@@ -18,6 +18,43 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  createTaskAction: {
+    input:
+      "id del producto, ubicaciones de origen y destino, cantidad, prioridad, a quién se asigna y una nota",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); producto, ubicaciones y la persona asignada se buscan solo en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
+  },
+  taskStepAction: {
+    input: "id de la tarea y el paso (tomar, recoger o entregar)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
+  },
+  blockTaskAction: {
+    input: "id de la tarea y qué pasó",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo la persona que tiene la tarea en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
+  },
+  cancelTaskAction: {
+    input: "id de la tarea y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
+  },
+  releaseTaskAction: {
+    input: "id de la tarea",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
+  },
+  assignTaskAction: {
+    input: "id de la tarea y de la persona (o vacío para dejarla disponible)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y la persona debe poder hacer tareas ahí",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
+  },
   receivePurchaseOrderAction: {
     input: "id de orden, id de ubicación, remisión y clave de confirmación",
     identity:

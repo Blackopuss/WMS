@@ -448,6 +448,30 @@ beforeAll(async () => {
         payload: {},
       },
     });
+    // A transfer task (WMS-06) from the default location to a rack.
+    const rackId = newId();
+    await db.location.create({
+      data: {
+        id: rackId,
+        organizationId,
+        facilityId: location.facilityId,
+        name: "Rack de tareas",
+        kind: "SHELF",
+      },
+    });
+    await db.warehouseTask.create({
+      data: {
+        id: newId(),
+        organizationId,
+        number: 1,
+        productId,
+        fromLocationId: location.id,
+        toLocationId: rackId,
+        quantity: "2",
+        unitCode: "piece",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     const countId = newId();
     await db.stockCount.create({
       data: {

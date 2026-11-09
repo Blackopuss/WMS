@@ -45,6 +45,8 @@ const SCREENS = [
   "/inventario/importar",
   "/inventario/exportar",
   "/conteos",
+  "/tareas",
+  "/tareas/nueva",
   "/recepcion",
   "/compras",
   "/compras/proveedores",

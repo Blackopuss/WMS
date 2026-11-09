@@ -176,10 +176,12 @@ describe("operational roles (WMS-05)", () => {
     }
   });
 
-  it("Montacarguista only reads: it never types quantities freely", () => {
+  it("Montacarguista reads and does its tasks: it never types quantities freely", () => {
     for (const permission of of("forklift")) {
-      expect(permission).toMatch(/\.read$/);
+      expect(permission).toMatch(/\.read$|^inventory\.task\.execute$/);
     }
+    expect(of("forklift").has("inventory.task.execute")).toBe(true);
+    expect(of("forklift").has("inventory.transfer.create")).toBe(false);
   });
 
   it("Supervisor de almacén is Almacén plus receiving and the team list", () => {

@@ -37,9 +37,10 @@ describe("menu by role", () => {
     expect(menuOf(member("administrator"))).toEqual(all);
   });
 
-  it("Almacén does not see Compras", () => {
+  it("Almacén does not see Compras; it runs the tasks (WMS-07)", () => {
     expect(menuOf(member("warehouse"))).toEqual([
       "Inicio",
+      "Tareas",
       "Inventario",
       "Movimientos",
       "Conteos",
@@ -62,6 +63,15 @@ describe("menu by role", () => {
     expect(menuOf(member("viewer"))).toEqual(
       NAV_ITEMS.map((item) => item.label),
     );
+  });
+
+  it("Montacarguista sees its tasks and the stock (WMS-07)", () => {
+    expect(menuOf(member("forklift"))).toEqual([
+      "Inicio",
+      "Tareas",
+      "Inventario",
+      "Configuración",
+    ]);
   });
 
   it("a member without roles only sees Inicio and Configuración", () => {

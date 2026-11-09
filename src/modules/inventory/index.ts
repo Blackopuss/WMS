@@ -197,3 +197,37 @@ export {
   type ExportResult,
 } from "./exports";
 export { getFirstSteps, type FirstSteps } from "./first-steps";
+export {
+  TASK_PAGE_SIZE,
+  acceptTask,
+  assignTask,
+  blockTask,
+  cancelTask,
+  countMyTasks,
+  createTask,
+  deliverTask,
+  getTask,
+  listTaskPeople,
+  listTasks,
+  pickUpTask,
+  releaseTask,
+} from "./tasks";
+export type {
+  CreateTaskInput,
+  TaskField,
+  TaskListView,
+  TaskPage,
+  TaskPriority,
+  TaskResult,
+  TaskSummary,
+  TaskView,
+} from "./tasks";
+export {
+  OPEN_TASK_STATUSES,
+  WAREHOUSE_TASK_STATUS_LABELS,
+  WAREHOUSE_TASK_TRANSITIONS,
+  canTaskTransition,
+  formatTaskNumber,
+  taskTransitionProblem,
+} from "./task-states";
+export type { WarehouseTaskStatus } from "./task-states";

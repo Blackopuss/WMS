@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  ClipboardList,
   ClipboardCheck,
   House,
   PackageOpen,
@@ -37,6 +38,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: House,
     module: null,
     permission: null,
+    mobile: true,
+  },
+  {
+    // WMS-07: what the floor does every day (accept, pick up, deliver);
+    // second so the mobile bar of who does tasks starts with it.
+    href: "/tareas",
+    label: "Tareas",
+    icon: ClipboardList,
+    module: "inventory",
+    permission: "inventory.task.read",
     mobile: true,
   },
   {

@@ -1070,234 +1070,10 @@ export async function registerTransfer(
       : { kind: "base", quantity: data.quantity };
 
   try {
-    return await forOrganization(organizationId).$transaction(async (tx) => {
-      // Same order as every movement: the product, then the locations
-      // (both at once; `lockRows` takes them in id order).
-      const [productId] = await lockRows(tx, "product", [data.productId]);
-      await lockRows(tx, "location", [data.locationId, data.toLocationId]);
-
-      if (data.idempotencyKey) {
-        const replay = await tx.stockMovement.findFirst({
-          where: { idempotencyKey: data.idempotencyKey },
-          select: {
-            id: true,
-            type: true,
-            createdByUserId: true,
-            lines: {
-              orderBy: { lineNumber: "asc" },
-              select: {
-                productId: true,
-                locationId: true,
-                capturedQuantity: true,
-                capturedUnitCode: true,
-                presentationId: true,
-                baseQuantity: true,
-                unitCode: true,
-                product: { select: { name: true } },
-                location: { select: { name: true } },
-              },
-            },
-          },
-        });
-        if (replay) {
-          const [out, into] = replay.lines;
-          let sameQuantity = false;
-          try {
-            sameQuantity =
-              !!out &&
-              dec(data.quantity.replace(/,(?=\d{3}(\D|$))/g, "")).equals(
-                out.capturedQuantity.toString(),
-              );
-          } catch {
-            sameQuantity = false;
-          }
-          if (
-            !out ||
-            !into ||
-            replay.type !== "TRANSFER" ||
-            replay.createdByUserId !== userId ||
-            out.productId !== data.productId ||
-            out.locationId !== data.locationId ||
-            into.locationId !== data.toLocationId ||
-            (out.presentationId ?? null) !== data.presentationId ||
-            (out.capturedUnitCode ?? null) !== data.unitCode ||
-            !sameQuantity
-          ) {
-            return refuse("not_allowed", null, KEY_REUSED);
-          }
-          return {
-            ok: true as const,
-            movementId: replay.id,
-            repeated: true as const,
-            summary: `Este movimiento ya estaba registrado: ${formatStock(out.baseQuantity.toString(), out.unitCode)} de ${out.product.name} de ${out.location.name} a ${into.location.name}. No se registró de nuevo.`,
-          };
-        }
-      }
-
-      const product = productId
-        ? await tx.product.findFirst({
-            where: { id: productId },
-            select: { id: true, name: true, status: true },
-          })
-        : null;
-      if (!product) {
-        return refuse("not_found", "productId", "Este producto ya no existe.");
-      }
-      if (product.status !== "ACTIVE") {
-        return refuse(
-          "not_allowed",
-          "productId",
-          "Este producto está archivado. Reactívalo para reubicarlo.",
-        );
-      }
-
-      const places = await tx.location.findMany({
-        where: { id: { in: [data.locationId, data.toLocationId] } },
-        select: { id: true, name: true, archivedAt: true },
-      });
-      const from = places.find((place) => place.id === data.locationId);
-      const to = places.find((place) => place.id === data.toLocationId);
-      if (!from) {
-        return refuse(
-          "not_found",
-          "locationId",
-          "Esa ubicación ya no existe. Elige otra.",
-        );
-      }
-      if (!to) {
-        return refuse(
-          "not_found",
-          "toLocationId",
-          "Esa ubicación ya no existe. Elige otra.",
-        );
-      }
-      if (to.archivedAt) {
-        return refuse(
-          "not_allowed",
-          "toLocationId",
-          `«${to.name}» está archivada. Elige otra ubicación.`,
-        );
-      }
-
-      const resolved = await resolveConversion(tx, product.id, capture);
-      if (!resolved.ok) return refuse("invalid", "quantity", resolved.error);
-      const { conversion } = resolved;
-      const unitCode = resolved.product.unitCode;
-      const base = conversion.baseQuantity;
-
-      const balances = await tx.stockBalance.findMany({
-        where: {
-          productId: product.id,
-          locationId: { in: [from.id, to.id] },
-        },
-        select: { id: true, locationId: true, quantity: true },
-      });
-      const source = balances.find((b) => b.locationId === from.id);
-      const target = balances.find((b) => b.locationId === to.id);
-      const inSource = dec(source?.quantity.toString() ?? 0);
-      const inTarget = dec(target?.quantity.toString() ?? 0);
-      if (inSource.lessThan(base)) {
-        // MOV-01 also holds here: a location never gives more than it has.
-        return refuse(
-          "invalid",
-          "quantity",
-          inSource.isZero()
-            ? `No hay existencias de ${product.name} en ${from.name}.`
-            : `Solo hay ${formatStock(inSource.toString(), unitCode)} en ${from.name}: no se pueden mover ${formatStock(base.toString(), unitCode)}.`,
-        );
-      }
-      const leftInSource = inSource.minus(base);
-      const nowInTarget = inTarget.plus(base);
-      if (nowInTarget.greaterThan(MAX_BALANCE)) {
-        return refuse(
-          "invalid",
-          "quantity",
-          "Con esa cantidad el saldo sería demasiado grande. Revisa lo que escribiste.",
-        );
-      }
-
-      // VAL-04: moving it to another place does not change its value.
-      const costs = await openCostBook(tx, organizationId, [product.id]);
-      const price = lineCost(costs.price(product.id));
-
-      const movementId = newId();
-      await tx.stockMovement.create({
-        data: {
-          id: movementId,
-          organizationId,
-          type: "TRANSFER",
-          reason: data.reason,
-          reference: data.reference,
-          idempotencyKey: data.idempotencyKey,
-          createdByUserId: userId,
-        },
-      });
-      const line = {
-        organizationId,
-        movementId,
-        productId: product.id,
-        capturedQuantity: conversion.capturedQuantity.toString(),
-        capturedUnitCode: conversion.capturedUnitCode,
-        presentationId: conversion.presentation?.id ?? null,
-        presentationVersionId: conversion.presentation?.versionId ?? null,
-        factor: conversion.factor.toString(),
-        baseQuantity: base.toString(),
-        unitCode,
-        unitCost: price,
-      };
-      await tx.stockMovementLine.create({
-        data: {
-          ...line,
-          id: newId(),
-          lineNumber: 1,
-          locationId: from.id,
-          direction: "OUT",
-        },
-      });
-      await tx.stockMovementLine.create({
-        data: {
-          ...line,
-          id: newId(),
-          lineNumber: 2,
-          locationId: to.id,
-          direction: "IN",
-        },
-      });
-
-      const taken = await tx.stockBalance.updateMany({
-        where: { id: source?.id ?? "", quantity: { gte: base.toString() } },
-        data: { quantity: { decrement: base.toString() } },
-      });
-      if (taken.count !== 1) {
-        throw new Error(`Balance of ${product.id} changed under its lock`);
-      }
-      if (target) {
-        await tx.stockBalance.updateMany({
-          where: { id: target.id },
-          data: { quantity: { increment: base.toString() } },
-        });
-      } else {
-        await tx.stockBalance.create({
-          data: {
-            id: newId(),
-            organizationId,
-            productId: product.id,
-            locationId: to.id,
-            quantity: base.toString(),
-          },
-        });
-      }
-
-      const how =
-        conversion.presentation || conversion.capturedUnitCode
-          ? ` (${conversion.preview})`
-          : "";
-      return {
-        ok: true as const,
-        movementId,
-        summary: `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.`,
-      };
-    }, LOCKING_TRANSACTION);
+    return await forOrganization(organizationId).$transaction(
+      (tx) => transferWithin(tx, actor, data, capture),
+      LOCKING_TRANSACTION,
+    );
   } catch (error) {
     if (error instanceof TransferRejected) return error.result;
     if (
@@ -1316,6 +1092,253 @@ export async function registerTransfer(
     }
     throw error;
   }
+}
+
+type TransferTx = Parameters<
+  Parameters<ReturnType<typeof forOrganization>["$transaction"]>[0]
+>[0];
+type TransferData = z.output<typeof transferSchema>;
+
+/**
+ * The relocation itself, inside the caller's transaction (INV-23): locks
+ * product and locations, checks the key and the stock, writes the TRANSFER
+ * movement and moves the balances. A refusal throws `TransferRejected`, so
+ * everything the caller wrote is undone too. Warehouse tasks (WMS-06) call
+ * it from their delivery, after their own permission check.
+ */
+async function transferWithin(
+  tx: TransferTx,
+  actor: InventoryActor,
+  data: TransferData,
+  capture: Capture,
+): Promise<Extract<TransferResult, { ok: true }>> {
+  const { organizationId, userId } = actor;
+  // Same order as every movement: the product, then the locations
+  // (both at once; `lockRows` takes them in id order).
+  const [productId] = await lockRows(tx, "product", [data.productId]);
+  await lockRows(tx, "location", [data.locationId, data.toLocationId]);
+
+  if (data.idempotencyKey) {
+    const replay = await tx.stockMovement.findFirst({
+      where: { idempotencyKey: data.idempotencyKey },
+      select: {
+        id: true,
+        type: true,
+        createdByUserId: true,
+        lines: {
+          orderBy: { lineNumber: "asc" },
+          select: {
+            productId: true,
+            locationId: true,
+            capturedQuantity: true,
+            capturedUnitCode: true,
+            presentationId: true,
+            baseQuantity: true,
+            unitCode: true,
+            product: { select: { name: true } },
+            location: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (replay) {
+      const [out, into] = replay.lines;
+      let sameQuantity = false;
+      try {
+        sameQuantity =
+          !!out &&
+          dec(data.quantity.replace(/,(?=\d{3}(\D|$))/g, "")).equals(
+            out.capturedQuantity.toString(),
+          );
+      } catch {
+        sameQuantity = false;
+      }
+      if (
+        !out ||
+        !into ||
+        replay.type !== "TRANSFER" ||
+        replay.createdByUserId !== userId ||
+        out.productId !== data.productId ||
+        out.locationId !== data.locationId ||
+        into.locationId !== data.toLocationId ||
+        (out.presentationId ?? null) !== data.presentationId ||
+        (out.capturedUnitCode ?? null) !== data.unitCode ||
+        !sameQuantity
+      ) {
+        return refuse("not_allowed", null, KEY_REUSED);
+      }
+      return {
+        ok: true as const,
+        movementId: replay.id,
+        repeated: true as const,
+        summary: `Este movimiento ya estaba registrado: ${formatStock(out.baseQuantity.toString(), out.unitCode)} de ${out.product.name} de ${out.location.name} a ${into.location.name}. No se registró de nuevo.`,
+      };
+    }
+  }
+
+  const product = productId
+    ? await tx.product.findFirst({
+        where: { id: productId },
+        select: { id: true, name: true, status: true },
+      })
+    : null;
+  if (!product) {
+    return refuse("not_found", "productId", "Este producto ya no existe.");
+  }
+  if (product.status !== "ACTIVE") {
+    return refuse(
+      "not_allowed",
+      "productId",
+      "Este producto está archivado. Reactívalo para reubicarlo.",
+    );
+  }
+
+  const places = await tx.location.findMany({
+    where: { id: { in: [data.locationId, data.toLocationId] } },
+    select: { id: true, name: true, archivedAt: true },
+  });
+  const from = places.find((place) => place.id === data.locationId);
+  const to = places.find((place) => place.id === data.toLocationId);
+  if (!from) {
+    return refuse(
+      "not_found",
+      "locationId",
+      "Esa ubicación ya no existe. Elige otra.",
+    );
+  }
+  if (!to) {
+    return refuse(
+      "not_found",
+      "toLocationId",
+      "Esa ubicación ya no existe. Elige otra.",
+    );
+  }
+  if (to.archivedAt) {
+    return refuse(
+      "not_allowed",
+      "toLocationId",
+      `«${to.name}» está archivada. Elige otra ubicación.`,
+    );
+  }
+
+  const resolved = await resolveConversion(tx, product.id, capture);
+  if (!resolved.ok) return refuse("invalid", "quantity", resolved.error);
+  const { conversion } = resolved;
+  const unitCode = resolved.product.unitCode;
+  const base = conversion.baseQuantity;
+
+  const balances = await tx.stockBalance.findMany({
+    where: {
+      productId: product.id,
+      locationId: { in: [from.id, to.id] },
+    },
+    select: { id: true, locationId: true, quantity: true },
+  });
+  const source = balances.find((b) => b.locationId === from.id);
+  const target = balances.find((b) => b.locationId === to.id);
+  const inSource = dec(source?.quantity.toString() ?? 0);
+  const inTarget = dec(target?.quantity.toString() ?? 0);
+  if (inSource.lessThan(base)) {
+    // MOV-01 also holds here: a location never gives more than it has.
+    return refuse(
+      "invalid",
+      "quantity",
+      inSource.isZero()
+        ? `No hay existencias de ${product.name} en ${from.name}.`
+        : `Solo hay ${formatStock(inSource.toString(), unitCode)} en ${from.name}: no se pueden mover ${formatStock(base.toString(), unitCode)}.`,
+    );
+  }
+  const leftInSource = inSource.minus(base);
+  const nowInTarget = inTarget.plus(base);
+  if (nowInTarget.greaterThan(MAX_BALANCE)) {
+    return refuse(
+      "invalid",
+      "quantity",
+      "Con esa cantidad el saldo sería demasiado grande. Revisa lo que escribiste.",
+    );
+  }
+
+  // VAL-04: moving it to another place does not change its value.
+  const costs = await openCostBook(tx, organizationId, [product.id]);
+  const price = lineCost(costs.price(product.id));
+
+  const movementId = newId();
+  await tx.stockMovement.create({
+    data: {
+      id: movementId,
+      organizationId,
+      type: "TRANSFER",
+      reason: data.reason,
+      reference: data.reference,
+      idempotencyKey: data.idempotencyKey,
+      createdByUserId: userId,
+    },
+  });
+  const line = {
+    organizationId,
+    movementId,
+    productId: product.id,
+    capturedQuantity: conversion.capturedQuantity.toString(),
+    capturedUnitCode: conversion.capturedUnitCode,
+    presentationId: conversion.presentation?.id ?? null,
+    presentationVersionId: conversion.presentation?.versionId ?? null,
+    factor: conversion.factor.toString(),
+    baseQuantity: base.toString(),
+    unitCode,
+    unitCost: price,
+  };
+  await tx.stockMovementLine.create({
+    data: {
+      ...line,
+      id: newId(),
+      lineNumber: 1,
+      locationId: from.id,
+      direction: "OUT",
+    },
+  });
+  await tx.stockMovementLine.create({
+    data: {
+      ...line,
+      id: newId(),
+      lineNumber: 2,
+      locationId: to.id,
+      direction: "IN",
+    },
+  });
+
+  const taken = await tx.stockBalance.updateMany({
+    where: { id: source?.id ?? "", quantity: { gte: base.toString() } },
+    data: { quantity: { decrement: base.toString() } },
+  });
+  if (taken.count !== 1) {
+    throw new Error(`Balance of ${product.id} changed under its lock`);
+  }
+  if (target) {
+    await tx.stockBalance.updateMany({
+      where: { id: target.id },
+      data: { quantity: { increment: base.toString() } },
+    });
+  } else {
+    await tx.stockBalance.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId: product.id,
+        locationId: to.id,
+        quantity: base.toString(),
+      },
+    });
+  }
+
+  const how =
+    conversion.presentation || conversion.capturedUnitCode
+      ? ` (${conversion.preview})`
+      : "";
+  return {
+    ok: true as const,
+    movementId,
+    summary: `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.`,
+  };
 }
 
 const adjustmentSchema = entrySchema.extend({
@@ -2128,4 +2151,47 @@ export async function listMovementAuthors(
   return members
     .map((member) => ({ userId: member.userId, name: member.user.name }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+/**
+ * The transfer a warehouse task writes when it is delivered (WMS-06), in
+ * the task's transaction and with its key (`task:<id>`). The person's
+ * right to deliver was checked by the task service (`inventory.task.execute`);
+ * the same stock rules as a relocation apply. A refusal writes nothing.
+ */
+export async function postTaskTransfer(
+  tx: TransferTx,
+  actor: InventoryActor,
+  input: {
+    productId: string;
+    fromLocationId: string;
+    toLocationId: string;
+    /** In the product's unit. */
+    quantity: string;
+    idempotencyKey: string;
+    reference: string;
+  },
+): Promise<TransferResult> {
+  try {
+    return await transferWithin(
+      tx,
+      actor,
+      {
+        productId: input.productId,
+        locationId: input.fromLocationId,
+        toLocationId: input.toLocationId,
+        quantity: input.quantity,
+        presentationId: null,
+        unitCode: null,
+        reason: null,
+        reference: input.reference,
+        idempotencyKey: input.idempotencyKey,
+        unitCost: null,
+      } as TransferData,
+      { kind: "base", quantity: input.quantity },
+    );
+  } catch (error) {
+    if (error instanceof TransferRejected) return error.result;
+    throw error;
+  }
 }

@@ -132,6 +132,10 @@ Consultar equivalencias (INV-09) no concede permiso para confirmar el movimiento
 | `inventory.count.create` | Abrir conteo con alcance y referencia temporal; INV-31. | Sí | Sí | Sí | No | No | Sí | No | No |
 | `inventory.count.update` | Capturar/corregir cantidades del conteo abierto y previsualizar diferencias; INV-31/32. | Sí | Sí | Sí | No | No | Sí | Sí | No |
 | `inventory.count.apply` | Aplicar ajustes del conteo con motivo, movimientos posteriores e idempotencia; exige también `inventory.adjustment.create`; INV-33; pregunta 1. | Sí | Sí | Sí | No | No | Sí | No | No |
+| `inventory.task.read` | Consultar tareas de traslado, su estado y quién las tiene; WMS-06. | Sí | Sí | Sí | No | Sí | Sí | Sí | Sí |
+| `inventory.task.create` | Crear tareas de traslado (producto, origen, destino, cantidad, prioridad) y asignarlas a una persona; WMS-06. | Sí | Sí | Sí | No | No | Sí | No | No |
+| `inventory.task.execute` | Tomar una tarea, confirmar que se recogió y que se entregó (la entrega escribe la reubicación) y reportar un problema; WMS-06. No permite reubicar libremente. | Sí | Sí | Sí | No | No | Sí | Sí | Sí |
+| `inventory.task.cancel` | Cancelar una tarea con motivo o liberar una con problema para que la tome otra persona; WMS-06. | Sí | Sí | Sí | No | No | Sí | No | No |
 | `inventory.import.create` | Descargar plantilla, subir CSV/XLSX, mapear, validar y previsualizar productos/saldos/salidas; IMP-02/03/04/05/06/09/10. | Sí | Sí | Sí | No | No | Sí | No | No |
 | `inventory.import.read` | Consultar archivo, errores, progreso, resultado parcial y fecha de actualización de una importación autorizada; IMP-02/05/08/10. | Sí | Sí | Sí | No | No | Sí | No | No |
 | `inventory.import.confirm` | Confirmar importación y reservas; exige además cada permiso de la operación importada; IMP-07/08/09/10. | Sí | Sí | Sí | No | No | Sí | No | No |
