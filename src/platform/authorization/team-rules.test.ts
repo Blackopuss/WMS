@@ -107,7 +107,14 @@ describe("an administrator cannot raise privileges", () => {
     expect(checkTeamChange(admin, warehouse, { kind: "disable" })).toEqual({
       ok: true,
     });
-    expect(assignableRoles(admin)).toEqual(["warehouse", "buyer", "viewer"]);
+    expect(assignableRoles(admin)).toEqual([
+      "warehouse",
+      "buyer",
+      "viewer",
+      "supervisor",
+      "operator",
+      "forklift",
+    ]);
   });
 
   it("cannot invite an administrator; the titular can", () => {

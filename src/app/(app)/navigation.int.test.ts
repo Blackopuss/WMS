@@ -73,7 +73,7 @@ describe("menu by role", () => {
     expect(menuOf(member("warehouse", "buyer"))).toEqual(
       NAV_ITEMS.map((item) => item.label),
     );
-    expect(ROLES.length).toBe(4);
+    expect(ROLES.length).toBe(7);
   });
 });
 

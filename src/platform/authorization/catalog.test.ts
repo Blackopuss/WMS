@@ -20,10 +20,19 @@ const doc = readFileSync(
   path.join(process.cwd(), "docs/MATRIZ_ROLES_PERMISOS.md"),
   "utf8",
 );
-const COLUMNS = ["owner", "administrator", "warehouse", "buyer", "viewer"];
+const COLUMNS = [
+  "owner",
+  "administrator",
+  "warehouse",
+  "buyer",
+  "viewer",
+  "supervisor",
+  "operator",
+  "forklift",
+];
 const rows = [
   ...doc.matchAll(
-    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
+    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
   ),
 ].map(([, id, ...cells]) => ({ id: id!, cells: cells as string[] }));
 
@@ -124,7 +133,14 @@ describe("founder decisions (FUN-07)", () => {
   it("the full audit log is for titular and administrators only (7)", () => {
     expect(OWNER_PERMISSIONS).toContain("platform.audit.read");
     expect(of("administrator").has("platform.audit.read")).toBe(true);
-    for (const role of ["warehouse", "buyer", "viewer"] as const) {
+    for (const role of [
+      "warehouse",
+      "buyer",
+      "viewer",
+      "supervisor",
+      "operator",
+      "forklift",
+    ] as const) {
       expect(of(role).has("platform.audit.read")).toBe(false);
     }
   });
@@ -134,6 +150,46 @@ describe("founder decisions (FUN-07)", () => {
     for (const role of ROLES) {
       expect(of(role).has("platform.provisioning.manage")).toBe(false);
     }
+  });
+});
+
+describe("operational roles (WMS-05)", () => {
+  it("Almacenista receives and moves goods but never corrects stock", () => {
+    for (const p of [
+      "purchasing.receipt.create",
+      "inventory.entry.create",
+      "inventory.exit.create",
+      "inventory.transfer.create",
+      "inventory.count.update",
+    ] as Permission[]) {
+      expect(of("operator").has(p)).toBe(true);
+    }
+    for (const p of [
+      "inventory.adjustment.create",
+      "inventory.movement.reverse",
+      "inventory.count.apply",
+      "inventory.product.create",
+      "inventory.cost.read",
+      "purchasing.cost.read",
+    ] as Permission[]) {
+      expect(of("operator").has(p)).toBe(false);
+    }
+  });
+
+  it("Montacarguista only reads: it never types quantities freely", () => {
+    for (const permission of of("forklift")) {
+      expect(permission).toMatch(/\.read$/);
+    }
+  });
+
+  it("Supervisor de almacén is Almacén plus receiving and the team list", () => {
+    for (const permission of of("warehouse")) {
+      expect(of("supervisor").has(permission)).toBe(true);
+    }
+    expect(of("supervisor").has("purchasing.receipt.create")).toBe(true);
+    expect(of("supervisor").has("platform.team.read")).toBe(true);
+    expect(of("supervisor").has("platform.team.assign_roles")).toBe(false);
+    expect(of("supervisor").has("purchasing.cost.read")).toBe(false);
   });
 });
 
