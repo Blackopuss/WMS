@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   Pencil,
   Scale,
+  ShieldAlert,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -163,6 +164,15 @@ export default async function ProductoPage({
           label: "Corregir existencias",
           icon: Scale,
         },
+        // WMS-11: quarantine, damage, block or release.
+        hasStock &&
+          (access.allows("inventory.status.change") ||
+            access.allows("inventory.status.release") ||
+            access.allows("inventory.damage.report")) && {
+            href: `/inventario/${product.id}/estado`,
+            label: "Cambiar estado",
+            icon: ShieldAlert,
+          },
       ].filter((item) => item !== false)
     : [];
 

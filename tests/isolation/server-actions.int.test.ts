@@ -18,6 +18,13 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  changeStatusAction: {
+    input:
+      "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, cantidad, motivo y clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); producto y ubicación se bloquean solo en esa empresa",
+    coveredBy: "tests/inventory/status-change.int.test.ts",
+  },
   createTaskAction: {
     input:
       "id del producto, ubicaciones de origen y destino, cantidad, prioridad, a quién se asigna y una nota",

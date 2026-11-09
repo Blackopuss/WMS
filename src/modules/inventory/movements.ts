@@ -681,6 +681,7 @@ export const MOVEMENT_TYPE_LABELS = {
   REVERSAL: "Reversa",
   RECEIPT: "Recepción de compra",
   RETURN: "Devolución a proveedor",
+  STATUS_CHANGE: "Cambio de estado",
 } as const;
 
 export type MovementType = keyof typeof MOVEMENT_TYPE_LABELS;

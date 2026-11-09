@@ -39,6 +39,9 @@ export type ProductStock = {
     label: string;
     /** The location was archived after holding stock (should not happen). */
     archived: boolean;
+    /** The AVAILABLE part of this location: "10", «10 piezas». */
+    available: string;
+    availableLabel: string;
     /** What of it is not available, by state («4 piezas · Rechazado»). */
     unavailable: { status: StockStatus; label: string; quantity: string }[];
   }[];
@@ -129,32 +132,40 @@ export async function getProductStock(
     byLocation.set(balance.location.id, entry);
   }
   const locations = [...byLocation.values()]
-    .map(({ quantity, location, unavailable }) => ({
-      id: location.id,
-      isDefault: location.isDefault === true,
-      path: formatLocationPath(
-        [
-          location.parent?.parent?.name,
-          location.parent?.name,
-          location.name,
-        ].filter((name): name is string => Boolean(name)),
-      ),
-      quantity: quantity.toString(),
-      label: formatStock(quantity.toString(), unitCode),
-      archived: location.archivedAt !== null,
-      unavailable: STOCK_STATUSES.flatMap((status) => {
-        const amount = unavailable.get(status);
-        return amount
-          ? [
-              {
-                status,
-                quantity: amount.toString(),
-                label: `${formatStock(amount.toString(), unitCode)} · ${STOCK_STATUS_LABELS[status]}`,
-              },
-            ]
-          : [];
-      }),
-    }))
+    .map(({ quantity, location, unavailable }) => {
+      const held = [...unavailable.values()].reduce(
+        (sum, part) => sum.plus(part),
+        dec(0),
+      );
+      const available = quantity.minus(held);
+      return {
+        id: location.id,
+        isDefault: location.isDefault === true,
+        path: formatLocationPath(
+          [
+            location.parent?.parent?.name,
+            location.parent?.name,
+            location.name,
+          ].filter((name): name is string => Boolean(name)),
+        ),
+        quantity: quantity.toString(),
+        label: formatStock(quantity.toString(), unitCode),
+        archived: location.archivedAt !== null,
+        available: available.toString(),
+        unavailable: STOCK_STATUSES.flatMap((status) => {
+          const amount = unavailable.get(status);
+          return amount
+            ? [
+                {
+                  status,
+                  quantity: amount.toString(),
+                  label: `${formatStock(amount.toString(), unitCode)} · ${STOCK_STATUS_LABELS[status]}`,
+                },
+              ]
+            : [];
+        }),
+      };
+    })
     .sort(
       (a, b) =>
         Number(b.isDefault) - Number(a.isDefault) ||
@@ -166,6 +177,8 @@ export async function getProductStock(
       quantity: location.quantity,
       label: location.label,
       archived: location.archived,
+      available: location.available,
+      availableLabel: formatStock(location.available, unitCode),
       unavailable: location.unavailable,
     }));
 

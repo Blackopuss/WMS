@@ -171,9 +171,13 @@ describe("operational roles (WMS-05)", () => {
       "inventory.product.create",
       "inventory.cost.read",
       "purchasing.cost.read",
+      "inventory.status.change",
+      "inventory.status.release",
     ] as Permission[]) {
       expect(of("operator").has(p)).toBe(false);
     }
+    // WMS-11: the floor reports damage; it does not quarantine or release.
+    expect(of("operator").has("inventory.damage.report")).toBe(true);
   });
 
   it("Montacarguista reads and does its tasks: it never types quantities freely", () => {

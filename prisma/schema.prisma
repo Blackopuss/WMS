@@ -945,6 +945,9 @@ enum StockMovementType {
   /// Goods received and sent back to the supplier (CMP-12): written by
   /// the return, in its transaction; never reversed from Inventario.
   RETURN
+  /// Stock that changes state in the same location and lot (WMS-11, ADR
+  /// 0033): out of one state, into another; always with a reason.
+  STATUS_CHANGE
 }
 
 enum StockDirection {

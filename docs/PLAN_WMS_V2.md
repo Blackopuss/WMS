@@ -101,6 +101,9 @@ producción y calidad no obliguen a rehacerla.
   muestra.
 - **Pruebas:** permisos por rol; no se cambia más de lo que hay en el estado de
   origen; concurrencia de dos cambios sobre el mismo saldo; reconciliación.
+- **Estado:** hecho (2026-11-09). Permisos `inventory.status.change`,
+  `inventory.status.release` e `inventory.damage.report`; pruebas en
+  `tests/inventory/status-change.int.test.ts`.
 
 ### WMS-12 · Reservas
 

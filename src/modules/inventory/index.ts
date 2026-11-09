@@ -238,3 +238,13 @@ export {
   isStockStatus,
 } from "./stock-status";
 export type { StockStatus } from "./stock-status";
+export {
+  MANUAL_STOCK_STATUSES,
+  changeStockStatus,
+  permissionForStatusChange,
+} from "./status-change";
+export type {
+  StatusChangeField,
+  StatusChangeInput,
+  StatusChangeResult,
+} from "./status-change";
