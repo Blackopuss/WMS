@@ -20,6 +20,7 @@ import {
   type MovementType,
 } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Physical counts: capture (INV-31). A count belongs to one location.
@@ -338,7 +339,11 @@ export async function captureCount(
         }
         // Reference of the comparison: now, and what the system has now.
         const balance = await tx.stockBalance.findFirst({
-          where: { productId: product.id, locationId: count.locationId },
+          where: {
+            productId: product.id,
+            locationId: count.locationId,
+            ...AVAILABLE_STOCK,
+          },
           select: { quantity: true },
         });
         const id = newId();
@@ -768,7 +773,11 @@ export async function getCount(
       const ids = productIds.slice(start, start + 500);
       const [held, moved] = await Promise.all([
         client.stockBalance.findMany({
-          where: { locationId: count.locationId, productId: { in: ids } },
+          where: {
+            locationId: count.locationId,
+            productId: { in: ids },
+            ...AVAILABLE_STOCK,
+          },
           select: { productId: true, quantity: true },
         }),
         client.stockMovementLine.findMany({
@@ -1106,6 +1115,7 @@ export async function applyCount(
                 where: {
                   locationId: count.locationId,
                   productId: { in: [...locked] },
+                  ...AVAILABLE_STOCK,
                 },
                 select: { id: true, productId: true, quantity: true },
               })

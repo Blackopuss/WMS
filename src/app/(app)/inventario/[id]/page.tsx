@@ -104,12 +104,12 @@ export default async function ProductoPage({
         ? getProductCost(actor, product.id)
         : null,
     ]);
-  // Low = the real balance is at or below the minimum (INV-30).
+  // Low = what is available is at or below the minimum (INV-30, ADR 0033).
   const low =
     active &&
     stock !== null &&
     minimum !== null &&
-    dec(stock.total).lessThanOrEqualTo(minimum);
+    dec(stock.available).lessThanOrEqualTo(minimum);
   const unit = getUnit(product.unitCode);
   const hasStock = stock !== null && stock.locations.length > 0;
 
@@ -237,6 +237,11 @@ export default async function ProductoPage({
                 </Badge>
               )}
             </p>
+            {stock.available !== stock.total && (
+              <p className="text-sm font-medium tabular-nums">
+                Disponible: {stock.availableLabel}
+              </p>
+            )}
             {minimum !== null && !access.allows("inventory.minimum.update") && (
               <p className="text-sm text-muted-foreground">
                 Mínimo: {formatStock(minimum, product.unitCode)}
@@ -281,8 +286,16 @@ export default async function ProductoPage({
                         </>
                       )}
                     </span>
-                    <span className="font-medium tabular-nums">
-                      {location.label}
+                    <span className="text-right tabular-nums">
+                      <span className="font-medium">{location.label}</span>
+                      {location.unavailable.map((part) => (
+                        <span
+                          key={part.status}
+                          className="block text-sm text-muted-foreground"
+                        >
+                          {part.label}
+                        </span>
+                      ))}
                     </span>
                   </li>
                 ))}

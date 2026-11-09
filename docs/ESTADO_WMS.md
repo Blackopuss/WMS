@@ -54,6 +54,11 @@ SaaS-Almacen.
 - Productos con categorías, marcas, código de barras, unidades y presentaciones
   («caja de 100 piezas») con conversión exacta y versión histórica.
 - Ubicaciones en tres niveles fijos (Zona › Pasillo › Estante), con archivado.
+- **Estado y lote en cada saldo** (WMS-09/10, ADR 0033): disponible, en recepción,
+  inspección, cuarentena, dañado, rechazado, en tránsito o bloqueado. La ficha del
+  producto distingue «hay» de «disponible»; solo lo disponible se saca, mueve,
+  cuenta o surte. Falta la operación de cambiar de estado (WMS-11) y las reservas
+  (WMS-12).
 - **Libro de movimientos inmutable**: entradas, salidas (una o varias líneas),
   reubicaciones, saldo inicial, ajustes con motivo y reversas. Cada movimiento
   guarda quién, cuándo, motivo, referencia e identificador de idempotencia, y el

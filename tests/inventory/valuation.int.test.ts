@@ -429,6 +429,7 @@ describe("who sees what the inventory is worth", () => {
         "Clave (SKU)",
         "Producto",
         "Ubicación",
+        "Estado",
         "Cantidad",
         "Unidad",
       ]);
@@ -445,6 +446,7 @@ describe("who sees what the inventory is worth", () => {
       "Clave (SKU)",
       "Producto",
       "Ubicación",
+      "Estado",
       "Cantidad",
       "Unidad",
       "Costo promedio",
@@ -453,7 +455,7 @@ describe("who sees what the inventory is worth", () => {
     expect(
       sheet.rows
         .slice(1)
-        .map((row) => row.slice(3))
+        .map((row) => row.slice(4))
         .sort((a, b) => b[0]!.localeCompare(a[0]!)),
     ).toEqual([
       // The reader drops empty cells at the end of a row.

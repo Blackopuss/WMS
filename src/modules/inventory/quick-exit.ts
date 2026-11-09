@@ -15,6 +15,7 @@ import {
   type InventoryActor,
 } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Quick exit of several lines (INV-28), «salida por venta»: many products
@@ -359,6 +360,7 @@ export async function registerQuickExit(
                   productId: line.productId,
                   locationId: line.locationId,
                 })),
+                ...AVAILABLE_STOCK,
               },
               select: {
                 id: true,

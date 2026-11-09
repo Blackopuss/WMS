@@ -231,3 +231,10 @@ export {
   taskTransitionProblem,
 } from "./task-states";
 export type { WarehouseTaskStatus } from "./task-states";
+export {
+  AVAILABLE_STOCK,
+  STOCK_STATUSES,
+  STOCK_STATUS_LABELS,
+  isStockStatus,
+} from "./stock-status";
+export type { StockStatus } from "./stock-status";

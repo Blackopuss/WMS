@@ -6,6 +6,7 @@ import { parseQuantity } from "@/platform/catalog";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Minimums and low stock (INV-30). A minimum is the lowest quantity the
@@ -182,7 +183,10 @@ async function lowStock(
   for (let start = 0; start < ids.length; start += 1_000) {
     const sums = await client.stockBalance.groupBy({
       by: ["productId"],
-      where: { productId: { in: ids.slice(start, start + 1_000) } },
+      where: {
+        productId: { in: ids.slice(start, start + 1_000) },
+        ...AVAILABLE_STOCK,
+      },
       _sum: { quantity: true },
     });
     for (const row of sums) {

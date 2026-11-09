@@ -448,6 +448,16 @@ beforeAll(async () => {
         payload: {},
       },
     });
+    // A lot of the product (ADR 0033; filled in by WMS-21).
+    await db.lot.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId,
+        code: "L-1",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // A transfer task (WMS-06) from the default location to a rack.
     const rackId = newId();
     await db.location.create({

@@ -16,6 +16,7 @@ import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { COST_FORMAT_ERROR, parseCost } from "./average-cost";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Stock movements (INV-16 on). A confirmation writes the movement, its
@@ -399,7 +400,11 @@ async function post(
       }
 
       const current = await tx.stockBalance.findFirst({
-        where: { productId: product.id, locationId: location.id },
+        where: {
+          productId: product.id,
+          locationId: location.id,
+          ...AVAILABLE_STOCK,
+        },
         select: { id: true, quantity: true },
       });
       const before = dec(current?.quantity.toString() ?? 0);
@@ -611,7 +616,10 @@ function answerReplay(
   };
 }
 
-/** Total stock of each product (the sum of its locations), in its unit. */
+/**
+ * Stock on hand of each product (the sum of its locations and of every
+ * state, ADR 0033), in its unit.
+ */
 export async function getStockTotals(
   actor: InventoryActor,
   productIds: readonly string[],
@@ -635,7 +643,10 @@ export async function getStockTotals(
   );
 }
 
-/** Stock of one product in each location where it has any, by location id. */
+/**
+ * Available stock of one product (ADR 0033) in each location where it has
+ * any, by location id: what can be taken out or moved from there.
+ */
 export async function getStockByLocation(
   actor: InventoryActor,
   productId: string,
@@ -648,7 +659,11 @@ export async function getStockByLocation(
   const rows = await forOrganization(
     actor.organizationId,
   ).stockBalance.findMany({
-    where: { productId: String(productId), quantity: { gt: 0 } },
+    where: {
+      productId: String(productId),
+      ...AVAILABLE_STOCK,
+      quantity: { gt: 0 },
+    },
     take: 2_000,
     select: { locationId: true, quantity: true },
   });
@@ -1231,6 +1246,7 @@ async function transferWithin(
     where: {
       productId: product.id,
       locationId: { in: [from.id, to.id] },
+      ...AVAILABLE_STOCK,
     },
     select: { id: true, locationId: true, quantity: true },
   });
@@ -1507,7 +1523,11 @@ export async function registerAdjustment(
 
       const unitCode = product.unitCode;
       const current = await tx.stockBalance.findFirst({
-        where: { productId: product.id, locationId: location.id },
+        where: {
+          productId: product.id,
+          locationId: location.id,
+          ...AVAILABLE_STOCK,
+        },
         select: { id: true, quantity: true },
       });
       const before = dec(current?.quantity.toString() ?? 0);
@@ -1722,6 +1742,10 @@ export async function reverseMovement(
           factor: true,
           baseQuantity: true,
           unitCode: true,
+          // ADR 0033: undone in the same state and lot.
+          status: true,
+          lotId: true,
+          lotKey: true,
           // VAL-04: undone at the cost it was done with. Never shown.
           unitCost: true,
         },
@@ -1857,7 +1881,12 @@ export async function reverseMovement(
           );
         }
         const current = await tx.stockBalance.findFirst({
-          where: { productId: product.id, locationId: location.id },
+          where: {
+            productId: product.id,
+            locationId: location.id,
+            status: line.status,
+            lotKey: line.lotKey,
+          },
           select: { id: true, quantity: true },
         });
         const before = dec(current?.quantity.toString() ?? 0);
@@ -1898,6 +1927,9 @@ export async function reverseMovement(
             factor: line.factor.toString(),
             baseQuantity: base.toString(),
             unitCode: line.unitCode,
+            status: line.status,
+            lotId: line.lotId,
+            lotKey: line.lotKey,
             unitCost: lineCost(unitCost),
           },
         });
@@ -1916,6 +1948,9 @@ export async function reverseMovement(
               organizationId,
               productId: product.id,
               locationId: location.id,
+              status: line.status,
+              lotId: line.lotId,
+              lotKey: line.lotKey,
               quantity: after.toString(),
             },
           });

@@ -6,6 +6,7 @@ import { lockRows, type TenantDb } from "@/server";
 
 import { MAX_BALANCE, formatStock, type InventoryActor } from "./movements";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Decimal = ReturnType<typeof dec>;
@@ -190,6 +191,7 @@ export async function postReceiptEntry(
     where: {
       productId: { in: [...new Set(lines.map((line) => line.productId))] },
       locationId: { in: [...new Set(lines.map((line) => line.locationId))] },
+      ...AVAILABLE_STOCK,
     },
     select: { id: true, productId: true, locationId: true, quantity: true },
   });

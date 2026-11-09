@@ -1,7 +1,7 @@
 import "server-only";
 
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
-import { formatStock } from "@/modules/inventory";
+import { AVAILABLE_STOCK, formatStock } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { pluralizeName, resolveConversion } from "@/platform/catalog";
@@ -131,7 +131,7 @@ async function plan(client: Reader, productIds?: string[]): Promise<Plan> {
     const slice = ids.slice(start, start + 1_000);
     const sums = await client.stockBalance.groupBy({
       by: ["productId"],
-      where: { productId: { in: slice } },
+      where: { productId: { in: slice }, ...AVAILABLE_STOCK },
       _sum: { quantity: true },
     });
     for (const row of sums) {

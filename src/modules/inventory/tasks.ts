@@ -22,6 +22,7 @@ import {
   taskTransitionProblem,
   type WarehouseTaskStatus,
 } from "./task-states";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Warehouse tasks (WMS-06, especificación WMS v5 5.3): a supervisor asks
@@ -277,7 +278,11 @@ export async function createTask(
           );
         }
         const balance = await tx.stockBalance.findFirst({
-          where: { productId: product.id, locationId: from.id },
+          where: {
+            productId: product.id,
+            locationId: from.id,
+            ...AVAILABLE_STOCK,
+          },
           select: { quantity: true },
         });
         const there = dec(balance?.quantity.toString() ?? 0);

@@ -85,6 +85,8 @@ producción y calidad no obliguen a rehacerla.
   igual; la reconciliación compara por estado.
 - **Pruebas:** las actuales sin cambio; reconciliación por estado; un saldo
   `REJECTED` o `DAMAGED` nunca aparece como disponible (**PC-5**).
+- **Estado:** hecho (2026-11-09). Migración escrita a mano (la diferencia de Prisma
+  soltaba llaves foráneas); pruebas en `tests/inventory/stock-status.int.test.ts`.
 
 ### WMS-11 · Cambiar el estado de existencias
 

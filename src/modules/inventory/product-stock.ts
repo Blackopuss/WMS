@@ -7,6 +7,11 @@ import { compareLocationNames, formatLocationPath } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
+import {
+  STOCK_STATUSES,
+  STOCK_STATUS_LABELS,
+  type StockStatus,
+} from "./stock-status";
 
 /**
  * Stock of one product for its card (INV-26): the total, where it is, and
@@ -16,10 +21,14 @@ import { formatStock, type InventoryActor } from "./movements";
 
 export type ProductStock = {
   unitCode: string;
-  /** Sum of every location, in the product's unit: "250". */
+  /** On hand: sum of every location and state (ADR 0033), "250". */
   total: string;
   /** «250 piezas». */
   totalLabel: string;
+  /** What can be picked, taken out or moved: the AVAILABLE part. */
+  available: string;
+  /** «240 piezas». */
+  availableLabel: string;
   /** Where it is, «General» first, then by name. Only places with stock. */
   locations: {
     id: string;
@@ -30,6 +39,8 @@ export type ProductStock = {
     label: string;
     /** The location was archived after holding stock (should not happen). */
     archived: boolean;
+    /** What of it is not available, by state («4 piezas · Rechazado»). */
+    unavailable: { status: StockStatus; label: string; quantity: string }[];
   }[];
   /**
    * The total in each presentation, with its current content:
@@ -76,6 +87,7 @@ export async function getProductStock(
     take: 2_000,
     select: {
       quantity: true,
+      status: true,
       location: {
         select: {
           id: true,
@@ -91,8 +103,33 @@ export async function getProductStock(
   });
 
   const { unitCode } = product;
-  const locations = balances
-    .map(({ quantity, location }) => ({
+  // One row per location: several balances (one per state) add up.
+  const byLocation = new Map<
+    string,
+    {
+      location: (typeof balances)[number]["location"];
+      quantity: ReturnType<typeof dec>;
+      unavailable: Map<StockStatus, ReturnType<typeof dec>>;
+    }
+  >();
+  for (const balance of balances) {
+    const entry = byLocation.get(balance.location.id) ?? {
+      location: balance.location,
+      quantity: dec(0),
+      unavailable: new Map(),
+    };
+    const amount = dec(balance.quantity.toString());
+    entry.quantity = entry.quantity.plus(amount);
+    if (balance.status !== "AVAILABLE") {
+      entry.unavailable.set(
+        balance.status,
+        (entry.unavailable.get(balance.status) ?? dec(0)).plus(amount),
+      );
+    }
+    byLocation.set(balance.location.id, entry);
+  }
+  const locations = [...byLocation.values()]
+    .map(({ quantity, location, unavailable }) => ({
       id: location.id,
       isDefault: location.isDefault === true,
       path: formatLocationPath(
@@ -105,6 +142,18 @@ export async function getProductStock(
       quantity: quantity.toString(),
       label: formatStock(quantity.toString(), unitCode),
       archived: location.archivedAt !== null,
+      unavailable: STOCK_STATUSES.flatMap((status) => {
+        const amount = unavailable.get(status);
+        return amount
+          ? [
+              {
+                status,
+                quantity: amount.toString(),
+                label: `${formatStock(amount.toString(), unitCode)} · ${STOCK_STATUS_LABELS[status]}`,
+              },
+            ]
+          : [];
+      }),
     }))
     .sort(
       (a, b) =>
@@ -117,11 +166,19 @@ export async function getProductStock(
       quantity: location.quantity,
       label: location.label,
       archived: location.archived,
+      unavailable: location.unavailable,
     }));
 
   // Exact sum: decimals are never added as floating point.
   const total = balances.reduce(
     (sum, balance) => sum.plus(balance.quantity.toString()),
+    dec(0),
+  );
+  const available = balances.reduce(
+    (sum, balance) =>
+      balance.status === "AVAILABLE"
+        ? sum.plus(balance.quantity.toString())
+        : sum,
     dec(0),
   );
   const rule = {
@@ -146,6 +203,8 @@ export async function getProductStock(
     unitCode,
     total: total.toString(),
     totalLabel: formatStock(total.toString(), unitCode),
+    available: available.toString(),
+    availableLabel: formatStock(available.toString(), unitCode),
     locations,
     equivalences,
   };
