@@ -52,5 +52,4 @@ export const TIER_PRICES = PLAN_TIERS.map(({ prices }) => ({
   // Whole pesos, for display only; the checkout charges the exact list.
   inventory: Number(prices.inventory),
   purchasing: Number(prices.purchasing),
-  sales: Number(prices.sales),
 }));

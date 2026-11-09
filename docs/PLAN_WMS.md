@@ -34,7 +34,7 @@ Decisiones del fundador (2026-11-09):
 | ID | Paso | Listo cuando | Estado |
 | --- | --- | --- | --- |
 | WMS-01 | Plan, especificación en `docs/` e identidad del repositorio | Este plan y la especificación están en `docs/`; `AGENTS.md` y `README.md` hablan del WMS | Hecho |
-| WMS-02 | Quitar Ventas del código | No quedan pantallas, rutas, servicios, pruebas, permisos `sales.*`, roles Cajero/Encargado de caja ni precio de Ventas; el sitio y la compra en línea ya no lo ofrecen | Pendiente |
+| WMS-02 | Quitar Ventas del código | No quedan pantallas, rutas, servicios, pruebas, permisos `sales.*`, roles Cajero/Encargado de caja ni precio de Ventas; el sitio y la compra en línea ya no lo ofrecen | Hecho (ADR 0032) |
 | WMS-03 | Quitar Ventas de la base | Los modelos `Sale*`/`SalesQuote*`… salen de `schema.prisma` y una migración borra sus tablas y disparadores; movimientos `SALE`/`SALE_RETURN` dejan de aceptarse | Pendiente |
 | WMS-04 | Menú por tareas de almacén y marca WMS | El menú se organiza por tarea (Inicio, Inventario, Recepción, Movimientos, Conteos, Compras, Configuración) y la app y el sitio se presentan como WMS | Pendiente |
 | WMS-05 | Roles operativos (sección 4.2) | Existen Supervisor de almacén, Almacenista y Montacarguista en la matriz y el catálogo, con permisos acotados | Pendiente |

@@ -74,7 +74,6 @@ describe("getPlanOverview", () => {
     expect(plan.modules.map((m) => [m.id, m.state])).toEqual([
       ["inventory", "available"],
       ["purchasing", "available"],
-      ["sales", "available"],
       ["crm", "unavailable"],
     ]);
   });
@@ -113,7 +112,6 @@ describe("getPlanOverview", () => {
       [
         { name: "Inventario", state: "active" },
         { name: "Compras", state: "available" },
-        { name: "Ventas", state: "available" },
         { name: "CRM", state: "unavailable" },
       ],
     );

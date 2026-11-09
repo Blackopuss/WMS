@@ -75,14 +75,14 @@ export default function PrivacyPage() {
           title: "Información que capturas en el sistema",
           body: (
             <p>
-              Los productos, existencias, proveedores, clientes, ventas y
-              cuentas por cobrar que registras pertenecen a tu empresa. Respecto
-              de los datos personales que contengan (por ejemplo, el nombre,
-              teléfono, RFC o correo de un cliente o de un proveedor), tu
-              empresa es la responsable y {SITE.name} actúa como encargado: solo
-              los tratamos para prestarte el servicio, incluidos los correos que
-              nos pides enviarles (órdenes, cotizaciones, estados de cuenta y
-              recordatorios de pago), y no los usamos para otros fines.
+              Los productos, existencias, ubicaciones, proveedores, órdenes y
+              movimientos que registras pertenecen a tu empresa. Respecto de los
+              datos personales que contengan (por ejemplo, el nombre, teléfono,
+              RFC o correo de un proveedor), tu empresa es la responsable y{" "}
+              {SITE.name} actúa como encargado: solo los tratamos para prestarte
+              el servicio, incluidos los correos que nos pides enviarles
+              (órdenes de compra a tus proveedores), y no los usamos para otros
+              fines.
             </p>
           ),
         },

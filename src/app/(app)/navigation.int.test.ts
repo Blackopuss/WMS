@@ -57,7 +57,7 @@ describe("menu by role", () => {
     ]);
   });
 
-  it("Consulta sees every section it can read, Ventas for its history (VEN-22)", () => {
+  it("Consulta sees every section it can read", () => {
     expect(menuOf(member("viewer"))).toEqual(
       NAV_ITEMS.map((item) => item.label),
     );
@@ -70,25 +70,9 @@ describe("menu by role", () => {
 
   it("combined roles see the union", () => {
     expect(menuOf(member("warehouse", "buyer"))).toEqual(
-      NAV_ITEMS.map((item) => item.label).filter((label) => label !== "Ventas"),
+      NAV_ITEMS.map((item) => item.label),
     );
-    expect(ROLES.length).toBe(6);
-  });
-
-  it("Cajero and Encargado de caja sell and see the products they sell (VEN-02)", () => {
-    expect(menuOf(member("cashier"))).toEqual([
-      "Inicio",
-      "Ventas",
-      "Inventario",
-      "Configuración",
-    ]);
-    expect(menuOf(member("cash_manager"))).toEqual([
-      "Inicio",
-      "Ventas",
-      "Inventario",
-      "Movimientos",
-      "Configuración",
-    ]);
+    expect(ROLES.length).toBe(4);
   });
 });
 

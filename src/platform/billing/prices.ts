@@ -6,9 +6,8 @@ import { Decimal, dec } from "@/lib";
  * checkout computes every total here, on the server. Prices are monthly,
  * in MXN, with VAT (IVA) already included: what is listed is what is
  * paid, and VAT is not shown apart (founder, 2026-10-26). A proposal until
- * the founder confirms the amounts (FUN-06). Ventas (VEN-27): the founder
- * asked for something cheap for what it does and suggested $250; $249 for
- * the first tier, scaling with the tier like Compras.
+ * the founder confirms the amounts (FUN-06). Ventas was sold here until the
+ * WMS removed it (WMS-02).
  * Pure: no database.
  */
 
@@ -17,31 +16,31 @@ export const PLAN_TIERS = [
     id: "t100",
     productLimit: 100,
     users: 2,
-    prices: { inventory: "349.00", purchasing: "179.00", sales: "249.00" },
+    prices: { inventory: "349.00", purchasing: "179.00" },
   },
   {
     id: "t500",
     productLimit: 500,
     users: 3,
-    prices: { inventory: "649.00", purchasing: "299.00", sales: "399.00" },
+    prices: { inventory: "649.00", purchasing: "299.00" },
   },
   {
     id: "t1000",
     productLimit: 1000,
     users: 5,
-    prices: { inventory: "949.00", purchasing: "449.00", sales: "549.00" },
+    prices: { inventory: "949.00", purchasing: "449.00" },
   },
   {
     id: "t3000",
     productLimit: 3000,
     users: 8,
-    prices: { inventory: "1690.00", purchasing: "790.00", sales: "949.00" },
+    prices: { inventory: "1690.00", purchasing: "790.00" },
   },
   {
     id: "t10000",
     productLimit: 10000,
     users: 15,
-    prices: { inventory: "3490.00", purchasing: "1490.00", sales: "1790.00" },
+    prices: { inventory: "3490.00", purchasing: "1490.00" },
   },
 ] as const;
 
@@ -51,7 +50,7 @@ export type PlanTierId = PlanTier["id"];
 export type SoldModule = keyof PlanTier["prices"];
 
 /** What can be added on top of Inventario, in the order they are listed. */
-export const ADD_ON_MODULES = ["purchasing", "sales"] as const;
+export const ADD_ON_MODULES = ["purchasing"] as const;
 export type AddOnModule = (typeof ADD_ON_MODULES)[number];
 
 export const isAddOnModule = (value: string): value is AddOnModule =>
@@ -61,22 +60,19 @@ export const isAddOnModule = (value: string): value is AddOnModule =>
 export const SOLD_MODULE_NAMES: Record<SoldModule, string> = {
   inventory: "Inventario",
   purchasing: "Compras",
-  sales: "Ventas",
 };
 
 /** What each add-on brings, in one line for the checkout and the site. */
 export const ADD_ON_SUMMARIES: Record<AddOnModule, string> = {
   purchasing:
     "Proveedores, órdenes de compra, recepciones y sugerencias de compra.",
-  sales:
-    "Punto de venta con caja y ticket, cotizaciones, pedidos y ventas a plazos.",
 };
 
 /** The add-ons chosen, without repeats, in their listed order. */
 export const addOnsOf = (modules: readonly string[]): AddOnModule[] =>
   ADD_ON_MODULES.filter((module) => modules.includes(module));
 
-/** «purchasing+sales», «-» for none: the same choice gives the same key. */
+/** «purchasing», «-» for none: the same choice gives the same key. */
 export const addOnKey = (modules: readonly string[]): string =>
   addOnsOf(modules).join("+") || "-";
 
@@ -91,7 +87,7 @@ export const ADD_ON_CHOICES: readonly AddOnModule[][] = ADD_ON_MODULES.reduce<
   [[]],
 );
 
-/** "1,000 productos · Inventario + Compras + Ventas". */
+/** "1,000 productos · Inventario + Compras". */
 export function planText(
   productLimit: number,
   modules: readonly SoldModule[],

@@ -10,7 +10,7 @@ import { PriceCalculator } from "./price-calculator";
 export const metadata: Metadata = {
   title: "Precios",
   description:
-    "Precio mensual según cuántos productos manejas. Inventario incluido; Compras y Ventas opcionales. Sin permanencia.",
+    "Precio mensual según cuántos productos manejas. Inventario incluido; Compras opcional. Sin permanencia.",
 };
 
 const TIERS = PROPOSED_TIERS.map((tier, index) => ({
@@ -30,9 +30,9 @@ const FAQ = [
       "Puedes seguir trabajando con lo que ya tienes; para dar de alta más productos cambias al siguiente nivel o archivas lo que ya no vendes.",
   },
   {
-    question: "¿Puedo quitar Compras o Ventas después?",
+    question: "¿Puedo quitar Compras después?",
     answer:
-      "Sí. Nada se borra: tus órdenes, ventas, cotizaciones y cuentas quedan para consultar y exportar, y si lo vuelves a activar sigues donde te quedaste.",
+      "Sí. Nada se borra: tus órdenes, recepciones y devoluciones quedan para consultar y exportar, y si lo vuelves a activar sigues donde te quedaste.",
   },
   {
     question: "¿Puedo cambiar de plan a medio mes?",
@@ -54,8 +54,8 @@ export default function PricingPage() {
   return (
     <>
       <PageHero eyebrow="Precios" title="Pagas según el tamaño de tu catálogo">
-        Inventario siempre incluido. Agrega Compras o Ventas cuando los
-        necesites. Sin permanencia y con tus datos siempre exportables.
+        Inventario siempre incluido. Agrega Compras cuando lo necesites. Sin
+        permanencia y con tus datos siempre exportables.
       </PageHero>
 
       <Section className="pt-12 sm:pt-16">
@@ -97,9 +97,6 @@ export default function PricingPage() {
                   + Compras
                 </th>
                 <th scope="col" className="px-5 py-3 text-right font-medium">
-                  + Ventas
-                </th>
-                <th scope="col" className="px-5 py-3 text-right font-medium">
                   Todo
                 </th>
               </tr>
@@ -120,11 +117,8 @@ export default function PricingPage() {
                   <td className="px-5 py-4 text-right">
                     {formatMoney(tier.purchasing)}
                   </td>
-                  <td className="px-5 py-4 text-right">
-                    {formatMoney(tier.sales)}
-                  </td>
                   <td className="px-5 py-4 text-right font-semibold">
-                    {formatMoney(tier.inventory + tier.purchasing + tier.sales)}
+                    {formatMoney(tier.inventory + tier.purchasing)}
                   </td>
                 </tr>
               ))}

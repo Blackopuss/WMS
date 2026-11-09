@@ -312,7 +312,6 @@ export async function getCheckoutOptions(
       users: tier.users,
       addOnMonthly: {
         purchasing: tier.prices.purchasing,
-        sales: tier.prices.sales,
       },
     })),
     months: PURCHASE_MONTHS,
