@@ -248,3 +248,12 @@ export type {
   StatusChangeInput,
   StatusChangeResult,
 } from "./status-change";
+export {
+  consumeReservation,
+  freeToMoveFrom,
+  freeToTake,
+  getReservedTotals,
+  releaseReservations,
+  reserveStock,
+} from "./reservations";
+export type { ReservationSource, ReserveResult } from "./reservations";

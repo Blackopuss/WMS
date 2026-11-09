@@ -189,8 +189,28 @@ async function lowStock(
       },
       _sum: { quantity: true },
     });
+    // WMS-12: what is reserved for an order is not available.
+    const held = await client.stockReservation.groupBy({
+      by: ["productId"],
+      where: {
+        productId: { in: ids.slice(start, start + 1_000) },
+        state: "ACTIVE",
+      },
+      _sum: { remaining: true },
+    });
+    const reserved = new Map(
+      held.map((row) => [
+        row.productId,
+        dec((row._sum.remaining ?? 0).toString()),
+      ]),
+    );
     for (const row of sums) {
-      totals.set(row.productId, (row._sum.quantity ?? 0).toString());
+      totals.set(
+        row.productId,
+        dec((row._sum.quantity ?? 0).toString())
+          .minus(reserved.get(row.productId) ?? 0)
+          .toString(),
+      );
     }
   }
 

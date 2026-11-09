@@ -23,6 +23,7 @@ import {
   type WarehouseTaskStatus,
 } from "./task-states";
 import { AVAILABLE_STOCK } from "./stock-status";
+import { freeToMoveFrom, reservedMessage } from "./reservations";
 
 /**
  * Warehouse tasks (WMS-06, especificación WMS v5 5.3): a supervisor asks
@@ -292,6 +293,15 @@ export async function createTask(
             there.isZero()
               ? `No hay existencias de ${product.name} en ${from.name}.`
               : `Solo hay ${formatStock(there.toString(), product.unitCode)} en ${from.name}.`,
+            "quantity",
+          );
+        }
+        // WMS-12: what is reserved in that location stays there.
+        const freeHere = await freeToMoveFrom(tx, product.id, from.id);
+        if (freeHere.lessThan(quantity.quantity)) {
+          return stop(
+            "invalid",
+            reservedMessage(freeHere, product.unitCode, "mover"),
             "quantity",
           );
         }

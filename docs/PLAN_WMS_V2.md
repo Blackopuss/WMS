@@ -117,6 +117,8 @@ producción y calidad no obliguen a rehacerla.
   salida manual no puede tomar lo reservado (aviso claro).
 - **Pruebas:** dos reservas simultáneas no pasan de lo disponible (**PC-2**);
   reintento no duplica (**PC-3**); una salida manual respeta las reservas.
+- **Estado:** hecho (2026-11-09). Pruebas en `tests/inventory/reservations.int.test.ts`.
+  Etapa A cerrada.
 
 ## Etapa B. Salida (especificación 5.2)
 

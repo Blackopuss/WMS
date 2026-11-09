@@ -13,7 +13,8 @@ abajo son de ese documento).
 | Inventario (productos, ubicaciones, movimientos, conteos, Excel) | Hecho, heredado |
 | Compras y recepción | Hecho, heredado; Recepción con su propia sección (WMS-04) |
 | Operación de almacén (roles de piso, tareas de traslado, Inicio por rol) | Hecho (WMS-05..08) |
-| Surtido y despacho, estados de inventario, reservas | Falta (WMS-09, WMS-10) |
+| Estados de inventario, lotes en el saldo y reservas | Hecho (etapa A, WMS-09..12) |
+| Pedidos de salida, surtido y despacho | Falta (etapa B, WMS-13..17) |
 | Producción y calidad | Falta (WMS-11) |
 | Analítica | Falta (WMS-12) |
 | Varios almacenes, lotes y series, PWA, escaneo con cámara, PIN | Falta, sin paso asignado todavía |
@@ -58,8 +59,10 @@ SaaS-Almacen.
   inspección, cuarentena, dañado, rechazado, en tránsito o bloqueado. La ficha del
   producto distingue «hay» de «disponible»; solo lo disponible se saca, mueve,
   cuenta o surte. **Cambiar de estado** (WMS-11) con motivo: cuarentena, dañado,
-  bloqueado, rechazado o liberar; el Almacenista solo reporta dañado. Faltan las
-  reservas (WMS-12).
+  bloqueado, rechazado o liberar; el Almacenista solo reporta dañado.
+- **Reservas** (WMS-12): apartan existencias para un documento sin moverlas;
+  nada que se haga a mano toma lo reservado. Las usarán los pedidos de salida
+  (WMS-13) y la producción.
 - **Libro de movimientos inmutable**: entradas, salidas (una o varias líneas),
   reubicaciones, saldo inicial, ajustes con motivo y reversas. Cada movimiento
   guarda quién, cuándo, motivo, referencia e identificador de idempotencia, y el

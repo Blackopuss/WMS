@@ -21,6 +21,7 @@ import {
   isStockStatus,
   type StockStatus,
 } from "./stock-status";
+import { freeToTake, reservedMessage } from "./reservations";
 import { lineCost, openCostBook } from "./valuation";
 
 /**
@@ -293,6 +294,17 @@ export async function changeStockStatus(
             ? `No hay ${product.name} ${STOCK_STATUS_LABELS[data.from].toLowerCase()} en ${location.name}.`
             : `Solo hay ${formatStock(there.toString(), product.unitCode)} ${STOCK_STATUS_LABELS[data.from].toLowerCase()} en ${location.name}.`,
         );
+      }
+      if (data.from === "AVAILABLE") {
+        // WMS-12: what is reserved for an order keeps its state.
+        const free = await freeToTake(tx, product.id, location.id);
+        if (free.lessThan(base)) {
+          return refuse(
+            "invalid",
+            "quantity",
+            reservedMessage(free, product.unitCode, "cambiar"),
+          );
+        }
       }
       const nowInTarget = dec(target?.quantity.toString() ?? 0).plus(base);
       if (nowInTarget.greaterThan(MAX_BALANCE)) {

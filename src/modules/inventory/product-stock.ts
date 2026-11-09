@@ -25,10 +25,16 @@ export type ProductStock = {
   total: string;
   /** «250 piezas». */
   totalLabel: string;
-  /** What can be picked, taken out or moved: the AVAILABLE part. */
+  /**
+   * What can be picked, taken out or moved: the AVAILABLE part minus what
+   * is reserved (WMS-12).
+   */
   available: string;
   /** «240 piezas». */
   availableLabel: string;
+  /** Set aside for orders (WMS-12), "0" when nothing is. */
+  reserved: string;
+  reservedLabel: string;
   /** Where it is, «General» first, then by name. Only places with stock. */
   locations: {
     id: string;
@@ -106,6 +112,23 @@ export async function getProductStock(
   });
 
   const { unitCode } = product;
+  // WMS-12: reservations subtract from what is available.
+  const reservations = await client.stockReservation.findMany({
+    where: { productId: product.id, state: "ACTIVE" },
+    select: { locationId: true, remaining: true },
+  });
+  const reservedAt = new Map<string, ReturnType<typeof dec>>();
+  let reserved = dec(0);
+  for (const reservation of reservations) {
+    const amount = dec(reservation.remaining.toString());
+    reserved = reserved.plus(amount);
+    if (reservation.locationId) {
+      reservedAt.set(
+        reservation.locationId,
+        (reservedAt.get(reservation.locationId) ?? dec(0)).plus(amount),
+      );
+    }
+  }
   // One row per location: several balances (one per state) add up.
   const byLocation = new Map<
     string,
@@ -137,7 +160,8 @@ export async function getProductStock(
         (sum, part) => sum.plus(part),
         dec(0),
       );
-      const available = quantity.minus(held);
+      const free = quantity.minus(held).minus(reservedAt.get(location.id) ?? 0);
+      const available = free.isNegative() ? dec(0) : free;
       return {
         id: location.id,
         isDefault: location.isDefault === true,
@@ -187,13 +211,15 @@ export async function getProductStock(
     (sum, balance) => sum.plus(balance.quantity.toString()),
     dec(0),
   );
-  const available = balances.reduce(
+  const availableStock = balances.reduce(
     (sum, balance) =>
       balance.status === "AVAILABLE"
         ? sum.plus(balance.quantity.toString())
         : sum,
     dec(0),
   );
+  const net = availableStock.minus(reserved);
+  const available = net.isNegative() ? dec(0) : net;
   const rule = {
     unitCode,
     quantityStep: product.quantityStep.toString(),
@@ -218,6 +244,8 @@ export async function getProductStock(
     totalLabel: formatStock(total.toString(), unitCode),
     available: available.toString(),
     availableLabel: formatStock(available.toString(), unitCode),
+    reserved: reserved.toString(),
+    reservedLabel: formatStock(reserved.toString(), unitCode),
     locations,
     equivalences,
   };

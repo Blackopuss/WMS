@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { dec, formatDecimal, newId } from "@/lib";
+import { dec, formatDecimal, newId, type Decimal } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -17,6 +17,7 @@ import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 import { COST_FORMAT_ERROR, parseCost } from "./average-cost";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { AVAILABLE_STOCK } from "./stock-status";
+import { freeToMoveFrom, freeToTake, reservedMessage } from "./reservations";
 
 /**
  * Stock movements (INV-16 on). A confirmation writes the movement, its
@@ -420,6 +421,17 @@ async function post(
             : `Solo hay ${formatStock(before.toString(), unitCode)} en ${location.name}: no pueden salir ${formatStock(base.toString(), unitCode)}.`,
         );
       }
+      if (kind.direction === "OUT") {
+        // WMS-12: what is reserved for an order does not leave by hand.
+        const free = await freeToTake(tx, product.id, location.id);
+        if (free.lessThan(base)) {
+          return reject(
+            "invalid",
+            "quantity",
+            reservedMessage(free, unitCode, "sacar"),
+          );
+        }
+      }
       if (balance.greaterThan(MAX_BALANCE)) {
         return reject(
           "invalid",
@@ -656,19 +668,45 @@ export async function getStockByLocation(
     actor.userId,
     "inventory.stock.read",
   );
-  const rows = await forOrganization(
-    actor.organizationId,
-  ).stockBalance.findMany({
-    where: {
-      productId: String(productId),
-      ...AVAILABLE_STOCK,
-      quantity: { gt: 0 },
-    },
-    take: 2_000,
-    select: { locationId: true, quantity: true },
-  });
+  const client = forOrganization(actor.organizationId);
+  const id = String(productId);
+  const [rows, reservations] = await Promise.all([
+    client.stockBalance.findMany({
+      where: { productId: id, ...AVAILABLE_STOCK, quantity: { gt: 0 } },
+      take: 2_000,
+      select: { locationId: true, quantity: true },
+    }),
+    // WMS-12: what is reserved is not there to take.
+    client.stockReservation.findMany({
+      where: { productId: id, state: "ACTIVE" },
+      select: { locationId: true, remaining: true },
+    }),
+  ]);
+  const reservedAt = new Map<string, Decimal>();
+  let reservedAll = dec(0);
+  for (const reservation of reservations) {
+    const amount = dec(reservation.remaining.toString());
+    reservedAll = reservedAll.plus(amount);
+    if (reservation.locationId) {
+      reservedAt.set(
+        reservation.locationId,
+        (reservedAt.get(reservation.locationId) ?? dec(0)).plus(amount),
+      );
+    }
+  }
+  const availableAll = rows.reduce(
+    (sum, row) => sum.plus(row.quantity.toString()),
+    dec(0),
+  );
+  const freeAll = availableAll.minus(reservedAll);
   return Object.fromEntries(
-    rows.map((row) => [row.locationId, row.quantity.toString()]),
+    rows.flatMap((row) => {
+      let free = dec(row.quantity.toString()).minus(
+        reservedAt.get(row.locationId) ?? 0,
+      );
+      if (freeAll.lessThan(free)) free = freeAll;
+      return free.greaterThan(0) ? [[row.locationId, free.toString()]] : [];
+    }),
   );
 }
 
@@ -1263,6 +1301,15 @@ async function transferWithin(
       inSource.isZero()
         ? `No hay existencias de ${product.name} en ${from.name}.`
         : `Solo hay ${formatStock(inSource.toString(), unitCode)} en ${from.name}: no se pueden mover ${formatStock(base.toString(), unitCode)}.`,
+    );
+  }
+  // WMS-12: what is reserved in this location stays there.
+  const freeHere = await freeToMoveFrom(tx, product.id, from.id);
+  if (freeHere.lessThan(base)) {
+    return refuse(
+      "invalid",
+      "quantity",
+      reservedMessage(freeHere, unitCode, "mover"),
     );
   }
   const leftInSource = inSource.minus(base);

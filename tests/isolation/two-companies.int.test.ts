@@ -458,6 +458,19 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A reservation of the product for a document (WMS-12).
+    await db.stockReservation.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId,
+        quantity: "1",
+        remaining: "1",
+        sourceType: "test",
+        sourceId: newId(),
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // A transfer task (WMS-06) from the default location to a rack.
     const rackId = newId();
     await db.location.create({

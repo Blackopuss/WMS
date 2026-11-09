@@ -250,6 +250,12 @@ export default async function ProductoPage({
             {stock.available !== stock.total && (
               <p className="text-sm font-medium tabular-nums">
                 Disponible: {stock.availableLabel}
+                {stock.reserved !== "0" && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · Reservado para pedidos: {stock.reservedLabel}
+                  </span>
+                )}
               </p>
             )}
             {minimum !== null && !access.allows("inventory.minimum.update") && (

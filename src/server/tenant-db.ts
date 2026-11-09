@@ -59,6 +59,7 @@ export const TENANT_MODELS = [
   "QuotaUsage",
   "StockBalance",
   "Lot",
+  "StockReservation",
   "WarehouseTask",
   "StockCount",
   "StockCountCapture",
