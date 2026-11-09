@@ -31,6 +31,8 @@ Decisiones del fundador (2026-11-09):
 
 ## Pasos
 
+> Los pasos pendientes de esta tabla (WMS-09..12) se reemplazaron por `docs/PLAN_WMS_V2.md` (2026-11-09), con otra numeración a partir de WMS-09. Los pasos WMS-01..08 quedan como están.
+
 | ID | Paso | Listo cuando | Estado |
 | --- | --- | --- | --- |
 | WMS-01 | Plan, especificación en `docs/` e identidad del repositorio | Este plan y la especificación están en `docs/`; `AGENTS.md` y `README.md` hablan del WMS | Hecho |

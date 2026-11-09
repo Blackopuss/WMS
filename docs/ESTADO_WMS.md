@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-09. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-08 (CI en verde). Fuentes: `docs/PLAN_WMS.md` (pasos) y
+WMS-08 (CI en verde). Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -100,9 +100,11 @@ SaaS-Almacen.
 
 ## Lo que falta
 
-### Pasos ya planeados (`docs/PLAN_WMS.md`)
+### Pasos ya planeados
 
-| ID | Qué falta | Especificación |
+El orden, las dependencias y los criterios de cada paso están en `docs/PLAN_WMS_V2.md` (reemplaza la tabla de abajo, que era la del plan anterior). Ahí también quedaron ubicados los pendientes de la sección siguiente y las sugerencias de la revisión del 2026-11-09 (reabastecimiento, olas, empaque, devoluciones, trazabilidad, FIFO/FEFO, capacidad, etiquetas, equipos).
+
+| ID anterior | Qué falta | Especificación |
 | --- | --- | --- |
 | WMS-09 | Pedidos de salida: validar disponibilidad, reservar sin descontar, generar tareas de surtido, confirmar producto/ubicación/cantidad, verificar y despachar (el despacho escribe la salida) | 5.2 |
 | WMS-10 | Estados de inventario separados de la ubicación: disponible, reservado, en recepción, en inspección, cuarentena, dañado, rechazado, en tránsito, bloqueado | 6.2 |
