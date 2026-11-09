@@ -13,7 +13,7 @@ const child = spawn("npx", ["next", "dev", "-H", "127.0.0.1", "-p", port], {
   shell: true,
   env: {
     ...process.env,
-    DATABASE_NAME: process.env.DATABASE_TEST_NAME ?? "almacen_test",
+    DATABASE_NAME: process.env.DATABASE_TEST_NAME ?? "wms_test",
     BETTER_AUTH_URL: `http://localhost:${port}`,
     MAIL_DRIVER: "memory",
     // Same throwaway folder the tests use; never ./storage.

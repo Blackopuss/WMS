@@ -16,11 +16,11 @@ if (!rootPassword) {
 const defaults = {
   DATABASE_HOST: "127.0.0.1",
   DATABASE_PORT: "3306",
-  DATABASE_NAME: "almacen_dev",
-  DATABASE_TEST_NAME: "almacen_test",
-  DATABASE_SHADOW_NAME: "almacen_shadow",
-  DATABASE_APP_USER: "almacen_app",
-  DATABASE_MIGRATOR_USER: "almacen_migrator",
+  DATABASE_NAME: "wms_dev",
+  DATABASE_TEST_NAME: "wms_test",
+  DATABASE_SHADOW_NAME: "wms_shadow",
+  DATABASE_APP_USER: "wms_app",
+  DATABASE_MIGRATOR_USER: "wms_migrator",
 };
 const generated = ["DATABASE_APP_PASSWORD", "DATABASE_MIGRATOR_PASSWORD"];
 

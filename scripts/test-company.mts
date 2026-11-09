@@ -1,5 +1,5 @@
 // Company for manual browser checks WITHOUT touching development data:
-// creates, in almacen_test, a company with Inventario and Compras and an
+// creates, in wms_test, a company with Inventario and Compras and an
 // account with the role you ask for (no MFA needed unless administrator).
 // The test database is emptied by every `npm test`, so nothing has to be
 // cleaned afterwards — important now that several tables are append-only.
@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
-process.env.DATABASE_NAME = "almacen_test";
+process.env.DATABASE_NAME = process.env.DATABASE_TEST_NAME ?? "wms_test";
 
 const { newId } = await import("@/lib");
 const { db } = await import("@/server/db");

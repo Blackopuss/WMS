@@ -2,10 +2,10 @@
 // their stock and some history, read by 20 people at once. Reports p50/p95
 // per screen; the goal is p95 < 500 ms on the common reads.
 //
-// Runs only against almacen_test (emptied by every `npm test`), with the
+// Runs only against wms_test (emptied by every `npm test`), with the
 // production build serving it:
 //   npm run build
-//   DATABASE_NAME=almacen_test BETTER_AUTH_URL=http://localhost:3100 \
+//   DATABASE_NAME=wms_test BETTER_AUTH_URL=http://localhost:3100 \
 //     MAIL_DRIVER=memory FILE_STORAGE_DIR=<tmp> npx next start -p 3100
 //   npm run load:test            (LOAD_BASE_URL, LOAD_USERS, LOAD_REQUESTS)
 import { existsSync } from "node:fs";
@@ -14,7 +14,7 @@ import { availableParallelism, totalmem } from "node:os";
 import { pathToFileURL } from "node:url";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
-process.env.DATABASE_NAME = "almacen_test";
+process.env.DATABASE_NAME = process.env.DATABASE_TEST_NAME ?? "wms_test";
 
 // Server code outside Next.js: `server-only` resolves to an empty module,
 // as in the worker and the tests.
