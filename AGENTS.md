@@ -15,6 +15,7 @@ Este repositorio (`Blackopuss/WMS`) es una copia de SaaS-Almacen reorientada a l
 Contexto compartido por Claude Code y Codex. Leer antes de trabajar:
 
 - `docs/PLAN_WMS.md`: plan del WMS y estado de cada paso (manda sobre el plan v0.6).
+- **Estado WMS (2026-11-09):** hechos WMS-01..08 (sin Ventas; roles `supervisor`, `operator`, `forklift`; Recepción; tareas de traslado en `src/modules/inventory/tasks.ts` con `task-states.ts` y el disparador `warehouse_task_transition`, que se cambian juntos; pantalla `/tareas`; Inicio «Para hoy»). Siguiente: WMS-09 (pedidos de salida y surtido).
 
 - `MEMORY.md`: decisiones confirmadas del fundador y estado real.
 - `docs/PLAN_IMPLEMENTACION.md`: plan v0.6. Trabajar **un paso a la vez** (IDs como `BAS-01`, `INV-17`) y cerrar cada paso solo con su criterio «Listo cuando» verificado.
