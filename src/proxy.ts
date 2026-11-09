@@ -13,6 +13,7 @@ const PROTECTED = [
   "/inicio",
   "/recepcion",
   "/tareas",
+  "/pedidos",
   "/inventario",
   "/movimientos",
   "/ubicaciones",

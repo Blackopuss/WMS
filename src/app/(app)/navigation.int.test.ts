@@ -41,6 +41,7 @@ describe("menu by role", () => {
     expect(menuOf(member("warehouse"))).toEqual([
       "Inicio",
       "Tareas",
+      "Pedidos",
       "Inventario",
       "Movimientos",
       "Conteos",

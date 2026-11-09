@@ -1,0 +1,823 @@
+import "server-only";
+
+import { z } from "zod";
+
+import { dec, newId, type Decimal } from "@/lib";
+import { recordAuditEvent } from "@/platform/audit";
+import { assertModulePermission } from "@/platform/billing";
+import { parseQuantity } from "@/platform/catalog";
+import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
+
+import { formatStock, type InventoryActor } from "./movements";
+import {
+  OUTBOUND_ORDER_STATUS_LABELS,
+  formatOutboundNumber,
+  isOutboundOrderStatus,
+  outboundTransitionProblem,
+  type OutboundOrderStatus,
+} from "./outbound-states";
+import {
+  freeToTake,
+  releaseReservations,
+  reserveStock,
+  type ReservationSource,
+} from "./reservations";
+
+/**
+ * Outbound orders (WMS-13, spec 5.2): what has to leave the warehouse, for
+ * whom and when. A warehouse document, without prices (ADR 0032). A draft
+ * changes freely; releasing it reserves its stock (WMS-12) without moving
+ * it; cancelling it releases what it reserved. Picking, packing and
+ * shipping come in WMS-14..16.
+ *
+ * Locks: products (sorted) → order, like every document that reserves or
+ * moves stock. Every change of an order locks it and checks its state
+ * under the lock.
+ */
+
+export const OUTBOUND_PAGE_SIZE = 25;
+export const OUTBOUND_MAX_LINES = 200;
+const SOURCE_TYPE = "outbound_order_line";
+
+const sourceOf = (lineId: string): ReservationSource => ({
+  type: SOURCE_TYPE,
+  id: lineId,
+});
+
+type Tx = Parameters<
+  Parameters<ReturnType<typeof forOrganization>["$transaction"]>[0]
+>[0];
+
+export type OutboundField =
+  | "recipient"
+  | "address"
+  | "reference"
+  | "dueOn"
+  | "priority"
+  | "note"
+  | "productId"
+  | "quantity"
+  | "reason";
+
+export type OutboundShortage = {
+  lineId: string;
+  productName: string;
+  /** «12 piezas». */
+  asked: string;
+  /** «5 piezas». */
+  free: string;
+};
+
+export type OutboundResult =
+  | { ok: true; orderId: string; summary: string; repeated?: true }
+  | {
+      ok: false;
+      reason: "invalid" | "not_found" | "not_allowed" | "short";
+      fieldErrors?: Partial<Record<OutboundField, string>>;
+      formError?: string;
+      /** When releasing: what does not reach (nothing was reserved). */
+      shortages?: OutboundShortage[];
+    };
+
+type Failure = Extract<OutboundResult, { ok: false }>;
+
+class Rejected extends Error {
+  constructor(readonly result: Failure) {
+    super("outbound order rejected");
+  }
+}
+
+const stop = (
+  reason: Failure["reason"],
+  message: string,
+  field?: OutboundField,
+): never => {
+  throw new Rejected(
+    field
+      ? { ok: false, reason, fieldErrors: { [field]: message } }
+      : { ok: false, reason, formError: message },
+  );
+};
+
+async function inOrder(
+  organizationId: string,
+  work: (tx: Tx) => Promise<OutboundResult>,
+): Promise<OutboundResult> {
+  try {
+    return await forOrganization(organizationId).$transaction(
+      work,
+      LOCKING_TRANSACTION,
+    );
+  } catch (error) {
+    if (error instanceof Rejected) return error.result;
+    throw error;
+  }
+}
+
+async function lockOrder(tx: Tx, orderId: string) {
+  const [id] = await lockRows(tx, "outboundOrder", [String(orderId ?? "")]);
+  const order = id
+    ? await tx.outboundOrder.findFirst({
+        where: { id },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          lines: {
+            orderBy: { lineNumber: "asc" },
+            select: {
+              id: true,
+              lineNumber: true,
+              productId: true,
+              quantity: true,
+              unitCode: true,
+              product: { select: { name: true, status: true } },
+            },
+          },
+        },
+      })
+    : null;
+  if (!order) return stop("not_found", "Este pedido no existe.");
+  return order;
+}
+
+function draftOnly(status: OutboundOrderStatus) {
+  if (status !== "DRAFT") {
+    stop(
+      "not_allowed",
+      status === "CANCELLED"
+        ? "Este pedido está cancelado."
+        : "Este pedido ya se liberó: ya no se cambia.",
+    );
+  }
+}
+
+// ── Header ───────────────────────────────────────────────────────────────
+
+const text = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `Usa como máximo ${max} caracteres.`)
+    .optional()
+    .transform((value) => value || null);
+
+const headerSchema = z.object({
+  recipient: z
+    .string()
+    .trim()
+    .min(1, "Escribe para quién es el pedido.")
+    .max(160, "Usa como máximo 160 caracteres."),
+  address: text(300),
+  reference: text(120),
+  note: text(500),
+  dueOn: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || null)
+    .refine(
+      (value) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value),
+      "Escribe la fecha como año-mes-día.",
+    ),
+  priority: z
+    .string()
+    .optional()
+    .transform((value): "NORMAL" | "URGENT" =>
+      value === "URGENT" ? "URGENT" : "NORMAL",
+    ),
+});
+
+export type OutboundHeaderInput = z.input<typeof headerSchema>;
+
+function readHeader(input: OutboundHeaderInput) {
+  const parsed = headerSchema.safeParse(input);
+  if (parsed.success) return { ok: true as const, data: parsed.data };
+  const fieldErrors: Partial<Record<OutboundField, string>> = {};
+  for (const issue of parsed.error.issues) {
+    fieldErrors[issue.path[0] as OutboundField] ??= issue.message;
+  }
+  return { ok: false as const, fieldErrors };
+}
+
+const dayOf = (value: string | null) =>
+  value ? new Date(`${value}T00:00:00.000Z`) : null;
+
+export async function createOutboundOrder(
+  actor: InventoryActor,
+  input: OutboundHeaderInput,
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.create",
+  );
+  const header = readHeader(input);
+  if (!header.ok) {
+    return { ok: false, reason: "invalid", fieldErrors: header.fieldErrors };
+  }
+  const { data } = header;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await forOrganization(organizationId).$transaction(async (tx) => {
+        const last = await tx.outboundOrder.findFirst({
+          orderBy: { number: "desc" },
+          select: { number: true },
+        });
+        const id = newId();
+        const number = (last?.number ?? 0) + 1;
+        await tx.outboundOrder.create({
+          data: {
+            id,
+            organizationId,
+            number,
+            recipient: data.recipient,
+            address: data.address,
+            reference: data.reference,
+            note: data.note,
+            dueOn: dayOf(data.dueOn),
+            priority: data.priority,
+            createdByUserId: userId,
+          },
+        });
+        return {
+          ok: true as const,
+          orderId: id,
+          summary: `Se creó el pedido ${formatOutboundNumber(number)} para ${data.recipient}.`,
+        };
+      });
+    } catch (error) {
+      // Two orders created at once take the same number: try again.
+      if ((error as { code?: string }).code === "P2002" && attempt < 4) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+export async function updateOutboundOrder(
+  actor: InventoryActor,
+  orderId: string,
+  input: OutboundHeaderInput,
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.create",
+  );
+  const header = readHeader(input);
+  if (!header.ok) {
+    return { ok: false, reason: "invalid", fieldErrors: header.fieldErrors };
+  }
+  const { data } = header;
+  return inOrder(organizationId, async (tx) => {
+    const order = await lockOrder(tx, orderId);
+    draftOnly(order.status);
+    await tx.outboundOrder.update({
+      where: { id: order.id },
+      data: {
+        recipient: data.recipient,
+        address: data.address,
+        reference: data.reference,
+        note: data.note,
+        dueOn: dayOf(data.dueOn),
+        priority: data.priority,
+      },
+    });
+    return {
+      ok: true,
+      orderId: order.id,
+      summary: `Se guardó el pedido ${formatOutboundNumber(order.number)}.`,
+    };
+  });
+}
+
+// ── Lines ────────────────────────────────────────────────────────────────
+
+/**
+ * Sets what a draft asks of a product (one line per product): adds it, or
+ * replaces its quantity. The product is found by id; the quantity follows
+ * its rule.
+ */
+export async function setOutboundLine(
+  actor: InventoryActor,
+  orderId: string,
+  input: { productId: string; quantity: string },
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.create",
+  );
+  const productId = String(input.productId ?? "").trim();
+  if (!productId) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { productId: "Elige un producto." },
+    };
+  }
+  return inOrder(organizationId, async (tx) => {
+    const [locked] = await lockRows(tx, "product", [productId]);
+    const order = await lockOrder(tx, orderId);
+    draftOnly(order.status);
+    const product = locked
+      ? await tx.product.findFirst({
+          where: { id: locked },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            unitCode: true,
+            quantityStep: true,
+          },
+        })
+      : null;
+    if (!product) {
+      return stop("not_found", "Este producto no existe.", "productId");
+    }
+    if (product.status !== "ACTIVE") {
+      return stop("not_allowed", "Este producto está archivado.", "productId");
+    }
+    const quantity = parseQuantity(
+      {
+        unitCode: product.unitCode,
+        quantityStep: product.quantityStep.toString(),
+      },
+      String(input.quantity ?? ""),
+    );
+    if (!quantity.ok) return stop("invalid", quantity.error, "quantity");
+    const existing = order.lines.find((line) => line.productId === product.id);
+    if (existing) {
+      await tx.outboundOrderLine.update({
+        where: { id: existing.id },
+        data: { quantity: quantity.quantity.toString() },
+      });
+    } else {
+      if (order.lines.length >= OUTBOUND_MAX_LINES) {
+        return stop(
+          "not_allowed",
+          `Un pedido admite hasta ${OUTBOUND_MAX_LINES} productos.`,
+        );
+      }
+      await tx.outboundOrderLine.create({
+        data: {
+          id: newId(),
+          organizationId,
+          orderId: order.id,
+          lineNumber:
+            order.lines.reduce(
+              (max, line) => Math.max(max, line.lineNumber),
+              0,
+            ) + 1,
+          productId: product.id,
+          quantity: quantity.quantity.toString(),
+          unitCode: product.unitCode,
+        },
+      });
+    }
+    return {
+      ok: true,
+      orderId: order.id,
+      summary: `${formatStock(quantity.quantity.toString(), product.unitCode)} de ${product.name} en el pedido.`,
+    };
+  });
+}
+
+export async function removeOutboundLine(
+  actor: InventoryActor,
+  orderId: string,
+  lineId: string,
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.create",
+  );
+  return inOrder(organizationId, async (tx) => {
+    const order = await lockOrder(tx, orderId);
+    draftOnly(order.status);
+    const line = order.lines.find((row) => row.id === String(lineId ?? ""));
+    if (!line) return stop("not_found", "Esa línea ya no está en el pedido.");
+    await tx.outboundOrderLine.delete({ where: { id: line.id } });
+    return {
+      ok: true,
+      orderId: order.id,
+      summary: `Se quitó ${line.product.name} del pedido.`,
+    };
+  });
+}
+
+// ── Release and cancel ───────────────────────────────────────────────────
+
+/**
+ * Releases a draft to the warehouse: reserves the stock of each line. When
+ * something does not reach, nothing is reserved and the answer says what
+ * is short — unless `takeWhatThereIs`, which reserves what is free of each
+ * line and releases the order with the rest pending.
+ */
+export async function releaseOutboundOrder(
+  actor: InventoryActor,
+  orderId: string,
+  options: { takeWhatThereIs?: boolean } = {},
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.release",
+  );
+  // The lines of a draft can change until it is locked: read them to
+  // lock their products first, then check under the lock.
+  const draft = await forOrganization(
+    organizationId,
+  ).outboundOrderLine.findMany({
+    where: { orderId: String(orderId ?? "") },
+    select: { productId: true },
+  });
+  return inOrder(organizationId, async (tx) => {
+    await lockRows(
+      tx,
+      "product",
+      draft.map((line) => line.productId),
+    );
+    const order = await lockOrder(tx, orderId);
+    if (order.status === "RELEASED") {
+      return {
+        ok: true,
+        orderId: order.id,
+        repeated: true,
+        summary: `El pedido ${formatOutboundNumber(order.number)} ya estaba liberado.`,
+      };
+    }
+    const problem = outboundTransitionProblem(order.status, "RELEASED");
+    if (problem) return stop("not_allowed", problem);
+    if (order.lines.length === 0) {
+      return stop("invalid", "Agrega al menos un producto antes de liberar.");
+    }
+    // A product added after the first read is not locked: try again.
+    const lockedIds = new Set(draft.map((line) => line.productId));
+    if (order.lines.some((line) => !lockedIds.has(line.productId))) {
+      return stop(
+        "not_allowed",
+        "El pedido cambió mientras se liberaba. Inténtalo de nuevo.",
+      );
+    }
+    const archived = order.lines.find(
+      (line) => line.product.status !== "ACTIVE",
+    );
+    if (archived) {
+      return stop(
+        "not_allowed",
+        `${archived.product.name} está archivado: quítalo del pedido o reactívalo.`,
+      );
+    }
+
+    const plan: { line: (typeof order.lines)[number]; take: Decimal }[] = [];
+    const shortages: OutboundShortage[] = [];
+    // Several lines of the same product are not possible (unique index),
+    // so each line asks its product once.
+    for (const line of order.lines) {
+      const asked = dec(line.quantity.toString());
+      const free = await freeToTake(tx, line.productId, null);
+      if (free.lessThan(asked)) {
+        shortages.push({
+          lineId: line.id,
+          productName: line.product.name,
+          asked: formatStock(asked.toString(), line.unitCode),
+          free: formatStock(free.toString(), line.unitCode),
+        });
+      }
+      plan.push({ line, take: free.lessThan(asked) ? free : asked });
+    }
+    if (shortages.length > 0 && !options.takeWhatThereIs) {
+      throw new Rejected({
+        ok: false,
+        reason: "short",
+        formError:
+          shortages.length === 1
+            ? "Un producto no alcanza."
+            : `${shortages.length} productos no alcanzan.`,
+        shortages,
+      });
+    }
+    if (plan.every((step) => step.take.isZero())) {
+      return stop(
+        "not_allowed",
+        "No hay nada disponible de este pedido: no se reservó nada.",
+      );
+    }
+    for (const step of plan) {
+      if (step.take.isZero()) continue;
+      const reserved = await reserveStock(tx, actor, {
+        productId: step.line.productId,
+        quantity: step.take,
+        source: sourceOf(step.line.id),
+      });
+      if (!reserved.ok) {
+        throw new Error(
+          `Free stock of ${step.line.productId} moved under lock`,
+        );
+      }
+    }
+    await tx.outboundOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "RELEASED",
+        releasedAt: new Date(),
+        releasedByUserId: userId,
+      },
+    });
+    return {
+      ok: true,
+      orderId: order.id,
+      summary:
+        shortages.length === 0
+          ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó reservado.`
+          : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay; ${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`}.`,
+    };
+  });
+}
+
+export async function cancelOutboundOrder(
+  actor: InventoryActor,
+  orderId: string,
+  reason: string,
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.cancel",
+  );
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { reason: "Escribe por qué se cancela." },
+    };
+  }
+  if (why.length > 300) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { reason: "Usa como máximo 300 caracteres." },
+    };
+  }
+  return inOrder(organizationId, async (tx) => {
+    const order = await lockOrder(tx, orderId);
+    if (order.status === "CANCELLED") {
+      return {
+        ok: true,
+        orderId: order.id,
+        repeated: true,
+        summary: "El pedido ya estaba cancelado.",
+      };
+    }
+    const problem = outboundTransitionProblem(order.status, "CANCELLED");
+    if (problem) return stop("not_allowed", problem);
+    let released = 0;
+    for (const line of order.lines) {
+      released += await releaseReservations(tx, sourceOf(line.id));
+    }
+    await tx.outboundOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelledByUserId: userId,
+        cancelReason: why,
+      },
+    });
+    await recordAuditEvent(tx, {
+      organizationId,
+      actorUserId: userId,
+      action: "inventory.outbound_cancelled",
+      target: { type: "outbound_order", id: order.id },
+      reason: why,
+      metadata: {
+        pedido: formatOutboundNumber(order.number),
+        reservasLiberadas: released,
+      },
+    });
+    return {
+      ok: true,
+      orderId: order.id,
+      summary: `Se canceló el pedido ${formatOutboundNumber(order.number)}${released > 0 ? " y se liberó lo que tenía reservado" : ""}.`,
+    };
+  });
+}
+
+// ── Reading ──────────────────────────────────────────────────────────────
+
+export type OutboundSummary = {
+  id: string;
+  numberText: string;
+  status: OutboundOrderStatus;
+  statusLabel: string;
+  urgent: boolean;
+  recipient: string;
+  reference: string | null;
+  /** «2026-11-12» or null. */
+  dueOn: string | null;
+  lines: number;
+  createdAt: Date;
+};
+
+export type OutboundPage = {
+  items: OutboundSummary[];
+  total: number;
+  page: number;
+  pageCount: number;
+  status: OutboundOrderStatus | null;
+};
+
+const ymd = (value: Date | null) =>
+  value ? value.toISOString().slice(0, 10) : null;
+
+/** Orders a page at a time, newest first; optionally one state. */
+export async function listOutboundOrders(
+  actor: InventoryActor,
+  options: { status?: unknown; page?: number } = {},
+): Promise<OutboundPage> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.outbound.read",
+  );
+  const status = isOutboundOrderStatus(options.status) ? options.status : null;
+  const where = status ? { status } : {};
+  const client = forOrganization(actor.organizationId);
+  const total = await client.outboundOrder.count({ where });
+  const pageCount = Math.max(1, Math.ceil(total / OUTBOUND_PAGE_SIZE));
+  const page =
+    options.page === undefined || !Number.isSafeInteger(options.page)
+      ? 1
+      : Math.min(Math.max(options.page, 1), pageCount);
+  const rows = await client.outboundOrder.findMany({
+    where,
+    orderBy: { number: "desc" },
+    skip: (page - 1) * OUTBOUND_PAGE_SIZE,
+    take: OUTBOUND_PAGE_SIZE,
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      priority: true,
+      recipient: true,
+      reference: true,
+      dueOn: true,
+      createdAt: true,
+      _count: { select: { lines: true } },
+    },
+  });
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      numberText: formatOutboundNumber(row.number),
+      status: row.status,
+      statusLabel: OUTBOUND_ORDER_STATUS_LABELS[row.status],
+      urgent: row.priority === "URGENT",
+      recipient: row.recipient,
+      reference: row.reference,
+      dueOn: ymd(row.dueOn),
+      lines: row._count.lines,
+      createdAt: row.createdAt,
+    })),
+    total,
+    page,
+    pageCount,
+    status,
+  };
+}
+
+export type OutboundView = OutboundSummary & {
+  address: string | null;
+  note: string | null;
+  priority: "NORMAL" | "URGENT";
+  releasedAt: Date | null;
+  cancelledAt: Date | null;
+  cancelReason: string | null;
+  lineItems: {
+    id: string;
+    productId: string;
+    productName: string;
+    sku: string;
+    quantity: string;
+    /** «12 piezas». */
+    quantityText: string;
+    /** What its reservation still holds, «12 piezas» (released orders). */
+    reservedText: string | null;
+    /** Asked but not reserved when released with what there was. */
+    shortText: string | null;
+  }[];
+};
+
+export async function getOutboundOrder(
+  actor: InventoryActor,
+  orderId: string,
+): Promise<OutboundView | null> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.outbound.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  const row = await client.outboundOrder.findFirst({
+    where: { id: String(orderId ?? "") },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      priority: true,
+      recipient: true,
+      reference: true,
+      address: true,
+      note: true,
+      dueOn: true,
+      createdAt: true,
+      releasedAt: true,
+      cancelledAt: true,
+      cancelReason: true,
+      lines: {
+        orderBy: { lineNumber: "asc" },
+        select: {
+          id: true,
+          productId: true,
+          quantity: true,
+          unitCode: true,
+          product: { select: { name: true, sku: true } },
+        },
+      },
+    },
+  });
+  if (!row) return null;
+  const reservations =
+    row.status === "DRAFT" || row.lines.length === 0
+      ? []
+      : await client.stockReservation.findMany({
+          where: {
+            sourceType: SOURCE_TYPE,
+            sourceId: { in: row.lines.map((line) => line.id) },
+          },
+          select: { sourceId: true, quantity: true, remaining: true },
+        });
+  const reservedOf = new Map<
+    string,
+    { quantity: Decimal; remaining: Decimal }
+  >();
+  for (const reservation of reservations) {
+    const current = reservedOf.get(reservation.sourceId) ?? {
+      quantity: dec(0),
+      remaining: dec(0),
+    };
+    reservedOf.set(reservation.sourceId, {
+      quantity: current.quantity.plus(reservation.quantity.toString()),
+      remaining: current.remaining.plus(reservation.remaining.toString()),
+    });
+  }
+  const released = row.status !== "DRAFT" && row.status !== "CANCELLED";
+  return {
+    id: row.id,
+    numberText: formatOutboundNumber(row.number),
+    status: row.status,
+    statusLabel: OUTBOUND_ORDER_STATUS_LABELS[row.status],
+    urgent: row.priority === "URGENT",
+    priority: row.priority,
+    recipient: row.recipient,
+    reference: row.reference,
+    address: row.address,
+    note: row.note,
+    dueOn: ymd(row.dueOn),
+    lines: row.lines.length,
+    createdAt: row.createdAt,
+    releasedAt: row.releasedAt,
+    cancelledAt: row.cancelledAt,
+    cancelReason: row.cancelReason,
+    lineItems: row.lines.map((line) => {
+      const asked = dec(line.quantity.toString());
+      const held = reservedOf.get(line.id);
+      const short = released ? asked.minus(held?.quantity ?? 0) : dec(0);
+      return {
+        id: line.id,
+        productId: line.productId,
+        productName: line.product.name,
+        sku: line.product.sku,
+        quantity: asked.toString(),
+        quantityText: formatStock(asked.toString(), line.unitCode),
+        reservedText: released
+          ? formatStock((held?.remaining ?? dec(0)).toString(), line.unitCode)
+          : null,
+        shortText: short.greaterThan(0)
+          ? formatStock(short.toString(), line.unitCode)
+          : null,
+      };
+    }),
+  };
+}

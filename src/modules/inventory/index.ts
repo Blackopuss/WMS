@@ -257,3 +257,34 @@ export {
   reserveStock,
 } from "./reservations";
 export type { ReservationSource, ReserveResult } from "./reservations";
+export {
+  OUTBOUND_MAX_LINES,
+  OUTBOUND_PAGE_SIZE,
+  cancelOutboundOrder,
+  createOutboundOrder,
+  getOutboundOrder,
+  listOutboundOrders,
+  releaseOutboundOrder,
+  removeOutboundLine,
+  setOutboundLine,
+  updateOutboundOrder,
+} from "./outbound-orders";
+export type {
+  OutboundField,
+  OutboundHeaderInput,
+  OutboundPage,
+  OutboundResult,
+  OutboundShortage,
+  OutboundSummary,
+  OutboundView,
+} from "./outbound-orders";
+export {
+  OUTBOUND_ORDER_STATUSES,
+  OUTBOUND_ORDER_STATUS_LABELS,
+  OUTBOUND_ORDER_TRANSITIONS,
+  canOutboundTransition,
+  formatOutboundNumber,
+  isOutboundOrderStatus,
+  outboundTransitionProblem,
+} from "./outbound-states";
+export type { OutboundOrderStatus } from "./outbound-states";

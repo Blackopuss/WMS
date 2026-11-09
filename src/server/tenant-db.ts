@@ -60,6 +60,8 @@ export const TENANT_MODELS = [
   "StockBalance",
   "Lot",
   "StockReservation",
+  "OutboundOrder",
+  "OutboundOrderLine",
   "WarehouseTask",
   "StockCount",
   "StockCountCapture",
@@ -272,6 +274,7 @@ const LOCKABLE = {
   purchaseOrder: "purchase_order",
   stockCount: "stock_count",
   warehouseTask: "warehouse_task",
+  outboundOrder: "outbound_order",
 } as const;
 
 /**

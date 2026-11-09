@@ -471,6 +471,28 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // An outbound order with a line (WMS-13).
+    const outboundId = newId();
+    await db.outboundOrder.create({
+      data: {
+        id: outboundId,
+        organizationId,
+        number: 1,
+        recipient: "Sucursal",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.outboundOrderLine.create({
+      data: {
+        id: newId(),
+        organizationId,
+        orderId: outboundId,
+        lineNumber: 1,
+        productId,
+        quantity: "1",
+        unitCode: "piece",
+      },
+    });
     // A transfer task (WMS-06) from the default location to a rack.
     const rackId = newId();
     await db.location.create({

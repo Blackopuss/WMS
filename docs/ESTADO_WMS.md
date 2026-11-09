@@ -14,7 +14,8 @@ abajo son de ese documento).
 | Compras y recepción | Hecho, heredado; Recepción con su propia sección (WMS-04) |
 | Operación de almacén (roles de piso, tareas de traslado, Inicio por rol) | Hecho (WMS-05..08) |
 | Estados de inventario, lotes en el saldo y reservas | Hecho (etapa A, WMS-09..12) |
-| Pedidos de salida, surtido y despacho | Falta (etapa B, WMS-13..17) |
+| Pedidos de salida | Hecho (WMS-13; falta importarlos desde Excel, WMS-13B) |
+| Surtido, empaque, despacho y devoluciones de clientes | Falta (WMS-14..17) |
 | Producción y calidad | Falta (WMS-11) |
 | Analítica | Falta (WMS-12) |
 | Varios almacenes, lotes y series, PWA, escaneo con cámara, PIN | Falta, sin paso asignado todavía |
@@ -63,6 +64,9 @@ SaaS-Almacen.
 - **Reservas** (WMS-12): apartan existencias para un documento sin moverlas;
   nada que se haga a mano toma lo reservado. Las usarán los pedidos de salida
   (WMS-13) y la producción.
+- **Pedidos de salida** (WMS-13): borrador con destinatario, día de salida,
+  prioridad y productos (por clave o escaneo); liberarlo reserva sus existencias
+  (o lo que haya); cancelarlo las libera. Sección «Pedidos» del menú.
 - **Libro de movimientos inmutable**: entradas, salidas (una o varias líneas),
   reubicaciones, saldo inicial, ajustes con motivo y reversas. Cada movimiento
   guarda quién, cuándo, motivo, referencia e identificador de idempotencia, y el

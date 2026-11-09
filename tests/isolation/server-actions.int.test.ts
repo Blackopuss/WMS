@@ -18,6 +18,38 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  createOutboundAction: {
+    input:
+      "destinatario, referencia, dirección, día de salida, prioridad e indicaciones",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido nace en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
+  addOutboundLineAction: {
+    input:
+      "id del pedido (fijado por la página), clave o código de barras y cantidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el producto se busca y el pedido se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
+  removeOutboundLineAction: {
+    input: "id del pedido y de la línea",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
+  releaseOutboundAction: {
+    input: "id del pedido y si se libera con lo que hay",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos y pedido se bloquean solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
+  cancelOutboundAction: {
+    input: "id del pedido y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
   changeStatusAction: {
     input:
       "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, cantidad, motivo y clave de confirmación",

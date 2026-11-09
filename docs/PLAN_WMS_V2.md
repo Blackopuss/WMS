@@ -136,6 +136,19 @@ producción y calidad no obliguen a rehacerla.
   parcial o esperar.
 - **Pruebas:** tabla de estados y disparador; liberar dos pedidos sobre el mismo
   saldo a la vez no sobre-reserva (**PC-2**); entre empresas; permisos por rol.
+- **Estado:** hecho (2026-11-09) salvo la importación desde Excel, que pasa a
+  WMS-13B. Pruebas en `tests/inventory/outbound-orders.int.test.ts`.
+
+### WMS-13B · Importar pedidos de salida desde Excel
+
+- **Qué:** subir un archivo (una fila por línea: pedido, destinatario, fecha,
+  clave, cantidad) con el mismo camino de las importaciones actuales: revisar
+  sin escribir, confirmar y crear los borradores.
+- **Depende de:** WMS-13.
+- **Listo cuando:** un archivo de varios pedidos crea sus borradores; una fila
+  con error dice cuál y por qué, y nada se crea a medias.
+- **Pruebas:** validación por fila; reintento no duplica pedidos (clave del
+  archivo); entre empresas.
 
 ### WMS-14 · Surtido (picking)
 

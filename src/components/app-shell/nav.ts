@@ -3,6 +3,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   House,
+  PackageCheck,
   PackageOpen,
   Package,
   Settings,
@@ -59,6 +60,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     module: "purchasing",
     permission: "purchasing.receipt.read",
     mobile: true,
+  },
+  {
+    // WMS-13: what has to leave, every day; released, it reserves stock.
+    href: "/pedidos",
+    label: "Pedidos",
+    icon: PackageCheck,
+    module: "inventory",
+    permission: "inventory.outbound.read",
+    mobile: false,
   },
   {
     href: "/inventario",
