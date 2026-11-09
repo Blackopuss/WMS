@@ -69,6 +69,7 @@ producción y calidad no obliguen a rehacerla.
 - **Listo cuando:** el ADR está en `docs/adr/0033-dimensiones-del-saldo.md` con
   el esquema propuesto, la migración de datos y la lista de servicios que cambian.
 - **Pruebas:** no aplica (documento).
+- **Estado:** hecho (2026-11-09).
 
 ### WMS-10 · Estados de inventario en el saldo
 
