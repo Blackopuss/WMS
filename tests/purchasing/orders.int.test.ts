@@ -713,6 +713,24 @@ describe("listPurchaseOrders", () => {
       (await listPurchaseOrders(actor, { status: "INVENTADO", page: 99 }))
         .items,
     ).toHaveLength(3);
+    // Recepción (WMS-04): only what is on its way, oldest first; a state
+    // asked for at the same time is ignored.
+    const second2 = await order(actor, sur);
+    await line(actor, second2, {
+      productId: cable,
+      capture: "base",
+      quantity: "2",
+    });
+    await submitPurchaseOrder(actor, second2);
+    const incoming = await listPurchaseOrders(actor, {
+      toReceive: true,
+      status: "DRAFT",
+    });
+    expect(incoming.items.map((item) => item.numberText)).toEqual([
+      "OC-0001",
+      "OC-0004",
+    ]);
+    expect(incoming).toMatchObject({ toReceive: true, status: null, total: 2 });
   });
 });
 

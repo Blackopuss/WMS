@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   ClipboardCheck,
   House,
+  PackageOpen,
   Package,
   Settings,
   ShoppingCart,
@@ -36,6 +37,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: House,
     module: null,
     permission: null,
+    mobile: true,
+  },
+  {
+    // WMS-04: what arrives at the dock, every day; the receipt itself
+    // lives in the order (Compras), so there is one way of doing it.
+    href: "/recepcion",
+    label: "Recepción",
+    icon: PackageOpen,
+    module: "purchasing",
+    permission: "purchasing.receipt.read",
     mobile: true,
   },
   {

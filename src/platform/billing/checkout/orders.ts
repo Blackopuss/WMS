@@ -561,7 +561,7 @@ export async function startCheckout(
     const session = await provider!.createCheckout({
       orderId,
       transactionId,
-      description: `Almacén · ${planText(tier.productLimit, modules)} · ${months} ${months === 1 ? "mes" : "meses"}`,
+      description: `WMS · ${planText(tier.productLimit, modules)} · ${months} ${months === 1 ? "mes" : "meses"}`,
       total: price.total,
       currency: "MXN",
       customerEmail: ownerEmail,

@@ -41,7 +41,7 @@ export function CodeForm({ next }: { next: string }) {
       <p className="mt-2 text-muted-foreground">
         {backup
           ? "Escribe uno de los códigos que guardaste al activar la verificación. Cada uno sirve una sola vez."
-          : "Abre tu app de autenticación y escribe el código de 6 números de Almacén."}
+          : "Abre tu app de autenticación y escribe el código de 6 números de WMS."}
       </p>
 
       {state.restart ? (

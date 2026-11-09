@@ -11,6 +11,7 @@ import { contentSecurityPolicy, newNonce } from "@/lib";
  */
 const PROTECTED = [
   "/inicio",
+  "/recepcion",
   "/inventario",
   "/movimientos",
   "/ubicaciones",

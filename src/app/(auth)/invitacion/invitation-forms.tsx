@@ -204,7 +204,7 @@ export function SignInFirst({
     <>
       <Heading invitation={invitation} />
       <p className="mt-4 text-muted-foreground">
-        Este correo ya tiene cuenta en Almacén. Inicia sesión para aceptar la
+        Este correo ya tiene cuenta en WMS. Inicia sesión para aceptar la
         invitación.
       </p>
       <Button asChild size="lg" className="mt-6 w-full">

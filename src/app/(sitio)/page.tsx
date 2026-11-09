@@ -27,7 +27,7 @@ import { HeroScene } from "./hero-scene";
 import { CtaBand, Eyebrow, Section } from "./sections";
 
 export const metadata: Metadata = {
-  title: { absolute: "Almacén · Inventario y compras para tu negocio" },
+  title: { absolute: "WMS · Gestión de almacenes para tu negocio" },
   description:
     "Sabe cuánto tienes, dónde está y qué falta pedir. Inventario por cajas y piezas, ubicaciones, conteos y órdenes de compra, en español.",
 };
@@ -183,7 +183,7 @@ export default function LandingPage() {
         <div className="max-w-2xl" data-reveal>
           <Eyebrow>Hecho para mercancía real</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Compras por caja, vendes por pieza. Almacén hace la cuenta.
+            Compras por caja, sacas por pieza. WMS hace la cuenta.
           </h2>
         </div>
         <div data-reveal="stagger" className="mt-12 grid gap-4 md:grid-cols-6">

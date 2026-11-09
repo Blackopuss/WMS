@@ -17,7 +17,7 @@ const { sendEmail } = await import("@/platform/email");
 try {
   await sendEmail({
     to,
-    subject: "Prueba de correo de Almacén",
+    subject: "Prueba de correo de WMS",
     text: [
       "Hola:",
       "",

@@ -22,7 +22,7 @@ const from = (ip: string) => new Headers({ "x-forwarded-for": ip });
 /** Token from the latest reset email sent to `to`. */
 function lastResetToken(to: string): string {
   const mail = memoryOutboxFor(to)
-    .filter((m) => m.subject === "Restablece tu contraseña de Almacén")
+    .filter((m) => m.subject === "Restablece tu contraseña de WMS")
     .at(-1);
   const match = mail?.actionUrl?.match(/\/reset-password\/([^?]+)\?/);
   if (!match) throw new Error(`No reset email for ${to}`);
@@ -55,7 +55,7 @@ describe("requestPasswordReset", () => {
       ok: true,
     });
     const mail = memoryOutboxFor(email).at(-1);
-    expect(mail?.subject).toBe("Restablece tu contraseña de Almacén");
+    expect(mail?.subject).toBe("Restablece tu contraseña de WMS");
     expect(mail?.text).toContain("vence en 60 minutos y solo funciona una vez");
     expect(mail?.actionUrl).toMatch(
       /\/api\/auth\/reset-password\/[^?]+\?callbackURL=%2Frestablecer-contrasena$/,
@@ -142,7 +142,7 @@ describe("resetPassword", () => {
     ).toEqual({ ok: true });
 
     const notice = memoryOutboxFor(email).at(-1);
-    expect(notice?.subject).toBe("Tu contraseña de Almacén cambió");
+    expect(notice?.subject).toBe("Tu contraseña de WMS cambió");
     expect(notice?.actionUrl).toMatch(/\/recuperar-contrasena$/);
   }, 30_000);
 

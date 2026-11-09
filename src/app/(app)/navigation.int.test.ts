@@ -47,9 +47,10 @@ describe("menu by role", () => {
     ]);
   });
 
-  it("Comprador does not see Conteos", () => {
+  it("Comprador does not see Conteos; it receives at the dock (WMS-04)", () => {
     expect(menuOf(member("buyer"))).toEqual([
       "Inicio",
+      "Recepción",
       "Inventario",
       "Movimientos",
       "Compras",

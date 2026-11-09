@@ -61,10 +61,9 @@ export default function AboutPage() {
               pedido llega en partes.
             </p>
             <p>
-              Almacén nace de ese hueco: un inventario que hace bien lo
-              esencial, al que se le agregan módulos (Compras hoy; tareas de
-              almacén, producción y calidad después) solo cuando tu negocio los
-              necesita.
+              WMS nace de ese hueco: un inventario que hace bien lo esencial, al
+              que se le agregan módulos (Compras hoy; tareas de almacén,
+              producción y calidad después) solo cuando tu negocio los necesita.
             </p>
           </div>
           <div data-reveal="stagger" className="grid grid-cols-2 gap-4">

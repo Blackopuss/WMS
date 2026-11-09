@@ -99,7 +99,7 @@ describe("startTotpEnrollment", () => {
     const uri = new URL(result.totpUri);
     expect(uri.protocol).toBe("otpauth:");
     expect(decodeURIComponent(uri.pathname)).toContain(email);
-    expect(uri.searchParams.get("issuer")).toBe("Almacén");
+    expect(uri.searchParams.get("issuer")).toBe("WMS");
     expect(uri.searchParams.get("digits")).toBe("6");
     expect(result.secret).toMatch(/^[A-Z2-7]+=*$/);
 

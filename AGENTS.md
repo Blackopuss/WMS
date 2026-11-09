@@ -76,7 +76,7 @@ Dentro de un mismo módulo o área se usan imports relativos libremente. `eslint
 
 ## Sistema visual (BAS-12)
 
-- Fuente de verdad: `design-system/almacen/MASTER.md` (generado con `ui-ux-pro-max`). Estilo Minimal & Swiss, claridad tipo Apple, modo claro por defecto. Tipografía Inter.
+- Fuente de verdad: `design-system/almacen/MASTER.md` (generado con `ui-ux-pro-max`). Marca de la app y el sitio: «WMS» (WMS-04). Estilo Minimal & Swiss, claridad tipo Apple, modo claro por defecto. Tipografía Inter.
 - Modo oscuro gris neutro (zinc) y monocromo: las acciones son blancas sobre zinc y el color queda para estados: clase `dark` en `<html>` aplicada antes de pintar por `THEME_SCRIPT` (layout raíz) y cambiada con `useTheme`/`setTheme` de `src/components/theme.ts` (clave `almacen-tema`, claro por defecto) y el interruptor `ThemeToggle` (barra lateral y encabezado móvil). Todo color nuevo necesita su valor en `:root` y `.dark`.
 - Tokens en `src/app/globals.css` (`primary #2563EB`, `success`, `warning`, `destructive`…). Nunca colores sueltos en componentes. Cambiar un token exige que pase `src/components/design-tokens.test.ts` (contraste WCAG: texto ≥ 4.5:1, bordes/anillos ≥ 3:1).
 - shadcn/ui (base Radix, preset nova) en `src/components/ui`, ajustado: objetivos táctiles ≥ 44 px en móvil, textos en español, avisos con Sonner (`toast.success/error`).
@@ -88,7 +88,7 @@ Dentro de un mismo módulo o área se usan imports relativos libremente. `eslint
 
 ## Navegación y estados (BAS-13)
 
-- Pantallas de la app en `src/app/(app)/` con `AppShell`: barra lateral en escritorio; en móvil, barra inferior con 4 secciones y «Más». Secciones en `src/components/app-shell/nav.ts`, cada una con su `module` para ocultarla si no está contratado (MOD-05). El menú tiene solo lo que se usa seguido (Inicio, Inventario, Movimientos, Conteos, Compras, Configuración); lo que se configura una vez vive dentro de Configuración (Ubicaciones, con `also` en `nav.ts` para marcar la sección). Una sección nueva no entra al menú sin una razón de uso diario.
+- Pantallas de la app en `src/app/(app)/` con `AppShell`: barra lateral en escritorio; en móvil, barra inferior con 4 secciones y «Más». Secciones en `src/components/app-shell/nav.ts`, cada una con su `module` para ocultarla si no está contratado (MOD-05). El menú tiene solo lo que se usa seguido, ordenado por tarea de almacén (Inicio, Recepción, Inventario, Movimientos, Conteos, Compras, Configuración; WMS-04); lo que se configura una vez vive dentro de Configuración (Ubicaciones, con `also` en `nav.ts` para marcar la sección). Una sección nueva no entra al menú sin una razón de uso diario.
 - Estados reutilizables en `src/components/states.tsx`: `PageHeader`, `EmptyState`, `ErrorState`, `LoadingState`, `PageContainer`. Cada sección tiene `loading.tsx` y `error.tsx` compartidos.
 - No mostrar botones deshabilitados sin explicación; una acción aparece cuando su paso está implementado.
 - **Reglas KISS de pantalla** (auditoría `docs/ux/AUDITORIA_KISS.md`):

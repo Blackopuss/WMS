@@ -204,7 +204,7 @@ async function createCheckout(
             locale: "es-MX",
             user_action: "PAY_NOW",
             shipping_preference: "NO_SHIPPING",
-            brand_name: "Almacén",
+            brand_name: "WMS",
           },
         },
       },

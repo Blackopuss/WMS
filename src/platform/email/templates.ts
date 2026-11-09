@@ -10,12 +10,12 @@ export function verificationEmail(input: {
 }): EmailMessage {
   return {
     to: input.to,
-    subject: "Confirma tu correo para Almacén",
+    subject: "Confirma tu correo para WMS",
     actionUrl: input.url,
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Para activar tu cuenta de Almacén, abre este enlace y entra con la contraseña que elegiste:",
+      "Para activar tu cuenta de WMS, abre este enlace y entra con la contraseña que elegiste:",
       input.url,
       "",
       `El enlace vence en ${input.hours} horas.`,
@@ -36,7 +36,7 @@ export function existingAccountEmail(input: {
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Recibimos un intento de crear una cuenta nueva de Almacén con este correo, pero ya tienes una.",
+      "Recibimos un intento de crear una cuenta nueva de WMS con este correo, pero ya tienes una.",
       "Si fuiste tú, inicia sesión con tu cuenta actual:",
       input.signInUrl,
       "Si no recuerdas su contraseña (o no la elegiste tú), usa «¿Olvidaste tu contraseña?» en esa pantalla.",
@@ -54,12 +54,12 @@ export function passwordResetEmail(input: {
 }): EmailMessage {
   return {
     to: input.to,
-    subject: "Restablece tu contraseña de Almacén",
+    subject: "Restablece tu contraseña de WMS",
     actionUrl: input.url,
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Recibimos una solicitud para restablecer la contraseña de tu cuenta de Almacén. Elige una nueva con este enlace:",
+      "Recibimos una solicitud para restablecer la contraseña de tu cuenta de WMS. Elige una nueva con este enlace:",
       input.url,
       "",
       `El enlace vence en ${input.minutes} minutos y solo funciona una vez.`,
@@ -75,12 +75,12 @@ export function passwordChangedEmail(input: {
 }): EmailMessage {
   return {
     to: input.to,
-    subject: "Tu contraseña de Almacén cambió",
+    subject: "Tu contraseña de WMS cambió",
     actionUrl: input.recoverUrl,
     text: [
       `Hola, ${input.name}:`,
       "",
-      "La contraseña de tu cuenta de Almacén se acaba de cambiar y cerramos todas tus sesiones abiertas.",
+      "La contraseña de tu cuenta de WMS se acaba de cambiar y cerramos todas tus sesiones abiertas.",
       "",
       "Si no fuiste tú, restablécela de inmediato con este enlace:",
       input.recoverUrl,
@@ -98,7 +98,7 @@ export function mfaEnabledEmail(input: {
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Tu cuenta de Almacén ahora pide un código de tu app de autenticación además de tu contraseña.",
+      "Tu cuenta de WMS ahora pide un código de tu app de autenticación además de tu contraseña.",
       "",
       "Si no fuiste tú, cambia tu contraseña de inmediato y escríbenos.",
     ].join("\n"),
@@ -116,7 +116,7 @@ export function backupCodeUsedEmail(input: {
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Se inició sesión en tu cuenta de Almacén con un código de recuperación. Ese código ya no sirve.",
+      "Se inició sesión en tu cuenta de WMS con un código de recuperación. Ese código ya no sirve.",
       input.left === 1
         ? "Te queda 1 código de recuperación."
         : `Te quedan ${input.left} códigos de recuperación.`,
@@ -137,7 +137,7 @@ export function backupCodesRegeneratedEmail(input: {
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Se generaron nuevos códigos de recuperación para tu cuenta de Almacén. Los anteriores ya no sirven.",
+      "Se generaron nuevos códigos de recuperación para tu cuenta de WMS. Los anteriores ya no sirven.",
       "",
       "Si no fuiste tú, cambia tu contraseña de inmediato.",
     ].join("\n"),
@@ -154,7 +154,7 @@ export function mfaDisabledEmail(input: {
     text: [
       `Hola, ${input.name}:`,
       "",
-      "Tu cuenta de Almacén ya no pide un código de tu app al iniciar sesión.",
+      "Tu cuenta de WMS ya no pide un código de tu app al iniciar sesión.",
       "",
       "Si no fuiste tú, cambia tu contraseña de inmediato y vuelve a activarla en Configuración → Seguridad.",
     ].join("\n"),
@@ -172,12 +172,12 @@ export function invitationEmail(input: {
   return {
     to: input.to,
     // Names are written by people: one line, bounded (security audit).
-    subject: `${oneLine(input.inviterName, 60)} te invitó a ${oneLine(input.organizationName, 80)} en Almacén`,
+    subject: `${oneLine(input.inviterName, 60)} te invitó a ${oneLine(input.organizationName, 80)} en WMS`,
     actionUrl: input.url,
     text: [
       "Hola:",
       "",
-      `${input.inviterName} te invitó a trabajar en «${input.organizationName}» en Almacén como ${input.roleLabels.join(" y ")}.`,
+      `${input.inviterName} te invitó a trabajar en «${input.organizationName}» en WMS como ${input.roleLabels.join(" y ")}.`,
       "Acepta la invitación con este enlace:",
       input.url,
       "",
@@ -227,7 +227,7 @@ export function purchaseOrderEmail(input: {
       "",
       `Para confirmarla o si tienes dudas, responde a este correo: le llega a ${oneLine(input.sender.name, 120)} (${input.sender.email}).`,
       "",
-      `Este mensaje se envió desde Almacén a nombre de ${company}. Si no esperabas esta orden, ignora el mensaje.`,
+      `Este mensaje se envió desde WMS a nombre de ${company}. Si no esperabas esta orden, ignora el mensaje.`,
     ].join("\n"),
   };
 }
@@ -259,7 +259,7 @@ export function salesQuoteEmail(input: {
       "",
       `Para aceptarla o si tienes dudas, responde a este correo: le llega a ${oneLine(input.sender.name, 120)} (${input.sender.email}).`,
       "",
-      `Este mensaje se envió desde Almacén a nombre de ${company}. Si no esperabas esta cotización, ignora el mensaje.`,
+      `Este mensaje se envió desde WMS a nombre de ${company}. Si no esperabas esta cotización, ignora el mensaje.`,
     ].join("\n"),
   };
 }
@@ -295,7 +295,7 @@ export function salesStatementEmail(input: {
       "",
       `Si tienes dudas, responde a este correo: le llega a ${oneLine(input.sender.name, 120)} (${input.sender.email}).`,
       "",
-      `Este mensaje se envió desde Almacén a nombre de ${company}.`,
+      `Este mensaje se envió desde WMS a nombre de ${company}.`,
     ].join("\n"),
   };
 }
@@ -336,7 +336,7 @@ export function overdueReminderEmail(input: {
       "Si ya pagaste, no hagas caso de este aviso.",
       `Si tienes dudas, responde a este correo: le llega a ${oneLine(input.replyTo.name, 120)} (${input.replyTo.email}).`,
       "",
-      `Este mensaje se envió desde Almacén a nombre de ${company}.`,
+      `Este mensaje se envió desde WMS a nombre de ${company}.`,
     ].join("\n"),
   };
 }
@@ -399,7 +399,7 @@ export function planPurchaseEmail(input: {
   const company = oneLine(input.organizationName, 100);
   return {
     to: input.to,
-    subject: `Tu compra en Almacén (${input.transactionId})`,
+    subject: `Tu compra en WMS (${input.transactionId})`,
     actionUrl: input.planUrl,
     text: [
       `Hola, ${oneLine(input.name, 80)}:`,

@@ -10,11 +10,11 @@ import { CONTACT_EMAIL, PLAN_TIERS } from "@/platform/billing";
 export { SITE_NAV, formatCount, formatMoney } from "./site-shared";
 
 export const SITE = {
-  name: "Almacén",
+  name: "WMS",
   /** Contact mailbox (also in the receipts and legal texts). */
   contactEmail: CONTACT_EMAIL,
   /** Pending (founder): legal name of the company that runs the service. */
-  legalName: "Almacén (razón social por confirmar)",
+  legalName: "WMS (razón social por confirmar)",
 } as const;
 
 export const FOOTER_LINKS = [

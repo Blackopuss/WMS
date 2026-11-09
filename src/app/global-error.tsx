@@ -21,10 +21,10 @@ export default function GlobalError({
   return (
     <html lang="es-MX">
       <body className="grid min-h-dvh place-items-center bg-background p-4 font-sans text-foreground">
-        <title>Algo salió mal · Almacén</title>
+        <title>Algo salió mal · WMS</title>
         <main className="max-w-sm space-y-4 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">
-            No pudimos abrir Almacén
+            No pudimos abrir WMS
           </h1>
           <p className="text-muted-foreground">
             Revisa tu conexión e inténtalo de nuevo. Tus datos no se

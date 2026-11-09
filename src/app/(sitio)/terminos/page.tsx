@@ -9,7 +9,7 @@ import { LegalDocument } from "../legal-document";
 
 export const metadata: Metadata = {
   title: "Términos y condiciones",
-  description: "Condiciones de uso del servicio Almacén.",
+  description: "Condiciones de uso del servicio WMS.",
 };
 
 const link = "font-medium text-primary underline-offset-4 hover:underline";
