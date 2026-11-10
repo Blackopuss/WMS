@@ -117,7 +117,7 @@ SaaS-Almacen.
 
 ### Calidad del código y operación
 
-- 1,720 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
+- 1,755 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
   de tipos, lint, límites de arquitectura y formato en cada push (CI en GitHub).
 - Accesibilidad WCAG 2.1 AA revisada con axe en las pantallas principales; las
   nuevas (`/tareas`, `/tareas/nueva`, `/recepcion`) ya están en la lista.
