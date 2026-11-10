@@ -72,6 +72,15 @@ const provisionSchema = z.object({
     .int("Los usuarios deben ser un número entero.")
     .min(1, "Debe haber al menos 1 usuario.")
     .max(10_000, "El número de usuarios es demasiado grande."),
+  // WMS-18: how many warehouses; 1 when not said.
+  facilities: z.preprocess(
+    (value) => (value === undefined || String(value).trim() === "" ? 1 : value),
+    z.coerce
+      .number("Escribe cuántos almacenes incluye.")
+      .int("Los almacenes deben ser un número entero.")
+      .min(1, "Debe haber al menos 1 almacén.")
+      .max(500, "El número de almacenes es demasiado grande."),
+  ),
   modules: z.array(z.string()).max(50),
   validUntil: z
     .date()
@@ -89,6 +98,8 @@ const provisionSchema = z.object({
 export type ProvisionInput = {
   productLimit: number | string;
   users: number | string;
+  /** Warehouses the plan includes (WMS-18); 1 when left out. */
+  facilities?: number | string;
   modules: string[];
   /** Null = without end date. */
   validUntil: Date | null;
@@ -181,7 +192,7 @@ export async function provisionCompany(
     }
     return { ok: false, fieldErrors };
   }
-  const { productLimit, users, validUntil, reason } = parsed.data;
+  const { productLimit, users, facilities, validUntil, reason } = parsed.data;
   const modules = [...new Set(parsed.data.modules)];
 
   const moduleError = (message: string): ProvisionResult => ({
@@ -259,6 +270,15 @@ export async function provisionCompany(
       validUntil,
       now,
     );
+    await setEntitlement(
+      tx,
+      organizationId,
+      "LIMIT",
+      "facilities",
+      facilities,
+      validUntil,
+      now,
+    );
     for (const id of modules) {
       await setEntitlement(
         tx,
@@ -289,6 +309,7 @@ export async function provisionCompany(
       metadata: {
         productLimit,
         users,
+        facilities,
         modules: registry.all
           .filter((m) => modules.includes(m.id))
           .map((m) => m.name),
@@ -351,6 +372,8 @@ export type CompanyPlan = CompanySummary & {
   productLimit: number | null;
   productsUsed: number;
   users: number | null;
+  /** Warehouses the plan includes; null when it does not say (1). */
+  facilities: number | null;
   activeMembers: number;
   /** Earliest end date among what is in force; null = no end date. */
   validUntil: Date | null;
@@ -411,6 +434,7 @@ export async function getCompanyPlan(
     productLimit: entitlements.limit("active_products"),
     productsUsed: products.used + products.reserved,
     users: entitlements.limit("users"),
+    facilities: entitlements.limit("facilities"),
     activeMembers,
     validUntil: ends?.validUntil ?? null,
     endedAt: planEnd !== null && planEnd <= now ? planEnd : null,

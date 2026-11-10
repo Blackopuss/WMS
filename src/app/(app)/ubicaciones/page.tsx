@@ -149,7 +149,7 @@ export default async function UbicacionesPage({
         >
           <div className="border-b p-4 sm:px-5">
             <p className="text-sm text-muted-foreground">
-              {showArchived ? "Archivadas de la instalación" : "Instalación"}
+              {showArchived ? "Archivadas del almacén" : "Almacén"}
             </p>
             <h2
               id="facility-heading"

@@ -26,12 +26,20 @@ export async function ensureDefaultLocation(
     throw new NotFoundError("organization_not_found", "La empresa no existe.");
   }
 
-  // The unique company key preserves identity even if the name changes later.
-  const facility = await tx.facility.upsert({
-    where: { organizationId },
-    update: {},
-    create: { id: newId(), organizationId, name: "Principal" },
-  });
+  // The main warehouse (WMS-18): there is always one.
+  const facility =
+    (await tx.facility.findFirst({
+      where: { organizationId, isDefault: true },
+    })) ??
+    (await tx.facility.create({
+      data: {
+        id: newId(),
+        organizationId,
+        name: "Principal",
+        code: "PRINCIPAL",
+        isDefault: true,
+      },
+    }));
   const location = await tx.location.upsert({
     where: {
       organizationId_facilityId_isDefault: {

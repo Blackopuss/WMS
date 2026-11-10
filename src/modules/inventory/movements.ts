@@ -11,7 +11,11 @@ import {
   resolveConversion,
   type Capture,
 } from "@/platform/catalog";
-import { compareLocationNames, formatLocationPath } from "@/platform/locations";
+import {
+  activeFacilityOf,
+  compareLocationNames,
+  formatLocationPath,
+} from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { COST_FORMAT_ERROR, parseCost } from "./average-cost";
@@ -890,7 +894,10 @@ async function fetchMovements(
   }));
 }
 
-/** Locations where stock can be received, in reading order, with their path. */
+/**
+ * Locations where stock can be received, in reading order, with their
+ * path: those of the warehouse the person works in (WMS-18).
+ */
 export async function listStockLocations(
   actor: InventoryActor,
 ): Promise<{ id: string; path: string; isDefault: boolean }[]> {
@@ -899,8 +906,10 @@ export async function listStockLocations(
     actor.userId,
     "inventory.location.read",
   );
-  const rows = await forOrganization(actor.organizationId).location.findMany({
-    where: { archivedAt: null },
+  const client = forOrganization(actor.organizationId);
+  const facility = await activeFacilityOf(client, actor.userId);
+  const rows = await client.location.findMany({
+    where: { archivedAt: null, facilityId: facility.id },
     take: 1_000,
     select: {
       id: true,
@@ -1249,7 +1258,7 @@ async function transferWithin(
 
   const places = await tx.location.findMany({
     where: { id: { in: [data.locationId, data.toLocationId] } },
-    select: { id: true, name: true, archivedAt: true },
+    select: { id: true, name: true, archivedAt: true, facilityId: true },
   });
   const from = places.find((place) => place.id === data.locationId);
   const to = places.find((place) => place.id === data.toLocationId);
@@ -1272,6 +1281,15 @@ async function transferWithin(
       "not_allowed",
       "toLocationId",
       `«${to.name}» está archivada. Elige otra ubicación.`,
+    );
+  }
+  // WMS-18: a move stays in its warehouse; between warehouses it is a
+  // transfer with its time in transit (WMS-19).
+  if (from.facilityId !== to.facilityId) {
+    return refuse(
+      "not_allowed",
+      "toLocationId",
+      "Esa ubicación es de otro almacén: entre almacenes se hace un traslado.",
     );
   }
 

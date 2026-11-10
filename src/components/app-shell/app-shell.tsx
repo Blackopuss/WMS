@@ -39,7 +39,14 @@ export function AppShell({
   allowedHrefs,
   signOutAction,
   switchOrganizationAction,
+  facility = null,
+  facilities = [],
+  switchFacilityAction,
 }: {
+  /** The warehouse the person works in (WMS-18), when there are several. */
+  facility?: ShellOrganization | null;
+  facilities?: ShellOrganization[];
+  switchFacilityAction?: SwitchAction;
   children: React.ReactNode;
   user: ShellUser;
   organization: ShellOrganization;
@@ -50,11 +57,21 @@ export function AppShell({
   switchOrganizationAction: SwitchAction;
 }) {
   const switcher = (
-    <OrganizationSwitcher
-      organization={organization}
-      organizations={organizations}
-      switchOrganizationAction={switchOrganizationAction}
-    />
+    <>
+      <OrganizationSwitcher
+        organization={organization}
+        organizations={organizations}
+        switchOrganizationAction={switchOrganizationAction}
+      />
+      {facility && facilities.length > 1 && switchFacilityAction && (
+        <OrganizationSwitcher
+          noun="warehouse"
+          organization={facility}
+          organizations={facilities}
+          switchOrganizationAction={switchFacilityAction}
+        />
+      )}
+    </>
   );
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href));

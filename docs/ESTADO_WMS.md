@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-50. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+WMS-18. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -19,7 +19,9 @@ abajo son de ese documento).
 | Empaque, despacho y devoluciones de clientes | Falta (WMS-15..17) |
 | Producción y calidad | Falta (WMS-11) |
 | Analítica | Falta (WMS-12) |
-| Varios almacenes, lotes y series, PWA, escaneo con cámara, PIN | Falta, sin paso asignado todavía |
+| Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
+| Ubicaciones configurables, alcance por almacén, lotes y series | Falta (WMS-22, WMS-20, WMS-21) |
+| PWA, escaneo con cámara, PIN | Falta (transversal: WMS-35, 36, 38) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
 Ventas (punto de venta, caja, cotizaciones, ventas a plazos) se quitó del

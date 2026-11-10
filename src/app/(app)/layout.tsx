@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { isPermission } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
+import { getActiveFacility, listFacilities } from "@/platform/locations";
 import { listMyOrganizations } from "@/platform/tenancy";
 
 import {
   leaveSupportAction,
   signOutAction,
+  switchFacilityAction,
   switchOrganizationAction,
 } from "./actions";
 
@@ -20,6 +22,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const access = await getModuleAccess();
   const { user, organization } = access;
   const organizations = await listMyOrganizations(user.id);
+  // The warehouse the person works in (WMS-18), switchable with several.
+  const actor = { organizationId: organization.id, userId: user.id };
+  const seesWarehouses =
+    access.moduleState("inventory") !== "none" &&
+    access.can("inventory.location.read");
+  const [facilities, facility] = seesWarehouses
+    ? await Promise.all([listFacilities(actor), getActiveFacility(actor)])
+    : [[], null];
   // The menu only offers what the roles of the person allow (USR-09) in
   // modules the company has (MOD-05).
   const allowedHrefs = visibleNavItems(
@@ -33,6 +43,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       allowedHrefs={allowedHrefs}
       signOutAction={signOutAction}
       switchOrganizationAction={switchOrganizationAction}
+      facility={facility ? { id: facility.id, name: facility.name } : null}
+      facilities={facilities.map((each) => ({ id: each.id, name: each.name }))}
+      switchFacilityAction={switchFacilityAction}
     >
       {/* Support looking in with the titular's leave (PIL-12): always said. */}
       {organization.supportUntil && (

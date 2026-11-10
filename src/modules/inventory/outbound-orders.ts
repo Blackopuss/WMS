@@ -6,7 +6,7 @@ import { dec, newId, type Decimal } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
-import { ensureStagingLocation } from "@/platform/locations";
+import { activeFacilityOf, ensureStagingLocation } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
@@ -133,6 +133,7 @@ async function lockOrder(tx: Tx, orderId: string) {
           status: true,
           priority: true,
           recipient: true,
+          facilityId: true,
           lines: {
             orderBy: { lineNumber: "asc" },
             select: {
@@ -228,6 +229,10 @@ export async function createOutboundOrder(
     return { ok: false, reason: "invalid", fieldErrors: header.fieldErrors };
   }
   const { data } = header;
+  const facility = await activeFacilityOf(
+    forOrganization(organizationId),
+    userId,
+  );
   for (let attempt = 0; ; attempt++) {
     try {
       return await forOrganization(organizationId).$transaction(async (tx) => {
@@ -241,6 +246,8 @@ export async function createOutboundOrder(
           data: {
             id,
             organizationId,
+            // It leaves from the warehouse its author works in (WMS-18).
+            facilityId: facility.id,
             number,
             recipient: data.recipient,
             address: data.address,
@@ -450,9 +457,18 @@ export async function releaseOutboundOrder(
     where: { orderId: String(orderId ?? "") },
     select: { productId: true },
   });
+  // The warehouse it leaves from only changes in draft: read it to prepare
+  // its staging location, and check it again under the lock.
+  const facilityId =
+    (
+      await forOrganization(organizationId).outboundOrder.findFirst({
+        where: { id: String(orderId ?? "") },
+        select: { facilityId: true },
+      })
+    )?.facilityId ?? null;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await releaseLocked(actor, orderId, draft, options);
+      return await releaseLocked(actor, orderId, draft, options, facilityId);
     } catch (error) {
       // A task created by hand took the same number at once: again.
       if ((error as { code?: string }).code === "P2002" && attempt < 4) {
@@ -468,6 +484,7 @@ function releaseLocked(
   orderId: string,
   draft: { productId: string }[],
   options: { takeWhatThereIs?: boolean },
+  facilityId: string | null,
 ): Promise<OutboundResult> {
   const { organizationId, userId } = actor;
   return inOrder(organizationId, async (tx) => {
@@ -477,8 +494,16 @@ function releaseLocked(
       draft.map((line) => line.productId),
     );
     // Where picked goods wait (WMS-14); created the first time.
-    const staging = await ensureStagingLocation(tx, organizationId);
+    if (!facilityId) return stop("not_found", "Este pedido no existe.");
+    // Where picked goods of its warehouse wait (WMS-14/18).
+    const staging = await ensureStagingLocation(tx, organizationId, facilityId);
     const order = await lockOrder(tx, orderId);
+    if (order.facilityId !== facilityId) {
+      return stop(
+        "not_allowed",
+        "El pedido cambió mientras se liberaba. Inténtalo de nuevo.",
+      );
+    }
     if (order.status === "RELEASED") {
       return {
         ok: true,
@@ -522,7 +547,10 @@ function releaseLocked(
     // elsewhere does not count.
     for (const line of order.lines) {
       const asked = dec(line.quantity.toString());
-      const sources = await pickSources(tx, line.productId, asked, staging.id);
+      const sources = await pickSources(tx, line.productId, asked, {
+        stagingId: staging.id,
+        facilityId,
+      });
       const take = sources.reduce(
         (sum, source) => sum.plus(source.quantity),
         dec(0),
@@ -715,8 +743,13 @@ export async function listOutboundOrders(
     "inventory.outbound.read",
   );
   const status = isOutboundOrderStatus(options.status) ? options.status : null;
-  const where = status ? { status } : {};
   const client = forOrganization(actor.organizationId);
+  // The warehouse the person works in (WMS-18).
+  const facility = await activeFacilityOf(client, actor.userId);
+  const where = {
+    facilityId: facility.id,
+    ...(status ? { status } : {}),
+  };
   const total = await client.outboundOrder.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / OUTBOUND_PAGE_SIZE));
   const page =

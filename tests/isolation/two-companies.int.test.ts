@@ -498,6 +498,11 @@ beforeAll(async () => {
       data: {
         id: outboundId,
         organizationId,
+        facilityId: (
+          await db.facility.findFirstOrThrow({
+            where: { organizationId, isDefault: true },
+          })
+        ).id,
         number: 1,
         recipient: "Sucursal",
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,

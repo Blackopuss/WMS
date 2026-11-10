@@ -82,6 +82,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-14 | Surtido con tareas hacia «Preparación» | Hecho (2026-11-10) |
 | WMS-49 | Parámetros de operación por empresa | Hecho (2026-11-10, ADR 0034) |
 | WMS-50 | Rol de Gerencia | Hecho (2026-11-10) |
+| WMS-18 | Varios almacenes | Hecho (2026-11-10, ADR 0035) |
 
 ---
 
@@ -138,6 +139,11 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
   funcionan en cualquiera de ellos.
 - **Pruebas:** existencias, movimientos, tareas y pedidos no se mezclan entre
   almacenes; cupo; entre empresas.
+- **Estado:** hecho (2026-11-10, ADR 0035). Configuración › Almacenes, selector
+  de almacén en el menú lateral, cupo `facilities` en la consola. Pendiente
+  (anotado en el ADR): mostrar el almacén junto a la ruta en historial y
+  reportes, y almacén de destino en órdenes de compra. Pruebas en
+  `tests/platform/facilities.int.test.ts`.
 
 ### WMS-22 · Ubicaciones configurables y capacidad
 

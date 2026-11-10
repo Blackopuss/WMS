@@ -215,6 +215,30 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el proveedor se busca solo entre los de esa empresa",
     coveredBy: "tests/platform/suppliers.int.test.ts",
   },
+  switchFacilityAction: {
+    input: "id del almacén en que se quiere trabajar",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y se guarda en la membresía de esa persona",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  createFacilityAction: {
+    input: "nombre, código y dirección del almacén",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); se crea en esa empresa, dentro del cupo de su plan",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  updateFacilityAction: {
+    input: "id del almacén, nombre, código y dirección",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  archiveFacilityAction: {
+    input: "id del almacén",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y se archiva solo vacío",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
   updateSettingAction: {
     input: "clave del ajuste y la opción elegida",
     identity:

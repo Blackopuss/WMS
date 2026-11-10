@@ -189,7 +189,7 @@ describe("provisionCompany", () => {
     const rows = await db.entitlement.findMany({
       where: { organizationId: org },
     });
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     expect(rows.every((r) => r.validUntil?.getTime() === until.getTime())).toBe(
       true,
     );

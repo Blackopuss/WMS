@@ -7,7 +7,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import { isAllowed, type Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
-import { formatLocationPath } from "@/platform/locations";
+import { activeFacilityOf, formatLocationPath } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { foldName, foldPath } from "./import-validation";
@@ -300,7 +300,7 @@ export async function createTask(
 
         const places = await tx.location.findMany({
           where: { id: { in: [data.fromLocationId, data.toLocationId] } },
-          select: { id: true, name: true, archivedAt: true },
+          select: { id: true, name: true, archivedAt: true, facilityId: true },
         });
         const from = places.find((p) => p.id === data.fromLocationId);
         const to = places.find((p) => p.id === data.toLocationId);
@@ -322,6 +322,14 @@ export async function createTask(
           return stop(
             "not_allowed",
             `«${to.name}» está archivada. Elige otra ubicación.`,
+            "toLocationId",
+          );
+        }
+        // WMS-18: a task moves inside one warehouse.
+        if (from.facilityId !== to.facilityId) {
+          return stop(
+            "not_allowed",
+            "Esa ubicación es de otro almacén: entre almacenes se hace un traslado.",
             "toLocationId",
           );
         }
@@ -1098,7 +1106,7 @@ export async function listTasks(
     options.view === "closed"
       ? options.view
       : "mine";
-  const where =
+  const byView =
     view === "mine"
       ? {
           assignedToUserId: actor.userId,
@@ -1121,6 +1129,12 @@ export async function listTasks(
               },
             };
   const client = forOrganization(actor.organizationId);
+  // Tasks of the warehouse the person works in (WMS-18).
+  const facility = await activeFacilityOf(client, actor.userId);
+  const where = {
+    ...byView,
+    fromLocation: { facilityId: facility.id },
+  };
   const total = await client.warehouseTask.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / TASK_PAGE_SIZE));
   const page =
@@ -1160,15 +1174,18 @@ export async function countMyTasks(
     "inventory.task.read",
   );
   const client = forOrganization(actor.organizationId);
+  const facility = await activeFacilityOf(client, actor.userId);
+  const here = { fromLocation: { facilityId: facility.id } };
   const [mine, available, blocked] = await Promise.all([
     client.warehouseTask.count({
       where: {
+        ...here,
         assignedToUserId: actor.userId,
         status: { in: ["ASSIGNED", "ACCEPTED", "PICKED_UP"] },
       },
     }),
-    client.warehouseTask.count({ where: { status: "PENDING" } }),
-    client.warehouseTask.count({ where: { status: "BLOCKED" } }),
+    client.warehouseTask.count({ where: { ...here, status: "PENDING" } }),
+    client.warehouseTask.count({ where: { ...here, status: "BLOCKED" } }),
   ]);
   return { mine, available, blocked };
 }

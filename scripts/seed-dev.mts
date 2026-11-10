@@ -142,6 +142,8 @@ for (const grant of [
   { kind: "MODULE" as const, key: "purchasing", value: null },
   { kind: "LIMIT" as const, key: "active_products", value: 1000 },
   { kind: "LIMIT" as const, key: "users", value: 5 },
+  // Several warehouses (WMS-18), so the switcher can be tried locally.
+  { kind: "LIMIT" as const, key: "facilities", value: 3 },
 ]) {
   await db.entitlement.upsert({
     where: {

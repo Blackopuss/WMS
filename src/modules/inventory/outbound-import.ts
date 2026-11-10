@@ -13,6 +13,7 @@ import {
   storeFile,
   type Cell,
 } from "@/platform/files";
+import { activeFacilityOf } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatExitDay, parseExitDay } from "./exit-import";
@@ -1002,6 +1003,11 @@ export async function confirmOutboundImport(
   if (!checked.ok) return checked;
   const { orders, invalidRows } = checked.result;
   const ready = orders.length > 0 && invalidRows === 0;
+  // The orders leave from the warehouse of who confirms (WMS-18).
+  const facility = await activeFacilityOf(
+    forOrganization(organizationId),
+    userId,
+  );
 
   for (let attempt = 0; ; attempt++) {
     try {
@@ -1093,6 +1099,7 @@ export async function confirmOutboundImport(
           createdByUserId: string;
           importId: string;
           sourceKey: string;
+          facilityId: string;
         }[] = [];
         const lineRows: {
           id: string;
@@ -1120,6 +1127,7 @@ export async function confirmOutboundImport(
             createdByUserId: userId,
             importId: row.id,
             sourceKey: order.sourceKey,
+            facilityId: facility.id,
           });
           order.lines.forEach((line, index) =>
             lineRows.push({

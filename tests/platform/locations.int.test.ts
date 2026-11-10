@@ -49,8 +49,8 @@ async function grantInventory(actor: LocationActor, expired = false) {
 }
 
 async function defaults(actor: LocationActor) {
-  return forOrganization(actor.organizationId).facility.findUniqueOrThrow({
-    where: { organizationId: actor.organizationId },
+  return forOrganization(actor.organizationId).facility.findFirstOrThrow({
+    where: { isDefault: true },
     include: { locations: true },
   });
 }
@@ -250,17 +250,22 @@ describe("database constraints", () => {
     ).rejects.toThrow(/location_default_check/);
   });
 
-  it("rejects another facility in v1 and a location pointing to another company", async () => {
+  it("rejects a second main warehouse and a location pointing to another company", async () => {
     const facility = await defaults(actorB);
+    // WMS-18: several warehouses, but only one main one.
     await expect(
       db.facility.create({
         data: {
           id: newId(),
           organizationId: actorA.organizationId,
           name: "Otra",
+          code: "OTRA",
+          isDefault: true,
         },
       }),
-    ).rejects.toThrow(/Unique constraint|facility_organizationId_key/);
+    ).rejects.toThrow(
+      /Unique constraint|facility_organizationId_isDefault_key/,
+    );
     await expect(db.$executeRaw`
       INSERT INTO location (id, organizationId, facilityId, name, kind, updatedAt)
       VALUES (${newId()}, ${actorA.organizationId}, ${facility.id}, 'Ajena', 'ZONE', UTC_TIMESTAMP(3))

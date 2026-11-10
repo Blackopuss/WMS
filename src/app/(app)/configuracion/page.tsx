@@ -6,6 +6,7 @@ import {
   MapPin,
   SlidersHorizontal,
   Users,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -51,6 +52,14 @@ export default async function ConfiguracionPage() {
           <h2 id="empresa" className="text-lg font-semibold">
             Tu negocio
           </h2>
+          {showLocations && (
+            <SettingsLink
+              href="/configuracion/almacenes"
+              icon={Warehouse}
+              title="Almacenes"
+              description="Tus almacenes y sucursales."
+            />
+          )}
           {showLocations && (
             <SettingsLink
               href="/ubicaciones"
@@ -171,6 +180,7 @@ function SettingsLink({
 }: {
   href:
     | "/ubicaciones"
+    | "/configuracion/almacenes"
     | "/configuracion/operacion"
     | "/configuracion/equipo"
     | "/configuracion/plan"

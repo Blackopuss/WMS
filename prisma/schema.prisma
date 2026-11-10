@@ -174,16 +174,29 @@ model Organization {
 
 // Shared physical space (INV-13). V1 has one facility per company;
 // multi-facility operation requires an explicit future migration.
+/// A warehouse of the company (WMS-18): several per company, each with its
+/// own locations, its General and its staging location. Never deleted:
+/// archived when empty.
 model Facility {
-  id             String       @id @db.Char(36)
-  organizationId String       @unique @db.Char(36)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String       @db.VarChar(120)
-  createdAt      DateTime     @default(now()) @db.DateTime(3)
-  updatedAt      DateTime     @updatedAt @db.DateTime(3)
+  id             String          @id @db.Char(36)
+  organizationId String          @db.Char(36)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String          @db.VarChar(120)
+  /// Short code people use and scan («CDMX-1»); unique in the company.
+  code           String          @db.VarChar(20)
+  address        String?         @db.VarChar(300)
+  /// True for the main warehouse, NULL for the others (one per company).
+  isDefault      Boolean?
+  archivedAt     DateTime?       @db.DateTime(3)
+  createdAt      DateTime        @default(now()) @db.DateTime(3)
+  updatedAt      DateTime        @updatedAt @db.DateTime(3)
   locations      Location[]
+  activeFor      Membership[]
+  outboundOrders OutboundOrder[]
 
   @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@unique([organizationId, isDefault])
   @@map("facility")
 }
 
@@ -250,16 +263,19 @@ enum MembershipStatus {
 }
 
 model Membership {
-  id              String              @id @db.Char(36)
-  organizationId  String              @db.Char(36)
-  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  userId          String              @db.Char(36)
-  user            User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status          MembershipStatus    @default(ACTIVE)
-  createdAt       DateTime            @default(now()) @db.DateTime(3)
-  updatedAt       DateTime            @updatedAt @db.DateTime(3)
-  roles           MembershipRole[]
-  ownershipOffers OwnershipTransfer[]
+  id               String              @id @db.Char(36)
+  organizationId   String              @db.Char(36)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId           String              @db.Char(36)
+  user             User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status           MembershipStatus    @default(ACTIVE)
+  createdAt        DateTime            @default(now()) @db.DateTime(3)
+  updatedAt        DateTime            @updatedAt @db.DateTime(3)
+  roles            MembershipRole[]
+  ownershipOffers  OwnershipTransfer[]
+  /// The warehouse this person works in (WMS-18); null = the main one.
+  activeFacilityId String?             @db.Char(36)
+  activeFacility   Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([organizationId, userId])
   /// Target of company-scoped foreign keys (PLT-13).
@@ -2066,6 +2082,9 @@ model OutboundOrder {
   cancelReason      String?               @db.VarChar(300)
   updatedAt         DateTime              @updatedAt @db.DateTime(3)
   lines             OutboundOrderLine[]
+  /// The warehouse it leaves from (WMS-18): it is picked there.
+  facilityId        String                @db.Char(36)
+  facility          Facility              @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The file it came from (WMS-13B); null when written by hand.
   importId          String?               @db.Char(36)
   import            OutboundImport?       @relation(fields: [organizationId, importId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
