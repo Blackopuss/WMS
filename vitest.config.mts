@@ -8,7 +8,7 @@ if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 
 // Every test process (including global setup) targets the test database,
 // never development. tests/setup/test-db.ts double-checks the name.
-process.env.DATABASE_NAME = process.env.DATABASE_TEST_NAME ?? "almacen_test";
+process.env.DATABASE_NAME = process.env.DATABASE_TEST_NAME ?? "wms_test";
 // Emails are captured in memory so tests can read them (PLT-03).
 process.env.MAIL_DRIVER = "memory";
 // Private files of tests go to a throwaway folder, never to ./storage.

@@ -37,9 +37,11 @@ describe("menu by role", () => {
     expect(menuOf(member("administrator"))).toEqual(all);
   });
 
-  it("Almacén does not see Compras", () => {
+  it("Almacén does not see Compras; it runs the tasks (WMS-07)", () => {
     expect(menuOf(member("warehouse"))).toEqual([
       "Inicio",
+      "Tareas",
+      "Pedidos",
       "Inventario",
       "Movimientos",
       "Conteos",
@@ -47,9 +49,10 @@ describe("menu by role", () => {
     ]);
   });
 
-  it("Comprador does not see Conteos", () => {
+  it("Comprador does not see Conteos; it receives at the dock (WMS-04)", () => {
     expect(menuOf(member("buyer"))).toEqual([
       "Inicio",
+      "Recepción",
       "Inventario",
       "Movimientos",
       "Compras",
@@ -57,10 +60,19 @@ describe("menu by role", () => {
     ]);
   });
 
-  it("Consulta sees every section it can read, Ventas for its history (VEN-22)", () => {
+  it("Consulta sees every section it can read", () => {
     expect(menuOf(member("viewer"))).toEqual(
       NAV_ITEMS.map((item) => item.label),
     );
+  });
+
+  it("Montacarguista sees its tasks and the stock (WMS-07)", () => {
+    expect(menuOf(member("forklift"))).toEqual([
+      "Inicio",
+      "Tareas",
+      "Inventario",
+      "Configuración",
+    ]);
   });
 
   it("a member without roles only sees Inicio and Configuración", () => {
@@ -70,25 +82,9 @@ describe("menu by role", () => {
 
   it("combined roles see the union", () => {
     expect(menuOf(member("warehouse", "buyer"))).toEqual(
-      NAV_ITEMS.map((item) => item.label).filter((label) => label !== "Ventas"),
+      NAV_ITEMS.map((item) => item.label),
     );
-    expect(ROLES.length).toBe(6);
-  });
-
-  it("Cajero and Encargado de caja sell and see the products they sell (VEN-02)", () => {
-    expect(menuOf(member("cashier"))).toEqual([
-      "Inicio",
-      "Ventas",
-      "Inventario",
-      "Configuración",
-    ]);
-    expect(menuOf(member("cash_manager"))).toEqual([
-      "Inicio",
-      "Ventas",
-      "Inventario",
-      "Movimientos",
-      "Configuración",
-    ]);
+    expect(ROLES.length).toBe(7);
   });
 });
 

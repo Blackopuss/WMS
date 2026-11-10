@@ -1,16 +1,16 @@
 // Company for manual browser checks WITHOUT touching development data:
-// creates, in almacen_test, a company with Inventario, Compras and Ventas and an
+// creates, in wms_test, a company with Inventario and Compras and an
 // account with the role you ask for (no MFA needed unless administrator).
 // The test database is emptied by every `npm test`, so nothing has to be
 // cleaned afterwards — important now that several tables are append-only.
 //
 // Usage (with `npm run dev:test` running on http://localhost:3100):
-//   npm run test:company -- "<contraseña de 12+ caracteres>" [warehouse|buyer|viewer|administrator|cashier|cash_manager|titular]
+//   npm run test:company -- "<contraseña de 12+ caracteres>" [warehouse|buyer|viewer|supervisor|operator|forklift|administrator|titular]
 // Prints the email to sign in with.
 import { existsSync } from "node:fs";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
-process.env.DATABASE_NAME = "almacen_test";
+process.env.DATABASE_NAME = process.env.DATABASE_TEST_NAME ?? "wms_test";
 
 const { newId } = await import("@/lib");
 const { db } = await import("@/server/db");
@@ -81,8 +81,6 @@ if (role === "titular") {
 for (const grant of [
   { kind: "MODULE" as const, key: "inventory", value: null },
   { kind: "MODULE" as const, key: "purchasing", value: null },
-  // Ventas, so its screens can be checked (contracted online since VEN-27).
-  { kind: "MODULE" as const, key: "sales", value: null },
   { kind: "LIMIT" as const, key: "active_products", value: 100 },
   { kind: "LIMIT" as const, key: "users", value: 5 },
 ]) {

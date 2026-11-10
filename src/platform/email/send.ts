@@ -162,7 +162,7 @@ export type SmtpSettings = {
   security: "tls" | "starttls" | "none";
   user?: string;
   password?: string;
-  /** «Almacén <avisos@tudominio.mx>». */
+  /** «WMS <avisos@tudominio.mx>». */
   from: string;
 };
 

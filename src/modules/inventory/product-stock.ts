@@ -7,6 +7,11 @@ import { compareLocationNames, formatLocationPath } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
+import {
+  STOCK_STATUSES,
+  STOCK_STATUS_LABELS,
+  type StockStatus,
+} from "./stock-status";
 
 /**
  * Stock of one product for its card (INV-26): the total, where it is, and
@@ -16,10 +21,20 @@ import { formatStock, type InventoryActor } from "./movements";
 
 export type ProductStock = {
   unitCode: string;
-  /** Sum of every location, in the product's unit: "250". */
+  /** On hand: sum of every location and state (ADR 0033), "250". */
   total: string;
   /** «250 piezas». */
   totalLabel: string;
+  /**
+   * What can be picked, taken out or moved: the AVAILABLE part minus what
+   * is reserved (WMS-12).
+   */
+  available: string;
+  /** «240 piezas». */
+  availableLabel: string;
+  /** Set aside for orders (WMS-12), "0" when nothing is. */
+  reserved: string;
+  reservedLabel: string;
   /** Where it is, «General» first, then by name. Only places with stock. */
   locations: {
     id: string;
@@ -30,6 +45,11 @@ export type ProductStock = {
     label: string;
     /** The location was archived after holding stock (should not happen). */
     archived: boolean;
+    /** The AVAILABLE part of this location: "10", «10 piezas». */
+    available: string;
+    availableLabel: string;
+    /** What of it is not available, by state («4 piezas · Rechazado»). */
+    unavailable: { status: StockStatus; label: string; quantity: string }[];
   }[];
   /**
    * The total in each presentation, with its current content:
@@ -76,6 +96,7 @@ export async function getProductStock(
     take: 2_000,
     select: {
       quantity: true,
+      status: true,
       location: {
         select: {
           id: true,
@@ -91,21 +112,84 @@ export async function getProductStock(
   });
 
   const { unitCode } = product;
-  const locations = balances
-    .map(({ quantity, location }) => ({
-      id: location.id,
-      isDefault: location.isDefault === true,
-      path: formatLocationPath(
-        [
-          location.parent?.parent?.name,
-          location.parent?.name,
-          location.name,
-        ].filter((name): name is string => Boolean(name)),
-      ),
-      quantity: quantity.toString(),
-      label: formatStock(quantity.toString(), unitCode),
-      archived: location.archivedAt !== null,
-    }))
+  // WMS-12: reservations subtract from what is available.
+  const reservations = await client.stockReservation.findMany({
+    where: { productId: product.id, state: "ACTIVE" },
+    select: { locationId: true, remaining: true },
+  });
+  const reservedAt = new Map<string, ReturnType<typeof dec>>();
+  let reserved = dec(0);
+  for (const reservation of reservations) {
+    const amount = dec(reservation.remaining.toString());
+    reserved = reserved.plus(amount);
+    if (reservation.locationId) {
+      reservedAt.set(
+        reservation.locationId,
+        (reservedAt.get(reservation.locationId) ?? dec(0)).plus(amount),
+      );
+    }
+  }
+  // One row per location: several balances (one per state) add up.
+  const byLocation = new Map<
+    string,
+    {
+      location: (typeof balances)[number]["location"];
+      quantity: ReturnType<typeof dec>;
+      unavailable: Map<StockStatus, ReturnType<typeof dec>>;
+    }
+  >();
+  for (const balance of balances) {
+    const entry = byLocation.get(balance.location.id) ?? {
+      location: balance.location,
+      quantity: dec(0),
+      unavailable: new Map(),
+    };
+    const amount = dec(balance.quantity.toString());
+    entry.quantity = entry.quantity.plus(amount);
+    if (balance.status !== "AVAILABLE") {
+      entry.unavailable.set(
+        balance.status,
+        (entry.unavailable.get(balance.status) ?? dec(0)).plus(amount),
+      );
+    }
+    byLocation.set(balance.location.id, entry);
+  }
+  const locations = [...byLocation.values()]
+    .map(({ quantity, location, unavailable }) => {
+      const held = [...unavailable.values()].reduce(
+        (sum, part) => sum.plus(part),
+        dec(0),
+      );
+      const free = quantity.minus(held).minus(reservedAt.get(location.id) ?? 0);
+      const available = free.isNegative() ? dec(0) : free;
+      return {
+        id: location.id,
+        isDefault: location.isDefault === true,
+        path: formatLocationPath(
+          [
+            location.parent?.parent?.name,
+            location.parent?.name,
+            location.name,
+          ].filter((name): name is string => Boolean(name)),
+        ),
+        quantity: quantity.toString(),
+        label: formatStock(quantity.toString(), unitCode),
+        archived: location.archivedAt !== null,
+        available: available.toString(),
+        unavailable: STOCK_STATUSES.flatMap((status) => {
+          const amount = unavailable.get(status);
+          return amount
+            ? [
+                {
+                  status,
+                  quantity: amount.toString(),
+                  label: `${formatStock(amount.toString(), unitCode)} · ${STOCK_STATUS_LABELS[status]}`,
+                },
+              ]
+            : [];
+        }),
+      };
+    })
     .sort(
       (a, b) =>
         Number(b.isDefault) - Number(a.isDefault) ||
@@ -117,6 +201,9 @@ export async function getProductStock(
       quantity: location.quantity,
       label: location.label,
       archived: location.archived,
+      available: location.available,
+      availableLabel: formatStock(location.available, unitCode),
+      unavailable: location.unavailable,
     }));
 
   // Exact sum: decimals are never added as floating point.
@@ -124,6 +211,15 @@ export async function getProductStock(
     (sum, balance) => sum.plus(balance.quantity.toString()),
     dec(0),
   );
+  const availableStock = balances.reduce(
+    (sum, balance) =>
+      balance.status === "AVAILABLE"
+        ? sum.plus(balance.quantity.toString())
+        : sum,
+    dec(0),
+  );
+  const net = availableStock.minus(reserved);
+  const available = net.isNegative() ? dec(0) : net;
   const rule = {
     unitCode,
     quantityStep: product.quantityStep.toString(),
@@ -146,6 +242,10 @@ export async function getProductStock(
     unitCode,
     total: total.toString(),
     totalLabel: formatStock(total.toString(), unitCode),
+    available: available.toString(),
+    availableLabel: formatStock(available.toString(), unitCode),
+    reserved: reserved.toString(),
+    reservedLabel: formatStock(reserved.toString(), unitCode),
     locations,
     equivalences,
   };

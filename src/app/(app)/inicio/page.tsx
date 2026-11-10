@@ -4,6 +4,10 @@ import {
   ChevronRight,
   CircleAlert,
   CircleCheck,
+  ClipboardList,
+  PackageOpen,
+  TriangleAlert,
+  type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -13,10 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
+  countMyTasks,
   getFirstSteps,
   listLowStock,
   listRecentMovements,
 } from "@/modules/inventory";
+import { listPurchaseOrders } from "@/modules/purchasing";
 import { moduleRegistry } from "@/modules/registry";
 import {
   getModuleAccess,
@@ -37,8 +43,9 @@ const linkClass =
 const SHOWN = 5;
 
 /**
- * Home (INV-35): what needs attention today — products to restock and what
- * moved last. The plan shows up only when it needs attention (KISS). Each
+ * Home (INV-35, WMS-08): what needs attention today — first what each
+ * role executes (its tasks, what arrives, what is stuck), then products to
+ * restock and what moved last. The plan shows up only when it needs attention (KISS). Each
  * block appears only for who may see its section; all of it is read from
  * the same services as those sections.
  */
@@ -61,12 +68,70 @@ export default async function InicioPage() {
   const showGuide =
     moduleState === "active" && access.can("inventory.product.read");
 
-  const [low, movements, plan, firstSteps] = await Promise.all([
-    showLow ? listLowStock(actor) : null,
-    showMovements ? listRecentMovements(actor, { limit: SHOWN }) : null,
-    showPlan ? getPlanOverview(moduleRegistry, actor.organizationId) : null,
-    showGuide ? getFirstSteps(actor) : null,
-  ]);
+  // WMS-08: what each role does first — its tasks, what arrives, what is
+  // stuck — read from the same services as Tareas and Recepción.
+  const showTasks = inventory && access.can("inventory.task.read");
+  const showIncoming =
+    access.moduleState("purchasing") !== "none" &&
+    access.can("purchasing.receipt.read");
+
+  const [low, movements, plan, firstSteps, tasks, incoming] = await Promise.all(
+    [
+      showLow ? listLowStock(actor) : null,
+      showMovements ? listRecentMovements(actor, { limit: SHOWN }) : null,
+      showPlan ? getPlanOverview(moduleRegistry, actor.organizationId) : null,
+      showGuide ? getFirstSteps(actor) : null,
+      showTasks ? countMyTasks(actor) : null,
+      showIncoming ? listPurchaseOrders(actor, { toReceive: true }) : null,
+    ],
+  );
+  const executes = access.can("inventory.task.execute");
+  const supervises = access.can("inventory.task.create");
+  const today: {
+    href: string;
+    label: string;
+    count: number;
+    icon: LucideIcon;
+    alert?: boolean;
+  }[] = [
+    ...(tasks && executes
+      ? [
+          {
+            href: "/tareas?vista=mine",
+            label: "Mis tareas",
+            count: tasks.mine,
+            icon: ClipboardList,
+          },
+          {
+            href: "/tareas?vista=available",
+            label: "Tareas disponibles",
+            count: tasks.available,
+            icon: ClipboardList,
+          },
+        ]
+      : []),
+    ...(tasks && supervises && tasks.blocked > 0
+      ? [
+          {
+            href: "/tareas?vista=open",
+            label: "Tareas con problema",
+            count: tasks.blocked,
+            icon: TriangleAlert,
+            alert: true,
+          },
+        ]
+      : []),
+    ...(incoming
+      ? [
+          {
+            href: "/recepcion",
+            label: "Órdenes por recibir",
+            count: incoming.total,
+            icon: PackageOpen,
+          },
+        ]
+      : []),
+  ];
 
   const canEnter = access.allows("inventory.entry.create");
   const canExit = access.allows("inventory.exit.create");
@@ -94,7 +159,7 @@ export default async function InicioPage() {
         )}
       </>
     ) : undefined;
-  const nothing = !low && !movements && !plan;
+  const nothing = !low && !movements && !plan && today.length === 0;
   const products = plan?.products;
   const level = products ? usageLevel(products.used, products.limit) : "ok";
   // Day to day the plan is noise: it shows up only when it needs attention,
@@ -154,6 +219,37 @@ export default async function InicioPage() {
             exit: canExit,
           }}
         />
+      )}
+
+      {today.length > 0 && (
+        <section aria-labelledby="inicio-hoy" className="space-y-3">
+          <h2 id="inicio-hoy" className="font-medium">
+            Para hoy
+          </h2>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {today.map(({ href, label, count, icon: Icon, alert }) => (
+              <li key={href + label}>
+                <Link
+                  href={href}
+                  className={`flex min-h-24 flex-col justify-between gap-2 rounded-xl border p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 ${alert ? "border-warning/40 bg-warning/10" : "bg-card"}`}
+                >
+                  <Icon
+                    aria-hidden="true"
+                    className={`size-5 ${alert ? "text-warning" : "text-primary"}`}
+                  />
+                  <span>
+                    <span className="block text-2xl font-semibold tabular-nums">
+                      {count.toLocaleString("es-MX")}
+                    </span>
+                    <span className="block text-sm text-muted-foreground">
+                      {label}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <div className="grid gap-4">

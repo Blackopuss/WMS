@@ -2,10 +2,10 @@
 // their stock and some history, read by 20 people at once. Reports p50/p95
 // per screen; the goal is p95 < 500 ms on the common reads.
 //
-// Runs only against almacen_test (emptied by every `npm test`), with the
+// Runs only against wms_test (emptied by every `npm test`), with the
 // production build serving it:
 //   npm run build
-//   DATABASE_NAME=almacen_test BETTER_AUTH_URL=http://localhost:3100 \
+//   DATABASE_NAME=wms_test BETTER_AUTH_URL=http://localhost:3100 \
 //     MAIL_DRIVER=memory FILE_STORAGE_DIR=<tmp> npx next start -p 3100
 //   npm run load:test            (LOAD_BASE_URL, LOAD_USERS, LOAD_REQUESTS)
 import { existsSync } from "node:fs";
@@ -14,7 +14,7 @@ import { availableParallelism, totalmem } from "node:os";
 import { pathToFileURL } from "node:url";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
-process.env.DATABASE_NAME = "almacen_test";
+process.env.DATABASE_NAME = process.env.DATABASE_TEST_NAME ?? "wms_test";
 
 // Server code outside Next.js: `server-only` resolves to an empty module,
 // as in the worker and the tests.
@@ -37,8 +37,6 @@ const { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_IDS } =
   await import("@/platform/legal/documents");
 const { registerEntry, registerExit, registerInitialBalance } =
   await import("@/modules/inventory");
-const { openCashSession, registerSale, setSalePrices } =
-  await import("@/modules/sales");
 const { chromium } = await import("playwright");
 
 const BASE = process.env.LOAD_BASE_URL ?? "http://localhost:3100";
@@ -73,8 +71,6 @@ type Company = {
   organizationId: string;
   email: string;
   productIds: string[];
-  /** Sales made at the counter, for the screens of Ventas. */
-  saleIds: string[];
 };
 
 /** The company of a previous run, with a new password for its reader. */
@@ -98,22 +94,16 @@ async function reuse(size: number): Promise<Company | null> {
     where: { organizationId },
     select: { id: true },
   });
-  const sales = await db.sale.findMany({
-    where: { organizationId },
-    select: { id: true },
-  });
   return {
     size,
     organizationId,
     email: reader.email,
     productIds: products.map((p) => p.id),
-    saleIds: sales.map((sale) => sale.id),
   };
 }
 
 /**
- * A company with Inventario and Ventas, a titular, and a person of Almacén
- * who also charges at the counter (Cajero), with their register open.
+ * A company with Inventario, a titular, and a person of Almacén.
  */
 async function seed(size: number): Promise<Company> {
   const ownerId = newId();
@@ -139,7 +129,6 @@ async function seed(size: number): Promise<Company> {
   });
   for (const grant of [
     { kind: "MODULE" as const, key: "inventory", value: null },
-    { kind: "MODULE" as const, key: "sales", value: null },
     { kind: "LIMIT" as const, key: "active_products", value: size },
     { kind: "LIMIT" as const, key: "users", value: 5 },
   ]) {
@@ -181,7 +170,7 @@ async function seed(size: number): Promise<Company> {
     data: { id: membershipId, organizationId, userId },
   });
   await db.membershipRole.createMany({
-    data: (["warehouse", "cashier"] as const).map((role) => ({
+    data: (["warehouse"] as const).map((role) => ({
       id: newId(),
       organizationId,
       membershipId,
@@ -236,32 +225,7 @@ async function seed(size: number): Promise<Company> {
     n++;
   }
 
-  // Ventas: prices for part of the catalog and a history of counter sales
-  // charged through the real service (one in ten products, up to 300).
-  const sold = productIds.filter((_, i) => i % 10 === 0).slice(0, 300);
-  for (const productId of sold) {
-    await must(
-      setSalePrices(actor, productId, {
-        unitPrice: "25.50",
-        presentations: {},
-      }),
-    );
-  }
-  await must(openCashSession(actor, { openingFloat: "500" }));
-  await must(
-    openCashSession({ organizationId, userId }, { openingFloat: "500" }),
-  );
-  const saleIds: string[] = [];
-  for (const productId of sold) {
-    const sale = await registerSale(actor, {
-      lines: [{ productId, capture: "base", quantity: "2" }],
-      payments: [{ method: "CASH" }],
-      idempotencyKey: newId(),
-    });
-    if (!sale.ok) throw new Error(JSON.stringify(sale));
-    saleIds.push(sale.saleId);
-  }
-  return { size, organizationId, email, productIds, saleIds };
+  return { size, organizationId, email, productIds };
 }
 
 /** Signs in through the real form and returns the session cookie header. */
@@ -300,12 +264,6 @@ function screens(company: Company) {
     Movimientos: () => "/movimientos",
     "Movimientos de un producto": () =>
       `/movimientos?producto=${pick(company.productIds)}`,
-    "Ventas (mostrador)": () => "/ventas",
-    "Historial de ventas": () => "/ventas/historial",
-    Venta: () => `/ventas/${pick(company.saleIds)}`,
-    Caja: () => "/ventas/caja",
-    Cotizaciones: () => "/ventas/cotizaciones",
-    "Cuentas por cobrar": () => "/ventas/cuentas",
   };
 }
 

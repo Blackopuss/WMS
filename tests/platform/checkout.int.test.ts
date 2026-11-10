@@ -357,46 +357,49 @@ describe("confirming the payment", () => {
   });
 });
 
-describe("modules (VEN-27)", () => {
-  it("Ventas is bought like the others; renewing keeps the same modules", async () => {
+describe("modules (VEN-27, WMS-02)", () => {
+  it("Compras is bought on top of Inventario; renewing keeps the same modules", async () => {
     const c = await company();
     const result = await startCheckout(
       actorOf(c),
-      choice({ modules: ["sales", "purchasing", "sales", "crm"], months: 1 }),
+      choice({
+        modules: ["purchasing", "sales", "purchasing", "crm"],
+        months: 1,
+      }),
       headers(),
       c.owner.email,
     );
     expect(result).toMatchObject({ ok: true });
-    // 349 + 179 + 249, VAT included; unknown modules are ignored.
-    expect(fake.createCalls.at(-1)?.total).toBe("777.00");
+    // 349 + 179, VAT included; unknown modules (Ventas too) are ignored.
+    expect(fake.createCalls.at(-1)?.total).toBe("528.00");
     expect(
       await db.checkoutOrder.findFirst({ where: { organizationId: c.org } }),
-    ).toMatchObject({ modules: "inventory,purchasing,sales" });
+    ).toMatchObject({ modules: "inventory,purchasing" });
 
     const paid = await company();
     const code = await newCode(100, 1);
     expect(
       await startCheckout(
         actorOf(paid),
-        choice({ code: code.code, modules: ["sales"], provider: "" }),
+        choice({ code: code.code, modules: ["purchasing"], provider: "" }),
         headers(),
         paid.owner.email,
       ),
     ).toMatchObject({ ok: true });
     expect([...(await getFreshEntitlements(paid.org)).modules].sort()).toEqual([
       "inventory",
-      "sales",
+      "purchasing",
     ]);
     // Renewing the same plan while live: just its months.
     expect(
       await startCheckout(
         actorOf(paid),
-        choice({ modules: ["sales"] }),
+        choice({ modules: ["purchasing"] }),
         headers(),
         paid.owner.email,
       ),
     ).toMatchObject({ ok: true });
-    expect(fake.createCalls.at(-1)?.total).toBe("598.00");
+    expect(fake.createCalls.at(-1)?.total).toBe("528.00");
   });
 });
 
@@ -425,13 +428,13 @@ describe("changing a live plan (BIL-08..10)", () => {
 
   it("adding a module pays only the difference until the plan ends", async () => {
     const { c, end, daysLeft } = await live();
-    const prorated = ((249 * daysLeft) / 30).toFixed(2);
+    const prorated = ((179 * daysLeft) / 30).toFixed(2);
     expect(
       await previewCode(
         actorOf(c),
         choice({
           code: (await newCode(50, 1)).code,
-          modules: ["sales"],
+          modules: ["purchasing"],
           months: 0,
         }),
         headers(),
@@ -446,7 +449,7 @@ describe("changing a live plan (BIL-08..10)", () => {
         actorOf(c),
         choice({
           code: code.code,
-          modules: ["sales"],
+          modules: ["purchasing"],
           months: 0,
           provider: "",
         }),
@@ -459,13 +462,13 @@ describe("changing a live plan (BIL-08..10)", () => {
     });
     expect(order).toMatchObject({ status: "PAID", proratedDays: daysLeft });
     expect(order.prorated.toFixed(2)).toBe(prorated);
-    // Ventas now, until the same end; nothing else moved.
+    // Compras now, until the same end; nothing else moved.
     const rights = await getFreshEntitlements(c.org);
-    expect([...rights.modules].sort()).toEqual(["inventory", "sales"]);
-    const sales = await db.entitlement.findFirstOrThrow({
-      where: { organizationId: c.org, key: "sales" },
+    expect([...rights.modules].sort()).toEqual(["inventory", "purchasing"]);
+    const purchasing = await db.entitlement.findFirstOrThrow({
+      where: { organizationId: c.org, key: "purchasing" },
     });
-    expect(sales.validUntil?.getTime()).toBe(end.getTime());
+    expect(purchasing.validUntil?.getTime()).toBe(end.getTime());
   });
 
   it("a bigger plan adds the difference of the days left to its months", async () => {
@@ -491,7 +494,7 @@ describe("changing a live plan (BIL-08..10)", () => {
       choice({
         code: code.code,
         tier: "t500",
-        modules: ["sales"],
+        modules: ["purchasing"],
         provider: "",
       }),
       headers(),
@@ -531,7 +534,7 @@ describe("changing a live plan (BIL-08..10)", () => {
     expect(
       await startCheckout(
         actorOf(fresh),
-        choice({ modules: ["sales"], months: 0 }),
+        choice({ modules: ["purchasing"], months: 0 }),
         headers(),
         fresh.owner.email,
       ),

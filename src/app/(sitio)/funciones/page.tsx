@@ -2,7 +2,6 @@ import {
   ArrowLeftRight,
   BarChart3,
   Boxes,
-  CalendarClock,
   ClipboardCheck,
   Download,
   FileSpreadsheet,
@@ -13,13 +12,11 @@ import {
   MapPinned,
   PackageMinus,
   PackageOpen,
-  Receipt,
   RotateCcw,
   ScanBarcode,
   ShieldCheck,
   TrendingDown,
   Truck,
-  Wallet,
   Undo2,
   Users,
 } from "lucide-react";
@@ -30,7 +27,7 @@ import { CtaBand, PageHero, Section } from "../sections";
 export const metadata: Metadata = {
   title: "Funciones",
   description:
-    "Inventario por presentaciones y ubicaciones, conteos, importación desde Excel, órdenes de compra, punto de venta, cotizaciones, ventas a plazos y seguridad para tu equipo.",
+    "Inventario por presentaciones y ubicaciones, conteos, importación desde Excel, órdenes de compra, recepciones y seguridad para tu equipo.",
 };
 
 type Feature = { icon: typeof Boxes; title: string; text: string };
@@ -139,44 +136,6 @@ const GROUPS: {
         icon: Truck,
         title: "Último costo",
         text: "Cada compra guarda lo que pagaste y por qué presentación. Solo lo ve quien debe.",
-      },
-    ],
-  },
-  {
-    id: "ventas",
-    name: "Ventas",
-    intro:
-      "Cobra en el mostrador, cotiza a tus clientes y vende a plazos, con el inventario al día solo.",
-    features: [
-      {
-        icon: ScanBarcode,
-        title: "Punto de venta",
-        text: "Busca o escanea, cobra en efectivo, tarjeta o transferencia, y la mercancía sale del inventario al instante.",
-      },
-      {
-        icon: Receipt,
-        title: "Caja y ticket",
-        text: "Abre caja con fondo, registra entradas y salidas de efectivo, haz el corte a ciegas e imprime o comparte el ticket.",
-      },
-      {
-        icon: FileText,
-        title: "Cotizaciones y pedidos",
-        text: "Cotiza en PDF o por correo; lo aceptado se vuelve pedido y se entrega y cobra en partes.",
-      },
-      {
-        icon: CalendarClock,
-        title: "Ventas a plazos",
-        text: "Enganche que cubre tu costo, mensualidades con o sin interés, abonos en caja y recordatorios por correo.",
-      },
-      {
-        icon: Wallet,
-        title: "Cuentas por cobrar",
-        text: "Quién te debe, cuánto está vencido y su estado de cuenta en PDF, listo para mandarle.",
-      },
-      {
-        icon: BarChart3,
-        title: "Reportes",
-        text: "Ventas por día, producto y cajero, cotizaciones convertidas y tu cartera, en pantalla o en Excel.",
       },
     ],
   },

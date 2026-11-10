@@ -4,7 +4,7 @@
 //
 // Usage:
 //   npm run worker                              (database of .env.local)
-//   DATABASE_NAME=almacen_test npm run worker
+//   DATABASE_NAME=wms_test npm run worker
 // Stop with Ctrl+C: it finishes the job in hand first.
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";

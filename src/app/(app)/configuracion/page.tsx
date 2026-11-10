@@ -4,7 +4,6 @@ import {
   History,
   LifeBuoy,
   MapPin,
-  Receipt,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -33,9 +32,6 @@ export default async function ConfiguracionPage() {
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
   const canGrantSupport = access.can("platform.support.grant");
-  const showSales =
-    access.moduleState("sales") !== "none" &&
-    access.can("sales.settings.update");
   const [sessions, mfa, support] = await Promise.all([
     listActiveSessions(user.id, sessionId),
     getMfaStatus(user.id),
@@ -46,7 +42,6 @@ export default async function ConfiguracionPage() {
     <PageContainer>
       <PageHeader title="Configuración" />
       {(showLocations ||
-        showSales ||
         access.can("platform.team.read") ||
         access.can("platform.plan.read") ||
         access.can("platform.audit.read")) && (
@@ -68,14 +63,6 @@ export default async function ConfiguracionPage() {
               icon={Users}
               title="Equipo"
               description="Personas, roles e invitaciones."
-            />
-          )}
-          {showSales && (
-            <SettingsLink
-              href="/configuracion/ventas"
-              icon={Receipt}
-              title="Ventas"
-              description="IVA y descuentos."
             />
           )}
           {access.can("platform.plan.read") && (
@@ -175,7 +162,6 @@ function SettingsLink({
   href:
     | "/ubicaciones"
     | "/configuracion/equipo"
-    | "/configuracion/ventas"
     | "/configuracion/plan"
     | "/configuracion/bitacora";
   icon: LucideIcon;

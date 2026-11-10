@@ -32,14 +32,14 @@ describe("purchase quote", () => {
 
   it("over a live plan, charges what the new one costs more for the days left (BIL-08)", () => {
     const t500 = findTier("t500")!;
-    // Inventario 100 ($349) with 15 days left → + Ventas ($249 more a month).
+    // Inventario 100 ($349) with 15 days left → + Compras ($179 more a month).
     const carry = { monthly: "349.00", daysLeft: 15 };
-    expect(quote(t100, ["sales"], 0, 0, carry)).toEqual({
-      monthly: "598.00",
-      prorated: "124.50",
-      subtotal: "124.50",
+    expect(quote(t100, ["purchasing"], 0, 0, carry)).toEqual({
+      monthly: "528.00",
+      prorated: "89.50",
+      subtotal: "89.50",
       discount: "0.00",
-      total: "124.50",
+      total: "89.50",
     });
     // The difference for the days left plus the months bought.
     expect(quote(t500, [], 1, 0, carry)).toMatchObject({
@@ -52,7 +52,7 @@ describe("purchase quote", () => {
     ).toMatchObject({ prorated: "0.00", total: "349.00" });
     // Nothing left of the current plan: nothing to prorate.
     expect(
-      quote(t100, ["sales"], 0, 0, { monthly: "349.00", daysLeft: 0 }),
+      quote(t100, ["purchasing"], 0, 0, { monthly: "349.00", daysLeft: 0 }),
     ).toMatchObject({ total: "0.00" });
     expect(() => quote(t100, [], 13)).toThrow();
   });

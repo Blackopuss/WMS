@@ -1,0 +1,258 @@
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Plus,
+} from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+
+import {
+  EmptyState,
+  NoAccessState,
+  NoModuleState,
+  PageContainer,
+  PageHeader,
+  ReadOnlyNotice,
+} from "@/components";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  countMyTasks,
+  listTasks,
+  type TaskListView,
+} from "@/modules/inventory";
+import { getModuleAccess } from "@/platform/billing";
+
+export const metadata: Metadata = { title: "Tareas" };
+
+const chip =
+  "inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+
+/**
+ * Tareas (WMS-07): the transfer tasks, mobile first. Who does them sees
+ * first what is theirs and what is available; a supervisor also sees every
+ * open task and the finished ones. A row opens the task, where the big
+ * button of its next step lives.
+ */
+export default async function TareasPage({
+  searchParams,
+}: PageProps<"/tareas">) {
+  const access = await getModuleAccess();
+  if (!access.can("inventory.task.read")) {
+    return (
+      <PageContainer>
+        <NoAccessState />
+      </PageContainer>
+    );
+  }
+  const moduleState = access.moduleState("inventory");
+  if (moduleState === "none") {
+    return (
+      <PageContainer>
+        <NoModuleState module="Inventario" />
+      </PageContainer>
+    );
+  }
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  const supervises = access.can("inventory.task.create");
+  const executes = access.can("inventory.task.execute");
+  const { vista, pagina } = await searchParams;
+  const asked = typeof vista === "string" ? vista : "";
+  // Who does not execute tasks starts with every open one.
+  const view: TaskListView =
+    asked === "available" || asked === "open" || asked === "closed"
+      ? asked
+      : asked === "mine" || executes
+        ? "mine"
+        : "open";
+  const [list, counts] = await Promise.all([
+    listTasks(actor, {
+      view,
+      page:
+        typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+          ? Number(pagina)
+          : undefined,
+    }),
+    countMyTasks(actor),
+  ]);
+  const tabs: { id: TaskListView; label: string; count?: number }[] = [
+    ...(executes
+      ? [
+          { id: "mine" as const, label: "Mis tareas", count: counts.mine },
+          {
+            id: "available" as const,
+            label: "Disponibles",
+            count: counts.available,
+          },
+        ]
+      : []),
+    { id: "open", label: "Abiertas" },
+    { id: "closed", label: "Terminadas" },
+  ];
+  const href = (target: TaskListView, page = 1) => {
+    const params = new URLSearchParams({ vista: target });
+    if (page > 1) params.set("pagina", String(page));
+    return `/tareas?${params.toString()}`;
+  };
+  const newButton =
+    supervises && moduleState === "active" ? (
+      <Button asChild>
+        <Link href="/tareas/nueva">
+          <Plus aria-hidden="true" data-icon="inline-start" />
+          Nueva tarea
+        </Link>
+      </Button>
+    ) : undefined;
+
+  const empty = {
+    mine: {
+      title: "No tienes tareas",
+      description: "Toma una de las disponibles o espera a que te asignen.",
+    },
+    available: {
+      title: "No hay tareas disponibles",
+      description: "Cuando se pida un traslado aparecerá aquí.",
+    },
+    open: {
+      title: "No hay tareas abiertas",
+      description: "Pide un traslado para que alguien lo haga.",
+    },
+    closed: {
+      title: "Todavía no hay tareas terminadas",
+      description: "Aquí quedan las entregadas y las canceladas.",
+    },
+  }[view];
+
+  return (
+    <PageContainer>
+      {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
+      <PageHeader title="Tareas" actions={newButton} />
+      {supervises && counts.blocked > 0 && (
+        <p
+          role="status"
+          className="max-w-3xl rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+        >
+          <span className="font-medium">
+            {counts.blocked === 1
+              ? "1 tarea tiene un problema"
+              : `${counts.blocked} tareas tienen un problema`}
+          </span>{" "}
+          — búscala en Abiertas para liberarla o cancelarla.
+        </p>
+      )}
+
+      <nav aria-label="Qué tareas ver" className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <Link
+            key={tab.id}
+            href={href(tab.id)}
+            aria-current={view === tab.id ? "true" : undefined}
+            className={`${chip} ${view === tab.id ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
+          >
+            {tab.label}
+            {tab.count !== undefined && tab.count > 0 && (
+              <span className="tabular-nums">{tab.count}</span>
+            )}
+          </Link>
+        ))}
+      </nav>
+
+      {list.total === 0 ? (
+        <EmptyState
+          icon={ClipboardList}
+          title={empty.title}
+          description={empty.description}
+          action={view === "open" ? newButton : undefined}
+        />
+      ) : (
+        <section
+          aria-label="Tareas de traslado"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <ul className="divide-y">
+            {list.items.map((task) => (
+              <li key={task.id}>
+                <Link
+                  href={`/tareas/${task.id}`}
+                  className="flex min-h-20 items-center gap-3 p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <span className="min-w-0 flex-1 space-y-1.5">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {task.urgent && (
+                        <Badge variant="destructive">Urgente</Badge>
+                      )}
+                      <Badge
+                        variant={
+                          task.status === "BLOCKED"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                      >
+                        {task.statusLabel}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        {task.numberText}
+                      </span>
+                    </span>
+                    <span className="block text-base font-medium [overflow-wrap:anywhere]">
+                      {task.quantityText} · {task.productName}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-1.5 text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                      <span>{task.fromPath}</span>
+                      <ArrowRight aria-label="a" className="size-4 shrink-0" />
+                      <span>{task.toPath}</span>
+                    </span>
+                    {view !== "mine" && task.assignedToName && (
+                      <span className="block text-sm text-muted-foreground">
+                        La tiene {task.assignedToName}
+                      </span>
+                    )}
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {list.pageCount > 1 && (
+            <nav
+              aria-label="Páginas de tareas"
+              className="flex items-center justify-between gap-3 border-t p-4 sm:px-5"
+            >
+              {list.page > 1 ? (
+                <Button asChild variant="outline">
+                  <Link href={href(view, list.page - 1)} rel="prev">
+                    <ChevronLeft aria-hidden="true" data-icon="inline-start" />
+                    Anterior
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+              <p className="text-sm text-muted-foreground tabular-nums">
+                Página {list.page} de {list.pageCount}
+              </p>
+              {list.page < list.pageCount ? (
+                <Button asChild variant="outline">
+                  <Link href={href(view, list.page + 1)} rel="next">
+                    Siguiente
+                    <ChevronRight aria-hidden="true" data-icon="inline-end" />
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+            </nav>
+          )}
+        </section>
+      )}
+    </PageContainer>
+  );
+}

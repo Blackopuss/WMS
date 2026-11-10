@@ -5,6 +5,7 @@ import { parseQuantity } from "@/platform/catalog";
 import type { TenantDb } from "@/server";
 
 import { lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Initial stock that comes in the file of an import (IMP-09). Each row
@@ -177,7 +178,11 @@ export async function postImportedStock(
       },
     });
     const added = await tx.stockBalance.updateMany({
-      where: { productId: product.id, locationId: line.locationId },
+      where: {
+        productId: product.id,
+        locationId: line.locationId,
+        ...AVAILABLE_STOCK,
+      },
       data: { quantity: { increment: line.base } },
     });
     if (added.count === 0) {

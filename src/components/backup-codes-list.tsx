@@ -11,7 +11,7 @@ import { Button } from "./ui/button";
  */
 export function BackupCodesList({ codes }: { codes: string[] }) {
   const text = [
-    "Códigos de recuperación de Almacén",
+    "Códigos de recuperación de WMS",
     "Cada código sirve una sola vez. Guárdalos en un lugar seguro.",
     "",
     ...codes,

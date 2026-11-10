@@ -14,7 +14,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Almacén", template: "%s · Almacén" },
+  title: { default: "WMS", template: "%s · WMS" },
   description: "Inventario modular para pymes.",
 };
 

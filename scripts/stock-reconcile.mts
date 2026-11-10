@@ -5,7 +5,7 @@
 //
 // Usage:
 //   npm run stock:reconcile                 (database of .env.local)
-//   DATABASE_NAME=almacen_test npm run stock:reconcile
+//   DATABASE_NAME=wms_test npm run stock:reconcile
 import { existsSync } from "node:fs";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");

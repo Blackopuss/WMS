@@ -1,11 +1,13 @@
 import {
   ArrowLeftRight,
+  ClipboardList,
   ClipboardCheck,
   House,
+  PackageCheck,
+  PackageOpen,
   Package,
   Settings,
   ShoppingCart,
-  Store,
   type LucideIcon,
 } from "lucide-react";
 
@@ -14,7 +16,7 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   /** Module that must be contracted to show the item (MOD-05); null = always. */
-  module: "inventory" | "purchasing" | "sales" | null;
+  module: "inventory" | "purchasing" | null;
   /**
    * Permission needed to see the item and open its screen (USR-09), from
    * the catalog in platform/authorization; null = every member.
@@ -40,14 +42,33 @@ export const NAV_ITEMS: readonly NavItem[] = [
     mobile: true,
   },
   {
-    // Selling is what a store does most: first after Inicio (VEN-06).
-    href: "/ventas",
-    label: "Ventas",
-    icon: Store,
-    module: "sales",
-    // Consulta reads the history; the counter itself asks for sale.create.
-    permission: "sales.sale.read",
+    // WMS-07: what the floor does every day (accept, pick up, deliver);
+    // second so the mobile bar of who does tasks starts with it.
+    href: "/tareas",
+    label: "Tareas",
+    icon: ClipboardList,
+    module: "inventory",
+    permission: "inventory.task.read",
     mobile: true,
+  },
+  {
+    // WMS-04: what arrives at the dock, every day; the receipt itself
+    // lives in the order (Compras), so there is one way of doing it.
+    href: "/recepcion",
+    label: "Recepción",
+    icon: PackageOpen,
+    module: "purchasing",
+    permission: "purchasing.receipt.read",
+    mobile: true,
+  },
+  {
+    // WMS-13: what has to leave, every day; released, it reserves stock.
+    href: "/pedidos",
+    label: "Pedidos",
+    icon: PackageCheck,
+    module: "inventory",
+    permission: "inventory.outbound.read",
+    mobile: false,
   },
   {
     href: "/inventario",

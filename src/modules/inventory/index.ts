@@ -59,16 +59,6 @@ export {
   type ReturnExitLine,
   type ReturnExitResult,
 } from "./return-exit";
-export {
-  postSaleExit,
-  type SaleExitLine,
-  type SaleExitResult,
-} from "./sale-exit";
-export {
-  postSaleReturnEntry,
-  type SaleReturnEntryLine,
-  type SaleReturnEntryResult,
-} from "./sale-return-entry";
 export { reconcileStock, reconcileValue } from "./reconciliation";
 export type { StockDrift, ValueDrift } from "./reconciliation";
 export { getProductStock } from "./product-stock";
@@ -207,3 +197,94 @@ export {
   type ExportResult,
 } from "./exports";
 export { getFirstSteps, type FirstSteps } from "./first-steps";
+export {
+  TASK_PAGE_SIZE,
+  acceptTask,
+  assignTask,
+  blockTask,
+  cancelTask,
+  countMyTasks,
+  createTask,
+  deliverTask,
+  getTask,
+  listTaskPeople,
+  listTasks,
+  pickUpTask,
+  releaseTask,
+} from "./tasks";
+export type {
+  CreateTaskInput,
+  TaskField,
+  TaskListView,
+  TaskPage,
+  TaskPriority,
+  TaskResult,
+  TaskSummary,
+  TaskView,
+} from "./tasks";
+export {
+  OPEN_TASK_STATUSES,
+  WAREHOUSE_TASK_STATUS_LABELS,
+  WAREHOUSE_TASK_TRANSITIONS,
+  canTaskTransition,
+  formatTaskNumber,
+  taskTransitionProblem,
+} from "./task-states";
+export type { WarehouseTaskStatus } from "./task-states";
+export {
+  AVAILABLE_STOCK,
+  STOCK_STATUSES,
+  STOCK_STATUS_LABELS,
+  isStockStatus,
+} from "./stock-status";
+export type { StockStatus } from "./stock-status";
+export {
+  MANUAL_STOCK_STATUSES,
+  changeStockStatus,
+  permissionForStatusChange,
+} from "./status-change";
+export type {
+  StatusChangeField,
+  StatusChangeInput,
+  StatusChangeResult,
+} from "./status-change";
+export {
+  consumeReservation,
+  freeToMoveFrom,
+  freeToTake,
+  getReservedTotals,
+  releaseReservations,
+  reserveStock,
+} from "./reservations";
+export type { ReservationSource, ReserveResult } from "./reservations";
+export {
+  OUTBOUND_MAX_LINES,
+  OUTBOUND_PAGE_SIZE,
+  cancelOutboundOrder,
+  createOutboundOrder,
+  getOutboundOrder,
+  listOutboundOrders,
+  releaseOutboundOrder,
+  removeOutboundLine,
+  setOutboundLine,
+  updateOutboundOrder,
+} from "./outbound-orders";
+export type {
+  OutboundField,
+  OutboundHeaderInput,
+  OutboundPage,
+  OutboundResult,
+  OutboundShortage,
+  OutboundSummary,
+  OutboundView,
+} from "./outbound-orders";
+export {
+  OUTBOUND_ORDER_STATUSES,
+  OUTBOUND_ORDER_STATUS_LABELS,
+  OUTBOUND_ORDER_TRANSITIONS,
+  canOutboundTransition,
+  formatOutboundNumber,
+  isOutboundOrderStatus,
+  outboundTransitionProblem,
+} from "./outbound-states";
+export type { OutboundOrderStatus } from "./outbound-states";

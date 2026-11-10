@@ -991,16 +991,25 @@ export type PurchaseOrderPage = {
   pageCount: number;
   /** The state the list was narrowed to, when it was. */
   status: PurchaseOrderStatus | null;
+  /** Only what is still on its way (WMS-04): sent or partly received. */
+  toReceive: boolean;
 };
+
+/** States of an order whose goods may still arrive (WMS-04). */
+export const AWAITING_RECEIPT: readonly PurchaseOrderStatus[] = [
+  "SENT",
+  "PARTIAL",
+];
 
 /**
  * Orders of the company, newest first, a page at a time; optionally only
  * those in one state. No amounts here: the list is the same for everyone
- * who may see orders.
+ * who may see orders. `toReceive` (Recepción, WMS-04) lists only what is
+ * still on its way, oldest first: what has waited longest goes on top.
  */
 export async function listPurchaseOrders(
   actor: PurchasingActor,
-  options: { page?: number; status?: unknown } = {},
+  options: { page?: number; status?: unknown; toReceive?: boolean } = {},
 ): Promise<PurchaseOrderPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -1008,8 +1017,14 @@ export async function listPurchaseOrders(
     "purchasing.order.read",
   );
   // An unknown state is ignored, not an error.
-  const status = isPurchaseOrderStatus(options.status) ? options.status : null;
-  const where = status ? { status } : {};
+  const toReceive = options.toReceive === true;
+  const status =
+    !toReceive && isPurchaseOrderStatus(options.status) ? options.status : null;
+  const where = toReceive
+    ? { status: { in: [...AWAITING_RECEIPT] } }
+    : status
+      ? { status }
+      : {};
   const client = forOrganization(actor.organizationId);
   const total = await client.purchaseOrder.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / PURCHASE_ORDER_PAGE_SIZE));
@@ -1020,7 +1035,7 @@ export async function listPurchaseOrders(
   const rows = await client.purchaseOrder.findMany({
     where,
     // The number is unique in the company: a stable order on its index.
-    orderBy: { number: "desc" },
+    orderBy: { number: toReceive ? "asc" : "desc" },
     skip: (page - 1) * PURCHASE_ORDER_PAGE_SIZE,
     take: PURCHASE_ORDER_PAGE_SIZE,
     select: {
@@ -1050,5 +1065,6 @@ export async function listPurchaseOrders(
     page,
     pageCount,
     status,
+    toReceive,
   };
 }

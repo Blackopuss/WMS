@@ -91,7 +91,7 @@ function checkedBaseUrl(): string | undefined {
  * PLT-07. MFA with an authenticator app (TOTP): PLT-08A..PLT-09.
  */
 export const auth = betterAuth({
-  appName: "Almacén",
+  appName: "WMS",
   baseURL: checkedBaseUrl(),
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(db, { provider: "mysql", transaction: true }),
@@ -246,7 +246,7 @@ export const auth = betterAuth({
     // password is required to start enrollment and the app is active only
     // after its first code is confirmed. "Trust this device" is not offered.
     twoFactor({
-      issuer: "Almacén",
+      issuer: "WMS",
       totpOptions: { digits: TOTP_DIGITS, period: 30 },
       // Easy-to-type codes; see ./backup-codes.ts (PLT-09).
       backupCodeOptions: { customBackupCodesGenerate: generateBackupCodes },

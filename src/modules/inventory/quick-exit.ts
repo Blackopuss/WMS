@@ -15,6 +15,8 @@ import {
   type InventoryActor,
 } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
+import { freeToTake, reservedMessage } from "./reservations";
 
 /**
  * Quick exit of several lines (INV-28), «salida por venta»: many products
@@ -359,6 +361,7 @@ export async function registerQuickExit(
                   productId: line.productId,
                   locationId: line.locationId,
                 })),
+                ...AVAILABLE_STOCK,
               },
               select: {
                 id: true,
@@ -373,6 +376,17 @@ export async function registerQuickExit(
       );
       const remaining = new Map<string, ReturnType<typeof dec>>();
       const taken = new Map<string, ReturnType<typeof dec>>();
+      // WMS-12: what is reserved for an order does not leave by hand, in a
+      // location or across the lines of the same product.
+      const freeOf = new Map<string, ReturnType<typeof dec>>();
+      const free = async (productId: string, locationId: string | null) => {
+        const slot = `${productId}|${locationId ?? "*"}`;
+        if (!freeOf.has(slot)) {
+          freeOf.set(slot, await freeToTake(tx, productId, locationId));
+        }
+        return freeOf.get(slot)!;
+      };
+      const takenOfProduct = new Map<string, ReturnType<typeof dec>>();
       for (const line of resolved) {
         const key = pair(line);
         const held = dec(balanceOf.get(key)?.quantity.toString() ?? 0);
@@ -391,8 +405,30 @@ export async function registerQuickExit(
           );
           continue;
         }
+        const slotTaken = (taken.get(key) ?? dec(0)).plus(line.base);
+        const productTaken = (
+          takenOfProduct.get(line.productId) ?? dec(0)
+        ).plus(line.base);
+        const freeHere = await free(line.productId, line.locationId);
+        const freeAnywhere = await free(line.productId, null);
+        if (
+          slotTaken.greaterThan(freeHere) ||
+          productTaken.greaterThan(freeAnywhere)
+        ) {
+          fail(
+            line.index,
+            "invalid",
+            `${line.productName}: ${reservedMessage(
+              freeHere.lessThan(freeAnywhere) ? freeHere : freeAnywhere,
+              line.unitCode,
+              "sacar",
+            )}`,
+          );
+          continue;
+        }
         remaining.set(key, after);
-        taken.set(key, (taken.get(key) ?? dec(0)).plus(line.base));
+        taken.set(key, slotTaken);
+        takenOfProduct.set(line.productId, productTaken);
       }
 
       if (Object.keys(lineErrors).length > 0) {

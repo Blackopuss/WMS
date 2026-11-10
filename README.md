@@ -1,6 +1,8 @@
-# SaaS de inventario modular
+# WMS modular multiempresa
 
-Aplicación en construcción (Next.js + TypeScript). Pasos completados según `docs/PLAN_IMPLEMENTACION.md`: BAS-01, BAS-02, BAS-03, BAS-04, BAS-05, BAS-06, BAS-07, BAS-08, BAS-12, BAS-13, PLT-01, PLT-02, PLT-03, PLT-04, PLT-05, PLT-06, PLT-07, PLT-08A, PLT-08B, PLT-09, PLT-10, PLT-11, PLT-12, PLT-13, PLT-14, PLT-15, PLT-16, USR-01 (con FUN-07 aprobada). Rama de trabajo: `pruebas` (CI en GitHub Actions).
+Gestión de almacenes (recepción, ubicaciones, existencias, movimientos, conteos, compras y, por pasos, tareas de traslado, surtido, producción y calidad). Copia de SaaS-Almacen reorientada al WMS: ver [Estado del WMS](docs/ESTADO_WMS.md) (lo que hay y lo que falta), [Plan WMS](docs/PLAN_WMS.md) y la [especificación](docs/ESPECIFICACION_WMS_v5.md). Ventas se quitó del producto.
+
+Historial heredado (Next.js + TypeScript). Pasos completados según `docs/PLAN_IMPLEMENTACION.md`: BAS-01, BAS-02, BAS-03, BAS-04, BAS-05, BAS-06, BAS-07, BAS-08, BAS-12, BAS-13, PLT-01, PLT-02, PLT-03, PLT-04, PLT-05, PLT-06, PLT-07, PLT-08A, PLT-08B, PLT-09, PLT-10, PLT-11, PLT-12, PLT-13, PLT-14, PLT-15, PLT-16, USR-01 (con FUN-07 aprobada). Rama de trabajo: `pruebas` (CI en GitHub Actions).
 
 ```powershell
 npm install
@@ -19,4 +21,3 @@ npm run check    # tipos, lint, límites, formato y pruebas
 - [Cuestionario para almacenes](docs/CUESTIONARIO_ALMACEN.md): 24 preguntas operativas, 6 para quien decide la compra y hoja para convertir respuestas en requisitos.
 
 Antes de continuar el proyecto, leer la memoria y el plan. Las propuestas técnicas y comerciales todavía no son decisiones confirmadas por el usuario.
-# SaaS-Almacen

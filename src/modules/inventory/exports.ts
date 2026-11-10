@@ -16,6 +16,7 @@ import {
   type InventoryActor,
 } from "./movements";
 import { mayReadInventoryCosts } from "./inventory-value";
+import { STOCK_STATUS_LABELS } from "./stock-status";
 
 /**
  * Exports to a spreadsheet (IMP-11): the catalog, the stock and the
@@ -195,7 +196,7 @@ async function catalogRows(client: Client): Promise<Cell[][]> {
 }
 
 /**
- * Stock by location. With `withCosts` (VAL-05, only for who may see
+ * Stock by location and state (ADR 0033). With `withCosts` (VAL-05, only for who may see
  * costs) it also says the average cost and what that stock is worth; for
  * the rest those columns are not there, not empty.
  */
@@ -213,6 +214,7 @@ async function stockRows(
           select: {
             id: true,
             quantity: true,
+            status: true,
             locationId: true,
             productId: true,
             product: { select: { sku: true, name: true, unitCode: true } },
@@ -242,6 +244,7 @@ async function stockRows(
       sku: balance.product.sku,
       name: balance.product.name,
       location: paths.get(balance.locationId) ?? "",
+      status: STOCK_STATUS_LABELS[balance.status],
       // The exact decimal, as text: never a floating-point number.
       quantity: balance.quantity.toString(),
       unit: getUnit(balance.product.unitCode).name,
@@ -259,13 +262,15 @@ async function stockRows(
   rows.sort(
     (a, b) =>
       a.sku.localeCompare(b.sku, "es") ||
-      a.location.localeCompare(b.location, "es"),
+      a.location.localeCompare(b.location, "es") ||
+      a.status.localeCompare(b.status, "es"),
   );
   return [
     [
       "Clave (SKU)",
       "Producto",
       "Ubicación",
+      "Estado",
       "Cantidad",
       "Unidad",
       ...(withCosts ? ["Costo promedio", "Valor"] : []),
@@ -274,6 +279,7 @@ async function stockRows(
       row.sku,
       row.name,
       row.location,
+      row.status,
       row.quantity,
       row.unit,
       ...(withCosts ? [row.averageCost, row.value] : []),

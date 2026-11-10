@@ -14,7 +14,6 @@ export type PriceTier = {
   users: number;
   inventory: number;
   purchasing: number;
-  sales: number;
 };
 
 const ADD_ONS = [
@@ -22,11 +21,6 @@ const ADD_ONS = [
     id: "purchasing",
     name: "Compras",
     summary: "Proveedores, órdenes y recepciones",
-  },
-  {
-    id: "sales",
-    name: "Ventas",
-    summary: "Punto de venta, cotizaciones y ventas a plazos",
   },
 ] as const;
 
@@ -39,7 +33,6 @@ export function PriceCalculator({ tiers }: { tiers: PriceTier[] }) {
   const [index, setIndex] = useState(1);
   const [chosen, setChosen] = useState<Record<string, boolean>>({
     purchasing: true,
-    sales: true,
   });
   const total = useRef<HTMLSpanElement>(null);
   const shown = useRef({ value: 0 });
