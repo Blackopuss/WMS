@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components";
 import { formatDate } from "@/lib";
-import { getAccess, getSeatUsage } from "@/platform/authorization";
+import { getAccess } from "@/platform/authorization";
 import {
   ADD_ON_MODULES,
   ADD_ON_SUMMARIES,
@@ -63,13 +63,10 @@ export default async function BuyPlanPage({
   }
 
   const { cancelada } = await searchParams;
-  const [options, seats] = await Promise.all([
-    getCheckoutOptions({
-      organizationId: access.organization.id,
-      userId: access.user.id,
-    }),
-    getSeatUsage(access.organization.id),
-  ]);
+  const options = await getCheckoutOptions({
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  });
   const { current } = options;
   // Every combination priced on the server; the browser only looks up.
   const quotes = quoteTable(0, options.carry);
@@ -97,7 +94,7 @@ export default async function BuyPlanPage({
   const special = live && current?.validUntil !== null && !current?.tierId;
   const currentText =
     current && current.productLimit !== null
-      ? planText(current.productLimit, current.addOns, current.extraUsers)
+      ? planText(current.productLimit, current.addOns)
       : null;
 
   return (
@@ -152,11 +149,6 @@ export default async function BuyPlanPage({
                 : null
             }
             months={[...options.months]}
-            extraUser={{
-              monthly: formatMxn(options.extraUser.monthly),
-              max: options.extraUser.max,
-            }}
-            seatsTaken={seats.members + seats.pendingInvitations}
             quotes={quotes}
             providers={options.providers}
             refundTerms={[...options.refundTerms]}
@@ -164,8 +156,6 @@ export default async function BuyPlanPage({
               tier: (live && current?.tierId) || options.tiers[0]?.id || "",
               months: "1",
               modules: live && current ? [...current.addOns] : [],
-              extraUsers:
-                live && current?.extraUsers ? String(current.extraUsers) : "",
               code: "",
             }}
           />

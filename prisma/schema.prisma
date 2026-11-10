@@ -641,9 +641,6 @@ model CheckoutOrder {
   tier             String           @db.VarChar(20)
   productLimit     Int
   includedUsers    Int
-  /// People bought on top of `includedUsers` (BIL-11); the plan's "users"
-  /// limit is their sum.
-  extraUsers       Int              @default(0)
   /// Modules bought, comma separated in registry order: "inventory,purchasing".
   modules          String           @db.VarChar(200)
   /// 0 = only the difference until the current plan ends (BIL-08).

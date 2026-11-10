@@ -1,7 +1,6 @@
 "use client";
 
 import { Loader2, UserCheck, UserCog, UserX } from "lucide-react";
-import Link from "next/link";
 import {
   useActionState,
   useEffect,
@@ -71,13 +70,10 @@ export function MembersPanel({
   members,
   roleOptions,
   seats,
-  canBuySeats = false,
 }: {
   members: MemberRow[];
   roleOptions: RoleOption[];
   seats: SeatSummary;
-  /** The titular, with every seat taken: offers adding people (BIL-11). */
-  canBuySeats?: boolean;
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -100,14 +96,6 @@ export function MembersPanel({
           Personas
         </h2>
         <p className="text-sm text-muted-foreground">{seatText(seats)}</p>
-        {canBuySeats && (
-          <Link
-            href="/configuracion/plan/comprar"
-            className="mt-1 inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            Agregar usuarios
-          </Link>
-        )}
       </div>
       <ul className="divide-y">
         {members.map((member) => (

@@ -107,11 +107,6 @@ export default async function EquipoPage() {
           taken: seats.members + seats.pendingInvitations,
           pending: seats.pendingInvitations,
         }}
-        canBuySeats={
-          seats.limit !== null &&
-          seats.available === 0 &&
-          access.can("platform.subscription.create")
-        }
         members={members.map((member) => ({
           userId: member.userId,
           name: member.name,

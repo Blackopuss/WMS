@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 export const LEGAL_DOCUMENTS = {
   terms: {
-    version: "2026-11-10",
+    version: "2026-11-01",
     title: "Términos y condiciones",
     href: "/terminos",
   },

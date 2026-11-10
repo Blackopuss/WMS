@@ -5,11 +5,7 @@
  * (PROPOSED_TIERS); the prices below are a proposal, not an approved list.
  */
 
-import {
-  CONTACT_EMAIL,
-  EXTRA_USER_MONTHLY,
-  PLAN_TIERS,
-} from "@/platform/billing";
+import { CONTACT_EMAIL, PLAN_TIERS } from "@/platform/billing";
 
 export { SITE_NAV, formatCount, formatMoney } from "./site-shared";
 
@@ -58,6 +54,3 @@ export const TIER_PRICES = PLAN_TIERS.map(({ prices }) => ({
   purchasing: Number(prices.purchasing),
   sales: Number(prices.sales),
 }));
-
-/** Each person added on top of a tier's (BIL-11), a month, VAT included. */
-export const EXTRA_USER_PRICE = Number(EXTRA_USER_MONTHLY);

@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 
 import {
   checkoutAction,
-  quoteAction,
   type CheckoutState,
   type CheckoutValues,
 } from "./actions";
@@ -42,17 +41,6 @@ const key = (
   }`;
 /** Same shape the server gives a code («pepito gratis» → «PEPITOGRATIS»). */
 const asCode = (text: string) => text.replace(/\s+/g, "").toUpperCase();
-/** People added as typed: "" = 0; null when it is not a whole number in range. */
-const usersOf = (text: string, max: number): number | null => {
-  const trimmed = text.trim();
-  if (trimmed === "") return 0;
-  if (!/^\d{1,3}$/.test(trimmed)) return null;
-  const count = Number(trimmed);
-  return count <= max ? count : null;
-};
-
-/** What adding people costs and how many seats the company uses now. */
-export type ExtraUserOffer = { monthly: string; max: number };
 
 /**
  * The checkout of a plan: tier (a carousel on phones), modules, months,
@@ -68,15 +56,9 @@ export function CheckoutForm({
   initial,
   addOns,
   changeUntil = null,
-  extraUser,
-  seatsTaken,
 }: {
   /** Modules that can be added on top of Inventario. */
   addOns: AddOnOption[];
-  /** «$59.00» a month per person added, up to `max` (BIL-11). */
-  extraUser: ExtraUserOffer;
-  /** Active people plus pending invitations today. */
-  seatsTaken: number;
   /**
    * End of the live plan («15 dic 2026»): offers paying only the change
    * until then (0 months, BIL-08). Null without a live plan.
@@ -118,8 +100,6 @@ export function CheckoutForm({
         busy={busy}
         addOns={addOns}
         changeUntil={changeUntil}
-        extraUser={extraUser}
-        seatsTaken={seatsTaken}
       />
     </form>
   );
@@ -151,13 +131,9 @@ function Choices({
   busy,
   addOns,
   changeUntil,
-  extraUser,
-  seatsTaken,
 }: {
   addOns: AddOnOption[];
   changeUntil: string | null;
-  extraUser: ExtraUserOffer;
-  seatsTaken: number;
   state: CheckoutState;
   values: CheckoutValues;
   tiers: TierCard[];
@@ -171,58 +147,13 @@ function Choices({
   const [length, setLength] = useState(values.months || "1");
   const [modules, setModules] = useState<string[]>(values.modules);
   const [codeText, setCodeText] = useState(values.code);
-  const [usersText, setUsersText] = useState(values.extraUsers ?? "");
-  const users = usersOf(usersText, extraUser.max);
 
   const applied =
     state.applied && asCode(codeText) === state.applied.code
       ? state.applied
       : null;
-  const choiceKey = key(tier, length, modules, addOns);
-  // Without people added, every combination was priced ahead; with them,
-  // the server prices the choice a moment after the last change (BIL-11).
-  const asking = `${choiceKey}:${users ?? "x"}:${applied?.code ?? ""}`;
-  const [served, setServed] = useState<{
-    asking: string;
-    quote: ShownQuote | null;
-  } | null>(null);
-  const [quoteFailed, setQuoteFailed] = useState(false);
-  const asked = useRef(0);
-  const appliedToken = applied?.token ?? "";
-  useEffect(() => {
-    const ticket = ++asked.current;
-    if (users === null || users === 0) return;
-    const timer = setTimeout(async () => {
-      try {
-        const answer = await quoteAction(
-          {
-            tier,
-            months: length,
-            modules,
-            extraUsers: String(users),
-            code: codeText,
-          },
-          appliedToken,
-        );
-        if (ticket !== asked.current) return;
-        setServed({ asking, quote: answer });
-        setQuoteFailed(false);
-      } catch {
-        if (ticket === asked.current) setQuoteFailed(true);
-      }
-    }, 250);
-    return () => clearTimeout(timer);
-    // `asking` already names every input of the quote.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asking]);
-  const shown =
-    users === 0
-      ? (applied?.quotes ?? quotes)[choiceKey]
-      : served?.asking === asking
-        ? (served.quote ?? undefined)
-        : undefined;
+  const shown = (applied?.quotes ?? quotes)[key(tier, length, modules, addOns)];
   const chosenTier = tiers.find((t) => t.id === tier) ?? tiers[0];
-  const seatsChosen = (chosenTier?.users ?? 0) + (users ?? 0);
   const errors = state.fieldErrors;
   const root = useRef<HTMLDivElement>(null);
   // Remounted with every answer: take the person to what was rejected.
@@ -275,9 +206,7 @@ function Choices({
                   </span>
                   <span className="text-sm text-muted-foreground">
                     <span className="block">productos activos</span>
-                    <span className="block">
-                      {each.users} usuarios incluidos
-                    </span>
+                    <span className="block">{each.users} usuarios</span>
                   </span>
                   <span className="mt-auto">
                     <span className="text-lg font-semibold tabular-nums">
@@ -330,48 +259,6 @@ function Choices({
             </label>
           ))}
         </fieldset>
-
-        <FormField
-          id="extraUsers"
-          label="Usuarios adicionales"
-          error={errors.extraUsers}
-          hint={`Tu plan incluye ${chosenTier?.users ?? 0} usuarios. Cada usuario adicional cuesta ${extraUser.monthly} al mes.`}
-        >
-          {(control) => (
-            <Input
-              {...control}
-              name="extraUsers"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={extraUser.max}
-              step={1}
-              placeholder="0"
-              className="sm:max-w-40"
-              defaultValue={values.extraUsers ?? ""}
-              onChange={(event) => setUsersText(event.currentTarget.value)}
-            />
-          )}
-        </FormField>
-        {users === null && !errors.extraUsers && (
-          <p role="alert" className="-mt-4 text-sm text-destructive">
-            Escribe un número de 0 a {extraUser.max}.
-          </p>
-        )}
-        {users !== null && seatsChosen < seatsTaken && (
-          <p
-            role="status"
-            className="-mt-4 flex items-start gap-1.5 text-sm text-muted-foreground"
-          >
-            <CircleAlert
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-warning"
-            />
-            Hoy ocupan {seatsTaken} lugares (personas e invitaciones
-            pendientes). Nadie pierde el acceso, pero no podrán invitar a nadie
-            más hasta que haya lugar.
-          </p>
-        )}
 
         <fieldset className="space-y-3">
           <legend className="text-lg font-semibold">¿Por cuántos meses?</legend>
@@ -487,10 +374,7 @@ function Choices({
               {addOns
                 .filter((option) => modules.includes(option.id))
                 .map((option) => ` + ${option.name}`)
-                .join("")}
-              {users
-                ? ` + ${users} ${users === 1 ? "usuario" : "usuarios"}`
-                : ""}{" "}
+                .join("")}{" "}
               {length !== "0" &&
                 ` · ${length} ${length === "1" ? "mes" : "meses"}`}
             </dt>
@@ -513,18 +397,9 @@ function Choices({
           )}
           <div className="flex justify-between gap-3 border-t pt-2 text-base font-semibold">
             <dt>Total</dt>
-            <dd>{shown ? `${shown.total} MXN` : "—"}</dd>
+            <dd>{shown?.total} MXN</dd>
           </div>
         </dl>
-        {!shown && users !== null && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {quoteFailed
-              ? "No pudimos calcular el total. Revisa tu conexión; se intentará de nuevo al cambiar algo."
-              : served?.asking === asking
-                ? "Revisa lo que elegiste arriba."
-                : "Calculando el total…"}
-          </p>
-        )}
 
         {shown?.free ? (
           <Button type="submit" className="w-full" disabled={busy}>
