@@ -94,7 +94,7 @@ export default async function BuyPlanPage({
   const special = live && current?.validUntil !== null && !current?.tierId;
   const currentText =
     current && current.productLimit !== null
-      ? planText(current.productLimit, current.addOns, current.extraUsers)
+      ? planText(current.productLimit, current.addOns)
       : null;
 
   return (
@@ -149,11 +149,6 @@ export default async function BuyPlanPage({
                 : null
             }
             months={[...options.months]}
-            users={{
-              monthly: formatMxn(options.extraUserMonthly),
-              max: options.maxExtraUsers,
-              taken: options.seatsTaken,
-            }}
             quotes={quotes}
             providers={options.providers}
             refundTerms={[...options.refundTerms]}
@@ -161,8 +156,6 @@ export default async function BuyPlanPage({
               tier: (live && current?.tierId) || options.tiers[0]?.id || "",
               months: "1",
               modules: live && current ? [...current.addOns] : [],
-              extraUsers:
-                live && current?.extraUsers ? String(current.extraUsers) : "0",
               code: "",
             }}
           />

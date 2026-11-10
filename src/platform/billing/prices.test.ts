@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  MAX_EXTRA_USERS,
-  PLAN_TIERS,
-  findTier,
-  monthlyPrice,
-  planText,
-  quote,
-} from "./prices";
+import { PLAN_TIERS, findTier, quote } from "./prices";
 
 // ADR 0028: the server computes every amount; exact cents.
 
@@ -62,32 +55,6 @@ describe("purchase quote", () => {
       quote(t100, ["sales"], 0, 0, { monthly: "349.00", daysLeft: 0 }),
     ).toMatchObject({ total: "0.00" });
     expect(() => quote(t100, [], 13)).toThrow();
-  });
-
-  it("adds $49 a month per additional user, in every tier (BIL-11)", () => {
-    expect(quote(t100, [], 1, 0, null, 2)).toMatchObject({
-      monthly: "447.00",
-      subtotal: "447.00",
-    });
-    expect(monthlyPrice(findTier("t10000")!, [], 1).toFixed(2)).toBe("3539.00");
-    // Over a live plan, only what costs more is prorated: one more user
-    // with 15 days left is 49 × 15 ÷ 30.
-    expect(
-      quote(t100, [], 0, 0, { monthly: "349.00", daysLeft: 15 }, 1),
-    ).toMatchObject({ prorated: "24.50", total: "24.50" });
-    expect(() => quote(t100, [], 1, 0, null, MAX_EXTRA_USERS + 1)).toThrow();
-    expect(() => quote(t100, [], 1, 0, null, -1)).toThrow();
-    expect(() => quote(t100, [], 1, 0, null, 1.5)).toThrow();
-  });
-
-  it("names the additional users in the plan", () => {
-    expect(planText(1000, ["purchasing"], 1)).toBe(
-      "1,000 productos · Inventario + Compras · 1 usuario adicional",
-    );
-    expect(planText(100, [], 3)).toBe(
-      "100 productos · Inventario · 3 usuarios adicionales",
-    );
-    expect(planText(100, [])).toBe("100 productos · Inventario");
   });
 
   it("rejects impossible discounts and unknown tiers", () => {
