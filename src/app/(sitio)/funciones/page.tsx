@@ -175,8 +175,8 @@ export default function FeaturesPage() {
         eyebrow="Funciones"
         title="Todo lo que tu almacén necesita, nada que estorbe"
       >
-        Diseñado con una ferretería de verdad: cajas que se venden por pieza,
-        pedidos que llegan incompletos y gente que cuenta mientras otros venden.
+        Diseñado para almacenes reales: cajas que salen por pieza, pedidos que
+        llegan incompletos y gente que cuenta mientras otros surten.
       </PageHero>
 
       <nav

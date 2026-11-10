@@ -55,7 +55,7 @@ export const OUTBOUND_IMPORT_COLUMNS = [
     header: "Destinatario",
     required: true,
     help: "Para quién es: cliente, sucursal o línea de producción. Basta en la primera fila del pedido.",
-    example: "Ferretería El Clavo",
+    example: "Comercial del Bajío",
   },
   {
     key: "sku",

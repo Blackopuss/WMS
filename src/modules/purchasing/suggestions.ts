@@ -361,7 +361,7 @@ export type GenerateSuggestedResult =
         supplierName: string;
         lines: number;
       }[];
-      /** «Se creó el borrador OC-0004 para Ferretera del Norte con 3 productos.» */
+      /** «Se creó el borrador OC-0004 para Distribuidora del Norte con 3 productos.» */
       summary: string;
     }
   | { ok: false; reason: "invalid"; error: string };

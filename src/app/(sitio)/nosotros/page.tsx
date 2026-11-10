@@ -42,8 +42,8 @@ export default function AboutPage() {
         eyebrow="Nosotros"
         title="Software de almacén para quien de verdad mueve mercancía"
       >
-        Empezamos con una pregunta simple de una ferretería: «¿cuántas cajas de
-        tornillos me quedan?». Nadie lo sabía sin ir a contar.
+        Empezamos con una pregunta simple de un almacén: «¿cuánto me queda y
+        dónde está?». Nadie lo sabía sin ir a contar.
       </PageHero>
 
       <Section>
@@ -68,7 +68,7 @@ export default function AboutPage() {
           </div>
           <div data-reveal="stagger" className="grid grid-cols-2 gap-4">
             {[
-              { value: "1", label: "ferretería real como primer cliente" },
+              { value: "1", label: "solo sistema para todo tu almacén" },
               { value: "2", label: "módulos disponibles hoy" },
               { value: "4", label: "roles para repartir el trabajo" },
               { value: "100%", label: "en español" },

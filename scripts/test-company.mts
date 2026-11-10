@@ -40,7 +40,7 @@ await db.$transaction(async (tx) => {
   await tx.organization.create({
     data: {
       id: organizationId,
-      name: "Ferretería de navegador",
+      name: "Empresa de navegador",
       ownerUserId: ownerId,
       memberships: { create: { id: newId(), userId: ownerId } },
     },

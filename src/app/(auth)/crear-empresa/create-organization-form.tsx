@@ -74,7 +74,7 @@ export function CreateOrganizationForm({
         <FormField
           id="name"
           label="Nombre del negocio"
-          hint="Por ejemplo: Ferretería La Esperanza."
+          hint="Por ejemplo: Distribuidora La Esperanza."
           error={state.fieldErrors.name}
         >
           {(control) => (

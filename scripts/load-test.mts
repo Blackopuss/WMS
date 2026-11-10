@@ -120,7 +120,7 @@ async function seed(size: number): Promise<Company> {
     await tx.organization.create({
       data: {
         id: organizationId,
-        name: `Ferretería de ${size.toLocaleString("es-MX")} productos`,
+        name: `Empresa de ${size.toLocaleString("es-MX")} productos`,
         ownerUserId: ownerId,
         memberships: { create: { id: newId(), userId: ownerId } },
       },
