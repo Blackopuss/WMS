@@ -5,7 +5,7 @@ Tercera corrida de la skill sobre el commit `acd91d0` (rama `pruebas`), que ya i
 - **Perfil:** standard.
 - **Revisión:** Claude revisó los archivos de mayor valor de la superficie nueva (CSP con nonce, proxy/redirects tras Caddy, SMTP real, `/api/salud`, logs, sesión, confirmar-correo, allowlist HTTP, lector XLSX, y toda la carpeta `deploy/`). **Codex** hizo una revisión estática independiente del mismo diff.
 - **Verificación dinámica:** en vivo contra producción (solo lectura / no destructivo): cabeceras, CSP, TLS/HSTS, gating de autenticación, open-redirect, endpoints de desarrollo, superficie `/api/auth`, `/api/salud`, y exposición de puertos. No se hicieron ataques de volumen ni se cerró la sesión del fundador.
-- **Reporte completo:** fuera del repositorio, en `~/security-audit-skill/SaaS-Almacen/run-3/` (`REPORT.md`, `findings.json`).
+- **Reporte completo:** fuera del repositorio, en `~/security-audit-skill/run-3/` (`REPORT.md`, `findings.json`).
 
 ## Hallazgos y corrección
 

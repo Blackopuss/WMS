@@ -9,7 +9,7 @@
 #     --clave-respaldos age1... \
 #     --llave-ci "ssh-ed25519 AAAA..."      (la que usa GitHub para desplegar)
 #     [--correo-ssl tu@correo.mx]           (avisos de Let's Encrypt)
-#     [--repo git@github.com:…/SaaS-Almacen.git --rama pruebas]
+#     [--repo git@github.com:…/WMS.git --rama pruebas]
 #                                           (solo si se compila en el servidor)
 #     [--admin usuario --llave-admin "ssh-ed25519 AAAA..."]
 #

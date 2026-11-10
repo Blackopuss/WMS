@@ -138,7 +138,7 @@ En el servidor, esta llave solo puede desplegar: no abre una terminal.
    almacen staff add tu@correo.mx
    ```
 
-**Alternativa sin GitHub Actions:** instala con `--repo git@github.com:Blackopuss/SaaS-Almacen.git` y agrega en GitHub la _deploy key_ de solo lectura que muestra el instalador. Después despliega en el servidor con `sudo -u almacen /usr/local/lib/almacen/desplegar`, que compila ahí mismo. Con 4 GB funciona, pero tarda más y aprieta la memoria.
+**Alternativa sin GitHub Actions:** instala con `--repo git@github.com:Blackopuss/WMS.git` y agrega en GitHub la _deploy key_ de solo lectura que muestra el instalador. Después despliega en el servidor con `sudo -u almacen /usr/local/lib/almacen/desplegar`, que compila ahí mismo. Con 4 GB funciona, pero tarda más y aprieta la memoria.
 
 ### 5. Respaldo del secreto de autenticación
 

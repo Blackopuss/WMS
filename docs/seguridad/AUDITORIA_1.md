@@ -1,6 +1,6 @@
 # Auditoría de seguridad 1 (skill `security-audit`)
 
-Revisión hecha con la skill `security-audit` de Cloudflare sobre el commit `9f806cc` (rama `pruebas`), perfil **quick**, con revisores de solo lectura y verificadores independientes que reprodujeron cada hallazgo en local contra `almacen_test`. Codex hizo el mapeo inicial; su verificación cruzada quedó pendiente de cuota. El reporte completo está fuera del repositorio (`~/security-audit-skill/SaaS-Almacen/run-1/`).
+Revisión hecha con la skill `security-audit` de Cloudflare sobre el commit `9f806cc` (rama `pruebas`), perfil **quick**, con revisores de solo lectura y verificadores independientes que reprodujeron cada hallazgo en local contra `almacen_test`. Codex hizo el mapeo inicial; su verificación cruzada quedó pendiente de cuota. El reporte completo está fuera del repositorio (`~/security-audit-skill/run-1/`).
 
 Resistieron sin fallas: aislamiento entre empresas, permisos por rol y módulo, archivos privados y enlaces firmados, cola de trabajos, correo saliente, SQL, costos ocultos a Consulta, configuración y dependencias.
 

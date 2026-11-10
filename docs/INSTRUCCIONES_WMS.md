@@ -2,11 +2,11 @@
 
 Fuente: fundador, 2026-11-10. **Este documento manda sobre todo lo demás** del
 repositorio: la especificación (`ESPECIFICACION_WMS_v5.md`) y el plan
-(`PLAN_WMS_V3.md`) lo detallan, pero no lo contradicen. Lo heredado de
-SaaS-Almacen (`MEMORY.md`, `PLAN_IMPLEMENTACION.md`, ADR anteriores) es
-historial: explica de dónde viene el código, pero **no marca el rumbo ni los
-siguientes pasos**. No se continúa el plan de SaaS-Almacen (etapas PIL, BIL,
-VEN, COT, PAG, CRM ni su cobro en línea).
+(`PLAN_WMS_V3.md`) lo detallan, pero no lo contradicen. Los ADR anteriores y
+los IDs viejos de las convenciones (`BAS-01`, `INV-17`…) son historial:
+explican de dónde viene el código, pero **no marcan el rumbo ni los
+siguientes pasos**. No se continúan las etapas PIL, BIL, VEN, COT, PAG ni CRM,
+ni el cobro en línea.
 
 ## 1. Objetivo del proyecto
 
@@ -557,7 +557,7 @@ independientes.
 
 ## Cómo se aplica en este repositorio (notas para los agentes)
 
-- **Rumbo:** las fases de la sección 12. Lo heredado de SaaS-Almacen se
+- **Rumbo:** las fases de la sección 12. El código existente se
   reutiliza (núcleo multiempresa, permisos, inventario, compras, seguridad,
   despliegue), pero sus planes no se continúan: nada de seguir sus etapas de
   cobro en línea, punto de venta o pilotos de ferretería. El cobro, las

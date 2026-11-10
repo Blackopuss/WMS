@@ -5,8 +5,8 @@
 
 ## Contexto
 
-SaaS-Almacen creció hacia punto de venta (caja, ticket, cotizaciones,
-pedidos de venta, ventas a plazos). El fundador copió el proyecto a
+El proyecto había crecido hacia punto de venta (caja, ticket, cotizaciones,
+pedidos de venta, ventas a plazos). El fundador lo llevó a
 `Blackopuss/WMS` para enfocarlo en la gestión de almacenes según
 `docs/ESPECIFICACION_WMS_v5.md`, y pidió quitar el módulo de Ventas.
 
@@ -27,5 +27,5 @@ pedidos de venta, ventas a plazos). El fundador copió el proyecto a
 
 ## Consecuencias
 
-- El código de Ventas sigue en el historial de git y en SaaS-Almacen.
+- El código de Ventas sigue en el historial de git.
 - Las secciones VEN, COT y PAG de `AGENTS.md` quedan como historial.

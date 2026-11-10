@@ -2,9 +2,7 @@
 
 Actualizado: 2026-11-09.
 
-Este repositorio (`Blackopuss/WMS`) nace como copia de `Blackopuss/SaaS-Almacen`
-(rama `pruebas`, commit `c6cc45d`, con todo su historial). SaaS-Almacen se
-estaba orientando a punto de venta; aquí el producto se enfoca en la gestión de
+En este repositorio (`Blackopuss/WMS`) el producto se enfoca en la gestión de
 almacenes según `docs/ESPECIFICACION_WMS_v5.md` (especificación del fundador).
 
 Se conserva lo esencial: inicio de sesión, MFA, registro, sitio público,
@@ -23,8 +21,8 @@ Decisiones del fundador (2026-11-09):
 
 - Un paso a la vez; cada paso cierra con `npm run check` y `npm run build` en
   verde y un commit en español con su ID (`WMS-xx`).
-- Ramas: `main` es la base copiada; el trabajo va en `pruebas` (CI en cada push),
-  como en SaaS-Almacen. Nada se despliega: este repositorio no tiene servidor
+- Ramas: el trabajo va en `pruebas` (CI en cada push) y `main` se mantiene al
+  día con ella. Nada se despliega: este repositorio no tiene servidor
   ni secretos de despliegue todavía.
 - Las convenciones de `AGENTS.md` siguen vigentes (tenencia, permisos,
   movimientos inmutables, decimales exactos, KISS de pantalla).
@@ -37,7 +35,7 @@ Decisiones del fundador (2026-11-09):
 | --- | --- | --- | --- |
 | WMS-01 | Plan, especificación en `docs/` e identidad del repositorio | Este plan y la especificación están en `docs/`; `AGENTS.md` y `README.md` hablan del WMS | Hecho |
 | WMS-02 | Quitar Ventas del código | No quedan pantallas, rutas, servicios, pruebas, permisos `sales.*`, roles Cajero/Encargado de caja ni precio de Ventas; el sitio y la compra en línea ya no lo ofrecen | Hecho (ADR 0032) |
-| WMS-03 | Quitar Ventas de la base | Los modelos `Sale*`/`SalesQuote*`… salen de `schema.prisma` y una migración borra sus tablas y disparadores; movimientos `SALE`/`SALE_RETURN` dejan de aceptarse | Hecho (además, bases locales propias `wms_dev`/`wms_test`/`wms_shadow` para no tocar las de SaaS-Almacen) |
+| WMS-03 | Quitar Ventas de la base | Los modelos `Sale*`/`SalesQuote*`… salen de `schema.prisma` y una migración borra sus tablas y disparadores; movimientos `SALE`/`SALE_RETURN` dejan de aceptarse | Hecho (además, bases locales propias `wms_dev`/`wms_test`/`wms_shadow` para no mezclarlas con otros proyectos) |
 | WMS-04 | Menú por tareas de almacén y marca WMS | El menú se organiza por tarea (Inicio, Inventario, Recepción, Movimientos, Conteos, Compras, Configuración) y la app y el sitio se presentan como WMS | Hecho: sección «Recepción» (órdenes por llegar, la más antigua primero) en el menú y en la barra móvil; marca «WMS» |
 | WMS-05 | Roles operativos (sección 4.2) | Existen Supervisor de almacén, Almacenista y Montacarguista en la matriz y el catálogo, con permisos acotados | Hecho: `supervisor`, `operator` y `forklift` en la matriz, el catálogo y la base |
 | WMS-06 | Tareas de traslado (sección 5.3) | Tabla de tareas con estados `pending → assigned → accepted → picked_up → delivered` (+ `blocked`, `cancelled`), con concurrencia e idempotencia; la entrega genera el movimiento de traslado | Hecho: `warehouse_task` con disparadores, `tasks.ts`, permisos `inventory.task.*` |

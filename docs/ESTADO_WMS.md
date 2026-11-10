@@ -9,7 +9,7 @@ abajo son de ese documento).
 
 | Área | Estado |
 | --- | --- |
-| Núcleo (empresas, cuentas, roles, bitácora, módulos, plan) | Hecho, heredado de SaaS-Almacen |
+| Núcleo (empresas, cuentas, roles, bitácora, módulos, plan) | Hecho |
 | Inventario (productos, ubicaciones, movimientos, conteos, Excel) | Hecho, heredado |
 | Compras y recepción | Hecho, heredado; Recepción con su propia sección (WMS-04) |
 | Operación de almacén (roles de piso, tareas de traslado, Inicio por rol) | Hecho (WMS-05..08) |
@@ -25,8 +25,7 @@ abajo son de ese documento).
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
 Ventas (punto de venta, caja, cotizaciones, ventas a plazos) se quitó del
-producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git y en
-SaaS-Almacen.
+producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
 
 ## Lo que ya existe
 
@@ -122,7 +121,7 @@ SaaS-Almacen.
 - Accesibilidad WCAG 2.1 AA revisada con axe en las pantallas principales; las
   nuevas (`/tareas`, `/tareas/nueva`, `/recepcion`) ya están en la lista.
 - Scripts de despliegue, respaldo cifrado, restauración, alertas y salud
-  heredados de SaaS-Almacen (`deploy/`), listos para cuando el WMS tenga servidor.
+  (`deploy/`), listos para cuando el WMS tenga servidor.
 
 ## Lo que falta
 
@@ -165,10 +164,10 @@ empresa se agrega ahí.
 ### Decisiones y tareas del fundador
 
 - **Servidor y dominio del WMS.** El repositorio no tiene producción ni secretos
-  de despliegue; la EC2 de SaaS-Almacen no se usa aquí.
+  de despliegue; la EC2 de `docs/DESPLIEGUE.md` no se usa aquí.
 - **Nombre comercial.** «WMS» es provisional.
-- **Precios del WMS.** Siguen los niveles por número de productos heredados de
-  SaaS-Almacen; la especificación (13) habla de implementación más suscripción y
+- **Precios del WMS.** Siguen los niveles por número de productos que ya
+  había; la especificación (13) habla de implementación más suscripción y
   soporte por horas.
 - **Textos legales.** Términos y privacidad versión 2026-11-09 necesitan razón
   social y revisión de un abogado.

@@ -7,7 +7,7 @@ Segunda corrida de la skill sobre el commit `4830ff8`, que ya incluía las corre
 - **Verificación:** verificadores independientes reprodujeron en local, contra `almacen_test`, cada hallazgo nuevo. Trabajaron sobre una copia fija del commit.
 - **Cobertura:** una crítica final la dio por cerrada, sin áreas faltantes.
 - **Codex:** revisó por su cuenta las seis correcciones de la auditoría 1 y confirmó que están en el código.
-- **Reporte completo:** está fuera del repositorio, en `~/security-audit-skill/SaaS-Almacen/run-2/`.
+- **Reporte completo:** está fuera del repositorio, en `~/security-audit-skill/run-2/`.
 
 **Resistieron sin fallas:**
 - las seis correcciones de la auditoría 1;
