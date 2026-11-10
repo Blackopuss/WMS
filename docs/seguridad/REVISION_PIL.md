@@ -41,6 +41,11 @@ hora; después, 429 sin llegar a verificar). Un proveedor real nunca falla la
 firma, así que nunca cuenta. Prueba: `checkout.int.test.ts` («forged
 deliveries from one IP are cut off»).
 
+### Usuarios adicionales (BIL-11, 2026-11-10)
+
+- El número de usuarios adicionales es un entero de 0 a 50 que valida el servicio (`isExtraUsers`); el precio sale de `EXTRA_USER_MONTHLY` en el servidor y la orden lo guarda inmutable (disparador `checkout_order_frozen`, que ahora también congela `productLimit` e `includedUsers`). El límite de usuarios se escribe solo al confirmar el pago, igual que el resto del plan.
+- `priceChoiceAction` (precio mientras se escribe) exige al titular y precia sobre el plan de su empresa. Recibe el % de un código ya aceptado por `previewCode` solo para mostrar: no valida códigos (no sirve para adivinarlos) y no concede nada, porque `startCheckout` vuelve a buscar el código, contar el intento y preciar todo.
+
 ## Rediseño de pantallas (KISS) y PIL-07
 
 Sin cambios en servicios, permisos ni rutas. Revisado lo que se tocó:

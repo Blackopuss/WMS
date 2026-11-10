@@ -17,6 +17,7 @@ import {
   getOrder,
   handleWebhook,
   previewCode,
+  priceChoice,
   startCheckout,
   type CheckoutInput,
 } from "@/platform/billing";
@@ -551,6 +552,168 @@ describe("changing a live plan (BIL-08..10)", () => {
       ok: false,
       fieldErrors: { months: expect.stringMatching(/no cuesta más/) },
     });
+  });
+});
+
+describe("additional users (BIL-11)", () => {
+  /** Whole days left in Mexico, as the server counts them. */
+  const daysUntil = (end: Date) => {
+    const day = (at: Date) =>
+      Math.floor((at.getTime() - 6 * 3_600_000) / 86_400_000);
+    return day(end) - day(new Date());
+  };
+  const planEnd = async (org: string) =>
+    (
+      await db.entitlement.findFirstOrThrow({
+        where: { organizationId: org, key: "active_products" },
+      })
+    ).validUntil!;
+
+  it("are charged by the month and the plan's seats are the sum", async () => {
+    const c = await company();
+    const result = await startCheckout(
+      actorOf(c),
+      choice({ extraUsers: "2" }),
+      headers(),
+      c.owner.email,
+    );
+    if (!result.ok) throw new Error("checkout failed");
+    // 349 + 2 × 49, VAT included.
+    expect(fake.createCalls.at(-1)?.total).toBe("447.00");
+    const order = await db.checkoutOrder.findFirstOrThrow({
+      where: { id: result.orderId },
+    });
+    expect(order).toMatchObject({ includedUsers: 2, extraUsers: 2 });
+
+    fake.status = {
+      state: "paid",
+      amount: "447.00",
+      currency: "MXN",
+      paymentRef: "pi_users",
+    };
+    await confirmOrder(c.org, result.orderId);
+    expect((await getFreshEntitlements(c.org)).limit("users")).toBe(4);
+    expect(await getOrder(actorOf(c), result.orderId)).toMatchObject({
+      status: "PAID",
+      planText: "100 productos · Inventario · 2 usuarios adicionales",
+    });
+    const event = await db.auditEvent.findFirstOrThrow({
+      where: { organizationId: c.org, action: "plan.purchased" },
+    });
+    expect(event.metadata).toMatchObject({ extraUsers: 2 });
+    // What was charged for does not change afterwards.
+    await expect(
+      db.checkoutOrder.update({
+        where: { id: result.orderId },
+        data: { extraUsers: 9 },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("over a live plan, one more user pays only the days left; renewing keeps them", async () => {
+    const c = await company();
+    const code = await newCode(100, 3);
+    expect(
+      await startCheckout(
+        actorOf(c),
+        choice({ code: code.code, extraUsers: 1, provider: "" }),
+        headers(),
+        c.owner.email,
+      ),
+    ).toMatchObject({ ok: true });
+    expect((await getFreshEntitlements(c.org)).limit("users")).toBe(3);
+    const end = await planEnd(c.org);
+    const prorated = ((49 * daysUntil(end)) / 30).toFixed(2);
+
+    // The price the page shows while typing comes from the same service.
+    expect(
+      await priceChoice(
+        actorOf(c),
+        { tier: "t100", modules: [], months: 0, extraUsers: "2" },
+        0,
+      ),
+    ).toMatchObject({ ok: true, quote: { prorated, total: prorated } });
+    // Renewing with the same users: the plan's own price, nothing prorated.
+    expect(
+      await priceChoice(
+        actorOf(c),
+        { tier: "t100", modules: [], months: 1, extraUsers: 1 },
+        0,
+      ),
+    ).toMatchObject({
+      ok: true,
+      quote: { prorated: "0.00", total: "398.00" },
+    });
+    // Same users and only the change: nothing to pay.
+    expect(
+      await priceChoice(
+        actorOf(c),
+        { tier: "t100", modules: [], months: 0, extraUsers: 1 },
+        0,
+      ),
+    ).toMatchObject({ ok: false, fieldErrors: { months: expect.any(String) } });
+
+    expect(
+      await startCheckout(
+        actorOf(c),
+        choice({ code: code.code, months: 0, extraUsers: 2, provider: "" }),
+        headers(),
+        c.owner.email,
+      ),
+    ).toMatchObject({ ok: true });
+    expect((await getFreshEntitlements(c.org)).limit("users")).toBe(4);
+    // The end did not move: only the change until then.
+    expect((await planEnd(c.org)).getTime()).toBe(end.getTime());
+
+    // Fewer users removes nobody: the limit only goes down.
+    expect(
+      await startCheckout(
+        actorOf(c),
+        choice({ code: code.code, extraUsers: 0, provider: "" }),
+        headers(),
+        c.owner.email,
+      ),
+    ).toMatchObject({ ok: true });
+    expect((await getFreshEntitlements(c.org)).limit("users")).toBe(2);
+    expect(
+      await db.membership.count({
+        where: { organizationId: c.org, status: "ACTIVE" },
+      }),
+    ).toBe(1);
+  });
+
+  it("accepts only a whole count up to the maximum, and only from the titular", async () => {
+    const c = await company();
+    for (const extraUsers of ["51", "-1", "1.5", "muchos"]) {
+      expect(
+        await startCheckout(
+          actorOf(c),
+          choice({ extraUsers }),
+          headers(),
+          c.owner.email,
+        ),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: { extraUsers: expect.stringMatching(/0 a 50/) },
+      });
+    }
+    expect(fake.createCalls).toHaveLength(0);
+    // Empty is none.
+    expect(
+      await priceChoice(
+        actorOf(c),
+        { tier: "t100", modules: [], months: 1, extraUsers: "" },
+        0,
+      ),
+    ).toMatchObject({ ok: true, quote: { total: "349.00" } });
+    const stranger = await newUser();
+    await expect(
+      priceChoice(
+        { organizationId: c.org, userId: stranger.id },
+        { tier: "t100", modules: [], months: 1, extraUsers: 1 },
+        0,
+      ),
+    ).rejects.toThrow();
   });
 });
 

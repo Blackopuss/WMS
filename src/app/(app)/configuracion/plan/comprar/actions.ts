@@ -6,17 +6,20 @@ import { redirect } from "next/navigation";
 import { getAccess } from "@/platform/authorization";
 import {
   previewCode,
+  priceChoice,
   startCheckout,
   type CheckoutField,
 } from "@/platform/billing";
 
-import { quoteTable, type ShownQuote } from "./quotes";
+import { quoteTable, showQuote, type ShownQuote } from "./quotes";
 
 export type CheckoutValues = {
   tier: string;
   months: string;
   /** Add-ons chosen on top of Inventario. */
   modules: string[];
+  /** Additional users, as typed (BIL-11). */
+  extraUsers: string;
   code: string;
 };
 
@@ -56,6 +59,7 @@ export async function checkoutAction(
       .getAll("modules")
       .slice(0, 10)
       .map((value) => String(value).slice(0, 20)),
+    extraUsers: String(formData.get("extraUsers") ?? "").slice(0, 10),
     code: String(formData.get("code") ?? ""),
   };
   const answers = prev.answers + 1;
@@ -99,4 +103,40 @@ export async function checkoutAction(
     };
   }
   redirect(result.next);
+}
+
+/**
+ * The price of the choice with additional users (BIL-11), asked while the
+ * titular types: the table the page carries only has the plans without
+ * them. The service checks the titular and prices on the server; the
+ * discount is the one `previewCode` gave the page and only changes what is
+ * shown (paying checks the code again).
+ */
+export async function priceChoiceAction(
+  values: Omit<CheckoutValues, "code">,
+  percentOff: number,
+): Promise<{ quote: ShownQuote } | { error: string }> {
+  const access = await getAccess();
+  const result = await priceChoice(
+    { organizationId: access.organization.id, userId: access.user.id },
+    {
+      tier: String(values.tier ?? "").slice(0, 20),
+      months: String(values.months ?? "").slice(0, 5),
+      modules: (Array.isArray(values.modules) ? values.modules : [])
+        .slice(0, 10)
+        .map((value) => String(value).slice(0, 20)),
+      extraUsers: String(values.extraUsers ?? "").slice(0, 10),
+    },
+    Number(percentOff),
+  );
+  if (!result.ok) {
+    return {
+      error:
+        result.fieldErrors.extraUsers ??
+        result.fieldErrors.months ??
+        result.formError ??
+        "No pudimos calcular el precio. Revisa lo que elegiste.",
+    };
+  }
+  return { quote: showQuote(result.quote) };
 }
