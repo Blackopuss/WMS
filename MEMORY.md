@@ -1,6 +1,26 @@
 # Memoria del proyecto
 
-Actualizada: 2026-10-02, zona America/Mexico_City.
+Actualizada: 2026-11-10, zona America/Mexico_City.
+
+## WMS (desde 2026-11-09)
+
+Este repositorio es `Blackopuss/WMS`, copia de SaaS-Almacen (rama `pruebas`, commit `c6cc45d`) reorientada a la gestión de almacenes. Todo lo que sigue después de esta sección es historial de SaaS-Almacen: explica de dónde vienen las convenciones, pero lo vigente del WMS está aquí, en `AGENTS.md` y en `docs/ESTADO_WMS.md`.
+
+### Decisiones confirmadas del fundador
+
+- 2026-11-09: crear el WMS como repositorio aparte porque SaaS-Almacen se estaba yendo hacia punto de venta. Conservar lo esencial (cuentas, empresas, inicio, inventario, compras) y cambiar pestañas e interfaz según `docs/ESPECIFICACION_WMS_v5.md`.
+- 2026-11-09: **quitar Ventas** del producto (punto de venta, caja, cotizaciones, pedidos de venta, ventas a plazos). ADR 0032. No volver a agregarlo sin su decisión; el código sigue en git y en SaaS-Almacen.
+- 2026-11-09: avanzar el plan paso a paso **sin pedirle confirmación** en cada uno.
+- 2026-11-09: aceptó la revisión que ordenó el trabajo en `docs/PLAN_WMS_V2.md` (etapas A–I, WMS-09..48 y WMS-13B): primero estados, lotes y reservas; luego pedidos, surtido, empaque, despacho y devoluciones; después varios almacenes, permisos por alcance, lotes y series, ubicaciones configurables, y lo demás (reabastecimiento, olas, FIFO/FEFO, capacidad, etiquetas, equipos, producción, calidad, analítica).
+- Nombre comercial provisional: «WMS». Sin servidor, dominio ni secretos de despliegue: **no empujar a `produccion`**; la EC2 de SaaS-Almacen no es de este repositorio.
+- Pendientes del fundador: servidor y dominio, nombre comercial, precios del WMS (la especificación habla de implementación + suscripción + soporte por horas), razón social y revisión legal de términos y privacidad (versión 2026-11-09, sin Ventas), decisiones abiertas de la sección 16 de la especificación.
+
+### Estado (2026-11-10)
+
+- Hechos y con CI en verde: WMS-01..08 (plan, Ventas fuera, bases `wms_*`, menú por tarea, Recepción, roles de piso `supervisor`/`operator`/`forklift`, tareas de traslado, Inicio «Para hoy»), WMS-09/10 (estado y lote en el saldo, ADR 0033), WMS-11 (cambio de estado con motivo), WMS-12 (reservas) y WMS-13 (pedidos de salida). Etapa A cerrada. Último commit de paso: `bd287a6`; 1,720 pruebas.
+- Siguiente: WMS-13B (importar pedidos de salida desde Excel) y WMS-14 (surtido).
+- Entorno en la nube de Claude: MySQL 9.4 en Docker (`mirror.gcr.io/library/mysql:9.4`, contenedor `mysql94`); si el contenedor se reinicia, borrar `/var/run/docker.pid` y `/var/run/docker.sock` viejos, arrancar `dockerd` y `docker start mysql94`. Node 24 en `/opt/node24/bin`. `.env.local` con `DATABASE_HOST=127.0.0.1` y `DATABASE_USER_HOST=%`.
+- Lecciones de estos pasos: `prisma migrate diff` propuso borrar llaves foráneas al cambiar la llave del saldo (WMS-10): esa migración se escribió a mano creando el índice nuevo antes de quitar el viejo. MySQL no acepta un `CHECK` sobre una columna de llave foránea con `ON UPDATE CASCADE`: esas relaciones van con `onUpdate: Restrict`. Para capturas de pantalla, matar los `next-server` viejos y usar movimiento reducido.
 
 ## Requisitos confirmados por el usuario
 

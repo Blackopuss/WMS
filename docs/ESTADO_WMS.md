@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
-Actualizado: 2026-11-09. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-08 (CI en verde). Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
+WMS-13 (CI en verde). Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -104,7 +104,7 @@ SaaS-Almacen.
 
 ### Calidad del código y operación
 
-- 1,687 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
+- 1,720 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
   de tipos, lint, límites de arquitectura y formato en cada push (CI en GitHub).
 - Accesibilidad WCAG 2.1 AA revisada con axe en las pantallas principales; las
   nuevas (`/tareas`, `/tareas/nueva`, `/recepcion`) ya están en la lista.
