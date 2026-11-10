@@ -29,10 +29,11 @@ const COLUMNS = [
   "supervisor",
   "operator",
   "forklift",
+  "manager",
 ];
 const rows = [
   ...doc.matchAll(
-    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
+    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
   ),
 ].map(([, id, ...cells]) => ({ id: id!, cells: cells as string[] }));
 
@@ -196,6 +197,25 @@ describe("operational roles (WMS-05)", () => {
     expect(of("supervisor").has("platform.team.read")).toBe(true);
     expect(of("supervisor").has("platform.team.assign_roles")).toBe(false);
     expect(of("supervisor").has("purchasing.cost.read")).toBe(false);
+  });
+});
+
+describe("Gerencia (WMS-50)", () => {
+  it("reads and exports everything operational, and never writes", () => {
+    for (const permission of of("manager")) {
+      expect(permission).toMatch(
+        /\.(read|export)$|^inventory\.export\.create$/,
+      );
+    }
+    for (const permission of PERMISSIONS) {
+      if (/^(inventory|purchasing)\.[a-z_]+\.(read|export)$/.test(permission)) {
+        expect(of("manager").has(permission)).toBe(true);
+      }
+    }
+    expect(of("manager").has("inventory.cost.read")).toBe(true);
+    expect(of("manager").has("platform.audit.read")).toBe(true);
+    expect(of("manager").has("platform.billing.read")).toBe(false);
+    expect(of("manager").has("platform.organization.update")).toBe(false);
   });
 });
 

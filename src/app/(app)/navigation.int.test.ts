@@ -66,6 +66,12 @@ describe("menu by role", () => {
     );
   });
 
+  it("Gerencia sees every section, to read (WMS-50)", () => {
+    expect(menuOf(member("manager"))).toEqual(
+      NAV_ITEMS.map((item) => item.label),
+    );
+  });
+
   it("Montacarguista sees its tasks and the stock (WMS-07)", () => {
     expect(menuOf(member("forklift"))).toEqual([
       "Inicio",
@@ -84,7 +90,7 @@ describe("menu by role", () => {
     expect(menuOf(member("warehouse", "buyer"))).toEqual(
       NAV_ITEMS.map((item) => item.label),
     );
-    expect(ROLES.length).toBe(7);
+    expect(ROLES.length).toBe(8);
   });
 });
 

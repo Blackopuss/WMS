@@ -114,6 +114,7 @@ describe("an administrator cannot raise privileges", () => {
       "supervisor",
       "operator",
       "forklift",
+      "manager",
     ]);
   });
 

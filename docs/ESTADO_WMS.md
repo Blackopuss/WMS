@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-49. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+WMS-50. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -39,7 +39,7 @@ SaaS-Almacen.
 - **Sesiones**: cada persona ve y cierra sus propias sesiones.
 - **Roles y permisos (RBAC)** verificados en el servidor en cada operación. Roles:
   Titular (no es rol), Administrador, Almacén, Comprador, Consulta, Supervisor de
-  almacén, Almacenista y Montacarguista. Matriz aprobada en
+  almacén, Almacenista, Montacarguista y Gerencia (WMS-50). Matriz aprobada en
   `docs/MATRIZ_ROLES_PERMISOS.md`.
 - **Bitácora** solo-agregar de los cambios sensibles.
 - **Módulos activables** por empresa (Inventario base, Compras opcional); quitar

@@ -16,6 +16,7 @@ export const ROLES = [
   "supervisor",
   "operator",
   "forklift",
+  "manager",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -28,6 +29,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   supervisor: "Supervisor de almacén",
   operator: "Almacenista",
   forklift: "Montacarguista",
+  manager: "Gerencia",
 };
 
 /**
@@ -516,6 +518,40 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.stock.read",
     "inventory.task.read",
     "inventory.task.execute",
+  ],
+  // WMS-50: who runs the business reads and exports everything operational
+  // of the contracted modules; never operates, configures or sees billing.
+  manager: [
+    "platform.organization.read",
+    "platform.team.read",
+    "platform.audit.read",
+    "platform.module.read",
+    "platform.capacity.read",
+    "platform.plan.read",
+    "inventory.product.read",
+    "inventory.unit.read",
+    "inventory.presentation.read",
+    "inventory.location.read",
+    "inventory.stock.read",
+    "inventory.movement.read",
+    "inventory.minimum.read",
+    "inventory.cost.read",
+    "inventory.dashboard.read",
+    "inventory.count.read",
+    "inventory.task.read",
+    "inventory.outbound.read",
+    "inventory.import.read",
+    "inventory.export.create",
+    "purchasing.supplier.read",
+    "purchasing.product_supplier.read",
+    "purchasing.cost.read",
+    "purchasing.order.read",
+    "purchasing.order.export",
+    "purchasing.receipt.read",
+    "purchasing.return.read",
+    "purchasing.suggestion.read",
+    "purchasing.report.read",
+    "purchasing.report.export",
   ],
 };
 

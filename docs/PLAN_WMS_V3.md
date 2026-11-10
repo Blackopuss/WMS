@@ -81,6 +81,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-13B | Importar pedidos desde Excel/CSV | Hecho (2026-11-10) |
 | WMS-14 | Surtido con tareas hacia «Preparación» | Hecho (2026-11-10) |
 | WMS-49 | Parámetros de operación por empresa | Hecho (2026-11-10, ADR 0034) |
+| WMS-50 | Rol de Gerencia | Hecho (2026-11-10) |
 
 ---
 
@@ -117,6 +118,10 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 - **Depende de:** nada.
 - **Listo cuando:** el menú y los permisos de Gerencia coinciden con la matriz.
 - **Pruebas:** `catalog.test.ts`, casos negativos por rol, navegación.
+- **Estado:** hecho (2026-11-10). Rol `manager` («Gerencia»): todos los
+  permisos de lectura y exportación de la plataforma (empresa, equipo,
+  bitácora, módulos, cupos, plan; no el cobro) y de los módulos, incluidos
+  costos. El administrador lo puede asignar.
 
 ### WMS-18 · Varios almacenes y sucursales
 

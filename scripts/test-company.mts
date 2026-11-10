@@ -5,7 +5,7 @@
 // cleaned afterwards — important now that several tables are append-only.
 //
 // Usage (with `npm run dev:test` running on http://localhost:3100):
-//   npm run test:company -- "<contraseña de 12+ caracteres>" [warehouse|buyer|viewer|supervisor|operator|forklift|administrator|titular]
+//   npm run test:company -- "<contraseña de 12+ caracteres>" [warehouse|buyer|viewer|supervisor|operator|forklift|manager|administrator|titular]
 // Prints the email to sign in with.
 import { existsSync } from "node:fs";
 
