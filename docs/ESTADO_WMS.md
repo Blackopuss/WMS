@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-14. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+WMS-14. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -124,47 +124,40 @@ SaaS-Almacen.
 
 ## Lo que falta
 
-### Pasos ya planeados
+El orden, las dependencias y los criterios de cada paso están en
+`docs/PLAN_WMS_V3.md`, ordenado por las fases de `docs/INSTRUCCIONES_WMS.md`.
+En resumen:
 
-El orden, las dependencias y los criterios de cada paso están en `docs/PLAN_WMS_V2.md` (reemplaza la tabla de abajo, que era la del plan anterior). Ahí también quedaron ubicados los pendientes de la sección siguiente y las sugerencias de la revisión del 2026-11-09 (reabastecimiento, olas, empaque, devoluciones, trazabilidad, FIFO/FEFO, capacidad, etiquetas, equipos).
+- **Fase 1 (cerrar fundamentos):** parámetros de operación por empresa
+  (WMS-49; incluye volver configurables la estrategia de surtido y la ubicación
+  de preparación de WMS-14), rol de Gerencia (WMS-50), varios almacenes
+  (WMS-18), ubicaciones configurables con código, tipo, capacidad y
+  restricciones (WMS-22), alcance de permisos por almacén y zona (WMS-20), lotes,
+  caducidad, series y trazabilidad (WMS-21) y documentación técnica base
+  (WMS-51).
+- **Fase 2 (operación logística):** acomodo con recomendación (WMS-52), tarimas
+  (WMS-53), empaque (WMS-15), despacho y embarques (WMS-16), devoluciones de
+  clientes (WMS-17), traslados entre almacenes (WMS-19), cross-docking (WMS-54),
+  conteos cíclicos (WMS-55), etiquetas (WMS-26), cámara (WMS-36), reposición
+  (WMS-23/24) y picking por olas, lotes y zona (WMS-25).
+- **Fase 3 (gestión empresarial):** flujos de aprobación (WMS-56) y ajustes
+  autorizados (WMS-41), solicitudes de compra y comparación de proveedores
+  (WMS-57), campos personalizados (WMS-58), producción y calidad con sus roles
+  (WMS-27..31, WMS-59), API y webhooks (WMS-60), facturación fiscal como módulo
+  independiente (WMS-61), integraciones (WMS-62) y Ventas, pendiente de decisión
+  (WMS-63).
+- **Fase 4 (inteligencia operativa):** indicadores y tableros (WMS-32..34),
+  automatizaciones (WMS-64), slotting (WMS-65) y búsqueda global (WMS-66).
+- **Transversal:** PWA, fotos, PIN, incidencias, sesiones del equipo, historial
+  de accesos y alertas, equipos, almacenamiento externo de archivos y ambientes
+  (WMS-35..42, 47, 67, 68).
+- **Fase 5 (escalabilidad comercial):** licencias y usuarios adicionales
+  (WMS-69), configuración inicial, demo, plantillas por giro, manuales, portal de
+  clientes y lo comercial (WMS-43..46, 48, 70).
 
-| ID anterior | Qué falta | Especificación |
-| --- | --- | --- |
-| WMS-09 | Pedidos de salida: validar disponibilidad, reservar sin descontar, generar tareas de surtido, confirmar producto/ubicación/cantidad, verificar y despachar (el despacho escribe la salida) | 5.2 |
-| WMS-10 | Estados de inventario separados de la ubicación: disponible, reservado, en recepción, en inspección, cuarentena, dañado, rechazado, en tránsito, bloqueado | 6.2 |
-| WMS-11 | Producción (órdenes, receta, consumo real, producción por turno y trabajador, merma) y calidad (inspección, aprobado/rechazado/cuarentena, liberación) | 5.4–5.6 |
-| WMS-12 | Analítica: rotación, exactitud, pedidos completos y a tiempo, tiempos de recepción y surtido, producción, rechazo, merma; filtros por periodo, almacén, producto y usuario | 7 |
-
-### Pedido por la especificación y sin paso asignado todavía
-
-- **Varios almacenes y sucursales por empresa** (3.1, 6.5). Hoy cada empresa
-  tiene una sola instalación.
-- **Permisos con alcance por almacén, zona o ubicación** (4.1; prueba crítica 12).
-  Hoy los permisos valen para toda la empresa.
-- **Ubicaciones configurables** (6.5): niveles libres (bodega, rack, nivel,
-  posición), código único por almacén, capacidad, dimensiones, peso máximo,
-  restricciones, código de barras o QR de la ubicación, y reportes que suman los
-  nodos descendientes. Hoy son tres niveles fijos solo con nombre.
-- **Lotes y números de serie** (5.1, 6.1). No existen.
-- **Autorización de ajustes por umbral** (6.3): quién pidió y quién autorizó, con
-  evidencia. Hoy un ajuste solo exige motivo.
-- **Notificaciones e incidencias** dentro de la app (Fase 2).
-- **Evidencias fotográficas** en recepción, tareas e inspecciones (4.5).
-- **Escaneo con cámara** en el teléfono (4.5). Hoy se acepta un lector que
-  teclea el código.
-- **PWA instalable** y operaciones con conectividad limitada, con cola local e
-  idempotencia (4.5).
-- **Terminales compartidas** con cambio rápido de persona por PIN o tarjeta
-  (4.3, 16.1).
-- **Sesiones del equipo para el administrador**: ver las sesiones activas de las
-  personas de la empresa y cerrarlas a distancia (16.1). Hoy cada persona ve solo
-  las suyas.
-- **Plantillas por giro** (3.3): almacén general, comercial, manufactura, 3PL.
-- **Operación 3PL**: varios propietarios de inventario en un mismo almacén (1, 3.3).
-- **Integraciones**: API, ERP, básculas e impresoras de etiquetas (3.2, Fase 4).
-- **CFDI** mediante un PAC (16.3).
-- **Entorno de pruebas previo a producción (staging)**, Cloudflare con WAF y
-  límites, y monitoreo de la infraestructura del WMS (11, 12, 16.2).
+Hoy, fijo en el código y pendiente de configurarse (regla 11): la estrategia
+de surtido («la más llena primero») y una sola ubicación «Preparación» por
+almacén (WMS-49).
 
 ### Decisiones y tareas del fundador
 

@@ -2,7 +2,7 @@
 
 Fuente: fundador, 2026-11-10. **Este documento manda sobre todo lo demás** del
 repositorio: la especificación (`ESPECIFICACION_WMS_v5.md`) y el plan
-(`PLAN_WMS_V2.md`) lo detallan, pero no lo contradicen. Lo heredado de
+(`PLAN_WMS_V3.md`) lo detallan, pero no lo contradicen. Lo heredado de
 SaaS-Almacen (`MEMORY.md`, `PLAN_IMPLEMENTACION.md`, ADR anteriores) es
 historial: explica de dónde viene el código, pero **no marca el rumbo ni los
 siguientes pasos**. No se continúa el plan de SaaS-Almacen (etapas PIL, BIL,
@@ -571,16 +571,10 @@ independientes.
   fijo, se anota en `ESTADO_WMS.md` como pendiente de configuración.
 - **Flujo antes que pantalla (regla 15 y sección 6.10):** un paso nuevo
   describe su flujo operativo (quién, en qué dispositivo, qué valida, qué deja
-  de rastro) en `PLAN_WMS_V2.md` antes de programarse.
+  de rastro) en `PLAN_WMS_V3.md` antes de programarse.
 - **Ventas (módulo H):** está en estas instrucciones, pero se quitó del
   producto el 2026-11-09 (ADR 0032). Queda **pendiente de decisión del
   fundador**; no se reintroduce hasta que la tome. Su código sigue en el
   historial de git.
-- **Huecos frente a estas instrucciones** (revisión del 2026-11-10, a llevar
-  al plan): campos personalizados y reglas configurables; put-away con
-  recomendación y tareas desde la recepción; cross-docking, slotting, pallets
-  y picking por lotes o zonas; conteos cíclicos programados; solicitudes de
-  compra y comparación de proveedores; búsqueda global; roles de Gerencia,
-  Producción, Calidad y Ventas; alertas de accesos sospechosos e historial de
-  accesos; API y webhooks; documentación de API, diagramas y modelo de datos;
-  almacenamiento externo, Cloudflare y ambientes separados.
+- **Huecos frente a estas instrucciones** (revisión del 2026-11-10): quedaron
+  como pasos en `PLAN_WMS_V3.md` (WMS-49..70).
