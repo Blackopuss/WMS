@@ -21,6 +21,7 @@ export {
   listOrders,
   orderPath,
   previewCode,
+  priceChoice,
   startCheckout,
 } from "./orders";
 export type {
