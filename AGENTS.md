@@ -14,12 +14,33 @@ Este repositorio (`Blackopuss/WMS`) es una copia de SaaS-Almacen (rama `pruebas`
 
 Contexto compartido por Claude Code y Codex. Leer antes de trabajar, en este orden:
 
+- **`docs/INSTRUCCIONES_WMS.md`: instrucciones generales del fundador (2026-11-10). Mandan sobre todo lo demás.** WMS global para cualquier industria, núcleo único configurable por empresa, módulos independientes, fases de desarrollo y reglas obligatorias para los agentes (sección 11). **No se continúa el plan de SaaS-Almacen** (sus etapas PIL, BIL, VEN, COT, PAG, CRM, el cobro en línea ni nada pensado para ferreterías): lo heredado se reutiliza como código, no como rumbo.
 - `docs/ESTADO_WMS.md`: lo que hay y lo que falta, por área y por sección de la especificación.
 - `docs/PLAN_WMS_V2.md`: los pasos que siguen (WMS-09 en adelante, etapas A–I), con dependencias, «Listo cuando» y pruebas de cada uno. Trabajar **un paso a la vez**, en orden, y cerrarlo solo con su criterio verificado. Manda sobre los planes anteriores.
 - `docs/PLAN_WMS.md`: pasos WMS-01..08 ya cerrados (su numeración pendiente quedó reemplazada por la v2).
 - `docs/ESPECIFICACION_WMS_v5.md`: la especificación del fundador (roles, flujos, inventario, analítica, infraestructura, criterios de aceptación de la sección 15).
-- `MEMORY.md` y `docs/PLAN_IMPLEMENTACION.md` (plan v0.6, IDs como `BAS-01`, `INV-17`): historial de SaaS-Almacen; explican de dónde vienen las convenciones de abajo.
+- `MEMORY.md` y `docs/PLAN_IMPLEMENTACION.md` (plan v0.6, IDs como `BAS-01`, `INV-17`): historial de SaaS-Almacen; explican de dónde vienen las convenciones de abajo, **no qué hacer después**. Las decisiones vigentes del WMS están en la sección «WMS» de `MEMORY.md`.
 - El fundador pidió avanzar el plan paso a paso sin pedirle confirmación en cada uno (2026-11-09).
+
+## Reglas del fundador para los agentes (INSTRUCCIONES_WMS.md, sección 11)
+
+1. Antes de modificar código, analizar la arquitectura existente.
+2. No duplicar funcionalidades ya implementadas.
+3. No crear módulos aislados que rompan la arquitectura global.
+4. No modificar funcionalidades existentes sin revisar sus dependencias.
+5. Mantener compatibilidad entre módulos.
+6. Validar permisos tanto en frontend como en backend.
+7. Crear pruebas para las funcionalidades nuevas.
+8. Documentar cambios importantes.
+9. No introducir dependencias innecesarias.
+10. Evitar soluciones temporales que comprometan la escalabilidad.
+11. No asumir que todas las empresas trabajan de la misma manera: lo que admite más de una forma razonable es un parámetro de la empresa con valor por omisión, no algo fijo en el código.
+12. Toda funcionalidad debe considerar la configuración multiempresa.
+13. Priorizar integridad de inventario y trazabilidad.
+14. No sacrificar seguridad por velocidad de desarrollo.
+15. No implementar funcionalidades complejas sin definir primero su flujo operativo.
+
+Nada de textos, ejemplos, datos de demostración ni valores por omisión pensados para un solo giro (ferreterías u otro).
 
 ## Stack
 

@@ -1,8 +1,8 @@
 # WMS modular multiempresa
 
-Gestión de almacenes (recepción, ubicaciones, existencias, movimientos, conteos, compras y, por pasos, tareas de traslado, surtido, producción y calidad). Copia de SaaS-Almacen reorientada al WMS: ver [Estado del WMS](docs/ESTADO_WMS.md) (lo que hay y lo que falta), [Plan WMS](docs/PLAN_WMS.md) y la [especificación](docs/ESPECIFICACION_WMS_v5.md). Ventas se quitó del producto.
+Plataforma WMS empresarial para cualquier industria: un solo núcleo, configurable por empresa y con módulos que se activan por separado. El rumbo está en las [instrucciones del fundador](docs/INSTRUCCIONES_WMS.md), que mandan sobre todo lo demás; ver también [Estado del WMS](docs/ESTADO_WMS.md) (lo que hay y lo que falta), [Plan WMS v2](docs/PLAN_WMS_V2.md) y la [especificación](docs/ESPECIFICACION_WMS_v5.md). Nació como copia de SaaS-Almacen: su código se reutiliza, su plan no se sigue.
 
-Historial heredado (Next.js + TypeScript). Pasos completados según `docs/PLAN_IMPLEMENTACION.md`: BAS-01, BAS-02, BAS-03, BAS-04, BAS-05, BAS-06, BAS-07, BAS-08, BAS-12, BAS-13, PLT-01, PLT-02, PLT-03, PLT-04, PLT-05, PLT-06, PLT-07, PLT-08A, PLT-08B, PLT-09, PLT-10, PLT-11, PLT-12, PLT-13, PLT-14, PLT-15, PLT-16, USR-01 (con FUN-07 aprobada). Rama de trabajo: `pruebas` (CI en GitHub Actions).
+Historial heredado de SaaS-Almacen (Next.js + TypeScript). Pasos completados según `docs/PLAN_IMPLEMENTACION.md` (histórico): BAS-01, BAS-02, BAS-03, BAS-04, BAS-05, BAS-06, BAS-07, BAS-08, BAS-12, BAS-13, PLT-01, PLT-02, PLT-03, PLT-04, PLT-05, PLT-06, PLT-07, PLT-08A, PLT-08B, PLT-09, PLT-10, PLT-11, PLT-12, PLT-13, PLT-14, PLT-15, PLT-16, USR-01 (con FUN-07 aprobada). Rama de trabajo: `pruebas` (CI en GitHub Actions).
 
 ```powershell
 npm install

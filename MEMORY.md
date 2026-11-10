@@ -8,6 +8,8 @@ Este repositorio es `Blackopuss/WMS`, copia de SaaS-Almacen (rama `pruebas`, com
 
 ### Decisiones confirmadas del fundador
 
+- 2026-11-10: **instrucciones generales del WMS** guardadas en `docs/INSTRUCCIONES_WMS.md`; mandan sobre todo lo demás. WMS global para cualquier industria, configurable por empresa, por fases (fundamentos → operación logística → gestión empresarial → inteligencia operativa → escalabilidad comercial). **No seguir lo de SaaS-Almacen**: su plan, sus etapas de cobro en línea, punto de venta y pilotos, y todo lo pensado para ferreterías quedan como historial. Ventas aparece en las instrucciones pero sigue fuera (ADR 0032) hasta que el fundador decida.
+
 - 2026-11-09: crear el WMS como repositorio aparte porque SaaS-Almacen se estaba yendo hacia punto de venta. Conservar lo esencial (cuentas, empresas, inicio, inventario, compras) y cambiar pestañas e interfaz según `docs/ESPECIFICACION_WMS_v5.md`.
 - 2026-11-09: **quitar Ventas** del producto (punto de venta, caja, cotizaciones, pedidos de venta, ventas a plazos). ADR 0032. No volver a agregarlo sin su decisión; el código sigue en git y en SaaS-Almacen.
 - 2026-11-09: avanzar el plan paso a paso **sin pedirle confirmación** en cada uno.

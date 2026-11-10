@@ -5,6 +5,11 @@ Actualizado: 2026-11-09. Reemplaza los pasos pendientes de `docs/PLAN_WMS.md`
 `docs/ESTADO_WMS.md`, de la revisión del fundador del 2026-11-09 y de
 `docs/ESPECIFICACION_WMS_v5.md` (las secciones citadas son de ella).
 
+> Manda sobre este plan: [`INSTRUCCIONES_WMS.md`](INSTRUCCIONES_WMS.md)
+> (instrucciones del fundador, 2026-11-10). Un paso que las contradiga se
+> corrige antes de programarse; los huecos que esas instrucciones señalan se
+> agregan aquí como pasos.
+
 ## Cómo se usa este plan
 
 - Un paso a la vez, en orden. Un paso no empieza si su dependencia no está

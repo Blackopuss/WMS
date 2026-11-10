@@ -1,5 +1,7 @@
 # Plan de implementación — SaaS de inventario modular
 
+> **Histórico (SaaS-Almacen).** Este plan ya no se sigue. El rumbo del WMS está en [`INSTRUCCIONES_WMS.md`](INSTRUCCIONES_WMS.md) (instrucciones del fundador, 2026-11-10) y los pasos en [`PLAN_WMS_V2.md`](PLAN_WMS_V2.md). Se conserva solo para entender de dónde vienen las convenciones del código.
+
 Versión 0.7 · 27 de octubre de 2026 (Ventas adelantada, ADR 0030) · Modelo modular acordado: Inventario como base por capacidad, Compras en el primer lanzamiento, después Ventas (punto de venta, cotizaciones) y CRM; varios usuarios con roles. Plan revisado en conjunto por Claude y Codex en 224 pasos de unas 3 horas.
 
 Ejecución de la primera fase: [definición, reglas, investigación y riesgos](FASE_01_DEFINICION.md). Prototipo navegable: [instrucciones y validación](../prototype/README.md). Entregables internos preparados; entrevistas, validación con ferreterías y decisiones comerciales siguen pendientes.
