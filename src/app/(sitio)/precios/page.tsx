@@ -3,7 +3,13 @@ import type { Metadata } from "next";
 
 import { PROPOSED_TIERS } from "@/platform/billing";
 
-import { formatCount, formatMoney, SITE, TIER_PRICES } from "../content";
+import {
+  EXTRA_USER_PRICE,
+  formatCount,
+  formatMoney,
+  SITE,
+  TIER_PRICES,
+} from "../content";
 import { CtaBand, PageHero, Section } from "../sections";
 import { PriceCalculator } from "./price-calculator";
 
@@ -45,7 +51,11 @@ const FAQ = [
       "No. Pagas por adelantado 1, 3, 6 o 12 meses y nada se cobra solo. Si no renuevas, tu cuenta queda en modo consulta para que veas y descargues tu información.",
   },
   {
-    question: "¿Necesitan más personas o más productos?",
+    question: "¿Necesitan más personas?",
+    answer: `Agrega las que necesites por ${formatMoney(EXTRA_USER_PRICE)} al mes cada una al comprar tu plan o en cualquier momento después; si es a medio mes, pagas solo los días que quedan. Una persona con varios roles ocupa un solo lugar.`,
+  },
+  {
+    question: "¿Necesitan más productos o un plan especial?",
     answer: `Escríbenos a ${SITE.contactEmail} y armamos un plan a tu medida.`,
   },
 ];

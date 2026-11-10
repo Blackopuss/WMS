@@ -95,8 +95,14 @@ export default function TermsPage() {
                 manejas.
               </li>
               <li>
-                Para más personas, más productos o un plan a tu medida,
-                escríbenos a {mail}.
+                Puedes agregar personas a las que incluye tu plan al comprarlo o
+                cambiarlo; cada persona adicional tiene el precio mensual que
+                indica la página de precios y, si la agregas a medio periodo,
+                pagas solo los días que quedan. Una persona con varios roles
+                ocupa un solo lugar y las invitaciones pendientes cuentan.
+              </li>
+              <li>
+                Para más productos o un plan a tu medida, escríbenos a {mail}.
               </li>
             </ul>
           ),

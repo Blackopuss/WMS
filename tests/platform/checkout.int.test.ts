@@ -17,6 +17,7 @@ import {
   getOrder,
   handleWebhook,
   previewCode,
+  previewQuote,
   startCheckout,
   type CheckoutInput,
 } from "@/platform/billing";
@@ -551,6 +552,156 @@ describe("changing a live plan (BIL-08..10)", () => {
       ok: false,
       fieldErrors: { months: expect.stringMatching(/no cuesta más/) },
     });
+  });
+});
+
+describe("people added (BIL-11)", () => {
+  const usersLimit = async (org: string) =>
+    (await getFreshEntitlements(org)).limit("users");
+
+  it("are priced per person a month and raise the users limit when paid", async () => {
+    const c = await company();
+    expect(
+      await startCheckout(
+        actorOf(c),
+        choice({ extraUsers: 3, months: 3 }),
+        headers(),
+        c.owner.email,
+      ),
+    ).toMatchObject({ ok: true });
+    // (349 + 3 × 59) × 3.
+    expect(fake.createCalls.at(-1)?.total).toBe("1578.00");
+    const order = await db.checkoutOrder.findFirstOrThrow({
+      where: { organizationId: c.org },
+    });
+    expect(order).toMatchObject({ includedUsers: 2, extraUsers: 3 });
+    expect(order.subtotal.toFixed(2)).toBe("1578.00");
+    fake.status = {
+      state: "paid",
+      amount: "1578.00",
+      currency: "MXN",
+      paymentRef: "pay_users",
+    };
+    await confirmOrder(c.org, order.id);
+    expect(await usersLimit(c.org)).toBe(5);
+    expect(await getOrder(actorOf(c), order.id)).toMatchObject({
+      status: "PAID",
+      planText: "100 productos · Inventario · 3 usuarios adicionales",
+    });
+    // The amounts of the order, people included, never change.
+    await expect(
+      db.$executeRaw`UPDATE checkout_order SET extraUsers = 9 WHERE id = ${order.id}`,
+    ).rejects.toThrow();
+  });
+
+  it("over a live plan, adding people pays only the days left; fewer refunds nothing", async () => {
+    const c = await company();
+    const code = await newCode(100, 3);
+    await startCheckout(
+      actorOf(c),
+      choice({ code: code.code, extraUsers: 1, provider: "" }),
+      headers(),
+      c.owner.email,
+    );
+    expect(await usersLimit(c.org)).toBe(3);
+    const end = (
+      await db.entitlement.findFirstOrThrow({
+        where: { organizationId: c.org, key: "active_products" },
+      })
+    ).validUntil!;
+    const day = (at: Date) =>
+      Math.floor((at.getTime() - 6 * 3_600_000) / 86_400_000);
+    const daysLeft = day(end) - day(new Date());
+
+    // Two more people until the end: 2 × 59 for the days left.
+    const prorated = ((118 * daysLeft) / 30).toFixed(2);
+    expect(
+      await startCheckout(
+        actorOf(c),
+        choice({ extraUsers: 3, months: 0 }),
+        headers(),
+        c.owner.email,
+      ),
+    ).toMatchObject({ ok: true });
+    expect(fake.createCalls.at(-1)?.total).toBe(prorated);
+    // The same people as now: renewing charges no difference.
+    expect(
+      await previewCode(
+        actorOf(c),
+        choice({ code: code.code, extraUsers: 1 }),
+        headers(),
+      ),
+    ).toMatchObject({ quote: { prorated: "0.00", subtotal: "408.00" } });
+    // Fewer people: starts when paid, nothing deleted, nothing refunded.
+    await startCheckout(
+      actorOf(c),
+      choice({ code: code.code, extraUsers: "", provider: "" }),
+      headers(),
+      c.owner.email,
+    );
+    expect(await usersLimit(c.org)).toBe(2);
+    expect(
+      await db.membership.count({
+        where: { organizationId: c.org, status: "ACTIVE" },
+      }),
+    ).toBe(1);
+  });
+
+  it("previewQuote prices any choice; a code only through its signed token", async () => {
+    const c = await company();
+    const code = await newCode(50);
+    const applied = await previewCode(
+      actorOf(c),
+      choice({ code: code.code }),
+      headers(),
+    );
+    if (!applied.ok) throw new Error("code setup failed");
+    const ask = (token: string, change: Partial<CheckoutInput> = {}) =>
+      previewQuote(
+        actorOf(c),
+        choice({ code: code.code, extraUsers: 2, ...change }),
+        token,
+      );
+    expect(await ask(applied.codeToken)).toMatchObject({
+      ok: true,
+      quote: { subtotal: "467.00", discount: "233.50", total: "233.50" },
+    });
+    // No token, a forged one, or one given to someone else: no discount.
+    expect(await ask("")).toMatchObject({ quote: { total: "467.00" } });
+    expect(await ask("100.9999999999999.forged")).toMatchObject({
+      quote: { total: "467.00" },
+    });
+    const other = await company();
+    const elsewhere = await previewCode(
+      actorOf(other),
+      choice({ code: code.code }),
+      headers(),
+    );
+    if (!elsewhere.ok) throw new Error("code setup failed");
+    expect(await ask(elsewhere.codeToken)).toMatchObject({
+      quote: { total: "467.00" },
+    });
+    // The token is for that code only.
+    expect(
+      await ask(applied.codeToken, { code: `${code.code}X` }),
+    ).toMatchObject({ quote: { total: "467.00" } });
+    expect(await ask("", { extraUsers: 51 })).toMatchObject({
+      ok: false,
+      fieldErrors: { extraUsers: expect.stringMatching(/de 0 a 50/) },
+    });
+    expect(await ask("", { extraUsers: "dos" })).toMatchObject({
+      ok: false,
+      fieldErrors: { extraUsers: expect.any(String) },
+    });
+    // Only the titular.
+    const member = await newUser("Empleado");
+    await expect(
+      previewQuote(
+        { organizationId: c.org, userId: member.id },
+        choice({ extraUsers: 1 }),
+        "",
+      ),
+    ).rejects.toThrow();
   });
 });
 

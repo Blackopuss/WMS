@@ -1,6 +1,11 @@
 import "server-only";
 
-import { createHash, randomInt } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomInt,
+  timingSafeEqual,
+} from "node:crypto";
 
 import { z } from "zod";
 
@@ -24,6 +29,8 @@ import { LOCKING_TRANSACTION, db, forOrganization } from "@/server";
 
 import {
   ADD_ON_MODULES,
+  EXTRA_USER_MONTHLY,
+  MAX_EXTRA_USERS,
   PLAN_TIERS,
   PURCHASE_MONTHS,
   addOnKey,
@@ -42,7 +49,12 @@ import {
 } from "../prices";
 import { setEntitlement } from "../provisioning";
 import { extendValidity, mexicoDay } from "../validity";
-import { CODE_REJECTED, findUsableCode, redeemCode } from "./codes";
+import {
+  CODE_REJECTED,
+  findUsableCode,
+  normalizeCode,
+  redeemCode,
+} from "./codes";
 import type { PaymentProvider, ProviderId, WebhookRequest } from "./provider";
 import { enabledProviders, findProvider } from "./providers";
 import { CONTACT_EMAIL, REFUND_TERMS } from "./refunds";
@@ -143,6 +155,11 @@ type CurrentPlan = {
   productLimit: number | null;
   /** The modules on top of Inventario that end with the plan. */
   addOns: AddOnModule[];
+  /**
+   * People on top of the ones the tier includes (BIL-11): the "users"
+   * limit that ends with the plan minus the tier's. 0 without a tier.
+   */
+  extraUsers: number;
   /** Null = no end date (granted by staff). */
   validUntil: Date | null;
   live: boolean;
@@ -168,21 +185,26 @@ async function readPlan(
   );
   if (!products) return null;
   const end = products.validUntil;
+  const endsWithPlan = (row: { validUntil: Date | null }) =>
+    (row.validUntil?.getTime() ?? null) === (end?.getTime() ?? null);
   // The modules of the plan end when it ends; one removed earlier does not.
   const addOns = ADD_ON_MODULES.filter((module) =>
     rows.some(
-      (row) =>
-        row.kind === "MODULE" &&
-        row.key === module &&
-        (row.validUntil?.getTime() ?? null) === (end?.getTime() ?? null),
+      (row) => row.kind === "MODULE" && row.key === module && endsWithPlan(row),
     ),
   );
+  const tier = PLAN_TIERS.find((each) => each.productLimit === products.value);
+  const users = rows.find(
+    (row) => row.kind === "LIMIT" && row.key === "users" && endsWithPlan(row),
+  )?.value;
   return {
-    tierId:
-      PLAN_TIERS.find((tier) => tier.productLimit === products.value)?.id ??
-      null,
+    tierId: tier?.id ?? null,
     productLimit: products.value,
     addOns,
+    extraUsers:
+      tier && users != null
+        ? Math.min(MAX_EXTRA_USERS, Math.max(0, users - tier.users))
+        : 0,
     validUntil: end,
     live: products.validFrom <= now && (end === null || end > now),
   };
@@ -214,7 +236,7 @@ function carryOf(plan: CurrentPlan | null, now: Date): CurrentPlanCarry | null {
   const tier = findTier(plan.tierId);
   if (!tier) return null;
   return {
-    monthly: monthlyPrice(tier, plan.addOns).toFixed(2),
+    monthly: monthlyPrice(tier, plan.addOns, plan.extraUsers).toFixed(2),
     daysLeft: Math.max(
       0,
       Math.round(
@@ -225,11 +247,12 @@ function carryOf(plan: CurrentPlan | null, now: Date): CurrentPlanCarry | null {
   };
 }
 
-/** Same plan as when it was priced: tier, modules and end. */
+/** Same plan as when it was priced: tier, modules, people and end. */
 const samePlan = (a: CurrentPlan | null, b: CurrentPlan | null) =>
   (a?.live ?? false) === (b?.live ?? false) &&
   (a?.tierId ?? null) === (b?.tierId ?? null) &&
   addOnKey(a?.addOns ?? []) === addOnKey(b?.addOns ?? []) &&
+  (a?.extraUsers ?? 0) === (b?.extraUsers ?? 0) &&
   (a?.validUntil?.getTime() ?? null) === (b?.validUntil?.getTime() ?? null);
 
 /**
@@ -238,7 +261,12 @@ const samePlan = (a: CurrentPlan | null, b: CurrentPlan | null) =>
  */
 async function priceOf(
   organizationId: string,
-  choice: { tier: PlanTier; modules: AddOnModule[]; months: number },
+  choice: {
+    tier: PlanTier;
+    modules: AddOnModule[];
+    months: number;
+    extraUsers: number;
+  },
   percentOff: number,
   now: Date,
 ): Promise<
@@ -268,6 +296,7 @@ async function priceOf(
     choice.months,
     percentOff,
     carry,
+    choice.extraUsers,
   );
   if (choice.months === 0 && price.prorated === "0.00") {
     return {
@@ -296,6 +325,8 @@ export type CheckoutOptions = {
   current: CurrentPlan | null;
   /** The live plan a purchase would change (BIL-08); null if none. */
   carry: CurrentPlanCarry | null;
+  /** Price a month of each person added (BIL-11), and how many fit. */
+  extraUser: { monthly: string; max: number };
   refundTerms: readonly string[];
 };
 
@@ -319,11 +350,14 @@ export async function getCheckoutOptions(
     providers: enabledProviders().map(({ id, label }) => ({ id, label })),
     current,
     carry: current?.live && current.tierId ? carryOf(current, now) : null,
+    extraUser: { monthly: EXTRA_USER_MONTHLY, max: MAX_EXTRA_USERS },
     refundTerms: REFUND_TERMS,
   };
 }
 
 // ── Starting a checkout ─────────────────────────────────────────────────
+
+const USERS_MESSAGE = `Escribe cuántos usuarios agregar, de 0 a ${MAX_EXTRA_USERS}. Para más, escríbenos a ${CONTACT_EMAIL}.`;
 
 const choiceSchema = z.object({
   tier: z.string().transform((value, context) => {
@@ -335,6 +369,15 @@ const choiceSchema = z.object({
     return tier;
   }),
   modules: z.array(z.string().max(20)).max(10).transform(addOnsOf),
+  // People on top of the tier's (BIL-11); empty = none.
+  extraUsers: z.preprocess(
+    (value) => (String(value ?? "").trim() === "" ? 0 : value),
+    z.coerce
+      .number({ message: USERS_MESSAGE })
+      .int(USERS_MESSAGE)
+      .min(0, USERS_MESSAGE)
+      .max(MAX_EXTRA_USERS, USERS_MESSAGE),
+  ),
   // 0 = only the difference until the live plan ends (BIL-08).
   months: z.coerce
     .number()
@@ -352,12 +395,15 @@ export type CheckoutInput = {
   tier: string;
   /** Add-ons on top of Inventario («purchasing», «sales»); others ignored. */
   modules: readonly string[];
+  /** People on top of the ones the tier includes (BIL-11); "" = 0. */
+  extraUsers?: number | string;
   months: number | string;
   code: string;
   /** Provider id; ignored when a code makes it free. */
   provider: string;
 };
-export type CheckoutField = "tier" | "months" | "code" | "provider";
+export type CheckoutField =
+  "tier" | "months" | "extraUsers" | "code" | "provider";
 export type CheckoutResult =
   | {
       ok: true;
@@ -386,6 +432,7 @@ function parseChoice(input: CheckoutInput) {
   const parsed = choiceSchema.safeParse({
     tier: String(input.tier ?? ""),
     modules: Array.isArray(input.modules) ? input.modules.map(String) : [],
+    extraUsers: input.extraUsers ?? 0,
     months: input.months,
     code: String(input.code ?? ""),
   });
@@ -421,13 +468,15 @@ export async function previewCode(
       quote: Quote;
       /** The live plan it was priced over, for the rest of the table. */
       carry: CurrentPlanCarry | null;
+      /** Lets `previewQuote` price other choices with this discount. */
+      codeToken: string;
     }
   | Fail
 > {
   await assertOwnerAction(actor.organizationId, actor.userId, PERMISSION);
   const choice = parseChoice({ ...input, provider: "" });
   if (!choice.ok) return choice.result;
-  const { tier, modules, months, code } = choice.data;
+  const { tier, modules, months, extraUsers, code } = choice.data;
   if (!code) return fail(undefined, { code: "Escribe el código." });
   const wait = await reserveAttempt(attemptKeys(actor, headers));
   if (wait > 0) return fail(tooManyAttemptsMessage(wait));
@@ -435,7 +484,7 @@ export async function previewCode(
   if (!usable) return fail(undefined, { code: CODE_REJECTED });
   const priced = await priceOf(
     actor.organizationId,
-    { tier, modules, months },
+    { tier, modules, months, extraUsers },
     usable.percentOff,
     new Date(),
   );
@@ -444,9 +493,98 @@ export async function previewCode(
     ok: true,
     code: usable.code,
     percentOff: usable.percentOff,
+    codeToken: signCode(actor, usable.code, usable.percentOff, Date.now()),
     quote: priced.price,
     carry: priced.carry,
   };
+}
+
+// ── Pricing other choices while choosing (BIL-11) ───────────────────────
+
+/** An applied code is good for pricing for an hour (never for paying). */
+const CODE_TOKEN_MS = 3_600_000;
+
+/** Key for signing applied codes, apart from sessions and other links. */
+function codeKey(): Buffer {
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("BETTER_AUTH_SECRET is required to sign checkout codes");
+  }
+  return createHmac("sha256", secret)
+    .update("almacen:checkout-code:v1")
+    .digest();
+}
+
+const codeSignature = (
+  actor: Actor,
+  code: string,
+  percentOff: number,
+  expires: number,
+) =>
+  createHmac("sha256", codeKey())
+    .update(
+      `${actor.organizationId}|${actor.userId}|${code}|${percentOff}|${expires}`,
+    )
+    .digest("base64url");
+
+/** «<percentOff>.<expires>.<signature>»: a code this person already applied. */
+function signCode(
+  actor: Actor,
+  code: string,
+  percentOff: number,
+  now: number,
+): string {
+  const expires = now + CODE_TOKEN_MS;
+  return `${percentOff}.${expires}.${codeSignature(actor, code, percentOff, expires)}`;
+}
+
+/** The discount of a signed code, or 0 when it is not this person's or old. */
+function percentOfToken(actor: Actor, code: string, token: string): number {
+  const [percentText, expiresText, signature = ""] = token.split(".");
+  const percentOff = Number(percentText);
+  const expires = Number(expiresText);
+  if (
+    !Number.isInteger(percentOff) ||
+    percentOff < 0 ||
+    percentOff > 100 ||
+    !Number.isSafeInteger(expires) ||
+    expires < Date.now()
+  ) {
+    return 0;
+  }
+  const expected = Buffer.from(codeSignature(actor, code, percentOff, expires));
+  const given = Buffer.from(signature);
+  return given.length === expected.length && timingSafeEqual(given, expected)
+    ? percentOff
+    : 0;
+}
+
+/**
+ * Prices a choice while the titular chooses (the number of people added
+ * makes too many combinations to price them all ahead). Creates nothing
+ * and is not an attempt: a code counts only through the token that
+ * `previewCode` gave after limiting its attempts, so codes cannot be
+ * guessed here. `startCheckout` prices everything again.
+ */
+export async function previewQuote(
+  actor: Actor,
+  input: Omit<CheckoutInput, "provider">,
+  codeToken: string,
+): Promise<{ ok: true; quote: Quote } | Fail> {
+  await assertOwnerAction(actor.organizationId, actor.userId, PERMISSION);
+  const choice = parseChoice({ ...input, provider: "" });
+  if (!choice.ok) return choice.result;
+  const { tier, modules, months, extraUsers, code } = choice.data;
+  const normalized = code ? normalizeCode(code) : null;
+  const percentOff =
+    normalized && codeToken ? percentOfToken(actor, normalized, codeToken) : 0;
+  const priced = await priceOf(
+    actor.organizationId,
+    { tier, modules, months, extraUsers },
+    percentOff,
+    new Date(),
+  );
+  return priced.ok ? { ok: true, quote: priced.price } : priced.result;
 }
 
 /**
@@ -462,7 +600,7 @@ export async function startCheckout(
   await assertOwnerAction(actor.organizationId, actor.userId, PERMISSION);
   const choice = parseChoice(input);
   if (!choice.ok) return choice.result;
-  const { tier, modules, months, code } = choice.data;
+  const { tier, modules, months, extraUsers, code } = choice.data;
 
   const wait = await reserveAttempt(attemptKeys(actor, headers));
   if (wait > 0) return fail(tooManyAttemptsMessage(wait));
@@ -471,7 +609,7 @@ export async function startCheckout(
   if (code && !usable) return fail(undefined, { code: CODE_REJECTED });
   const priced = await priceOf(
     actor.organizationId,
-    { tier, modules, months },
+    { tier, modules, months, extraUsers },
     usable?.percentOff ?? 0,
     new Date(),
   );
@@ -526,6 +664,7 @@ export async function startCheckout(
           tier: tier.id,
           productLimit: tier.productLimit,
           includedUsers: tier.users,
+          extraUsers,
           modules: ["inventory", ...modules].join(","),
           months,
           prorated: price.prorated,
@@ -562,7 +701,7 @@ export async function startCheckout(
     const session = await provider!.createCheckout({
       orderId,
       transactionId,
-      description: `Almacén · ${planText(tier.productLimit, modules)} · ${months} ${months === 1 ? "mes" : "meses"}`,
+      description: `Almacén · ${planText(tier.productLimit, modules, extraUsers)} · ${months} ${months === 1 ? "mes" : "meses"}`,
       total: price.total,
       currency: "MXN",
       customerEmail: ownerEmail,
@@ -637,7 +776,7 @@ async function applyPurchase(
     organizationId,
     "LIMIT",
     "users",
-    order.includedUsers,
+    order.includedUsers + order.extraUsers,
     after,
     now,
   );
@@ -680,6 +819,7 @@ async function applyPurchase(
       transactionId: order.transactionId,
       tier: order.tier,
       modules,
+      extraUsers: order.extraUsers,
       months: order.months,
       total: order.total.toFixed(2),
       currency: order.currency,
@@ -888,6 +1028,7 @@ const ORDER_SELECT = {
   status: true,
   productLimit: true,
   modules: true,
+  extraUsers: true,
   months: true,
   subtotal: true,
   discount: true,
@@ -905,6 +1046,7 @@ function toView(row: {
   status: OrderView["status"];
   productLimit: number;
   modules: string;
+  extraUsers: number;
   months: number;
   subtotal: { toFixed(n: number): string };
   discount: { toFixed(n: number): string };
@@ -919,7 +1061,11 @@ function toView(row: {
     id: row.id,
     transactionId: row.transactionId,
     status: row.status,
-    planText: planText(row.productLimit, parseModules(row.modules)),
+    planText: planText(
+      row.productLimit,
+      parseModules(row.modules),
+      row.extraUsers,
+    ),
     months: row.months,
     subtotal: row.subtotal.toFixed(2),
     discount: row.discount.toFixed(2),

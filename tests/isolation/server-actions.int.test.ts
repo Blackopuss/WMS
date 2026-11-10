@@ -586,9 +586,16 @@ const REVIEWED: Record<string, Review> = {
   },
   checkoutAction: {
     input:
-      "nivel, meses, si agrega Compras, código, proveedor e intención (aplicar código o pagar); nunca importes",
+      "nivel, meses, módulos, usuarios adicionales, código, proveedor e intención (aplicar código o pagar); nunca importes",
     identity:
       "sesión y empresa activa (getAccess); el servicio exige al titular (assertOwnerAction), precia en el servidor y el correo del recibo sale de la sesión",
+    coveredBy: "tests/platform/checkout.int.test.ts",
+  },
+  quoteAction: {
+    input:
+      "nivel, meses, módulos, usuarios adicionales, código y la firma que dio el servidor al aplicarlo; nunca importes",
+    identity:
+      "sesión y empresa activa (getAccess); el servicio exige al titular (assertOwnerAction) y el descuento solo vale con una firma ligada a esa persona y empresa",
     coveredBy: "tests/platform/checkout.int.test.ts",
   },
   createPromoCodeAction: {

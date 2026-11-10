@@ -25,6 +25,7 @@ Revisado `src/platform/billing/checkout/*` y `src/app/api/pagos/[proveedor]/webh
 | Un aviso repetido no aplica dos veces | Cumple. `payment_event` único por proveedor + id de evento; la empresa se bloquea y `applyPurchase` es idempotente. |
 | Precios y totales | Cumple. Solo del servidor (`prices.ts`); el navegador manda plan y meses, no importes. |
 | Solo el titular compra; límites contra pruebas de tarjetas | Cumple. `assertOwnerAction` y `reserveAttempt` por persona, empresa e IP antes de abrir un pago o probar un código. |
+| Cotizar con usuarios adicionales (BIL-11) | Cumple. `previewQuote` exige al titular, no crea nada y no cuenta como intento; por eso un código solo descuenta ahí con la firma (HMAC, llave propia, una hora, ligada a persona, empresa, código y porcentaje) que entrega `previewCode` tras su límite de intentos: no sirve para adivinar códigos. Usuarios de 0 a 50 validados en el servidor; la orden los guarda inmutables. |
 | Redirección al proveedor | Cumple. Solo a hosts de una lista fija por proveedor (`CHECKOUT_HOSTS`, también en la CSP). |
 | Órdenes inmutables | Cumple. Disparadores impiden editar o borrar `checkout_order` pagada. |
 | Tamaño del aviso | Cumple. Caddy limita el cuerpo a 12 MB y la ruta rechaza más de 256 KB. |

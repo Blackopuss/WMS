@@ -91,15 +91,31 @@ export const ADD_ON_CHOICES: readonly AddOnModule[][] = ADD_ON_MODULES.reduce<
   [[]],
 );
 
-/** "1,000 productos · Inventario + Compras + Ventas". */
+/**
+ * People added on top of the ones a tier includes (BIL-11): a flat price
+ * per person a month, the same in every tier and without discount, VAT
+ * included. A proposal until the founder confirms it (the plan had $49
+ * before VAT).
+ */
+export const EXTRA_USER_MONTHLY = "59.00";
+/** Most people that can be added online; more, by writing to us. */
+export const MAX_EXTRA_USERS = 50;
+
+/** «1 usuario adicional», «3 usuarios adicionales». */
+export const extraUsersText = (count: number) =>
+  `${count} ${count === 1 ? "usuario adicional" : "usuarios adicionales"}`;
+
+/** "1,000 productos · Inventario + Compras + Ventas · 2 usuarios adicionales". */
 export function planText(
   productLimit: number,
   modules: readonly SoldModule[],
+  extraUsers = 0,
 ): string {
   const names = ["inventory" as const, ...addOnsOf(modules)].map(
     (module) => SOLD_MODULE_NAMES[module],
   );
-  return `${productLimit.toLocaleString("es-MX")} productos · ${names.join(" + ")}`;
+  const users = extraUsers > 0 ? ` · ${extraUsersText(extraUsers)}` : "";
+  return `${productLimit.toLocaleString("es-MX")} productos · ${names.join(" + ")}${users}`;
 }
 
 /** How many months can be bought at once. */
@@ -144,20 +160,34 @@ export const DAYS_PER_MONTH = 30;
 
 const money = (value: Decimal) => value.toDecimalPlaces(2).toFixed(2);
 
-/** The monthly price of a tier with its modules. */
+const assertExtraUsers = (extraUsers: number) => {
+  if (
+    !Number.isInteger(extraUsers) ||
+    extraUsers < 0 ||
+    extraUsers > MAX_EXTRA_USERS
+  ) {
+    throw new Error(
+      `extraUsers must be 0..${MAX_EXTRA_USERS}, got ${extraUsers}`,
+    );
+  }
+};
+
+/** The monthly price of a tier with its modules and people added. */
 export function monthlyPrice(
   tier: PlanTier,
   modules: readonly SoldModule[],
+  extraUsers = 0,
 ): Decimal {
+  assertExtraUsers(extraUsers);
   const chosen = new Set<SoldModule>(["inventory", ...modules]);
-  let monthly = dec(0);
+  let monthly = dec(EXTRA_USER_MONTHLY).times(extraUsers);
   for (const sold of chosen) monthly = monthly.plus(tier.prices[sold]);
   return monthly;
 }
 
 /**
- * What a purchase costs: the monthly price of the tier and its modules
- * times the months, minus a code's discount (a whole percentage). Prices
+ * What a purchase costs: the monthly price of the tier, its modules and
+ * the people added (BIL-11) times the months, minus a code's discount (a whole percentage). Prices
  * include VAT, so nothing is added on top. Rounded to cents, half up.
  *
  * Over a live plan (`carry`), the new plan applies from the payment: what
@@ -172,6 +202,7 @@ export function quote(
   months: number,
   percentOff = 0,
   carry: CurrentPlanCarry | null = null,
+  extraUsers = 0,
 ): Quote {
   if (!Number.isInteger(percentOff) || percentOff < 0 || percentOff > 100) {
     throw new Error(`percentOff must be 0..100, got ${percentOff}`);
@@ -179,7 +210,7 @@ export function quote(
   if (!Number.isInteger(months) || months < 0 || months > 12) {
     throw new Error(`months must be 0..12, got ${months}`);
   }
-  const monthly = monthlyPrice(tier, modules);
+  const monthly = monthlyPrice(tier, modules, extraUsers);
   const difference = carry
     ? Decimal.max(monthly.minus(carry.monthly), 0)
     : dec(0);
