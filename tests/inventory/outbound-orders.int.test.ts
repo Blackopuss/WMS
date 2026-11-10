@@ -186,7 +186,8 @@ describe("releasing", () => {
     });
     expect(await releaseOutboundOrder(owner, orderId)).toMatchObject({
       ok: true,
-      summary: "Se liberó el pedido PS-0001: todo quedó reservado.",
+      summary:
+        "Se liberó el pedido PS-0001: todo quedó reservado y hay 1 tarea de surtido.",
     });
     expect(await releaseOutboundOrder(owner, orderId)).toMatchObject({
       ok: true,

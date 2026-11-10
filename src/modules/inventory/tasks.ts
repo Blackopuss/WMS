@@ -10,11 +10,19 @@ import { parseQuantity } from "@/platform/catalog";
 import { formatLocationPath } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
+import { foldName, foldPath } from "./import-validation";
 import {
   formatStock,
   postTaskTransfer,
   type InventoryActor,
 } from "./movements";
+import {
+  deliverPick,
+  lockPickOrder,
+  releasePickReservation,
+  settlePickedOrder,
+  startPicking,
+} from "./picking";
 import {
   OPEN_TASK_STATUSES,
   WAREHOUSE_TASK_STATUS_LABELS,
@@ -22,6 +30,7 @@ import {
   taskTransitionProblem,
   type WarehouseTaskStatus,
 } from "./task-states";
+import { formatOutboundNumber } from "./outbound-states";
 import { AVAILABLE_STOCK } from "./stock-status";
 import { freeToMoveFrom, reservedMessage } from "./reservations";
 
@@ -58,7 +67,10 @@ export type TaskField =
   | "priority"
   | "assignToUserId"
   | "note"
-  | "reason";
+  | "reason"
+  | "productCode"
+  | "locationCode"
+  | "shortReason";
 
 type Failure = Extract<TaskResult, { ok: false }>;
 
@@ -116,14 +128,49 @@ async function lockTask(tx: Tx, taskId: string) {
           quantity: true,
           unitCode: true,
           movementId: true,
-          product: { select: { name: true } },
-          fromLocation: { select: { name: true } },
+          kind: true,
+          outboundLineId: true,
+          pickedQuantity: true,
+          outboundLine: { select: { orderId: true } },
+          product: {
+            select: {
+              name: true,
+              sku: true,
+              barcode: true,
+              unitCode: true,
+              quantityStep: true,
+            },
+          },
+          fromLocation: {
+            select: {
+              name: true,
+              parent: {
+                select: { name: true, parent: { select: { name: true } } },
+              },
+            },
+          },
           toLocation: { select: { name: true } },
         },
       })
     : null;
   if (!task) return stop("not_found", "Esta tarea no existe.");
   return task;
+}
+
+/**
+ * The order of a picking task, read before its transaction (it never
+ * changes), so the order is locked before the task: products → locations
+ * → order → task, like every document.
+ */
+async function pickOrderOf(
+  organizationId: string,
+  taskId: string,
+): Promise<string | null> {
+  const row = await forOrganization(organizationId).warehouseTask.findFirst({
+    where: { id: String(taskId ?? "") },
+    select: { outboundLine: { select: { orderId: true } } },
+  });
+  return row?.outboundLine?.orderId ?? null;
 }
 
 type LockedTask = Awaited<ReturnType<typeof lockTask>>;
@@ -360,9 +407,11 @@ async function step(
   work: (tx: Tx, task: LockedTask) => Promise<TaskResult>,
 ): Promise<TaskResult> {
   await assertModulePermission(actor.organizationId, actor.userId, permission);
-  return inTask(actor.organizationId, async (tx) =>
-    work(tx, await lockTask(tx, taskId)),
-  );
+  const orderId = await pickOrderOf(actor.organizationId, taskId);
+  return inTask(actor.organizationId, async (tx) => {
+    await lockPickOrder(tx, orderId);
+    return work(tx, await lockTask(tx, taskId));
+  });
 }
 
 /** Takes an available task, or the one given to this person. */
@@ -392,6 +441,7 @@ export function acceptTask(
         acceptedAt: new Date(),
       },
     });
+    if (task.outboundLine) await startPicking(tx, task.outboundLine.orderId);
     return {
       ok: true,
       taskId: task.id,
@@ -417,6 +467,12 @@ export function pickUpTask(
         summary: "Ya habías confirmado que recogiste la carga.",
       };
     }
+    if (task.kind === "PICK") {
+      return stop(
+        "not_allowed",
+        "Confirma el producto, la ubicación y cuánto surtiste.",
+      );
+    }
     ensure(task, "PICKED_UP");
     await tx.warehouseTask.update({
       where: { id: task.id },
@@ -426,6 +482,125 @@ export function pickUpTask(
       ok: true,
       taskId: task.id,
       summary: `Recogiste la carga. Llévala a ${task.toLocation.name}.`,
+    };
+  });
+}
+
+export type ConfirmPickInput = {
+  /** Scanned or typed: the product's key or barcode. */
+  productCode: string;
+  /** Scanned or typed: the name or path of the origin location. */
+  locationCode: string;
+  /** What was taken, in the product's unit. */
+  quantity: string;
+  /** Why less than asked; required then. */
+  shortReason?: string;
+};
+
+/**
+ * Picking (WMS-14): the person confirms, at the origin, which product and
+ * location they are at and how much they took. A wrong product or
+ * location is refused; less than asked needs a reason, and what was not
+ * taken is released at the delivery.
+ */
+export function confirmPick(
+  actor: InventoryActor,
+  taskId: string,
+  input: ConfirmPickInput,
+): Promise<TaskResult> {
+  return step(actor, taskId, "inventory.task.execute", async (tx, task) => {
+    if (task.kind !== "PICK") {
+      return stop("not_allowed", "Esta tarea no es de surtido.");
+    }
+    if (task.assignedToUserId !== actor.userId) {
+      return stop("not_allowed", "Esta tarea la tiene otra persona.");
+    }
+    const parsed = parseQuantity(
+      {
+        unitCode: task.product.unitCode,
+        quantityStep: task.product.quantityStep.toString(),
+      },
+      String(input.quantity ?? ""),
+    );
+    if (task.status === "PICKED_UP") {
+      const same =
+        parsed.ok &&
+        task.pickedQuantity !== null &&
+        parsed.quantity.equals(task.pickedQuantity.toString());
+      if (same) {
+        return {
+          ok: true,
+          taskId: task.id,
+          repeated: true,
+          summary: "Ya habías confirmado lo que surtiste.",
+        };
+      }
+    }
+    ensure(task, "PICKED_UP");
+    const code = foldName(String(input.productCode ?? "").slice(0, 80));
+    if (
+      code === "" ||
+      (code !== foldName(task.product.sku) &&
+        code !== foldName(task.product.barcode ?? ""))
+    ) {
+      return stop(
+        "invalid",
+        `Ese no es el producto de la tarea: busca ${task.product.name} (${task.product.sku}).`,
+        "productCode",
+      );
+    }
+    const place = foldPath(String(input.locationCode ?? "").slice(0, 200));
+    const from = task.fromLocation;
+    const path = formatLocationPath(
+      [from.parent?.parent?.name, from.parent?.name, from.name].filter(
+        (name): name is string => Boolean(name),
+      ),
+    );
+    if (
+      place === "" ||
+      (place !== foldPath(from.name) && place !== foldPath(path))
+    ) {
+      return stop(
+        "invalid",
+        `No es la ubicación de la tarea: ve a ${path}.`,
+        "locationCode",
+      );
+    }
+    if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
+    const asked = dec(task.quantity.toString());
+    if (parsed.quantity.greaterThan(asked)) {
+      return stop(
+        "invalid",
+        `La tarea pide ${formatStock(asked.toString(), task.unitCode)}: no surtas de más.`,
+        "quantity",
+      );
+    }
+    const short = parsed.quantity.lessThan(asked);
+    let reason: string | null = null;
+    if (short) {
+      const why = reasonSchema.safeParse(input.shortReason ?? "");
+      if (!why.success) {
+        return stop(
+          "invalid",
+          "Surtiste menos de lo que pide la tarea: escribe por qué.",
+          "shortReason",
+        );
+      }
+      reason = why.data;
+    }
+    await tx.warehouseTask.update({
+      where: { id: task.id },
+      data: {
+        status: "PICKED_UP",
+        pickedUpAt: new Date(),
+        pickedQuantity: parsed.quantity.toString(),
+        shortReason: reason,
+      },
+    });
+    return {
+      ok: true,
+      taskId: task.id,
+      summary: `Surtiste ${formatStock(parsed.quantity.toString(), task.unitCode)} de ${task.product.name}. Llévalo a ${task.toLocation.name}.`,
     };
   });
 }
@@ -450,7 +625,12 @@ export async function deliverTask(
   // movement first (product → locations), then the task's.
   const fixed = await forOrganization(organizationId).warehouseTask.findFirst({
     where: { id: String(taskId ?? "") },
-    select: { productId: true, fromLocationId: true, toLocationId: true },
+    select: {
+      productId: true,
+      fromLocationId: true,
+      toLocationId: true,
+      outboundLine: { select: { orderId: true } },
+    },
   });
   if (!fixed) {
     return {
@@ -462,6 +642,7 @@ export async function deliverTask(
   return inTask(organizationId, async (tx) => {
     await lockRows(tx, "product", [fixed.productId]);
     await lockRows(tx, "location", [fixed.fromLocationId, fixed.toLocationId]);
+    await lockPickOrder(tx, fixed.outboundLine?.orderId ?? null);
     const task = await lockTask(tx, taskId);
     if (task.assignedToUserId !== userId) {
       return stop("not_allowed", "Esta tarea la tiene otra persona.");
@@ -475,6 +656,40 @@ export async function deliverTask(
       };
     }
     ensure(task, "DELIVERED");
+    if (task.kind === "PICK" && task.outboundLineId && task.outboundLine) {
+      const picked = dec(task.pickedQuantity?.toString() ?? 0);
+      const delivered = await deliverPick(tx, actor, {
+        id: task.id,
+        number: task.number,
+        outboundLineId: task.outboundLineId,
+        productId: task.productId,
+        fromLocationId: task.fromLocationId,
+        toLocationId: task.toLocationId,
+        quantity: dec(task.quantity.toString()),
+        picked,
+        unitCode: task.unitCode,
+      });
+      if (!delivered.ok) {
+        return stop(
+          "not_allowed",
+          `${delivered.error} Si no puedes entregarlo, reporta el problema.`,
+        );
+      }
+      await tx.warehouseTask.update({
+        where: { id: task.id },
+        data: {
+          status: "DELIVERED",
+          deliveredAt: new Date(),
+          movementId: delivered.movementId,
+        },
+      });
+      await settlePickedOrder(tx, task.outboundLine.orderId);
+      return {
+        ok: true,
+        taskId: task.id,
+        summary: `Dejaste ${formatStock(picked.toString(), task.unitCode)} de ${task.product.name} en ${task.toLocation.name}.`,
+      };
+    }
     const moved = await postTaskTransfer(tx, actor, {
       productId: task.productId,
       fromLocationId: task.fromLocationId,
@@ -621,6 +836,9 @@ export function releaseTask(
         assignedToUserId: null,
         acceptedAt: null,
         pickedUpAt: null,
+        // Whoever takes it again confirms again what they pick.
+        pickedQuantity: null,
+        shortReason: null,
       },
     });
     await recordAuditEvent(tx, {
@@ -674,8 +892,23 @@ export function cancelTask(
         cancelledAt: new Date(),
         cancelReason: why.data,
         closedByUserId: actor.userId,
+        pickedQuantity: null,
+        shortReason: null,
       },
     });
+    if (task.kind === "PICK" && task.outboundLineId && task.outboundLine) {
+      // Nothing was picked: what it held for the order is free again.
+      await releasePickReservation(
+        tx,
+        {
+          outboundLineId: task.outboundLineId,
+          fromLocationId: task.fromLocationId,
+          quantity: dec(task.quantity.toString()),
+        },
+        dec(0),
+      );
+      await settlePickedOrder(tx, task.outboundLine.orderId);
+    }
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -700,6 +933,10 @@ export type TaskSummary = {
   status: WarehouseTaskStatus;
   statusLabel: string;
   urgent: boolean;
+  /** «TRANSFER» (a move asked by someone) or «PICK» (an order, WMS-14). */
+  kind: "TRANSFER" | "PICK";
+  /** PICK: the order it picks for. */
+  order: { id: string; numberText: string; recipient: string } | null;
   productName: string;
   sku: string;
   quantityText: string;
@@ -711,6 +948,12 @@ export type TaskSummary = {
 };
 
 export type TaskView = TaskSummary & {
+  /** «12», in the product's unit; and that unit. */
+  quantity: string;
+  unitCode: string;
+  /** PICK: what was confirmed as taken, «10 piezas»; and why it was less. */
+  pickedText: string | null;
+  shortReason: string | null;
   note: string | null;
   createdByName: string | null;
   acceptedAt: Date | null;
@@ -752,6 +995,12 @@ const SUMMARY_SELECT = {
   number: true,
   status: true,
   priority: true,
+  kind: true,
+  outboundLine: {
+    select: {
+      order: { select: { id: true, number: true, recipient: true } },
+    },
+  },
   quantity: true,
   unitCode: true,
   assignedToUserId: true,
@@ -766,6 +1015,10 @@ type SummaryRow = {
   number: number;
   status: WarehouseTaskStatus;
   priority: TaskPriority;
+  kind: "TRANSFER" | "PICK";
+  outboundLine: {
+    order: { id: string; number: number; recipient: string };
+  } | null;
   quantity: { toString(): string };
   unitCode: string;
   assignedToUserId: string | null;
@@ -798,6 +1051,14 @@ const summaryOf = (
   status: row.status,
   statusLabel: WAREHOUSE_TASK_STATUS_LABELS[row.status],
   urgent: row.priority === "URGENT",
+  kind: row.kind,
+  order: row.outboundLine
+    ? {
+        id: row.outboundLine.order.id,
+        numberText: formatOutboundNumber(row.outboundLine.order.number),
+        recipient: row.outboundLine.order.recipient,
+      }
+    : null,
   productName: row.product.name,
   sku: row.product.sku,
   quantityText: formatStock(row.quantity.toString(), row.unitCode),
@@ -937,6 +1198,8 @@ export async function getTask(
       cancelledAt: true,
       cancelReason: true,
       movementId: true,
+      pickedQuantity: true,
+      shortReason: true,
     },
   });
   if (!row) return null;
@@ -946,6 +1209,13 @@ export async function getTask(
   ]);
   return {
     ...summaryOf(row, names),
+    quantity: row.quantity.toString(),
+    unitCode: row.unitCode,
+    pickedText:
+      row.pickedQuantity === null
+        ? null
+        : formatStock(row.pickedQuantity.toString(), row.unitCode),
+    shortReason: row.shortReason,
     note: row.note,
     createdByName: names.get(row.createdByUserId) ?? null,
     acceptedAt: row.acceptedAt,

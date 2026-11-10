@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-13B. Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+WMS-14. Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -15,7 +15,8 @@ abajo son de ese documento).
 | Operación de almacén (roles de piso, tareas de traslado, Inicio por rol) | Hecho (WMS-05..08) |
 | Estados de inventario, lotes en el saldo y reservas | Hecho (etapa A, WMS-09..12) |
 | Pedidos de salida | Hecho (WMS-13; importación desde Excel/CSV, WMS-13B) |
-| Surtido, empaque, despacho y devoluciones de clientes | Falta (WMS-14..17) |
+| Surtido | Hecho (WMS-14) |
+| Empaque, despacho y devoluciones de clientes | Falta (WMS-15..17) |
 | Producción y calidad | Falta (WMS-11) |
 | Analítica | Falta (WMS-12) |
 | Varios almacenes, lotes y series, PWA, escaneo con cámara, PIN | Falta, sin paso asignado todavía |
@@ -71,6 +72,12 @@ SaaS-Almacen.
   producto; las filas con el mismo «Pedido» forman un pedido) se revisa sin
   escribir, dice qué fila está mal y por qué, y al confirmarlo crea todos sus
   borradores o ninguno. Un pedido que ya se importó no se crea otra vez.
+- **Surtido** (WMS-14): liberar un pedido crea sus tareas de surtido (la
+  ubicación más llena primero) y aparta esa mercancía donde está. Desde el
+  teléfono, quien surte confirma producto, ubicación y cantidad; si junta
+  menos, dice por qué. Lo surtido queda en «Preparación», apartado para el
+  pedido, y lo que faltó se libera. El pedido muestra sus tareas y cuánto se
+  surtió de cada producto.
 - **Libro de movimientos inmutable**: entradas, salidas (una o varias líneas),
   reubicaciones, saldo inicial, ajustes con motivo y reversas. Cada movimiento
   guarda quién, cuándo, motivo, referencia e identificador de idempotencia, y el

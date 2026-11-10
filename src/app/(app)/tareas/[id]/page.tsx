@@ -14,7 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
 import { getTask, listTaskPeople } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
+import { getUnit } from "@/platform/catalog";
 
+import { PickForm } from "./pick-form";
 import {
   AssignTask,
   CancelTask,
@@ -98,14 +100,19 @@ export default async function TareaPage({
     ? null
     : task.status === "PENDING" || (task.status === "ASSIGNED" && mine)
       ? ({ step: "accept", label: "Tomar tarea" } as const)
-      : task.status === "ACCEPTED" && mine
+      : task.status === "ACCEPTED" && mine && task.kind === "TRANSFER"
         ? ({ step: "pickUp", label: "Ya recogí la carga" } as const)
         : task.status === "PICKED_UP" && mine
           ? ({
               step: "deliver",
-              label: `Ya la dejé en ${task.toPath}`,
+              label:
+                task.kind === "PICK"
+                  ? `Ya lo dejé en ${task.toPath}`
+                  : `Ya la dejé en ${task.toPath}`,
             } as const)
           : null;
+  const picking =
+    executes && mine && task.kind === "PICK" && task.status === "ACCEPTED";
   const canReport =
     executes &&
     mine &&
@@ -145,8 +152,22 @@ export default async function TareaPage({
         aria-label="Qué se mueve"
         className="max-w-xl space-y-4 rounded-xl border bg-card p-4 sm:p-5"
       >
+        {task.order && (
+          <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
+            Pedido{" "}
+            <Link
+              href={`/pedidos/${task.order.id}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              {task.order.numberText}
+            </Link>{" "}
+            para {task.order.recipient}
+          </p>
+        )}
         <div>
-          <p className="text-sm text-muted-foreground">Mover</p>
+          <p className="text-sm text-muted-foreground">
+            {task.kind === "PICK" ? "Surtir" : "Mover"}
+          </p>
           <p className="text-2xl font-semibold [overflow-wrap:anywhere]">
             {task.quantityText}
           </p>
@@ -184,6 +205,25 @@ export default async function TareaPage({
           <span className="font-medium">Problema reportado:</span>{" "}
           {task.blockedReason}
         </p>
+      )}
+
+      {task.pickedText && (
+        <p
+          role="status"
+          className="max-w-xl rounded-xl border bg-card p-4 text-sm [overflow-wrap:anywhere]"
+        >
+          <span className="font-medium">Surtido: {task.pickedText}</span>
+          {task.shortReason ? ` · Faltó porque: ${task.shortReason}` : ""}
+        </p>
+      )}
+
+      {picking && (
+        <PickForm
+          taskId={task.id}
+          asked={task.quantityText}
+          quantity={task.quantity}
+          unit={getUnit(task.unitCode).plural}
+        />
       )}
 
       {(step || canReport) && (

@@ -27,4 +27,5 @@ export {
 } from "./kinds";
 export type { AnyLocationKind, LocationKind } from "./kinds";
 export { getDefaultLocation } from "./locations";
+export { STAGING_NAME, ensureStagingLocation } from "./staging";
 export type { LocationActor } from "./locations";

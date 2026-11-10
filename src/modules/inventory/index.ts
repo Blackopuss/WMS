@@ -203,6 +203,7 @@ export {
   assignTask,
   blockTask,
   cancelTask,
+  confirmPick,
   countMyTasks,
   createTask,
   deliverTask,
@@ -213,6 +214,7 @@ export {
   releaseTask,
 } from "./tasks";
 export type {
+  ConfirmPickInput,
   CreateTaskInput,
   TaskField,
   TaskListView,

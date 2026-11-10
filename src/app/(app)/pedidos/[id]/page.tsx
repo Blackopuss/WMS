@@ -165,6 +165,11 @@ export default async function PedidoPage({
                         Faltan {line.shortText}
                       </span>
                     )}
+                    {line.pickedText && (
+                      <span className="block text-sm text-muted-foreground">
+                        Surtido: {line.pickedText}
+                      </span>
+                    )}
                   </span>
                   {canEdit && (
                     <RemoveLine
@@ -184,6 +189,45 @@ export default async function PedidoPage({
           </div>
         )}
       </section>
+
+      {order.tasks.length > 0 && (
+        <section
+          aria-labelledby="surtido"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2 id="surtido" className="border-b p-4 font-medium sm:px-5">
+            Surtido
+          </h2>
+          <ul className="divide-y">
+            {order.tasks.map((task) => (
+              <li key={task.id} className="relative">
+                <Link
+                  href={`/tareas/${task.id}`}
+                  className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-1 p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
+                    <span className="block font-medium">
+                      {task.quantityText} de {task.productName}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {task.numberText} · de {task.fromName}
+                      {task.pickedText ? ` · surtido ${task.pickedText}` : ""}
+                      {task.shortReason ? ` · ${task.shortReason}` : ""}
+                    </span>
+                  </span>
+                  <Badge
+                    variant={
+                      task.status === "BLOCKED" ? "destructive" : "secondary"
+                    }
+                  >
+                    {task.statusLabel}
+                  </Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {canRelease && (
         <div className="max-w-3xl">

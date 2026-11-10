@@ -95,6 +95,7 @@ type Row = {
   kind: AnyLocationKind;
   parentId: string | null;
   isDefault: boolean | null;
+  isStaging: boolean | null;
   archivedAt: Date | null;
 };
 
@@ -104,6 +105,7 @@ const ROW = {
   kind: true,
   parentId: true,
   isDefault: true,
+  isStaging: true,
   archivedAt: true,
 } as const;
 
@@ -305,6 +307,7 @@ export async function createLocation(
           kind,
           parentId: parent?.id ?? null,
           isDefault: null,
+          isStaging: null,
           archivedAt: null,
         }),
       },
@@ -421,6 +424,12 @@ export async function archiveLocation(
     await lockRows(tx, "location", [String(locationId)]);
     const location = await findLocation(tx, locationId);
     if (location.isDefault) reject("not_allowed", GENERAL_FIXED);
+    if (location.isStaging) {
+      reject(
+        "not_allowed",
+        "Aquí espera lo surtido de los pedidos: esta ubicación no se archiva.",
+      );
+    }
     if (location.archivedAt) {
       reject("unchanged", "Esta ubicación ya está archivada.");
     }

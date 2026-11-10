@@ -70,6 +70,13 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona",
     coveredBy: "tests/inventory/tasks.int.test.ts",
   },
+  confirmPickAction: {
+    input:
+      "id de la tarea de surtido, clave o código de barras del producto, ubicación y cantidad surtida (y motivo si es menos)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea y su pedido se bloquean solo en esa empresa y la tarea debe ser de esa persona",
+    coveredBy: "tests/inventory/picking.int.test.ts",
+  },
   blockTaskAction: {
     input: "id de la tarea y qué pasó",
     identity:

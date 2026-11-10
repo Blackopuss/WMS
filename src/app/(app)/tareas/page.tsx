@@ -197,6 +197,7 @@ export default async function TareasPage({
                       </Badge>
                       <span className="text-sm text-muted-foreground tabular-nums">
                         {task.numberText}
+                        {task.order ? ` · Surtir ${task.order.numberText}` : ""}
                       </span>
                     </span>
                     <span className="block text-base font-medium [overflow-wrap:anywhere]">

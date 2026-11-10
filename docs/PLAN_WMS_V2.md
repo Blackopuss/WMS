@@ -168,6 +168,10 @@ producción y calidad no obliguen a rehacerla.
 - **Pruebas:** una tarea de surtido no se confirma dos veces (**PC-6**);
   confirmar con producto o ubicación equivocados se rechaza; faltante libera la
   reserva que no se usó; reconciliación.
+- **Estado:** hecho (2026-11-10). La ubicación de preparación es una por
+  instalación («Preparación», `location.isStaging`) y se crea al liberar el
+  primer pedido; la estrategia es «la más llena primero» (`pickSources`).
+  Pruebas en `tests/inventory/picking.int.test.ts`.
 
 ### WMS-15 · Verificación y empaque (packing)
 

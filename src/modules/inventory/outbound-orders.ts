@@ -6,6 +6,7 @@ import { dec, newId, type Decimal } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
+import { ensureStagingLocation } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
@@ -17,11 +18,18 @@ import {
   type OutboundOrderStatus,
 } from "./outbound-states";
 import {
-  freeToTake,
-  releaseReservations,
-  reserveStock,
-  type ReservationSource,
-} from "./reservations";
+  OUTBOUND_LINE_SOURCE,
+  createPickTasks,
+  nextTaskNumber,
+  pickSources,
+  type PickSource,
+} from "./picking";
+import { releaseReservations, type ReservationSource } from "./reservations";
+import {
+  WAREHOUSE_TASK_STATUS_LABELS,
+  formatTaskNumber,
+  type WarehouseTaskStatus,
+} from "./task-states";
 
 /**
  * Outbound orders (WMS-13, spec 5.2): what has to leave the warehouse, for
@@ -37,7 +45,7 @@ import {
 
 export const OUTBOUND_PAGE_SIZE = 25;
 export const OUTBOUND_MAX_LINES = 200;
-const SOURCE_TYPE = "outbound_order_line";
+const SOURCE_TYPE = OUTBOUND_LINE_SOURCE;
 
 const sourceOf = (lineId: string): ReservationSource => ({
   type: SOURCE_TYPE,
@@ -123,6 +131,8 @@ async function lockOrder(tx: Tx, orderId: string) {
           id: true,
           number: true,
           status: true,
+          priority: true,
+          recipient: true,
           lines: {
             orderBy: { lineNumber: "asc" },
             select: {
@@ -440,12 +450,34 @@ export async function releaseOutboundOrder(
     where: { orderId: String(orderId ?? "") },
     select: { productId: true },
   });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await releaseLocked(actor, orderId, draft, options);
+    } catch (error) {
+      // A task created by hand took the same number at once: again.
+      if ((error as { code?: string }).code === "P2002" && attempt < 4) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+function releaseLocked(
+  actor: InventoryActor,
+  orderId: string,
+  draft: { productId: string }[],
+  options: { takeWhatThereIs?: boolean },
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
   return inOrder(organizationId, async (tx) => {
     await lockRows(
       tx,
       "product",
       draft.map((line) => line.productId),
     );
+    // Where picked goods wait (WMS-14); created the first time.
+    const staging = await ensureStagingLocation(tx, organizationId);
     const order = await lockOrder(tx, orderId);
     if (order.status === "RELEASED") {
       return {
@@ -478,22 +510,32 @@ export async function releaseOutboundOrder(
       );
     }
 
-    const plan: { line: (typeof order.lines)[number]; take: Decimal }[] = [];
+    const plan: {
+      line: (typeof order.lines)[number];
+      sources: PickSource[];
+      take: Decimal;
+    }[] = [];
     const shortages: OutboundShortage[] = [];
     // Several lines of the same product are not possible (unique index),
-    // so each line asks its product once.
+    // so each line asks its product once. Where it is picked from decides
+    // what can be taken: stock already in the staging location or held
+    // elsewhere does not count.
     for (const line of order.lines) {
       const asked = dec(line.quantity.toString());
-      const free = await freeToTake(tx, line.productId, null);
-      if (free.lessThan(asked)) {
+      const sources = await pickSources(tx, line.productId, asked, staging.id);
+      const take = sources.reduce(
+        (sum, source) => sum.plus(source.quantity),
+        dec(0),
+      );
+      if (take.lessThan(asked)) {
         shortages.push({
           lineId: line.id,
           productName: line.product.name,
           asked: formatStock(asked.toString(), line.unitCode),
-          free: formatStock(free.toString(), line.unitCode),
+          free: formatStock(take.toString(), line.unitCode),
         });
       }
-      plan.push({ line, take: free.lessThan(asked) ? free : asked });
+      plan.push({ line, sources, take });
     }
     if (shortages.length > 0 && !options.takeWhatThereIs) {
       throw new Rejected({
@@ -512,19 +554,8 @@ export async function releaseOutboundOrder(
         "No hay nada disponible de este pedido: no se reservó nada.",
       );
     }
-    for (const step of plan) {
-      if (step.take.isZero()) continue;
-      const reserved = await reserveStock(tx, actor, {
-        productId: step.line.productId,
-        quantity: step.take,
-        source: sourceOf(step.line.id),
-      });
-      if (!reserved.ok) {
-        throw new Error(
-          `Free stock of ${step.line.productId} moved under lock`,
-        );
-      }
-    }
+    // Released first: a picking task only comes from a released order
+    // (trigger).
     await tx.outboundOrder.update({
       where: { id: order.id },
       data: {
@@ -533,13 +564,31 @@ export async function releaseOutboundOrder(
         releasedByUserId: userId,
       },
     });
+    const firstTask = await nextTaskNumber(tx);
+    let nextNumber = firstTask;
+    for (const step of plan) {
+      nextNumber = await createPickTasks(tx, actor, {
+        order: {
+          number: formatOutboundNumber(order.number),
+          recipient: order.recipient,
+          priority: order.priority,
+        },
+        line: step.line,
+        sources: step.sources,
+        stagingId: staging.id,
+        nextNumber,
+      });
+    }
     return {
       ok: true,
       orderId: order.id,
       summary:
-        shortages.length === 0
-          ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó reservado.`
-          : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay; ${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`}.`,
+        (shortages.length === 0
+          ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó reservado`
+          : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay (${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`})`) +
+        (nextNumber - firstTask === 1
+          ? " y hay 1 tarea de surtido."
+          : ` y hay ${nextNumber - firstTask} tareas de surtido.`),
     };
   });
 }
@@ -586,6 +635,20 @@ export async function cancelOutboundOrder(
     for (const line of order.lines) {
       released += await releaseReservations(tx, sourceOf(line.id));
     }
+    // Picking had not started (it would be PICKING): its tasks go too.
+    await tx.warehouseTask.updateMany({
+      where: {
+        kind: "PICK",
+        outboundLine: { orderId: order.id },
+        status: { in: ["PENDING", "ASSIGNED", "BLOCKED"] },
+      },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelReason: `Se canceló el pedido: ${why}`.slice(0, 300),
+        closedByUserId: userId,
+      },
+    });
     await tx.outboundOrder.update({
       where: { id: order.id },
       data: {
@@ -716,6 +779,22 @@ export type OutboundView = OutboundSummary & {
     reservedText: string | null;
     /** Asked but not reserved when released with what there was. */
     shortText: string | null;
+    /** Already in the staging location (delivered picking), «8 piezas». */
+    pickedText: string | null;
+  }[];
+  /** Its picking tasks (WMS-14), in order. */
+  tasks: {
+    id: string;
+    numberText: string;
+    status: WarehouseTaskStatus;
+    statusLabel: string;
+    productName: string;
+    fromName: string;
+    /** «12 piezas». */
+    quantityText: string;
+    /** What was confirmed as picked, when it was. */
+    pickedText: string | null;
+    shortReason: string | null;
   }[];
 };
 
@@ -783,6 +862,38 @@ export async function getOutboundOrder(
     });
   }
   const released = row.status !== "DRAFT" && row.status !== "CANCELLED";
+  const tasks =
+    row.status === "DRAFT" || row.lines.length === 0
+      ? []
+      : await client.warehouseTask.findMany({
+          where: {
+            kind: "PICK",
+            outboundLineId: { in: row.lines.map((line) => line.id) },
+          },
+          orderBy: { number: "asc" },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            quantity: true,
+            unitCode: true,
+            pickedQuantity: true,
+            shortReason: true,
+            outboundLineId: true,
+            product: { select: { name: true } },
+            fromLocation: { select: { name: true } },
+          },
+        });
+  const pickedOf = new Map<string, Decimal>();
+  for (const task of tasks) {
+    if (task.status !== "DELIVERED" || !task.outboundLineId) continue;
+    pickedOf.set(
+      task.outboundLineId,
+      (pickedOf.get(task.outboundLineId) ?? dec(0)).plus(
+        task.pickedQuantity?.toString() ?? 0,
+      ),
+    );
+  }
   return {
     id: row.id,
     numberText: formatOutboundNumber(row.number),
@@ -817,7 +928,24 @@ export async function getOutboundOrder(
         shortText: short.greaterThan(0)
           ? formatStock(short.toString(), line.unitCode)
           : null,
+        pickedText: pickedOf.has(line.id)
+          ? formatStock(pickedOf.get(line.id)!.toString(), line.unitCode)
+          : null,
       };
     }),
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      numberText: formatTaskNumber(task.number),
+      status: task.status,
+      statusLabel: WAREHOUSE_TASK_STATUS_LABELS[task.status],
+      productName: task.product.name,
+      fromName: task.fromLocation.name,
+      quantityText: formatStock(task.quantity.toString(), task.unitCode),
+      pickedText:
+        task.pickedQuantity === null
+          ? null
+          : formatStock(task.pickedQuantity.toString(), task.unitCode),
+      shortReason: task.shortReason,
+    })),
   };
 }

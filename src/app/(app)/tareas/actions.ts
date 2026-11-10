@@ -9,6 +9,7 @@ import {
   assignTask,
   blockTask,
   cancelTask,
+  confirmPick,
   createTask,
   deliverTask,
   pickUpTask,
@@ -164,4 +165,65 @@ export async function assignTaskAction(
   return run(taskId, (actor, id) =>
     assignTask(actor, id, String(assignToUserId ?? "").slice(0, 36) || null),
   );
+}
+
+export type ConfirmPickState = {
+  ok?: true;
+  summary?: string;
+  error?: string;
+  fieldErrors?: Partial<Record<TaskField, string>>;
+  /** What was typed, so a refused form keeps it. */
+  values: {
+    productCode: string;
+    locationCode: string;
+    quantity: string;
+    shortReason: string;
+  };
+  answers: number;
+};
+
+/**
+ * Picking (WMS-14): what the person confirms at the origin — product and
+ * location (scanned or typed) and how much they took. The service checks
+ * them against the task, looked for only inside the company of the
+ * session.
+ */
+export async function confirmPickAction(
+  taskId: string,
+  previous: ConfirmPickState,
+  formData: FormData,
+): Promise<ConfirmPickState> {
+  const { user, organization } = await requireOrganizationContext();
+  const id = String(taskId ?? "").slice(0, 36);
+  const values = {
+    productCode: text(formData, "productCode", 80),
+    locationCode: text(formData, "locationCode", 200),
+    quantity: text(formData, "quantity", 40),
+    shortReason: text(formData, "shortReason", 400),
+  };
+  const answers = previous.answers + 1;
+  let result: TaskResult;
+  try {
+    result = await confirmPick(
+      { organizationId: organization.id, userId: user.id },
+      id,
+      values,
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { error: error.message, values, answers };
+    }
+    throw error;
+  }
+  if (!result.ok) {
+    return {
+      error: result.formError,
+      fieldErrors: result.fieldErrors,
+      values,
+      answers,
+    };
+  }
+  revalidatePath("/tareas");
+  revalidatePath(`/tareas/${id}`);
+  return { ok: true, summary: result.summary, values, answers };
 }
