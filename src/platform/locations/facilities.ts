@@ -8,6 +8,7 @@ import { assertModulePermission } from "@/platform/billing";
 import { readLimit } from "@/platform/entitlements";
 import { LOCKING_TRANSACTION, forOrganization, type TenantDb } from "@/server";
 
+import { createDefaultLevels } from "./bootstrap";
 import type { LocationActor } from "./locations";
 
 /**
@@ -255,10 +256,10 @@ export async function createFacility(
         organizationId,
         facilityId: id,
         name: GENERAL_NAME,
-        kind: "GENERAL",
         isDefault: true,
       },
     });
+    await createDefaultLevels(tx, organizationId, id);
     await recordAuditEvent(tx, {
       organizationId,
       actorUserId: userId,

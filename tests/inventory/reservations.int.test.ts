@@ -84,7 +84,7 @@ async function scenario() {
   const productId = created.productId;
   const general = (await getDefaultLocation(owner))!.id;
   const rackResult = await createLocation(owner, {
-    kind: "SHELF",
+    level: 3,
     name: `Rack ${counter}`,
   });
   if (!rackResult.ok) throw new Error("location setup failed");

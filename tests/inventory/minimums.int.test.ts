@@ -229,7 +229,7 @@ describe("listLowStock", () => {
     const actor = await company();
     const tornillo = await product(actor, "Tornillo repartido", "6");
     const shelf = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: "Estante 1",
     });
     if (!shelf.ok) throw new Error("location setup failed");

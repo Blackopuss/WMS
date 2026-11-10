@@ -171,7 +171,7 @@ describe("simultaneous exits", () => {
     const actor = await company();
     const general = (await getDefaultLocation(actor))?.id ?? "";
     const shelf = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: "Estante",
     });
     if (!shelf.ok) throw new Error("location setup failed");

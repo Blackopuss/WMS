@@ -128,7 +128,7 @@ describe("buying with Compras and Inventario (CMP-18)", () => {
     ).productId;
     const caja = await box(actor, clavo, "100");
     const shelf = ok(
-      await createLocation(actor, { kind: "SHELF", name: "A-01" }),
+      await createLocation(actor, { level: 3, name: "A-01" }),
     ).locationId;
     const general = (
       await db.location.findFirstOrThrow({

@@ -95,7 +95,7 @@ async function product(
 
 async function place(owner: InventoryActor, name: string, parentId?: string) {
   const result = await createLocation(owner, {
-    kind: parentId ? "SHELF" : "ZONE",
+    level: parentId ? 3 : 1,
     name,
     ...(parentId ? { parentId } : {}),
   });

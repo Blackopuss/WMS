@@ -259,7 +259,7 @@ describe("a key is for one confirmation", () => {
   it("reusing a key for something else is refused and writes nothing", async () => {
     const tornillo = await product(actor);
     const clavo = await product(actor, "Clavo");
-    const shelf = await createLocation(actor, { kind: "SHELF", name: "E1" });
+    const shelf = await createLocation(actor, { level: 3, name: "E1" });
     if (!shelf.ok) throw new Error("location setup failed");
     const idempotencyKey = key();
     await registerEntry(actor, {

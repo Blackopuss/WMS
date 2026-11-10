@@ -222,7 +222,7 @@ describe("reverseMovement", () => {
   it("undoes each kind of movement", async () => {
     const tornillo = await product(actor);
     const shelf = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: `Estante ${++counter}`,
     });
     if (!shelf.ok) throw new Error("location setup failed");

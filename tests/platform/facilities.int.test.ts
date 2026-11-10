@@ -109,7 +109,7 @@ async function twoWarehouses() {
 }
 
 async function shelf(actor: InventoryActor, name: string) {
-  const made = await createLocation(actor, { kind: "SHELF", name });
+  const made = await createLocation(actor, { level: 3, name });
   if (!made.ok) throw new Error(JSON.stringify(made));
   return made.locationId;
 }
@@ -137,7 +137,16 @@ describe("warehouses", () => {
       await db.location.findFirst({
         where: { facilityId: northId, isDefault: true },
       }),
-    ).toMatchObject({ name: "General", kind: "GENERAL" });
+    ).toMatchObject({ name: "General", levelId: null });
+    // And with the usual levels, its own (WMS-22A).
+    expect(
+      (
+        await db.locationLevel.findMany({
+          where: { facilityId: northId },
+          orderBy: { depth: "asc" },
+        })
+      ).map((level) => level.name),
+    ).toEqual(["Zona", "Pasillo", "Estante"]);
     expect(
       await createFacility(owner, { name: "Repetido", code: "NORTE" }),
     ).toMatchObject({ ok: false, fieldErrors: { code: expect.any(String) } });

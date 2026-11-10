@@ -20,7 +20,8 @@ abajo son de ese documento).
 | Producción y calidad | Falta (WMS-11) |
 | Analítica | Falta (WMS-12) |
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
-| Ubicaciones configurables, alcance por almacén, lotes y series | Falta (WMS-22, WMS-20, WMS-21) |
+| Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |
+| Capacidad y restricciones de ubicación, alcance por almacén, lotes y series | Falta (WMS-22B, WMS-20, WMS-21) |
 | PWA, escaneo con cámara, PIN | Falta (transversal: WMS-35, 36, 38) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
@@ -57,7 +58,11 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
 
 - Productos con categorías, marcas, código de barras, unidades y presentaciones
   («caja de 100 piezas») con conversión exacta y versión histórica.
-- Ubicaciones en tres niveles fijos (Zona › Pasillo › Estante), con archivado.
+- Ubicaciones en los niveles que cada almacén define (WMS-22A, ADR 0036; de
+  inicio Zona › Pasillo › Estante, hasta 8), con código opcional que se escanea
+  al surtir, uso (almacenamiento, surtido, recepción, preparación, cuarentena,
+  andén) y archivado. Se configuran en Configuración › Ubicaciones y «Cambiar
+  niveles».
 - **Estado y lote en cada saldo** (WMS-09/10, ADR 0033): disponible, en recepción,
   inspección, cuarentena, dañado, rechazado, en tránsito o bloqueado. La ficha del
   producto distingue «hay» de «disponible»; solo lo disponible se saca, mueve,
@@ -132,8 +137,8 @@ En resumen:
 - **Fase 1 (cerrar fundamentos):** parámetros de operación por empresa
   (WMS-49; incluye volver configurables la estrategia de surtido y la ubicación
   de preparación de WMS-14), rol de Gerencia (WMS-50), varios almacenes
-  (WMS-18), ubicaciones configurables con código, tipo, capacidad y
-  restricciones (WMS-22), alcance de permisos por almacén y zona (WMS-20), lotes,
+  (WMS-18), niveles de ubicación, código y uso (WMS-22A, hecho), capacidad y
+  restricciones (WMS-22B), alcance de permisos por almacén y zona (WMS-20), lotes,
   caducidad, series y trazabilidad (WMS-21) y documentación técnica base
   (WMS-51).
 - **Fase 2 (operación logística):** acomodo con recomendación (WMS-52), tarimas

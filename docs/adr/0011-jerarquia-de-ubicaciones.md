@@ -1,6 +1,6 @@
 # ADR 0011 — Jerarquía de ubicaciones
 
-Fecha: 2026-10-04 · Estado: aceptada · Paso: INV-14
+Fecha: 2026-10-04 · Estado: aceptada; los tipos fijos los reemplazó ADR 0036 (niveles por almacén, WMS-22A) · Paso: INV-14
 
 ## Contexto
 

@@ -51,7 +51,10 @@ async function grantInventory(actor: LocationActor, expired = false) {
 async function defaults(actor: LocationActor) {
   return forOrganization(actor.organizationId).facility.findFirstOrThrow({
     where: { isDefault: true },
-    include: { locations: true },
+    include: {
+      locations: true,
+      levels: { orderBy: { depth: "asc" } },
+    },
   });
 }
 
@@ -164,8 +167,8 @@ describe("database constraints", () => {
   it("rejects a second default even when the application is bypassed", async () => {
     const facility = await defaults(actorA);
     await expect(db.$executeRaw`
-      INSERT INTO location (id, organizationId, facilityId, name, kind, isDefault, updatedAt)
-      VALUES (${newId()}, ${actorA.organizationId}, ${facility.id}, 'General', 'GENERAL', true, UTC_TIMESTAMP(3))
+      INSERT INTO location (id, organizationId, facilityId, name, isDefault, updatedAt)
+      VALUES (${newId()}, ${actorA.organizationId}, ${facility.id}, 'General', true, UTC_TIMESTAMP(3))
     `).rejects.toThrow(/Duplicate entry|unique constraint|location_tree/i);
     await expect(
       db.location.create({
@@ -174,7 +177,6 @@ describe("database constraints", () => {
           organizationId: actorA.organizationId,
           facilityId: facility.id,
           name: "Otra predeterminada",
-          kind: "GENERAL",
           isDefault: true,
         },
       }),
@@ -191,7 +193,7 @@ describe("database constraints", () => {
     const data = {
       organizationId: actorA.organizationId,
       facilityId: facility.id,
-      kind: "AISLE" as const,
+      levelId: facility.levels[1]!.id,
     };
     await db.location.create({
       data: { id: newId(), ...data, name: "Pasillo Á" },
@@ -211,7 +213,7 @@ describe("database constraints", () => {
           id: newId(),
           organizationId: actorB.organizationId,
           facilityId: other.id,
-          kind: "AISLE",
+          levelId: other.levels[1]!.id,
           name: "Pasillo Á",
         },
       }),
@@ -230,7 +232,7 @@ describe("database constraints", () => {
             id: newId(),
             organizationId: actorA.organizationId,
             facilityId: facility.id,
-            kind: "ZONE",
+            levelId: facility.levels[0]!.id,
             name,
           },
         }),
@@ -243,7 +245,7 @@ describe("database constraints", () => {
           organizationId: actorA.organizationId,
           facilityId: facility.id,
           name: "False",
-          kind: "ZONE",
+          levelId: facility.levels[0]!.id,
           isDefault: false,
         },
       }),
@@ -267,8 +269,8 @@ describe("database constraints", () => {
       /Unique constraint|facility_organizationId_isDefault_key/,
     );
     await expect(db.$executeRaw`
-      INSERT INTO location (id, organizationId, facilityId, name, kind, updatedAt)
-      VALUES (${newId()}, ${actorA.organizationId}, ${facility.id}, 'Ajena', 'ZONE', UTC_TIMESTAMP(3))
+      INSERT INTO location (id, organizationId, facilityId, name, levelId, updatedAt)
+      VALUES (${newId()}, ${actorA.organizationId}, ${facility.id}, 'Ajena', ${facility.levels[0]!.id}, UTC_TIMESTAMP(3))
     `).rejects.toThrow(/foreign key/i);
     const own = (await defaults(actorA)).locations.find(
       (row) => row.isDefault,

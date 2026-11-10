@@ -10,7 +10,11 @@ import {
   resolveConversion,
   type Capture,
 } from "@/platform/catalog";
-import { formatLocationPath } from "@/platform/locations";
+import {
+  LOCATION_PARENTS,
+  type LocationWithParents,
+  locationPath,
+} from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import {
@@ -515,22 +519,12 @@ export async function cancelCount(
 
 const locationSelect = {
   name: true,
-  parent: { select: { name: true, parent: { select: { name: true } } } },
+  parent: LOCATION_PARENTS,
 } as const;
 
-type LocationNames = {
-  name: string;
-  parent: { name: string; parent: { name: string } | null } | null;
-};
+type LocationNames = LocationWithParents;
 
-const pathOf = (location: LocationNames) =>
-  formatLocationPath(
-    [
-      location.parent?.parent?.name,
-      location.parent?.name,
-      location.name,
-    ].filter((name): name is string => Boolean(name)),
-  );
+const pathOf = (location: LocationNames) => locationPath(location);
 
 /** Names of people of this company, by account. */
 async function namesOf(

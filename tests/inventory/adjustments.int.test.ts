@@ -210,7 +210,7 @@ describe("registerAdjustment", () => {
   it("adjusts one location without touching the others", async () => {
     const tornillo = await stocked(actor, "100");
     const shelf = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: `Estante ${++counter}`,
     });
     if (!shelf.ok) throw new Error("location setup failed");

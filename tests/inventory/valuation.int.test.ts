@@ -247,7 +247,7 @@ describe("every movement is valued", () => {
     const martillo = await product(actor);
     const clavo = await product(actor);
     const estante = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: "Estante 1",
     });
     if (!estante.ok) throw new Error("location setup failed");

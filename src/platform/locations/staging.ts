@@ -40,17 +40,24 @@ export async function ensureStagingLocation(
       facilityId: facility.id,
       parentId: null,
       name: STAGING_NAME,
-      kind: { not: "GENERAL" },
+      isDefault: null,
     },
     select: { id: true, name: true, archivedAt: true },
   });
   if (named) {
     await tx.location.update({
       where: { id: named.id },
-      data: { isStaging: true, archivedAt: null },
+      data: { isStaging: true, type: "STAGING", archivedAt: null },
     });
     return { id: named.id, name: named.name };
   }
+  // At the root, in the widest level of the warehouse.
+  const level = await tx.locationLevel.findFirst({
+    where: { facilityId: facility.id },
+    orderBy: { depth: "asc" },
+    select: { id: true },
+  });
+  if (!level) throw new Error(`Warehouse ${facility.id} has no levels`);
   const id = newId();
   await tx.location.create({
     data: {
@@ -58,7 +65,8 @@ export async function ensureStagingLocation(
       organizationId,
       facilityId: facility.id,
       name: STAGING_NAME,
-      kind: "ZONE",
+      levelId: level.id,
+      type: "STAGING",
       isStaging: true,
     },
   });

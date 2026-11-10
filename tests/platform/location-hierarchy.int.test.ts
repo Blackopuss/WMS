@@ -13,7 +13,7 @@ import {
   renameLocation,
   restoreLocation,
   type LocationActor,
-  type LocationKind,
+  type LocationNode,
   type LocationResult,
 } from "@/platform/locations";
 import { createOrganization } from "@/platform/tenancy";
@@ -21,8 +21,17 @@ import { db, forOrganization } from "@/server";
 
 import { migratorConnection } from "../setup/test-db";
 
-// INV-14: zones, aisles and shelves named by the business, in a hierarchy
-// that cannot have a cycle.
+// INV-14, WMS-22A: locations named by the business in the levels of its
+// warehouse (by default Zona › Pasillo › Estante), in a hierarchy that
+// cannot have a cycle.
+
+/** The default levels of a new warehouse, by the name these tests use. */
+type Kind = "ZONE" | "AISLE" | "SHELF";
+const DEPTH: Record<Kind, number> = { ZONE: 1, AISLE: 2, SHELF: 3 };
+const kindOf = (location: LocationNode) =>
+  location.isDefault
+    ? "GENERAL"
+    : (["", "ZONE", "AISLE", "SHELF"][location.level?.depth ?? 0] ?? "?");
 
 const stamp = Date.now();
 let counter = 0;
@@ -74,11 +83,15 @@ async function member(organizationId: string, role: Role) {
 /** Creates a location and returns its id; fails the test if it was refused. */
 async function add(
   actor: LocationActor,
-  kind: LocationKind,
+  kind: Kind,
   name: string,
   parentId?: string,
 ) {
-  const result = await createLocation(actor, { kind, name, parentId });
+  const result = await createLocation(actor, {
+    level: DEPTH[kind],
+    name,
+    parentId,
+  });
   if (!result.ok) {
     throw new Error(`location setup failed: ${JSON.stringify(result)}`);
   }
@@ -111,7 +124,7 @@ describe("a hierarchy named by the business", () => {
     const tree = await listLocations(actor);
     expect(tree?.facility.name).toBe("Principal");
     expect(
-      tree?.locations.map((l) => [l.depth, l.kind, l.path, l.children]),
+      tree?.locations.map((l) => [l.depth, kindOf(l), l.path, l.children]),
     ).toEqual([
       [0, "GENERAL", "General", 0],
       [0, "ZONE", "Bodega de atrás", 2],
@@ -155,7 +168,7 @@ describe("a hierarchy named by the business", () => {
       ["general", undefined],
     ] as const) {
       const result = await createLocation(actor, {
-        kind: "SHELF",
+        level: 3,
         name,
         parentId,
       });
@@ -164,24 +177,26 @@ describe("a hierarchy named by the business", () => {
     expect((await paths(actor))?.length).toBe(6);
   });
 
-  it("validates the name and the kind with a message for the person", async () => {
+  it("validates the name and the level with a message for the person", async () => {
     const actor = await company();
     const cases: [unknown, unknown, string][] = [
-      ["", "ZONE", "invalid: Escribe el nombre de la ubicación."],
-      ["   ", "ZONE", "invalid: Escribe el nombre de la ubicación."],
-      [undefined, "ZONE", "invalid: Escribe el nombre de la ubicación."],
+      ["", 1, "invalid: Escribe el nombre de la ubicación."],
+      ["   ", 1, "invalid: Escribe el nombre de la ubicación."],
+      [undefined, 1, "invalid: Escribe el nombre de la ubicación."],
       [
         "x".repeat(61),
-        "ZONE",
+        1,
         "invalid: El nombre es demasiado largo (máximo 60 caracteres).",
       ],
-      ["Zona\tA", "ZONE", "invalid: Quita los saltos de línea o tabuladores."],
-      ["Zona A", "", "invalid: Elige si es zona, pasillo o estante."],
-      ["Zona A", "GENERAL", "invalid: Elige si es zona, pasillo o estante."],
-      ["Zona A", "LEVEL", "invalid: Elige si es zona, pasillo o estante."],
+      ["Zona\tA", 1, "invalid: Quita los saltos de línea o tabuladores."],
+      ["Zona A", "", "invalid: Elige el nivel de la ubicación."],
+      ["Zona A", 0, "invalid: Elige el nivel de la ubicación."],
+      ["Zona A", 4, "invalid: Elige el nivel de la ubicación."],
+      ["Zona A", "ZONE", "invalid: Elige el nivel de la ubicación."],
+      ["Zona A", 1.5, "invalid: Elige el nivel de la ubicación."],
     ];
-    for (const [name, kind, expected] of cases) {
-      expect(refusal(await createLocation(actor, { name, kind }))).toBe(
+    for (const [name, level, expected] of cases) {
+      expect(refusal(await createLocation(actor, { name, level }))).toBe(
         expected,
       );
     }
@@ -198,7 +213,7 @@ describe("a hierarchy named by the business", () => {
     expect(
       refusal(
         await createLocation(actor, {
-          kind: "SHELF",
+          level: 3,
           name: "Estante",
           parentId: newId(),
         }),
@@ -215,45 +230,49 @@ describe("a hierarchy named by the business", () => {
         id: newId(),
         organizationId: actor.organizationId,
         facilityId: tree.facility.id,
-        kind: "SHELF" as const,
+        levelId: tree.levels[2]!.id,
         name: `Estante ${i + 1}`,
       })),
     });
     expect(
-      refusal(await createLocation(actor, { kind: "SHELF", name: "Uno más" })),
+      refusal(await createLocation(actor, { level: 3, name: "Uno más" })),
     ).toBe("limit_reached: Llegaste al máximo de 1,000 ubicaciones.");
     expect((await listLocations(actor))?.locations).toHaveLength(MAX_LOCATIONS);
   });
 });
 
 describe("a hierarchy without cycles", () => {
-  it("a location only goes inside a wider kind", async () => {
+  it("a location only goes inside a wider level", async () => {
     const actor = await company();
     const zone = await add(actor, "ZONE", "Zona A");
     const aisle = await add(actor, "AISLE", "Pasillo 1", zone);
     const shelf = await add(actor, "SHELF", "Estante 1", aisle);
     const general = (await listLocations(actor))?.locations[0]?.id;
-    const cases: [LocationKind, string | undefined, string][] = [
-      ["ZONE", zone, "not_allowed: Una zona no puede ir dentro de otra zona."],
+    const cases: [Kind, string | undefined, string][] = [
+      [
+        "ZONE",
+        zone,
+        "not_allowed: Una ubicación de nivel «Zona» no puede ir dentro de una de nivel «Zona»: dentro de «Zona» solo van los niveles que siguen.",
+      ],
       [
         "ZONE",
         aisle,
-        "not_allowed: Una zona no puede ir dentro de un pasillo: el pasillo va dentro de la zona.",
+        "not_allowed: Una ubicación de nivel «Zona» no puede ir dentro de una de nivel «Pasillo»: dentro de «Pasillo» solo van los niveles que siguen.",
       ],
       [
         "AISLE",
         aisle,
-        "not_allowed: Un pasillo no puede ir dentro de otro pasillo.",
+        "not_allowed: Una ubicación de nivel «Pasillo» no puede ir dentro de una de nivel «Pasillo»: dentro de «Pasillo» solo van los niveles que siguen.",
       ],
       [
         "AISLE",
         shelf,
-        "not_allowed: Un estante no contiene otras ubicaciones.",
+        "not_allowed: «Estante» es el último nivel: no contiene otras ubicaciones.",
       ],
       [
         "SHELF",
         shelf,
-        "not_allowed: Un estante no contiene otras ubicaciones.",
+        "not_allowed: «Estante» es el último nivel: no contiene otras ubicaciones.",
       ],
       [
         "SHELF",
@@ -263,7 +282,13 @@ describe("a hierarchy without cycles", () => {
     ];
     for (const [kind, parentId, expected] of cases) {
       expect(
-        refusal(await createLocation(actor, { kind, name: "Nueva", parentId })),
+        refusal(
+          await createLocation(actor, {
+            level: DEPTH[kind],
+            name: "Nueva",
+            parentId,
+          }),
+        ),
       ).toBe(expected);
     }
     expect(await paths(actor)).toHaveLength(4);
@@ -280,13 +305,13 @@ describe("a hierarchy without cycles", () => {
     );
     // Indirect cycles: under its child and under its grandchild.
     expect(refusal(await moveLocation(actor, zone, { parentId: aisle }))).toBe(
-      "not_allowed: Una zona no puede ir dentro de un pasillo: el pasillo va dentro de la zona.",
+      "not_allowed: Una ubicación de nivel «Zona» no puede ir dentro de una de nivel «Pasillo»: dentro de «Pasillo» solo van los niveles que siguen.",
     );
     expect(refusal(await moveLocation(actor, zone, { parentId: shelf }))).toBe(
-      "not_allowed: Un estante no contiene otras ubicaciones.",
+      "not_allowed: «Estante» es el último nivel: no contiene otras ubicaciones.",
     );
     expect(refusal(await moveLocation(actor, aisle, { parentId: shelf }))).toBe(
-      "not_allowed: Un estante no contiene otras ubicaciones.",
+      "not_allowed: «Estante» es el último nivel: no contiene otras ubicaciones.",
     );
     expect(await paths(actor)).toEqual([
       "General",
@@ -379,13 +404,11 @@ describe("a hierarchy without cycles", () => {
     const results = await Promise.all(attempts);
     expect(results.filter((r) => r.ok).length).toBeGreaterThan(0);
     // Every location still reaches the root: the walk from the root finds
-    // all eleven, each with a depth its kind allows.
+    // all eleven, each with a depth its level allows.
     const tree = await listLocations(actor);
     expect(tree?.locations).toHaveLength(11);
     for (const location of tree?.locations ?? []) {
-      const allowed = { GENERAL: 0, ZONE: 0, AISLE: 1, SHELF: 2 }[
-        location.kind
-      ];
+      const allowed = (location.level?.depth ?? 1) - 1;
       expect(location.depth, location.path).toBeLessThanOrEqual(allowed);
     }
     const rows = await forOrganization(actor.organizationId).location.findMany({
@@ -405,7 +428,7 @@ describe("a hierarchy without cycles", () => {
     const actor = await company();
     const results = await Promise.all(
       Array.from({ length: 6 }, () =>
-        createLocation(actor, { kind: "ZONE", name: "Zona única" }),
+        createLocation(actor, { level: 1, name: "Zona única" }),
       ),
     );
     expect(results.filter((r) => r.ok)).toHaveLength(1);
@@ -504,12 +527,12 @@ describe("archiving", () => {
 
     // Its name stays taken, and nothing new goes inside it.
     expect(
-      await createLocation(actor, { kind: "ZONE", name: "zona a" }),
+      await createLocation(actor, { level: 1, name: "zona a" }),
     ).toMatchObject({ ok: false, reason: "duplicate" });
     expect(
       refusal(
         await createLocation(actor, {
-          kind: "SHELF",
+          level: 3,
           name: "Estante 2",
           parentId: zone,
         }),
@@ -562,7 +585,7 @@ describe("who can change locations", () => {
     for (const role of ["buyer", "viewer"] as const) {
       const actor = await member(owner.organizationId, role);
       for (const attempt of [
-        () => createLocation(actor, { kind: "ZONE", name: "Zona B" }),
+        () => createLocation(actor, { level: 1, name: "Zona B" }),
         () => renameLocation(actor, zone, { name: "Otra" }),
         () => moveLocation(actor, zone, { parentId: "" }),
         () => archiveLocation(actor, zone),
@@ -588,7 +611,7 @@ describe("who can change locations", () => {
     });
     invalidateEntitlements(actor.organizationId);
     for (const attempt of [
-      () => createLocation(actor, { kind: "ZONE", name: "Zona B" }),
+      () => createLocation(actor, { level: 1, name: "Zona B" }),
       () => renameLocation(actor, zone, { name: "Otra" }),
       () => moveLocation(actor, zone, { parentId: "" }),
       () => archiveLocation(actor, zone),
@@ -610,7 +633,7 @@ describe("who can change locations", () => {
     if (!created.ok) throw new Error("company setup failed");
     const actor = { organizationId: created.organizationId, userId: owner };
     await expect(
-      createLocation(actor, { kind: "ZONE", name: "Zona A" }),
+      createLocation(actor, { level: 1, name: "Zona A" }),
     ).rejects.toMatchObject({ code: "module_not_contracted" });
   });
 
@@ -635,7 +658,7 @@ describe("who can change locations", () => {
     expect(
       refusal(
         await createLocation(theirs, {
-          kind: "SHELF",
+          level: 3,
           name: "Intruso",
           parentId: zone,
         }),
@@ -694,12 +717,24 @@ describe("the audit trail of locations", () => {
         [
           "location.created",
           zone,
-          { name: "Zona A", kind: "ZONE", path: "Zona A" },
+          {
+            name: "Zona A",
+            nivel: "Zona",
+            codigo: null,
+            tipo: "Almacenamiento",
+            path: "Zona A",
+          },
         ],
         [
           "location.created",
           shelf,
-          { name: "Estante 1", kind: "SHELF", path: "Estante 1" },
+          {
+            name: "Estante 1",
+            nivel: "Estante",
+            codigo: null,
+            tipo: "Almacenamiento",
+            path: "Estante 1",
+          },
         ],
         [
           "location.renamed",
@@ -732,7 +767,7 @@ describe("the audit trail of locations", () => {
 });
 
 describe("the database keeps the hierarchy even when the application is bypassed", () => {
-  it("rejects wrong parents, kind changes, touching General and deletions", async () => {
+  it("rejects wrong parents, level changes, touching General and deletions", async () => {
     const actor = await company();
     const zone = await add(actor, "ZONE", "Zona A");
     const aisle = await add(actor, "AISLE", "Pasillo 1", zone);
@@ -744,13 +779,26 @@ describe("the database keeps the hierarchy even when the application is bypassed
     const connection = await migratorConnection();
     const sql = (statement: string, values: unknown[] = []) =>
       connection.query(statement, values);
-    const insert = (name: string, kind: string, parentId: string | null) =>
+    const levelOf = (kind: Kind | "GENERAL") =>
+      kind === "GENERAL" ? null : tree!.levels[DEPTH[kind] - 1]!.id;
+    const insert = (
+      name: string,
+      kind: Kind | "GENERAL",
+      parentId: string | null,
+    ) =>
       sql(
-        "INSERT INTO location (id, organizationId, facilityId, name, kind, parentId, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(3))",
-        [newId(), actor.organizationId, facility, name, kind, parentId],
+        "INSERT INTO location (id, organizationId, facilityId, name, levelId, parentId, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(3))",
+        [
+          newId(),
+          actor.organizationId,
+          facility,
+          name,
+          levelOf(kind),
+          parentId,
+        ],
       );
     try {
-      const coarser = /a location only goes inside a coarser kind/;
+      const coarser = /a location only goes inside a wider level/;
       // Same kind, finer parent, General as parent.
       await expect(insert("Zona B", "ZONE", zone)).rejects.toThrow(coarser);
       await expect(insert("Zona B", "ZONE", aisle)).rejects.toThrow(coarser);
@@ -764,14 +812,17 @@ describe("the database keeps the hierarchy even when the application is bypassed
       // Itself as parent, and a cycle built with two updates.
       await expect(
         sql("UPDATE location SET parentId = id WHERE id = ?", [aisle]),
-      ).rejects.toThrow(/location_parent_check|coarser kind/);
+      ).rejects.toThrow(/location_parent_check|wider level/);
       await expect(
         sql("UPDATE location SET parentId = ? WHERE id = ?", [aisle, zone]),
       ).rejects.toThrow(coarser);
-      // The kind is fixed.
+      // The level is fixed.
       await expect(
-        sql("UPDATE location SET kind = 'SHELF' WHERE id = ?", [aisle]),
-      ).rejects.toThrow(/the kind of a location never changes/);
+        sql("UPDATE location SET levelId = ? WHERE id = ?", [
+          levelOf("SHELF"),
+          aisle,
+        ]),
+      ).rejects.toThrow(/the level of a location never changes/);
       // Names at the root and inside a parent.
       await expect(insert("zona a", "ZONE", null)).rejects.toThrow(
         /name repeated at the root/,
@@ -782,18 +833,22 @@ describe("the database keeps the hierarchy even when the application is bypassed
       await expect(
         sql("UPDATE location SET name = 'General' WHERE id = ?", [zone]),
       ).rejects.toThrow(/name repeated at the root/);
-      // General: not renamed, moved, archived, unmarked or given a kind.
+      // General: not renamed, moved, archived, unmarked or given a level.
       for (const change of [
         "name = 'Mostrador'",
         "parentId = ?",
         "archivedAt = NOW(3)",
         "isDefault = NULL",
-        "kind = 'ZONE'",
+        "levelId = ?",
       ]) {
         await expect(
           sql(
             `UPDATE location SET ${change} WHERE id = ?`,
-            change.includes("?") ? [zone, general] : [general],
+            change === "parentId = ?"
+              ? [zone, general]
+              : change === "levelId = ?"
+                ? [levelOf("ZONE"), general]
+                : [general],
           ),
           change,
         ).rejects.toThrow(

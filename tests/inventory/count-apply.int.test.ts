@@ -84,7 +84,7 @@ async function member(organizationId: string, role: Role) {
 
 async function shelf(owner: InventoryActor) {
   const result = await createLocation(owner, {
-    kind: "SHELF",
+    level: 3,
     name: `Estante ${++counter}`,
   });
   if (!result.ok) throw new Error("location setup failed");

@@ -212,7 +212,7 @@ describe("receivePurchaseOrder", () => {
   it("puts it in the chosen location", async () => {
     const actor = await company();
     const productId = await product(actor);
-    const shelf = await createLocation(actor, { kind: "SHELF", name: "A-01" });
+    const shelf = await createLocation(actor, { level: 3, name: "A-01" });
     if (!shelf.ok) throw new Error("location setup failed");
     const orderId = await sentOrder(actor, [{ productId, quantity: "8" }]);
 
@@ -366,7 +366,7 @@ describe("receivePurchaseOrder", () => {
     expect(await db.purchaseReceipt.count({ where: { orderId } })).toBe(0);
 
     const other = await sentOrder(actor, [{ productId: kept, quantity: "2" }]);
-    const shelf = await createLocation(actor, { kind: "SHELF", name: "B-02" });
+    const shelf = await createLocation(actor, { level: 3, name: "B-02" });
     if (!shelf.ok) throw new Error("location setup failed");
     expect(await archiveLocation(actor, shelf.locationId)).toMatchObject({
       ok: true,
@@ -435,7 +435,7 @@ describe("who may receive", () => {
   it("the location must be of the company", async () => {
     const mine = await company();
     const theirs = await company();
-    const shelf = await createLocation(theirs, { kind: "SHELF", name: "Z-9" });
+    const shelf = await createLocation(theirs, { level: 3, name: "Z-9" });
     if (!shelf.ok) throw new Error("location setup failed");
     const productId = await product(mine);
     const orderId = await sentOrder(mine, [{ productId, quantity: "3" }]);
@@ -648,8 +648,8 @@ describe("destination and presentation when receiving (CMP-09)", () => {
     const nails = await product(actor);
     const screws = await product(actor);
     const caja = await box(actor, nails, "100");
-    const a01 = await createLocation(actor, { kind: "SHELF", name: "A-01" });
-    const b02 = await createLocation(actor, { kind: "SHELF", name: "B-02" });
+    const a01 = await createLocation(actor, { level: 3, name: "A-01" });
+    const b02 = await createLocation(actor, { level: 3, name: "B-02" });
     if (!a01.ok || !b02.ok) throw new Error("location setup failed");
     const orderId = await sentOrder(actor, [
       { productId: nails, capture: `p:${caja}`, quantity: "2" },
@@ -727,8 +727,8 @@ describe("destination and presentation when receiving (CMP-09)", () => {
   it("a line location of another company or archived is refused on its line", async () => {
     const mine = await company();
     const theirs = await company();
-    const foreign = await createLocation(theirs, { kind: "SHELF", name: "X" });
-    const old = await createLocation(mine, { kind: "SHELF", name: "Vieja" });
+    const foreign = await createLocation(theirs, { level: 3, name: "X" });
+    const old = await createLocation(mine, { level: 3, name: "Vieja" });
     if (!foreign.ok || !old.ok) throw new Error("location setup failed");
     await archiveLocation(mine, old.locationId);
     const productId = await product(mine);
@@ -865,7 +865,7 @@ describe("concurrent and repeated receipts (CMP-10, NEG-24)", () => {
   it("archiving the destination at the same time never leaves stock in an archived location", async () => {
     const actor = await company();
     const productId = await product(actor);
-    const shelf = await createLocation(actor, { kind: "SHELF", name: "C-03" });
+    const shelf = await createLocation(actor, { level: 3, name: "C-03" });
     if (!shelf.ok) throw new Error("location setup failed");
     const orderId = await sentOrder(actor, [{ productId, quantity: "5" }]);
 

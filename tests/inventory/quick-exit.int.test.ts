@@ -204,7 +204,7 @@ describe("registerQuickExit", () => {
   it("takes from the location of each line", async () => {
     const tornillo = await stocked(actor, "Tornillo en estante", "10");
     const created = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: `Estante ${++counter}`,
     });
     if (!created.ok) throw new Error("location setup failed");
@@ -345,7 +345,7 @@ describe("registerQuickExit", () => {
     const theirs = await company();
     const foreign = await stocked(theirs, "Ajeno", "50");
     const foreignShelf = await createLocation(theirs, {
-      kind: "SHELF",
+      level: 3,
       name: "Estante ajeno",
     });
     if (!foreignShelf.ok) throw new Error("location setup failed");

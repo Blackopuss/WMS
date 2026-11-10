@@ -527,7 +527,16 @@ beforeAll(async () => {
         organizationId,
         facilityId: location.facilityId,
         name: "Rack de tareas",
-        kind: "SHELF",
+        // The default levels of the warehouse (WMS-22A): its finest one.
+        levelId: (
+          await db.locationLevel.findFirstOrThrow({
+            where: {
+              organizationId,
+              facilityId: location.facilityId,
+              depth: 3,
+            },
+          })
+        ).id,
       },
     });
     await db.warehouseTask.create({

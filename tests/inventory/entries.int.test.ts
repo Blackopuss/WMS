@@ -98,7 +98,7 @@ async function product(
 }
 
 async function shelf(actor: InventoryActor, name: string, parentId?: string) {
-  const result = await createLocation(actor, { kind: "SHELF", name, parentId });
+  const result = await createLocation(actor, { level: 3, name, parentId });
   if (!result.ok) throw new Error("location setup failed");
   return result.locationId;
 }
@@ -532,7 +532,7 @@ describe("who can register entries", () => {
 describe("the list of movements", () => {
   it("shows the latest first, with who made them and where", async () => {
     const own = await company();
-    const zone = await createLocation(own, { kind: "ZONE", name: "Bodega" });
+    const zone = await createLocation(own, { level: 1, name: "Bodega" });
     if (!zone.ok) throw new Error("location setup failed");
     const inside = await shelf(own, "Estante 3", zone.locationId);
     const hose = await product(own, { name: "Manguera", unit: "m" });
@@ -582,7 +582,7 @@ describe("the list of movements", () => {
 
   it("offers the active locations in reading order, General first", async () => {
     const own = await company();
-    const zone = await createLocation(own, { kind: "ZONE", name: "Bodega" });
+    const zone = await createLocation(own, { level: 1, name: "Bodega" });
     if (!zone.ok) throw new Error("location setup failed");
     await shelf(own, "Estante 10", zone.locationId);
     await shelf(own, "Estante 2", zone.locationId);

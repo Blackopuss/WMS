@@ -25,7 +25,11 @@ import { moduleRegistry } from "@/modules/registry";
 import type { Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
-import { archiveLocation, createLocation } from "@/platform/locations";
+import {
+  archiveLocation,
+  createLocation,
+  editLocation,
+} from "@/platform/locations";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -102,7 +106,7 @@ async function scenario() {
   });
   if (!created.ok) throw new Error("product setup failed");
   const rack = async (name: string) => {
-    const result = await createLocation(owner, { kind: "SHELF", name });
+    const result = await createLocation(owner, { level: 3, name });
     if (!result.ok) throw new Error("location setup failed");
     return result.locationId;
   };
@@ -188,7 +192,17 @@ describe("releasing an order", () => {
     const orderId = await released(owner, productId, "40");
     const tasks = await tasksOf(owner.organizationId);
     const place = await staging(owner.organizationId);
-    expect(place).toMatchObject({ name: "Preparación", kind: "ZONE" });
+    // At the root, in the widest level, with its own use (WMS-22A).
+    expect(place).toMatchObject({
+      name: "Preparación",
+      type: "STAGING",
+      parentId: null,
+    });
+    expect(
+      await db.locationLevel.findUniqueOrThrow({
+        where: { id: place.levelId! },
+      }),
+    ).toMatchObject({ depth: 1, name: "Zona" });
     expect(
       tasks.map((task) => [
         task.fromLocationId,
@@ -284,9 +298,13 @@ describe("picking", () => {
       ok: false,
       fieldErrors: { quantity: expect.any(String) },
     });
-    // The barcode works as well as the key.
+    // The barcode works as well as the key, and the location's code
+    // (WMS-22A) as well as its name.
+    expect(await editLocation(owner, a, { code: "ra-01" })).toMatchObject({
+      ok: true,
+    });
     expect(
-      await confirm({ productCode: product.barcode!, locationCode: "rack a" }),
+      await confirm({ productCode: product.barcode!, locationCode: "ra-01" }),
     ).toMatchObject({ ok: true });
 
     expect(await deliverTask(operator, first!.id)).toMatchObject({ ok: true });

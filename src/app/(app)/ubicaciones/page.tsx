@@ -1,11 +1,4 @@
-import {
-  ChevronLeft,
-  Columns3,
-  LayoutGrid,
-  MapPin,
-  Rows3,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronLeft, MapPin, Rows3 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -21,11 +14,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { getModuleAccess } from "@/platform/billing";
 import {
-  LOCATION_KIND_LABELS,
+  LOCATION_TYPES,
+  LOCATION_TYPE_LABELS,
   canContain,
-  kindsInside,
+  levelsInside,
   listLocations,
-  type AnyLocationKind,
+  type LevelRef,
+  type LocationNode,
 } from "@/platform/locations";
 
 import {
@@ -37,17 +32,36 @@ import {
 
 export const metadata: Metadata = { title: "Ubicaciones" };
 
-const KIND_ICONS: Record<AnyLocationKind, LucideIcon> = {
-  GENERAL: MapPin,
-  ZONE: LayoutGrid,
-  AISLE: Columns3,
-  SHELF: Rows3,
-};
+/**
+ * Left padding of a row by its depth in the tree (levels bound it to 8);
+ * on a phone it stops growing so the names keep their room.
+ */
+const INDENT = [
+  "",
+  "pl-8 sm:pl-12",
+  "pl-12 sm:pl-20",
+  "pl-14 sm:pl-28",
+  "pl-16 sm:pl-36",
+  "pl-16 sm:pl-44",
+  "pl-16 sm:pl-52",
+  "pl-16 sm:pl-60",
+];
 
-/** Left padding of a row by its depth in the tree (kinds bound it to 2). */
-const INDENT = ["", "pl-10 sm:pl-12", "pl-16 sm:pl-20"];
+/** What a row says under its name: level, code and use. */
+function detailOf(location: LocationNode): string {
+  if (location.isDefault) {
+    return "Ubicación inicial: aquí llega lo que aún no acomodas.";
+  }
+  return [
+    location.level?.name,
+    location.code ? `Código ${location.code}` : null,
+    location.type === "STORAGE" ? null : LOCATION_TYPE_LABELS[location.type],
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
-/** Zones, aisles and shelves of the facility (INV-13/14). */
+/** The locations of the warehouse, in its own levels (INV-13/14, WMS-22A). */
 export default async function UbicacionesPage({
   searchParams,
 }: PageProps<"/ubicaciones">) {
@@ -91,29 +105,35 @@ export default async function UbicacionesPage({
   const active = tree.locations.filter((location) => !location.archived);
   const archived = tree.locations.filter((location) => location.archived);
   const facilityPlace = `Directamente en ${tree.facility.name}`;
-  const kindOptions = (kind: AnyLocationKind | null) =>
-    kindsInside(kind).map((value) => ({
-      value,
-      label: LOCATION_KIND_LABELS[value],
+  const levelOptions = (parent: LevelRef | null | "warehouse") =>
+    levelsInside(tree.levels, parent).map((level) => ({
+      value: String(level.depth),
+      label: level.name,
     }));
-  /** Where something new can go: the facility and whatever holds others. */
+  /** Where something new can go: the warehouse and whatever holds others. */
   const places: PlaceOption[] = [
-    { id: "", label: facilityPlace, kinds: kindOptions(null) },
+    { id: "", label: facilityPlace, levels: levelOptions("warehouse") },
     ...active
-      .filter((location) => kindsInside(location.kind).length > 0)
+      .filter((location) => levelOptions(location.level).length > 0)
       .map((location) => ({
         id: location.id,
         label: location.path,
-        kinds: kindOptions(location.kind),
+        levels: levelOptions(location.level),
       })),
   ];
-  /** Where a location of this kind fits; what it contains is always finer. */
-  const destinationsFor = (kind: AnyLocationKind) => [
+  /** Where a location of this level fits; what it contains is always finer. */
+  const destinationsFor = (level: LevelRef | null) => [
     { id: "", label: facilityPlace },
     ...active
-      .filter((location) => canContain(location.kind, kind))
+      .filter((location) => canContain(location.level, level))
       .map((location) => ({ id: location.id, label: location.path })),
   ];
+  /** Uses a person chooses; staging is chosen in Configuración › Operación. */
+  const types = LOCATION_TYPES.filter((type) => type !== "STAGING").map(
+    (type) => ({ value: type, label: LOCATION_TYPE_LABELS[type] }),
+  );
+  const quietLink =
+    "inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50";
   const list = showArchived ? archived : active;
 
   return (
@@ -129,13 +149,20 @@ export default async function UbicacionesPage({
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader
         title="Ubicaciones"
-        description="Zonas, pasillos y estantes."
+        description={`Niveles: ${tree.levels.map((level) => level.name).join(" › ")}.`}
         actions={
           canCreate && !showArchived ? (
-            <AddLocationDialog places={places} />
+            <AddLocationDialog places={places} types={types} />
           ) : undefined
         }
       />
+      {canUpdate && !showArchived && (
+        <p className="-mt-2">
+          <Link href="/ubicaciones/niveles" className={quietLink}>
+            Cambiar niveles
+          </Link>
+        </p>
+      )}
       {showArchived && archived.length === 0 ? (
         <EmptyState
           icon={MapPin}
@@ -160,13 +187,13 @@ export default async function UbicacionesPage({
           </div>
           <ul className="divide-y">
             {list.map((location) => {
-              const Icon = KIND_ICONS[location.kind];
-              const holds = kindsInside(location.kind).length > 0;
+              const Icon = location.isDefault ? MapPin : Rows3;
+              const holds = levelOptions(location.level).length > 0;
               return (
                 <li
                   key={location.id}
                   className={`flex min-h-16 items-center gap-3 p-4 sm:px-5 ${
-                    showArchived ? "" : (INDENT[location.depth] ?? INDENT[2])
+                    showArchived ? "" : (INDENT[location.depth] ?? INDENT[7])
                   }`}
                 >
                   <Icon
@@ -177,10 +204,8 @@ export default async function UbicacionesPage({
                     <h3 className="font-medium break-words">
                       {showArchived ? location.path : location.name}
                     </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {location.isDefault
-                        ? "Ubicación inicial: aquí llega lo que aún no acomodas."
-                        : LOCATION_KIND_LABELS[location.kind]}
+                    <p className="text-sm break-words text-muted-foreground">
+                      {detailOf(location)}
                     </p>
                   </div>
                   {location.isDefault && (
@@ -197,6 +222,7 @@ export default async function UbicacionesPage({
                       {canCreate && holds && (
                         <AddLocationDialog
                           places={places}
+                          types={types}
                           insideId={location.id}
                           insideName={location.name}
                         />
@@ -206,11 +232,15 @@ export default async function UbicacionesPage({
                           location={{
                             id: location.id,
                             name: location.name,
-                            kindLabel: LOCATION_KIND_LABELS[location.kind],
+                            levelName: location.level?.name ?? "",
+                            code: location.code ?? "",
+                            type: location.type,
+                            isStaging: location.isStaging,
                             parentId: location.parentId ?? "",
                             children: location.children,
                           }}
-                          destinations={destinationsFor(location.kind)}
+                          types={types}
+                          destinations={destinationsFor(location.level)}
                           canUpdate={canUpdate}
                           canArchive={canArchive}
                         />
@@ -224,8 +254,8 @@ export default async function UbicacionesPage({
           {!showArchived && active.length === 1 && (
             <p className="border-t p-4 text-sm text-muted-foreground sm:px-5">
               {canCreate
-                ? "Puedes trabajar solo con «General» y agregar zonas cuando las necesites."
-                : "Tu negocio todavía no tiene zonas, pasillos ni estantes: todo está en «General»."}
+                ? "Puedes trabajar solo con «General» y agregar ubicaciones cuando las necesites."
+                : "Tu almacén todavía no tiene otras ubicaciones: todo está en «General»."}
             </p>
           )}
         </section>

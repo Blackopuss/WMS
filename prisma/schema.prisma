@@ -133,6 +133,7 @@ model Organization {
   productPresentations    ProductPresentation[]
   presentationVersions    PresentationVersion[]
   facilities              Facility[]
+  locationLevels          LocationLevel[]
   locations               Location[]
   stockMovements          StockMovement[]
   stockMovementLines      StockMovementLine[]
@@ -191,6 +192,7 @@ model Facility {
   createdAt      DateTime        @default(now()) @db.DateTime(3)
   updatedAt      DateTime        @updatedAt @db.DateTime(3)
   locations      Location[]
+  levels         LocationLevel[]
   activeFor      Membership[]
   outboundOrders OutboundOrder[]
 
@@ -200,16 +202,37 @@ model Facility {
   @@map("facility")
 }
 
-/// What a location is (INV-14). The order is the hierarchy: a zone holds
-/// aisles and shelves, an aisle holds shelves, a shelf holds nothing.
-/// Levels are optional (a shelf may hang directly from the facility), but a
-/// location only goes inside a coarser one, so a cycle cannot be built.
-enum LocationKind {
-  /// The default location of the facility; always at the root, no children.
-  GENERAL
-  ZONE
-  AISLE
-  SHELF
+/// What a location is used for (WMS-22A): informative and for filters;
+/// the capacity and restrictions of WMS-22B build on it.
+enum LocationType {
+  STORAGE
+  PICKING
+  RECEIVING
+  STAGING
+  QUARANTINE
+  DOCK
+}
+
+/// The levels of a warehouse (WMS-22A, ADR 0036): «Zona», «Pasillo»,
+/// «Rack»… with free names, in order (depth 1 = the widest). A location only
+/// goes inside one of a wider level, so the tree has no cycles.
+model LocationLevel {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId     String       @db.Char(36)
+  facility       Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  depth          Int
+  name           String       @db.VarChar(40)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+  updatedAt      DateTime     @updatedAt @db.DateTime(3)
+  locations      Location[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, facilityId, id])
+  @@unique([organizationId, facilityId, depth])
+  @@unique([organizationId, facilityId, name])
+  @@map("location_level")
 }
 
 model Location {
@@ -220,8 +243,14 @@ model Location {
   facility       Facility              @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict)
   /// Name given by the business; unique among the locations of its parent.
   name           String                @db.VarChar(120)
-  /// Fixed when the location is created (trigger).
-  kind           LocationKind
+  /// Its level in the warehouse; NULL only for General. Fixed when the
+  /// location is created (trigger).
+  levelId        String?               @db.Char(36)
+  level          LocationLevel?        @relation(fields: [organizationId, facilityId, levelId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// What is scanned or typed to confirm the place («A-01-03»); unique in
+  /// its warehouse, upper case. Optional: without it, the name or path.
+  code           String?               @db.VarChar(30)
+  type           LocationType          @default(STORAGE)
   /// Location that contains this one, in the same facility; NULL = root.
   parentId       String?               @db.Char(36)
   parent         Location?             @relation("LocationTree", fields: [organizationId, facilityId, parentId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
@@ -254,6 +283,7 @@ model Location {
   @@unique([organizationId, facilityId, parentId, name])
   @@unique([organizationId, facilityId, isDefault])
   @@unique([organizationId, facilityId, isStaging])
+  @@unique([organizationId, facilityId, code])
   @@map("location")
 }
 

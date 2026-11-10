@@ -83,11 +83,11 @@ async function company(productLimit = 50): Promise<InventoryActor> {
 
 /** «Zona A» with «Estante 3» inside; returns the id of the shelf. */
 async function shelf(actor: InventoryActor) {
-  const zone = await createLocation(actor, { name: "Zona A", kind: "ZONE" });
+  const zone = await createLocation(actor, { name: "Zona A", level: 1 });
   if (!zone.ok) throw new Error("zone setup failed");
   const made = await createLocation(actor, {
     name: "Estante 3",
-    kind: "SHELF",
+    level: 3,
     parentId: zone.locationId,
   });
   if (!made.ok) throw new Error("shelf setup failed");

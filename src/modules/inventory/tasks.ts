@@ -7,7 +7,12 @@ import { recordAuditEvent } from "@/platform/audit";
 import { isAllowed, type Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
-import { activeFacilityOf, formatLocationPath } from "@/platform/locations";
+import {
+  LOCATION_PARENTS,
+  type LocationWithParents,
+  activeFacilityOf,
+  locationPath,
+} from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { foldName, foldPath } from "./import-validation";
@@ -144,9 +149,8 @@ async function lockTask(tx: Tx, taskId: string) {
           fromLocation: {
             select: {
               name: true,
-              parent: {
-                select: { name: true, parent: { select: { name: true } } },
-              },
+              code: true,
+              parent: LOCATION_PARENTS,
             },
           },
           toLocation: { select: { name: true } },
@@ -497,7 +501,7 @@ export function pickUpTask(
 export type ConfirmPickInput = {
   /** Scanned or typed: the product's key or barcode. */
   productCode: string;
-  /** Scanned or typed: the name or path of the origin location. */
+  /** Scanned or typed: the code, name or path of the origin location. */
   locationCode: string;
   /** What was taken, in the product's unit. */
   quantity: string;
@@ -557,20 +561,23 @@ export function confirmPick(
         "productCode",
       );
     }
-    const place = foldPath(String(input.locationCode ?? "").slice(0, 200));
+    // Its code (WMS-22A) is what is scanned; without one, its name or path.
+    const typed = String(input.locationCode ?? "").slice(0, 200);
+    const place = foldPath(typed);
     const from = task.fromLocation;
-    const path = formatLocationPath(
-      [from.parent?.parent?.name, from.parent?.name, from.name].filter(
-        (name): name is string => Boolean(name),
-      ),
-    );
+    const path = locationPath(from);
+    const byCode =
+      from.code !== null && typed.trim().toUpperCase() === from.code;
     if (
-      place === "" ||
-      (place !== foldPath(from.name) && place !== foldPath(path))
+      !byCode &&
+      (place === "" ||
+        (place !== foldPath(from.name) && place !== foldPath(path)))
     ) {
       return stop(
         "invalid",
-        `No es la ubicación de la tarea: ve a ${path}.`,
+        from.code
+          ? `No es la ubicación de la tarea: ve a ${path} (código ${from.code}).`
+          : `No es la ubicación de la tarea: ve a ${path}.`,
         "locationCode",
       );
     }
@@ -980,23 +987,13 @@ export type TaskListView = "mine" | "available" | "open" | "closed";
 const LOCATION_NAMES = {
   select: {
     name: true,
-    parent: { select: { name: true, parent: { select: { name: true } } } },
+    parent: LOCATION_PARENTS,
   },
 } as const;
 
-type LocationNames = {
-  name: string;
-  parent: { name: string; parent: { name: string } | null } | null;
-};
+type LocationNames = LocationWithParents;
 
-const pathOf = (location: LocationNames) =>
-  formatLocationPath(
-    [
-      location.parent?.parent?.name,
-      location.parent?.name,
-      location.name,
-    ].filter((name): name is string => Boolean(name)),
-  );
+const pathOf = (location: LocationNames) => locationPath(location);
 
 const SUMMARY_SELECT = {
   id: true,

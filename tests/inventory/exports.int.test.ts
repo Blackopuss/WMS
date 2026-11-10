@@ -169,11 +169,11 @@ describe("what each export contains", () => {
 
   it("stock: what there is in each location, with exact decimals", async () => {
     const actor = await company();
-    const zone = await createLocation(actor, { name: "Zona A", kind: "ZONE" });
+    const zone = await createLocation(actor, { name: "Zona A", level: 1 });
     if (!zone.ok) throw new Error("zone setup failed");
     const made = await createLocation(actor, {
       name: "Estante 3",
-      kind: "SHELF",
+      level: 3,
       parentId: zone.locationId,
     });
     if (!made.ok) throw new Error("shelf setup failed");

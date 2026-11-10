@@ -3,10 +3,46 @@ import "server-only";
 import { newId, NotFoundError } from "@/lib";
 import type { TransactionClient } from "@/server";
 
+import { DEFAULT_LEVEL_NAMES } from "./levels";
+
 type LocationTransaction = Pick<
   TransactionClient,
-  "$queryRaw" | "facility" | "location"
+  "$queryRaw" | "facility" | "location" | "locationLevel"
 >;
+
+/**
+ * The levels a new warehouse starts with (WMS-22A); the company changes
+ * them in Ubicaciones. Call it in the transaction that creates the
+ * warehouse.
+ */
+export async function createDefaultLevels(
+  // The raw client of company provisioning or the company client.
+  tx: {
+    locationLevel: {
+      createMany(args: {
+        data: {
+          id: string;
+          organizationId: string;
+          facilityId: string;
+          depth: number;
+          name: string;
+        }[];
+      }): PromiseLike<unknown>;
+    };
+  },
+  organizationId: string,
+  facilityId: string,
+) {
+  await tx.locationLevel.createMany({
+    data: DEFAULT_LEVEL_NAMES.map((name, index) => ({
+      id: newId(),
+      organizationId,
+      facilityId,
+      depth: index + 1,
+      name,
+    })),
+  });
+}
 
 /**
  * System provisioning, not a user-facing write operation. Call only with
@@ -27,11 +63,11 @@ export async function ensureDefaultLocation(
   }
 
   // The main warehouse (WMS-18): there is always one.
-  const facility =
-    (await tx.facility.findFirst({
-      where: { organizationId, isDefault: true },
-    })) ??
-    (await tx.facility.create({
+  let facility = await tx.facility.findFirst({
+    where: { organizationId, isDefault: true },
+  });
+  if (!facility) {
+    facility = await tx.facility.create({
       data: {
         id: newId(),
         organizationId,
@@ -39,7 +75,9 @@ export async function ensureDefaultLocation(
         code: "PRINCIPAL",
         isDefault: true,
       },
-    }));
+    });
+    await createDefaultLevels(tx, organizationId, facility.id);
+  }
   const location = await tx.location.upsert({
     where: {
       organizationId_facilityId_isDefault: {
@@ -54,7 +92,6 @@ export async function ensureDefaultLocation(
       organizationId,
       facilityId: facility.id,
       name: "General",
-      kind: "GENERAL",
       isDefault: true,
     },
   });

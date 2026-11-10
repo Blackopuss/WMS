@@ -375,8 +375,8 @@ describe("returnToSupplier", () => {
     const actor = await company();
     const theirs = await company();
     const productId = await product(actor);
-    const shelf = await createLocation(actor, { kind: "SHELF", name: "A-01" });
-    const foreign = await createLocation(theirs, { kind: "SHELF", name: "X" });
+    const shelf = await createLocation(actor, { level: 3, name: "A-01" });
+    const foreign = await createLocation(theirs, { level: 3, name: "X" });
     if (!shelf.ok || !foreign.ok) throw new Error("location setup failed");
     const { receiptId, receiptLines } = await received(
       actor,

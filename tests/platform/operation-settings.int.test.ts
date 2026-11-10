@@ -92,7 +92,7 @@ async function stocked(owner: InventoryActor) {
   });
   if (!product.ok) throw new Error("product setup failed");
   const rack = async (name: string) => {
-    const made = await createLocation(owner, { kind: "SHELF", name });
+    const made = await createLocation(owner, { level: 3, name });
     if (!made.ok) throw new Error("location setup failed");
     return made.locationId;
   };
@@ -244,7 +244,7 @@ describe("picking follows the company's choice", () => {
   it("the staging location is chosen by the company", async () => {
     const owner = await company();
     const { productId } = await stocked(owner);
-    const dock = await createLocation(owner, { kind: "ZONE", name: "Andén 1" });
+    const dock = await createLocation(owner, { level: 1, name: "Andén 1" });
     if (!dock.ok) throw new Error("location setup failed");
     expect(await setStagingLocation(owner, dock.locationId)).toMatchObject({
       ok: true,

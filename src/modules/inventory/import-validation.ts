@@ -78,7 +78,27 @@ export type RowsValidation = {
   invalidRows: number;
 };
 
-type Location = { id: string; path: string; isDefault: boolean };
+type Location = {
+  id: string;
+  path: string;
+  isDefault: boolean;
+  /** Its code (WMS-22A): a file may name the location by it. */
+  code?: string | null;
+};
+
+/** Locations by path, then by code: what a file may write in «Ubicación». */
+export function locationFinder<T extends Location>(locations: readonly T[]) {
+  const byPath = new Map(
+    locations.map((location) => [foldPath(location.path), location]),
+  );
+  const byCode = new Map(
+    locations.flatMap((location) =>
+      location.code ? [[location.code, location] as const] : [],
+    ),
+  );
+  return (text: string): T | undefined =>
+    byPath.get(foldPath(text)) ?? byCode.get(text.trim().toUpperCase());
+}
 
 /** Text to compare names: no accents, case or extra spaces. */
 export const foldName = (text: string) =>
@@ -122,9 +142,7 @@ export function validateImportRows(
 ): RowsValidation {
   const { headers, mapping, decimalSeparator } = options;
   const general = options.locations.find((location) => location.isDefault);
-  const locationByPath = new Map(
-    options.locations.map((location) => [foldPath(location.path), location]),
-  );
+  const findLocation = locationFinder(options.locations);
   const ourHeader = (key: ImportColumnKey) =>
     IMPORT_COLUMNS.find((column) => column.key === key)!.header;
 
@@ -328,7 +346,7 @@ export function validateImportRows(
       const location =
         locationText === "" || foldPath(locationText) === "general"
           ? general
-          : locationByPath.get(foldPath(locationText));
+          : findLocation(locationText);
       if (!location) {
         issue(
           "location",

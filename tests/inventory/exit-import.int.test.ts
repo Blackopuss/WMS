@@ -755,7 +755,7 @@ describe("registering the exits of a file", () => {
 
   it("presentations and other locations leave like a manual exit, with today's content", async () => {
     const actor = await company();
-    const zone = await createLocation(actor, { name: "Zona A", kind: "ZONE" });
+    const zone = await createLocation(actor, { name: "Zona A", level: 1 });
     if (!zone.ok) throw new Error("zone setup failed");
     const productId = await stocked(actor, "TOR-1", null);
     const caja = await createPresentation(actor, productId, {
@@ -798,7 +798,7 @@ describe("registering the exits of a file", () => {
 
   it("what was archived after confirming is not registered; the rest goes on", async () => {
     const actor = await company();
-    const zone = await createLocation(actor, { name: "Zona A", kind: "ZONE" });
+    const zone = await createLocation(actor, { name: "Zona A", level: 1 });
     if (!zone.ok) throw new Error("zone setup failed");
     const gone = await stocked(actor, "ARC-1", null);
     await stocked(actor, "ZON-2", null);

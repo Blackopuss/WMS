@@ -94,7 +94,7 @@ async function product(
 }
 
 async function shelf(actor: InventoryActor, name: string) {
-  const result = await createLocation(actor, { kind: "SHELF", name });
+  const result = await createLocation(actor, { level: 3, name });
   if (!result.ok) throw new Error("location setup failed");
   return result.locationId;
 }

@@ -29,18 +29,30 @@ import { NativeSelect } from "@/components/ui/native-select";
 import {
   archiveLocationAction,
   createLocationAction,
+  editLocationAction,
   moveLocationAction,
-  renameLocationAction,
   restoreLocationAction,
   type LocationFormState,
 } from "./actions";
 
-/** A place where a location can go, with the kinds it accepts (built in the server). */
+/** A place where a location can go, with the levels it accepts (built in the server). */
 export type PlaceOption = {
-  /** "" = directly in the facility. */
+  /** "" = directly in the warehouse. */
   id: string;
   label: string;
-  kinds: { value: string; label: string }[];
+  /** Value = depth of the level. */
+  levels: { value: string; label: string }[];
+};
+
+/** Uses a person may give a location, built in the server. */
+export type TypeOption = { value: string; label: string };
+
+const EMPTY_VALUES = {
+  name: "",
+  level: "",
+  parentId: "",
+  code: "",
+  type: "STORAGE",
 };
 
 function FormError({ message }: { message?: string }) {
@@ -77,15 +89,17 @@ function Submit({
 }
 
 /**
- * Adds a zone, aisle or shelf. The person first says where it goes; the
- * kinds offered are the ones that fit there.
+ * Adds a location. The person first says where it goes; the levels
+ * offered are the ones that fit there.
  */
 export function AddLocationDialog({
   places,
+  types,
   insideId = "",
   insideName,
 }: {
   places: PlaceOption[];
+  types: TypeOption[];
   /** Place preselected when the dialog opens from a row. */
   insideId?: string;
   /** Name of that row: the trigger becomes its small «add inside» button. */
@@ -111,13 +125,13 @@ export function AddLocationDialog({
     },
     {
       fieldErrors: {},
-      values: { name: "", kind: "", parentId: insideId },
+      values: { ...EMPTY_VALUES, parentId: insideId },
       answers: 0,
     },
   );
   const { answers } = state;
   const place = places.find((option) => option.id === placeId) ?? places[0];
-  const kinds = place?.kinds ?? [];
+  const levels = place?.levels ?? [];
   const prefix = `add-${insideId || "root"}`;
 
   return (
@@ -142,8 +156,8 @@ export function AddLocationDialog({
         <DialogHeader>
           <DialogTitle>Agregar ubicación</DialogTitle>
           <DialogDescription>
-            Ponle el nombre que usan en tu negocio. Una zona puede tener
-            pasillos y estantes; un pasillo, estantes.
+            Ponle el nombre que usan en tu almacén. Dentro de cada ubicación van
+            los niveles que siguen después del suyo.
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} noValidate className="space-y-5">
@@ -170,25 +184,25 @@ export function AddLocationDialog({
             )}
           </FormField>
           <FormField
-            id={`${prefix}-kind`}
-            label="¿Qué es?"
-            error={state.fieldErrors.kind}
+            id={`${prefix}-level`}
+            label="Nivel"
+            error={state.fieldErrors.level}
           >
             {(control) => (
               <NativeSelect
                 {...control}
-                name="kind"
+                name="level"
                 defaultValue={
-                  kinds.some((kind) => kind.value === state.values.kind)
-                    ? state.values.kind
-                    : kinds[0]?.value
+                  levels.some((level) => level.value === state.values.level)
+                    ? state.values.level
+                    : levels[0]?.value
                 }
-                // The kinds depend on the place: start over when it changes.
-                key={`${placeId}-${state.values.kind}-${answers}`}
+                // The levels depend on the place: start over when it changes.
+                key={`${placeId}-${state.values.level}-${answers}`}
               >
-                {kinds.map((kind) => (
-                  <option key={kind.value} value={kind.value}>
-                    {kind.label}
+                {levels.map((level) => (
+                  <option key={level.value} value={level.value}>
+                    {level.label}
                   </option>
                 ))}
               </NativeSelect>
@@ -212,6 +226,13 @@ export function AddLocationDialog({
               />
             )}
           </FormField>
+          <CodeAndType
+            prefix={prefix}
+            types={types}
+            values={state.values}
+            errors={state.fieldErrors}
+            answers={answers}
+          />
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">
@@ -228,9 +249,75 @@ export function AddLocationDialog({
   );
 }
 
-/** Rename, move or archive one location. */
+/** Code and use of a location, in the add and edit dialogs. */
+function CodeAndType({
+  prefix,
+  types,
+  values,
+  errors,
+  answers,
+  stagingFixed = false,
+}: {
+  prefix: string;
+  types: TypeOption[];
+  values: LocationFormState["values"];
+  errors: LocationFormState["fieldErrors"];
+  answers: number;
+  /** The staging location keeps its use: it is changed elsewhere. */
+  stagingFixed?: boolean;
+}) {
+  return (
+    <>
+      <FormField
+        id={`${prefix}-code`}
+        label="Código (opcional)"
+        hint="Lo que se escanea para confirmar el lugar, por ejemplo A-01-03."
+        error={errors.code}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            name="code"
+            defaultValue={values.code}
+            key={`code-${values.code}-${answers}`}
+            maxLength={30}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+          />
+        )}
+      </FormField>
+      {stagingFixed ? (
+        <p className="text-sm text-muted-foreground">
+          Uso: Preparación. Se cambia en Configuración › Operación.
+          <input type="hidden" name="type" value="STAGING" />
+        </p>
+      ) : (
+        <FormField id={`${prefix}-type`} label="Uso" error={errors.type}>
+          {(control) => (
+            <NativeSelect
+              {...control}
+              name="type"
+              defaultValue={values.type || "STORAGE"}
+              key={`type-${values.type}-${answers}`}
+            >
+              {types.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+        </FormField>
+      )}
+    </>
+  );
+}
+
+/** Change the name, code or use of one location, move it or archive it. */
 export function EditLocationDialog({
   location,
+  types,
   destinations,
   canUpdate,
   canArchive,
@@ -238,11 +325,15 @@ export function EditLocationDialog({
   location: {
     id: string;
     name: string;
-    kindLabel: string;
+    levelName: string;
+    code: string;
+    type: string;
+    isStaging: boolean;
     parentId: string;
     /** Locations directly inside it. */
     children: number;
   };
+  types: TypeOption[];
   /** Places this location could be moved to (its current one included). */
   destinations: { id: string; label: string }[];
   canUpdate: boolean;
@@ -251,18 +342,27 @@ export function EditLocationDialog({
   const [open, setOpen] = useState(false);
   const empty: LocationFormState = {
     fieldErrors: {},
-    values: { name: location.name, kind: "", parentId: location.parentId },
+    values: {
+      ...EMPTY_VALUES,
+      name: location.name,
+      code: location.code,
+      type: location.type,
+      parentId: location.parentId,
+    },
   };
-  const [renameState, renameAction, renaming] = useActionState(
-    async (prev: LocationFormState, formData: FormData) => {
-      const next = await renameLocationAction(location.id, prev, formData);
+  const [editState, editAction, editing] = useActionState(
+    async (
+      prev: LocationFormState & { answers: number },
+      formData: FormData,
+    ) => {
+      const next = await editLocationAction(location.id, prev, formData);
       if (next.done) {
-        toast.success("Nombre cambiado.");
+        toast.success("Cambios guardados.");
         setOpen(false);
       }
-      return next;
+      return { ...next, answers: prev.answers + 1 };
     },
-    empty,
+    { ...empty, answers: 0 },
   );
   const [moveState, moveAction, moving] = useActionState(
     async (prev: LocationFormState, formData: FormData) => {
@@ -306,7 +406,7 @@ export function EditLocationDialog({
         <DialogHeader>
           <DialogTitle>{location.name}</DialogTitle>
           <DialogDescription>
-            {location.kindLabel}.{" "}
+            {location.levelName}.{" "}
             {location.children === 0
               ? "No tiene ubicaciones dentro."
               : location.children === 1
@@ -315,27 +415,35 @@ export function EditLocationDialog({
           </DialogDescription>
         </DialogHeader>
         {canUpdate && (
-          <form action={renameAction} noValidate className="space-y-3">
-            <FormError message={renameState.formError} />
+          <form action={editAction} noValidate className="space-y-3">
+            <FormError message={editState.formError} />
             <FormField
-              id={`rename-${location.id}`}
+              id={`edit-${location.id}-name`}
               label="Nombre"
-              error={renameState.fieldErrors.name}
+              error={editState.fieldErrors.name}
             >
               {(control) => (
                 <Input
                   {...control}
                   name="name"
-                  defaultValue={renameState.values.name}
-                  key={`name-${renameState.values.name}`}
+                  defaultValue={editState.values.name}
+                  key={`name-${editState.values.name}-${editState.answers}`}
                   maxLength={60}
                   autoComplete="off"
                   required
                 />
               )}
             </FormField>
-            <Submit pending={renaming} busy="Guardando…">
-              Cambiar nombre
+            <CodeAndType
+              prefix={`edit-${location.id}`}
+              types={types}
+              values={editState.values}
+              errors={editState.fieldErrors}
+              answers={editState.answers}
+              stagingFixed={location.isStaging}
+            />
+            <Submit pending={editing} busy="Guardando…">
+              Guardar cambios
             </Submit>
           </form>
         )}

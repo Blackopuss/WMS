@@ -16,7 +16,7 @@ import {
 import { enqueueJob } from "@/platform/jobs";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
-import { foldName, foldPath } from "./import-validation";
+import { foldName, foldPath, locationFinder } from "./import-validation";
 import { normalizeDecimal, type DecimalSeparator } from "./imports";
 import {
   formatStock,
@@ -273,7 +273,12 @@ export function validateExitRows(
     /** Today in the calendar of the company: 2026-10-10. */
     today: string;
     products: ExitProduct[];
-    locations: { id: string; path: string; isDefault: boolean }[];
+    locations: {
+      id: string;
+      path: string;
+      isDefault: boolean;
+      code?: string | null;
+    }[];
   },
 ): ExitRowsValidation {
   const { headers, mapping } = options;
@@ -286,9 +291,7 @@ export function validateExitRows(
     ),
   );
   const general = options.locations.find((location) => location.isDefault);
-  const byPath = new Map(
-    options.locations.map((location) => [foldPath(location.path), location]),
-  );
+  const findLocation = locationFinder(options.locations);
 
   const issues: ExitIssue[] = [];
   const valid: ValidExitRow[] = [];
@@ -419,7 +422,7 @@ export function validateExitRows(
     const location =
       locationText === "" || foldPath(locationText) === "general"
         ? general
-        : byPath.get(foldPath(locationText));
+        : findLocation(locationText);
     if (!location) {
       issue(
         "location",

@@ -434,16 +434,24 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/inventory/entries.int.test.ts",
   },
   createLocationAction: {
-    input: "nombre, tipo e id de la ubicación que la contiene",
+    input:
+      "nombre, nivel (profundidad), código, uso e id de la ubicación que la contiene",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la ubicación se busca solo en esa empresa",
+      "sesión y empresa activa (requireOrganizationContext); la ubicación se busca solo en esa empresa y el nivel en su almacén",
     coveredBy: "tests/platform/location-hierarchy.int.test.ts",
   },
-  renameLocationAction: {
-    input: "id de ubicación y nombre nuevo",
+  editLocationAction: {
+    input: "id de ubicación, nombre, código y uso",
     identity:
       "sesión y empresa activa (requireOrganizationContext); la ubicación se busca solo en esa empresa",
-    coveredBy: "tests/platform/location-hierarchy.int.test.ts",
+    coveredBy: "tests/platform/location-levels.int.test.ts",
+  },
+  saveLevelsAction: {
+    input:
+      "lista de niveles (id de los que existen y nombre); el almacén es el activo de la persona",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); los niveles se buscan solo en el almacén activo de esa empresa",
+    coveredBy: "tests/platform/location-levels.int.test.ts",
   },
   moveLocationAction: {
     input: "id de ubicación e id del destino",

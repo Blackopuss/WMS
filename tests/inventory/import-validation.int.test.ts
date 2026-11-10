@@ -477,7 +477,7 @@ describe("validateImport", () => {
     if (!result.ok) throw new Error("provision failed");
     actor = { organizationId: created.organizationId, userId: owner };
     const location = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: "Estante 3",
     });
     if (!location.ok) throw new Error("location setup failed");

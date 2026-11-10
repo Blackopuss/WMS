@@ -3,7 +3,11 @@ import "server-only";
 import { dec } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
 import { describeInPresentation } from "@/platform/catalog";
-import { compareLocationNames, formatLocationPath } from "@/platform/locations";
+import {
+  LOCATION_PARENTS,
+  compareLocationNames,
+  locationPath,
+} from "@/platform/locations";
 import { forOrganization } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
@@ -103,9 +107,7 @@ export async function getProductStock(
           name: true,
           isDefault: true,
           archivedAt: true,
-          parent: {
-            select: { name: true, parent: { select: { name: true } } },
-          },
+          parent: LOCATION_PARENTS,
         },
       },
     },
@@ -165,13 +167,7 @@ export async function getProductStock(
       return {
         id: location.id,
         isDefault: location.isDefault === true,
-        path: formatLocationPath(
-          [
-            location.parent?.parent?.name,
-            location.parent?.name,
-            location.name,
-          ].filter((name): name is string => Boolean(name)),
-        ),
+        path: locationPath(location),
         quantity: quantity.toString(),
         label: formatStock(quantity.toString(), unitCode),
         archived: location.archivedAt !== null,

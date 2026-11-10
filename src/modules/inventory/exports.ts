@@ -7,7 +7,7 @@ import type { Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
 import { buildCsv, buildXlsx, type Cell } from "@/platform/files";
-import { formatLocationPath } from "@/platform/locations";
+import { LOCATION_PARENTS, locationPath } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
 import {
@@ -122,20 +122,11 @@ async function locationPaths(client: Client): Promise<Map<string, string>> {
     select: {
       id: true,
       name: true,
-      parent: { select: { name: true, parent: { select: { name: true } } } },
+      parent: LOCATION_PARENTS,
     },
   });
   return new Map(
-    locations.map((location) => [
-      location.id,
-      formatLocationPath(
-        [
-          location.parent?.parent?.name,
-          location.parent?.name,
-          location.name,
-        ].filter((name): name is string => Boolean(name)),
-      ),
-    ]),
+    locations.map((location) => [location.id, locationPath(location)]),
   );
 }
 

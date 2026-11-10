@@ -215,7 +215,7 @@ describe("classifyImport", () => {
   it("a product in several rows counts once", async () => {
     const actor = await company(10);
     const shelf = await createLocation(actor, {
-      kind: "SHELF",
+      level: 3,
       name: "Estante 1",
     });
     if (!shelf.ok) throw new Error("location setup failed");

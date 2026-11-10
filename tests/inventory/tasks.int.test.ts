@@ -97,7 +97,7 @@ async function scenario(owner: InventoryActor) {
   });
   if (!created.ok) throw new Error("product setup failed");
   const rack = async (name: string) => {
-    const result = await createLocation(owner, { kind: "SHELF", name });
+    const result = await createLocation(owner, { level: 3, name });
     if (!result.ok) throw new Error("location setup failed");
     return result.locationId;
   };

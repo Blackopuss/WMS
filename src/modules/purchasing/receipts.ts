@@ -12,7 +12,7 @@ import {
   pluralizeName,
   type Capture,
 } from "@/platform/catalog";
-import { formatLocationPath } from "@/platform/locations";
+import { LOCATION_PARENTS, locationPath } from "@/platform/locations";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -707,7 +707,7 @@ export type OrderReceipts = {
 
 const placeSelect = {
   name: true,
-  parent: { select: { name: true, parent: { select: { name: true } } } },
+  parent: LOCATION_PARENTS,
 } as const;
 
 /** «Zona A › Pasillo 2 › A-01». */
@@ -715,13 +715,7 @@ function pathOf(location: {
   name: string;
   parent: { name: string; parent: { name: string } | null } | null;
 }): string {
-  return formatLocationPath(
-    [
-      location.parent?.parent?.name,
-      location.parent?.name,
-      location.name,
-    ].filter((name): name is string => Boolean(name)),
-  );
+  return locationPath(location);
 }
 
 /** Whether the person may record costs: never an error, just yes or no. */

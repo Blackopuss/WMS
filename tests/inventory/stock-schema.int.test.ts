@@ -98,7 +98,7 @@ async function fixture(): Promise<Fixture> {
     where: { presentationId: box.presentationId },
   });
   const general = await getDefaultLocation(actor);
-  const shelf = await createLocation(actor, { kind: "SHELF", name: "Estante" });
+  const shelf = await createLocation(actor, { level: 3, name: "Estante" });
   if (!general || !shelf.ok) throw new Error("location setup failed");
   return {
     actor,

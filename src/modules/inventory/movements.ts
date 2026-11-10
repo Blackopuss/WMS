@@ -12,9 +12,10 @@ import {
   type Capture,
 } from "@/platform/catalog";
 import {
+  LOCATION_PARENTS,
   activeFacilityOf,
   compareLocationNames,
-  formatLocationPath,
+  locationPath,
 } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
@@ -845,24 +846,13 @@ async function fetchMovements(
       select: {
         id: true,
         name: true,
-        parent: {
-          select: { name: true, parent: { select: { name: true } } },
-        },
+        parent: LOCATION_PARENTS,
       },
     }),
   ]);
   const names = new Map(members.map((m) => [m.userId, m.user.name]));
   const paths = new Map(
-    locations.map((location) => [
-      location.id,
-      formatLocationPath(
-        [
-          location.parent?.parent?.name,
-          location.parent?.name,
-          location.name,
-        ].filter((name): name is string => Boolean(name)),
-      ),
-    ]),
+    locations.map((location) => [location.id, locationPath(location)]),
   );
 
   return movements.map((movement) => ({
@@ -900,7 +890,9 @@ async function fetchMovements(
  */
 export async function listStockLocations(
   actor: InventoryActor,
-): Promise<{ id: string; path: string; isDefault: boolean }[]> {
+): Promise<
+  { id: string; path: string; isDefault: boolean; code: string | null }[]
+> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
@@ -914,19 +906,17 @@ export async function listStockLocations(
     select: {
       id: true,
       name: true,
+      code: true,
       isDefault: true,
-      parent: { select: { name: true, parent: { select: { name: true } } } },
+      parent: LOCATION_PARENTS,
     },
   });
   return rows
     .map((row) => ({
       id: row.id,
       isDefault: row.isDefault === true,
-      path: formatLocationPath(
-        [row.parent?.parent?.name, row.parent?.name, row.name].filter(
-          (name): name is string => Boolean(name),
-        ),
-      ),
+      path: locationPath(row),
+      code: row.code,
     }))
     .sort(
       (a, b) =>
