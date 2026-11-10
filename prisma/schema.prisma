@@ -147,6 +147,7 @@ model Organization {
   productImports          ProductImport[]
   productImportItems      ProductImportItem[]
   exitImports             ExitImport[]
+  outboundImports         OutboundImport[]
   exitImportRows          ExitImportRow[]
   contacts                Contact[]
   productSuppliers        ProductSupplier[]
@@ -1263,25 +1264,26 @@ model Job {
 /// was generated for it to download. The row says whose it is; the bytes
 /// live in the file storage under a key that starts with the company.
 model StoredFile {
-  id              String          @id @db.Char(36)
-  organizationId  String          @db.Char(36)
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id              String           @id @db.Char(36)
+  organizationId  String           @db.Char(36)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// What it is for: "import_source", "export". Decides who may read it.
-  purpose         String          @db.VarChar(40)
+  purpose         String           @db.VarChar(40)
   /// Name shown to people; never used as a path.
-  name            String          @db.VarChar(160)
+  name            String           @db.VarChar(160)
   /// Decided by the server from the extension, not by the browser.
-  contentType     String          @db.VarChar(100)
+  contentType     String           @db.VarChar(100)
   size            Int
-  sha256          String          @db.Char(64)
+  sha256          String           @db.Char(64)
   /// Where the bytes are in the storage: "<organizationId>/<id>".
-  storageKey      String          @db.VarChar(100)
-  createdByUserId String          @db.Char(36)
-  createdAt       DateTime        @default(now()) @db.DateTime(3)
+  storageKey      String           @db.VarChar(100)
+  createdByUserId String           @db.Char(36)
+  createdAt       DateTime         @default(now()) @db.DateTime(3)
   /// Set when it was removed; the bytes are gone, the row stays as a trace.
-  deletedAt       DateTime?       @db.DateTime(3)
+  deletedAt       DateTime?        @db.DateTime(3)
   productImports  ProductImport[]
   exitImports     ExitImport[]
+  outboundImports OutboundImport[]
 
   @@unique([organizationId, id])
   @@index([organizationId, purpose, createdAt])
@@ -2042,11 +2044,53 @@ model OutboundOrder {
   cancelReason      String?               @db.VarChar(300)
   updatedAt         DateTime              @updatedAt @db.DateTime(3)
   lines             OutboundOrderLine[]
+  /// The file it came from (WMS-13B); null when written by hand.
+  importId          String?               @db.Char(36)
+  import            OutboundImport?       @relation(fields: [organizationId, importId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Imported orders only: its «Pedido» of the file, folded. Unique in the
+  /// company, so the same order of a file never becomes two (WMS-13B).
+  sourceKey         String?               @db.VarChar(80)
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
+  @@unique([organizationId, sourceKey])
   @@index([organizationId, status, number])
   @@map("outbound_order")
+}
+
+enum OutboundImportStatus {
+  /// Uploaded: its rows are checked every time it is opened.
+  READY
+  /// Its orders were created, all of them in one transaction.
+  CONFIRMED
+  CANCELLED
+}
+
+/// A file of outbound orders (WMS-13B): one row per line. Confirming it
+/// creates every draft at once, or none.
+model OutboundImport {
+  id                String               @id @db.Char(36)
+  organizationId    String               @db.Char(36)
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fileId            String               @db.Char(36)
+  file              StoredFile           @relation(fields: [organizationId, fileId], references: [organizationId, id], onDelete: Restrict)
+  status            OutboundImportStatus @default(READY)
+  /// "." or ",": how the person said decimals are written in the file.
+  decimalSeparator  String               @db.Char(1)
+  /// Rows with data under the titles.
+  dataRows          Int
+  /// Orders it created when confirmed.
+  ordersCreated     Int                  @default(0)
+  confirmedAt       DateTime?            @db.DateTime(3)
+  confirmedByUserId String?              @db.Char(36)
+  createdByUserId   String               @db.Char(36)
+  createdAt         DateTime             @default(now()) @db.DateTime(3)
+  updatedAt         DateTime             @updatedAt @db.DateTime(3)
+  orders            OutboundOrder[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, createdAt])
+  @@map("outbound_import")
 }
 
 /// What an outbound order asks for: one product per line, in its unit.

@@ -18,7 +18,8 @@ Este repositorio es `Blackopuss/WMS`, copia de SaaS-Almacen (rama `pruebas`, com
 ### Estado (2026-11-10)
 
 - Hechos y con CI en verde: WMS-01..08 (plan, Ventas fuera, bases `wms_*`, menú por tarea, Recepción, roles de piso `supervisor`/`operator`/`forklift`, tareas de traslado, Inicio «Para hoy»), WMS-09/10 (estado y lote en el saldo, ADR 0033), WMS-11 (cambio de estado con motivo), WMS-12 (reservas) y WMS-13 (pedidos de salida). Etapa A cerrada. Último commit de paso: `bd287a6`; 1,720 pruebas.
-- Siguiente: WMS-13B (importar pedidos de salida desde Excel) y WMS-14 (surtido).
+- 2026-11-10: WMS-13B hecho. En Pedidos, «Importar pedidos»: se sube un Excel o CSV con una fila por producto (Pedido, Destinatario, Clave o código de barras, Cantidad y, si se quiere, Fecha compromiso, Prioridad, Dirección y Notas); las filas con el mismo «Pedido» forman un pedido. Primero se muestra cómo se entiende y qué fila está mal y por qué; al confirmar se crean todos los pedidos como borradores, o ninguno si algo cambió. Un pedido que ya se importó no se vuelve a crear. Nada se aparta hasta liberar cada pedido.
+- Siguiente: WMS-14 (surtido con tareas).
 - Entorno en la nube de Claude: MySQL 9.4 en Docker (`mirror.gcr.io/library/mysql:9.4`, contenedor `mysql94`); si el contenedor se reinicia, borrar `/var/run/docker.pid` y `/var/run/docker.sock` viejos, arrancar `dockerd` y `docker start mysql94`. Node 24 en `/opt/node24/bin`. `.env.local` con `DATABASE_HOST=127.0.0.1` y `DATABASE_USER_HOST=%`.
 - Lecciones de estos pasos: `prisma migrate diff` propuso borrar llaves foráneas al cambiar la llave del saldo (WMS-10): esa migración se escribió a mano creando el índice nuevo antes de quitar el viejo. MySQL no acepta un `CHECK` sobre una columna de llave foránea con `ON UPDATE CASCADE`: esas relaciones van con `onUpdate: Restrict`. Para capturas de pantalla, matar los `next-server` viejos y usar movimiento reducido.
 

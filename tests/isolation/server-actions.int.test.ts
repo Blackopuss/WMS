@@ -208,6 +208,24 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el proveedor se busca solo entre los de esa empresa",
     coveredBy: "tests/platform/suppliers.int.test.ts",
   },
+  startOutboundImportAction: {
+    input: "archivo .csv o .xlsx de pedidos de salida y separador decimal",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el archivo se guarda como privado de esa empresa",
+    coveredBy: "tests/inventory/outbound-import.int.test.ts",
+  },
+  confirmOutboundImportAction: {
+    input: "id de importación de pedidos",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la importación se busca solo en esa empresa y bajo su candado",
+    coveredBy: "tests/inventory/outbound-import.int.test.ts",
+  },
+  cancelOutboundImportAction: {
+    input: "id de importación de pedidos",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la importación se busca solo en esa empresa y bajo su candado",
+    coveredBy: "tests/inventory/outbound-import.int.test.ts",
+  },
   startExitImportAction: {
     input: "archivo .csv o .xlsx de salidas y separador decimal",
     identity:

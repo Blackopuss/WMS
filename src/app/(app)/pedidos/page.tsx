@@ -1,4 +1,10 @@
-import { ChevronLeft, ChevronRight, PackageCheck, Plus } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileUp,
+  PackageCheck,
+  Plus,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -82,6 +88,17 @@ export default async function PedidosPage({
     <PageContainer>
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader title="Pedidos" actions={newButton} />
+      {newButton && (
+        <p className="-mt-2 flex flex-wrap gap-x-6">
+          <Link
+            href="/pedidos/importar"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <FileUp aria-hidden="true" className="size-4" />
+            Importar pedidos
+          </Link>
+        </p>
+      )}
       {(list.total > 0 || list.status) && (
         <nav
           aria-label="Estado de los pedidos"

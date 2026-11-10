@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-13 (CI en verde). Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+WMS-13B. Fuentes: `docs/PLAN_WMS_V2.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -14,7 +14,7 @@ abajo son de ese documento).
 | Compras y recepción | Hecho, heredado; Recepción con su propia sección (WMS-04) |
 | Operación de almacén (roles de piso, tareas de traslado, Inicio por rol) | Hecho (WMS-05..08) |
 | Estados de inventario, lotes en el saldo y reservas | Hecho (etapa A, WMS-09..12) |
-| Pedidos de salida | Hecho (WMS-13; falta importarlos desde Excel, WMS-13B) |
+| Pedidos de salida | Hecho (WMS-13; importación desde Excel/CSV, WMS-13B) |
 | Surtido, empaque, despacho y devoluciones de clientes | Falta (WMS-14..17) |
 | Producción y calidad | Falta (WMS-11) |
 | Analítica | Falta (WMS-12) |
@@ -67,6 +67,10 @@ SaaS-Almacen.
 - **Pedidos de salida** (WMS-13): borrador con destinatario, día de salida,
   prioridad y productos (por clave o escaneo); liberarlo reserva sus existencias
   (o lo que haya); cancelarlo las libera. Sección «Pedidos» del menú.
+- **Importar pedidos** (WMS-13B): un archivo Excel o CSV (una fila por
+  producto; las filas con el mismo «Pedido» forman un pedido) se revisa sin
+  escribir, dice qué fila está mal y por qué, y al confirmarlo crea todos sus
+  borradores o ninguno. Un pedido que ya se importó no se crea otra vez.
 - **Libro de movimientos inmutable**: entradas, salidas (una o varias líneas),
   reubicaciones, saldo inicial, ajustes con motivo y reversas. Cada movimiento
   guarda quién, cuándo, motivo, referencia e identificador de idempotencia, y el

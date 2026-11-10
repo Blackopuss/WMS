@@ -149,6 +149,9 @@ producción y calidad no obliguen a rehacerla.
   con error dice cuál y por qué, y nada se crea a medias.
 - **Pruebas:** validación por fila; reintento no duplica pedidos (clave del
   archivo); entre empresas.
+- **Estado:** hecho (2026-11-10). Pantallas `/pedidos/importar` y
+  `/pedidos/importar/[id]`; pruebas en
+  `tests/inventory/outbound-import.int.test.ts`.
 
 ### WMS-14 · Surtido (picking)
 

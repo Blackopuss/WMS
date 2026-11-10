@@ -471,6 +471,17 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A file of outbound orders (WMS-13B).
+    await db.outboundImport.create({
+      data: {
+        id: newId(),
+        organizationId,
+        fileId: storedFileId,
+        decimalSeparator: ".",
+        dataRows: 1,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // An outbound order with a line (WMS-13).
     const outboundId = newId();
     await db.outboundOrder.create({

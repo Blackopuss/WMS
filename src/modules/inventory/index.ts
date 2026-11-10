@@ -288,3 +288,27 @@ export {
   outboundTransitionProblem,
 } from "./outbound-states";
 export type { OutboundOrderStatus } from "./outbound-states";
+export {
+  OUTBOUND_IMPORT_COLUMNS,
+  OUTBOUND_IMPORT_MAX_ORDERS,
+  OUTBOUND_IMPORT_MAX_ROWS,
+  OUTBOUND_IMPORT_STATUS_LABELS,
+  buildOutboundTemplate,
+  cancelOutboundImport,
+  confirmOutboundImport,
+  listOutboundImports,
+  matchOutboundColumns,
+  outboundSourceKey,
+  reviewOutboundImport,
+  startOutboundImport,
+  validateOutboundRows,
+} from "./outbound-import";
+export type {
+  CancelOutboundImportResult,
+  ConfirmOutboundImportResult,
+  OutboundImportReview,
+  OutboundImportStatus,
+  OutboundImportSummary,
+  OutboundIssue,
+  StartOutboundImportResult,
+} from "./outbound-import";
