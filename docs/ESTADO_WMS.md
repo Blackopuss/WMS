@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
 Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-14. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+WMS-49. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -155,9 +155,10 @@ En resumen:
   (WMS-69), configuración inicial, demo, plantillas por giro, manuales, portal de
   clientes y lo comercial (WMS-43..46, 48, 70).
 
-Hoy, fijo en el código y pendiente de configurarse (regla 11): la estrategia
-de surtido («la más llena primero») y una sola ubicación «Preparación» por
-almacén (WMS-49).
+Ajustes de operación por empresa (WMS-49, hecho): Configuración › Operación
+permite elegir de dónde se surte primero (la ubicación más llena o la menos
+llena) y cuál es la ubicación de preparación. Lo siguiente que variará por
+empresa se agrega ahí.
 
 ### Decisiones y tareas del fundador
 

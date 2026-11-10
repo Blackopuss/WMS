@@ -215,6 +215,18 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el proveedor se busca solo entre los de esa empresa",
     coveredBy: "tests/platform/suppliers.int.test.ts",
   },
+  updateSettingAction: {
+    input: "clave del ajuste y la opción elegida",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo del ajuste, y escribe solo en esa empresa",
+    coveredBy: "tests/platform/operation-settings.int.test.ts",
+  },
+  setStagingAction: {
+    input: "id de la ubicación de preparación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la ubicación se busca y bloquea solo en esa empresa",
+    coveredBy: "tests/platform/operation-settings.int.test.ts",
+  },
   startOutboundImportAction: {
     input: "archivo .csv o .xlsx de pedidos de salida y separador decimal",
     identity:

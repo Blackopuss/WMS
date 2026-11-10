@@ -45,7 +45,7 @@ const nameSchema = z
   .min(1, "Escribe el nombre de la ubicación.")
   .max(60, "El nombre es demasiado largo (máximo 60 caracteres).");
 
-export type LocationField = "name" | "kind" | "parentId";
+export type LocationField = "name" | "kind" | "parentId" | "locationId";
 
 export type LocationResult =
   | { ok: true; locationId: string }
@@ -405,6 +405,71 @@ export async function moveLocation(
 }
 
 /**
+ * Chooses where picked goods wait (WMS-49): one location per facility
+ * (`isStaging`), any active one but General. What was already picked into
+ * the previous one stays there, reserved for its orders; new picking goes
+ * to the new one. For who edits the business configuration.
+ */
+export async function setStagingLocation(
+  actor: LocationActor,
+  locationId: string,
+): Promise<LocationResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "platform.organization.update",
+  );
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.location.update",
+  );
+  return changeTree(organizationId, async (tx) => {
+    await lockRows(tx, "location", [String(locationId ?? "")]);
+    const location = await findLocation(tx, locationId);
+    if (location.isStaging) {
+      reject("unchanged", "Esa ya es la ubicación de preparación.");
+    }
+    if (location.isDefault) {
+      reject(
+        "not_allowed",
+        "«General» no puede ser la ubicación de preparación: elige otra.",
+        "locationId",
+      );
+    }
+    if (location.archivedAt) {
+      reject("not_allowed", "Esa ubicación está archivada.", "locationId");
+    }
+    const previous = await tx.location.findFirst({
+      where: { isStaging: true },
+      select: { id: true, name: true },
+    });
+    if (previous) {
+      await tx.location.update({
+        where: { id: previous.id },
+        data: { isStaging: null },
+      });
+    }
+    await tx.location.update({
+      where: { id: location.id },
+      data: { isStaging: true },
+    });
+    await recordAuditEvent(tx, {
+      organizationId,
+      actorUserId: userId,
+      action: "location.staging_changed",
+      target: { type: "location", id: location.id },
+      metadata: {
+        antes: previous?.name ?? null,
+        ahora: await pathOf(tx, location),
+      },
+    });
+    return location.id;
+  });
+}
+
+/**
  * Archives an empty location: it leaves the lists but stays in the history.
  * What it contains must be archived or moved out first, and it must hold
  * no stock (INV-19B, NEG-21).
@@ -529,6 +594,8 @@ export type LocationNode = {
   parentId: string | null;
   /** General: the default location, fixed. */
   isDefault: boolean;
+  /** Where picked goods wait (WMS-14/49). */
+  isStaging: boolean;
   archived: boolean;
   /** 0 = directly in the facility. */
   depth: number;
@@ -586,6 +653,7 @@ export async function listLocations(
         kind: row.kind,
         parentId: row.parentId,
         isDefault: row.isDefault === true,
+        isStaging: row.isStaging === true,
         archived: row.archivedAt !== null,
         depth,
         path: formatLocationPath(path),

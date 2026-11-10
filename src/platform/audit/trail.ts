@@ -34,6 +34,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "inventory.status_changed": "Cambió el estado de existencias",
   "inventory.outbound_cancelled": "Canceló un pedido de salida",
   "inventory.outbound_imported": "Importó pedidos de salida desde un archivo",
+  "settings.changed": "Cambió un ajuste de operación",
+  "location.staging_changed": "Cambió la ubicación de preparación",
   "inventory.task_released": "Liberó una tarea de traslado con problema",
   "product_supplier.created": "Vinculó un producto con un proveedor",
   "product_supplier.updated":

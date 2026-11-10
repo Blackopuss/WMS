@@ -1,6 +1,7 @@
 import "server-only";
 
 import { dec, newId, type Decimal } from "@/lib";
+import { readSetting } from "@/platform/settings";
 import { lockRows, type TenantDb } from "@/server";
 
 import {
@@ -14,6 +15,7 @@ import {
   freeToTake,
   reserveStock,
 } from "./reservations";
+import { PICKING_STRATEGY } from "./settings";
 import { AVAILABLE_STOCK } from "./stock-status";
 import { formatTaskNumber } from "./task-states";
 
@@ -42,8 +44,9 @@ export type PickSource = { locationId: string; quantity: Decimal };
 
 /**
  * Where to pick a quantity of a product from: the strategy of assignment,
- * in one place. Today, the fullest location first (fewer trips); FIFO and
- * FEFO (with lots, WMS-21) will go here. Only AVAILABLE stock that nothing
+ * in one place. The company chooses it (WMS-49, `PICKING_STRATEGY`): the
+ * fullest location first (fewer trips) or the emptiest (frees places);
+ * FIFO and FEFO (with lots, WMS-21) will go here too. Only AVAILABLE stock that nothing
  * reserves in its location, never the staging location itself, and never
  * more than is free of the product. Returns less than asked when there is
  * not enough. Call it under the product's lock.
@@ -66,6 +69,8 @@ export async function pickSources(
     },
     select: { locationId: true, quantity: true },
   });
+  const emptiestFirst =
+    (await readSetting(tx, PICKING_STRATEGY)) === "emptiest";
   const ranked = balances
     .map((row) => ({
       locationId: row.locationId,
@@ -73,7 +78,9 @@ export async function pickSources(
     }))
     .sort(
       (a, b) =>
-        b.quantity.comparedTo(a.quantity) ||
+        (emptiestFirst
+          ? a.quantity.comparedTo(b.quantity)
+          : b.quantity.comparedTo(a.quantity)) ||
         a.locationId.localeCompare(b.locationId),
     );
   const sources: PickSource[] = [];

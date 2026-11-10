@@ -63,6 +63,7 @@ export const TENANT_MODELS = [
   "OutboundOrder",
   "OutboundOrderLine",
   "OutboundImport",
+  "OrganizationSetting",
   "WarehouseTask",
   "StockCount",
   "StockCountCapture",

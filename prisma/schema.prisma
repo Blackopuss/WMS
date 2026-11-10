@@ -148,6 +148,7 @@ model Organization {
   productImportItems      ProductImportItem[]
   exitImports             ExitImport[]
   outboundImports         OutboundImport[]
+  settings                OrganizationSetting[]
   exitImportRows          ExitImportRow[]
   contacts                Contact[]
   productSuppliers        ProductSupplier[]
@@ -2077,6 +2078,24 @@ model OutboundOrder {
   @@unique([organizationId, sourceKey])
   @@index([organizationId, status, number])
   @@map("outbound_order")
+}
+
+/// A parameter of how a company works (WMS-49): a key of the registry in
+/// code (`@/platform/settings`) and its value as text, checked by the
+/// definition when written and when read. No row = the default value.
+model OrganizationSetting {
+  id              String       @id @db.Char(36)
+  organizationId  String       @db.Char(36)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  key             String       @db.VarChar(80)
+  value           String       @db.VarChar(500)
+  updatedByUserId String       @db.Char(36)
+  createdAt       DateTime     @default(now()) @db.DateTime(3)
+  updatedAt       DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, key])
+  @@map("organization_setting")
 }
 
 enum OutboundImportStatus {

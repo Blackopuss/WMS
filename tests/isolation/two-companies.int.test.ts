@@ -471,6 +471,16 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // An operation setting (WMS-49).
+    await db.organizationSetting.create({
+      data: {
+        id: newId(),
+        organizationId,
+        key: "inventory.picking.strategy",
+        value: "emptiest",
+        updatedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // A file of outbound orders (WMS-13B).
     await db.outboundImport.create({
       data: {

@@ -314,3 +314,4 @@ export type {
   OutboundIssue,
   StartOutboundImportResult,
 } from "./outbound-import";
+export { INVENTORY_SETTINGS, PICKING_STRATEGY } from "./settings";

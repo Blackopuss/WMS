@@ -4,6 +4,7 @@ import {
   History,
   LifeBuoy,
   MapPin,
+  SlidersHorizontal,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -44,7 +45,8 @@ export default async function ConfiguracionPage() {
       {(showLocations ||
         access.can("platform.team.read") ||
         access.can("platform.plan.read") ||
-        access.can("platform.audit.read")) && (
+        access.can("platform.audit.read") ||
+        access.can("platform.organization.update")) && (
         <section aria-labelledby="empresa" className="space-y-3">
           <h2 id="empresa" className="text-lg font-semibold">
             Tu negocio
@@ -55,6 +57,14 @@ export default async function ConfiguracionPage() {
               icon={MapPin}
               title="Ubicaciones"
               description="Zonas, pasillos y estantes."
+            />
+          )}
+          {access.can("platform.organization.update") && (
+            <SettingsLink
+              href="/configuracion/operacion"
+              icon={SlidersHorizontal}
+              title="Operación"
+              description="Cómo trabaja tu almacén: surtido y preparación."
             />
           )}
           {access.can("platform.team.read") && (
@@ -161,6 +171,7 @@ function SettingsLink({
 }: {
   href:
     | "/ubicaciones"
+    | "/configuracion/operacion"
     | "/configuracion/equipo"
     | "/configuracion/plan"
     | "/configuracion/bitacora";

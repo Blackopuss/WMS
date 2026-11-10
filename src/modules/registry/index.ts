@@ -7,6 +7,7 @@ import { createModuleRegistry } from "@/platform/billing";
 import { crmModule } from "./announced";
 
 export { moduleOpenWork } from "./open-work";
+export { operationSettings } from "./settings";
 
 /**
  * Installed modules. Inventario and Compras can be contracted; CRM is

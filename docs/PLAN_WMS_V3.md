@@ -79,7 +79,8 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-09..12 | Estado y lote en el saldo (ADR 0033), cambio de estado, reservas | Hechos (`PLAN_WMS_V2.md`) |
 | WMS-13 | Pedidos de salida | Hecho |
 | WMS-13B | Importar pedidos desde Excel/CSV | Hecho (2026-11-10) |
-| WMS-14 | Surtido con tareas hacia «Preparación» | Hecho (2026-11-10); estrategia y ubicación de preparación fijas: se vuelven configurables en WMS-49 |
+| WMS-14 | Surtido con tareas hacia «Preparación» | Hecho (2026-11-10) |
+| WMS-49 | Parámetros de operación por empresa | Hecho (2026-11-10, ADR 0034) |
 
 ---
 
@@ -100,6 +101,12 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
   el mismo código; un parámetro desconocido o inválido se rechaza.
 - **Pruebas:** validación por tipo; aislamiento entre empresas; FIFO y «la más
   llena» eligen las ubicaciones esperadas; bitácora del cambio.
+- **Estado:** hecho (2026-11-10, ADR 0034). Primer ajuste: «De dónde se surte
+  primero» (la más llena o la menos llena); FIFO y FEFO pasan a WMS-21 (necesitan
+  la fecha de cada lote) y las tolerancias de recepción a WMS-52. La ubicación de
+  preparación se elige en la misma pantalla (`setStagingLocation`). Pantalla
+  Configuración › Operación; pruebas en
+  `tests/platform/operation-settings.int.test.ts`.
 
 ### WMS-50 · Rol de Gerencia
 

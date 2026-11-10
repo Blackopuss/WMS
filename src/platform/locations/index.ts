@@ -3,6 +3,7 @@ export { ensureDefaultLocation } from "./bootstrap";
 export {
   MAX_LOCATIONS,
   archiveLocation,
+  setStagingLocation,
   createLocation,
   listLocations,
   moveLocation,
