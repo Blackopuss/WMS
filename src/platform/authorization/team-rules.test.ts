@@ -111,8 +111,10 @@ describe("an administrator cannot raise privileges", () => {
       "warehouse",
       "buyer",
       "viewer",
-      "cashier",
-      "cash_manager",
+      "supervisor",
+      "operator",
+      "forklift",
+      "manager",
     ]);
   });
 

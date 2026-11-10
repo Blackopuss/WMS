@@ -15,6 +15,7 @@ import {
 import { EXIT_IMPORT_JOB_TYPE, exitKey, formatExitDay } from "./exit-import";
 import { formatStock } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
 
 /**
  * Registering the exits of a confirmed file, in the worker (IMP-10). The
@@ -190,13 +191,18 @@ async function registerRow(
     where: {
       productId: product.id,
       locationId: location.id,
+      ...AVAILABLE_STOCK,
       quantity: { gte: base.toString() },
     },
     data: { quantity: { decrement: base.toString() } },
   });
   if (taken.count !== 1) {
     const held = await tx.stockBalance.findFirst({
-      where: { productId: product.id, locationId: location.id },
+      where: {
+        productId: product.id,
+        locationId: location.id,
+        ...AVAILABLE_STOCK,
+      },
       select: { quantity: true },
     });
     const there = dec(held?.quantity.toString() ?? 0);

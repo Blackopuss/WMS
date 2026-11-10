@@ -18,205 +18,88 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
-  openCashAction: {
-    input: "efectivo con el que se abre la caja",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); la caja se abre a nombre de esa persona en esa empresa",
-    coveredBy: "tests/sales/cash.int.test.ts",
-  },
-  cashMovementAction: {
-    input: "si entra o sale dinero, importe y motivo",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); solo en la caja abierta de esa persona",
-    coveredBy: "tests/sales/cash.int.test.ts",
-  },
-  closeCashAction: {
-    input: "id de la caja y lo contado por forma de pago",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); la caja se busca y se bloquea solo en esa empresa",
-    coveredBy: "tests/sales/cash.int.test.ts",
-  },
-  findQuoteProductsAction: {
-    input: "texto buscado (nombre, clave o código de barras)",
-    identity:
-      "sesión y empresa activa (getModuleAccess); solo busca productos de esa empresa",
-    coveredBy: "tests/sales/quotes.int.test.ts",
-  },
-  loadQuoteProductAction: {
-    input: "id del producto",
-    identity:
-      "sesión y empresa activa (getModuleAccess); el producto se busca solo en esa empresa",
-    coveredBy: "tests/sales/quotes.int.test.ts",
-  },
-  previewQuoteAction: {
-    input: "líneas (id de producto, presentación y cantidad) y descuento",
-    identity:
-      "sesión y empresa activa (getModuleAccess); precios de esa empresa",
-    coveredBy: "tests/sales/quotes.int.test.ts",
-  },
-  saveQuoteAction: {
+  createOutboundAction: {
     input:
-      "id de la cotización (al editar), cliente, vigencia, notas, descuento y líneas",
+      "destinatario, referencia, dirección, día de salida, prioridad e indicaciones",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); cotización, cliente y productos se buscan solo en esa empresa",
-    coveredBy: "tests/sales/quotes.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); el pedido nace en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
   },
-  sendQuoteAction: {
-    input: "id de la cotización",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); la cotización se bloquea solo en esa empresa y el correo sale de la ficha del cliente",
-    coveredBy: "tests/sales/quote-delivery.int.test.ts",
-  },
-  setQuoteCustomerEmailAction: {
-    input: "id de la cotización y el correo",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); el cliente es el de la cotización, buscada solo en esa empresa",
-    coveredBy: "tests/sales/quote-delivery.int.test.ts",
-  },
-  changeQuoteStatusAction: {
+  addOutboundLineAction: {
     input:
-      "id de la cotización, el estado al que pasa y el motivo de un rechazo",
+      "id del pedido (fijado por la página), clave o código de barras y cantidad",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la cotización se bloquea solo en esa empresa",
-    coveredBy: "tests/sales/quote-status.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); el producto se busca y el pedido se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
   },
-  sendStatementAction: {
-    input: "id del cliente",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); el cliente se busca solo en esa empresa y el correo sale de su ficha",
-    coveredBy: "tests/sales/statements.int.test.ts",
-  },
-  remindPaymentAction: {
-    input: "id de la cuenta",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); la cuenta se bloquea solo en esa empresa y el correo sale de la ficha del cliente",
-    coveredBy: "tests/sales/overdue-reminders.int.test.ts",
-  },
-  registerPaymentAction: {
-    input:
-      "id de la cuenta, importe, forma de pago, recibido o referencia y clave",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); la cuenta y la caja se bloquean solo en esa empresa y la caja es la de quien recibe",
-    coveredBy: "tests/sales/receivable-payments.int.test.ts",
-  },
-  checkPaymentAction: {
-    input: "clave de confirmación",
-    identity:
-      "sesión y empresa activa (getModuleAccess); solo encuentra abonos de esa persona en esa empresa",
-    coveredBy: "tests/sales/receivable-payments.int.test.ts",
-  },
-  cancelOrderAction: {
-    input: "id del pedido y motivo",
+  removeOutboundLineAction: {
+    input: "id del pedido y de la línea",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
-    coveredBy: "tests/sales/order-fulfillment.int.test.ts",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
   },
-  previewFulfillmentAction: {
+  releaseOutboundAction: {
+    input: "id del pedido y si se libera con lo que hay",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos y pedido se bloquean solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
+  cancelOutboundAction: {
+    input: "id del pedido y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/outbound-orders.int.test.ts",
+  },
+  changeStatusAction: {
     input:
-      "id del pedido, líneas (id de línea, cantidad, ubicación) y pagos tecleados",
+      "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, cantidad, motivo y clave de confirmación",
     identity:
-      "sesión y empresa activa (getModuleAccess); el pedido se busca solo en esa empresa y no escribe nada",
-    coveredBy: "tests/sales/order-fulfillment.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); producto y ubicación se bloquean solo en esa empresa",
+    coveredBy: "tests/inventory/status-change.int.test.ts",
   },
-  fulfillOrderAction: {
+  createTaskAction: {
     input:
-      "id del pedido, líneas (id de línea, cantidad, ubicación), pagos y clave",
+      "id del producto, ubicaciones de origen y destino, cantidad, prioridad, a quién se asigna y una nota",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); el pedido y la caja se bloquean solo en esa empresa y la caja es la de quien cobra",
-    coveredBy: "tests/sales/order-fulfillment.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); producto, ubicaciones y la persona asignada se buscan solo en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
   },
-  convertQuoteAction: {
-    input: "id de la cotización",
+  taskStepAction: {
+    input: "id de la tarea y el paso (tomar, recoger o entregar)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la cotización se bloquea solo en esa empresa",
-    coveredBy: "tests/sales/sales-orders.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
   },
-  returnSaleAction: {
+  confirmPickAction: {
     input:
-      "id de la venta, cantidades por línea, motivo, forma de reembolso y referencia",
+      "id de la tarea de surtido, clave o código de barras del producto, ubicación y cantidad surtida (y motivo si es menos)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la venta se busca y se bloquea solo en esa empresa",
-    coveredBy: "tests/sales/returns.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la tarea y su pedido se bloquean solo en esa empresa y la tarea debe ser de esa persona",
+    coveredBy: "tests/inventory/picking.int.test.ts",
   },
-  cancelSaleAction: {
-    input: "id de la venta, motivo, forma de reembolso y referencia",
+  blockTaskAction: {
+    input: "id de la tarea y qué pasó",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la venta se busca y se bloquea solo en esa empresa",
-    coveredBy: "tests/sales/returns.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); solo la persona que tiene la tarea en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
   },
-  checkSaleReturnAction: {
-    input: "clave de confirmación",
+  cancelTaskAction: {
+    input: "id de la tarea y el motivo",
     identity:
-      "sesión y empresa activa (getModuleAccess); solo encuentra devoluciones de esa persona en esa empresa",
-    coveredBy: "tests/sales/returns.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
   },
-  authorizeDiscountAction: {
-    input: "id de quien autoriza, su contraseña, porcentaje y motivo",
+  releaseTaskAction: {
+    input: "id de la tarea",
     identity:
-      "sesión y empresa activa (getModuleAccess) para quien cobra; quien autoriza se busca entre los miembros activos de esa empresa y su contraseña se verifica con límite de intentos",
-    coveredBy: "tests/sales/discounts.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
   },
-  registerSaleAction: {
-    input:
-      "líneas (id de producto, presentación, cantidad tecleada, ubicación), id de cliente, pagos tecleados y clave de confirmación",
+  assignTaskAction: {
+    input: "id de la tarea y de la persona (o vacío para dejarla disponible)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); productos, ubicaciones y cliente se buscan solo en esa empresa; precios, IVA y cambio los calcula el servidor",
-    coveredBy: "tests/sales/sale.int.test.ts",
-  },
-  checkSaleAction: {
-    input: "clave de confirmación",
-    identity:
-      "sesión y empresa activa (getModuleAccess); solo encuentra ventas de esa persona en esa empresa",
-    coveredBy: "tests/sales/sale.int.test.ts",
-  },
-  findCustomersAction: {
-    input: "texto buscado (nombre, teléfono o RFC)",
-    identity:
-      "sesión y empresa activa (getModuleAccess); solo lee clientes de esa empresa",
-    coveredBy: "tests/sales/customers.int.test.ts",
-  },
-  createCustomerAction: {
-    input: "nombre, teléfono y RFC del cliente; si acepta un posible duplicado",
-    identity:
-      "sesión y empresa activa (getModuleAccess); el cliente se crea en esa empresa a nombre de esa persona",
-    coveredBy: "tests/sales/customers.int.test.ts",
-  },
-  findSaleProductsAction: {
-    input: "texto buscado (nombre, clave o código de barras)",
-    identity:
-      "sesión y empresa activa (getModuleAccess); solo lee productos de esa empresa",
-    coveredBy: "tests/sales/cart.int.test.ts",
-  },
-  loadSaleProductAction: {
-    input: "id de producto",
-    identity:
-      "sesión y empresa activa (getModuleAccess); el producto se busca solo en esa empresa",
-    coveredBy: "tests/sales/cart.int.test.ts",
-  },
-  quoteSaleAction: {
-    input:
-      "líneas del carrito: id de producto, presentación, cantidad tecleada y ubicación",
-    identity:
-      "sesión y empresa activa (getModuleAccess); productos, precios e IVA se leen solo de esa empresa; solo lee",
-    coveredBy: "tests/sales/cart.int.test.ts",
-  },
-  updateInstallmentTermsAction: {
-    input: "meses e interés de cada plazo",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); solo el titular (assertOwnerAction) y solo para su empresa",
-    coveredBy: "tests/sales/installment-terms.int.test.ts",
-  },
-  updateSalesSettingsAction: {
-    input: "modo de IVA (incluido o sumado) y tasa",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); solo el titular (assertOwnerAction) y solo para su empresa",
-    coveredBy: "tests/sales/settings.int.test.ts",
-  },
-  setSalePricesAction: {
-    input: "id de producto y precio de la unidad y de cada presentación",
-    identity:
-      "sesión y empresa activa (requireOrganizationContext); el producto y sus presentaciones se buscan solo en esa empresa",
-    coveredBy: "tests/sales/prices.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y la persona debe poder hacer tareas ahí",
+    coveredBy: "tests/inventory/tasks.int.test.ts",
   },
   receivePurchaseOrderAction: {
     input: "id de orden, id de ubicación, remisión y clave de confirmación",
@@ -331,6 +214,60 @@ const REVIEWED: Record<string, Review> = {
     identity:
       "sesión y empresa activa (requireOrganizationContext); el proveedor se busca solo entre los de esa empresa",
     coveredBy: "tests/platform/suppliers.int.test.ts",
+  },
+  switchFacilityAction: {
+    input: "id del almacén en que se quiere trabajar",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y se guarda en la membresía de esa persona",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  createFacilityAction: {
+    input: "nombre, código y dirección del almacén",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); se crea en esa empresa, dentro del cupo de su plan",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  updateFacilityAction: {
+    input: "id del almacén, nombre, código y dirección",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  archiveFacilityAction: {
+    input: "id del almacén",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y se archiva solo vacío",
+    coveredBy: "tests/platform/facilities.int.test.ts",
+  },
+  updateSettingAction: {
+    input: "clave del ajuste y la opción elegida",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo del ajuste, y escribe solo en esa empresa",
+    coveredBy: "tests/platform/operation-settings.int.test.ts",
+  },
+  setStagingAction: {
+    input: "id de la ubicación de preparación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la ubicación se busca y bloquea solo en esa empresa",
+    coveredBy: "tests/platform/operation-settings.int.test.ts",
+  },
+  startOutboundImportAction: {
+    input: "archivo .csv o .xlsx de pedidos de salida y separador decimal",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el archivo se guarda como privado de esa empresa",
+    coveredBy: "tests/inventory/outbound-import.int.test.ts",
+  },
+  confirmOutboundImportAction: {
+    input: "id de importación de pedidos",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la importación se busca solo en esa empresa y bajo su candado",
+    coveredBy: "tests/inventory/outbound-import.int.test.ts",
+  },
+  cancelOutboundImportAction: {
+    input: "id de importación de pedidos",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la importación se busca solo en esa empresa y bajo su candado",
+    coveredBy: "tests/inventory/outbound-import.int.test.ts",
   },
   startExitImportAction: {
     input: "archivo .csv o .xlsx de salidas y separador decimal",

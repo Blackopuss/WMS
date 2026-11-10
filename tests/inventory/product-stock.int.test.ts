@@ -250,6 +250,10 @@ describe("getProductStock", () => {
       unitCode: "piece",
       total: "0",
       totalLabel: "0 piezas",
+      available: "0",
+      availableLabel: "0 piezas",
+      reserved: "0",
+      reservedLabel: "0 piezas",
       locations: [],
       equivalences: [],
     });

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
-import { formatStock } from "@/modules/inventory";
+import { AVAILABLE_STOCK, formatStock } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { pluralizeName, resolveConversion } from "@/platform/catalog";
@@ -35,6 +35,7 @@ type Reader = Pick<
   Tx,
   | "stockMinimum"
   | "stockBalance"
+  | "stockReservation"
   | "purchaseOrderLine"
   | "purchaseReceiptLine"
   | "productSupplier"
@@ -131,11 +132,28 @@ async function plan(client: Reader, productIds?: string[]): Promise<Plan> {
     const slice = ids.slice(start, start + 1_000);
     const sums = await client.stockBalance.groupBy({
       by: ["productId"],
-      where: { productId: { in: slice } },
+      where: { productId: { in: slice }, ...AVAILABLE_STOCK },
       _sum: { quantity: true },
     });
+    // WMS-12: what is reserved for an order is not available.
+    const held = await client.stockReservation.groupBy({
+      by: ["productId"],
+      where: { productId: { in: slice }, state: "ACTIVE" },
+      _sum: { remaining: true },
+    });
+    const reserved = new Map(
+      held.map((row) => [
+        row.productId,
+        dec((row._sum.remaining ?? 0).toString()),
+      ]),
+    );
     for (const row of sums) {
-      stock.set(row.productId, dec((row._sum.quantity ?? 0).toString()));
+      stock.set(
+        row.productId,
+        dec((row._sum.quantity ?? 0).toString()).minus(
+          reserved.get(row.productId) ?? 0,
+        ),
+      );
     }
   }
   const low = minimums.filter((row) =>
@@ -343,7 +361,7 @@ export type GenerateSuggestedResult =
         supplierName: string;
         lines: number;
       }[];
-      /** «Se creó el borrador OC-0004 para Ferretera del Norte con 3 productos.» */
+      /** «Se creó el borrador OC-0004 para Distribuidora del Norte con 3 productos.» */
       summary: string;
     }
   | { ok: false; reason: "invalid"; error: string };

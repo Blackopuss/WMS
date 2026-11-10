@@ -1,0 +1,290 @@
+import { ArrowDown, ChevronLeft, ClipboardList } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+
+import {
+  EmptyState,
+  NoAccessState,
+  NoModuleState,
+  PageContainer,
+  PageHeader,
+  ReadOnlyNotice,
+} from "@/components";
+import { Badge } from "@/components/ui/badge";
+import { formatDateTime } from "@/lib";
+import { getTask, listTaskPeople } from "@/modules/inventory";
+import { getModuleAccess } from "@/platform/billing";
+import { getUnit } from "@/platform/catalog";
+
+import { PickForm } from "./pick-form";
+import {
+  AssignTask,
+  CancelTask,
+  ReleaseTask,
+  ReportProblem,
+  TaskStep,
+} from "./task-controls";
+
+export const metadata: Metadata = { title: "Tarea" };
+
+const backClass =
+  "inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
+
+/**
+ * One task (WMS-07): what moves, from where to where, and the big button
+ * of its next step for the person who has it. A supervisor gives it to
+ * someone, releases it when it has a problem or cancels it.
+ */
+export default async function TareaPage({
+  params,
+  searchParams,
+}: PageProps<"/tareas/[id]">) {
+  const access = await getModuleAccess();
+  const back = (
+    <Link href="/tareas" className={backClass}>
+      <ChevronLeft aria-hidden="true" className="size-4" />
+      Tareas
+    </Link>
+  );
+  if (!access.can("inventory.task.read")) {
+    return (
+      <PageContainer>
+        {back}
+        <NoAccessState />
+      </PageContainer>
+    );
+  }
+  const moduleState = access.moduleState("inventory");
+  if (moduleState === "none") {
+    return (
+      <PageContainer>
+        {back}
+        <NoModuleState module="Inventario" />
+      </PageContainer>
+    );
+  }
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  const { id } = await params;
+  const task = await getTask(actor, id);
+  if (!task) {
+    return (
+      <PageContainer>
+        {back}
+        <EmptyState
+          icon={ClipboardList}
+          title="Esta tarea no existe"
+          description="Puede que la dirección esté incompleta."
+        />
+      </PageContainer>
+    );
+  }
+  const { hecho } = await searchParams;
+  const active = moduleState === "active";
+  const mine = task.assignedToUserId === access.user.id;
+  const executes = active && access.allows("inventory.task.execute");
+  const supervises = active && access.allows("inventory.task.create");
+  const cancels = active && access.allows("inventory.task.cancel");
+  const people =
+    supervises && (task.status === "PENDING" || task.status === "ASSIGNED")
+      ? await listTaskPeople(actor)
+      : null;
+  const timeZone = access.organization.timeZone;
+  const when = (date: Date) => (
+    <time dateTime={date.toISOString()}>{formatDateTime(date, timeZone)}</time>
+  );
+
+  const step = !executes
+    ? null
+    : task.status === "PENDING" || (task.status === "ASSIGNED" && mine)
+      ? ({ step: "accept", label: "Tomar tarea" } as const)
+      : task.status === "ACCEPTED" && mine && task.kind === "TRANSFER"
+        ? ({ step: "pickUp", label: "Ya recogí la carga" } as const)
+        : task.status === "PICKED_UP" && mine
+          ? ({
+              step: "deliver",
+              label:
+                task.kind === "PICK"
+                  ? `Ya lo dejé en ${task.toPath}`
+                  : `Ya la dejé en ${task.toPath}`,
+            } as const)
+          : null;
+  const picking =
+    executes && mine && task.kind === "PICK" && task.status === "ACCEPTED";
+  const canReport =
+    executes &&
+    mine &&
+    (task.status === "ACCEPTED" || task.status === "PICKED_UP");
+  const canCancel =
+    cancels &&
+    ["PENDING", "ASSIGNED", "ACCEPTED", "BLOCKED"].includes(task.status);
+
+  return (
+    <PageContainer>
+      {back}
+      {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
+      <PageHeader title={`Tarea ${task.numberText}`} />
+      {hecho === "1" && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Tarea creada.
+          {task.assignedToName
+            ? ` Se le asignó a ${task.assignedToName}.`
+            : " Cualquiera de tu equipo la puede tomar."}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {task.urgent && <Badge variant="destructive">Urgente</Badge>}
+        <Badge
+          variant={task.status === "BLOCKED" ? "destructive" : "secondary"}
+        >
+          {task.statusLabel}
+        </Badge>
+        {task.assignedToName && (
+          <span className="text-sm text-muted-foreground">
+            {mine ? "La tienes tú" : `La tiene ${task.assignedToName}`}
+          </span>
+        )}
+      </div>
+
+      <section
+        aria-label="Qué se mueve"
+        className="max-w-xl space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+      >
+        {task.order && (
+          <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
+            Pedido{" "}
+            <Link
+              href={`/pedidos/${task.order.id}`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              {task.order.numberText}
+            </Link>{" "}
+            para {task.order.recipient}
+          </p>
+        )}
+        <div>
+          <p className="text-sm text-muted-foreground">
+            {task.kind === "PICK" ? "Surtir" : "Mover"}
+          </p>
+          <p className="text-2xl font-semibold [overflow-wrap:anywhere]">
+            {task.quantityText}
+          </p>
+          <p className="text-lg [overflow-wrap:anywhere]">
+            {task.productName}{" "}
+            <span className="text-sm text-muted-foreground">{task.sku}</span>
+          </p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">De</p>
+          <p className="text-lg font-medium [overflow-wrap:anywhere]">
+            {task.fromPath}
+          </p>
+          <ArrowDown
+            aria-hidden="true"
+            className="size-5 text-muted-foreground"
+          />
+          <p className="text-sm text-muted-foreground">A</p>
+          <p className="text-lg font-medium [overflow-wrap:anywhere]">
+            {task.toPath}
+          </p>
+        </div>
+        {task.note && (
+          <p className="rounded-lg bg-muted p-3 text-sm [overflow-wrap:anywhere]">
+            {task.note}
+          </p>
+        )}
+      </section>
+
+      {task.status === "BLOCKED" && task.blockedReason && (
+        <p
+          role="status"
+          className="max-w-xl rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm [overflow-wrap:anywhere]"
+        >
+          <span className="font-medium">Problema reportado:</span>{" "}
+          {task.blockedReason}
+        </p>
+      )}
+
+      {task.pickedText && (
+        <p
+          role="status"
+          className="max-w-xl rounded-xl border bg-card p-4 text-sm [overflow-wrap:anywhere]"
+        >
+          <span className="font-medium">Surtido: {task.pickedText}</span>
+          {task.shortReason ? ` · Faltó porque: ${task.shortReason}` : ""}
+        </p>
+      )}
+
+      {picking && (
+        <PickForm
+          taskId={task.id}
+          asked={task.quantityText}
+          quantity={task.quantity}
+          unit={getUnit(task.unitCode).plural}
+        />
+      )}
+
+      {(step || canReport) && (
+        <div className="flex max-w-xl flex-col gap-3">
+          {step && (
+            <TaskStep taskId={task.id} step={step.step} label={step.label} />
+          )}
+          {canReport && <ReportProblem taskId={task.id} />}
+        </div>
+      )}
+
+      {(people || (cancels && task.status === "BLOCKED") || canCancel) && (
+        <section
+          aria-labelledby="supervision"
+          className="max-w-xl space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+        >
+          <h2 id="supervision" className="font-medium">
+            Supervisión
+          </h2>
+          {people && (
+            <AssignTask
+              taskId={task.id}
+              assignedToUserId={task.assignedToUserId}
+              people={people}
+            />
+          )}
+          {cancels && task.status === "BLOCKED" && (
+            <ReleaseTask taskId={task.id} />
+          )}
+          {canCancel && <CancelTask taskId={task.id} />}
+        </section>
+      )}
+
+      <section aria-labelledby="historial" className="max-w-xl space-y-2">
+        <h2 id="historial" className="font-medium">
+          Historial
+        </h2>
+        <ul className="space-y-1 text-sm text-muted-foreground">
+          <li>
+            Pedida {task.createdByName ? `por ${task.createdByName} ` : ""}el{" "}
+            {when(task.createdAt)}
+          </li>
+          {task.acceptedAt && <li>Tomada el {when(task.acceptedAt)}</li>}
+          {task.pickedUpAt && <li>Recogida el {when(task.pickedUpAt)}</li>}
+          {task.blockedAt && (
+            <li>Problema reportado el {when(task.blockedAt)}</li>
+          )}
+          {task.deliveredAt && (
+            <li>
+              Entregada el {when(task.deliveredAt)}; la reubicación quedó en
+              Movimientos.
+            </li>
+          )}
+          {task.cancelledAt && (
+            <li className="[overflow-wrap:anywhere]">
+              Cancelada el {when(task.cancelledAt)}
+              {task.cancelReason ? `: ${task.cancelReason}` : ""}
+            </li>
+          )}
+        </ul>
+      </section>
+    </PageContainer>
+  );
+}

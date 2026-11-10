@@ -1,0 +1,229 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+import { isAppError } from "@/lib";
+import {
+  acceptTask,
+  assignTask,
+  blockTask,
+  cancelTask,
+  confirmPick,
+  createTask,
+  deliverTask,
+  pickUpTask,
+  releaseTask,
+  type TaskField,
+  type TaskResult,
+} from "@/modules/inventory";
+import { requireOrganizationContext } from "@/platform/tenancy";
+
+/**
+ * Warehouse tasks (WMS-06/07). Person and company always come from the
+ * session; the task, product and locations are looked for only inside that
+ * company by the service, which checks the permission again.
+ */
+
+export type CreateTaskState = {
+  error?: string;
+  fieldErrors?: Partial<Record<TaskField, string>>;
+  values: {
+    fromLocationId: string;
+    toLocationId: string;
+    quantity: string;
+    priority: string;
+    assignToUserId: string;
+    note: string;
+  };
+  /** Bumped on every answer, so selects show what was sent. */
+  answers: number;
+};
+
+const text = (formData: FormData, name: string, max: number) =>
+  String(formData.get(name) ?? "").slice(0, max);
+
+export async function createTaskAction(
+  previous: CreateTaskState,
+  formData: FormData,
+): Promise<CreateTaskState> {
+  const { user, organization } = await requireOrganizationContext();
+  const values = {
+    fromLocationId: text(formData, "fromLocationId", 36),
+    toLocationId: text(formData, "toLocationId", 36),
+    quantity: text(formData, "quantity", 40),
+    priority: text(formData, "priority", 10),
+    assignToUserId: text(formData, "assignToUserId", 36),
+    note: text(formData, "note", 400),
+  };
+  let result: TaskResult;
+  try {
+    result = await createTask(
+      { organizationId: organization.id, userId: user.id },
+      { ...values, productId: text(formData, "productId", 36) },
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { error: error.message, values, answers: previous.answers + 1 };
+    }
+    throw error;
+  }
+  if (!result.ok) {
+    return {
+      error: result.formError,
+      fieldErrors: result.fieldErrors,
+      values,
+      answers: previous.answers + 1,
+    };
+  }
+  revalidatePath("/tareas");
+  redirect(`/tareas/${result.taskId}?hecho=1`);
+}
+
+export type TaskStepState =
+  { ok: true; summary: string } | { ok: false; error: string };
+
+async function run(
+  taskId: string,
+  work: (
+    actor: { organizationId: string; userId: string },
+    id: string,
+  ) => Promise<TaskResult>,
+): Promise<TaskStepState> {
+  const { user, organization } = await requireOrganizationContext();
+  const id = String(taskId ?? "").slice(0, 36);
+  try {
+    const result = await work(
+      { organizationId: organization.id, userId: user.id },
+      id,
+    );
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.formError ??
+          Object.values(result.fieldErrors ?? {})[0] ??
+          "No se pudo cambiar la tarea.",
+      };
+    }
+    revalidatePath("/tareas");
+    revalidatePath(`/tareas/${id}`);
+    return { ok: true, summary: result.summary };
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** The next step of the person who does it: take, pick up or deliver. */
+export async function taskStepAction(
+  taskId: string,
+  step: "accept" | "pickUp" | "deliver",
+): Promise<TaskStepState> {
+  const work =
+    step === "accept"
+      ? acceptTask
+      : step === "pickUp"
+        ? pickUpTask
+        : step === "deliver"
+          ? deliverTask
+          : null;
+  if (!work) return { ok: false, error: "No se pudo cambiar la tarea." };
+  return run(taskId, work);
+}
+
+export async function blockTaskAction(
+  taskId: string,
+  reason: string,
+): Promise<TaskStepState> {
+  return run(taskId, (actor, id) =>
+    blockTask(actor, id, String(reason ?? "").slice(0, 400)),
+  );
+}
+
+export async function cancelTaskAction(
+  taskId: string,
+  reason: string,
+): Promise<TaskStepState> {
+  return run(taskId, (actor, id) =>
+    cancelTask(actor, id, String(reason ?? "").slice(0, 400)),
+  );
+}
+
+export async function releaseTaskAction(
+  taskId: string,
+): Promise<TaskStepState> {
+  return run(taskId, releaseTask);
+}
+
+export async function assignTaskAction(
+  taskId: string,
+  assignToUserId: string,
+): Promise<TaskStepState> {
+  return run(taskId, (actor, id) =>
+    assignTask(actor, id, String(assignToUserId ?? "").slice(0, 36) || null),
+  );
+}
+
+export type ConfirmPickState = {
+  ok?: true;
+  summary?: string;
+  error?: string;
+  fieldErrors?: Partial<Record<TaskField, string>>;
+  /** What was typed, so a refused form keeps it. */
+  values: {
+    productCode: string;
+    locationCode: string;
+    quantity: string;
+    shortReason: string;
+  };
+  answers: number;
+};
+
+/**
+ * Picking (WMS-14): what the person confirms at the origin — product and
+ * location (scanned or typed) and how much they took. The service checks
+ * them against the task, looked for only inside the company of the
+ * session.
+ */
+export async function confirmPickAction(
+  taskId: string,
+  previous: ConfirmPickState,
+  formData: FormData,
+): Promise<ConfirmPickState> {
+  const { user, organization } = await requireOrganizationContext();
+  const id = String(taskId ?? "").slice(0, 36);
+  const values = {
+    productCode: text(formData, "productCode", 80),
+    locationCode: text(formData, "locationCode", 200),
+    quantity: text(formData, "quantity", 40),
+    shortReason: text(formData, "shortReason", 400),
+  };
+  const answers = previous.answers + 1;
+  let result: TaskResult;
+  try {
+    result = await confirmPick(
+      { organizationId: organization.id, userId: user.id },
+      id,
+      values,
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { error: error.message, values, answers };
+    }
+    throw error;
+  }
+  if (!result.ok) {
+    return {
+      error: result.formError,
+      fieldErrors: result.fieldErrors,
+      values,
+      answers,
+    };
+  }
+  revalidatePath("/tareas");
+  revalidatePath(`/tareas/${id}`);
+  return { ok: true, summary: result.summary, values, answers };
+}

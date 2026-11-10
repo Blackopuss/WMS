@@ -20,6 +20,7 @@ import {
   isLocationKind,
   type AnyLocationKind,
 } from "./kinds";
+import { getActiveFacility } from "./facilities";
 import type { LocationActor } from "./locations";
 
 /**
@@ -45,7 +46,7 @@ const nameSchema = z
   .min(1, "Escribe el nombre de la ubicación.")
   .max(60, "El nombre es demasiado largo (máximo 60 caracteres).");
 
-export type LocationField = "name" | "kind" | "parentId";
+export type LocationField = "name" | "kind" | "parentId" | "locationId";
 
 export type LocationResult =
   | { ok: true; locationId: string }
@@ -95,7 +96,9 @@ type Row = {
   kind: AnyLocationKind;
   parentId: string | null;
   isDefault: boolean | null;
+  isStaging: boolean | null;
   archivedAt: Date | null;
+  facilityId: string;
 };
 
 const ROW = {
@@ -104,7 +107,9 @@ const ROW = {
   kind: true,
   parentId: true,
   isDefault: true,
+  isStaging: true,
   archivedAt: true,
+  facilityId: true,
 } as const;
 
 /**
@@ -115,17 +120,26 @@ const ROW = {
 async function changeTree(
   organizationId: string,
   change: (tx: Tx, facilityId: string) => Promise<string>,
+  /** Warehouse a new root location goes into (WMS-18); default: the main one. */
+  facilityId: string | null = null,
 ): Promise<LocationResult> {
   try {
     const locationId = await forOrganization(organizationId).$transaction(
       async (tx) => {
+        // Every warehouse of the company: the same lock as creating or
+        // archiving a warehouse.
         await tx.facility.updateMany({
           where: {},
           data: { updatedAt: new Date() },
         });
-        const facility = await tx.facility.findFirst({ select: { id: true } });
+        const facility = await tx.facility.findFirst({
+          where: facilityId
+            ? { id: facilityId, archivedAt: null }
+            : { isDefault: true },
+          select: { id: true },
+        });
         if (!facility) {
-          throw new Error(`Company ${organizationId} has no facility`);
+          return reject("not_found", "Ese almacén ya no existe o se archivó.");
         }
         return change(tx, facility.id);
       },
@@ -204,10 +218,16 @@ async function checkFreeName(
   tx: Tx,
   name: string,
   parentId: string | null,
+  facilityId: string,
   exceptId?: string,
 ) {
   const taken = await tx.location.findFirst({
-    where: { parentId, name, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+    where: {
+      facilityId,
+      parentId,
+      name,
+      ...(exceptId ? { NOT: { id: exceptId } } : {}),
+    },
     select: { archivedAt: true },
   });
   if (!taken) return;
@@ -266,51 +286,61 @@ export async function createLocation(
     userId,
     "inventory.location.create",
   );
-  return changeTree(organizationId, async (tx, facilityId) => {
-    const name = parseName(input.name);
-    const kind = isLocationKind(input.kind)
-      ? input.kind
-      : reject("invalid", "Elige si es zona, pasillo o estante.", "kind");
-    const parent = await findParent(tx, parentIdOf(input.parentId));
-    checkFit(kind, parent, "kind");
-    await checkFreeName(tx, name, parent?.id ?? null);
-    if ((await tx.location.count()) >= MAX_LOCATIONS) {
-      reject(
-        "limit_reached",
-        `Llegaste al máximo de ${MAX_LOCATIONS.toLocaleString("es-MX")} ubicaciones.`,
-      );
-    }
-    const id = newId();
-    await tx.location.create({
-      data: {
-        id,
-        organizationId,
-        facilityId,
-        name,
-        kind,
-        parentId: parent?.id ?? null,
-      },
-    });
-    await recordAuditEvent(tx, {
-      organizationId,
-      actorUserId: userId,
-      action: "location.created",
-      target: { type: "location", id },
-      metadata: {
-        name,
-        kind,
-        path: await pathOf(tx, {
+  // At the root, the warehouse the person works in (WMS-18); inside
+  // another location, the warehouse of that one.
+  const active = await getActiveFacility(actor);
+  return changeTree(
+    organizationId,
+    async (tx, activeFacilityId) => {
+      const name = parseName(input.name);
+      const kind = isLocationKind(input.kind)
+        ? input.kind
+        : reject("invalid", "Elige si es zona, pasillo o estante.", "kind");
+      const parent = await findParent(tx, parentIdOf(input.parentId));
+      checkFit(kind, parent, "kind");
+      const facilityId = parent?.facilityId ?? activeFacilityId;
+      await checkFreeName(tx, name, parent?.id ?? null, facilityId);
+      if ((await tx.location.count()) >= MAX_LOCATIONS) {
+        reject(
+          "limit_reached",
+          `Llegaste al máximo de ${MAX_LOCATIONS.toLocaleString("es-MX")} ubicaciones.`,
+        );
+      }
+      const id = newId();
+      await tx.location.create({
+        data: {
           id,
+          organizationId,
+          facilityId,
           name,
           kind,
           parentId: parent?.id ?? null,
-          isDefault: null,
-          archivedAt: null,
-        }),
-      },
-    });
-    return id;
-  });
+        },
+      });
+      await recordAuditEvent(tx, {
+        organizationId,
+        actorUserId: userId,
+        action: "location.created",
+        target: { type: "location", id },
+        metadata: {
+          name,
+          kind,
+          path: await pathOf(tx, {
+            id,
+            name,
+            kind,
+            parentId: parent?.id ?? null,
+            isDefault: null,
+            isStaging: null,
+            archivedAt: null,
+            facilityId,
+          }),
+        },
+      });
+      return id;
+    },
+    active.id,
+  );
 }
 
 /** Changes the name of a location; where it is and its kind stay. */
@@ -332,7 +362,13 @@ export async function renameLocation(
     if (name === location.name) {
       reject("unchanged", "Ese ya es su nombre.", "name");
     }
-    await checkFreeName(tx, name, location.parentId, location.id);
+    await checkFreeName(
+      tx,
+      name,
+      location.parentId,
+      location.facilityId,
+      location.id,
+    );
     await tx.location.updateMany({
       where: { id: location.id },
       data: { name },
@@ -381,7 +417,20 @@ export async function moveLocation(
     // The kinds make a cycle impossible: what is inside this location is
     // finer than it, and it only goes into something coarser.
     checkFit(location.kind, parent, "parentId");
-    await checkFreeName(tx, location.name, parent?.id ?? null, location.id);
+    if (parent && parent.facilityId !== location.facilityId) {
+      reject(
+        "not_allowed",
+        "Esa ubicación es de otro almacén: entre almacenes se hace un traslado.",
+        "parentId",
+      );
+    }
+    await checkFreeName(
+      tx,
+      location.name,
+      parent?.id ?? null,
+      location.facilityId,
+      location.id,
+    );
     const before = await pathOf(tx, location);
     await tx.location.updateMany({
       where: { id: location.id },
@@ -395,6 +444,71 @@ export async function moveLocation(
       metadata: {
         before,
         after: await pathOf(tx, { ...location, parentId: parent?.id ?? null }),
+      },
+    });
+    return location.id;
+  });
+}
+
+/**
+ * Chooses where picked goods wait (WMS-49): one location per facility
+ * (`isStaging`), any active one but General. What was already picked into
+ * the previous one stays there, reserved for its orders; new picking goes
+ * to the new one. For who edits the business configuration.
+ */
+export async function setStagingLocation(
+  actor: LocationActor,
+  locationId: string,
+): Promise<LocationResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "platform.organization.update",
+  );
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.location.update",
+  );
+  return changeTree(organizationId, async (tx) => {
+    await lockRows(tx, "location", [String(locationId ?? "")]);
+    const location = await findLocation(tx, locationId);
+    if (location.isStaging) {
+      reject("unchanged", "Esa ya es la ubicación de preparación.");
+    }
+    if (location.isDefault) {
+      reject(
+        "not_allowed",
+        "«General» no puede ser la ubicación de preparación: elige otra.",
+        "locationId",
+      );
+    }
+    if (location.archivedAt) {
+      reject("not_allowed", "Esa ubicación está archivada.", "locationId");
+    }
+    const previous = await tx.location.findFirst({
+      where: { isStaging: true, facilityId: location.facilityId },
+      select: { id: true, name: true },
+    });
+    if (previous) {
+      await tx.location.update({
+        where: { id: previous.id },
+        data: { isStaging: null },
+      });
+    }
+    await tx.location.update({
+      where: { id: location.id },
+      data: { isStaging: true },
+    });
+    await recordAuditEvent(tx, {
+      organizationId,
+      actorUserId: userId,
+      action: "location.staging_changed",
+      target: { type: "location", id: location.id },
+      metadata: {
+        antes: previous?.name ?? null,
+        ahora: await pathOf(tx, location),
       },
     });
     return location.id;
@@ -421,6 +535,12 @@ export async function archiveLocation(
     await lockRows(tx, "location", [String(locationId)]);
     const location = await findLocation(tx, locationId);
     if (location.isDefault) reject("not_allowed", GENERAL_FIXED);
+    if (location.isStaging) {
+      reject(
+        "not_allowed",
+        "Aquí espera lo surtido de los pedidos: esta ubicación no se archiva.",
+      );
+    }
     if (location.archivedAt) {
       reject("unchanged", "Esta ubicación ya está archivada.");
     }
@@ -520,6 +640,8 @@ export type LocationNode = {
   parentId: string | null;
   /** General: the default location, fixed. */
   isDefault: boolean;
+  /** Where picked goods wait (WMS-14/49). */
+  isStaging: boolean;
   archived: boolean;
   /** 0 = directly in the facility. */
   depth: number;
@@ -538,7 +660,7 @@ export type LocationTree = {
 /** The whole tree of the facility, ready to show or to offer in a select. */
 export async function listLocations(
   actor: LocationActor,
-  options: { includeArchived?: boolean } = {},
+  options: { includeArchived?: boolean; facilityId?: string } = {},
 ): Promise<LocationTree | null> {
   await assertModulePermission(
     actor.organizationId,
@@ -546,10 +668,18 @@ export async function listLocations(
     "inventory.location.read",
   );
   const client = forOrganization(actor.organizationId);
+  // One warehouse at a time (WMS-18): the one asked, or where the person works.
+  const facilityId = options.facilityId ?? (await getActiveFacility(actor)).id;
   const [facility, rows] = await Promise.all([
-    client.facility.findFirst({ select: { id: true, name: true } }),
+    client.facility.findFirst({
+      where: { id: facilityId },
+      select: { id: true, name: true },
+    }),
     client.location.findMany({
-      where: options.includeArchived ? {} : { archivedAt: null },
+      where: {
+        facilityId,
+        ...(options.includeArchived ? {} : { archivedAt: null }),
+      },
       take: MAX_LOCATIONS,
       select: ROW,
     }),
@@ -577,6 +707,7 @@ export async function listLocations(
         kind: row.kind,
         parentId: row.parentId,
         isDefault: row.isDefault === true,
+        isStaging: row.isStaging === true,
         archived: row.archivedAt !== null,
         depth,
         path: formatLocationPath(path),

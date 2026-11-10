@@ -4,8 +4,9 @@ import {
   History,
   LifeBuoy,
   MapPin,
-  Receipt,
+  SlidersHorizontal,
   Users,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -33,9 +34,6 @@ export default async function ConfiguracionPage() {
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
   const canGrantSupport = access.can("platform.support.grant");
-  const showSales =
-    access.moduleState("sales") !== "none" &&
-    access.can("sales.settings.update");
   const [sessions, mfa, support] = await Promise.all([
     listActiveSessions(user.id, sessionId),
     getMfaStatus(user.id),
@@ -46,14 +44,22 @@ export default async function ConfiguracionPage() {
     <PageContainer>
       <PageHeader title="Configuración" />
       {(showLocations ||
-        showSales ||
         access.can("platform.team.read") ||
         access.can("platform.plan.read") ||
-        access.can("platform.audit.read")) && (
+        access.can("platform.audit.read") ||
+        access.can("platform.organization.update")) && (
         <section aria-labelledby="empresa" className="space-y-3">
           <h2 id="empresa" className="text-lg font-semibold">
             Tu negocio
           </h2>
+          {showLocations && (
+            <SettingsLink
+              href="/configuracion/almacenes"
+              icon={Warehouse}
+              title="Almacenes"
+              description="Tus almacenes y sucursales."
+            />
+          )}
           {showLocations && (
             <SettingsLink
               href="/ubicaciones"
@@ -62,20 +68,20 @@ export default async function ConfiguracionPage() {
               description="Zonas, pasillos y estantes."
             />
           )}
+          {access.can("platform.organization.update") && (
+            <SettingsLink
+              href="/configuracion/operacion"
+              icon={SlidersHorizontal}
+              title="Operación"
+              description="Cómo trabaja tu almacén: surtido y preparación."
+            />
+          )}
           {access.can("platform.team.read") && (
             <SettingsLink
               href="/configuracion/equipo"
               icon={Users}
               title="Equipo"
               description="Personas, roles e invitaciones."
-            />
-          )}
-          {showSales && (
-            <SettingsLink
-              href="/configuracion/ventas"
-              icon={Receipt}
-              title="Ventas"
-              description="IVA y descuentos."
             />
           )}
           {access.can("platform.plan.read") && (
@@ -174,8 +180,9 @@ function SettingsLink({
 }: {
   href:
     | "/ubicaciones"
+    | "/configuracion/almacenes"
+    | "/configuracion/operacion"
     | "/configuracion/equipo"
-    | "/configuracion/ventas"
     | "/configuracion/plan"
     | "/configuracion/bitacora";
   icon: LucideIcon;

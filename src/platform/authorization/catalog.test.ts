@@ -26,12 +26,14 @@ const COLUMNS = [
   "warehouse",
   "buyer",
   "viewer",
-  "cashier",
-  "cash_manager",
+  "supervisor",
+  "operator",
+  "forklift",
+  "manager",
 ];
 const rows = [
   ...doc.matchAll(
-    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
+    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
   ),
 ].map(([, id, ...cells]) => ({ id: id!, cells: cells as string[] }));
 
@@ -64,7 +66,7 @@ describe("catalog = approved matrix", () => {
   it("uses stable module.resource.action identifiers", () => {
     for (const permission of PERMISSIONS) {
       expect(permission).toMatch(
-        /^(platform|inventory|purchasing|sales)\.[a-z_]+\.[a-z_]+$/,
+        /^(platform|inventory|purchasing)\.[a-z_]+\.[a-z_]+$/,
       );
     }
   });
@@ -132,7 +134,14 @@ describe("founder decisions (FUN-07)", () => {
   it("the full audit log is for titular and administrators only (7)", () => {
     expect(OWNER_PERMISSIONS).toContain("platform.audit.read");
     expect(of("administrator").has("platform.audit.read")).toBe(true);
-    for (const role of ["warehouse", "buyer", "viewer"] as const) {
+    for (const role of [
+      "warehouse",
+      "buyer",
+      "viewer",
+      "supervisor",
+      "operator",
+      "forklift",
+    ] as const) {
       expect(of(role).has("platform.audit.read")).toBe(false);
     }
   });
@@ -142,6 +151,71 @@ describe("founder decisions (FUN-07)", () => {
     for (const role of ROLES) {
       expect(of(role).has("platform.provisioning.manage")).toBe(false);
     }
+  });
+});
+
+describe("operational roles (WMS-05)", () => {
+  it("Almacenista receives and moves goods but never corrects stock", () => {
+    for (const p of [
+      "purchasing.receipt.create",
+      "inventory.entry.create",
+      "inventory.exit.create",
+      "inventory.transfer.create",
+      "inventory.count.update",
+    ] as Permission[]) {
+      expect(of("operator").has(p)).toBe(true);
+    }
+    for (const p of [
+      "inventory.adjustment.create",
+      "inventory.movement.reverse",
+      "inventory.count.apply",
+      "inventory.product.create",
+      "inventory.cost.read",
+      "purchasing.cost.read",
+      "inventory.status.change",
+      "inventory.status.release",
+    ] as Permission[]) {
+      expect(of("operator").has(p)).toBe(false);
+    }
+    // WMS-11: the floor reports damage; it does not quarantine or release.
+    expect(of("operator").has("inventory.damage.report")).toBe(true);
+  });
+
+  it("Montacarguista reads and does its tasks: it never types quantities freely", () => {
+    for (const permission of of("forklift")) {
+      expect(permission).toMatch(/\.read$|^inventory\.task\.execute$/);
+    }
+    expect(of("forklift").has("inventory.task.execute")).toBe(true);
+    expect(of("forklift").has("inventory.transfer.create")).toBe(false);
+  });
+
+  it("Supervisor de almacén is Almacén plus receiving and the team list", () => {
+    for (const permission of of("warehouse")) {
+      expect(of("supervisor").has(permission)).toBe(true);
+    }
+    expect(of("supervisor").has("purchasing.receipt.create")).toBe(true);
+    expect(of("supervisor").has("platform.team.read")).toBe(true);
+    expect(of("supervisor").has("platform.team.assign_roles")).toBe(false);
+    expect(of("supervisor").has("purchasing.cost.read")).toBe(false);
+  });
+});
+
+describe("Gerencia (WMS-50)", () => {
+  it("reads and exports everything operational, and never writes", () => {
+    for (const permission of of("manager")) {
+      expect(permission).toMatch(
+        /\.(read|export)$|^inventory\.export\.create$/,
+      );
+    }
+    for (const permission of PERMISSIONS) {
+      if (/^(inventory|purchasing)\.[a-z_]+\.(read|export)$/.test(permission)) {
+        expect(of("manager").has(permission)).toBe(true);
+      }
+    }
+    expect(of("manager").has("inventory.cost.read")).toBe(true);
+    expect(of("manager").has("platform.audit.read")).toBe(true);
+    expect(of("manager").has("platform.billing.read")).toBe(false);
+    expect(of("manager").has("platform.organization.update")).toBe(false);
   });
 });
 

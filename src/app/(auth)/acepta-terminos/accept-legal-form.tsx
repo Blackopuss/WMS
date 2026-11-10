@@ -29,8 +29,7 @@ export function AcceptLegalForm({
           Revisa nuestros documentos
         </h1>
         <p className="text-muted-foreground">
-          Para seguir usando Almacén necesitamos que aceptes la versión vigente
-          de:
+          Para seguir usando WMS necesitamos que aceptes la versión vigente de:
         </p>
       </div>
       <ul className="mt-4 space-y-2 text-sm">

@@ -18,7 +18,13 @@ type ModuleOption = {
 
 type Tier = { productLimit: number; users: number };
 
-const FIELD_ORDER = ["productLimit", "users", "validUntil", "reason"] as const;
+const FIELD_ORDER = [
+  "productLimit",
+  "users",
+  "facilities",
+  "validUntil",
+  "reason",
+] as const;
 
 /** Date part (YYYY-MM-DD) of an instant, as seen in central Mexico. */
 function dateInMexico(iso: string): string {
@@ -39,6 +45,7 @@ export function ProvisionForm({
   current: {
     productLimit: number | null;
     users: number | null;
+    facilities: number | null;
     modules: string[];
     validUntil: string | null;
   };
@@ -163,6 +170,21 @@ export function ProvisionForm({
                 value={users}
                 onChange={(event) => setUsers(event.target.value)}
                 required
+              />
+            )}
+          </FormField>
+          <FormField
+            id="facilities"
+            label="Almacenes incluidos"
+            error={state.fieldErrors.facilities}
+          >
+            {(control) => (
+              <Input
+                {...control}
+                name="facilities"
+                inputMode="numeric"
+                autoComplete="off"
+                defaultValue={String(current.facilities ?? 1)}
               />
             )}
           </FormField>

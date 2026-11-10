@@ -64,6 +64,7 @@ export async function provisionAction(
     {
       productLimit: String(formData.get("productLimit") ?? ""),
       users: String(formData.get("users") ?? ""),
+      facilities: String(formData.get("facilities") ?? ""),
       modules: values.modules,
       validUntil,
       reason: values.reason,

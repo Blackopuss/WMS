@@ -99,7 +99,7 @@ describe("registerUser", () => {
 
   it("sends a Spanish verification email with a single-use link", async () => {
     const [mail] = memoryOutboxFor(email.toLowerCase());
-    expect(mail?.subject).toBe("Confirma tu correo para Almacén");
+    expect(mail?.subject).toBe("Confirma tu correo para WMS");
     expect(mail?.text).toContain("Hola, Ana Pérez:");
     expect(mail?.text).toContain("vence en 24 horas");
     // It lands on /confirmar-correo: the password confirms it (audit 2).

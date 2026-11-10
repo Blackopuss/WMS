@@ -160,6 +160,7 @@ export default async function EmpresaInternaPage({
         current={{
           productLimit: company.productLimit,
           users: company.users,
+          facilities: company.facilities,
           modules: company.modules,
           validUntil: company.validUntil
             ? company.validUntil.toISOString()

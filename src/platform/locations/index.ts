@@ -3,6 +3,7 @@ export { ensureDefaultLocation } from "./bootstrap";
 export {
   MAX_LOCATIONS,
   archiveLocation,
+  setStagingLocation,
   createLocation,
   listLocations,
   moveLocation,
@@ -27,4 +28,21 @@ export {
 } from "./kinds";
 export type { AnyLocationKind, LocationKind } from "./kinds";
 export { getDefaultLocation } from "./locations";
+export { STAGING_NAME, ensureStagingLocation } from "./staging";
 export type { LocationActor } from "./locations";
+export {
+  FACILITIES_LIMIT_KEY,
+  activeFacilityOf,
+  archiveFacility,
+  createFacility,
+  getActiveFacility,
+  listFacilities,
+  switchFacility,
+  updateFacility,
+} from "./facilities";
+export type {
+  FacilityField,
+  FacilityInput,
+  FacilityResult,
+  FacilitySummary,
+} from "./facilities";

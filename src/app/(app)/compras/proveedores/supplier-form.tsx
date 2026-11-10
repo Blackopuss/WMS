@@ -156,7 +156,7 @@ export function SupplierForm({
       <FormField
         id="name"
         label="Nombre"
-        hint="Como lo conoces: «Ferretera del Norte»."
+        hint="Como lo conoces: «Distribuidora del Norte»."
         error={state.fieldErrors.name}
       >
         {(control) => (

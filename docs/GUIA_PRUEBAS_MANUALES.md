@@ -45,7 +45,7 @@ npm run worker                           # terminal 2: aplica las importaciones 
 
 Deja las dos terminales abiertas mientras pruebas.
 
-### Cuenta demo (titular de «Ferretería Demo»)
+### Cuenta demo (titular de «Empresa Demo»)
 
 | Dato | Dónde está |
 | --- | --- |
@@ -53,7 +53,7 @@ Deja las dos terminales abiertas mientras pruebas.
 | Contraseña | `DEMO_PASSWORD` en `.env.local` |
 | Código de dos pasos | `npm run demo:codigo` (cambia cada 30 segundos y cada código sirve una sola vez) |
 
-La Ferretería Demo ya tiene plan: Inventario y Compras, 1,000 productos y 5 usuarios. Empieza sin productos; solo tiene la ubicación «General».
+La Empresa Demo ya tiene plan: Inventario y Compras, 1,000 productos y 5 usuarios. Empieza sin productos; solo tiene la ubicación «General».
 
 ### Los correos no salen de tu computadora
 
@@ -598,7 +598,7 @@ Dispositivo: computadora o celular
 
 También me sirve mucho:
 
-- Textos que no entendería un ferretero (dime cómo lo dirías tú).
+- Textos que no entendería quien trabaja en el almacén (dime cómo lo dirías tú).
 - Pasos que sobran o que faltan.
 - Lo que se ve mal en el celular (abre `http://localhost:3000` desde las herramientas de tu navegador en vista móvil) y en modo oscuro (interruptor en la barra lateral).
 - Las tres decisiones pendientes: quién será personal de plataforma, si el registro debe dar un periodo de prueba automático, y si reactivar a un miembro necesita un permiso distinto al de desactivarlo.

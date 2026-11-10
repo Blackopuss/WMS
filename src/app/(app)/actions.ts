@@ -9,7 +9,11 @@ import {
   signOut,
 } from "@/platform/auth";
 import { leaveSupport } from "@/platform/authorization";
-import { switchOrganization } from "@/platform/tenancy";
+import { switchFacility } from "@/platform/locations";
+import {
+  requireOrganizationContext,
+  switchOrganization,
+} from "@/platform/tenancy";
 
 export async function signOutAction(): Promise<void> {
   await signOut();
@@ -39,4 +43,22 @@ export async function leaveSupportAction(): Promise<void> {
   await leaveSupport(user.id, sessionId);
   revalidatePath("/", "layout");
   redirect("/interno");
+}
+
+/**
+ * The person starts working in another warehouse (WMS-18). Person and
+ * company come from the session; the warehouse is looked for only in that
+ * company.
+ */
+export async function switchFacilityAction(
+  facilityId: string,
+): Promise<{ error: string }> {
+  const { user, organization } = await requireOrganizationContext();
+  const result = await switchFacility(
+    { organizationId: organization.id, userId: user.id },
+    String(facilityId ?? "").slice(0, 36),
+  );
+  if (!result.ok) return { error: result.formError ?? "No se pudo cambiar." };
+  revalidatePath("/", "layout");
+  redirect(DEFAULT_AFTER_SIGN_IN);
 }

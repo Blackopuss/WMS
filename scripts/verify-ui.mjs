@@ -738,7 +738,7 @@ try {
     await page.getByRole("button", { name: "Más" }).click();
     const sheet = page.getByRole("dialog", { name: "Más opciones" });
     check(
-      await sheet.getByText("Ferretería Demo").isVisible(),
+      await sheet.getByText("Empresa Demo").isVisible(),
       "company: the active company is shown in the menu",
     );
     await page.keyboard.press("Escape");

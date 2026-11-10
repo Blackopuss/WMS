@@ -567,6 +567,8 @@ describe("balances", () => {
       {
         productId: own.screws,
         locationId: own.general,
+        status: "AVAILABLE",
+        lotId: null,
         fromMovements: "275",
         balance: "0",
       },
@@ -590,6 +592,8 @@ describe("balances", () => {
       {
         productId: own.screws,
         locationId: own.general,
+        status: "AVAILABLE",
+        lotId: null,
         fromMovements: "275",
         balance: "270",
       },
@@ -612,6 +616,8 @@ describe("balances", () => {
       {
         productId: own.cable,
         locationId: own.shelf,
+        status: "AVAILABLE",
+        lotId: null,
         fromMovements: "0",
         balance: "1.5",
       },

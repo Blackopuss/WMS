@@ -5,6 +5,8 @@ import { lockRows, type TenantDb } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
+import { AVAILABLE_STOCK } from "./stock-status";
+import { freeToTake, reservedMessage } from "./reservations";
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Decimal = ReturnType<typeof dec>;
@@ -85,6 +87,7 @@ export async function postReturnExit(
     where: {
       productId: { in: [...new Set(lines.map((line) => line.productId))] },
       locationId: { in: [...new Set(lines.map((line) => line.locationId))] },
+      ...AVAILABLE_STOCK,
     },
     select: { id: true, productId: true, locationId: true, quantity: true },
   });
@@ -108,6 +111,33 @@ export async function postReturnExit(
         ok: false,
         line: index,
         error: `En ${nameOf.get(line.locationId) ?? "esa ubicación"} solo hay ${formatStock(before.toString(), line.unitCode)}. Lo que ya salió o se movió de ahí no se puede devolver desde ahí.`,
+      };
+    }
+  }
+  // WMS-12: what is reserved for an order is not sent back.
+  const byProduct = new Map<string, Decimal>();
+  for (const [slot, quantity] of taken) {
+    const [productId = "", locationId = ""] = slot.split(" ");
+    byProduct.set(
+      productId,
+      (byProduct.get(productId) ?? dec(0)).plus(quantity),
+    );
+    const free = await freeToTake(tx, productId, locationId);
+    const total = byProduct.get(productId)!;
+    const freeAnywhere = await freeToTake(tx, productId, null);
+    if (free.lessThan(quantity) || freeAnywhere.lessThan(total)) {
+      const index = lines.findIndex(
+        (line) => `${line.productId} ${line.locationId}` === slot,
+      );
+      const line = lines[index]!;
+      return {
+        ok: false,
+        line: index,
+        error: reservedMessage(
+          free.lessThan(freeAnywhere) ? free : freeAnywhere,
+          line.unitCode,
+          "devolver",
+        ),
       };
     }
   }

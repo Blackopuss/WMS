@@ -138,7 +138,7 @@ describe("PayPal", () => {
       locale: "es-MX",
       user_action: "PAY_NOW",
       shipping_preference: "NO_SHIPPING",
-      brand_name: "Almacén",
+      brand_name: "WMS",
     });
 
     // Second call reuses the cached token.

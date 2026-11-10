@@ -9,7 +9,7 @@ import { LegalDocument } from "../legal-document";
 
 export const metadata: Metadata = {
   title: "Términos y condiciones",
-  description: "Condiciones de uso del servicio Almacén.",
+  description: "Condiciones de uso del servicio WMS.",
 };
 
 const link = "font-medium text-primary underline-offset-4 hover:underline";
@@ -57,14 +57,6 @@ export default function TermsPage() {
                   <strong>Compras</strong> (opcional): proveedores, órdenes de
                   compra en PDF y por correo, recepción de mercancía,
                   devoluciones, sugerencias de qué pedir y reportes.
-                </li>
-                <li>
-                  <strong>Ventas</strong> (opcional): punto de venta con caja y
-                  ticket, cotizaciones, pedidos, ventas a plazos con cuentas por
-                  cobrar, y reportes. Los tickets, cotizaciones y estados de
-                  cuenta no son comprobantes fiscales, y las ventas, precios,
-                  plazos e intereses que pactes con tus clientes son
-                  responsabilidad de tu negocio.
                 </li>
               </ul>
               <p>

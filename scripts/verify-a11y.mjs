@@ -45,6 +45,14 @@ const SCREENS = [
   "/inventario/importar",
   "/inventario/exportar",
   "/conteos",
+  "/tareas",
+  "/tareas/nueva",
+  "/recepcion",
+  "/pedidos",
+  "/pedidos/nuevo",
+  "/pedidos/importar",
+  "/configuracion/operacion",
+  "/configuracion/almacenes",
   "/compras",
   "/compras/proveedores",
   "/compras/ordenes/nueva",
@@ -52,16 +60,6 @@ const SCREENS = [
   "/ubicaciones",
   "/configuracion/equipo",
   "/configuracion/plan",
-  // Ventas (VEN, COT, PAG): the counter and what is used every day.
-  "/ventas",
-  "/ventas/historial",
-  "/ventas/caja",
-  "/ventas/cotizaciones",
-  "/ventas/cotizaciones/nueva",
-  "/ventas/pedidos",
-  "/ventas/cuentas",
-  "/ventas/reportes",
-  "/configuracion/ventas",
 ];
 /** Screens before signing in. */
 const PUBLIC = ["/ingresar", "/registro", "/recuperar-contrasena"];

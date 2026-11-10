@@ -161,7 +161,7 @@ export function Brand({ className }: { className?: string }) {
       <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
         <Warehouse aria-hidden="true" className="size-4.5" />
       </span>
-      Almacén
+      WMS
     </Link>
   );
 }

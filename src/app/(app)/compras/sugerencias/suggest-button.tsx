@@ -16,7 +16,7 @@ export function SuggestButton({
   label,
 }: {
   productIds: string[];
-  /** «Crear borrador para Ferretera del Norte». */
+  /** «Crear borrador para Distribuidora del Norte». */
   label: string;
 }) {
   const [state, formAction, busy] = useActionState(

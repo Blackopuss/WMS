@@ -39,7 +39,14 @@ export function AppShell({
   allowedHrefs,
   signOutAction,
   switchOrganizationAction,
+  facility = null,
+  facilities = [],
+  switchFacilityAction,
 }: {
+  /** The warehouse the person works in (WMS-18), when there are several. */
+  facility?: ShellOrganization | null;
+  facilities?: ShellOrganization[];
+  switchFacilityAction?: SwitchAction;
   children: React.ReactNode;
   user: ShellUser;
   organization: ShellOrganization;
@@ -50,11 +57,21 @@ export function AppShell({
   switchOrganizationAction: SwitchAction;
 }) {
   const switcher = (
-    <OrganizationSwitcher
-      organization={organization}
-      organizations={organizations}
-      switchOrganizationAction={switchOrganizationAction}
-    />
+    <>
+      <OrganizationSwitcher
+        organization={organization}
+        organizations={organizations}
+        switchOrganizationAction={switchOrganizationAction}
+      />
+      {facility && facilities.length > 1 && switchFacilityAction && (
+        <OrganizationSwitcher
+          noun="warehouse"
+          organization={facility}
+          organizations={facilities}
+          switchOrganizationAction={switchFacilityAction}
+        />
+      )}
+    </>
   );
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href));
@@ -95,7 +112,7 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md md:hidden print:hidden">
           <Warehouse aria-hidden="true" className="size-5 text-primary" />
-          <span className="font-semibold">{current?.label ?? "Almacén"}</span>
+          <span className="font-semibold">{current?.label ?? "WMS"}</span>
           <ThemeToggle className="ml-auto" />
         </header>
 
@@ -143,7 +160,7 @@ function Brand() {
       <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
         <Warehouse aria-hidden="true" className="size-4.5" />
       </span>
-      Almacén
+      WMS
     </Link>
   );
 }

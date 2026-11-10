@@ -1,6 +1,38 @@
 # Memoria del proyecto
 
-Actualizada: 2026-10-02, zona America/Mexico_City.
+Actualizada: 2026-11-10, zona America/Mexico_City.
+
+## WMS (desde 2026-11-09)
+
+Este repositorio es `Blackopuss/WMS`, copia de SaaS-Almacen (rama `pruebas`, commit `c6cc45d`) reorientada a la gestión de almacenes. Todo lo que sigue después de esta sección es historial de SaaS-Almacen: explica de dónde vienen las convenciones, pero lo vigente del WMS está aquí, en `AGENTS.md` y en `docs/ESTADO_WMS.md`.
+
+### Decisiones confirmadas del fundador
+
+- 2026-11-10: **instrucciones generales del WMS** guardadas en `docs/INSTRUCCIONES_WMS.md`; mandan sobre todo lo demás. WMS global para cualquier industria, configurable por empresa, por fases (fundamentos → operación logística → gestión empresarial → inteligencia operativa → escalabilidad comercial). **No seguir lo de SaaS-Almacen**: su plan, sus etapas de cobro en línea, punto de venta y pilotos, y todo lo pensado para ferreterías quedan como historial. Ventas aparece en las instrucciones pero sigue fuera (ADR 0032) hasta que el fundador decida.
+
+- 2026-11-09: crear el WMS como repositorio aparte porque SaaS-Almacen se estaba yendo hacia punto de venta. Conservar lo esencial (cuentas, empresas, inicio, inventario, compras) y cambiar pestañas e interfaz según `docs/ESPECIFICACION_WMS_v5.md`.
+- 2026-11-09: **quitar Ventas** del producto (punto de venta, caja, cotizaciones, pedidos de venta, ventas a plazos). ADR 0032. No volver a agregarlo sin su decisión; el código sigue en git y en SaaS-Almacen.
+- 2026-11-09: avanzar el plan paso a paso **sin pedirle confirmación** en cada uno.
+- 2026-11-10: **es un WMS general**, no para ferreterías: nada de ferretería en textos, ejemplos ni datos de demostración (la empresa demo es «Empresa Demo»). Lo que el historial de abajo dice de ferreterías era de SaaS-Almacen. No seguir con el cobro en línea (BIL de SaaS-Almacen, p. ej. usuarios adicionales): priorizar las implementaciones técnicas del plan.
+- 2026-11-09: aceptó la revisión que ordenó el trabajo en `docs/PLAN_WMS_V2.md` (etapas A–I, WMS-09..48 y WMS-13B): primero estados, lotes y reservas; luego pedidos, surtido, empaque, despacho y devoluciones; después varios almacenes, permisos por alcance, lotes y series, ubicaciones configurables, y lo demás (reabastecimiento, olas, FIFO/FEFO, capacidad, etiquetas, equipos, producción, calidad, analítica).
+- Nombre comercial provisional: «WMS». Sin servidor, dominio ni secretos de despliegue: **no empujar a `produccion`**; la EC2 de SaaS-Almacen no es de este repositorio.
+- Pendientes del fundador: servidor y dominio, nombre comercial, precios del WMS (la especificación habla de implementación + suscripción + soporte por horas), razón social y revisión legal de términos y privacidad (versión 2026-11-09, sin Ventas), decisiones abiertas de la sección 16 de la especificación.
+
+### Estado (2026-11-10)
+
+- Hechos y con CI en verde: WMS-01..08 (plan, Ventas fuera, bases `wms_*`, menú por tarea, Recepción, roles de piso `supervisor`/`operator`/`forklift`, tareas de traslado, Inicio «Para hoy»), WMS-09/10 (estado y lote en el saldo, ADR 0033), WMS-11 (cambio de estado con motivo), WMS-12 (reservas) y WMS-13 (pedidos de salida). Etapa A cerrada. Último commit de paso: `bd287a6`; 1,720 pruebas (ver abajo lo cerrado después).
+- 2026-11-10: WMS-13B hecho. En Pedidos, «Importar pedidos»: se sube un Excel o CSV con una fila por producto (Pedido, Destinatario, Clave o código de barras, Cantidad y, si se quiere, Fecha compromiso, Prioridad, Dirección y Notas); las filas con el mismo «Pedido» forman un pedido. Primero se muestra cómo se entiende y qué fila está mal y por qué; al confirmar se crean todos los pedidos como borradores, o ninguno si algo cambió. Un pedido que ya se importó no se vuelve a crear. Nada se aparta hasta liberar cada pedido.
+- 2026-11-10: WMS-14 hecho. Al liberar un pedido se crean sus tareas de surtido (de la ubicación más llena primero) y esa mercancía queda apartada donde está. En el teléfono, quien surte toma la tarea, escanea o escribe el producto y la ubicación y dice cuánto tomó (si es menos, por qué); al entregarla, lo surtido pasa a la ubicación «Preparación» (se crea sola con el primer pedido y no se puede archivar), sigue apartado para el pedido, y lo que faltó se libera. Cuando ya no queda tarea abierta, el pedido queda «Surtido». **Decisión de la IA, a confirmar:** una sola ubicación de preparación por almacén, y para confirmar la ubicación se escribe su nombre o ruta (las ubicaciones todavía no tienen código propio; llega con WMS-22).
+- 2026-11-10: plan revisado contra las instrucciones: `docs/PLAN_WMS_V3.md`, ordenado por sus fases. Almacenes y ubicaciones configurables pasan antes de empaque y despacho (recomendación, a confirmar por el fundador); se agregan como pasos los huecos (WMS-49..70).
+- 2026-11-10: el fundador aprobó el plan v3 y su orden (almacenes y ubicaciones antes de empaque y despacho). WMS-49 hecho: en Configuración › Operación el titular o el administrador eligen de dónde se surte primero (la ubicación con más existencias, por omisión, o la que tiene menos, para liberar lugares) y cuál ubicación es la de preparación. Cada cambio queda en la bitácora y no afecta a otras empresas. FIFO y FEFO llegan con los lotes (WMS-21).
+- 2026-11-10: WMS-50 hecho. Rol «Gerencia» para quien dirige: ve y exporta todo lo operativo (existencias, costos y valor, movimientos, tareas, pedidos, compras, reportes, equipo y bitácora), sin operar el piso, sin cambiar configuración ni equipo y sin ver el cobro. El titular o el administrador lo asignan en Equipo.
+- 2026-11-10: WMS-18 hecho. Una empresa puede tener varios almacenes (Configuración › Almacenes: nombre, código, dirección; uno es el principal), hasta los que diga su plan (la consola interna fija el cupo; sin decirlo, 1). Cada persona trabaja en un almacén y lo cambia desde el menú lateral; ahí ve sus ubicaciones, pedidos y tareas. Nada se mueve de un almacén a otro por accidente: eso será el traslado (WMS-19). Un almacén se archiva solo vacío y el principal nunca. Pendiente: mostrar el almacén junto a la ubicación en historial y reportes, y almacén de destino en órdenes de compra.
+- 2026-11-10: a pedido del fundador, todo lo de arriba (WMS-13B, sin ferretería, WMS-14, instrucciones y plan v3, WMS-49, WMS-50, WMS-18) se subió a `pruebas` y CI quedó en verde en `faccffa` (1,755 pruebas). El intento de BIL-11 (usuarios adicionales en la compra en línea) quedó revertido en el historial: el fundador pidió no seguir con el cobro de SaaS-Almacen.
+- Decisiones pendientes del fundador sobre el WMS: si Ventas vuelve como módulo opcional (WMS-63; está en sus instrucciones pero se quitó el 2026-11-09), una sola ubicación de preparación por almacén y confirmar ubicaciones por nombre o ruta hasta que tengan código (WMS-22), proveedor de servidor y de timbrado, precios.
+- El trabajo de cada sesión va en su rama `ccr-…` y se pasa a `pruebas` (avance simple, sin reescribir) cuando el fundador lo pide; CI solo corre en `pruebas` y `main`.
+- Siguiente: WMS-22 (ubicaciones configurables y capacidad).
+- Entorno en la nube de Claude: MySQL 9.4 en Docker (`mirror.gcr.io/library/mysql:9.4`, contenedor `mysql94`); si el contenedor se reinicia, borrar `/var/run/docker.pid` y `/var/run/docker.sock` viejos, arrancar `dockerd` y `docker start mysql94`. Node 24 en `/opt/node24/bin`. `.env.local` con `DATABASE_HOST=127.0.0.1` y `DATABASE_USER_HOST=%`.
+- Lecciones de estos pasos: `prisma migrate diff` propuso borrar llaves foráneas al cambiar la llave del saldo (WMS-10): esa migración se escribió a mano creando el índice nuevo antes de quitar el viejo. MySQL no acepta un `CHECK` sobre una columna de llave foránea con `ON UPDATE CASCADE`: esas relaciones van con `onUpdate: Restrict`. Para capturas de pantalla, matar los `next-server` viejos y usar movimiento reducido.
 
 ## Requisitos confirmados por el usuario
 

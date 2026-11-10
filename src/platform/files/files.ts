@@ -50,6 +50,13 @@ export const FILE_PURPOSES = {
     maxBytes: 10 * MB,
     extensions: ["csv", "xlsx"],
   },
+  /** A file of outbound orders (WMS-13B): who writes orders uploads it. */
+  outbound_source: {
+    write: "inventory.outbound.create",
+    read: "inventory.outbound.read",
+    maxBytes: 10 * MB,
+    extensions: ["csv", "xlsx"],
+  },
   /** What is generated for a company to download (IMP-03, IMP-11). */
   export: {
     write: "inventory.export.create",

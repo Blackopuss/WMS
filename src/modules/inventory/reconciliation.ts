@@ -4,8 +4,8 @@ import { dec } from "@/lib";
 import { forOrganization } from "@/server";
 
 /**
- * The balance of a product in a location is a projection of its movement
- * lines: everything that came in minus everything that went out (INV-15).
+ * The balance of a product in a location, state and lot (ADR 0033) is a
+ * projection of its movement lines: everything that came in minus everything that went out (INV-15).
  * This check recomputes that sum and reports where the stored balance
  * differs. It must always come back empty; tests use it after every kind of
  * movement and after concurrent ones.
@@ -14,6 +14,10 @@ import { forOrganization } from "@/server";
 export type StockDrift = {
   productId: string;
   locationId: string;
+  /** State of the stock that differs (ADR 0033). */
+  status: string;
+  /** Lot of the stock that differs; null without a lot. */
+  lotId: string | null;
   /** What the movement lines add up to. */
   fromMovements: string;
   /** What the balance row says ("0" when there is no row). */
@@ -27,16 +31,26 @@ export async function reconcileStock(
   const client = forOrganization(organizationId);
   const [sums, balances] = await Promise.all([
     client.stockMovementLine.groupBy({
-      by: ["productId", "locationId", "direction"],
+      by: ["productId", "locationId", "status", "lotKey", "direction"],
       _sum: { baseQuantity: true },
     }),
     client.stockBalance.findMany({
-      select: { productId: true, locationId: true, quantity: true },
+      select: {
+        productId: true,
+        locationId: true,
+        status: true,
+        lotKey: true,
+        quantity: true,
+      },
     }),
   ]);
 
-  const key = (row: { productId: string; locationId: string }) =>
-    `${row.productId}|${row.locationId}`;
+  const key = (row: {
+    productId: string;
+    locationId: string;
+    status: string;
+    lotKey: string;
+  }) => `${row.productId}|${row.locationId}|${row.status}|${row.lotKey}`;
   const expected = new Map<string, ReturnType<typeof dec>>();
   for (const sum of sums) {
     const amount = dec((sum._sum.baseQuantity ?? 0).toString());
@@ -55,10 +69,13 @@ export async function reconcileStock(
     const fromMovements = expected.get(id) ?? dec(0);
     const balance = stored.get(id) ?? dec(0);
     if (!fromMovements.equals(balance)) {
-      const [productId = "", locationId = ""] = id.split("|");
+      const [productId = "", locationId = "", status = "", lotKey = ""] =
+        id.split("|");
       drift.push({
         productId,
         locationId,
+        status,
+        lotId: lotKey || null,
         fromMovements: fromMovements.toString(),
         balance: balance.toString(),
       });

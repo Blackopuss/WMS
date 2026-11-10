@@ -83,15 +83,25 @@ if (credential) {
 
 await db.$transaction(async (tx) => {
   await tx.$queryRaw`SELECT id FROM user WHERE id = ${user.id} FOR UPDATE`;
+  // Before the WMS was general it was «Ferretería Demo»: renamed, not duplicated.
   const existing = await tx.organization.findFirst({
-    where: { ownerUserId: user.id, name: "Ferretería Demo" },
+    where: {
+      ownerUserId: user.id,
+      name: { in: ["Empresa Demo", "Ferretería Demo"] },
+    },
   });
+  if (existing && existing.name !== "Empresa Demo") {
+    await tx.organization.update({
+      where: { id: existing.id },
+      data: { name: "Empresa Demo" },
+    });
+  }
   const organization =
     existing ??
     (await tx.organization.create({
       data: {
         id: newId(),
-        name: "Ferretería Demo",
+        name: "Empresa Demo",
         ownerUserId: user.id,
         memberships: { create: { id: newId(), userId: user.id } },
       },
@@ -122,17 +132,18 @@ await db.user.update({
   data: { twoFactorEnabled: true },
 });
 
-// What the demo company may use (MOD-05): Inventario, Compras and Ventas
+// What the demo company may use (MOD-05): Inventario and Compras
 // with the 1,000-product tier, so every screen is reachable locally.
 const demo = await db.organization.findFirstOrThrow({
-  where: { ownerUserId: user.id, name: "Ferretería Demo" },
+  where: { ownerUserId: user.id, name: "Empresa Demo" },
 });
 for (const grant of [
   { kind: "MODULE" as const, key: "inventory", value: null },
   { kind: "MODULE" as const, key: "purchasing", value: null },
-  { kind: "MODULE" as const, key: "sales", value: null },
   { kind: "LIMIT" as const, key: "active_products", value: 1000 },
   { kind: "LIMIT" as const, key: "users", value: 5 },
+  // Several warehouses (WMS-18), so the switcher can be tried locally.
+  { kind: "LIMIT" as const, key: "facilities", value: 3 },
 ]) {
   await db.entitlement.upsert({
     where: {

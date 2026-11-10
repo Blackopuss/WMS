@@ -11,12 +11,14 @@ import { contentSecurityPolicy, newNonce } from "@/lib";
  */
 const PROTECTED = [
   "/inicio",
+  "/recepcion",
+  "/tareas",
+  "/pedidos",
   "/inventario",
   "/movimientos",
   "/ubicaciones",
   "/conteos",
   "/compras",
-  "/ventas",
   "/configuracion",
   "/activa-dos-pasos",
   "/acepta-terminos",
@@ -26,7 +28,7 @@ const PROTECTED = [
   "/api/importaciones",
   "/api/exportaciones",
   "/api/compras",
-  "/api/ventas",
+  "/api/pedidos",
 ];
 
 /** The site people open: BETTER_AUTH_URL (required in production). */

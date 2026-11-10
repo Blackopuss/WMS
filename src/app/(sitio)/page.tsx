@@ -27,7 +27,7 @@ import { HeroScene } from "./hero-scene";
 import { CtaBand, Eyebrow, Section } from "./sections";
 
 export const metadata: Metadata = {
-  title: { absolute: "Almacén · Inventario y compras para tu negocio" },
+  title: { absolute: "WMS · Gestión de almacenes para tu negocio" },
   description:
     "Sabe cuánto tienes, dónde está y qué falta pedir. Inventario por cajas y piezas, ubicaciones, conteos y órdenes de compra, en español.",
 };
@@ -83,7 +83,7 @@ export default function LandingPage() {
         />
         <div className="relative mx-auto grid max-w-6xl items-center gap-6 px-4 pt-10 pb-16 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:gap-4 lg:pt-16 lg:pb-24">
           <div className="space-y-6 motion-safe:animate-in motion-safe:duration-700 motion-safe:fade-in motion-safe:slide-in-from-bottom-3">
-            <Eyebrow>Inventario, Compras y Ventas para pymes</Eyebrow>
+            <Eyebrow>WMS modular para almacenes</Eyebrow>
             <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
               Tu almacén, <span className="text-primary">bajo control</span>.
             </h1>
@@ -183,7 +183,7 @@ export default function LandingPage() {
         <div className="max-w-2xl" data-reveal>
           <Eyebrow>Hecho para mercancía real</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            Compras por caja, vendes por pieza. Almacén hace la cuenta.
+            Compras por caja, sacas por pieza. WMS hace la cuenta.
           </h2>
         </div>
         <div data-reveal="stagger" className="mt-12 grid gap-4 md:grid-cols-6">
@@ -246,9 +246,9 @@ export default function LandingPage() {
               Paga solo por lo que usas
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              Inventario es la base. Compras y Ventas se agregan cuando los
-              necesites, y se quitan sin perder nada: tus datos quedan para
-              consultar y exportar.
+              Inventario es la base. Compras se agrega cuando lo necesites, y se
+              quitan sin perder nada: tus datos quedan para consultar y
+              exportar.
             </p>
             <Button asChild variant="outline" className="mt-6">
               <Link href="/precios">
@@ -262,12 +262,13 @@ export default function LandingPage() {
             <ModuleCard icon={ShoppingCart} name="Compras" state="Disponible" />
             <ModuleCard
               icon={ClipboardCheck}
-              name="Ventas"
-              state="Disponible"
+              name="Producción y calidad"
+              state="Próximamente"
+              soon
             />
             <ModuleCard
               icon={PackageSearch}
-              name="Clientes (CRM)"
+              name="Tareas de almacén"
               state="Próximamente"
               soon
             />
