@@ -36,13 +36,12 @@ const FAQ = [
   },
   {
     question: "¿Puedo cambiar de plan a medio mes?",
-    answer:
-      "Sí. Si subes de nivel o agregas un módulo, empieza en cuanto pagas y solo pagas la diferencia de los días que te quedan. Si bajas, también empieza al pagar y conservas tus días, pero la diferencia no se devuelve.",
+    answer: `Sí. Escríbenos a ${SITE.contactEmail} y lo cambiamos; te decimos la diferencia antes de aplicarlo.`,
   },
   {
     question: "¿Hay permanencia?",
     answer:
-      "No. Pagas por adelantado 1, 3, 6 o 12 meses y nada se cobra solo. Si no renuevas, tu cuenta queda en modo consulta para que veas y descargues tu información.",
+      "No. Pagas por adelantado los meses que acordemos, por transferencia, y nada se cobra solo. Si no renuevas, tu cuenta queda en modo consulta para que veas y descargues tu información.",
   },
   {
     question: "¿Necesitan más personas o más productos?",

@@ -26,10 +26,7 @@ export default async function InternoLayout({
           <span className="sr-only sm:not-sr-only">Consola interna</span>
         </Link>
         <nav aria-label="Consola" className="flex items-center gap-1 text-sm">
-          {[
-            { href: "/interno", label: "Empresas" },
-            { href: "/interno/codigos", label: "Códigos" },
-          ].map((item) => (
+          {[{ href: "/interno", label: "Empresas" }].map((item) => (
             <Link
               key={item.href}
               href={item.href}

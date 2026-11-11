@@ -1,6 +1,6 @@
 # ADR 0028 — Compra del plan en línea (Stripe, PayPal, Mercado Pago y códigos)
 
-Fecha: 2026-10-25 · Estado: aceptada (puntos a confirmar por el fundador) · Pasos: adelanta BIL-03, BIL-05, BIL-06A/B (sin suscripción recurrente)
+Fecha: 2026-10-25 · Estado: **retirada** el 2026-11-11 por el ADR 0037 (el código se quitó; queda como historial) · Pasos: adelanta BIL-03, BIL-05, BIL-06A/B (sin suscripción recurrente)
 
 ## Contexto
 

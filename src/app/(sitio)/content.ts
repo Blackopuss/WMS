@@ -11,7 +11,7 @@ export { SITE_NAV, formatCount, formatMoney } from "./site-shared";
 
 export const SITE = {
   name: "WMS",
-  /** Contact mailbox (also in the receipts and legal texts). */
+  /** Contact mailbox (also in the legal texts). */
   contactEmail: CONTACT_EMAIL,
   /** Pending (founder): legal name of the company that runs the service. */
   legalName: "WMS (razón social por confirmar)",
@@ -49,7 +49,7 @@ export const FOOTER_LINKS = [
  * FUN-06 before anyone is charged.
  */
 export const TIER_PRICES = PLAN_TIERS.map(({ prices }) => ({
-  // Whole pesos, for display only; the checkout charges the exact list.
+  // Whole pesos, for display only.
   inventory: Number(prices.inventory),
   purchasing: Number(prices.purchasing),
 }));

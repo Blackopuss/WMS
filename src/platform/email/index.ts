@@ -24,7 +24,6 @@ export {
   mfaEnabledEmail,
   passwordChangedEmail,
   passwordResetEmail,
-  planPurchaseEmail,
   purchaseOrderEmail,
   salesQuoteEmail,
   salesStatementEmail,

@@ -46,9 +46,9 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
 - **Bitácora** solo-agregar de los cambios sensibles.
 - **Módulos activables** por empresa (Inventario base, Compras opcional); quitar
   un módulo no borra datos, queda en solo lectura.
-- **Plan y cupos**: niveles por número de productos, compra en línea (Stripe,
-  PayPal, Mercado Pago, códigos), pagos SPEI registrados por la plataforma,
-  cambio de plan con prorrateo, aviso de vencimiento, solo lectura al vencer.
+- **Plan y cupos**: niveles por número de productos, pagos por transferencia
+  registrados por la plataforma, aviso de vencimiento, solo lectura al vencer.
+  No hay cobro en línea (ADR 0037).
 - **Consola interna** del personal de plataforma y **acceso de soporte** temporal,
   autorizado por el titular y auditado.
 - **Sitio público**: inicio, funciones, precios, nosotros, términos y privacidad

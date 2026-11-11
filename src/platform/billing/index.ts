@@ -56,27 +56,5 @@ export type {
   PaymentInput,
   PaymentResult,
 } from "./payments";
-export * from "./checkout";
-export {
-  ADD_ON_CHOICES,
-  ADD_ON_MODULES,
-  ADD_ON_SUMMARIES,
-  PLAN_TIERS,
-  PURCHASE_MONTHS,
-  SOLD_MODULE_NAMES,
-  addOnKey,
-  addOnsOf,
-  isAddOnModule,
-  monthlyPrice,
-  planText,
-  quote,
-} from "./prices";
-export type {
-  AddOnModule,
-  CurrentPlanCarry,
-  PlanTier,
-  PurchaseMonths,
-  Quote,
-  SoldModule,
-} from "./prices";
-export { CONTACT_EMAIL } from "./checkout/refunds";
+export { PLAN_TIERS } from "./prices";
+export { CONTACT_EMAIL } from "./contact";

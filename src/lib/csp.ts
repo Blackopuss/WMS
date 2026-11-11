@@ -6,18 +6,6 @@
  * the animation libraries write inline style attributes, and a style
  * cannot run code.
  */
-/**
- * Payment pages of the providers (ADR 0028): a checkout form posted without
- * JavaScript is redirected there, and form-action also covers redirects.
- */
-export const CHECKOUT_HOSTS = [
-  "https://checkout.stripe.com",
-  "https://www.paypal.com",
-  "https://www.sandbox.paypal.com",
-  "https://www.mercadopago.com.mx",
-  "https://sandbox.mercadopago.com.mx",
-].join(" ");
-
 export function contentSecurityPolicy(
   nonce: string,
   options: { development: boolean; https: boolean },
@@ -35,7 +23,7 @@ export function contentSecurityPolicy(
     "object-src 'none'",
     "frame-src 'none'",
     "base-uri 'self'",
-    `form-action 'self' ${CHECKOUT_HOSTS}`,
+    "form-action 'self'",
     "frame-ancestors 'none'",
     ...(options.https ? ["upgrade-insecure-requests"] : []),
   ];

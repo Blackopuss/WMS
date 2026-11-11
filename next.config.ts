@@ -1,7 +1,5 @@
 import type { NextConfig } from "next";
 
-import { CHECKOUT_HOSTS } from "./src/lib/csp";
-
 /**
  * Security headers for every response (PLT-16). The page cannot be shown
  * inside another site's frame (clickjacking), the browser does not guess
@@ -13,7 +11,7 @@ import { CHECKOUT_HOSTS } from "./src/lib/csp";
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
-    value: `frame-ancestors 'none'; base-uri 'self'; form-action 'self' ${CHECKOUT_HOSTS}; object-src 'none'`,
+    value: `frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`,
   },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },

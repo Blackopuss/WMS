@@ -1,31 +1,21 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  ShoppingCart,
-} from "lucide-react";
+import { ChevronLeft, CircleAlert } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { formatDate, formatDateTime } from "@/lib";
+import { formatDate } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import { getAccess } from "@/platform/authorization";
 import {
-  formatMxn,
+  CONTACT_EMAIL,
   getPlanOverview,
-  listOrders,
-  orderPath,
   renewalDaysLeft,
   renewalText,
   usageLevel,
   usagePercent,
   type PlanModule,
 } from "@/platform/billing";
-
-import { ORDER_STATUS } from "./order-status";
 
 export const metadata: Metadata = { title: "Mi plan" };
 
@@ -141,17 +131,12 @@ export default async function PlanPage() {
   }
 
   const plan = await getPlanOverview(moduleRegistry, access.organization.id);
-  // Only the titular buys the plan, for the whole team (ADR 0028).
-  const buyer = access.can("platform.subscription.create");
-  const orders = buyer
-    ? await listOrders({
-        organizationId: access.organization.id,
-        userId: access.user.id,
-      })
-    : [];
-  const renewHint = buyer
-    ? "Renuévalo en «Comprar o renovar»."
-    : "El titular puede renovarlo.";
+  // Plans are paid by transfer and activated by platform staff; the
+  // titular asks for it (the online purchase was removed).
+  const owner = access.organization.isOwner;
+  const renewHint = owner
+    ? `Para renovarlo escríbenos a ${CONTACT_EMAIL}: lo activamos al confirmar el pago.`
+    : "El titular puede pedir la renovación.";
   const { products, seats } = plan;
   const daysLeft =
     plan.status === "active" ? renewalDaysLeft(plan.validUntil) : null;
@@ -168,20 +153,10 @@ export default async function PlanPage() {
       <PageHeader
         title="Mi plan"
         description="Lo que tu empresa tiene contratado y cuánto está usando."
-        actions={
-          buyer ? (
-            <Button asChild>
-              <Link href="/configuracion/plan/comprar">
-                <ShoppingCart aria-hidden="true" data-icon="inline-start" />
-                Comprar o renovar
-              </Link>
-            </Button>
-          ) : undefined
-        }
       />
-      {!buyer && (
+      {!owner && (
         <p className="text-sm text-muted-foreground">
-          El plan es de toda la empresa: lo compra el titular y todo el equipo
+          El plan es de toda la empresa: lo contrata el titular y todo el equipo
           usa el mismo plan.
         </p>
       )}
@@ -196,8 +171,7 @@ export default async function PlanPage() {
             className={`mt-0.5 size-4 shrink-0 ${daysLeft === 0 ? "text-destructive" : "text-warning"}`}
           />
           <p>
-            {renewalText(daysLeft, plan.validUntil)}{" "}
-            {buyer ? "" : "El titular puede renovarlo."}
+            {renewalText(daysLeft, plan.validUntil)} {renewHint}
           </p>
         </div>
       )}
@@ -245,9 +219,9 @@ export default async function PlanPage() {
           <p>
             Tu empresa todavía no tiene un plan activo; mientras tanto no se
             pueden agregar productos ni personas.{" "}
-            {buyer
-              ? "Cómpralo en «Comprar o renovar»."
-              : "El titular puede comprarlo."}
+            {owner
+              ? `Escríbenos a ${CONTACT_EMAIL} para contratarlo.`
+              : "El titular puede contratarlo."}
           </p>
         </div>
       )}
@@ -328,50 +302,6 @@ export default async function PlanPage() {
           y lo activamos al confirmar el pago.
         </p>
       </section>
-
-      {buyer && orders.length > 0 && (
-        <section aria-labelledby="compras" className="space-y-3">
-          <h2 id="compras" className="text-lg font-semibold">
-            Compras
-          </h2>
-          <ul className="divide-y rounded-xl border bg-card">
-            {orders.slice(0, 10).map((order) => (
-              <li key={order.id}>
-                <Link
-                  href={orderPath(order.id)}
-                  className="flex min-h-11 items-center gap-3 p-4 transition-colors outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono font-medium">
-                        {order.transactionId}
-                      </span>
-                      <Badge variant={ORDER_STATUS[order.status].variant}>
-                        {ORDER_STATUS[order.status].label}
-                      </Badge>
-                    </span>
-                    <span className="block text-sm text-muted-foreground tabular-nums">
-                      {order.planText} ·{" "}
-                      {order.months === 0
-                        ? "solo el cambio"
-                        : `${order.months} ${order.months === 1 ? "mes" : "meses"}`}{" "}
-                      · {formatMxn(order.total)} ·{" "}
-                      {formatDateTime(
-                        order.createdAt,
-                        access.organization.timeZone,
-                      )}
-                    </span>
-                  </span>
-                  <ChevronRight
-                    aria-hidden="true"
-                    className="size-5 shrink-0 text-muted-foreground"
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </PageContainer>
   );
 }

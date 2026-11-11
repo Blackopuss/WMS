@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PURCHASE_MONTHS, REFUND_TERMS } from "@/platform/billing";
 import { LEGAL_DOCUMENTS } from "@/platform/legal";
 
 import { SITE } from "../content";
@@ -19,9 +18,6 @@ const mail = (
     {SITE.contactEmail}
   </a>
 );
-
-/** «1, 3, 6 o 12». */
-const months = `${PURCHASE_MONTHS.slice(0, -1).join(", ")} o ${PURCHASE_MONTHS.at(-1)}`;
 
 export default function TermsPage() {
   return (
@@ -201,29 +197,23 @@ export default function TermsPage() {
                 es lo que pagas.
               </li>
               <li>
-                El plan se paga por adelantado, por {months} meses, con tarjeta,
-                OXXO, PayPal o Mercado Pago (o por transferencia, si lo
-                acordamos). El pago lo procesa el proveedor elegido: nunca
-                recibimos los datos de tu tarjeta.
+                El plan se paga por adelantado, por los meses que acordemos, por
+                transferencia bancaria. No cobramos en línea ni guardamos datos
+                de tarjetas.
               </li>
               <li>
                 Nada se cobra en automático: al terminar los meses pagados, tú
-                decides si renuevas. Mientras tu plan esté vigente se renueva
-                igual; para cambiar de nivel o de módulos escríbenos.
+                decides si renuevas. Para renovar, o para cambiar de nivel o de
+                módulos, escríbenos a {mail}.
               </li>
               <li>
-                Cada compra tiene un ID de transacción y te enviamos su
-                comprobante por correo. El plan se activa cuando el proveedor
-                confirma el pago.
+                El plan se activa cuando confirmamos tu pago, y te avisamos por
+                correo.
               </li>
               <li>
                 El precio que contratas se mantiene mientras renueves tu plan;
                 un cambio de precio aplica a contrataciones nuevas o te lo
                 avisamos con anticipación.
-              </li>
-              <li>
-                Un código de descuento vale solo en las condiciones con las que
-                se entregó y no se cambia por dinero.
               </li>
             </ul>
           ),
@@ -244,9 +234,24 @@ export default function TermsPage() {
           title: "Reembolsos",
           body: (
             <ul>
-              {REFUND_TERMS.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
+              <li>
+                Puedes pedir el reembolso de un pago dentro de los 10 días
+                naturales siguientes, escribiendo a {mail} desde el correo del
+                titular.
+              </li>
+              <li>
+                Si lo pides en ese plazo te devolvemos el importe completo;
+                después, solo los meses completos que todavía no empiezan.
+              </li>
+              <li>
+                El reembolso se hace por transferencia, en un plazo de hasta 20
+                días hábiles. Al reembolsarse, la vigencia del plan se ajusta a
+                lo que sí se pagó.
+              </li>
+              <li>
+                Tus datos no se borran por pedir un reembolso: al terminar la
+                vigencia, la empresa queda en solo lectura y puedes exportarlos.
+              </li>
             </ul>
           ),
         },

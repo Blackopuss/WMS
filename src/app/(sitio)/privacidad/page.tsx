@@ -63,9 +63,9 @@ export default function PrivacyPage() {
                 invitas a tu equipo, con su rol.
               </li>
               <li>
-                <strong>Contratación:</strong> plan, módulos, meses pagados, ID
-                de transacción y el proveedor con el que pagaste. Los datos de
-                tu tarjeta los recibe ese proveedor, nunca nosotros.
+                <strong>Contratación:</strong> plan, módulos, meses pagados y la
+                referencia de tu transferencia. No recibimos ni guardamos datos
+                de tarjetas.
               </li>
             </ul>
           ),
@@ -156,10 +156,6 @@ export default function PrivacyPage() {
               <ul>
                 <li>Hospedaje: Amazon Web Services.</li>
                 <li>Envío de correo: Google (Gmail).</li>
-                <li>
-                  Cobro: Stripe, PayPal o Mercado Pago, según la forma de pago
-                  que elijas.
-                </li>
               </ul>
               <p>
                 Algunos de estos proveedores guardan información fuera de

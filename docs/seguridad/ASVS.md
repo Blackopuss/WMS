@@ -51,5 +51,5 @@ Estados: **Cumple** (con evidencia), **Parcial**, **Pendiente** (con paso del pl
 | V16 | Errores sin detalles internos al usuario | Cumple | Mensajes genéricos; detalles solo en el log del servidor. |
 | V16 | Monitoreo y alertas | Cumple | `/api/salud` y alertas por correo de cambios de estado (PIL-04, ADR 0025). |
 | V17 WebRTC | — | N/A | No se usa. |
-| V2 | Pagos en línea | Cumple | Plan aplicado solo tras confirmar con el proveedor importe y moneda exactos; avisos firmados e idempotentes; precios solo del servidor (ADR 0028, `REVISION_PIL.md`, `checkout.int.test.ts`, pruebas de cada proveedor). |
+| V2 | Pagos en línea | No aplica | El cobro en línea se quitó (ADR 0037, `AUDITORIA_4.md`): no hay proveedores de pago, webhook público ni códigos. Los pagos son transferencias que registra el personal de plataforma (ADR 0027). |
 | V8 | Ventas: precios, descuentos, caja y cancelaciones en servidor | Cumple | Precios e IVA calculados al confirmar; topes de descuento por rol con autorización por contraseña; caja propia bloqueada; cancelar con permiso y motivo; enlace de ticket con HMAC; ventas a plazos con enganche validado contra el costo, abonos y devoluciones que nunca dejan saldo negativo (VEN, COT, PAG; `REVISION_VEN.md`). Falta revisión independiente. |
