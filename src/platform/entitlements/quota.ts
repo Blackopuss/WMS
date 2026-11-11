@@ -92,6 +92,39 @@ async function ensureRow(
   });
 }
 
+/** Prisma's code for «deadlock or write conflict: retry the transaction». */
+const WRITE_CONFLICT = "P2034";
+const DEADLOCK_TRIES = 4;
+
+/**
+ * Runs `work` again when MySQL picks it as the victim of a deadlock. Only
+ * outside a transaction: there each statement stands alone, nothing else was
+ * undone and repeating it is what MySQL asks for. Inside the caller's
+ * transaction the whole transaction is already rolled back, so the error
+ * goes up untouched.
+ *
+ * It happens to the very first requests of a company whose counter does not
+ * exist yet (one made before counters were created with the plan): several
+ * arrive at once, each tries to create the row, and the ones that find it
+ * keep a shared lock on it for an instant while another one is already
+ * updating it (seen in CI, about 1 in 150 under stress).
+ */
+async function retryingDeadlock<T>(
+  client: QuotaClient,
+  work: () => Promise<T>,
+): Promise<T> {
+  const standalone =
+    typeof (client as { $transaction?: unknown }).$transaction === "function";
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (error) {
+      const conflict = (error as { code?: unknown }).code === WRITE_CONFLICT;
+      if (!standalone || !conflict || attempt >= DEADLOCK_TRIES) throw error;
+    }
+  }
+}
+
 async function takenNow(client: QuotaClient, key: QuotaKey) {
   const row = await client.quotaUsage.findFirst({
     where: { key },
@@ -114,13 +147,15 @@ async function take(
   if (limit === null) {
     return { ok: false, reason: "limit_reached", limit, taken: 0 };
   }
-  await ensureRow(client, organizationId, key);
-  const updated = await client.quotaUsage.updateMany({
-    where: { key, taken: { lte: limit - amount } },
-    data: {
-      taken: { increment: amount },
-      ...(reserve ? { reserved: { increment: amount } } : {}),
-    },
+  const updated = await retryingDeadlock(client, async () => {
+    await ensureRow(client, organizationId, key);
+    return client.quotaUsage.updateMany({
+      where: { key, taken: { lte: limit - amount } },
+      data: {
+        taken: { increment: amount },
+        ...(reserve ? { reserved: { increment: amount } } : {}),
+      },
+    });
   });
   if (updated.count === 1) return { ok: true };
   return {
