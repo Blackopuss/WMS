@@ -52,17 +52,19 @@ const REVIEWED: Record<string, Review> = {
   },
   changeStatusAction: {
     input:
-      "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, cantidad, motivo y clave de confirmación",
+      "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, ubicación donde queda (WMS-22B), cantidad, motivo, clave de confirmación y la aceptación del aviso de capacidad",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); producto y ubicación se bloquean solo en esa empresa",
-    coveredBy: "tests/inventory/status-change.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); producto y ubicaciones se bloquean solo en esa empresa",
+    coveredBy:
+      "tests/inventory/status-change.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   createTaskAction: {
     input:
-      "id del producto, ubicaciones de origen y destino, cantidad, prioridad, a quién se asigna y una nota",
+      "id del producto, ubicaciones de origen y destino, cantidad, prioridad, a quién se asigna, una nota y la aceptación del aviso de capacidad (WMS-22B)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); producto, ubicaciones y la persona asignada se buscan solo en esa empresa",
-    coveredBy: "tests/inventory/tasks.int.test.ts",
+    coveredBy:
+      "tests/inventory/tasks.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   taskStepAction: {
     input: "id de la tarea y el paso (tomar, recoger o entregar)",
@@ -102,10 +104,12 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/inventory/tasks.int.test.ts",
   },
   receivePurchaseOrderAction: {
-    input: "id de orden, id de ubicación, remisión y clave de confirmación",
+    input:
+      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); la orden y la ubicación se buscan solo en esa empresa",
-    coveredBy: "tests/purchasing/receipts.int.test.ts",
+    coveredBy:
+      "tests/purchasing/receipts.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   checkReceiptAction: {
     input: "clave de confirmación",
@@ -395,10 +399,11 @@ const REVIEWED: Record<string, Review> = {
   },
   registerTransferAction: {
     input:
-      "id de producto, ubicación de origen y de destino, cantidad, forma de captura, nota y clave de la confirmación",
+      "id de producto, ubicación de origen y de destino, cantidad, forma de captura, nota, clave de la confirmación y la aceptación del aviso de capacidad (WMS-22B)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); producto y ubicaciones se buscan solo en esa empresa",
-    coveredBy: "tests/inventory/transfers.int.test.ts",
+    coveredBy:
+      "tests/inventory/transfers.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   checkConfirmationAction: {
     input: "clave de la confirmación",
@@ -415,10 +420,11 @@ const REVIEWED: Record<string, Review> = {
   },
   registerInitialBalanceAction: {
     input:
-      "id de producto, id de ubicación, cantidad, forma de captura y nota (sin factor ni saldo)",
+      "id de producto, id de ubicación, cantidad, forma de captura, nota y la aceptación del aviso de capacidad (WMS-22B; sin factor ni saldo)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); producto y ubicación se buscan solo en esa empresa",
-    coveredBy: "tests/inventory/initial-balance.int.test.ts",
+    coveredBy:
+      "tests/inventory/initial-balance.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   previewEntryAction: {
     input:
@@ -429,18 +435,26 @@ const REVIEWED: Record<string, Review> = {
   },
   registerEntryAction: {
     input:
-      "id de producto, id de ubicación, cantidad, forma de captura (id de presentación o código de unidad), referencia, nota y la aceptación del aviso de entrada repetida (WMS-71; sin factor ni saldo)",
+      "id de producto, id de ubicación, cantidad, forma de captura (id de presentación o código de unidad), referencia, nota y la aceptación de los avisos de entrada repetida (WMS-71) y de capacidad (WMS-22B; sin factor ni saldo)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); producto y ubicación se buscan solo en esa empresa, y la entrada reciente también",
     coveredBy:
-      "tests/inventory/entries.int.test.ts, tests/inventory/entry-repeat.int.test.ts",
+      "tests/inventory/entries.int.test.ts, tests/inventory/entry-repeat.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   createLocationAction: {
     input:
-      "nombre, nivel (profundidad), código, uso e id de la ubicación que la contiene",
+      "nombre, nivel (profundidad), código, uso, id de la ubicación que la contiene y, opcionales, capacidad y restricciones (claves de productos e ids de categorías; WMS-22B)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la ubicación se busca solo en esa empresa y el nivel en su almacén",
-    coveredBy: "tests/platform/location-hierarchy.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la ubicación se busca solo en esa empresa y el nivel en su almacén; productos y categorías, solo en esa empresa",
+    coveredBy:
+      "tests/platform/location-hierarchy.int.test.ts, tests/platform/location-limits.int.test.ts",
+  },
+  setLocationLimitsAction: {
+    input:
+      "id de ubicación (fijado por la página), unidades, peso y volumen máximos, claves de los productos e ids de las categorías que admite",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la ubicación, los productos y las categorías se buscan solo en esa empresa",
+    coveredBy: "tests/platform/location-limits.int.test.ts",
   },
   editLocationAction: {
     input: "id de ubicación, nombre, código y uso",
@@ -499,13 +513,15 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/platform/product-archive.int.test.ts",
   },
   updateProductAction: {
-    input: "id de producto y los campos de la ficha (sin cantidades)",
+    input:
+      "id de producto y los campos de la ficha, con peso y volumen por unidad (WMS-22B; sin cantidades)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el producto se busca solo en esa empresa",
     coveredBy: "tests/platform/product-update.int.test.ts",
   },
   createProductAction: {
-    input: "clave, nombre, descripción, categoría, marca y código de barras",
+    input:
+      "clave, nombre, descripción, categoría, marca, código de barras y, opcionales, peso y volumen por unidad (WMS-22B)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el servicio comprueba rol, módulo y cupo",
     coveredBy: "tests/platform/products.int.test.ts",

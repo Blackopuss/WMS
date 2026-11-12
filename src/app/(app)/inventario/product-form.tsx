@@ -21,6 +21,8 @@ export const EMPTY_PRODUCT: ProductFormState["values"] = {
   barcode: "",
   unit: "piece",
   step: "",
+  weight: "",
+  volume: "",
 };
 
 const FIELD_ORDER = [
@@ -32,6 +34,8 @@ const FIELD_ORDER = [
   "brand",
   "barcode",
   "description",
+  "weight",
+  "volume",
 ] as const;
 
 /** Card of a product: used to create it and to edit it (INV-02, INV-03). */
@@ -80,9 +84,14 @@ export function ProductForm({
     setSeen(attempt);
     setUnit(state.values.unit || "piece");
   }
-  const fractional = unitGroups
+  const chosenUnit = unitGroups
     .flatMap((group) => group.units)
-    .find((option) => option.code === unit)?.fractional;
+    .find((option) => option.code === unit);
+  const fractional = chosenUnit?.fractional;
+  // A product controlled by weight already says its weight (and one by
+  // volume, its volume): that field is not asked.
+  const askWeight = chosenUnit?.measures !== "weight";
+  const askVolume = chosenUnit?.measures !== "volume";
 
   return (
     <form
@@ -286,6 +295,68 @@ export function ProductForm({
           />
         )}
       </FormField>
+
+      {(askWeight || askVolume) && (
+        // Rarely filled: folded unless it has something or a problem.
+        <details
+          className="rounded-lg border p-3"
+          open={Boolean(
+            state.values.weight ||
+            state.values.volume ||
+            state.fieldErrors.weight ||
+            state.fieldErrors.volume,
+          )}
+        >
+          <summary className="-m-1 flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+            Peso y volumen (opcional)
+          </summary>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sirven para la capacidad de las ubicaciones. Sin este dato, el
+            producto no cuenta en ese límite.
+          </p>
+          <div className="mt-4 grid gap-5 sm:grid-cols-2">
+            {askWeight && (
+              <FormField
+                id="weight"
+                label="Peso de una unidad (kg)"
+                error={state.fieldErrors.weight}
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    name="weight"
+                    key={`weight-${attempt}`}
+                    defaultValue={state.values.weight}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    maxLength={20}
+                  />
+                )}
+              </FormField>
+            )}
+            {askVolume && (
+              <FormField
+                id="volume"
+                label="Volumen de una unidad (litros)"
+                hint="Un litro son 1,000 cm³."
+                error={state.fieldErrors.volume}
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    name="volume"
+                    key={`volume-${attempt}`}
+                    defaultValue={state.values.volume}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    maxLength={20}
+                  />
+                )}
+              </FormField>
+            )}
+          </div>
+        </details>
+      )}
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button asChild variant="outline">

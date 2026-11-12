@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { newId } from "@/lib";
+import { dec, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -23,6 +23,17 @@ import {
   normalizeLocationCode,
   type LocationType,
 } from "./levels";
+import {
+  CAPACITY_MEASURES,
+  MAX_RESTRICTED_PRODUCTS,
+  NO_CAPACITY,
+  describeCapacity,
+  foldCode,
+  isUnlimited,
+  parseCapacity,
+  splitProductCodes,
+  type CapacityLimits,
+} from "./limits";
 import { getActiveFacility } from "./facilities";
 import {
   assertFacilityInScope,
@@ -57,7 +68,18 @@ const nameSchema = z
   .max(60, "El nombre es demasiado largo (máximo 60 caracteres).");
 
 export type LocationField =
-  "name" | "level" | "parentId" | "locationId" | "code" | "type" | "levels";
+  | "name"
+  | "level"
+  | "parentId"
+  | "locationId"
+  | "code"
+  | "type"
+  | "levels"
+  | "maxUnits"
+  | "maxWeight"
+  | "maxVolume"
+  | "products"
+  | "categoryIds";
 
 export type LocationResult =
   | { ok: true; locationId: string }
@@ -105,6 +127,10 @@ type Tx = Pick<
   | "auditEvent"
   | "stockBalance"
   | "stockCount"
+  | "locationCapacity"
+  | "locationRestriction"
+  | "product"
+  | "productCategory"
 >;
 
 type Level = { id: string; depth: number; name: string };
@@ -332,6 +358,242 @@ const parentIdOf = (value: unknown): string | null =>
 const GENERAL_FIXED =
   "«General» es la ubicación inicial de tu inventario: no se renombra, no se mueve y no se archiva.";
 
+const GENERAL_NO_LIMITS =
+  "«General» recibe lo que todavía no tiene lugar: no lleva capacidad ni restricciones.";
+
+export type LocationLimitsInput = {
+  /** Most units it may hold; empty = no limit. */
+  maxUnits?: unknown;
+  /** Most weight, in kilograms; empty = no limit. */
+  maxWeight?: unknown;
+  /** Most volume, in cubic meters; empty = no limit. */
+  maxVolume?: unknown;
+  /**
+   * Codes (SKU) of the only products it admits, one per line or separated
+   * by commas; empty = any product.
+   */
+  products?: unknown;
+  /** Ids of the only categories it admits; empty = any. */
+  categoryIds?: unknown;
+};
+
+/** The capacity and the restrictions of a location, as they are kept. */
+type Limits = {
+  capacity: CapacityLimits;
+  products: { id: string; sku: string }[];
+  categories: { id: string; name: string }[];
+};
+
+const hasLimits = (limits: Limits): boolean =>
+  !isUnlimited(limits.capacity) ||
+  limits.products.length > 0 ||
+  limits.categories.length > 0;
+
+const CAPACITY_FIELDS = {
+  units: "maxUnits",
+  weight: "maxWeight",
+  volume: "maxVolume",
+} as const;
+
+/** What the form sent, checked against the company's catalog. */
+async function parseLimits(
+  tx: Tx,
+  input: LocationLimitsInput,
+): Promise<Limits> {
+  const capacity: CapacityLimits = { ...NO_CAPACITY };
+  for (const measure of CAPACITY_MEASURES) {
+    const field = CAPACITY_FIELDS[measure];
+    const parsed = parseCapacity(input[field] ?? "");
+    if (!parsed.ok) reject("invalid", parsed.error, field);
+    else capacity[measure] = parsed.value;
+  }
+
+  const codes = splitProductCodes(
+    typeof input.products === "string" ? input.products.slice(0, 20_000) : "",
+  );
+  if (codes.length > MAX_RESTRICTED_PRODUCTS) {
+    reject(
+      "invalid",
+      `Una ubicación admite una lista de hasta ${MAX_RESTRICTED_PRODUCTS} productos. Para más, usa categorías.`,
+      "products",
+    );
+  }
+  const found =
+    codes.length > 0
+      ? await tx.product.findMany({
+          where: { sku: { in: codes.map((code) => code.slice(0, 64)) } },
+          select: { id: true, sku: true },
+        })
+      : [];
+  const bySku = new Map(found.map((row) => [foldCode(row.sku), row]));
+  const products: Limits["products"] = [];
+  const unknown: string[] = [];
+  for (const code of codes) {
+    const product = bySku.get(foldCode(code));
+    if (product) products.push(product);
+    else unknown.push(code.slice(0, 64));
+  }
+  if (unknown.length > 0) {
+    reject(
+      "invalid",
+      unknown.length === 1
+        ? `No encontramos un producto con la clave «${unknown[0]}».`
+        : `No encontramos productos con estas claves: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? "…" : ""}.`,
+      "products",
+    );
+  }
+
+  const ids = [
+    ...new Set(
+      (Array.isArray(input.categoryIds) ? input.categoryIds : [])
+        .filter((id): id is string => typeof id === "string" && id !== "")
+        .map((id) => id.slice(0, 36)),
+    ),
+  ].slice(0, 500);
+  const categories =
+    ids.length > 0
+      ? await tx.productCategory.findMany({
+          where: { id: { in: ids } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : [];
+  if (categories.length !== ids.length) {
+    reject(
+      "not_found",
+      "Una de las categorías ya no existe. Recarga la página.",
+      "categoryIds",
+    );
+  }
+  return {
+    capacity,
+    products: products.sort((a, b) => a.sku.localeCompare(b.sku, "es")),
+    categories,
+  };
+}
+
+/** The limits a location has now. */
+async function limitsOf(tx: Tx, locationId: string): Promise<Limits> {
+  const [capacity, restrictions] = await Promise.all([
+    tx.locationCapacity.findFirst({
+      where: { locationId },
+      select: { maxUnits: true, maxWeight: true, maxVolume: true },
+    }),
+    tx.locationRestriction.findMany({
+      where: { locationId },
+      select: {
+        product: { select: { id: true, sku: true } },
+        category: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
+  return {
+    capacity: {
+      units: capacity?.maxUnits?.toString() ?? null,
+      weight: capacity?.maxWeight?.toString() ?? null,
+      volume: capacity?.maxVolume?.toString() ?? null,
+    },
+    products: restrictions
+      .flatMap((row) => (row.product ? [row.product] : []))
+      .sort((a, b) => a.sku.localeCompare(b.sku, "es")),
+    categories: restrictions
+      .flatMap((row) => (row.category ? [row.category] : []))
+      .sort((a, b) => a.name.localeCompare(b.name, "es")),
+  };
+}
+
+/** «500 unidades · 1,000 kg», for the audit log. */
+const capacityText = (limits: Limits): string =>
+  describeCapacity(limits.capacity) ?? "Sin límite";
+
+/** «Categorías: Químicos. Productos: TOR-001», for the audit log. */
+function restrictionText(limits: Limits): string {
+  const parts = [
+    limits.categories.length > 0
+      ? `Categorías: ${limits.categories.map((each) => each.name).join(", ")}`
+      : null,
+    limits.products.length > 0
+      ? `Productos: ${limits.products.map((each) => each.sku).join(", ")}`
+      : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(". ") : "Cualquier producto";
+}
+
+const sameLimits = (a: Limits, b: Limits): boolean =>
+  CAPACITY_MEASURES.every((measure) =>
+    a.capacity[measure] === null || b.capacity[measure] === null
+      ? a.capacity[measure] === b.capacity[measure]
+      : dec(a.capacity[measure]).equals(b.capacity[measure]),
+  ) &&
+  a.products.map((each) => each.id).join() ===
+    b.products.map((each) => each.id).join() &&
+  a.categories.map((each) => each.id).join() ===
+    b.categories.map((each) => each.id).join();
+
+/** Leaves the limits of a location as `after` says. */
+async function writeLimits(
+  tx: Tx,
+  organizationId: string,
+  locationId: string,
+  before: Limits,
+  after: Limits,
+): Promise<void> {
+  if (isUnlimited(after.capacity)) {
+    await tx.locationCapacity.deleteMany({ where: { locationId } });
+  } else {
+    const data = {
+      maxUnits: after.capacity.units,
+      maxWeight: after.capacity.weight,
+      maxVolume: after.capacity.volume,
+    };
+    const changed = await tx.locationCapacity.updateMany({
+      where: { locationId },
+      data,
+    });
+    if (changed.count === 0) {
+      await tx.locationCapacity.create({
+        data: { id: newId(), organizationId, locationId, ...data },
+      });
+    }
+  }
+  const keptProducts = new Set(after.products.map((each) => each.id));
+  const keptCategories = new Set(after.categories.map((each) => each.id));
+  const hadProducts = new Set(before.products.map((each) => each.id));
+  const hadCategories = new Set(before.categories.map((each) => each.id));
+  const goneProducts = [...hadProducts].filter((id) => !keptProducts.has(id));
+  const goneCategories = [...hadCategories].filter(
+    (id) => !keptCategories.has(id),
+  );
+  if (goneProducts.length > 0) {
+    await tx.locationRestriction.deleteMany({
+      where: { locationId, productId: { in: goneProducts } },
+    });
+  }
+  if (goneCategories.length > 0) {
+    await tx.locationRestriction.deleteMany({
+      where: { locationId, categoryId: { in: goneCategories } },
+    });
+  }
+  const added = [
+    ...after.products
+      .filter((each) => !hadProducts.has(each.id))
+      .map((each) => ({ productId: each.id, categoryId: null })),
+    ...after.categories
+      .filter((each) => !hadCategories.has(each.id))
+      .map((each) => ({ productId: null, categoryId: each.id })),
+  ];
+  if (added.length > 0) {
+    await tx.locationRestriction.createMany({
+      data: added.map((each) => ({
+        id: newId(),
+        organizationId,
+        locationId,
+        ...each,
+      })),
+    });
+  }
+}
+
 export type CreateLocationInput = {
   name?: unknown;
   /** Depth of its level in the warehouse (1 = the widest). */
@@ -341,6 +603,8 @@ export type CreateLocationInput = {
   code?: unknown;
   /** What it is used for; default storage. */
   type?: unknown;
+  /** Capacity and restrictions (WMS-22B); absent = none. */
+  limits?: LocationLimitsInput;
 };
 
 /** Creates a location, inside another one or directly in the warehouse. */
@@ -385,6 +649,7 @@ export async function createLocation(
       }
       await checkFreeName(tx, name, parent?.id ?? null, facilityId);
       const code = await parseCode(tx, input.code, facilityId);
+      const limits = input.limits ? await parseLimits(tx, input.limits) : null;
       if ((await tx.location.count()) >= MAX_LOCATIONS) {
         reject(
           "limit_reached",
@@ -404,6 +669,15 @@ export async function createLocation(
           parentId: parent?.id ?? null,
         },
       });
+      if (limits && hasLimits(limits)) {
+        await writeLimits(
+          tx,
+          organizationId,
+          id,
+          { capacity: NO_CAPACITY, products: [], categories: [] },
+          limits,
+        );
+      }
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
@@ -414,6 +688,12 @@ export async function createLocation(
           nivel: level.name,
           codigo: code,
           tipo: LOCATION_TYPE_LABELS[type],
+          ...(limits && hasLimits(limits)
+            ? {
+                capacidad: capacityText(limits),
+                admite: restrictionText(limits),
+              }
+            : {}),
           path: await pathOf(tx, {
             id,
             name,
@@ -546,6 +826,65 @@ export async function editLocation(
         },
       });
     }
+    return location.id;
+  });
+}
+
+/**
+ * Sets the capacity and the restrictions of a location (WMS-22B, ADR
+ * 0039): what it may hold at most and which products or categories it is
+ * limited to. They count for everything inside it. What is already there
+ * stays: nothing is moved or corrected, the occupancy shows it.
+ */
+export async function setLocationLimits(
+  actor: LocationActor,
+  locationId: string,
+  input: LocationLimitsInput,
+): Promise<LocationResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.location.update",
+  );
+  return changeTree(organizationId, async (tx) => {
+    const location = await findLocation(tx, locationId);
+    await assertLocationsInScope(tx, userId, [location.id]);
+    const after = await parseLimits(tx, input ?? {});
+    if (location.isDefault && hasLimits(after)) {
+      reject("not_allowed", GENERAL_NO_LIMITS);
+    }
+    const before = await limitsOf(tx, location.id);
+    if (sameLimits(before, after)) reject("unchanged", "No cambiaste nada.");
+    await writeLimits(tx, organizationId, location.id, before, after);
+    await recordAuditEvent(tx, {
+      organizationId,
+      actorUserId: userId,
+      action: "location.limits_changed",
+      target: { type: "location", id: location.id },
+      metadata: {
+        ubicacion: await pathOf(tx, location),
+        // Shown in the audit screen as «Capacidad: antes → ahora».
+        changes: {
+          ...(capacityText(before) !== capacityText(after)
+            ? {
+                Capacidad: {
+                  antes: capacityText(before),
+                  ahora: capacityText(after),
+                },
+              }
+            : {}),
+          ...(restrictionText(before) !== restrictionText(after)
+            ? {
+                "Solo admite": {
+                  antes: restrictionText(before),
+                  ahora: restrictionText(after),
+                },
+              }
+            : {}),
+        },
+      },
+    });
     return location.id;
   });
 }
@@ -836,6 +1175,13 @@ export type LocationNode = {
   path: string;
   /** Locations directly inside, among the ones listed. */
   children: number;
+  /** What it may hold at most (WMS-22B); every measure null = no limit. */
+  capacity: CapacityLimits;
+  /** The only products and categories it admits; both empty = anything. */
+  restrictedTo: {
+    products: { id: string; sku: string; name: string }[];
+    categories: { id: string; name: string }[];
+  };
 };
 
 export type LocationTree = {
@@ -863,7 +1209,7 @@ export async function listLocations(
   // id is checked, and with zones only their locations are listed.
   await assertFacilityInScope(client, actor.userId, facilityId);
   const scoped = await locationScopeWhere(client, actor.userId);
-  const [facility, rows, levels] = await Promise.all([
+  const [facility, rows, levels, capacities, restrictions] = await Promise.all([
     client.facility.findFirst({
       where: { id: facilityId },
       select: { id: true, name: true },
@@ -887,8 +1233,46 @@ export async function listLocations(
         _count: { select: { locations: true } },
       },
     }),
+    client.locationCapacity.findMany({
+      where: { location: { facilityId } },
+      select: {
+        locationId: true,
+        maxUnits: true,
+        maxWeight: true,
+        maxVolume: true,
+      },
+    }),
+    client.locationRestriction.findMany({
+      where: { location: { facilityId } },
+      orderBy: { id: "asc" },
+      select: {
+        locationId: true,
+        product: { select: { id: true, sku: true, name: true } },
+        category: { select: { id: true, name: true } },
+      },
+    }),
   ]);
   if (!facility) return null;
+  const capacityOf = new Map(
+    capacities.map((row) => [
+      row.locationId,
+      {
+        units: row.maxUnits?.toString() ?? null,
+        weight: row.maxWeight?.toString() ?? null,
+        volume: row.maxVolume?.toString() ?? null,
+      } satisfies CapacityLimits,
+    ]),
+  );
+  const restrictedOf = new Map<string, LocationNode["restrictedTo"]>();
+  for (const row of restrictions) {
+    const entry = restrictedOf.get(row.locationId) ?? {
+      products: [],
+      categories: [],
+    };
+    if (row.product) entry.products.push(row.product);
+    if (row.category) entry.categories.push(row.category);
+    restrictedOf.set(row.locationId, entry);
+  }
 
   const byParent = new Map<string | null, Row[]>();
   for (const row of rows) {
@@ -918,6 +1302,11 @@ export async function listLocations(
         depth,
         path: formatLocationPath(path),
         children: byParent.get(row.id)?.length ?? 0,
+        capacity: capacityOf.get(row.id) ?? NO_CAPACITY,
+        restrictedTo: restrictedOf.get(row.id) ?? {
+          products: [],
+          categories: [],
+        },
       });
       // Levels bound the depth; the limit only guards against bad data.
       if (depth < MAX_LOCATION_LEVELS) walk(row.id, path, depth + 1);

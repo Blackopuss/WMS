@@ -20,7 +20,7 @@ import {
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { dec, formatDateTime } from "@/lib";
+import { dec, formatDateTime, formatDecimal } from "@/lib";
 import {
   formatStock,
   getMinimum,
@@ -185,6 +185,20 @@ export default async function ProductoPage({
       "Se controla en",
       `${unit.plural}${unit.fractional ? `, en pasos de ${Number(product.quantityStep)}` : ", en enteros"}`,
     ],
+    // WMS-22B: shown only when the card says them.
+    ...(product.unitWeight
+      ? ([
+          ["Peso", `${formatDecimal(product.unitWeight)} kg por ${unit.name}`],
+        ] as [string, string][])
+      : []),
+    ...(product.unitVolume
+      ? ([
+          [
+            "Volumen",
+            `${formatDecimal(product.unitVolume)} L por ${unit.name}`,
+          ],
+        ] as [string, string][])
+      : []),
   ];
 
   return (

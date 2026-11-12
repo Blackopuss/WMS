@@ -90,6 +90,11 @@ const receiveSchema = z.object({
     )
     .max(PURCHASE_ORDER_MAX_LINES)
     .optional(),
+  /**
+   * The person saw that what arrives goes over the capacity of a location
+   * and receives it anyway (WMS-22B); only counts where the company warns.
+   */
+  acceptCapacity: z.boolean().optional(),
 });
 
 export type ReceiveInput = z.input<typeof receiveSchema>;
@@ -107,7 +112,17 @@ export type ReceiveResult =
     }
   | {
       ok: false;
-      reason: "invalid" | "not_found" | "not_allowed" | "invalid_transition";
+      /**
+       * `over_capacity` (WMS-22B): a location would go over its capacity
+       * and the company only warns. Nothing was written; the same receipt
+       * with `acceptCapacity` goes through.
+       */
+      reason:
+        | "invalid"
+        | "not_found"
+        | "not_allowed"
+        | "invalid_transition"
+        | "over_capacity";
       fieldErrors: Partial<Record<ReceiveField, string>>;
       formError?: string;
       /** Problem of each line, by the id of the order line. */
@@ -368,9 +383,19 @@ export async function receivePurchaseOrder(
               0,
               500,
             ),
+          acceptCapacity: data.acceptCapacity === true,
         },
       );
       if (!entry.ok) {
+        // WMS-22B: a warning the person may accept, not a refusal.
+        if (entry.overCapacity) {
+          throw new Rejected({
+            ok: false,
+            reason: "over_capacity",
+            fieldErrors: {},
+            formError: entry.error,
+          });
+        }
         if (entry.line !== null && pending[entry.line]) {
           return refuseLines(
             { [pending[entry.line]!.line.id]: entry.error },
@@ -465,7 +490,7 @@ export async function receivePurchaseOrder(
           missing === 0
             ? "La orden quedó recibida."
             : `La orden quedó recibida en parte: ${missing === 1 ? "falta 1 producto" : `faltan ${missing} productos`}.`
-        }`,
+        }${entry.notes.map((note) => ` ${note}`).join("")}`,
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {

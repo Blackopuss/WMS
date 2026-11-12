@@ -72,6 +72,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "location.archived": "Archivó una ubicación",
   "location.restored": "Reactivó una ubicación",
   "location.details_changed": "Cambió el código o el uso de una ubicación",
+  "location.limits_changed":
+    "Cambió la capacidad o las restricciones de una ubicación",
   "location.levels_changed": "Cambió los niveles de ubicación de un almacén",
   "plan.provisioned": "Se asignó el plan de la empresa",
   "payment.recorded": "Se registró un pago",
@@ -139,6 +141,8 @@ const FACT_LABELS: readonly (readonly [string, string])[] = [
   ["productLimit", "Cupo de productos"],
   ["users", "Personas"],
   ["ubicacion", "Ubicación"],
+  ["capacidad", "Capacidad"],
+  ["admite", "Solo admite"],
   ["antes", "Había"],
   ["contado", "Contado"],
   ["diferencia", "Diferencia"],

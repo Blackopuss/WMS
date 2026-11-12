@@ -14,6 +14,7 @@ import type { JobHandlers } from "@/platform/jobs";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { checkImportedStock, postImportedStock } from "./import-stock";
+import { loadPlacementRules } from "./placement";
 import {
   IMPORT_JOB_TYPE,
   releaseFailedImport,
@@ -254,6 +255,9 @@ export async function applyImport(
           ),
         );
         if (places.size > 0) await lockRows(tx, "location", [...places]);
+        // WMS-22B: what restricts those locations, read once for the batch.
+        const placementRules =
+          places.size > 0 ? await loadPlacementRules(tx, [...places]) : null;
 
         let reserved = row.reservedPlaces;
         let failed = 0;
@@ -297,6 +301,13 @@ export async function applyImport(
               stock,
               data.presentation !== null,
               actor.userId,
+              placementRules
+                ? {
+                    rules: placementRules,
+                    name: data.name,
+                    category: data.category,
+                  }
+                : undefined,
             );
             if (problem) {
               await fail(item.id, problem);

@@ -41,6 +41,7 @@ import {
   type WarehouseTaskStatus,
 } from "./task-states";
 import { formatOutboundNumber } from "./outbound-states";
+import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
 import { AVAILABLE_STOCK } from "./stock-status";
 import { freeToMoveFrom, reservedMessage } from "./reservations";
 
@@ -262,8 +263,12 @@ export type CreateTaskInput = z.input<typeof createSchema>;
  */
 export async function createTask(
   actor: InventoryActor,
-  input: CreateTaskInput,
-): Promise<TaskResult> {
+  /**
+   * `acceptCapacity`: the destination would go over its capacity and the
+   * person wants the task anyway (WMS-22B).
+   */
+  input: CreateTaskInput & { acceptCapacity?: boolean },
+): Promise<TaskResult | OverCapacity> {
   const { organizationId, userId } = actor;
   await assertModulePermission(organizationId, userId, "inventory.task.create");
   const parsed = createSchema.safeParse(input);
@@ -395,6 +400,28 @@ export async function createTask(
             "quantity",
           );
         }
+        // WMS-22B: nobody is sent to a place that does not admit the
+        // product, or (as the company decided) that has no room for it.
+        // Asked now, where someone can choose; the delivery only reports.
+        const placed = await checkPlacement(
+          tx,
+          [
+            {
+              productId: product.id,
+              quantity: quantity.quantity,
+              toLocationId: to.id,
+              fromLocationId: from.id,
+              status: "AVAILABLE",
+            },
+          ],
+          { mode: "ask", accepted: input.acceptCapacity === true },
+        );
+        if (!placed.ok) {
+          if (placed.reason === "over_capacity" && !placed.blocked) {
+            throw new CapacityNotice(placed.message);
+          }
+          return stop("not_allowed", placed.message, "toLocationId");
+        }
         if (!assigneeOk) {
           return stop(
             "invalid",
@@ -439,6 +466,7 @@ export async function createTask(
         };
       });
     } catch (error) {
+      if (error instanceof CapacityNotice) return error.result;
       // Two tasks created at once take the same number: try again.
       if ((error as { code?: string }).code === "P2002" && attempt < 4) {
         continue;
@@ -751,7 +779,9 @@ export async function deliverTask(
       return {
         ok: true,
         taskId: task.id,
-        summary: `Dejaste ${formatStock(picked.toString(), task.unitCode)} de ${task.product.name} en ${task.toLocation.name}.`,
+        summary:
+          `Dejaste ${formatStock(picked.toString(), task.unitCode)} de ${task.product.name} en ${task.toLocation.name}.` +
+          delivered.notes.map((note) => ` ${note}`).join(""),
       };
     }
     const moved = await postTaskTransfer(tx, actor, {
@@ -779,7 +809,10 @@ export async function deliverTask(
     return {
       ok: true,
       taskId: task.id,
-      summary: `Entregaste la tarea ${describe(task)}.`,
+      // WMS-22B: a destination left above its capacity is said, not stopped.
+      summary:
+        `Entregaste la tarea ${describe(task)}.` +
+        (moved.notes ?? []).map((note) => ` ${note}`).join(""),
     };
   });
 }

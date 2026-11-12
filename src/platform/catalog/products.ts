@@ -13,6 +13,7 @@ import {
   type TenantDb,
 } from "@/server";
 
+import { measuresVolumeByUnit, parseMeasure, weighsByUnit } from "./measures";
 import { defaultStep, stepProblem } from "./quantity";
 import { getUnit, isUnitCode } from "./units";
 
@@ -70,7 +71,49 @@ export const productSchema = z.object({
     .trim()
     .optional()
     .transform((value) => value || ""),
+  /**
+   * Weight of one unit, in kilograms, and its volume, in liters (WMS-22B):
+   * optional, as typed. They measure the product against the capacity of a
+   * location; without them it does not count in that measure.
+   */
+  weight: z
+    .string()
+    .trim()
+    .max(30, "Máximo 30 caracteres.")
+    .optional()
+    .transform((value) => value || ""),
+  volume: z
+    .string()
+    .trim()
+    .max(30, "Máximo 30 caracteres.")
+    .optional()
+    .transform((value) => value || ""),
 });
+
+/**
+ * Weight and volume of a parsed card, as they are kept, or the field with
+ * a problem. A product controlled by weight keeps no weight of its own (its
+ * unit says it), and likewise for volume.
+ */
+function measuresOf(data: { unit: string; weight: string; volume: string }) {
+  const weight = weighsByUnit(data.unit)
+    ? ({ ok: true, value: null } as const)
+    : parseMeasure(data.weight);
+  if (!weight.ok) {
+    return { ok: false, field: "weight", problem: weight.error } as const;
+  }
+  const volume = measuresVolumeByUnit(data.unit)
+    ? ({ ok: true, value: null } as const)
+    : parseMeasure(data.volume);
+  if (!volume.ok) {
+    return { ok: false, field: "volume", problem: volume.error } as const;
+  }
+  return {
+    ok: true,
+    unitWeight: weight.value,
+    unitVolume: volume.value,
+  } as const;
+}
 
 /** Unit and increment of a parsed card, or the problem with them. */
 function quantityRule(data: { unit: string; step: string }) {
@@ -152,6 +195,14 @@ export async function createProduct(
       fieldErrors: { step: rule.problem },
     };
   }
+  const measures = measuresOf(data);
+  if (!measures.ok) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { [measures.field]: measures.problem },
+    };
+  }
   const productId = newId();
 
   try {
@@ -212,6 +263,8 @@ export async function createProduct(
           barcode: data.barcode,
           unitCode: rule.unitCode,
           quantityStep: rule.quantityStep,
+          unitWeight: measures.unitWeight,
+          unitVolume: measures.unitVolume,
         },
       });
       await recordAuditEvent(tx, {
@@ -481,6 +534,10 @@ export async function listProductGroups(
 
 export type ProductCard = ProductSummary & {
   description: string | null;
+  /** Kilograms one unit weighs, as kept in the card; null = not said. */
+  unitWeight: string | null;
+  /** Liters one unit takes, as kept in the card; null = not said. */
+  unitVolume: string | null;
   status: "ACTIVE" | "ARCHIVED";
   updatedAt: Date;
 };
@@ -505,6 +562,8 @@ export async function getProduct(
       barcode: true,
       unitCode: true,
       quantityStep: true,
+      unitWeight: true,
+      unitVolume: true,
       status: true,
       createdAt: true,
       updatedAt: true,
@@ -523,6 +582,12 @@ export async function getProduct(
     barcode: row.barcode,
     unitCode: row.unitCode,
     quantityStep: row.quantityStep.toString(),
+    unitWeight: row.unitWeight
+      ? dec(row.unitWeight.toString()).toString()
+      : null,
+    unitVolume: row.unitVolume
+      ? dec(row.unitVolume.toString()).toString()
+      : null,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -541,6 +606,8 @@ const FIELD_LABELS: Record<ProductField, string> = {
   barcode: "Código de barras",
   unit: "Unidad",
   step: "Precisión",
+  weight: "Peso por unidad (kg)",
+  volume: "Volumen por unidad (litros)",
 };
 
 /**
@@ -578,6 +645,14 @@ export async function updateProduct(
       fieldErrors: { step: rule.problem },
     };
   }
+  const measures = measuresOf(data);
+  if (!measures.ok) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { [measures.field]: measures.problem },
+    };
+  }
   const id = String(productId);
 
   try {
@@ -594,6 +669,8 @@ export async function updateProduct(
           barcode: true,
           unitCode: true,
           quantityStep: true,
+          unitWeight: true,
+          unitVolume: true,
           category: { select: { name: true } },
           brand: { select: { name: true } },
         },
@@ -615,11 +692,26 @@ export async function updateProduct(
         barcode: current.barcode,
         unit: current.unitCode,
         step: Number(current.quantityStep.toString()).toString(),
+        weight: current.unitWeight
+          ? dec(current.unitWeight.toString()).toString()
+          : null,
+        volume: current.unitVolume
+          ? dec(current.unitVolume.toString()).toString()
+          : null,
       };
       const after: Record<ProductField, string | null> = {
         ...data,
         unit: rule.unitCode,
         step: Number(rule.quantityStep).toString(),
+        // Absent = keep what the card says (unless the unit now says it).
+        weight:
+          input.weight === undefined && !weighsByUnit(rule.unitCode)
+            ? before.weight
+            : measures.unitWeight,
+        volume:
+          input.volume === undefined && !measuresVolumeByUnit(rule.unitCode)
+            ? before.volume
+            : measures.unitVolume,
       };
       const changed = (Object.keys(before) as ProductField[]).filter(
         (field) => before[field] !== after[field],
@@ -708,6 +800,8 @@ export async function updateProduct(
           barcode: data.barcode,
           unitCode: rule.unitCode,
           quantityStep: rule.quantityStep,
+          unitWeight: after.weight,
+          unitVolume: after.volume,
         },
       });
       await recordAuditEvent(tx, {

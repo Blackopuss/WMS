@@ -6,6 +6,7 @@ import { activeFacilityOf, assertLocationsInScope } from "@/platform/locations";
 import { lockRows, type TenantDb } from "@/server";
 
 import { MAX_BALANCE, formatStock, type InventoryActor } from "./movements";
+import { checkPlacement } from "./placement";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { AVAILABLE_STOCK } from "./stock-status";
 
@@ -45,6 +46,11 @@ export type ReceiptEntryInput = {
   /** «OC-0007 · Remisión 4411»: what people see in the history. */
   reference: string | null;
   reason: string | null;
+  /**
+   * The person saw that what arrives goes over a capacity the company only
+   * warns about, and receives it anyway (WMS-22B).
+   */
+  acceptCapacity?: boolean;
 };
 
 export type ReceiptEntryLine = {
@@ -71,12 +77,19 @@ export type ReceiptEntryResult =
       locationId: string;
       locationName: string;
       lines: ReceiptEntryLine[];
+      /** Locations left above their capacity (WMS-22B), one sentence each. */
+      notes: string[];
     }
   | {
       ok: false;
       /** Position of the line with the problem, or null for the location of the receipt. */
       line: number | null;
       error: string;
+      /**
+       * It only goes over a capacity the company warns about (WMS-22B):
+       * the same receipt with `acceptCapacity` goes through.
+       */
+      overCapacity?: true;
     };
 
 export async function postReceiptEntry(
@@ -227,6 +240,30 @@ export async function postReceiptEntry(
     }
   }
 
+  // WMS-22B: every destination must admit its product (always) and have
+  // room for what arrives (as the company decided). All the lines at once:
+  // two lines to the same place count together.
+  const placed = await checkPlacement(
+    tx,
+    lines.map((line) => ({
+      productId: line.productId,
+      quantity: line.baseQuantity,
+      toLocationId: line.locationId,
+      status: "AVAILABLE" as const,
+    })),
+    { mode: "ask", accepted: input.acceptCapacity === true },
+  );
+  if (!placed.ok) {
+    return {
+      ok: false,
+      line: placed.index,
+      error: placed.message,
+      ...(placed.reason === "over_capacity" && !placed.blocked
+        ? { overCapacity: true as const }
+        : {}),
+    };
+  }
+
   // Read before any balance changes: the stock all locations had.
   const costs = await openCostBook(
     tx,
@@ -297,5 +334,6 @@ export async function postReceiptEntry(
     locationId: location.id,
     locationName: location.name,
     lines,
+    notes: placed.notes,
   };
 }

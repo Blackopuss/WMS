@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, TriangleAlert } from "lucide-react";
 import { useActionState } from "react";
 
 import { FormField } from "@/components";
@@ -116,8 +116,12 @@ export function TaskForm({
             defaultValue={state.values.priority}
             key={key("priority")}
           >
-            <option value="NORMAL">Normal</option>
-            <option value="URGENT">Urgente</option>
+            <option key="NORMAL" value="NORMAL">
+              Normal
+            </option>
+            <option key="URGENT" value="URGENT">
+              Urgente
+            </option>
           </NativeSelect>
         )}
       </FormField>
@@ -156,9 +160,37 @@ export function TaskForm({
           />
         )}
       </FormField>
-      <Button type="submit" size="lg" className="min-h-12" disabled={pending}>
+      {state.capacityWarning && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground"
+        >
+          <TriangleAlert
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-warning"
+          />
+          <p>
+            <span className="font-medium">{state.capacityWarning.message}</span>{" "}
+            La tarea todavía no se crea. Si de verdad cabe, continúa; si no,
+            cambia el destino o la cantidad.
+          </p>
+        </div>
+      )}
+      <Button
+        type="submit"
+        size="lg"
+        className="min-h-12"
+        // Only this button says the person saw the warning (WMS-22B).
+        name={state.capacityWarning ? "acceptCapacity" : undefined}
+        value={state.capacityWarning?.stamp}
+        disabled={pending}
+      >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-        {pending ? "Creando…" : "Crear tarea"}
+        {pending
+          ? "Creando…"
+          : state.capacityWarning
+            ? "Crear de todos modos"
+            : "Crear tarea"}
       </Button>
     </form>
   );

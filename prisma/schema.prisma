@@ -136,6 +136,8 @@ model Organization {
   facilities              Facility[]
   locationLevels          LocationLevel[]
   locations               Location[]
+  locationCapacities      LocationCapacity[]
+  locationRestrictions    LocationRestriction[]
   stockMovements          StockMovement[]
   stockMovementLines      StockMovementLine[]
   stockBalances           StockBalance[]
@@ -267,6 +269,10 @@ model Location {
   tasksTo        WarehouseTask[]       @relation("TaskTo")
   reservations   StockReservation[]
   memberScopes   MembershipScope[]
+  /// What it may hold at most (WMS-22B); no row = no limit.
+  capacity       LocationCapacity?
+  /// Products or categories it is limited to (WMS-22B); none = anything.
+  restrictions   LocationRestriction[]
   /// True for General, NULL for other locations (never false; SQL CHECK).
   /// MySQL allows multiple NULLs in the unique key, but only one true.
   isDefault      Boolean?
@@ -288,6 +294,56 @@ model Location {
   @@unique([organizationId, facilityId, isStaging])
   @@unique([organizationId, facilityId, code])
   @@map("location")
+}
+
+/// What a location may hold at most (WMS-22B, ADR 0039): units, weight and
+/// volume, each optional. It counts everything inside the location, its
+/// descendants included. A row exists only while some limit is set; the
+/// row is also what an operation that puts stock in locks, after all its
+/// other locks, so two arrivals under the same limit are decided one after
+/// the other.
+model LocationCapacity {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  locationId     String       @db.Char(36)
+  location       Location     @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Sum of the quantities of every product, each in its own unit.
+  maxUnits       Decimal?     @db.Decimal(18, 3)
+  /// Kilograms.
+  maxWeight      Decimal?     @db.Decimal(18, 3)
+  /// Cubic meters.
+  maxVolume      Decimal?     @db.Decimal(18, 3)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+  updatedAt      DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, locationId])
+  @@map("location_capacity")
+}
+
+/// A product or a category a location is limited to (WMS-22B, ADR 0039):
+/// with rows, only those products or products of those categories may be
+/// put in the location or in anything inside it; without rows, anything.
+/// Exactly one of productId and categoryId is set (SQL CHECK).
+model LocationRestriction {
+  id             String           @id @db.Char(36)
+  organizationId String           @db.Char(36)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  locationId     String           @db.Char(36)
+  location       Location         @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId      String?          @db.Char(36)
+  product        Product?         @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  categoryId     String?          @db.Char(36)
+  category       ProductCategory? @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt      DateTime         @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, locationId, productId])
+  @@unique([organizationId, locationId, categoryId])
+  @@index([organizationId, productId])
+  @@index([organizationId, categoryId])
+  @@map("location_restriction")
 }
 
 enum MembershipStatus {
@@ -854,12 +910,13 @@ enum ProductStatus {
 
 /// Grouping chosen by the business: "Tornillería", "Pinturas".
 model ProductCategory {
-  id             String       @id @db.Char(36)
-  organizationId String       @db.Char(36)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String       @db.VarChar(80)
-  createdAt      DateTime     @default(now()) @db.DateTime(3)
-  products       Product[]
+  id                   String                @id @db.Char(36)
+  organizationId       String                @db.Char(36)
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name                 String                @db.VarChar(80)
+  createdAt            DateTime              @default(now()) @db.DateTime(3)
+  products             Product[]
+  locationRestrictions LocationRestriction[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, name])
@@ -883,43 +940,49 @@ model ProductBrand {
 /// stock is the sum of movements (INV-15). An active product takes one
 /// place of the plan's quota; an archived one does not.
 model Product {
-  id             String                @id @db.Char(36)
-  organizationId String                @db.Char(36)
-  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                   String                @id @db.Char(36)
+  organizationId       String                @db.Char(36)
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Code the business uses for the product; unique in the company.
-  sku            String                @db.VarChar(64)
-  name           String                @db.VarChar(160)
-  description    String?               @db.Text
-  categoryId     String?               @db.Char(36)
-  category       ProductCategory?      @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
-  brandId        String?               @db.Char(36)
-  brand          ProductBrand?         @relation(fields: [organizationId, brandId], references: [organizationId, id], onDelete: Restrict)
+  sku                  String                @db.VarChar(64)
+  name                 String                @db.VarChar(160)
+  description          String?               @db.Text
+  categoryId           String?               @db.Char(36)
+  category             ProductCategory?      @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  brandId              String?               @db.Char(36)
+  brand                ProductBrand?         @relation(fields: [organizationId, brandId], references: [organizationId, id], onDelete: Restrict)
   /// Printed code read by a scanner; unique in the company when present.
-  barcode        String?               @db.VarChar(64)
+  barcode              String?               @db.VarChar(64)
   /// Unit in which the product is controlled (INV-06). Stock is always
   /// kept in this unit; presentations convert to it.
-  unitCode       String                @default("piece") @db.VarChar(12)
-  unit           Unit                  @relation(fields: [unitCode], references: [code], onDelete: Restrict)
+  unitCode             String                @default("piece") @db.VarChar(12)
+  unit                 Unit                  @relation(fields: [unitCode], references: [code], onDelete: Restrict)
   /// Increment accepted for quantities: 1 = whole units, 0.01 = hundredths.
-  quantityStep   Decimal               @default(1) @db.Decimal(12, 3)
-  presentations  ProductPresentation[]
-  movementLines  StockMovementLine[]
-  balances       StockBalance[]
-  minimum        StockMinimum?
-  countLines     StockCountLine[]
-  exitImportRows ExitImportRow[]
-  suppliers      ProductSupplier[]
-  orderLines     PurchaseOrderLine[]
-  receiptLines   PurchaseReceiptLine[]
-  returnLines    PurchaseReturnLine[]
-  warehouseTasks WarehouseTask[]
-  lots           Lot[]
-  reservations   StockReservation[]
-  cost           ProductCost?
-  status         ProductStatus         @default(ACTIVE)
-  createdAt      DateTime              @default(now()) @db.DateTime(3)
-  updatedAt      DateTime              @updatedAt @db.DateTime(3)
-  outboundLines  OutboundOrderLine[]
+  quantityStep         Decimal               @default(1) @db.Decimal(12, 3)
+  /// Weight of one unit of the product, in kilograms (WMS-22B); NULL =
+  /// unknown: it does not count against a weight capacity.
+  unitWeight           Decimal?              @db.Decimal(14, 6)
+  /// Volume of one unit of the product, in liters; NULL = unknown.
+  unitVolume           Decimal?              @db.Decimal(14, 6)
+  locationRestrictions LocationRestriction[]
+  presentations        ProductPresentation[]
+  movementLines        StockMovementLine[]
+  balances             StockBalance[]
+  minimum              StockMinimum?
+  countLines           StockCountLine[]
+  exitImportRows       ExitImportRow[]
+  suppliers            ProductSupplier[]
+  orderLines           PurchaseOrderLine[]
+  receiptLines         PurchaseReceiptLine[]
+  returnLines          PurchaseReturnLine[]
+  warehouseTasks       WarehouseTask[]
+  lots                 Lot[]
+  reservations         StockReservation[]
+  cost                 ProductCost?
+  status               ProductStatus         @default(ACTIVE)
+  createdAt            DateTime              @default(now()) @db.DateTime(3)
+  updatedAt            DateTime              @updatedAt @db.DateTime(3)
+  outboundLines        OutboundOrderLine[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, sku])

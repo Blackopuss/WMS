@@ -277,15 +277,43 @@ export function ReceiveOrder({
               />
             )}
           </FormField>
+          {state.capacityWarning && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground"
+            >
+              <TriangleAlert
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0 text-warning"
+              />
+              <p>
+                <span className="font-medium">
+                  {state.capacityWarning.message}
+                </span>{" "}
+                Todavía no se recibe. Si de verdad cabe, continúa; si no, cambia
+                dónde lo guardas.
+              </p>
+            </div>
+          )}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">
                 Todavía no
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={busy}>
+            <Button
+              type="submit"
+              // Only this button says the person saw the warning (WMS-22B).
+              name={state.capacityWarning ? "acceptCapacity" : undefined}
+              value={state.capacityWarning?.stamp}
+              disabled={busy}
+            >
               {busy && <Loader2 aria-hidden="true" className="animate-spin" />}
-              {busy ? "Recibiendo…" : "Confirmar recepción"}
+              {busy
+                ? "Recibiendo…"
+                : state.capacityWarning
+                  ? "Recibir de todos modos"
+                  : "Confirmar recepción"}
             </Button>
           </DialogFooter>
         </form>

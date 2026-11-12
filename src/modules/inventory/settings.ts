@@ -64,7 +64,33 @@ export const ENTRY_REPEAT_WINDOW = {
   defaultValue: "30",
 } as const satisfies SettingDefinition;
 
+/**
+ * What happens when a movement would leave a location above its capacity
+ * (WMS-22B, ADR 0039; `checkPlacement`). Restrictions of a location
+ * (quarantine, products, categories) are not a setting: they always stop.
+ */
+export const CAPACITY_MODE = {
+  key: "inventory.capacity.mode",
+  module: "inventory",
+  area: "Ubicaciones",
+  label: "Al pasar la capacidad de una ubicación",
+  options: [
+    {
+      value: "warn",
+      label: "Avisar y dejar continuar",
+      help: "Antes de guardar dice por cuánto se pasa; la persona decide.",
+    },
+    {
+      value: "block",
+      label: "No permitirlo",
+      help: "El movimiento se rechaza hasta que haya lugar o cambie la capacidad.",
+    },
+  ],
+  defaultValue: "warn",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   ENTRY_REPEAT_WINDOW,
+  CAPACITY_MODE,
 ];
