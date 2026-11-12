@@ -17,9 +17,12 @@ import {
   compareLocationNames,
   locationPath,
 } from "@/platform/locations";
+import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { COST_FORMAT_ERROR, parseCost } from "./average-cost";
+import { agoText } from "./entry-repeat";
+import { ENTRY_REPEAT_WINDOW } from "./settings";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { AVAILABLE_STOCK } from "./stock-status";
 import { freeToMoveFrom, freeToTake, reservedMessage } from "./reservations";
@@ -144,6 +147,30 @@ export type MovementResult =
 
 type Failure = Extract<MovementResult, { ok: false }>;
 
+/**
+ * The same entry was registered a moment ago (WMS-71): nothing was written.
+ * It is a warning, not a refusal: sending it again with `acceptRepeat`
+ * registers it.
+ */
+export type RepeatedEntry = {
+  ok: false;
+  reason: "repeated_recently";
+  fieldErrors: Partial<Record<EntryField, string>>;
+  /** «Hace 2 minutos Olivia registró 500 piezas de este producto.» */
+  formError: string;
+  /** The entry it repeats; the name is null if that person left the company. */
+  recent: { movementId: string; authorName: string | null; minutesAgo: number };
+};
+
+export type EntryResult = MovementResult | RepeatedEntry;
+
+/** Carries the warning out of the transaction; only entries ask for it. */
+class RepeatNotice extends Error {
+  constructor(readonly result: RepeatedEntry) {
+    super("entry repeated recently");
+  }
+}
+
 /** Carries an expected failure out of the transaction so it rolls back. */
 class Rejected extends Error {
   constructor(readonly result: Failure) {
@@ -178,14 +205,86 @@ export function formatStock(quantity: string, unitCode: string): string {
  */
 export async function registerEntry(
   actor: InventoryActor,
-  input: EntryInput,
-): Promise<MovementResult> {
+  /**
+   * `acceptRepeat`: the person saw that the same entry was registered a
+   * moment ago and wants this one too (WMS-71).
+   */
+  input: EntryInput & { acceptRepeat?: boolean },
+): Promise<EntryResult> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
     "inventory.entry.create",
   );
-  return post(actor, input, "ENTRY");
+  const { acceptRepeat, ...entry } = input;
+  try {
+    return await post(actor, entry, "ENTRY", {
+      warnRepeat: acceptRepeat !== true,
+    });
+  } catch (error) {
+    if (error instanceof RepeatNotice) return error.result;
+    throw error;
+  }
+}
+
+/**
+ * WMS-71: stops an entry when the same product came in, in the same
+ * quantity and in the same warehouse, within the window the company chose.
+ * Called under the lock of the product, so two identical entries sent at
+ * once see each other. A reversed entry does not count: registering it
+ * again is how it is corrected.
+ */
+async function warnRepeatedEntry(
+  tx: TransferTx,
+  actor: InventoryActor,
+  entry: {
+    productId: string;
+    facilityId: string;
+    base: Decimal;
+    unitCode: string;
+  },
+): Promise<void> {
+  const minutes = Number(await readSetting(tx, ENTRY_REPEAT_WINDOW));
+  if (!Number.isInteger(minutes) || minutes <= 0) return;
+  const now = Date.now();
+  const recent = await tx.stockMovement.findFirst({
+    where: {
+      type: "ENTRY",
+      createdAt: { gte: new Date(now - minutes * 60_000) },
+      reversedBy: null,
+      lines: {
+        some: {
+          productId: entry.productId,
+          direction: "IN",
+          baseQuantity: entry.base.toString(),
+          location: { facilityId: entry.facilityId },
+        },
+      },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, createdAt: true, createdByUserId: true },
+  });
+  if (!recent) return;
+  const mine = recent.createdByUserId === actor.userId;
+  const author = await tx.membership.findFirst({
+    where: { userId: recent.createdByUserId },
+    select: { user: { select: { name: true } } },
+  });
+  const authorName = author?.user.name.trim() || null;
+  const minutesAgo = Math.max(
+    0,
+    Math.floor((now - recent.createdAt.getTime()) / 60_000),
+  );
+  const what = `${formatStock(entry.base.toString(), entry.unitCode)} de este producto`;
+  throw new RepeatNotice({
+    ok: false,
+    reason: "repeated_recently",
+    fieldErrors: {},
+    formError: mine
+      ? `${agoText(minutesAgo)} registraste ${what}.`
+      : `${agoText(minutesAgo)} ${authorName ?? "otra persona"} registró ${what}.`,
+    recent: { movementId: recent.id, authorName, minutesAgo },
+  });
 }
 
 /**
@@ -253,6 +352,8 @@ async function post(
   actor: InventoryActor,
   input: EntryInput,
   type: keyof typeof KINDS,
+  /** `warnRepeat`: only manual entries (WMS-71); throws `RepeatNotice`. */
+  options: { warnRepeat?: boolean } = {},
 ): Promise<MovementResult> {
   const { organizationId, userId } = actor;
   const kind = KINDS[type];
@@ -353,7 +454,7 @@ async function post(
 
       const location = await tx.location.findFirst({
         where: data.locationId ? { id: data.locationId } : { isDefault: true },
-        select: { id: true, name: true, archivedAt: true },
+        select: { id: true, name: true, archivedAt: true, facilityId: true },
       });
       if (!location) {
         return reject(
@@ -443,6 +544,16 @@ async function post(
           "quantity",
           "Con esa cantidad el saldo sería demasiado grande. Revisa lo que escribiste.",
         );
+      }
+
+      // WMS-71: the last question, once the entry is known to be valid.
+      if (options.warnRepeat) {
+        await warnRepeatedEntry(tx, actor, {
+          productId: product.id,
+          facilityId: location.facilityId,
+          base,
+          unitCode,
+        });
       }
 
       // VAL-03: read before the balance changes, under the product's lock.

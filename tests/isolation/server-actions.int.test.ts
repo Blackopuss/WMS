@@ -428,10 +428,11 @@ const REVIEWED: Record<string, Review> = {
   },
   registerEntryAction: {
     input:
-      "id de producto, id de ubicación, cantidad, forma de captura (id de presentación o código de unidad), referencia y nota (sin factor ni saldo)",
+      "id de producto, id de ubicación, cantidad, forma de captura (id de presentación o código de unidad), referencia, nota y la aceptación del aviso de entrada repetida (WMS-71; sin factor ni saldo)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); producto y ubicación se buscan solo en esa empresa",
-    coveredBy: "tests/inventory/entries.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); producto y ubicación se buscan solo en esa empresa, y la entrada reciente también",
+    coveredBy:
+      "tests/inventory/entries.int.test.ts, tests/inventory/entry-repeat.int.test.ts",
   },
   createLocationAction: {
     input:

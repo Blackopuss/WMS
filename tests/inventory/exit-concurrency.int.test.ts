@@ -8,7 +8,7 @@ import {
   registerEntry,
   registerExit,
   type InventoryActor,
-  type MovementResult,
+  type EntryResult,
 } from "@/modules/inventory";
 import { moduleRegistry } from "@/modules/registry";
 import { provisionCompany } from "@/platform/billing";
@@ -75,7 +75,7 @@ async function product(actor: InventoryActor, name: string, unit?: string) {
   return result.productId;
 }
 
-const succeeded = (results: MovementResult[]) =>
+const succeeded = (results: EntryResult[]) =>
   results.filter((result) => result.ok).length;
 
 const outLines = (actor: InventoryActor, productId: string) =>
@@ -204,7 +204,12 @@ describe("simultaneous exits", () => {
     const results = await Promise.all(
       Array.from({ length: 30 }, (_, i) =>
         i % 3 === 0
-          ? registerEntry(actor, { productId, quantity: "2" })
+          ? // Ten deliveries of the same, each one wanted (WMS-71).
+            registerEntry(actor, {
+              productId,
+              quantity: "2",
+              acceptRepeat: true,
+            })
           : registerExit(actor, { productId, quantity: "1" }),
       ),
     );

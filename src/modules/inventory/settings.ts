@@ -29,6 +29,42 @@ export const PICKING_STRATEGY = {
   defaultValue: "fullest",
 } as const satisfies SettingDefinition;
 
+/**
+ * For how many minutes an entry of the same product, with the same quantity
+ * and in the same warehouse asks to be confirmed before it is registered
+ * again (WMS-71, `registerEntry`). It warns; it never forbids.
+ */
+export const ENTRY_REPEAT_WINDOW = {
+  key: "inventory.entry.repeat_window",
+  module: "inventory",
+  area: "Entradas",
+  label: "Avisar si se registra dos veces la misma entrada",
+  options: [
+    {
+      value: "off",
+      label: "Sin aviso",
+      help: "Las entradas se registran siempre a la primera.",
+    },
+    {
+      value: "10",
+      label: "Si pasó en los últimos 10 minutos",
+      help: "Para almacenes donde llega seguido lo mismo.",
+    },
+    {
+      value: "30",
+      label: "Si pasó en los últimos 30 minutos",
+      help: "Antes de guardar, dice quién la registró y hace cuánto.",
+    },
+    {
+      value: "120",
+      label: "Si pasó en las últimas 2 horas",
+      help: "Para cuando dos personas pueden capturar la misma entrega.",
+    },
+  ],
+  defaultValue: "30",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
+  ENTRY_REPEAT_WINDOW,
 ];

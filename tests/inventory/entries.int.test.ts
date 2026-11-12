@@ -450,7 +450,14 @@ describe("who can register entries", () => {
     for (const role of ["warehouse", "administrator"] as const) {
       const person = await member(owner.organizationId, role);
       expect(
-        (await registerEntry(person, { productId, quantity: "10" })).ok,
+        (
+          await registerEntry(person, {
+            productId,
+            quantity: "10",
+            // The second person registers another delivery (WMS-71).
+            acceptRepeat: true,
+          })
+        ).ok,
         role,
       ).toBe(true);
     }

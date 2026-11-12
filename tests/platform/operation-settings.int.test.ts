@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  ENTRY_REPEAT_WINDOW,
   PICKING_STRATEGY,
   createOutboundOrder,
   registerEntry,
@@ -163,9 +164,11 @@ describe("operation settings", () => {
     ).toMatchObject({ ok: true, repeated: true });
     expect(await getOperationSettings(one, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "emptiest", defaultValue: "fullest" },
+      { key: ENTRY_REPEAT_WINDOW.key, value: "30", defaultValue: "30" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
+      { key: ENTRY_REPEAT_WINDOW.key, value: "30" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");
