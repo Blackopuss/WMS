@@ -20,6 +20,8 @@ export type InvitationRow = {
   roles: string[];
   expiresAt: string;
   expired: boolean;
+  /** It limits the person to some warehouses or zones (WMS-20). */
+  limited: boolean;
   canResend: boolean;
   canCancel: boolean;
 };
@@ -80,6 +82,9 @@ export function InvitationsPanel({
                       {role}
                     </Badge>
                   ))}
+                  {invitation.limited && (
+                    <Badge variant="secondary">Almacenes limitados</Badge>
+                  )}
                   {invitation.expired ? (
                     <Badge variant="warning">Vencida</Badge>
                   ) : (

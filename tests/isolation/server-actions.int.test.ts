@@ -532,9 +532,11 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/platform/payments.int.test.ts",
   },
   inviteAction: {
-    input: "correo y roles",
+    input:
+      "correo, roles y, si se limita, ids de almacenes y zonas (se comprueban en la empresa de la sesión y contra lo que tiene quien invita)",
     identity: "sesión y empresa activa (requireOrganizationContext)",
-    coveredBy: "tests/platform/invitations.int.test.ts",
+    coveredBy:
+      "tests/platform/invitations.int.test.ts y tests/platform/member-scope.int.test.ts",
   },
   resendInvitationAction: {
     input: "id de invitación",

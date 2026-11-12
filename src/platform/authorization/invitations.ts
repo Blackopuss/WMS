@@ -17,6 +17,12 @@ import { db, forOrganization } from "@/server";
 import { loadSubject } from "./access";
 import { ROLE_LABELS, isRole, type Role } from "./catalog";
 import { can } from "./policy";
+import {
+  readScopeRows,
+  resolveScopeRows,
+  type ScopeFacilitiesInput,
+  type ScopeRow,
+} from "./scope-rows";
 import { SeatLimitError, assertSeatAvailable, lockOrganization } from "./seats";
 import { TEAM_RULE_MESSAGES, checkInvitationRoles } from "./team-rules";
 
@@ -41,7 +47,7 @@ export function hashInvitationToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export type InvitationField = "email" | "roles";
+export type InvitationField = "email" | "roles" | "scope";
 
 export type CreateInvitationResult =
   | { ok: true; invitationId: string; expiresAt: Date }
@@ -70,6 +76,8 @@ async function issue(
     actorUserId: string;
     email: string;
     roles: Role[];
+    /** Rows of the scope, already checked; empty = no limit. */
+    scope: ScopeRow[];
   },
 ) {
   const now = new Date();
@@ -98,6 +106,7 @@ async function issue(
       email: input.email,
       tokenHash: hashInvitationToken(token),
       roles: input.roles,
+      ...(input.scope.length > 0 ? { scope: input.scope } : {}),
       invitedByUserId: input.actorUserId,
       expiresAt,
     },
@@ -107,7 +116,11 @@ async function issue(
     actorUserId: input.actorUserId,
     action: "team.invitation_created",
     target: { type: "invitation", id: invitationId },
-    metadata: { email: input.email, roles: input.roles },
+    metadata: {
+      email: input.email,
+      roles: input.roles,
+      ...(input.scope.length > 0 ? { limitedToWarehouses: true } : {}),
+    },
   });
   return { token, invitationId, expiresAt };
 }
@@ -139,14 +152,20 @@ async function deliver(
 }
 
 /**
- * Invites an address to the company with the given roles. Refused when the
- * person may not invite, may not hand out those roles, or the address
- * already is in the team.
+ * Invites an address to the company with the given roles and, optionally,
+ * limited to some warehouses or zones (WMS-20). Refused when the person may
+ * not invite, may not hand out those roles or that scope, or the address
+ * already is in the team. Someone who is limited never invites without a
+ * limit: with no warehouses chosen, the invitation takes their own scope.
  */
 export async function createInvitation(
   organizationId: string,
   actorUserId: string,
-  input: { email: string; roles: readonly string[] },
+  input: {
+    email: string;
+    roles: readonly string[];
+    facilities?: ScopeFacilitiesInput;
+  },
 ): Promise<CreateInvitationResult> {
   const subject = await loadSubject(organizationId, actorUserId);
   const rule = checkInvitationRoles(subject, input.roles);
@@ -178,19 +197,38 @@ export async function createInvitation(
   const wait = await reserveAttempt(key);
   if (wait > 0) return invalid({}, tooManyAttemptsMessage(wait));
 
-  let issued: Awaited<ReturnType<typeof issue>>;
+  let issued:
+    | Awaited<ReturnType<typeof issue>>
+    | { scopeProblem: "invalid_scope" | "scope_exceeds" };
   try {
-    issued = await db.$transaction((tx) =>
-      issue(tx, {
+    issued = await db.$transaction(async (tx) => {
+      const scope = await resolveScopeRows(
+        tx,
+        organizationId,
+        { userId: actorUserId, isOwner: subject.isOwner === true },
+        input.facilities ?? [],
+        { inheritWhenLimited: true },
+      );
+      if (!scope.ok) return { scopeProblem: scope.reason };
+      return issue(tx, {
         organizationId,
         actorUserId,
         email: email.data,
         roles,
-      }),
-    );
+        scope: scope.rows,
+      });
+    });
   } catch (error) {
     if (error instanceof SeatLimitError) return invalid({}, error.message);
     throw error;
+  }
+  if ("scopeProblem" in issued) {
+    return invalid({
+      scope:
+        issued.scopeProblem === "scope_exceeds"
+          ? "Solo puedes dar acceso a los almacenes o zonas que tú tienes asignados."
+          : "Elige almacenes y zonas que existan y estén activos.",
+    });
   }
   await deliver(organizationId, actorUserId, email.data, roles, issued.token);
   return {
@@ -318,6 +356,8 @@ export type PendingInvitation = {
   id: string;
   email: string;
   roles: Role[];
+  /** The person will be limited to some warehouses or zones (WMS-20). */
+  limited: boolean;
   expiresAt: Date;
   expired: boolean;
   createdAt: Date;
@@ -334,6 +374,7 @@ export async function listPendingInvitations(
       id: true,
       email: true,
       roles: true,
+      scope: true,
       expiresAt: true,
       createdAt: true,
     },
@@ -343,6 +384,7 @@ export async function listPendingInvitations(
     id: row.id,
     email: row.email,
     roles: Array.isArray(row.roles) ? row.roles.filter(isRole) : [],
+    limited: readScopeRows(row.scope).length > 0,
     expiresAt: row.expiresAt,
     expired: row.expiresAt.getTime() <= now,
     createdAt: row.createdAt,

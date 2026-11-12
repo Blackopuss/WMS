@@ -13,6 +13,7 @@ import {
 } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
+import { dayWindow, type DayWindow } from "./calendar-day";
 import { formatStock, type InventoryActor } from "./movements";
 import {
   OUTBOUND_ORDER_STATUS_LABELS,
@@ -742,15 +743,49 @@ export type OutboundPage = {
   page: number;
   pageCount: number;
   status: OutboundOrderStatus | null;
+  /** The day the list is narrowed to («2026-11-12»), if any. */
+  pickedOn: string | null;
 };
+
+const LEFT_PICKING = ["PICKED", "PACKED", "SHIPPED"] as const;
+
+/**
+ * Orders of a warehouse picked on a day: they have left picking and their
+ * last picking task closed that day (the order keeps no date of its own).
+ * The same for the list and for the summary of the day (WMS-73).
+ */
+export function pickedOnWhere(facilityId: string, window: DayWindow) {
+  const pickClosed = (when: { gte: Date; lt?: Date }) => ({
+    lines: {
+      some: {
+        tasks: {
+          some: {
+            kind: "PICK" as const,
+            OR: [{ deliveredAt: when }, { cancelledAt: when }],
+          },
+        },
+      },
+    },
+  });
+  return {
+    facilityId,
+    status: { in: [...LEFT_PICKING] },
+    ...pickClosed(window.range),
+    // Its last picking task closed that day, not on a later one.
+    NOT: pickClosed({ gte: window.range.lt }),
+  };
+}
 
 const ymd = (value: Date | null) =>
   value ? value.toISOString().slice(0, 10) : null;
 
-/** Orders a page at a time, newest first; optionally one state. */
+/**
+ * Orders a page at a time, newest first; optionally one state, or the ones
+ * picked on a day (`pickedOn`, year-month-day of the company's calendar).
+ */
 export async function listOutboundOrders(
   actor: InventoryActor,
-  options: { status?: unknown; page?: number } = {},
+  options: { status?: unknown; page?: number; pickedOn?: unknown } = {},
 ): Promise<OutboundPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -761,10 +796,13 @@ export async function listOutboundOrders(
   const client = forOrganization(actor.organizationId);
   // The warehouse the person works in (WMS-18).
   const facility = await activeFacilityOf(client, actor.userId);
-  const where = {
-    facilityId: facility.id,
-    ...(status ? { status } : {}),
-  };
+  const window =
+    typeof options.pickedOn === "string"
+      ? await dayWindow(client, options.pickedOn)
+      : null;
+  const where = window
+    ? pickedOnWhere(facility.id, window)
+    : { facilityId: facility.id, ...(status ? { status } : {}) };
   const total = await client.outboundOrder.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / OUTBOUND_PAGE_SIZE));
   const page =
@@ -804,7 +842,9 @@ export async function listOutboundOrders(
     total,
     page,
     pageCount,
-    status,
+    // A day narrows by itself: the state asked along with it is not applied.
+    status: window ? null : status,
+    pickedOn: window?.day ?? null,
   };
 }
 

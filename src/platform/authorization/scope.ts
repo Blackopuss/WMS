@@ -32,3 +32,16 @@ export async function loadScope(
   }
   return buildScope(membership.scopes);
 }
+
+/**
+ * True when nothing limits that person to warehouses or zones. Figures of
+ * the whole company (low stock against its minimum, what the inventory is
+ * worth, what to buy) are only for them: someone limited would read there
+ * numbers of places outside their scope (WMS-20).
+ */
+export async function seesWholeCompany(
+  client: ScopeReader,
+  userId: string,
+): Promise<boolean> {
+  return (await loadScope(client, userId)) === null;
+}

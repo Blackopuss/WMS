@@ -410,6 +410,9 @@ model Invitation {
   email           String           @db.VarChar(254)
   tokenHash       String           @unique @db.Char(64)
   roles           Json
+  /// Where the person will work (WMS-20): rows `{ facilityId, locationId }`
+  /// copied to `membership_scope` on acceptance. NULL = no limit.
+  scope           Json?
   status          InvitationStatus @default(PENDING)
   invitedByUserId String           @db.Char(36)
   expiresAt       DateTime         @db.DateTime(3)

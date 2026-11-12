@@ -33,6 +33,181 @@ const OPTION =
 const BOX = "mt-0.5 size-5 shrink-0 accent-primary outline-none";
 
 /**
+ * The choice itself, to put inside a form: «every warehouse» or the
+ * warehouses (and zones) a person may work in (WMS-20). It only sends ids
+ * (`mode`, `facility`, `zoneMode:<id>`, `zones:<id>`); the server decides.
+ */
+export function ScopeFields({
+  current,
+  choices,
+  everywhereAllowed,
+  errorId,
+}: {
+  current: MemberScope;
+  choices: ScopeChoice[];
+  /** False when who edits is limited: they cannot hand out everything. */
+  everywhereAllowed: boolean;
+  /** Id of the message that explains a rejected choice, if any. */
+  errorId?: string;
+}) {
+  const [mode, setMode] = useState<"all" | "some">(
+    current.length === 0 && everywhereAllowed ? "all" : "some",
+  );
+  const [chosen, setChosen] = useState<Record<string, "whole" | "zones">>(() =>
+    Object.fromEntries(
+      current.flatMap((entry) => {
+        const choice = choices.find((each) => each.id === entry.facilityId);
+        if (!choice) return [];
+        return [
+          [
+            entry.facilityId,
+            entry.zoneIds === null && choice.wholeAllowed ? "whole" : "zones",
+          ],
+        ];
+      }),
+    ),
+  );
+  const zonesOf = (facilityId: string) =>
+    current.find((entry) => entry.facilityId === facilityId)?.zoneIds ?? [];
+
+  const error = errorId !== undefined;
+
+  return (
+    <>
+      <fieldset
+        aria-describedby={error ? errorId : undefined}
+        className="space-y-2"
+      >
+        <legend className="text-sm font-medium">Dónde puede trabajar</legend>
+        {everywhereAllowed && (
+          <label className={OPTION}>
+            <input
+              type="radio"
+              name="mode"
+              value="all"
+              checked={mode === "all"}
+              onChange={() => setMode("all")}
+              className={BOX}
+            />
+            <span className="font-medium">Todos los almacenes</span>
+          </label>
+        )}
+        <label className={OPTION}>
+          <input
+            type="radio"
+            name="mode"
+            value="some"
+            checked={mode === "some"}
+            onChange={() => setMode("some")}
+            className={BOX}
+          />
+          <span className="font-medium">Solo los que elija</span>
+        </label>
+      </fieldset>
+
+      {mode === "some" && (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Almacenes</legend>
+          <div className="grid gap-2">
+            {choices.map((choice) => {
+              const state = chosen[choice.id];
+              return (
+                <div key={choice.id} className="rounded-lg border bg-card">
+                  <label className="flex min-h-11 cursor-pointer items-start gap-3 p-3">
+                    <input
+                      type="checkbox"
+                      name="facility"
+                      value={choice.id}
+                      checked={state !== undefined}
+                      onChange={(event) =>
+                        setChosen((previous) => {
+                          const next = { ...previous };
+                          if (event.target.checked) {
+                            next[choice.id] = choice.wholeAllowed
+                              ? "whole"
+                              : "zones";
+                          } else delete next[choice.id];
+                          return next;
+                        })
+                      }
+                      className={BOX}
+                    />
+                    <span className="font-medium">{choice.name}</span>
+                  </label>
+                  {state !== undefined && choice.zones.length > 0 && (
+                    <div className="space-y-2 border-t p-3 pl-11">
+                      {choice.wholeAllowed && (
+                        <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                          <input
+                            type="radio"
+                            name={`zoneMode:${choice.id}`}
+                            value="whole"
+                            checked={state === "whole"}
+                            onChange={() =>
+                              setChosen((previous) => ({
+                                ...previous,
+                                [choice.id]: "whole",
+                              }))
+                            }
+                            className={BOX}
+                          />
+                          <span>Todo el almacén</span>
+                        </label>
+                      )}
+                      <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                        <input
+                          type="radio"
+                          name={`zoneMode:${choice.id}`}
+                          value="zones"
+                          checked={state === "zones"}
+                          onChange={() =>
+                            setChosen((previous) => ({
+                              ...previous,
+                              [choice.id]: "zones",
+                            }))
+                          }
+                          className={BOX}
+                        />
+                        <span>Solo estas zonas</span>
+                      </label>
+                      {state === "zones" && (
+                        <div className="space-y-1 pl-8">
+                          {choice.zones.map((zone) => (
+                            <label
+                              key={zone.id}
+                              className="flex min-h-11 cursor-pointer items-center gap-3"
+                            >
+                              <input
+                                type="checkbox"
+                                name={`zones:${choice.id}`}
+                                value={zone.id}
+                                defaultChecked={zonesOf(choice.id).includes(
+                                  zone.id,
+                                )}
+                                className={BOX}
+                              />
+                              <span>{zone.name}</span>
+                            </label>
+                          ))}
+                          <p className="text-sm text-muted-foreground">
+                            Si surte pedidos, incluye también la ubicación donde
+                            se deja lo surtido.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+    </>
+  );
+}
+
+/**
  * Chooses «every warehouse» or the warehouses (and zones) a person may
  * work in (WMS-20). It only sends ids; the server decides.
  */
@@ -56,26 +231,6 @@ export function ScopeForm({
   formAction: (formData: FormData) => void;
   pending: boolean;
 }) {
-  const [mode, setMode] = useState<"all" | "some">(
-    current.length === 0 && everywhereAllowed ? "all" : "some",
-  );
-  const [chosen, setChosen] = useState<Record<string, "whole" | "zones">>(() =>
-    Object.fromEntries(
-      current.flatMap((entry) => {
-        const choice = choices.find((each) => each.id === entry.facilityId);
-        if (!choice) return [];
-        return [
-          [
-            entry.facilityId,
-            entry.zoneIds === null && choice.wholeAllowed ? "whole" : "zones",
-          ],
-        ];
-      }),
-    ),
-  );
-  const zonesOf = (facilityId: string) =>
-    current.find((entry) => entry.facilityId === facilityId)?.zoneIds ?? [];
-
   return (
     <>
       <DialogHeader>
@@ -87,135 +242,12 @@ export function ScopeForm({
       </DialogHeader>
       <form action={formAction} className="space-y-5">
         <input type="hidden" name="userId" value={memberUserId} />
-        <fieldset
-          aria-describedby={error ? "scope-error" : undefined}
-          className="space-y-2"
-        >
-          <legend className="text-sm font-medium">Dónde puede trabajar</legend>
-          {everywhereAllowed && (
-            <label className={OPTION}>
-              <input
-                type="radio"
-                name="mode"
-                value="all"
-                checked={mode === "all"}
-                onChange={() => setMode("all")}
-                className={BOX}
-              />
-              <span className="font-medium">Todos los almacenes</span>
-            </label>
-          )}
-          <label className={OPTION}>
-            <input
-              type="radio"
-              name="mode"
-              value="some"
-              checked={mode === "some"}
-              onChange={() => setMode("some")}
-              className={BOX}
-            />
-            <span className="font-medium">Solo los que elija</span>
-          </label>
-        </fieldset>
-
-        {mode === "some" && (
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Almacenes</legend>
-            <div className="grid gap-2">
-              {choices.map((choice) => {
-                const state = chosen[choice.id];
-                return (
-                  <div key={choice.id} className="rounded-lg border bg-card">
-                    <label className="flex min-h-11 cursor-pointer items-start gap-3 p-3">
-                      <input
-                        type="checkbox"
-                        name="facility"
-                        value={choice.id}
-                        checked={state !== undefined}
-                        onChange={(event) =>
-                          setChosen((previous) => {
-                            const next = { ...previous };
-                            if (event.target.checked) {
-                              next[choice.id] = choice.wholeAllowed
-                                ? "whole"
-                                : "zones";
-                            } else delete next[choice.id];
-                            return next;
-                          })
-                        }
-                        className={BOX}
-                      />
-                      <span className="font-medium">{choice.name}</span>
-                    </label>
-                    {state !== undefined && choice.zones.length > 0 && (
-                      <div className="space-y-2 border-t p-3 pl-11">
-                        {choice.wholeAllowed && (
-                          <label className="flex min-h-11 cursor-pointer items-center gap-3">
-                            <input
-                              type="radio"
-                              name={`zoneMode:${choice.id}`}
-                              value="whole"
-                              checked={state === "whole"}
-                              onChange={() =>
-                                setChosen((previous) => ({
-                                  ...previous,
-                                  [choice.id]: "whole",
-                                }))
-                              }
-                              className={BOX}
-                            />
-                            <span>Todo el almacén</span>
-                          </label>
-                        )}
-                        <label className="flex min-h-11 cursor-pointer items-center gap-3">
-                          <input
-                            type="radio"
-                            name={`zoneMode:${choice.id}`}
-                            value="zones"
-                            checked={state === "zones"}
-                            onChange={() =>
-                              setChosen((previous) => ({
-                                ...previous,
-                                [choice.id]: "zones",
-                              }))
-                            }
-                            className={BOX}
-                          />
-                          <span>Solo estas zonas</span>
-                        </label>
-                        {state === "zones" && (
-                          <div className="space-y-1 pl-8">
-                            {choice.zones.map((zone) => (
-                              <label
-                                key={zone.id}
-                                className="flex min-h-11 cursor-pointer items-center gap-3"
-                              >
-                                <input
-                                  type="checkbox"
-                                  name={`zones:${choice.id}`}
-                                  value={zone.id}
-                                  defaultChecked={zonesOf(choice.id).includes(
-                                    zone.id,
-                                  )}
-                                  className={BOX}
-                                />
-                                <span>{zone.name}</span>
-                              </label>
-                            ))}
-                            <p className="text-sm text-muted-foreground">
-                              Si surte pedidos, incluye también la ubicación
-                              donde se deja lo surtido.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </fieldset>
-        )}
+        <ScopeFields
+          current={current}
+          choices={choices}
+          everywhereAllowed={everywhereAllowed}
+          errorId={error ? "scope-error" : undefined}
+        />
 
         {error && (
           <p

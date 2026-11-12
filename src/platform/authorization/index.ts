@@ -23,7 +23,7 @@ export {
   scopeOf,
 } from "./policy";
 export type { Place, Scope, Subject } from "./policy";
-export { loadScope } from "./scope";
+export { loadScope, seesWholeCompany } from "./scope";
 export type { ScopeReader } from "./scope";
 export {
   FORBIDDEN_MESSAGE,

@@ -71,7 +71,13 @@ export default async function SugerenciasPage() {
         title="Qué pedir"
         description="Lo que está en su mínimo y no viene en camino, por proveedor."
       />
-      {suggestions.groups.length === 0 ? (
+      {suggestions.limited ? (
+        <EmptyState
+          icon={PackageSearch}
+          title="Esto lo ve quien administra"
+          description="Qué pedir se calcula con las existencias de toda la empresa, y tú trabajas solo en algunos almacenes o zonas."
+        />
+      ) : suggestions.groups.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
           title="No hace falta pedir nada"

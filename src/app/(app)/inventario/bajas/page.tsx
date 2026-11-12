@@ -85,7 +85,13 @@ export default async function ExistenciasBajasPage({
         title="Existencias bajas"
         description="Productos que llegaron a su mínimo o están por debajo, según lo que hay hoy."
       />
-      {list.total === 0 ? (
+      {list.limited ? (
+        <EmptyState
+          icon={TriangleAlert}
+          title="Esto lo ve quien administra"
+          description="Las existencias bajas se calculan con lo que hay en toda la empresa, y tú trabajas solo en algunos almacenes o zonas."
+        />
+      ) : list.total === 0 ? (
         list.withMinimum === 0 ? (
           <EmptyState
             icon={TriangleAlert}

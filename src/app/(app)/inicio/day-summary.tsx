@@ -54,20 +54,20 @@ export function DaySummaryBlock({
     {
       label: "Tareas terminadas",
       value: summary.tasksDone,
-      href: links.tasks ? "/tareas?vista=closed" : null,
+      href: links.tasks ? `/tareas?vista=closed&dia=${summary.day}` : null,
     },
     {
       label: "Pedidos surtidos",
       value: summary.ordersPicked.documents,
       detail: lines(summary.ordersPicked.lines),
-      href: links.orders ? "/pedidos?estado=PICKED" : null,
+      href: links.orders ? `/pedidos?dia=${summary.day}` : null,
     },
   ];
 
   return (
     <section aria-labelledby="inicio-resumen" className="space-y-3">
       <h2 id="inicio-resumen" className="font-medium">
-        Hoy
+        Lo que se hizo hoy
       </h2>
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {tiles.map(({ label, value, detail, href }) => {

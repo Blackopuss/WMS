@@ -3,6 +3,7 @@ import "server-only";
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
 import { AVAILABLE_STOCK, formatStock } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
+import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { pluralizeName, resolveConversion } from "@/platform/catalog";
 import {
@@ -78,6 +79,11 @@ export type PurchaseSuggestions = {
     sku: string;
     incomingText: string;
   }[];
+  /**
+   * The person is limited to warehouses or zones (WMS-20): what to buy is
+   * decided with the stock of the whole company, so nothing is suggested.
+   */
+  limited: boolean;
 };
 
 type Planned = Suggestion & {
@@ -317,9 +323,11 @@ export async function getPurchaseSuggestions(
     actor.userId,
     "purchasing.suggestion.read",
   );
-  const { planned, covered } = await plan(
-    forOrganization(actor.organizationId),
-  );
+  const client = forOrganization(actor.organizationId);
+  if (!(await seesWholeCompany(client, actor.userId))) {
+    return { groups: [], covered: [], limited: true };
+  }
+  const { planned, covered } = await plan(client);
   const groups = new Map<string, SuggestionGroup>();
   for (const item of planned) {
     const key = item.supplierId ?? "";
@@ -341,6 +349,7 @@ export async function getPurchaseSuggestions(
     groups.set(key, group);
   }
   return {
+    limited: false,
     groups: [...groups.values()].sort((a, b) =>
       a.supplierName === null
         ? 1
@@ -366,6 +375,10 @@ export type GenerateSuggestedResult =
     }
   | { ok: false; reason: "invalid"; error: string };
 
+/** Why someone limited to warehouses or zones gets no suggestions. */
+const LIMITED_MESSAGE =
+  "Qué pedir se calcula con las existencias de toda la empresa, y tú trabajas solo en algunos almacenes o zonas. Pídeselo a quien administra.";
+
 class NumberTaken extends Error {}
 
 /**
@@ -390,6 +403,13 @@ export async function generateSuggestedOrders(
     userId,
     "purchasing.order.create",
   );
+  if (!(await seesWholeCompany(forOrganization(organizationId), userId))) {
+    return {
+      ok: false,
+      reason: "invalid",
+      error: LIMITED_MESSAGE,
+    };
+  }
   const withCosts = await mayRecordCosts(actor);
   const asked = [
     ...new Set(

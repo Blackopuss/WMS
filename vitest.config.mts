@@ -43,10 +43,16 @@ export default defineConfig({
           globalSetup: ["./tests/setup/global-db.ts"],
           // Tests share one database: run files one at a time.
           fileParallelism: false,
-          // Worker threads instead of child processes: on Windows a forked
-          // worker sometimes died at start (exit 0xC0000409) with no test
-          // failing. Nothing here needs a separate process.
-          pool: "threads",
+          // One file at a time, each in its own worker. On Windows, worker
+          // threads: a forked worker sometimes died at start (exit
+          // 0xC0000409) with no test failing. Everywhere else (CI runs on
+          // Linux), child processes: with threads, Node 24 sometimes aborted
+          // the whole run when a thread that had loaded WebAssembly (the
+          // Prisma query compiler) was torn down («Check failed:
+          // jit_page_->allocations_.erase(addr) == 1», exit 133, four times
+          // in CI between 2026-11-11 and 2026-11-12, never a failing test).
+          // A process that ends takes its own memory with it.
+          pool: process.platform === "win32" ? "threads" : "forks",
           // Loops of 20–30 real database calls take a few seconds under load.
           testTimeout: 20_000,
         },

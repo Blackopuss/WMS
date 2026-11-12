@@ -12,13 +12,16 @@ import {
   changeStockStatus,
   createOutboundOrder,
   createTask,
+  countLowStock,
   getCount,
+  getInventoryValue,
   getOutboundOrder,
   getProductStock,
   getStockByLocation,
   getStockTotals,
   getTask,
   listCounts,
+  listLowStock,
   listMovements,
   listOutboundOrders,
   listRecentMovements,
@@ -34,12 +37,15 @@ import {
   registerTransfer,
   releaseOutboundOrder,
   reverseMovement,
+  setMinimum,
   setOutboundLine,
   type InventoryActor,
 } from "@/modules/inventory";
 import {
   addOrderLine,
   createPurchaseOrder,
+  generateSuggestedOrders,
+  getPurchaseSuggestions,
   receivePurchaseOrder,
   returnToSupplier,
   submitPurchaseOrder,
@@ -611,6 +617,39 @@ describe("PC-12: limited to warehouse B", () => {
     ).toMatchObject({ ok: true });
     expect(await stockAt(shelfA)).toBe(7);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("figures of the whole company are not for them", async () => {
+    // A minimum far above what there is: the product is low for the company.
+    expect(
+      await setMinimum(owner, { productId, quantity: "100000" }),
+    ).toMatchObject({ ok: true });
+
+    // Without a limit: the list, the count, the value and what to buy.
+    expect((await listLowStock(free)).items.map((i) => i.productId)).toContain(
+      productId,
+    );
+    expect(await countLowStock(free)).toBeGreaterThan(0);
+    expect(await getInventoryValue(free)).not.toBeNull();
+    expect((await getPurchaseSuggestions(free)).limited).toBe(false);
+
+    // Limited to B: none of them, and it says why instead of «all is fine».
+    expect(await listLowStock(limited)).toMatchObject({
+      items: [],
+      total: 0,
+      withMinimum: 0,
+      limited: true,
+    });
+    expect(await countLowStock(limited)).toBe(0);
+    expect(await getInventoryValue(limited)).toBeNull();
+    expect(await getPurchaseSuggestions(limited)).toEqual({
+      groups: [],
+      covered: [],
+      limited: true,
+    });
+    expect(
+      await generateSuggestedOrders(limited, { productIds: [productId] }),
+    ).toMatchObject({ ok: false, reason: "invalid" });
   });
 
   it("without rows nothing changes, and the titular is never limited", async () => {
