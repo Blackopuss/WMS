@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   countLowStock,
+  countUnplacedStock,
   formatStock,
   getInventoryValue,
   getStockTotals,
@@ -128,6 +129,11 @@ export default async function InventarioPage({
     access.can("inventory.stock.read")
       ? await countLowStock(actor)
       : null;
+  // WMS-72: what still waits in «General» or in receiving.
+  const unplacedCount =
+    !showArchived && access.can("inventory.stock.read")
+      ? await countUnplacedStock(actor)
+      : 0;
   const first = (list.page - 1) * list.pageSize + 1;
   const last = first + products.length - 1;
   const count = (n: number) => n.toLocaleString("es-MX");
@@ -274,6 +280,19 @@ export default async function InventarioPage({
             {lowCount === 1
               ? "1 producto se está acabando."
               : `${lowCount.toLocaleString("es-MX")} productos se están acabando.`}
+          </span>
+          <span className="font-medium text-primary">Ver cuáles</span>
+        </Link>
+      )}
+      {unplacedCount > 0 && (
+        <Link
+          href="/inventario/sin-acomodar"
+          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="flex-1">
+            {unplacedCount === 1
+              ? "1 producto sin acomodar."
+              : `${unplacedCount.toLocaleString("es-MX")} productos sin acomodar.`}
           </span>
           <span className="font-medium text-primary">Ver cuáles</span>
         </Link>

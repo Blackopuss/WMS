@@ -39,6 +39,7 @@ const SCREENS = [
   "/inicio",
   "/inventario",
   "/inventario/nuevo",
+  "/inventario/sin-acomodar",
   "/movimientos",
   "/movimientos/entrada",
   "/movimientos/salida-rapida",

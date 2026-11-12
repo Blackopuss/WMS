@@ -61,6 +61,13 @@ export {
 } from "./return-exit";
 export { reconcileStock, reconcileValue } from "./reconciliation";
 export type { StockDrift, ValueDrift } from "./reconciliation";
+export {
+  UNPLACED_PAGE_SIZE,
+  countUnplacedStock,
+  listUnplacedStock,
+  type UnplacedItem,
+  type UnplacedPage,
+} from "./unplaced";
 export { getProductStock } from "./product-stock";
 export type { ProductStock } from "./product-stock";
 export {
