@@ -219,10 +219,12 @@ describe("a key is for one confirmation", () => {
       quantity: "5",
       idempotencyKey: key(),
     });
+    // Another delivery of the same, accepted by the person (WMS-71).
     await registerEntry(actor, {
       productId: tornillo,
       quantity: "5",
       idempotencyKey: key(),
+      acceptRepeat: true,
     });
     expect(await stock(actor, tornillo)).toBe("10");
   });
@@ -230,7 +232,11 @@ describe("a key is for one confirmation", () => {
   it("without a key every send is a new movement", async () => {
     const tornillo = await product(actor);
     await registerEntry(actor, { productId: tornillo, quantity: "5" });
-    await registerEntry(actor, { productId: tornillo, quantity: "5" });
+    await registerEntry(actor, {
+      productId: tornillo,
+      quantity: "5",
+      acceptRepeat: true,
+    });
     expect(await stock(actor, tornillo)).toBe("10");
   });
 

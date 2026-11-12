@@ -35,6 +35,7 @@ export type {
   AdjustmentInput,
   EntryField,
   EntryInput,
+  EntryResult,
   InventoryActor,
   MovementFilters,
   MovementPage,
@@ -42,6 +43,7 @@ export type {
   MovementSummary,
   MovementType,
   PendingInitialBalance,
+  RepeatedEntry,
   ReversalInput,
   ReversalResult,
   TransferField,
@@ -322,4 +324,8 @@ export type {
   OutboundIssue,
   StartOutboundImportResult,
 } from "./outbound-import";
-export { INVENTORY_SETTINGS, PICKING_STRATEGY } from "./settings";
+export {
+  ENTRY_REPEAT_WINDOW,
+  INVENTORY_SETTINGS,
+  PICKING_STRATEGY,
+} from "./settings";

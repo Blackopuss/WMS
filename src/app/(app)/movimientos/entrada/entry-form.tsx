@@ -1,6 +1,12 @@
 "use client";
 
-import { CircleAlert, Equal, Loader2, WifiOff } from "lucide-react";
+import {
+  CircleAlert,
+  Equal,
+  Loader2,
+  TriangleAlert,
+  WifiOff,
+} from "lucide-react";
 import Link from "next/link";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
@@ -202,6 +208,7 @@ export function EntryForm({
   );
   const { answers } = state;
   const quantityRef = useRef<HTMLInputElement>(null);
+  const acceptRef = useRef<HTMLButtonElement>(null);
   const [capture, setCapture] = useState(state.values.capture);
   const [preview, setPreview] = useState<EntryPreview | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -210,6 +217,8 @@ export function EntryForm({
   // After a refusal, take the person back to the quantity when it is the problem.
   useEffect(() => {
     if (state.fieldErrors.quantity) quantityRef.current?.focus();
+    // WMS-71: the warning sits next to the button that answers it.
+    if (state.repeatWarning) acceptRef.current?.focus();
   }, [state]);
 
   /** Asks the server for the equivalence a moment after the person stops typing. */
@@ -455,13 +464,37 @@ export function EntryForm({
           />
         )}
       </FormField>
+      {state.repeatWarning && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground"
+        >
+          <TriangleAlert
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-warning"
+          />
+          <p>
+            <span className="font-medium">{state.repeatWarning}</span> Esta
+            entrada todavía no se guarda. Si es otra entrega, regístrala de
+            todos modos.
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button
+          ref={acceptRef}
           type="submit"
+          // Only this button says the person saw the warning (WMS-71).
+          name={state.repeatWarning ? "acceptRepeat" : undefined}
+          value={state.repeatWarning ? "1" : undefined}
           disabled={pending || lost === "checking" || lost === "unknown"}
         >
           {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-          {pending ? texts.busy : texts.submit}
+          {pending
+            ? texts.busy
+            : state.repeatWarning
+              ? "Registrar de todos modos"
+              : texts.submit}
         </Button>
         <Button asChild variant="outline">
           <Link href={texts.cancel}>Cancelar</Link>

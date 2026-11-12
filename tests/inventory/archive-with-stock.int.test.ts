@@ -173,7 +173,12 @@ describe("archiving a product", () => {
       const [archived, ...entries] = await Promise.all([
         archiveProduct(actor, productId),
         ...Array.from({ length: 4 }, () =>
-          registerEntry(actor, { productId, quantity: "5" }),
+          // Four deliveries of the same, not one sent four times (WMS-71).
+          registerEntry(actor, {
+            productId,
+            quantity: "5",
+            acceptRepeat: true,
+          }),
         ),
       ]);
       const card = await getProduct(actor, productId);

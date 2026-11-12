@@ -20,6 +20,11 @@ import { requireOrganizationContext } from "@/platform/tenancy";
 export type EntryFormState = {
   fieldErrors: Partial<Record<EntryField | "toLocationId", string>>;
   formError?: string;
+  /**
+   * The same entry was registered a moment ago (WMS-71): nothing was saved
+   * and the form offers «Registrar de todos modos».
+   */
+  repeatWarning?: string;
   values: {
     locationId: string;
     quantity: string;
@@ -59,6 +64,13 @@ export async function registerEntryAction(
 ): Promise<EntryFormState> {
   return receive("entry", productId, prev, formData);
 }
+
+/**
+ * What the form sends with «Registrar de todos modos» (WMS-71). Only that
+ * button carries it, so it is a decision of the person on that warning.
+ */
+const acceptsRepeat = (formData: FormData) =>
+  formData.get("acceptRepeat") === "1";
 
 /** Registers an exit; the service refuses more than the location holds (INV-19). */
 export async function registerExitAction(
@@ -125,6 +137,8 @@ async function receive(
         // Created with the form and resent on every retry (INV-21).
         idempotencyKey: text("idempotencyKey"),
         ...captureFields(values.capture),
+        // Only entries look at it (WMS-71).
+        ...(kind === "entry" ? { acceptRepeat: acceptsRepeat(formData) } : {}),
       },
     );
   } catch (error) {
@@ -132,6 +146,9 @@ async function receive(
       return { fieldErrors: {}, formError: error.message, values };
     }
     throw error;
+  }
+  if (!result.ok && result.reason === "repeated_recently") {
+    return { fieldErrors: {}, repeatWarning: result.formError, values };
   }
   if (!result.ok) {
     return {

@@ -183,7 +183,12 @@ describe("costs typed in entries", () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenError);
     expect(
-      await registerEntry(almacen, { productId: martillo, quantity: "2" }),
+      await registerEntry(almacen, {
+        productId: martillo,
+        quantity: "2",
+        // Another delivery of the same quantity (WMS-71).
+        acceptRepeat: true,
+      }),
     ).toMatchObject({ ok: true });
     expect(await costOf(martillo)).toBe("50.00 / 200.00");
 
@@ -336,6 +341,8 @@ describe("every movement is valued", () => {
         productId: martillo,
         quantity: "10",
         unitCost: "95",
+        // Another delivery of the same quantity (WMS-71).
+        acceptRepeat: true,
       }),
     );
     expect(await costOf(martillo)).toBe("90.00 / 1800.00");
