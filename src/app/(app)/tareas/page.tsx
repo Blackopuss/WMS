@@ -112,7 +112,7 @@ export default async function TareasPage({
   const empty = {
     mine: {
       title: "No tienes tareas",
-      description: "Toma una de las disponibles o espera a que te asignen.",
+      description: "Cuando tomes una o te la asignen, aparecerá aquí.",
     },
     available: {
       title: "No hay tareas disponibles",
@@ -167,7 +167,19 @@ export default async function TareasPage({
           icon={ClipboardList}
           title={empty.title}
           description={empty.description}
-          action={view === "open" ? newButton : undefined}
+          action={
+            view === "open" ? (
+              newButton
+            ) : view === "mine" && counts.available > 0 ? (
+              <Button asChild>
+                <Link href={href("available")}>
+                  {counts.available === 1
+                    ? "Ver 1 tarea disponible"
+                    : `Ver ${counts.available} tareas disponibles`}
+                </Link>
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <section

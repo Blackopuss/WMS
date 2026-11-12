@@ -59,6 +59,30 @@ registrar lo que llegó y lo que salió sin dar vueltas ni leer párrafos?
 | 24 | Párrafos de explicación al pie de cada orden (hasta tres renglones) y en el diálogo de recibir. | 1 | Una línea por estado; recibir dice «Ya viene lo que falta. Si algo no llegó, déjalo en 0.». |
 | 25 | El conteo tenía «Cancelar conteo» como botón principal arriba y un párrafo largo al pie. | 2 | Arriba solo «Aplicar conteo» cuando hay diferencias; cancelar va al final; una línea de ayuda. |
 
+## Cuarta ronda: Tareas, surtido y Pedidos (2026-11-12)
+
+Recorrido con Playwright como operadora en teléfono (390 px) y como titular en
+escritorio, con datos de ejemplo (`npm run db:seed:ejemplo`). Pregunta guía:
+¿alguien que no es técnico puede tomar una tarea, surtirla y entregarla sin
+preguntar?
+
+| # | Hallazgo (antes) | Gravedad | Cambio |
+| --- | --- | --- | --- |
+| 26 | Estados de tarea en palabras del sistema: «En camino al origen», «Recogida». | 2 | Dicen lo que falta por hacer: «Por recoger», «Por entregar». |
+| 27 | La tarea no decía cuántos pasos tiene ni en cuál va. | 2 | Tres pasos a la vista: «1. Tomarla · 2. Surtir (o Recoger) · 3. Entregar», con el actual marcado. |
+| 28 | Al surtir, los campos «Producto (escanea o escribe la clave)» y «Ubicación donde estás» no decían qué teclear sin lector; enviarlos vacíos respondía «Ese no es el producto de la tarea». | 3 | Etiquetas cortas («Producto», «¿Dónde estás?») con la pista exacta debajo («Escanéalo o escribe CIN-001», «…o escribe Estante 2»). Vacío y equivocado tienen mensajes distintos. |
+| 29 | «Mis tareas» vacía decía «Toma una de las disponibles» sin llevar a ellas. | 2 | Botón «Ver N tareas disponibles» en el estado vacío. |
+| 30 | Para agregar un producto a un pedido había que saberse la clave exacta. | 3 | Se busca por nombre, clave o código de barras; si hay varios parecidos se eligen de una lista. |
+| 31 | En el pedido, «Cancelar pedido» era el único botón del encabezado y competía con la acción del día. | 2 | Cancelar va al final, discreto; un borrador sin productos dice qué sigue. |
+| 32 | Los filtros de Pedidos no incluían «En surtido» ni «Surtido»; el pedido no decía cuánto llevaba. | 2 | Filtros de todos los estados en curso y «N de M listos» en la sección Surtido. |
+| 33 | «Reservado» para lo que un pedido aparta. | 1 | «Apartado» (decisión del fundador); «Liberar» se queda. |
+| 34 | Quien recibe mercancía (sin permiso de enviar órdenes) veía el bloque «Envío por correo». | 1 | Solo lo ve quien puede enviarla, o cuando ya hay envíos. |
+| 35 | En Operación, la opción usual decía «(por omisión)». | 1 | «(lo usual)». |
+
+Pendiente de decidir con el fundador: si confirmar producto y lugar al surtir
+debe ser un ajuste de la empresa (con lector conviene; sin lector es teclear dos
+veces).
+
 La importación mantiene sus garantías: nada se guarda hasta confirmar, la
 revisión vuelve a leer y validar cada fila, y el servidor sigue exigiendo el
 separador decimal (solo cambió que la pantalla lo trae marcado).

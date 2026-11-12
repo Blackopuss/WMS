@@ -94,10 +94,7 @@ export default async function PedidoPage({
     <PageContainer>
       {back}
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
-      <PageHeader
-        title={`${order.numberText} · ${order.recipient}`}
-        actions={canCancel ? <CancelOrder orderId={order.id} /> : undefined}
-      />
+      <PageHeader title={`${order.numberText} · ${order.recipient}`} />
       <div className="flex flex-wrap items-center gap-2">
         {order.urgent && <Badge variant="destructive">Urgente</Badge>}
         <Badge variant={draft ? "secondary" : "default"}>
@@ -157,7 +154,7 @@ export default async function PedidoPage({
                     </span>
                     {line.reservedText && (
                       <span className="block text-sm text-muted-foreground">
-                        Reservado: {line.reservedText}
+                        Apartado: {line.reservedText}
                       </span>
                     )}
                     {line.shortText && (
@@ -195,8 +192,17 @@ export default async function PedidoPage({
           aria-labelledby="surtido"
           className="max-w-3xl rounded-xl border bg-card"
         >
-          <h2 id="surtido" className="border-b p-4 font-medium sm:px-5">
+          <h2
+            id="surtido"
+            className="flex flex-wrap items-baseline justify-between gap-x-4 border-b p-4 font-medium sm:px-5"
+          >
             Surtido
+            <span className="text-sm font-normal text-muted-foreground tabular-nums">
+              {order.tasks.filter((task) => task.status === "DELIVERED").length}{" "}
+              de{" "}
+              {order.tasks.filter((task) => task.status !== "CANCELLED").length}{" "}
+              listos
+            </span>
           </h2>
           <ul className="divide-y">
             {order.tasks.map((task) => (
@@ -234,6 +240,11 @@ export default async function PedidoPage({
           <ReleaseOrder orderId={order.id} />
         </div>
       )}
+      {draft && order.lines === 0 && (
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Agrega los productos y después libéralo al almacén.
+        </p>
+      )}
 
       <p className="text-sm text-muted-foreground">
         Creado el{" "}
@@ -250,6 +261,11 @@ export default async function PedidoPage({
           </>
         )}
       </p>
+      {canCancel && (
+        <div>
+          <CancelOrder orderId={order.id} />
+        </div>
+      )}
     </PageContainer>
   );
 }

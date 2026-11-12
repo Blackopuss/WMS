@@ -31,7 +31,13 @@ const chip =
   "inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** States worth filtering by, in the order work flows. */
-const FILTERS: OutboundOrderStatus[] = ["DRAFT", "RELEASED", "CANCELLED"];
+const FILTERS: OutboundOrderStatus[] = [
+  "DRAFT",
+  "RELEASED",
+  "PICKING",
+  "PICKED",
+  "CANCELLED",
+];
 
 /**
  * Pedidos (WMS-13): what has to leave the warehouse, newest first. A row

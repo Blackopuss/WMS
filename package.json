@@ -28,6 +28,7 @@
     "verify:ui": "node scripts/verify-ui.mjs",
     "env:setup": "node scripts/env-setup.mjs",
     "setup": "npm run env:setup && npm run db:setup && npm run db:deploy",
+    "db:seed:ejemplo": "tsx scripts/seed-sample.mts",
     "skills:link": "node scripts/link-skills.mjs",
     "db:seed": "tsx --conditions=react-server scripts/seed-dev.mts",
     "demo:codigo": "node scripts/demo-code.mjs",

@@ -43,8 +43,8 @@ export const WAREHOUSE_TASK_STATUS_LABELS: Record<WarehouseTaskStatus, string> =
   {
     PENDING: "Disponible",
     ASSIGNED: "Asignada",
-    ACCEPTED: "En camino al origen",
-    PICKED_UP: "Recogida",
+    ACCEPTED: "Por recoger",
+    PICKED_UP: "Por entregar",
     DELIVERED: "Entregada",
     BLOCKED: "Con problema",
     CANCELLED: "Cancelada",

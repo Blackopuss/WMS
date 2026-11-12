@@ -84,17 +84,24 @@ export async function createOutboundAction(
   redirect(`/pedidos/${result.orderId}`);
 }
 
+/** How many matching products are offered to pick from. */
+const LINE_CHOICES = 6;
+
 export type LineFormState = {
   error?: string;
   fieldErrors?: Partial<Record<"code" | "quantity", string>>;
   saved?: string;
+  /** Several products match what was typed: the person picks one. */
+  choices?: { sku: string; name: string }[];
   values: { code: string; quantity: string };
   answers: number;
 };
 
 /**
- * Adds a product to a draft by its code (SKU or barcode, typed or
- * scanned), or changes the quantity of the one already there.
+ * Adds a product to a draft, or changes the quantity of the one already
+ * there. What is typed is its code (SKU or barcode, typed or scanned) or
+ * part of its name: with one match it is added; with several, the person
+ * picks among them (`pick` carries the chosen SKU).
  */
 export async function addOutboundLineAction(
   orderId: string,
@@ -106,30 +113,45 @@ export async function addOutboundLineAction(
     code: text(formData, "code", 100).trim(),
     quantity: text(formData, "quantity", 40),
   };
+  const picked = text(formData, "pick", 100).trim();
   const answers = previous.answers + 1;
-  if (!values.code) {
+  if (!values.code && !picked) {
     return {
-      fieldErrors: { code: "Escribe o escanea la clave del producto." },
+      fieldErrors: { code: "Escribe el nombre o la clave del producto." },
       values,
       answers,
     };
   }
   try {
     const found = await listProducts(who, {
-      search: values.code,
-      pageSize: 1,
+      search: picked || values.code,
+      pageSize: LINE_CHOICES,
     });
-    if (!found.exact) {
-      return {
-        fieldErrors: {
-          code: "No encontramos un producto con esa clave o código de barras.",
-        },
-        values,
-        answers,
-      };
+    const product =
+      found.exact ?? (found.total === 1 ? (found.items[0] ?? null) : null);
+    if (!product) {
+      return found.total === 0
+        ? {
+            fieldErrors: {
+              code: "No encontramos ese producto. Prueba con otra palabra o con su clave.",
+            },
+            values,
+            answers,
+          }
+        : {
+            choices: found.items.map(({ sku, name }) => ({ sku, name })),
+            fieldErrors: {
+              code:
+                found.total > found.items.length
+                  ? `Hay ${found.total} productos parecidos: elige uno o escribe algo más.`
+                  : "Hay varios productos parecidos: elige uno.",
+            },
+            values,
+            answers,
+          };
     }
     const result = await setOutboundLine(who, idOf(orderId), {
-      productId: found.exact.id,
+      productId: product.id,
       quantity: values.quantity,
     });
     if (!result.ok) {

@@ -579,7 +579,7 @@ function releaseLocked(
     if (plan.every((step) => step.take.isZero())) {
       return stop(
         "not_allowed",
-        "No hay nada disponible de este pedido: no se reservó nada.",
+        "No hay nada disponible de este pedido: no se apartó nada.",
       );
     }
     // Released first: a picking task only comes from a released order
@@ -612,7 +612,7 @@ function releaseLocked(
       orderId: order.id,
       summary:
         (shortages.length === 0
-          ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó reservado`
+          ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó apartado`
           : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay (${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`})`) +
         (nextNumber - firstTask === 1
           ? " y hay 1 tarea de surtido."
@@ -700,7 +700,7 @@ export async function cancelOutboundOrder(
     return {
       ok: true,
       orderId: order.id,
-      summary: `Se canceló el pedido ${formatOutboundNumber(order.number)}${released > 0 ? " y se liberó lo que tenía reservado" : ""}.`,
+      summary: `Se canceló el pedido ${formatOutboundNumber(order.number)}${released > 0 ? " y se liberó lo que tenía apartado" : ""}.`,
     };
   });
 }

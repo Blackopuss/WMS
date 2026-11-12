@@ -121,6 +121,22 @@ export default async function TareaPage({
     cancels &&
     ["PENDING", "ASSIGNED", "ACCEPTED", "BLOCKED"].includes(task.status);
 
+  // Where the task is among its three steps; nothing for one that is
+  // stopped (problem, cancelled) or finished.
+  const stepNow =
+    task.status === "PENDING" || task.status === "ASSIGNED"
+      ? 0
+      : task.status === "ACCEPTED"
+        ? 1
+        : task.status === "PICKED_UP"
+          ? 2
+          : null;
+  const stepNames = [
+    "Tomarla",
+    task.kind === "PICK" ? "Surtir" : "Recoger",
+    "Entregar",
+  ];
+
   return (
     <PageContainer>
       {back}
@@ -147,6 +163,31 @@ export default async function TareaPage({
           </span>
         )}
       </div>
+
+      {stepNow !== null && (
+        <ol
+          aria-label="Pasos de la tarea"
+          className="flex max-w-xl items-center gap-2 text-sm"
+        >
+          {stepNames.map((name, index) => (
+            <li
+              key={name}
+              aria-current={index === stepNow ? "step" : undefined}
+              className={`flex min-w-0 flex-1 items-center gap-2 border-t-2 pt-2 ${
+                index < stepNow
+                  ? "border-primary text-muted-foreground"
+                  : index === stepNow
+                    ? "border-primary font-medium"
+                    : "border-border text-muted-foreground"
+              }`}
+            >
+              <span className="tabular-nums">{index + 1}.</span>
+              <span className="truncate">{name}</span>
+              {index < stepNow && <span className="sr-only">(hecho)</span>}
+            </li>
+          ))}
+        </ol>
+      )}
 
       <section
         aria-label="Qué se mueve"
@@ -223,6 +264,8 @@ export default async function TareaPage({
           asked={task.quantityText}
           quantity={task.quantity}
           unit={getUnit(task.unitCode).plural}
+          sku={task.sku}
+          place={task.fromPath.split(" › ").at(-1) ?? task.fromPath}
         />
       )}
 

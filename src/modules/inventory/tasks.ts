@@ -550,10 +550,16 @@ export function confirmPick(
     }
     ensure(task, "PICKED_UP");
     const code = foldName(String(input.productCode ?? "").slice(0, 80));
+    if (code === "") {
+      return stop(
+        "invalid",
+        `Escanea el producto o escribe su clave (${task.product.sku}).`,
+        "productCode",
+      );
+    }
     if (
-      code === "" ||
-      (code !== foldName(task.product.sku) &&
-        code !== foldName(task.product.barcode ?? ""))
+      code !== foldName(task.product.sku) &&
+      code !== foldName(task.product.barcode ?? "")
     ) {
       return stop(
         "invalid",
@@ -568,11 +574,16 @@ export function confirmPick(
     const path = locationPath(from);
     const byCode =
       from.code !== null && typed.trim().toUpperCase() === from.code;
-    if (
-      !byCode &&
-      (place === "" ||
-        (place !== foldPath(from.name) && place !== foldPath(path)))
-    ) {
+    if (!byCode && place === "") {
+      return stop(
+        "invalid",
+        from.code
+          ? `Escanea la etiqueta del lugar o escribe su código (${from.code}).`
+          : `Escribe dónde estás (${from.name}).`,
+        "locationCode",
+      );
+    }
+    if (!byCode && place !== foldPath(from.name) && place !== foldPath(path)) {
       return stop(
         "invalid",
         from.code

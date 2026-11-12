@@ -116,8 +116,8 @@ export function reservedMessage(
   verb = "tomar",
 ): string {
   return free.isZero()
-    ? `Lo que hay está reservado para pedidos: no puedes ${verb} nada.`
-    : `Parte de lo que hay está reservado para pedidos: solo puedes ${verb} ${formatStock(free.toString(), unitCode)}.`;
+    ? `Lo que hay está apartado para pedidos: no puedes ${verb} nada.`
+    : `Parte de lo que hay está apartado para pedidos: solo puedes ${verb} ${formatStock(free.toString(), unitCode)}.`;
 }
 
 export type ReserveResult =

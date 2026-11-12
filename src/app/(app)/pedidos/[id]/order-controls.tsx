@@ -29,7 +29,10 @@ import {
   type OutboundStepState,
 } from "../actions";
 
-/** A product by its code (typed or scanned) and how much (WMS-13). */
+/**
+ * A product by its name or code (typed or scanned) and how much (WMS-13).
+ * When several match, they are offered as buttons that send the form.
+ */
 export function AddLineForm({ orderId }: { orderId: string }) {
   const [state, formAction, pending] = useActionState(
     addOutboundLineAction.bind(null, orderId),
@@ -43,7 +46,12 @@ export function AddLineForm({ orderId }: { orderId: string }) {
       noValidate
       className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end"
     >
-      <FormField id="code" label="Clave o código de barras" error={errors.code}>
+      <FormField
+        id="code"
+        label="Producto"
+        hint="Nombre, clave o código de barras."
+        error={errors.code}
+      >
         {(control) => (
           <Input
             {...control}
@@ -73,6 +81,29 @@ export function AddLineForm({ orderId }: { orderId: string }) {
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         Agregar
       </Button>
+      {state.choices && state.choices.length > 0 && (
+        <ul
+          aria-label="Productos parecidos"
+          className="divide-y rounded-lg border sm:col-span-3"
+        >
+          {state.choices.map((choice) => (
+            <li key={choice.sku}>
+              <button
+                type="submit"
+                name="pick"
+                value={choice.sku}
+                disabled={pending}
+                className="flex min-h-11 w-full flex-wrap items-baseline gap-x-2 px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
+              >
+                <span className="font-medium [overflow-wrap:anywhere]">
+                  {choice.name}
+                </span>
+                <span className="text-muted-foreground">{choice.sku}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {(state.saved || state.error) && (
         <p
           role={state.error ? "alert" : "status"}
@@ -192,7 +223,10 @@ export function CancelOrder({ orderId }: { orderId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="min-h-11">
+        <Button
+          variant="ghost"
+          className="min-h-11 text-muted-foreground hover:text-destructive"
+        >
           Cancelar pedido
         </Button>
       </DialogTrigger>
@@ -200,7 +234,7 @@ export function CancelOrder({ orderId }: { orderId: string }) {
         <DialogHeader>
           <DialogTitle>¿Cancelar este pedido?</DialogTitle>
           <DialogDescription>
-            Lo que tenía reservado vuelve a estar disponible. Queda registrado
+            Lo que tenía apartado vuelve a estar disponible. Queda registrado
             quién lo canceló y por qué.
           </DialogDescription>
         </DialogHeader>

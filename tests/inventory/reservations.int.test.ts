@@ -241,7 +241,7 @@ describe("what is reserved is not taken by hand", () => {
       ok: false,
       fieldErrors: {
         quantity:
-          "Parte de lo que hay está reservado para pedidos: solo puedes sacar 2 piezas.",
+          "Parte de lo que hay está apartado para pedidos: solo puedes sacar 2 piezas.",
       },
     });
     expect(
@@ -262,7 +262,7 @@ describe("what is reserved is not taken by hand", () => {
     });
     expect(quick).toMatchObject({
       ok: false,
-      lineErrors: { 1: expect.stringMatching(/reservado/) },
+      lineErrors: { 1: expect.stringMatching(/apartado/) },
     });
     expect(
       await registerTransfer(owner, {
@@ -273,7 +273,7 @@ describe("what is reserved is not taken by hand", () => {
       }),
     ).toMatchObject({
       ok: false,
-      fieldErrors: { quantity: expect.stringMatching(/reservado/) },
+      fieldErrors: { quantity: expect.stringMatching(/apartado/) },
     });
     expect(
       await changeStockStatus(owner, {
@@ -287,7 +287,7 @@ describe("what is reserved is not taken by hand", () => {
       }),
     ).toMatchObject({
       ok: false,
-      fieldErrors: { quantity: expect.stringMatching(/reservado/) },
+      fieldErrors: { quantity: expect.stringMatching(/apartado/) },
     });
     // What is free still moves.
     expect(

@@ -71,7 +71,7 @@ export function SettingForm({
                 {option.value === defaultValue && (
                   <span className="font-normal text-muted-foreground">
                     {" "}
-                    (por omisión)
+                    (lo usual)
                   </span>
                 )}
               </span>

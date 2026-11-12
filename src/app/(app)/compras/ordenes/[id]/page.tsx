@@ -113,9 +113,10 @@ export default async function OrdenPage({
   const zone = access.organization.timeZone;
   // By mail it goes once it is an order (not a draft); what was sent
   // stays in sight afterwards, whatever became of the order.
+  // Who cannot send it (the floor, receiving) only sees it once sent.
   const showDelivery =
-    order.status === "SENT" ||
-    order.status === "PARTIAL" ||
+    ((order.status === "SENT" || order.status === "PARTIAL") &&
+      access.can("purchasing.order.send")) ||
     delivery.deliveries.length > 0;
   const addHref = `/compras/ordenes/${order.id}/linea`;
   const expected = order.expectedOn

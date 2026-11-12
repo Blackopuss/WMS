@@ -1,0 +1,306 @@
+// Sample data for the demo company (development only): locations, products
+// with stock, a supplier with an order to receive, an outbound order to pick,
+// a transfer task and an open count, plus two people of the floor without
+// two-step sign-in. Everything goes through the real services, so balances
+// reconcile. Run after `npm run db:seed`: `npm run db:seed:ejemplo`.
+// Does nothing when the company already has products.
+import { existsSync } from "node:fs";
+import { registerHooks } from "node:module";
+import { pathToFileURL } from "node:url";
+
+if (existsSync(".env.local")) process.loadEnvFile(".env.local");
+const database = process.env.DATABASE_NAME ?? "wms_dev";
+if (process.env.NODE_ENV === "production" || !database.endsWith("_dev")) {
+  console.error("Solo para la base de desarrollo.");
+  process.exit(1);
+}
+
+const serverOnly = pathToFileURL("scripts/server-only-stub.mjs").href;
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "server-only") {
+      return { url: serverOnly, shortCircuit: true };
+    }
+    return nextResolve(specifier, context);
+  },
+});
+
+const { newId } = await import("@/lib");
+const { db } = await import("@/server/db");
+const { hashPassword } = await import("@/platform/auth/password");
+const { LEGAL_DOCUMENTS, LEGAL_DOCUMENT_IDS } =
+  await import("@/platform/legal/documents");
+const { createProduct } = await import("@/platform/catalog");
+const { createLocation } = await import("@/platform/locations");
+const { createSupplier } = await import("@/platform/contacts");
+const inventory = await import("@/modules/inventory");
+const purchasing = await import("@/modules/purchasing");
+
+const email = process.env.DEMO_EMAIL;
+const password = process.env.DEMO_PASSWORD;
+if (!email || !password) {
+  console.error("Faltan DEMO_EMAIL y DEMO_PASSWORD: corre npm run db:seed.");
+  process.exit(1);
+}
+const owner = await db.user.findUnique({ where: { email } });
+const organization = owner
+  ? await db.organization.findFirst({ where: { ownerUserId: owner.id } })
+  : null;
+if (!owner || !organization) {
+  console.error("No existe la empresa demo: corre npm run db:seed.");
+  process.exit(1);
+}
+const organizationId = organization.id;
+const actor = { organizationId, userId: owner.id };
+
+if ((await db.product.count({ where: { organizationId } })) > 0) {
+  console.log("La empresa demo ya tiene productos: no se agregó nada.");
+  await db.$disconnect();
+  process.exit(0);
+}
+
+async function must<T extends { ok: boolean }>(
+  what: string,
+  result: Promise<T>,
+): Promise<Extract<T, { ok: true }>> {
+  const done = await result;
+  if (!done.ok) throw new Error(`${what}: ${JSON.stringify(done)}`);
+  return done as Extract<T, { ok: true }>;
+}
+
+// People of the floor, with the demo password and no two-step sign-in.
+const people = [
+  { name: "Olivia Operadora", local: "operador", role: "operator" },
+  { name: "Samuel Supervisor", local: "supervisor", role: "supervisor" },
+] as const;
+const domain = email.split("@")[1];
+for (const person of people) {
+  const userId = newId();
+  await db.user.create({
+    data: {
+      id: userId,
+      name: person.name,
+      email: `${person.local}@${domain}`,
+      emailVerified: true,
+    },
+  });
+  await db.account.create({
+    data: {
+      id: newId(),
+      userId,
+      providerId: "credential",
+      accountId: userId,
+      password: await hashPassword(password),
+    },
+  });
+  await db.legalAcceptance.createMany({
+    data: LEGAL_DOCUMENT_IDS.map((document) => ({
+      id: newId(),
+      userId,
+      document,
+      version: LEGAL_DOCUMENTS[document].version,
+    })),
+  });
+  const membershipId = newId();
+  await db.membership.create({
+    data: { id: membershipId, organizationId, userId },
+  });
+  await db.membershipRole.create({
+    data: { id: newId(), organizationId, membershipId, role: person.role },
+  });
+}
+
+// Locations: two zones with aisles and shelves.
+const locations: Record<string, string> = {};
+async function location(
+  key: string,
+  name: string,
+  level: number,
+  parent?: string,
+  code?: string,
+) {
+  const made = await must(
+    `ubicación ${name}`,
+    createLocation(actor, {
+      name,
+      level,
+      parentId: parent ? locations[parent] : undefined,
+      code,
+    }),
+  );
+  locations[key] = (made as unknown as { locationId: string }).locationId;
+}
+await location("A", "Zona A", 1);
+await location("A1", "Pasillo 1", 2, "A");
+await location("A1-1", "Estante 1", 3, "A1", "A-01-01");
+await location("A1-2", "Estante 2", 3, "A1", "A-01-02");
+await location("A2", "Pasillo 2", 2, "A");
+await location("A2-1", "Estante 1", 3, "A2", "A-02-01");
+await location("B", "Zona B", 1);
+await location("B1", "Pasillo 1", 2, "B");
+await location("B1-1", "Estante 1", 3, "B1", "B-01-01");
+
+const PRODUCTS = [
+  ["CAJ-001", "Caja de cartón chica 30×20×15 cm", "Empaque", "A1-1", 480, 100],
+  [
+    "CAJ-002",
+    "Caja de cartón mediana 40×30×25 cm",
+    "Empaque",
+    "A1-1",
+    320,
+    100,
+  ],
+  ["CAJ-003", "Caja de cartón grande 60×40×40 cm", "Empaque", "A1-2", 35, 80],
+  ["CIN-001", "Cinta adhesiva transparente 48 mm", "Empaque", "A1-2", 150, 40],
+  ["CIN-002", "Cinta adhesiva canela 48 mm", "Empaque", "A1-2", 12, 40],
+  ["PEL-001", "Película estirable 18 in", "Empaque", "A2-1", 64, 20],
+  ["ETI-001", "Etiqueta térmica 4×6 in (rollo)", "Etiquetado", "A2-1", 90, 30],
+  ["ETI-002", "Etiqueta de frágil (rollo)", "Etiquetado", "A2-1", 8, 15],
+  ["GUA-001", "Guantes de trabajo talla M (par)", "Seguridad", "B1-1", 75, 20],
+  ["GUA-002", "Guantes de trabajo talla G (par)", "Seguridad", "B1-1", 60, 20],
+  ["CHA-001", "Chaleco reflejante", "Seguridad", "B1-1", 40, 10],
+  ["TAR-001", "Tarima de madera estándar", "Manejo", "B1-1", 55, 20],
+  ["FLE-001", "Fleje plástico 1/2 in (rollo)", "Manejo", "A2-1", 0, 10],
+  ["MAR-001", "Marcador permanente negro", "Oficina", "A1-2", 200, 50],
+] as const;
+
+const products: Record<string, string> = {};
+for (const [sku, name, category, where, stock, minimum] of PRODUCTS) {
+  const made = await must(
+    `producto ${sku}`,
+    createProduct(actor, { sku, name, category, unit: "piece" }),
+  );
+  products[sku] = made.productId;
+  if (stock > 0) {
+    await must(
+      `saldo ${sku}`,
+      inventory.registerInitialBalance(actor, {
+        productId: made.productId,
+        quantity: String(stock),
+        locationId: locations[where],
+      }),
+    );
+  }
+  await must(
+    `mínimo ${sku}`,
+    inventory.setMinimum(actor, {
+      productId: made.productId,
+      quantity: String(minimum),
+    }),
+  );
+}
+
+// Some history: an entry and two exits.
+await must(
+  "entrada",
+  inventory.registerEntry(actor, {
+    productId: products["CAJ-001"]!,
+    quantity: "120",
+    locationId: locations["A1-1"],
+  }),
+);
+for (const [sku, where, quantity] of [
+  ["CIN-001", "A1-2", "24"],
+  ["MAR-001", "A1-2", "10"],
+] as const) {
+  await must(
+    `salida ${sku}`,
+    inventory.registerExit(actor, {
+      productId: products[sku]!,
+      quantity,
+      locationId: locations[where],
+    }),
+  );
+}
+
+// A supplier with an order on its way (shows in Recepción).
+const supplier = await must(
+  "proveedor",
+  createSupplier(actor, {
+    name: "Empaques del Centro",
+    contactPerson: "Laura Méndez",
+    email: "ventas@empaquesdelcentro.example",
+    phone: "55 5555 0101",
+  }),
+);
+const order = await must(
+  "orden de compra",
+  purchasing.createPurchaseOrder(actor, { supplierId: supplier.supplierId }),
+);
+const purchaseOrderId = (order as unknown as { orderId: string }).orderId;
+for (const [sku, quantity, unitCost] of [
+  ["CIN-002", "60", "18.50"],
+  ["ETI-002", "30", "42.00"],
+  ["FLE-001", "20", "310.00"],
+] as const) {
+  await must(
+    `línea ${sku}`,
+    purchasing.addOrderLine(actor, purchaseOrderId, {
+      productId: products[sku]!,
+      capture: "base",
+      quantity,
+      unitCost,
+    }),
+  );
+}
+await must(
+  "confirmar orden",
+  purchasing.submitPurchaseOrder(actor, purchaseOrderId),
+);
+
+// An outbound order released (its picking tasks appear in Tareas) and a draft.
+const outbound = await must(
+  "pedido",
+  inventory.createOutboundOrder(actor, {
+    recipient: "Sucursal Norte",
+    reference: "Reposición semanal",
+    priority: "URGENT",
+  }),
+);
+const outboundId = (outbound as unknown as { orderId: string }).orderId;
+for (const [sku, quantity] of [
+  ["CAJ-001", "50"],
+  ["CIN-001", "12"],
+  ["GUA-001", "10"],
+] as const) {
+  await must(
+    `línea de pedido ${sku}`,
+    inventory.setOutboundLine(actor, outboundId, {
+      productId: products[sku]!,
+      quantity,
+    }),
+  );
+}
+await must("liberar pedido", inventory.releaseOutboundOrder(actor, outboundId));
+const draft = await must(
+  "pedido en borrador",
+  inventory.createOutboundOrder(actor, { recipient: "Sucursal Sur" }),
+);
+await must(
+  "línea de borrador",
+  inventory.setOutboundLine(
+    actor,
+    (draft as unknown as { orderId: string }).orderId,
+    { productId: products["CAJ-002"]!, quantity: "40" },
+  ),
+);
+
+// A transfer task and an open count.
+await must(
+  "tarea de traslado",
+  inventory.createTask(actor, {
+    productId: products["TAR-001"]!,
+    fromLocationId: locations["B1-1"]!,
+    toLocationId: locations["A2-1"]!,
+    quantity: "10",
+  }),
+);
+await must(
+  "conteo",
+  inventory.openCount(actor, { locationId: locations["A1-2"]! }),
+);
+
+console.log(
+  `Datos de ejemplo listos en «${organization.name}». Personas sin dos pasos (misma contraseña demo): ${people.map((p) => `${p.local}@${domain}`).join(", ")}.`,
+);
+await db.$disconnect();

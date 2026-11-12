@@ -253,7 +253,7 @@ export default async function ProductoPage({
                 {stock.reserved !== "0" && (
                   <span className="font-normal text-muted-foreground">
                     {" "}
-                    · Reservado para pedidos: {stock.reservedLabel}
+                    · Apartado para pedidos: {stock.reservedLabel}
                   </span>
                 )}
               </p>

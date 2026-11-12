@@ -27,7 +27,7 @@ const REVIEWED: Record<string, Review> = {
   },
   addOutboundLineAction: {
     input:
-      "id del pedido (fijado por la página), clave o código de barras y cantidad",
+      "id del pedido (fijado por la página), nombre, clave o código de barras (o la clave elegida entre varios parecidos) y cantidad",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el producto se busca y el pedido se bloquea solo en esa empresa",
     coveredBy: "tests/inventory/outbound-orders.int.test.ts",

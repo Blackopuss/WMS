@@ -28,8 +28,14 @@ export function PickForm({
   asked,
   quantity,
   unit,
+  sku,
+  place,
 }: {
   taskId: string;
+  /** Key of the product, to say what to type without a scanner. */
+  sku: string;
+  /** Name of the location the goods are taken from. */
+  place: string;
   /** «12 piezas». */
   asked: string;
   /** «12», what the task asks, to start with. */
@@ -90,7 +96,8 @@ export function PickForm({
       )}
       <FormField
         id="productCode"
-        label="Producto (escanea o escribe la clave)"
+        label="Producto"
+        hint={`Escanéalo o escribe ${sku}.`}
         error={errors.productCode}
       >
         {(control) => (
@@ -107,7 +114,8 @@ export function PickForm({
       </FormField>
       <FormField
         id="locationCode"
-        label="Ubicación donde estás"
+        label="¿Dónde estás?"
+        hint={`Escanea la etiqueta del lugar o escribe ${place}.`}
         error={errors.locationCode}
       >
         {(control) => (

@@ -187,7 +187,7 @@ describe("releasing", () => {
     expect(await releaseOutboundOrder(owner, orderId)).toMatchObject({
       ok: true,
       summary:
-        "Se liberó el pedido PS-0001: todo quedó reservado y hay 1 tarea de surtido.",
+        "Se liberó el pedido PS-0001: todo quedó apartado y hay 1 tarea de surtido.",
     });
     expect(await releaseOutboundOrder(owner, orderId)).toMatchObject({
       ok: true,
@@ -309,7 +309,7 @@ describe("cancelling", () => {
     ).toMatchObject({
       ok: true,
       summary:
-        "Se canceló el pedido PS-0001 y se liberó lo que tenía reservado.",
+        "Se canceló el pedido PS-0001 y se liberó lo que tenía apartado.",
     });
     expect(await cancelOutboundOrder(owner, orderId, "Otra vez")).toMatchObject(
       { ok: true, repeated: true },
