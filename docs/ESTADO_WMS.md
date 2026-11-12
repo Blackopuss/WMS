@@ -22,7 +22,8 @@ abajo son de ese documento).
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
 | Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |
 | Alcance por almacén y zona (WMS-20), aviso de entrada repetida (WMS-71), existencias sin acomodar (WMS-72), resumen del día (WMS-73) | Hecho (2026-11-12) |
-| Capacidad y restricciones de ubicación, lotes y series | Falta (WMS-22B, WMS-21) |
+| Capacidad y restricciones de ubicación | Hecho (WMS-22B, ADR 0039, 2026-11-12) |
+| Lotes, caducidad y series | Falta (WMS-21) |
 | PWA, escaneo con cámara, PIN | Falta (transversal: WMS-35, 36, 38) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
@@ -139,7 +140,7 @@ En resumen:
   (WMS-49; incluye volver configurables la estrategia de surtido y la ubicación
   de preparación de WMS-14), rol de Gerencia (WMS-50), varios almacenes
   (WMS-18), niveles de ubicación, código y uso (WMS-22A, hecho), capacidad y
-  restricciones (WMS-22B), lotes,
+  restricciones (WMS-22B, hecho), lotes,
   caducidad, series y trazabilidad (WMS-21) y documentación técnica base
   (WMS-51).
 - **Fase 2 (operación logística):** acomodo con recomendación (WMS-52), tarimas
