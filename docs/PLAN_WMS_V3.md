@@ -59,7 +59,7 @@ x.y» citadas son de [`ESPECIFICACION_WMS_v5.md`](ESPECIFICACION_WMS_v5.md).
 
 | Fase | Pasos (en orden) | Para qué |
 | --- | --- | --- |
-| 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, WMS-20, WMS-71, WMS-72, WMS-73, WMS-22B, WMS-21, WMS-51 | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
+| 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, ~~WMS-20~~, ~~WMS-71~~, ~~WMS-72~~, ~~WMS-73~~, WMS-22B, WMS-21, WMS-51 | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, WMS-52, WMS-53, WMS-15, WMS-16, WMS-17, WMS-19, WMS-54, WMS-55, WMS-26, WMS-36, WMS-23, WMS-24, WMS-25 | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
 | 3. Gestión empresarial | WMS-56, WMS-57, WMS-58, WMS-41, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
@@ -83,6 +83,11 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-49 | Parámetros de operación por empresa | Hecho (2026-11-10, ADR 0034) |
 | WMS-50 | Rol de Gerencia | Hecho (2026-11-10) |
 | WMS-18 | Varios almacenes | Hecho (2026-11-10, ADR 0035) |
+| WMS-22A | Niveles de ubicación por almacén, código y uso | Hecho (2026-11-10, ADR 0036) |
+| WMS-20 | Alcance de permisos por almacén y zona | Hecho (2026-11-12, ADR 0038); pendiente: totales de empresa, documentos de Compras y alcance al invitar |
+| WMS-71 | Aviso de entrada repetida | Hecho (2026-11-12) |
+| WMS-72 | Existencias sin acomodar | Hecho (2026-11-12) |
+| WMS-73 | Resumen del día | Hecho (2026-11-12) |
 
 ---
 

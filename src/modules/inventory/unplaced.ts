@@ -5,6 +5,8 @@ import { assertModulePermission } from "@/platform/billing";
 import {
   LOCATION_PARENTS,
   activeFacilityOf,
+  isLimited,
+  locationScopeWhere,
   compareLocationNames,
   locationPath,
 } from "@/platform/locations";
@@ -89,12 +91,17 @@ async function waitingPlaces(client: Client, userId: string) {
     select: { id: true },
   });
   if (!somewhere) return { facility, hasPlaces: false, places: [] };
+  // WMS-20: someone limited to zones only sees what waits in their own.
+  const scoped = await locationScopeWhere(client, userId);
   const places = await client.location.findMany({
     where: {
       facilityId: facility.id,
       archivedAt: null,
       isStaging: null,
-      OR: [{ isDefault: true }, { type: "RECEIVING" }],
+      AND: [
+        { OR: [{ isDefault: true }, { type: "RECEIVING" }] },
+        ...(isLimited(scoped) ? [scoped] : []),
+      ],
     },
     take: MAX_LOCATIONS_READ,
     select: { id: true, name: true, isDefault: true, parent: LOCATION_PARENTS },

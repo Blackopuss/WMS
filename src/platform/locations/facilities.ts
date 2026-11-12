@@ -2,14 +2,16 @@ import "server-only";
 
 import { z } from "zod";
 
-import { newId } from "@/lib";
+import { ForbiddenError, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import { loadScope } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { readLimit } from "@/platform/entitlements";
 import { LOCKING_TRANSACTION, forOrganization, type TenantDb } from "@/server";
 
 import { createDefaultLevels } from "./bootstrap";
 import type { LocationActor } from "./locations";
+import { FACILITY_OUT_OF_SCOPE_MESSAGE, facilityInScope } from "./scope";
 
 /**
  * Warehouses of a company (WMS-18). Each one has its own locations, its
@@ -61,27 +63,49 @@ const summaryOf = (row: {
   archived: row.archivedAt !== null,
 });
 
+export const NO_FACILITY_MESSAGE =
+  "No tienes ningún almacén asignado. Pide a un administrador que revise tu acceso.";
+
 /**
  * The warehouse this person works in: the one they chose, if it is still
  * active, or the main one. No permission check: it is not data, only where
  * the person is; each service that reads or moves checks its own.
+ *
+ * It is never one outside the person's scope (WMS-20): when the chosen one
+ * and the main one are closed to them, it is the first they may work in,
+ * by name. With no warehouse left it throws ForbiddenError.
  */
 export async function activeFacilityOf(
   client: Reader,
   userId: string,
 ): Promise<FacilitySummary> {
-  const membership = await client.membership.findFirst({
-    where: { userId },
-    select: { activeFacility: { select: SUMMARY } },
-  });
+  const [membership, scope] = await Promise.all([
+    client.membership.findFirst({
+      where: { userId },
+      select: { activeFacility: { select: SUMMARY } },
+    }),
+    loadScope(client, userId),
+  ]);
   const chosen = membership?.activeFacility;
-  if (chosen && !chosen.archivedAt) return summaryOf(chosen);
+  if (chosen && !chosen.archivedAt && facilityInScope(scope, chosen.id)) {
+    return summaryOf(chosen);
+  }
   const main = await client.facility.findFirst({
     where: { isDefault: true },
     select: SUMMARY,
   });
   if (!main) throw new Error("Company without a main warehouse");
-  return summaryOf(main);
+  if (scope === null || facilityInScope(scope, main.id)) return summaryOf(main);
+  const allowed = await client.facility.findMany({
+    where: { id: { in: [...scope.facilities.keys()] }, archivedAt: null },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: SUMMARY,
+  });
+  const first = allowed.find((each) => facilityInScope(scope, each.id));
+  if (!first) {
+    throw new ForbiddenError("no_facility_in_scope", NO_FACILITY_MESSAGE);
+  }
+  return summaryOf(first);
 }
 
 /** The warehouse of the session's person, for screens and services. */
@@ -91,7 +115,10 @@ export function getActiveFacility(
   return activeFacilityOf(forOrganization(actor.organizationId), actor.userId);
 }
 
-/** Warehouses of the company, the main one first. */
+/**
+ * Warehouses of the company the person may work in (WMS-20), the main one
+ * first.
+ */
 export async function listFacilities(
   actor: LocationActor,
   options: { includeArchived?: boolean } = {},
@@ -101,12 +128,15 @@ export async function listFacilities(
     actor.userId,
     "inventory.location.read",
   );
-  const rows = await forOrganization(actor.organizationId).facility.findMany({
+  const client = forOrganization(actor.organizationId);
+  const scope = await loadScope(client, actor.userId);
+  const rows = await client.facility.findMany({
     where: options.includeArchived ? {} : { archivedAt: null },
     select: SUMMARY,
     take: 500,
   });
   return rows
+    .filter((row) => facilityInScope(scope, row.id))
     .map(summaryOf)
     .sort(
       (a, b) =>
@@ -213,6 +243,16 @@ async function inFacilities(
   }
 }
 
+const LIMITED_MESSAGE =
+  "Tu acceso está limitado a ciertos almacenes: no puedes crear uno nuevo.";
+
+/** Stops a change to a warehouse the person may not work in (WMS-20). */
+async function checkScope(tx: Tx, userId: string, facilityId: string) {
+  if (!facilityInScope(await loadScope(tx, userId), facilityId)) {
+    stop("not_allowed", FACILITY_OUT_OF_SCOPE_MESSAGE);
+  }
+}
+
 async function checkFreeCode(tx: Tx, code: string, exceptId?: string) {
   const taken = await tx.facility.findFirst({
     where: { code, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
@@ -233,6 +273,10 @@ export async function createFacility(
     "inventory.location.create",
   );
   return inFacilities(organizationId, async (tx) => {
+    // Someone limited to certain warehouses does not open new ones (WMS-20).
+    if ((await loadScope(tx, userId)) !== null) {
+      stop("not_allowed", LIMITED_MESSAGE);
+    }
     const data = parse(input);
     const limit =
       (await readLimit(tx, organizationId, FACILITIES_LIMIT_KEY)) ?? 1;
@@ -293,6 +337,7 @@ export async function updateFacility(
       select: SUMMARY,
     });
     if (!facility) return stop("not_found", "Ese almacén ya no existe.");
+    await checkScope(tx, userId, facility.id);
     await checkFreeCode(tx, data.code, facility.id);
     await tx.facility.update({ where: { id: facility.id }, data });
     await recordAuditEvent(tx, {
@@ -331,6 +376,7 @@ export async function archiveFacility(
       select: SUMMARY,
     });
     if (!facility) return stop("not_found", "Ese almacén ya no existe.");
+    await checkScope(tx, userId, facility.id);
     if (facility.archivedAt) {
       return {
         ok: true,
@@ -411,6 +457,15 @@ export async function switchFacility(
       ok: false,
       reason: "not_found",
       formError: "Ese almacén ya no existe.",
+    };
+  }
+  // Never into a warehouse outside the person's scope (WMS-20), whatever
+  // id arrives.
+  if (!facilityInScope(await loadScope(client, actor.userId), facility.id)) {
+    return {
+      ok: false,
+      reason: "not_allowed",
+      formError: FACILITY_OUT_OF_SCOPE_MESSAGE,
     };
   }
   await client.membership.updateMany({

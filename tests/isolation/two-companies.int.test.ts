@@ -552,6 +552,17 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A limit to a warehouse (WMS-20). In B it hangs from the only
+    // membership there is; the services never write one for a titular.
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId,
+        membershipId:
+          organizationId === orgA ? membership.id : betoMembership.id,
+        facilityId: location.facilityId,
+      },
+    });
     const countId = newId();
     await db.stockCount.create({
       data: {

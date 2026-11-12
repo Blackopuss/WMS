@@ -10,8 +10,13 @@ import { parseQuantity } from "@/platform/catalog";
 import {
   LOCATION_PARENTS,
   type LocationWithParents,
+  type LocationScopeReader,
   activeFacilityOf,
+  assertLocationsInScope,
+  isLimited,
   locationPath,
+  locationScopeWhere,
+  locationsOutOfScope,
 } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
@@ -116,8 +121,21 @@ async function inTask(
   }
 }
 
-/** The task under its lock, or a refusal. */
-async function lockTask(tx: Tx, taskId: string) {
+/**
+ * WMS-20: a task is of the person's concern only when where it leaves from
+ * and where it goes are both inside their warehouses or zones. For a
+ * `where` on `warehouseTask`; `{}` without a limit.
+ */
+async function taskScope(client: LocationScopeReader, userId: string) {
+  const scoped = await locationScopeWhere(client, userId);
+  return isLimited(scoped) ? { fromLocation: scoped, toLocation: scoped } : {};
+}
+
+/**
+ * The task under its lock, or a refusal. A task outside the scope of who
+ * asks does not exist for them (WMS-20).
+ */
+async function lockTask(tx: Tx, taskId: string, userId: string) {
   const [id] = await lockRows(tx, "warehouseTask", [String(taskId ?? "")]);
   const task = id
     ? await tx.warehouseTask.findFirst({
@@ -158,6 +176,11 @@ async function lockTask(tx: Tx, taskId: string) {
       })
     : null;
   if (!task) return stop("not_found", "Esta tarea no existe.");
+  const outside = await locationsOutOfScope(tx, userId, [
+    task.fromLocationId,
+    task.toLocationId,
+  ]);
+  if (outside.length > 0) return stop("not_found", "Esta tarea no existe.");
   return task;
 }
 
@@ -194,6 +217,9 @@ function ensure(task: LockedTask, to: WarehouseTaskStatus): void {
  */
 const mayExecute = (organizationId: string, userId: string) =>
   isAllowed(organizationId, userId, "inventory.task.execute");
+
+const ASSIGNEE_OUT_OF_SCOPE =
+  "Esa persona no trabaja en el almacén o la zona de esta tarea. Elige a otra o déjala disponible.";
 
 const reasonSchema = z
   .string()
@@ -268,6 +294,11 @@ export async function createTask(
       return await inTask(organizationId, async (tx) => {
         const [productId] = await lockRows(tx, "product", [data.productId]);
         await lockRows(tx, "location", [
+          data.fromLocationId,
+          data.toLocationId,
+        ]);
+        // WMS-20: both ends inside the scope of who asks for the task.
+        await assertLocationsInScope(tx, userId, [
           data.fromLocationId,
           data.toLocationId,
         ]);
@@ -371,6 +402,13 @@ export async function createTask(
             "assignToUserId",
           );
         }
+        if (
+          data.assignToUserId &&
+          (await locationsOutOfScope(tx, data.assignToUserId, [from.id, to.id]))
+            .length > 0
+        ) {
+          return stop("invalid", ASSIGNEE_OUT_OF_SCOPE, "assignToUserId");
+        }
         const last = await tx.warehouseTask.findFirst({
           orderBy: { number: "desc" },
           select: { number: true },
@@ -422,7 +460,7 @@ async function step(
   const orderId = await pickOrderOf(actor.organizationId, taskId);
   return inTask(actor.organizationId, async (tx) => {
     await lockPickOrder(tx, orderId);
-    return work(tx, await lockTask(tx, taskId));
+    return work(tx, await lockTask(tx, taskId, actor.userId));
   });
 }
 
@@ -669,7 +707,7 @@ export async function deliverTask(
     await lockRows(tx, "product", [fixed.productId]);
     await lockRows(tx, "location", [fixed.fromLocationId, fixed.toLocationId]);
     await lockPickOrder(tx, fixed.outboundLine?.orderId ?? null);
-    const task = await lockTask(tx, taskId);
+    const task = await lockTask(tx, taskId, userId);
     if (task.assignedToUserId !== userId) {
       return stop("not_allowed", "Esta tarea la tiene otra persona.");
     }
@@ -820,6 +858,17 @@ export async function assignTask(
         "Esa persona no puede hacer tareas de traslado.",
         "assignToUserId",
       );
+    }
+    if (
+      target &&
+      (
+        await locationsOutOfScope(tx, target, [
+          task.fromLocationId,
+          task.toLocationId,
+        ])
+      ).length > 0
+    ) {
+      return stop("invalid", ASSIGNEE_OUT_OF_SCOPE, "assignToUserId");
     }
     await tx.warehouseTask.update({
       where: { id: task.id },
@@ -1139,9 +1188,12 @@ export async function listTasks(
   const client = forOrganization(actor.organizationId);
   // Tasks of the warehouse the person works in (WMS-18).
   const facility = await activeFacilityOf(client, actor.userId);
+  // WMS-20: and, with zones, only the ones inside them.
+  const scope = await taskScope(client, actor.userId);
   const where = {
     ...byView,
     fromLocation: { facilityId: facility.id },
+    ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
   };
   const total = await client.warehouseTask.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / TASK_PAGE_SIZE));
@@ -1183,7 +1235,11 @@ export async function countMyTasks(
   );
   const client = forOrganization(actor.organizationId);
   const facility = await activeFacilityOf(client, actor.userId);
-  const here = { fromLocation: { facilityId: facility.id } };
+  const scope = await taskScope(client, actor.userId);
+  const here = {
+    fromLocation: { facilityId: facility.id },
+    ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
+  };
   const [mine, available, blocked] = await Promise.all([
     client.warehouseTask.count({
       where: {
@@ -1207,10 +1263,12 @@ export async function getTask(
     actor.userId,
     "inventory.task.read",
   );
-  const row = await forOrganization(
-    actor.organizationId,
-  ).warehouseTask.findFirst({
-    where: { id: String(taskId ?? "") },
+  const client = forOrganization(actor.organizationId);
+  const row = await client.warehouseTask.findFirst({
+    where: {
+      id: String(taskId ?? ""),
+      ...(await taskScope(client, actor.userId)),
+    },
     select: {
       ...SUMMARY_SELECT,
       note: true,

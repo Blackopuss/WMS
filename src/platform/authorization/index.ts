@@ -12,14 +12,19 @@ export {
 export type { Permission, Role } from "./catalog";
 export {
   OWNER_ONLY_PERMISSIONS,
+  buildScope,
   can,
   canAll,
   canAny,
   isOwnerOnly,
   knownRoles,
+  inScope,
   permissionsOf,
+  scopeOf,
 } from "./policy";
-export type { Subject } from "./policy";
+export type { Place, Scope, Subject } from "./policy";
+export { loadScope } from "./scope";
+export type { ScopeReader } from "./scope";
 export {
   FORBIDDEN_MESSAGE,
   OWNER_ONLY_MESSAGE,
@@ -89,10 +94,19 @@ export {
   assignRoles,
   countSeatsInUse,
   disableMember,
+  listScopeOptions,
   listTeamMembers,
   reactivateMember,
+  setMemberScope,
 } from "./team";
-export type { TeamActionReason, TeamActionResult, TeamMember } from "./team";
+export type {
+  MemberScopeEntry,
+  MemberScopeInput,
+  ScopeOption,
+  TeamActionReason,
+  TeamActionResult,
+  TeamMember,
+} from "./team";
 export {
   SeatLimitError,
   assertSeatAvailable,

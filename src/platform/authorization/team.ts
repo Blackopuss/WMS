@@ -5,7 +5,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import { db, forOrganization } from "@/server";
 
 import { isRole, type Role } from "./catalog";
-import { knownRoles } from "./policy";
+import { buildScope, can, inScope, knownRoles, type Scope } from "./policy";
 import { SeatLimitError, assertSeatAvailable } from "./seats";
 import {
   TEAM_RULE_MESSAGES,
@@ -24,7 +24,12 @@ import {
  */
 
 export type TeamActionReason =
-  TeamRuleReason | "not_found" | "unchanged" | "no_seats";
+  | TeamRuleReason
+  | "not_found"
+  | "unchanged"
+  | "no_seats"
+  | "invalid_scope"
+  | "scope_exceeds";
 
 export type TeamActionResult =
   { ok: true } | { ok: false; reason: TeamActionReason; error: string };
@@ -34,6 +39,10 @@ const MESSAGES: Record<TeamActionReason, string> = {
   not_found: "Esta persona no está en tu equipo.",
   unchanged: "No hay cambios que guardar.",
   no_seats: "Tu plan no tiene lugares disponibles.",
+  invalid_scope:
+    "Elige almacenes y zonas que existan y estén activos. Si un almacén ya no aparece, vuelve a abrir esta ventana.",
+  scope_exceeds:
+    "Solo puedes dar acceso a los almacenes o zonas que tú tienes asignados.",
 };
 
 const fail = (reason: TeamActionReason) =>
@@ -77,7 +86,7 @@ async function withTeamChange(
   change: TeamChange,
   apply: (
     tx: Tx,
-    target: LoadedMember,
+    target: LoadedMember & { actorIsOwner: boolean },
   ) => Promise<TeamActionResult | undefined>,
 ): Promise<TeamActionResult> {
   return db.$transaction(async (tx) => {
@@ -104,7 +113,10 @@ async function withTeamChange(
     if (!rule.ok && rule.reason === "forbidden") return fail("forbidden");
     if (!target) return fail("not_found");
     if (!rule.ok) return fail(rule.reason);
-    return (await apply(tx, target)) ?? ({ ok: true } as const);
+    return (
+      (await apply(tx, { ...target, actorIsOwner: actor.isOwner === true })) ??
+      ({ ok: true } as const)
+    );
   });
 }
 
@@ -233,6 +245,211 @@ export async function reactivateMember(
   );
 }
 
+/** What the form sends: no warehouses = every warehouse. */
+export type MemberScopeInput = {
+  userId: string;
+  facilities: readonly {
+    facilityId: string;
+    /** Locations directly in the warehouse; none = the whole warehouse. */
+    zoneIds?: readonly string[];
+  }[];
+};
+
+const MAX_SCOPE_ROWS = 500;
+
+const scopeKey = (
+  rows: readonly { facilityId: string; locationId: string | null }[],
+) =>
+  rows
+    .map((row) => `${row.facilityId} ${row.locationId ?? ""}`)
+    .sort()
+    .join("|");
+
+/**
+ * Limits a member to certain warehouses and, inside them, to certain zones
+ * (WMS-20, ADR 0038); without warehouses the limit is removed. The rows
+ * are replaced whole, under the lock of the company, and the change goes
+ * to the audit trail. Someone who is limited can only hand out what they
+ * have. The titular is never limited (team rules).
+ */
+export async function setMemberScope(
+  organizationId: string,
+  actorUserId: string,
+  input: MemberScopeInput,
+): Promise<TeamActionResult> {
+  return withTeamChange(
+    organizationId,
+    actorUserId,
+    input.userId,
+    { kind: "set_scope" },
+    async (tx, target) => {
+      // One entry per warehouse; an entry without zones opens it whole.
+      const wanted = new Map<string, Set<string>>();
+      for (const entry of Array.isArray(input.facilities)
+        ? input.facilities.slice(0, MAX_SCOPE_ROWS)
+        : []) {
+        const facilityId = String(entry?.facilityId ?? "").slice(0, 36);
+        if (facilityId === "") return fail("invalid_scope");
+        const zones = wanted.get(facilityId) ?? new Set<string>();
+        for (const zoneId of Array.isArray(entry.zoneIds)
+          ? entry.zoneIds.slice(0, MAX_SCOPE_ROWS)
+          : []) {
+          const id = String(zoneId ?? "").slice(0, 36);
+          if (id === "") return fail("invalid_scope");
+          zones.add(id);
+        }
+        wanted.set(facilityId, zones);
+      }
+      const rows = [...wanted].flatMap(([facilityId, zones]) =>
+        zones.size === 0
+          ? [{ facilityId, locationId: null as string | null }]
+          : [...zones].map((locationId) => ({ facilityId, locationId })),
+      );
+      if (rows.length > MAX_SCOPE_ROWS) return fail("invalid_scope");
+
+      // Everything named must exist in this company, active; a zone must
+      // sit directly in its warehouse. Ids from the form are never trusted.
+      const facilities = await tx.facility.findMany({
+        where: { organizationId, id: { in: [...wanted.keys()] } },
+        select: { id: true, name: true, archivedAt: true },
+      });
+      if (
+        facilities.length !== wanted.size ||
+        facilities.some((facility) => facility.archivedAt !== null)
+      ) {
+        return fail("invalid_scope");
+      }
+      const zoneIds = rows.flatMap((row) =>
+        row.locationId ? [row.locationId] : [],
+      );
+      const zones = await tx.location.findMany({
+        where: {
+          organizationId,
+          id: { in: zoneIds },
+          parentId: null,
+          archivedAt: null,
+        },
+        select: { id: true, name: true, facilityId: true },
+      });
+      const zoneOf = new Map(zones.map((zone) => [zone.id, zone]));
+      if (
+        rows.some(
+          (row) =>
+            row.locationId !== null &&
+            zoneOf.get(row.locationId)?.facilityId !== row.facilityId,
+        )
+      ) {
+        return fail("invalid_scope");
+      }
+
+      // Someone limited hands out only what they have, never «everything».
+      const actorScope: Scope | null =
+        target.actorIsOwner === true
+          ? null
+          : buildScope(
+              await tx.membershipScope.findMany({
+                where: { organizationId, membership: { userId: actorUserId } },
+                select: { facilityId: true, locationId: true },
+              }),
+            );
+      if (actorScope !== null) {
+        const actor = { isOwner: false, roles: [], scope: actorScope };
+        const within = rows.every((row) =>
+          row.locationId === null
+            ? actorScope.facilities.get(row.facilityId) === null
+            : inScope(actor, {
+                facilityId: row.facilityId,
+                path: [row.locationId],
+              }),
+        );
+        if (rows.length === 0 || !within) return fail("scope_exceeds");
+      }
+
+      const previous = await tx.membershipScope.findMany({
+        where: { organizationId, membershipId: target.membershipId },
+        select: {
+          facilityId: true,
+          locationId: true,
+          facility: { select: { name: true } },
+          location: { select: { name: true } },
+        },
+      });
+      if (scopeKey(previous) === scopeKey(rows)) return fail("unchanged");
+
+      await tx.membershipScope.deleteMany({
+        where: { organizationId, membershipId: target.membershipId },
+      });
+      if (rows.length > 0) {
+        await tx.membershipScope.createMany({
+          data: rows.map((row) => ({
+            id: newId(),
+            organizationId,
+            membershipId: target.membershipId,
+            facilityId: row.facilityId,
+            locationId: row.locationId,
+          })),
+        });
+      }
+      const facilityName = new Map(facilities.map((f) => [f.id, f.name]));
+      await recordAuditEvent(tx, {
+        organizationId,
+        actorUserId,
+        action: "team.scope_changed",
+        target: { type: "user", id: target.userId },
+        metadata: {
+          changes: {
+            "Dónde trabaja": {
+              antes: describeScope(
+                previous.map((row) => ({
+                  facility: row.facility.name,
+                  zone: row.location?.name ?? null,
+                })),
+              ),
+              ahora: describeScope(
+                rows.map((row) => ({
+                  facility: facilityName.get(row.facilityId) ?? "",
+                  zone: row.locationId
+                    ? (zoneOf.get(row.locationId)?.name ?? "")
+                    : null,
+                })),
+              ),
+            },
+          },
+        },
+      });
+      return undefined;
+    },
+  );
+}
+
+/** «Norte; Sur (Zona A, Zona B)», or «Todos los almacenes» without rows. */
+function describeScope(
+  rows: readonly { facility: string; zone: string | null }[],
+): string {
+  if (rows.length === 0) return "Todos los almacenes";
+  const byFacility = new Map<string, string[] | null>();
+  for (const row of rows) {
+    if (row.zone === null) byFacility.set(row.facility, null);
+    else if (!byFacility.has(row.facility)) {
+      byFacility.set(row.facility, [row.zone]);
+    } else byFacility.get(row.facility)?.push(row.zone);
+  }
+  return [...byFacility]
+    .sort(([a], [b]) => a.localeCompare(b, "es"))
+    .map(([facility, zones]) =>
+      zones ? `${facility} (${zones.sort().join(", ")})` : facility,
+    )
+    .join("; ");
+}
+
+/** A warehouse a member is limited to, for the team screen. */
+export type MemberScopeEntry = {
+  facilityId: string;
+  facilityName: string;
+  /** Null = the whole warehouse. */
+  zones: { id: string; name: string }[] | null;
+};
+
 export type TeamMember = {
   userId: string;
   name: string;
@@ -240,6 +457,8 @@ export type TeamMember = {
   status: "ACTIVE" | "DISABLED";
   isOwner: boolean;
   roles: Role[];
+  /** Where they may work (WMS-20); empty = every warehouse. */
+  limitedTo: MemberScopeEntry[];
   joinedAt: Date;
 };
 
@@ -259,6 +478,13 @@ export async function listTeamMembers(
         createdAt: true,
         user: { select: { name: true, email: true } },
         roles: { select: { role: true } },
+        scopes: {
+          select: {
+            facilityId: true,
+            facility: { select: { name: true } },
+            location: { select: { id: true, name: true } },
+          },
+        },
       },
     }),
   ]);
@@ -270,6 +496,8 @@ export async function listTeamMembers(
       status: m.status,
       isOwner: organization?.ownerUserId === m.userId,
       roles: knownRoles(m.roles.map((r) => r.role).filter(isRole)),
+      limitedTo:
+        organization?.ownerUserId === m.userId ? [] : scopeEntries(m.scopes),
       joinedAt: m.createdAt,
     }))
     .sort(
@@ -277,6 +505,120 @@ export async function listTeamMembers(
         Number(b.isOwner) - Number(a.isOwner) ||
         a.name.localeCompare(b.name, "es"),
     );
+}
+
+function scopeEntries(
+  rows: readonly {
+    facilityId: string;
+    facility: { name: string };
+    location: { id: string; name: string } | null;
+  }[],
+): MemberScopeEntry[] {
+  const entries = new Map<string, MemberScopeEntry>();
+  for (const row of rows) {
+    const entry = entries.get(row.facilityId) ?? {
+      facilityId: row.facilityId,
+      facilityName: row.facility.name,
+      zones: [],
+    };
+    // A row for the whole warehouse wins over its zones.
+    if (row.location === null) entry.zones = null;
+    else entry.zones?.push(row.location);
+    entries.set(row.facilityId, entry);
+  }
+  return [...entries.values()]
+    .map((entry) => ({
+      ...entry,
+      zones:
+        entry.zones?.sort((a, b) => a.name.localeCompare(b.name, "es")) ?? null,
+    }))
+    .sort((a, b) => a.facilityName.localeCompare(b.facilityName, "es"));
+}
+
+/** A warehouse and the zones that can be chosen in it, for the team screen. */
+export type ScopeOption = {
+  id: string;
+  name: string;
+  /** Active locations directly in the warehouse. */
+  zones: { id: string; name: string }[];
+  /** False when who asks holds only some zones of it. */
+  wholeAllowed: boolean;
+};
+
+/**
+ * The warehouses and zones this person may hand out when limiting someone
+ * (WMS-20): all of the company, or only their own when they are limited.
+ * Nothing for who cannot change the team.
+ */
+export async function listScopeOptions(
+  organizationId: string,
+  actorUserId: string,
+): Promise<{ options: ScopeOption[]; actorLimited: boolean }> {
+  const client = forOrganization(organizationId);
+  const [organization, membership] = await Promise.all([
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { ownerUserId: true },
+    }),
+    client.membership.findFirst({
+      where: { userId: actorUserId, status: "ACTIVE" },
+      select: {
+        roles: { select: { role: true } },
+        scopes: { select: { facilityId: true, locationId: true } },
+      },
+    }),
+  ]);
+  if (!membership) return { options: [], actorLimited: false };
+  const isOwner = organization?.ownerUserId === actorUserId;
+  const actor = {
+    isOwner,
+    roles: membership.roles.map((r) => r.role),
+    scope: isOwner ? null : buildScope(membership.scopes),
+  };
+  if (!can(actor, "platform.team.assign_roles")) {
+    return { options: [], actorLimited: false };
+  }
+  const facilities = await client.facility.findMany({
+    where: { archivedAt: null },
+    take: 500,
+    select: {
+      id: true,
+      name: true,
+      isDefault: true,
+      locations: {
+        where: { parentId: null, archivedAt: null },
+        take: 500,
+        select: { id: true, name: true, isDefault: true },
+      },
+    },
+  });
+  const options = facilities
+    .filter((facility) => inScope(actor, { facilityId: facility.id }))
+    .sort(
+      (a, b) =>
+        Number(b.isDefault === true) - Number(a.isDefault === true) ||
+        a.name.localeCompare(b.name, "es"),
+    )
+    .map((facility) => ({
+      id: facility.id,
+      name: facility.name,
+      zones: facility.locations
+        .filter((zone) =>
+          inScope(actor, { facilityId: facility.id, path: [zone.id] }),
+        )
+        .sort(
+          (a, b) =>
+            Number(b.isDefault === true) - Number(a.isDefault === true) ||
+            a.name.localeCompare(b.name, "es", { numeric: true }),
+        )
+        .map((zone) => ({ id: zone.id, name: zone.name })),
+      // With only some zones of their own, they cannot hand out the whole.
+      wholeAllowed:
+        actor.scope === null ||
+        actor.isOwner ||
+        actor.scope.facilities.get(facility.id) === null,
+    }));
+  return { options, actorLimited: actor.scope !== null && !isOwner };
 }
 
 /**

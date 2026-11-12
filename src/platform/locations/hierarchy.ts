@@ -24,6 +24,12 @@ import {
   type LocationType,
 } from "./levels";
 import { getActiveFacility } from "./facilities";
+import {
+  assertFacilityInScope,
+  assertLocationsInScope,
+  assertWholeFacilityInScope,
+  locationScopeWhere,
+} from "./scope";
 import type { LocationActor } from "./locations";
 
 /**
@@ -95,6 +101,7 @@ type Tx = Pick<
   | "facility"
   | "location"
   | "locationLevel"
+  | "membership"
   | "auditEvent"
   | "stockBalance"
   | "stockCount"
@@ -356,6 +363,10 @@ export async function createLocation(
       const name = parseName(input.name);
       const parent = await findParent(tx, parentIdOf(input.parentId));
       const facilityId = parent?.facilityId ?? activeFacilityId;
+      // Only inside what the person may work in (WMS-20); directly in the
+      // warehouse, only with the whole warehouse open.
+      if (parent) await assertLocationsInScope(tx, userId, [parent.id]);
+      else await assertWholeFacilityInScope(tx, userId, facilityId);
       const depth = Number(input.level);
       const level =
         (Number.isInteger(depth) &&
@@ -449,6 +460,7 @@ export async function editLocation(
   );
   return changeTree(organizationId, async (tx) => {
     const location = await findLocation(tx, locationId);
+    await assertLocationsInScope(tx, userId, [location.id]);
     const name =
       input.name === undefined ? location.name : parseName(input.name);
     const type =
@@ -561,6 +573,7 @@ export async function moveLocation(
   );
   return changeTree(organizationId, async (tx) => {
     const location = await findLocation(tx, locationId);
+    await assertLocationsInScope(tx, userId, [location.id]);
     if (location.isDefault) reject("not_allowed", GENERAL_FIXED);
     if (location.archivedAt) {
       reject("not_allowed", "Reactiva la ubicación antes de moverla.");
@@ -574,6 +587,9 @@ export async function moveLocation(
       );
     }
     const parent = await findParent(tx, parentId);
+    // Where it goes must also be inside the person's scope (WMS-20).
+    if (parent) await assertLocationsInScope(tx, userId, [parent.id]);
+    else await assertWholeFacilityInScope(tx, userId, location.facilityId);
     if ((parent?.id ?? null) === location.parentId) {
       reject("unchanged", "La ubicación ya está ahí.", "parentId");
     }
@@ -637,6 +653,8 @@ export async function setStagingLocation(
   return changeTree(organizationId, async (tx) => {
     await lockRows(tx, "location", [String(locationId ?? "")]);
     const location = await findLocation(tx, locationId);
+    // The staging location is of the whole warehouse (WMS-20).
+    await assertWholeFacilityInScope(tx, userId, location.facilityId);
     if (location.isStaging) {
       reject("unchanged", "Esa ya es la ubicación de preparación.");
     }
@@ -697,6 +715,7 @@ export async function archiveLocation(
     // Movements into a location lock its row: none arrives while we decide.
     await lockRows(tx, "location", [String(locationId)]);
     const location = await findLocation(tx, locationId);
+    await assertLocationsInScope(tx, userId, [location.id]);
     if (location.isDefault) reject("not_allowed", GENERAL_FIXED);
     if (location.isStaging) {
       reject(
@@ -769,6 +788,7 @@ export async function restoreLocation(
   );
   return changeTree(organizationId, async (tx) => {
     const location = await findLocation(tx, locationId);
+    await assertLocationsInScope(tx, userId, [location.id]);
     if (!location.archivedAt) {
       reject("unchanged", "Esta ubicación ya está activa.");
     }
@@ -839,6 +859,10 @@ export async function listLocations(
   const client = forOrganization(actor.organizationId);
   // One warehouse at a time (WMS-18): the one asked, or where the person works.
   const facilityId = options.facilityId ?? (await getActiveFacility(actor)).id;
+  // Only what is inside the person's scope (WMS-20): a warehouse asked by
+  // id is checked, and with zones only their locations are listed.
+  await assertFacilityInScope(client, actor.userId, facilityId);
+  const scoped = await locationScopeWhere(client, actor.userId);
   const [facility, rows, levels] = await Promise.all([
     client.facility.findFirst({
       where: { id: facilityId },
@@ -848,6 +872,7 @@ export async function listLocations(
       where: {
         facilityId,
         ...(options.includeArchived ? {} : { archivedAt: null }),
+        ...scoped,
       },
       take: MAX_LOCATIONS,
       select: ROW,
@@ -937,6 +962,8 @@ export async function saveLocationLevels(
   return changeTree(
     organizationId,
     async (tx, facilityId) => {
+      // The levels are of the whole warehouse (WMS-20).
+      await assertWholeFacilityInScope(tx, userId, facilityId);
       const current = await levelsOf(tx, facilityId);
       const wanted = (Array.isArray(input.levels) ? input.levels : [])
         .slice(0, MAX_LOCATION_LEVELS + 1)

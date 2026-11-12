@@ -10,12 +10,15 @@ import {
 } from "./catalog";
 import {
   OWNER_ONLY_PERMISSIONS,
+  buildScope,
   can,
   canAll,
   canAny,
+  inScope,
   isOwnerOnly,
   knownRoles,
   permissionsOf,
+  scopeOf,
 } from "./policy";
 
 // USR-02: one decision function, tested for every role and every action,
@@ -229,5 +232,84 @@ describe("actions reserved to the titular", () => {
     expect(isOwnerOnly("platform.team.invite")).toBe(false);
     expect(isOwnerOnly("inventory.product.read")).toBe(false);
     expect(isOwnerOnly("platform.provisioning.manage")).toBe(false);
+  });
+});
+
+// WMS-20: where a person may work is part of the same decision.
+describe("scope by warehouse and zone", () => {
+  const scope = buildScope([
+    { facilityId: "B", locationId: null },
+    { facilityId: "C", locationId: "zone-1" },
+    { facilityId: "C", locationId: "zone-2" },
+  ]);
+  const limited = { isOwner: false, roles: ["warehouse"], scope };
+
+  it("no rows = no limit", () => {
+    expect(buildScope([])).toBeNull();
+    expect(inScope(member("warehouse"), { facilityId: "A" })).toBe(true);
+    expect(
+      inScope(
+        { ...member("warehouse"), scope: null },
+        { facilityId: "A", path: ["x"] },
+      ),
+    ).toBe(true);
+  });
+
+  it("a warehouse that is not named is closed", () => {
+    expect(inScope(limited, { facilityId: "A" })).toBe(false);
+    expect(inScope(limited, { facilityId: "A", path: ["zone-1"] })).toBe(false);
+    expect(inScope(limited, { facilityId: "B" })).toBe(true);
+    expect(inScope(limited, { facilityId: "B", path: ["any"] })).toBe(true);
+  });
+
+  it("with zones, only what is inside them", () => {
+    // Somewhere in the warehouse: yes. The location itself or an ancestor.
+    expect(inScope(limited, { facilityId: "C" })).toBe(true);
+    expect(inScope(limited, { facilityId: "C", path: ["zone-1"] })).toBe(true);
+    expect(
+      inScope(limited, { facilityId: "C", path: ["shelf", "aisle", "zone-2"] }),
+    ).toBe(true);
+    expect(inScope(limited, { facilityId: "C", path: ["general"] })).toBe(
+      false,
+    );
+    expect(inScope(limited, { facilityId: "C", path: [] })).toBe(false);
+    // A zone only counts in its own warehouse.
+    expect(inScope(limited, { facilityId: "B", path: ["zone-1"] })).toBe(true);
+    expect(inScope(limited, { facilityId: "A", path: ["zone-1"] })).toBe(false);
+  });
+
+  it("a row for the whole warehouse wins over its zones, in any order", () => {
+    for (const rows of [
+      [
+        { facilityId: "C", locationId: "zone-1" },
+        { facilityId: "C", locationId: null },
+      ],
+      [
+        { facilityId: "C", locationId: null },
+        { facilityId: "C", locationId: "zone-1" },
+      ],
+    ]) {
+      expect(buildScope(rows)?.facilities.get("C")).toBeNull();
+    }
+  });
+
+  it("the titular is never limited", () => {
+    const titular = { isOwner: true, roles: [], scope };
+    expect(scopeOf(titular)).toBeNull();
+    expect(inScope(titular, { facilityId: "A", path: ["x"] })).toBe(true);
+  });
+
+  it("can decides permission and place together", () => {
+    expect(can(limited, "inventory.stock.read")).toBe(true);
+    expect(can(limited, "inventory.stock.read", { facilityId: "B" })).toBe(
+      true,
+    );
+    expect(can(limited, "inventory.stock.read", { facilityId: "A" })).toBe(
+      false,
+    );
+    // Inside the scope, but without the permission: still no.
+    expect(
+      can(limited, "platform.team.assign_roles", { facilityId: "B" }),
+    ).toBe(false);
   });
 });

@@ -14,8 +14,12 @@ import {
 import {
   LOCATION_PARENTS,
   activeFacilityOf,
+  assertLocationsInScope,
   compareLocationNames,
+  isLimited,
   locationPath,
+  locationScopeWhere,
+  locationsOutOfScope,
 } from "@/platform/locations";
 import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
@@ -453,7 +457,12 @@ async function post(
       }
 
       const location = await tx.location.findFirst({
-        where: data.locationId ? { id: data.locationId } : { isDefault: true },
+        where: data.locationId
+          ? { id: data.locationId }
+          : {
+              isDefault: true,
+              facilityId: (await activeFacilityOf(tx, userId)).id,
+            },
         select: { id: true, name: true, archivedAt: true, facilityId: true },
       });
       if (!location) {
@@ -463,6 +472,8 @@ async function post(
           "Esa ubicación ya no existe. Elige otra.",
         );
       }
+      // WMS-20: never a location outside the person's warehouses or zones.
+      await assertLocationsInScope(tx, userId, [location.id]);
       if (location.archivedAt) {
         return reject(
           "not_allowed",
@@ -759,13 +770,17 @@ export async function getStockTotals(
   );
   const ids = [...new Set(productIds.map(String))].slice(0, 500);
   if (ids.length === 0) return {};
-  const sums = await forOrganization(actor.organizationId).stockBalance.groupBy(
-    {
-      by: ["productId"],
-      where: { productId: { in: ids } },
-      _sum: { quantity: true },
+  const client = forOrganization(actor.organizationId);
+  // WMS-20: someone limited to warehouses or zones sees what is in theirs.
+  const scoped = await locationScopeWhere(client, actor.userId);
+  const sums = await client.stockBalance.groupBy({
+    by: ["productId"],
+    where: {
+      productId: { in: ids },
+      ...(isLimited(scoped) ? { location: scoped } : {}),
     },
-  );
+    _sum: { quantity: true },
+  });
   return Object.fromEntries(
     sums.map((row) => [row.productId, (row._sum.quantity ?? 0).toString()]),
   );
@@ -815,8 +830,17 @@ export async function getStockByLocation(
     dec(0),
   );
   const freeAll = availableAll.minus(reservedAll);
+  // WMS-20: only the locations the person may work in are offered.
+  const outside = new Set(
+    await locationsOutOfScope(
+      client,
+      actor.userId,
+      rows.map((row) => row.locationId),
+    ),
+  );
   return Object.fromEntries(
     rows.flatMap((row) => {
+      if (outside.has(row.locationId)) return [];
       let free = dec(row.quantity.toString()).minus(
         reservedAt.get(row.locationId) ?? 0,
       );
@@ -885,14 +909,31 @@ export async function listRecentMovements(
   );
   return fetchMovements(
     actor.organizationId,
-    options.movementId
-      ? { id: String(options.movementId) }
-      : options.productId
-        ? { lines: { some: { productId: String(options.productId) } } }
-        : {},
+    {
+      ...(options.movementId
+        ? { id: String(options.movementId) }
+        : options.productId
+          ? { lines: { some: { productId: String(options.productId) } } }
+          : {}),
+      ...(await movementScope(actor.organizationId, actor.userId)),
+    },
     Math.min(Math.max(options.limit ?? 20, 1), 50),
     0,
   );
+}
+
+/**
+ * WMS-20: for someone limited to warehouses or zones, only the movements
+ * with a line in a location of theirs. `{}` without a limit.
+ */
+async function movementScope(organizationId: string, userId: string) {
+  const scoped = await locationScopeWhere(
+    forOrganization(organizationId),
+    userId,
+  );
+  return isLimited(scoped)
+    ? { AND: [{ lines: { some: { location: scoped } } }] }
+    : {};
 }
 
 /** Movements that match `where`, newest first, ready to show. */
@@ -1012,7 +1053,12 @@ export async function listStockLocations(
   const client = forOrganization(actor.organizationId);
   const facility = await activeFacilityOf(client, actor.userId);
   const rows = await client.location.findMany({
-    where: { archivedAt: null, facilityId: facility.id },
+    where: {
+      archivedAt: null,
+      facilityId: facility.id,
+      // WMS-20: with zones, only the locations inside them.
+      ...(await locationScopeWhere(client, actor.userId)),
+    },
     take: 1_000,
     select: {
       id: true,
@@ -1281,6 +1327,11 @@ async function transferWithin(
   // (both at once; `lockRows` takes them in id order).
   const [productId] = await lockRows(tx, "product", [data.productId]);
   await lockRows(tx, "location", [data.locationId, data.toLocationId]);
+  // WMS-20: both ends inside the scope of who moves, whatever ids arrive.
+  await assertLocationsInScope(tx, userId, [
+    data.locationId,
+    data.toLocationId,
+  ]);
 
   if (data.idempotencyKey) {
     const replay = await tx.stockMovement.findFirst({
@@ -1648,7 +1699,12 @@ export async function registerAdjustment(
         );
       }
       const location = await tx.location.findFirst({
-        where: data.locationId ? { id: data.locationId } : { isDefault: true },
+        where: data.locationId
+          ? { id: data.locationId }
+          : {
+              isDefault: true,
+              facilityId: (await activeFacilityOf(tx, userId)).id,
+            },
         select: { id: true, name: true, archivedAt: true },
       });
       if (!location) {
@@ -1658,6 +1714,8 @@ export async function registerAdjustment(
           "Esa ubicación ya no existe. Elige otra.",
         );
       }
+      // WMS-20: never a location outside the person's warehouses or zones.
+      await assertLocationsInScope(tx, userId, [location.id]);
       if (location.archivedAt) {
         return reject(
           "not_allowed",
@@ -1935,6 +1993,12 @@ export async function reverseMovement(
       await lockRows(tx, "location", [
         ...new Set(original.lines.map((line) => line.locationId)),
       ]);
+      // WMS-20: a reversal moves stock in the locations of the original.
+      await assertLocationsInScope(
+        tx,
+        userId,
+        original.lines.map((line) => line.locationId),
+      );
 
       if (data.idempotencyKey) {
         const replay = await tx.stockMovement.findFirst({
@@ -2276,6 +2340,7 @@ export async function listMovements(
     null;
 
   const where = {
+    ...(await movementScope(actor.organizationId, actor.userId)),
     ...(from || until
       ? {
           createdAt: {

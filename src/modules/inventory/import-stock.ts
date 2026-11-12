@@ -2,6 +2,7 @@ import "server-only";
 
 import { dec, newId } from "@/lib";
 import { parseQuantity } from "@/platform/catalog";
+import { locationsOutOfScope } from "@/platform/locations";
 import type { TenantDb } from "@/server";
 
 import { lineCost, openCostBook } from "./valuation";
@@ -52,6 +53,8 @@ export async function checkImportedStock(
   product: { id: string; unitCode: string; quantityStep: string } | null,
   lines: readonly ImportedStockLine[],
   hasPresentation: boolean,
+  /** Who confirmed the file: its stock enters only in their scope (WMS-20). */
+  userId: string,
 ): Promise<string | null> {
   if (lines.length === 0) return null;
   const ids = [...new Set(lines.map((line) => line.locationId))];
@@ -66,10 +69,14 @@ export async function checkImportedStock(
     select: { id: true, name: true, archivedAt: true },
   });
   const byId = new Map(locations.map((location) => [location.id, location]));
+  const outside = new Set(await locationsOutOfScope(tx, userId, ids));
   for (const line of lines) {
     const location = byId.get(line.locationId);
     if (!location) {
       return `La ubicación de la fila ${line.row} ya no existe.`;
+    }
+    if (outside.has(location.id)) {
+      return `«${location.name}» (fila ${line.row}) ya no está entre los almacenes o zonas de quien confirmó el archivo.`;
     }
     if (location.archivedAt) {
       return `«${location.name}» se archivó después de confirmar: su existencia (fila ${line.row}) ya no puede entrar ahí.`;

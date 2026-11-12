@@ -41,9 +41,23 @@ export {
 export type { LevelRef, LocationType, LocationWithParents } from "./levels";
 export { getDefaultLocation } from "./locations";
 export { STAGING_NAME, ensureStagingLocation } from "./staging";
+export {
+  FACILITY_OUT_OF_SCOPE_MESSAGE,
+  OUT_OF_SCOPE_MESSAGE,
+  assertFacilityInScope,
+  assertLocationsInScope,
+  assertWholeFacilityInScope,
+  facilityInScope,
+  isFacilityInScope,
+  isLimited,
+  locationScopeWhere,
+  locationsOutOfScope,
+} from "./scope";
+export type { LocationScopeReader, LocationScopeWhere } from "./scope";
 export type { LocationActor } from "./locations";
 export {
   FACILITIES_LIMIT_KEY,
+  NO_FACILITY_MESSAGE,
   activeFacilityOf,
   archiveFacility,
   createFacility,

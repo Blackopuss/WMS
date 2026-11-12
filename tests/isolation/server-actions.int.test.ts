@@ -218,8 +218,9 @@ const REVIEWED: Record<string, Review> = {
   switchFacilityAction: {
     input: "id del almacén en que se quiere trabajar",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y se guarda en la membresía de esa persona",
-    coveredBy: "tests/platform/facilities.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa, se rechaza si está fuera del alcance de la persona (WMS-20) y se guarda en su membresía",
+    coveredBy:
+      "tests/platform/facilities.int.test.ts, tests/platform/member-scope.int.test.ts",
   },
   createFacilityAction: {
     input: "nombre, código y dirección del almacén",
@@ -549,6 +550,13 @@ const REVIEWED: Record<string, Review> = {
     input: "id de usuario y roles",
     identity: "sesión y empresa activa (requireOrganizationContext)",
     coveredBy: "tests/platform/team.int.test.ts",
+  },
+  setMemberScopeAction: {
+    input:
+      "id de usuario, «todos» o ids de almacenes y, por almacén, ids de zonas",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); cada almacén y zona se busca solo en esa empresa y quien está limitado solo reparte lo suyo",
+    coveredBy: "tests/platform/member-scope.int.test.ts",
   },
   disableMemberAction: {
     input: "id de usuario y motivo",

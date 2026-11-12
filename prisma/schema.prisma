@@ -119,6 +119,7 @@ model Organization {
   updatedAt               DateTime                @updatedAt @db.DateTime(3)
   memberships             Membership[]
   memberRoles             MembershipRole[]
+  memberScopes            MembershipScope[]
   sessions                Session[]
   auditEvents             AuditEvent[]
   ownershipTransfers      OwnershipTransfer[]
@@ -179,22 +180,23 @@ model Organization {
 /// own locations, its General and its staging location. Never deleted:
 /// archived when empty.
 model Facility {
-  id             String          @id @db.Char(36)
-  organizationId String          @db.Char(36)
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String          @db.VarChar(120)
+  id             String            @id @db.Char(36)
+  organizationId String            @db.Char(36)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String            @db.VarChar(120)
   /// Short code people use and scan («CDMX-1»); unique in the company.
-  code           String          @db.VarChar(20)
-  address        String?         @db.VarChar(300)
+  code           String            @db.VarChar(20)
+  address        String?           @db.VarChar(300)
   /// True for the main warehouse, NULL for the others (one per company).
   isDefault      Boolean?
-  archivedAt     DateTime?       @db.DateTime(3)
-  createdAt      DateTime        @default(now()) @db.DateTime(3)
-  updatedAt      DateTime        @updatedAt @db.DateTime(3)
+  archivedAt     DateTime?         @db.DateTime(3)
+  createdAt      DateTime          @default(now()) @db.DateTime(3)
+  updatedAt      DateTime          @updatedAt @db.DateTime(3)
   locations      Location[]
   levels         LocationLevel[]
   activeFor      Membership[]
   outboundOrders OutboundOrder[]
+  memberScopes   MembershipScope[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -264,6 +266,7 @@ model Location {
   tasksFrom      WarehouseTask[]       @relation("TaskFrom")
   tasksTo        WarehouseTask[]       @relation("TaskTo")
   reservations   StockReservation[]
+  memberScopes   MembershipScope[]
   /// True for General, NULL for other locations (never false; SQL CHECK).
   /// MySQL allows multiple NULLs in the unique key, but only one true.
   isDefault      Boolean?
@@ -306,6 +309,8 @@ model Membership {
   /// The warehouse this person works in (WMS-18); null = the main one.
   activeFacilityId String?             @db.Char(36)
   activeFacility   Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Where this person may work (WMS-20); no rows = every warehouse.
+  scopes           MembershipScope[]
 
   @@unique([organizationId, userId])
   /// Target of company-scoped foreign keys (PLT-13).
@@ -331,6 +336,29 @@ model MembershipRole {
   @@unique([membershipId, role])
   @@index([organizationId, membershipId])
   @@map("membership_role")
+}
+
+/// Where a member may work (WMS-20, ADR 0038). No rows = no limit. A row
+/// without location opens the whole warehouse; a row with one opens only
+/// that location and what it holds (a zone). The titular never has rows.
+model MembershipScope {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  membershipId   String       @db.Char(36)
+  membership     Membership   @relation(fields: [organizationId, membershipId], references: [organizationId, id], onDelete: Cascade)
+  facilityId     String       @db.Char(36)
+  facility       Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// NULL = the whole warehouse; otherwise a location of that warehouse.
+  locationId     String?      @db.Char(36)
+  location       Location?    @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([membershipId, facilityId, locationId])
+  @@index([organizationId, membershipId])
+  @@index([organizationId, facilityId, locationId])
+  @@map("membership_scope")
 }
 
 enum OwnershipTransferStatus {

@@ -9,6 +9,7 @@ import {
   disableMember,
   reactivateMember,
   resendInvitation,
+  setMemberScope,
   type InvitationField,
 } from "@/platform/authorization";
 import { requireOrganizationContext } from "@/platform/tenancy";
@@ -135,5 +136,60 @@ export async function reactivateMemberAction(
   revalidatePath(TEAM_PATH);
   return result.ok
     ? { ok: true, message: "Persona reactivada con los roles que tenía." }
+    : { ok: false, message: result.error };
+}
+
+/**
+ * Limits a person to certain warehouses and zones, or removes the limit
+ * (WMS-20). The form only names ids: the service checks each one in the
+ * company of the session and that who asks may hand it out.
+ */
+export async function setMemberScopeAction(
+  _prev: TeamActionState | null,
+  formData: FormData,
+): Promise<TeamActionState> {
+  const { userId, organizationId } = await actor();
+  const everywhere = formData.get("mode") !== "some";
+  const chosen = everywhere
+    ? []
+    : [
+        ...new Set(formData.getAll("facility").map((value) => String(value))),
+      ].slice(0, 200);
+  if (!everywhere && chosen.length === 0) {
+    return { ok: false, message: "Elige al menos un almacén." };
+  }
+  const facilities = chosen.map((facilityId) => ({
+    facilityId,
+    zoneIds:
+      formData.get(`zoneMode:${facilityId}`) === "zones"
+        ? formData
+            .getAll(`zones:${facilityId}`)
+            .map((value) => String(value))
+            .slice(0, 500)
+        : [],
+    zoned: formData.get(`zoneMode:${facilityId}`) === "zones",
+  }));
+  if (facilities.some((each) => each.zoned && each.zoneIds.length === 0)) {
+    return {
+      ok: false,
+      message:
+        "Elige al menos una zona en cada almacén que limitaste, o marca «Todo el almacén».",
+    };
+  }
+  const result = await setMemberScope(organizationId, userId, {
+    userId: String(formData.get("userId") ?? ""),
+    facilities: facilities.map(({ facilityId, zoneIds }) => ({
+      facilityId,
+      zoneIds,
+    })),
+  });
+  revalidatePath(TEAM_PATH);
+  return result.ok
+    ? {
+        ok: true,
+        message: everywhere
+          ? "Ahora puede trabajar en todos los almacenes."
+          : "Almacenes actualizados.",
+      }
     : { ok: false, message: result.error };
 }
