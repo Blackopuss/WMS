@@ -57,7 +57,7 @@ Nada de textos, ejemplos, datos de demostración ni valores por omisión pensado
 - Cantidades y dinero con decimal exacto; nunca `number` de punto flotante para stock o importes.
 - Secretos solo en `.env.local` (ignorado por git). Plantilla sin secretos en `.env.example`.
 - Antes de cerrar un paso: `npm run check` y `npm run build` deben pasar.
-- Para UI usar las skills `ux-heuristics` (usabilidad: Krug y Nielsen), `impeccable` (`distill`, `critique`, `clarify`, `polish`), `ui-ux-pro-max` (sistema visual) y `web-design-guidelines` (revisión final). Todas en `.agents/skills` (enlazadas en `.claude/skills`). De `impeccable` solo se instalaron `SKILL.md` y `reference/`: su lanzador descarga un binario, así que se sigue su ruta «Launcher unavailable» (leer el contexto del proyecto directamente).
+- Para UI usar las skills `ux-heuristics` (usabilidad: Krug y Nielsen), `impeccable` (`distill`, `critique`, `clarify`, `polish`), `ui-ux-pro-max` (sistema visual) y `web-design-guidelines` (revisión final). Todas en `.agents/skills`; `.claude/skills` no viaja con el repositorio, así que en una copia nueva se enlazan con `npm run skills:link`. También está `caveman` (respuestas breves en el chat, solo si el fundador la pide con `/caveman`; nunca aplica a código, commits ni documentación). De `impeccable` solo se instalaron `SKILL.md` y `reference/`: su lanzador descarga un binario, así que se sigue su ruta «Launcher unavailable» (leer el contexto del proyecto directamente).
 - **Sencillez (KISS) en la app** (`docs/ux/AUDITORIA_KISS.md`): cualquier persona debe poder usarla desde cero sin dar vueltas. Ver «Navegación y estados».
 
 ## Arquitectura (BAS-02)
