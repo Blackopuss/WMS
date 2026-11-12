@@ -103,7 +103,25 @@ export default async function EquipoPage() {
         description="Quién trabaja en tu empresa y qué puede hacer cada persona."
         actions={
           access.can("platform.team.invite") && roleOptions.length > 0 ? (
-            <InviteDialog roleOptions={roleOptions} />
+            <InviteDialog
+              roleOptions={roleOptions}
+              scopeChoices={
+                scopeUseful || scopeOptions.actorLimited
+                  ? scopeOptions.options
+                  : []
+              }
+              everywhereAllowed={!scopeOptions.actorLimited}
+              scopeDefault={
+                scopeOptions.actorLimited
+                  ? scopeOptions.options.map((option) => ({
+                      facilityId: option.id,
+                      zoneIds: option.wholeAllowed
+                        ? null
+                        : option.zones.map((zone) => zone.id),
+                    }))
+                  : []
+              }
+            />
           ) : undefined
         }
       />
@@ -164,6 +182,7 @@ export default async function EquipoPage() {
               roles: invitation.roles.map((role) => ROLE_LABELS[role]),
               expiresAt: invitation.expiresAt.toISOString(),
               expired: invitation.expired,
+              limited: invitation.limited,
               canResend: manageable && access.can("platform.invitation.resend"),
               canCancel: manageable && access.can("platform.invitation.cancel"),
             };

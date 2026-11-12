@@ -32,6 +32,54 @@ async function actor() {
   return { userId: user.id, organizationId: organization.id };
 }
 
+/**
+ * What the warehouse fields of a form say (`ScopeFields`): every warehouse,
+ * or the chosen ones with their zones. Only ids; the service checks them.
+ */
+function scopeFrom(formData: FormData):
+  | {
+      ok: true;
+      everywhere: boolean;
+      facilities: { facilityId: string; zoneIds: string[] }[];
+    }
+  | { ok: false; error: string } {
+  const everywhere = formData.get("mode") !== "some";
+  const chosen = everywhere
+    ? []
+    : [
+        ...new Set(formData.getAll("facility").map((value) => String(value))),
+      ].slice(0, 200);
+  if (!everywhere && chosen.length === 0) {
+    return { ok: false, error: "Elige al menos un almacén." };
+  }
+  const facilities = chosen.map((facilityId) => ({
+    facilityId,
+    zoneIds:
+      formData.get(`zoneMode:${facilityId}`) === "zones"
+        ? formData
+            .getAll(`zones:${facilityId}`)
+            .map((value) => String(value))
+            .slice(0, 500)
+        : [],
+    zoned: formData.get(`zoneMode:${facilityId}`) === "zones",
+  }));
+  if (facilities.some((each) => each.zoned && each.zoneIds.length === 0)) {
+    return {
+      ok: false,
+      error:
+        "Elige al menos una zona en cada almacén que limitaste, o marca «Todo el almacén».",
+    };
+  }
+  return {
+    ok: true,
+    everywhere,
+    facilities: facilities.map(({ facilityId, zoneIds }) => ({
+      facilityId,
+      zoneIds,
+    })),
+  };
+}
+
 const rolesFrom = (formData: FormData) =>
   formData.getAll("roles").map((value) => String(value));
 
@@ -44,7 +92,18 @@ export async function inviteAction(
     email: String(formData.get("email") ?? ""),
     roles: rolesFrom(formData),
   };
-  const result = await createInvitation(organizationId, userId, values);
+  // The warehouse fields are only in the form when there is something to
+  // choose; without them the service decides (no limit, or the inviter's).
+  const scope = formData.has("mode")
+    ? scopeFrom(formData)
+    : ({ ok: true, everywhere: true, facilities: [] } as const);
+  if (!scope.ok) {
+    return { fieldErrors: { scope: scope.error }, values };
+  }
+  const result = await createInvitation(organizationId, userId, {
+    ...values,
+    facilities: scope.facilities,
+  });
   if (!result.ok) {
     return {
       fieldErrors: result.fieldErrors,
@@ -149,39 +208,12 @@ export async function setMemberScopeAction(
   formData: FormData,
 ): Promise<TeamActionState> {
   const { userId, organizationId } = await actor();
-  const everywhere = formData.get("mode") !== "some";
-  const chosen = everywhere
-    ? []
-    : [
-        ...new Set(formData.getAll("facility").map((value) => String(value))),
-      ].slice(0, 200);
-  if (!everywhere && chosen.length === 0) {
-    return { ok: false, message: "Elige al menos un almacén." };
-  }
-  const facilities = chosen.map((facilityId) => ({
-    facilityId,
-    zoneIds:
-      formData.get(`zoneMode:${facilityId}`) === "zones"
-        ? formData
-            .getAll(`zones:${facilityId}`)
-            .map((value) => String(value))
-            .slice(0, 500)
-        : [],
-    zoned: formData.get(`zoneMode:${facilityId}`) === "zones",
-  }));
-  if (facilities.some((each) => each.zoned && each.zoneIds.length === 0)) {
-    return {
-      ok: false,
-      message:
-        "Elige al menos una zona en cada almacén que limitaste, o marca «Todo el almacén».",
-    };
-  }
+  const scope = scopeFrom(formData);
+  if (!scope.ok) return { ok: false, message: scope.error };
+  const { everywhere, facilities } = scope;
   const result = await setMemberScope(organizationId, userId, {
     userId: String(formData.get("userId") ?? ""),
-    facilities: facilities.map(({ facilityId, zoneIds }) => ({
-      facilityId,
-      zoneIds,
-    })),
+    facilities,
   });
   revalidatePath(TEAM_PATH);
   return result.ok

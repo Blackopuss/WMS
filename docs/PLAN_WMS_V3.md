@@ -84,7 +84,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-50 | Rol de Gerencia | Hecho (2026-11-10) |
 | WMS-18 | Varios almacenes | Hecho (2026-11-10, ADR 0035) |
 | WMS-22A | Niveles de ubicación por almacén, código y uso | Hecho (2026-11-10, ADR 0036) |
-| WMS-20 | Alcance de permisos por almacén y zona | Hecho (2026-11-12, ADR 0038); pendiente: totales de empresa, documentos de Compras y alcance al invitar |
+| WMS-20 | Alcance de permisos por almacén y zona | Hecho (2026-11-12, ADR 0038), con alcance al invitar y cifras de empresa solo para quien no tiene límite; pendiente: los documentos de Compras no tienen almacén |
 | WMS-71 | Aviso de entrada repetida | Hecho (2026-11-12) |
 | WMS-72 | Existencias sin acomodar | Hecho (2026-11-12) |
 | WMS-73 | Resumen del día | Hecho (2026-11-12) |

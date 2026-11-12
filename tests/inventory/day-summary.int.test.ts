@@ -12,6 +12,7 @@ import {
   getOutboundOrder,
   listMovements,
   listOutboundOrders,
+  listTasks,
   pickUpTask,
   registerEntry,
   registerExit,
@@ -319,6 +320,37 @@ describe("getDaySummary", () => {
     );
     // The owner and Gerencia read the same.
     const manager = await member(owner.organizationId, "manager");
+    // The lists narrowed to the day: the same numbers the tiles link to.
+    const doneToday = await listTasks(owner, {
+      view: "closed",
+      day: summary.day,
+    });
+    expect(doneToday).toMatchObject({
+      total: summary.tasksDone,
+      day: summary.day,
+    });
+    const pickedToday = await listOutboundOrders(owner, {
+      pickedOn: summary.day,
+    });
+    expect(pickedToday).toMatchObject({
+      total: summary.ordersPicked.documents,
+      pickedOn: summary.day,
+      status: null,
+    });
+    // Another day has nothing; what is not a day narrows nothing.
+    expect(
+      (await listTasks(owner, { view: "closed", day: "2000-01-01" })).total,
+    ).toBe(0);
+    expect(
+      (await listOutboundOrders(owner, { pickedOn: "2000-01-01" })).total,
+    ).toBe(0);
+    expect(
+      await listTasks(owner, { view: "closed", day: "ayer" }),
+    ).toMatchObject({ day: null });
+    expect(await listOutboundOrders(owner, { pickedOn: "ayer" })).toMatchObject(
+      { pickedOn: null },
+    );
+
     expect(await getDaySummary(owner)).toEqual(summary);
     expect(await getDaySummary(manager)).toEqual(summary);
   }, 120_000);

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Decimal, dec, formatDecimal, isAppError } from "@/lib";
+import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { forOrganization } from "@/server";
 
@@ -83,16 +84,20 @@ export type InventoryValue = {
   withoutCost: number;
 };
 
-/** What all the stock of the company is worth at cost. */
+/**
+ * What all the stock of the company is worth at cost. Null for someone
+ * limited to warehouses or zones (WMS-20): the figure is of everything.
+ */
 export async function getInventoryValue(
   actor: InventoryActor,
-): Promise<InventoryValue> {
+): Promise<InventoryValue | null> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
     "inventory.cost.read",
   );
   const client = forOrganization(actor.organizationId);
+  if (!(await seesWholeCompany(client, actor.userId))) return null;
   const [sum, costed, stocked] = await Promise.all([
     client.productCost.aggregate({ _sum: { stockValue: true } }),
     client.productCost.findMany({ select: { productId: true } }),

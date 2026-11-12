@@ -30,6 +30,13 @@ export const metadata: Metadata = { title: "Tareas" };
 const chip =
   "inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
+/** «12 nov 2026» for a day written as year-month-day. */
+const dayText = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("es-MX", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  });
+
 /**
  * Tareas (WMS-07): the transfer tasks, mobile first. Who does them sees
  * first what is theirs and what is available; a supervisor also sees every
@@ -61,7 +68,7 @@ export default async function TareasPage({
   };
   const supervises = access.can("inventory.task.create");
   const executes = access.can("inventory.task.execute");
-  const { vista, pagina } = await searchParams;
+  const { vista, pagina, dia } = await searchParams;
   const asked = typeof vista === "string" ? vista : "";
   // Who does not execute tasks starts with every open one.
   const view: TaskListView =
@@ -73,6 +80,7 @@ export default async function TareasPage({
   const [list, counts] = await Promise.all([
     listTasks(actor, {
       view,
+      day: typeof dia === "string" ? dia : undefined,
       page:
         typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
           ? Number(pagina)
@@ -94,8 +102,10 @@ export default async function TareasPage({
     { id: "open", label: "Abiertas" },
     { id: "closed", label: "Terminadas" },
   ];
-  const href = (target: TaskListView, page = 1) => {
+  // The day only travels between the pages of the same narrowed list.
+  const href = (target: TaskListView, page = 1, day: string | null = null) => {
     const params = new URLSearchParams({ vista: target });
+    if (day) params.set("dia", day);
     if (page > 1) params.set("pagina", String(page));
     return `/tareas?${params.toString()}`;
   };
@@ -161,12 +171,25 @@ export default async function TareasPage({
           </Link>
         ))}
       </nav>
+      {list.day && (
+        <p className="text-sm text-muted-foreground">
+          Entregadas el {dayText(list.day)}.{" "}
+          <Link
+            href={href("closed")}
+            className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Ver todas las terminadas
+          </Link>
+        </p>
+      )}
 
       {list.total === 0 ? (
         <EmptyState
           icon={ClipboardList}
-          title={empty.title}
-          description={empty.description}
+          title={list.day ? "Ninguna tarea se entregó ese día" : empty.title}
+          description={
+            list.day ? "Mira todas las terminadas." : empty.description
+          }
           action={
             view === "open" ? (
               newButton
@@ -241,7 +264,7 @@ export default async function TareasPage({
             >
               {list.page > 1 ? (
                 <Button asChild variant="outline">
-                  <Link href={href(view, list.page - 1)} rel="prev">
+                  <Link href={href(view, list.page - 1, list.day)} rel="prev">
                     <ChevronLeft aria-hidden="true" data-icon="inline-start" />
                     Anterior
                   </Link>
@@ -254,7 +277,7 @@ export default async function TareasPage({
               </p>
               {list.page < list.pageCount ? (
                 <Button asChild variant="outline">
-                  <Link href={href(view, list.page + 1)} rel="next">
+                  <Link href={href(view, list.page + 1, list.day)} rel="next">
                     Siguiente
                     <ChevronRight aria-hidden="true" data-icon="inline-end" />
                   </Link>

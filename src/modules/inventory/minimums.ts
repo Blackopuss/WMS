@@ -1,6 +1,7 @@
 import "server-only";
 
 import { dec, newId } from "@/lib";
+import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
@@ -156,18 +157,28 @@ export type LowStockPage = {
   pageCount: number;
   /** Active products that have a minimum, low or not. */
   withMinimum: number;
+  /**
+   * The person is limited to warehouses or zones (WMS-20): minimums are of
+   * the whole company, so nothing is listed for them.
+   */
+  limited: boolean;
 };
 
 /** Every low product of the company, the most urgent first. */
 async function lowStock(
   actor: InventoryActor,
-): Promise<{ items: LowStockItem[]; withMinimum: number }> {
+): Promise<{ items: LowStockItem[]; withMinimum: number; limited: boolean }> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
     "inventory.minimum.read",
   );
   const client = forOrganization(actor.organizationId);
+  // A minimum is compared with everything the company has: someone
+  // limited to some warehouses or zones would read stock of the others.
+  if (!(await seesWholeCompany(client, actor.userId))) {
+    return { items: [], withMinimum: 0, limited: true };
+  }
   const minimums = await client.stockMinimum.findMany({
     // An archived product is not bought again: it is never «low».
     where: { product: { status: "ACTIVE" } },
@@ -247,6 +258,7 @@ async function lowStock(
   return {
     items: items.map((entry) => entry.item),
     withMinimum: minimums.length,
+    limited: false,
   };
 }
 
@@ -258,7 +270,7 @@ export async function listLowStock(
   actor: InventoryActor,
   options: { page?: number } = {},
 ): Promise<LowStockPage> {
-  const { items, withMinimum } = await lowStock(actor);
+  const { items, withMinimum, limited } = await lowStock(actor);
   const pageCount = Math.max(1, Math.ceil(items.length / LOW_STOCK_PAGE_SIZE));
   const requested = Number.isInteger(options.page) ? Number(options.page) : 1;
   const page = Math.min(Math.max(requested, 1), pageCount);
@@ -271,6 +283,7 @@ export async function listLowStock(
     page,
     pageCount,
     withMinimum,
+    limited,
   };
 }
 

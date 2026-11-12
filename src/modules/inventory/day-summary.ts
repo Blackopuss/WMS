@@ -1,11 +1,17 @@
 import "server-only";
 
-import { DEFAULT_TIME_ZONE } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
-import { activeFacilityOf } from "@/platform/locations";
+import {
+  activeFacilityOf,
+  isLimited,
+  locationScopeWhere,
+} from "@/platform/locations";
 import { forOrganization } from "@/server";
 
-import { startOfDay, type InventoryActor } from "./movements";
+import { dayWindow } from "./calendar-day";
+import type { InventoryActor } from "./movements";
+import { pickedOnWhere } from "./outbound-orders";
+import { deliveredOnWhere } from "./tasks";
 
 /**
  * Summary of the day (WMS-73): what the warehouse the person works in has
@@ -46,31 +52,6 @@ export type DaySummary = {
   }[];
 };
 
-/** The calendar day of a moment in a time zone: «2026-11-12». */
-function dayOf(at: Date, timeZone: string): string {
-  const format = (zone: string) =>
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: zone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(at);
-  try {
-    return format(timeZone);
-  } catch {
-    return format("UTC");
-  }
-}
-
-/** The day after, as a date of the calendar. */
-function nextDay(day: string): string {
-  const next = new Date(`${day}T00:00:00Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
-}
-
-const MOVED_ON = ["PICKED", "PACKED", "SHIPPED"] as const;
-
 export async function getDaySummary(
   actor: InventoryActor,
   /** `now` exists for tests of the day's edges; screens never pass it. */
@@ -82,50 +63,28 @@ export async function getDaySummary(
     "inventory.summary.read",
   );
   const client = forOrganization(actor.organizationId);
-  const [membership, facility] = await Promise.all([
-    client.membership.findFirst({
-      select: { organization: { select: { timeZone: true } } },
-    }),
-    // Only the warehouse the person works in (WMS-18).
+  // Only the warehouse the person works in (WMS-18) and, with zones, only
+  // what happens inside them (WMS-20).
+  const [window, facility, scoped] = await Promise.all([
+    dayWindow(client, options.now ?? new Date()),
     activeFacilityOf(client, actor.userId),
+    locationScopeWhere(client, actor.userId),
   ]);
-  const timeZone = membership?.organization.timeZone ?? DEFAULT_TIME_ZONE;
-  const day = dayOf(options.now ?? new Date(), timeZone);
-  const start = startOfDay(day, timeZone);
-  const end = startOfDay(nextDay(day), timeZone);
-  if (!start || !end) throw new Error("Unreadable day for the summary");
-  const today = { gte: start, lt: end };
+  if (!window) throw new Error("Unreadable day for the summary");
+  const { day, range: today } = window;
 
-  const inFacility = { location: { facilityId: facility.id } };
+  const place = {
+    facilityId: facility.id,
+    ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+  };
+  const inFacility = { location: place };
   const movements = { createdAt: today, lines: { some: inFacility } };
   const linesOf = (type: "ENTRY" | "EXIT" | "RECEIPT") =>
     client.stockMovementLine.count({
       where: { ...inFacility, movement: { type, createdAt: today } },
     });
-  const delivered = {
-    status: "DELIVERED" as const,
-    deliveredAt: today,
-    fromLocation: { facilityId: facility.id },
-  };
-  const pickClosed = (when: { gte: Date; lt?: Date }) => ({
-    lines: {
-      some: {
-        tasks: {
-          some: {
-            kind: "PICK" as const,
-            OR: [{ deliveredAt: when }, { cancelledAt: when }],
-          },
-        },
-      },
-    },
-  });
-  const picked = {
-    facilityId: facility.id,
-    status: { in: [...MOVED_ON] },
-    ...pickClosed(today),
-    // Its last picking task closed today, not on a later day.
-    NOT: pickClosed({ gte: end }),
-  };
+  const delivered = deliveredOnWhere(window, place);
+  const picked = pickedOnWhere(facility.id, window);
 
   const [
     byType,

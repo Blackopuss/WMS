@@ -242,7 +242,7 @@ describe("getPurchaseSuggestions", () => {
       await getPurchaseSuggestions(
         await member(actor.organizationId, "viewer"),
       ),
-    ).toEqual({ groups: [], covered: [] });
+    ).toEqual({ groups: [], covered: [], limited: false });
   });
 });
 

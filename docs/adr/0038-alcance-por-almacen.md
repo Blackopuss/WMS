@@ -54,8 +54,13 @@ lo de su área (plan v3, WMS-20; prueba crítica PC-12).
   a un administrador, solo el titular. Quien está limitado solo reparte lo
   que tiene y no puede dar «todos». Almacenes y zonas se validan en la empresa
   de la sesión (activos; la zona directamente en su almacén).
-- **Sin alcance al invitar (por ahora):** la invitación no guarda alcance; la
-  persona entra sin límite y se limita al editarla.
+- **Alcance al invitar (2026-11-12):** la invitación guarda el alcance
+  (`invitation.scope`, las mismas filas) y al aceptarla se copian a
+  `membership_scope` en la misma transacción: la persona entra ya limitada.
+  Se valida con la misma función que al editar (`resolveScopeRows` de
+  `scope-rows.ts`). Quien está limitado nunca invita sin límite: si no elige
+  nada, la invitación toma su propio alcance. Si al aceptar todo lo que
+  nombraba fue archivado, el enlace deja de servir (no entra «sin límite»).
 
 ## Dónde se aplica
 
@@ -85,10 +90,13 @@ salida (ver, editar, liberar, cancelar, listar, importar).
 
 ## Lo que no cubre (pendiente)
 
-- Cifras de toda la empresa que no se desglosan por ubicación: existencias
-  bajas y mínimos, valor del inventario y costo promedio, sugerencias de
-  compra, reconciliación y la guía de primer uso. Una persona limitada sigue
-  viendo ahí totales de toda la empresa.
+- Cifras de toda la empresa (2026-11-12, cerrado): existencias bajas, valor
+  del inventario y sugerencias de compra son **solo para quien no tiene
+  límite** (`seesWholeCompany`): un mínimo se compara con todo lo que tiene la
+  empresa, así que a una persona limitada no se le lista nada y la pantalla
+  dice por qué. Siguen sin desglose, por ser de poco riesgo: la
+  reconciliación (solo operación), los productos sin existencias y la guía de
+  primer uso.
 - Compras: órdenes, recepciones y devoluciones no tienen almacén (pendiente de
   ADR 0035); se ven todas. Recibir y devolver sí respetan el alcance.
 - En una reubicación entre dos zonas, el historial y la exportación muestran
@@ -96,7 +104,6 @@ salida (ver, editar, liberar, cancelar, listar, importar).
 - Lo apartado sin ubicación (reservas a nivel producto) no se descuenta de lo
   «disponible» que ve una persona limitada; las operaciones lo siguen
   comprobando bajo su candado.
-- Alcance en la invitación.
 
 ## Consecuencias
 

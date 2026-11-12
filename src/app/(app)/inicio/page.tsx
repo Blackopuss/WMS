@@ -210,7 +210,10 @@ export default async function InicioPage() {
             className={`mt-0.5 size-4 shrink-0 ${level === "full" || plan?.status === "read_only" || daysLeft === 0 ? "text-destructive" : "text-warning"}`}
           />
           <span className="flex-1">{planNotice}</span>
-          <span className="font-medium text-primary">Ver mi plan</span>
+          {/* Not the primary blue: too little contrast on the warning tint. */}
+          <span className="font-medium underline underline-offset-4">
+            Ver mi plan
+          </span>
         </Link>
       )}
 

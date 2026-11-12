@@ -16,6 +16,11 @@ import { db } from "@/server";
 
 import { isRole, type Role } from "./catalog";
 import { hashInvitationToken } from "./invitations";
+import {
+  readScopeRows,
+  stillValidScopeRows,
+  type ScopeRow,
+} from "./scope-rows";
 
 /**
  * Accepting an invitation (USR-05). The token of the link is the proof:
@@ -46,6 +51,8 @@ type LockedInvitation = {
   organizationId: string;
   email: string;
   roles: Role[];
+  /** Where they will work (WMS-20); empty = no limit. */
+  scope: ScopeRow[];
 };
 
 const TOKEN = /^[A-Za-z0-9_-]{20,128}$/;
@@ -67,6 +74,7 @@ async function findUsable(
       organizationId: true,
       email: true,
       roles: true,
+      scope: true,
       status: true,
       expiresAt: true,
     },
@@ -82,11 +90,22 @@ async function findUsable(
     ? invitation.roles.filter(isRole)
     : [];
   if (roles.length === 0) return null;
+  // WMS-20: an invitation limited to warehouses or zones gives exactly what
+  // is left of them. If all were archived since, it gives nothing: the link
+  // is refused instead of letting the person in without a limit.
+  const asked = readScopeRows(invitation.scope);
+  const scope = await stillValidScopeRows(
+    client,
+    invitation.organizationId,
+    asked,
+  );
+  if (invitation.scope !== null && scope.length === 0) return null;
   return {
     id: invitation.id,
     organizationId: invitation.organizationId,
     email: invitation.email,
     roles,
+    scope,
   };
 }
 
@@ -130,6 +149,17 @@ async function join(tx: Tx, invitation: LockedInvitation, userId: string) {
       role,
     })),
   });
+  if (invitation.scope.length > 0) {
+    await tx.membershipScope.createMany({
+      data: invitation.scope.map((row) => ({
+        id: newId(),
+        organizationId: invitation.organizationId,
+        membershipId,
+        facilityId: row.facilityId,
+        locationId: row.locationId,
+      })),
+    });
+  }
   await tx.invitation.update({
     where: { id: invitation.id },
     data: { status: "ACCEPTED", resolvedAt: new Date() },

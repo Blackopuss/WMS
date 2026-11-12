@@ -20,6 +20,7 @@ import {
 } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
+import { dayWindow, type DayWindow } from "./calendar-day";
 import { foldName, foldPath } from "./import-validation";
 import {
   formatStock,
@@ -1142,15 +1143,29 @@ export type TaskPage = {
   total: number;
   page: number;
   pageCount: number;
+  /** The day the list is narrowed to («2026-11-12»), if any. */
+  day: string | null;
 };
 
 /**
+ * Tasks delivered on a day that left from a place: the work done that day,
+ * the same for the list and for the summary of the day (WMS-73). Cancelled
+ * tasks are not work done.
+ */
+export const deliveredOnWhere = (window: DayWindow, from: object) => ({
+  status: "DELIVERED" as const,
+  deliveredAt: window.range,
+  fromLocation: from,
+});
+
+/**
  * Tasks a page at a time. Urgent first, then oldest first, for what needs
- * doing; the closed ones newest first.
+ * doing; the closed ones newest first. `day` (year-month-day, a day of the
+ * company's calendar) narrows the closed ones to those delivered that day.
  */
 export async function listTasks(
   actor: InventoryActor,
-  options: { view?: unknown; page?: number } = {},
+  options: { view?: unknown; page?: number; day?: unknown } = {},
 ): Promise<TaskPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -1190,9 +1205,14 @@ export async function listTasks(
   const facility = await activeFacilityOf(client, actor.userId);
   // WMS-20: and, with zones, only the ones inside them.
   const scope = await taskScope(client, actor.userId);
+  const window =
+    view === "closed" && typeof options.day === "string"
+      ? await dayWindow(client, options.day)
+      : null;
   const where = {
-    ...byView,
-    fromLocation: { facilityId: facility.id },
+    ...(window
+      ? deliveredOnWhere(window, { facilityId: facility.id })
+      : { ...byView, fromLocation: { facilityId: facility.id } }),
     ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
   };
   const total = await client.warehouseTask.count({ where });
@@ -1221,6 +1241,7 @@ export async function listTasks(
     total,
     page,
     pageCount,
+    day: window?.day ?? null,
   };
 }
 

@@ -39,6 +39,13 @@ const FILTERS: OutboundOrderStatus[] = [
   "CANCELLED",
 ];
 
+/** «12 nov 2026» for a day written as year-month-day. */
+const dayText = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("es-MX", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  });
+
 /**
  * Pedidos (WMS-13): what has to leave the warehouse, newest first. A row
  * opens the order, where it is written, released or cancelled.
@@ -62,20 +69,27 @@ export default async function PedidosPage({
       </PageContainer>
     );
   }
-  const { estado, pagina } = await searchParams;
+  const { estado, pagina, dia } = await searchParams;
   const list = await listOutboundOrders(
     { organizationId: access.organization.id, userId: access.user.id },
     {
       status: typeof estado === "string" ? estado : undefined,
+      pickedOn: typeof dia === "string" ? dia : undefined,
       page:
         typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
           ? Number(pagina)
           : undefined,
     },
   );
-  const href = (page: number, status = list.status) => {
+  // The day only travels between the pages of the same narrowed list.
+  const href = (
+    page: number,
+    status = list.status,
+    day: string | null = null,
+  ) => {
     const params = new URLSearchParams();
-    if (status) params.set("estado", status);
+    if (day) params.set("dia", day);
+    else if (status) params.set("estado", status);
     if (page > 1) params.set("pagina", String(page));
     const query = params.toString();
     return query ? `/pedidos?${query}` : "/pedidos";
@@ -105,15 +119,17 @@ export default async function PedidosPage({
           </Link>
         </p>
       )}
-      {(list.total > 0 || list.status) && (
+      {(list.total > 0 || list.status || list.pickedOn) && (
         <nav
           aria-label="Estado de los pedidos"
           className="flex flex-wrap gap-2"
         >
           <Link
             href={href(1, null)}
-            aria-current={list.status === null ? "true" : undefined}
-            className={`${chip} ${list.status === null ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
+            aria-current={
+              list.status === null && !list.pickedOn ? "true" : undefined
+            }
+            className={`${chip} ${list.status === null && !list.pickedOn ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
           >
             Todos
           </Link>
@@ -129,18 +145,33 @@ export default async function PedidosPage({
           ))}
         </nav>
       )}
+      {list.pickedOn && (
+        <p className="text-sm text-muted-foreground">
+          Surtidos el {dayText(list.pickedOn)}.{" "}
+          <Link
+            href={href(1, null)}
+            className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Ver todos los pedidos
+          </Link>
+        </p>
+      )}
       {list.total === 0 ? (
         <EmptyState
           icon={PackageCheck}
           title={
-            list.status
-              ? "No hay pedidos en ese estado"
-              : "Sin pedidos de salida"
+            list.pickedOn
+              ? "Ningún pedido se terminó de surtir ese día"
+              : list.status
+                ? "No hay pedidos en ese estado"
+                : "Sin pedidos de salida"
           }
           description={
-            list.status
-              ? "Elige otro estado o mira todos."
-              : "Registra lo que tiene que salir del almacén y para quién."
+            list.pickedOn
+              ? "Mira todos los pedidos o elige un estado."
+              : list.status
+                ? "Elige otro estado o mira todos."
+                : "Registra lo que tiene que salir del almacén y para quién."
           }
           action={list.status ? undefined : newButton}
         />
@@ -196,7 +227,10 @@ export default async function PedidosPage({
             >
               {list.page > 1 ? (
                 <Button asChild variant="outline">
-                  <Link href={href(list.page - 1)} rel="prev">
+                  <Link
+                    href={href(list.page - 1, list.status, list.pickedOn)}
+                    rel="prev"
+                  >
                     <ChevronLeft aria-hidden="true" data-icon="inline-start" />
                     Anterior
                   </Link>
@@ -209,7 +243,10 @@ export default async function PedidosPage({
               </p>
               {list.page < list.pageCount ? (
                 <Button asChild variant="outline">
-                  <Link href={href(list.page + 1)} rel="next">
+                  <Link
+                    href={href(list.page + 1, list.status, list.pickedOn)}
+                    rel="next"
+                  >
                     Siguiente
                     <ChevronRight aria-hidden="true" data-icon="inline-end" />
                   </Link>

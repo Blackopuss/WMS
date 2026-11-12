@@ -4,8 +4,12 @@ import { newId } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import { describeAuditFacts, listAuditTrail } from "@/platform/audit";
 import {
+  acceptInvitation,
   acceptOwnershipTransfer,
   can,
+  createInvitation,
+  listPendingInvitations,
+  previewInvitation,
   listScopeOptions,
   listTeamMembers,
   loadScope,
@@ -15,6 +19,7 @@ import {
   type Role,
 } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
+import { memoryOutboxFor } from "@/platform/email";
 import {
   archiveFacility,
   createFacility,
@@ -350,6 +355,177 @@ describe("setMemberScope", () => {
       ),
     ).toEqual({ ok: true });
     expect(await scopeRows(next.userId)).toEqual([]);
+  });
+});
+
+describe("inviting with a limit", () => {
+  // Its own company: invitations take seats and a third warehouse takes
+  // a place of the plan, which the other tests of this file count on.
+  let boss: Actor;
+  let warehouseA = "";
+  let warehouseB = "";
+  let generalOfB = "";
+  let zoneOfB = "";
+
+  beforeAll(async () => {
+    boss = await company();
+    const second = await createFacility(boss, { name: "Bodega B", code: "B" });
+    if (!second.ok) throw new Error(JSON.stringify(second));
+    warehouseB = second.facilityId;
+    warehouseA = (await listFacilities(boss)).find(
+      (each) => each.isDefault,
+    )!.id;
+    await switchFacility(boss, warehouseB);
+    generalOfB = (await getDefaultLocation(boss))!.id;
+    const zone = await createLocation(boss, { level: 1, name: "Zona 1" });
+    if (!zone.ok) throw new Error(JSON.stringify(zone));
+    zoneOfB = zone.locationId;
+    await switchFacility(boss, warehouseA);
+  }, 60_000);
+
+  /** Invites and returns the token of the link that was sent. */
+  async function invite(
+    actor: Actor,
+    email: string,
+    facilities?: { facilityId: string; zoneIds?: string[] }[],
+  ) {
+    const result = await createInvitation(actor.organizationId, actor.userId, {
+      email,
+      roles: ["warehouse"],
+      facilities,
+    });
+    if (!result.ok) return { result, token: "" };
+    const messages = memoryOutboxFor(email);
+    const url = messages[messages.length - 1]!.actionUrl!;
+    return { result, token: new URL(url).searchParams.get("token")! };
+  }
+
+  async function invited(name: string) {
+    const email = `invitada.${name}.${++counter}.${stamp}@example.test`;
+    const user = await db.user.create({
+      data: { id: newId(), name: "Invitada", email, emailVerified: true },
+    });
+    return { email, userId: user.id };
+  }
+
+  it("the person joins limited to what the invitation says", async () => {
+    const person = await invited("zona");
+    const { result, token } = await invite(boss, person.email, [
+      { facilityId: warehouseB, zoneIds: [zoneOfB] },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(
+      (await listPendingInvitations(boss.organizationId)).find(
+        (row) => row.email === person.email,
+      )?.limited,
+    ).toBe(true);
+
+    expect(await acceptInvitation(person.userId, token)).toMatchObject({
+      ok: true,
+    });
+    expect(await scopeRows(person.userId)).toEqual([
+      { facilityId: warehouseB, locationId: zoneOfB },
+    ]);
+    // Limited from the first request: never a moment without the limit.
+    expect(
+      (
+        await getActiveFacility({
+          organizationId: boss.organizationId,
+          userId: person.userId,
+        })
+      ).id,
+    ).toBe(warehouseB);
+  });
+
+  it("without warehouses, an invitation of the titular has no limit", async () => {
+    const person = await invited("libre");
+    const { token } = await invite(boss, person.email);
+    expect(
+      (await listPendingInvitations(boss.organizationId)).find(
+        (row) => row.email === person.email,
+      )?.limited,
+    ).toBe(false);
+    expect(await acceptInvitation(person.userId, token)).toMatchObject({
+      ok: true,
+    });
+    expect(await scopeRows(person.userId)).toEqual([]);
+  });
+
+  it("someone limited never invites without a limit, nor beyond theirs", async () => {
+    const admin = await member(boss.organizationId, "administrator", true);
+    expect(
+      await limit(boss, admin.userId, [
+        { facilityId: warehouseB, zoneIds: [zoneOfB] },
+      ]),
+    ).toEqual({ ok: true });
+
+    // Beyond what they have: refused, nothing is sent.
+    for (const facilities of [
+      [{ facilityId: warehouseA }],
+      [{ facilityId: warehouseB }],
+      [{ facilityId: warehouseB, zoneIds: [generalOfB] }],
+    ]) {
+      const person = await invited("fuera");
+      const { result } = await invite(admin, person.email, facilities);
+      expect(result).toMatchObject({ ok: false });
+      expect(result.ok === false && result.fieldErrors.scope).toMatch(
+        /que tú tienes asignados/,
+      );
+      expect(memoryOutboxFor(person.email)).toHaveLength(0);
+    }
+
+    // Without choosing anything, the invitation takes the inviter's scope.
+    const person = await invited("heredada");
+    const { result, token } = await invite(admin, person.email);
+    expect(result.ok).toBe(true);
+    expect(await acceptInvitation(person.userId, token)).toMatchObject({
+      ok: true,
+    });
+    expect(await scopeRows(person.userId)).toEqual([
+      { facilityId: warehouseB, locationId: zoneOfB },
+    ]);
+  });
+
+  it("refuses what does not exist or is of another company", async () => {
+    const other = await company();
+    const otherFacility = (await listFacilities(other)).find(
+      (each) => each.isDefault,
+    )!.id;
+    for (const facilities of [
+      [{ facilityId: newId() }],
+      [{ facilityId: otherFacility }],
+      [{ facilityId: warehouseA, zoneIds: [zoneOfB] }],
+    ]) {
+      const person = await invited("invalida");
+      const { result } = await invite(boss, person.email, facilities);
+      expect(result).toMatchObject({ ok: false });
+      expect(result.ok === false && result.fieldErrors.scope).toBeTruthy();
+    }
+  });
+
+  it("if everything it named was archived, the link stops working", async () => {
+    const third = await createFacility(boss, { name: "Bodega C", code: "C" });
+    if (!third.ok) throw new Error(JSON.stringify(third));
+    const person = await invited("archivada");
+    const { result, token } = await invite(boss, person.email, [
+      { facilityId: third.facilityId },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(await previewInvitation(token)).not.toBeNull();
+
+    expect(await archiveFacility(boss, third.facilityId)).toMatchObject({
+      ok: true,
+    });
+    // Not «without a limit»: the invitation gives nothing any more.
+    expect(await previewInvitation(token)).toBeNull();
+    expect(await acceptInvitation(person.userId, token)).toMatchObject({
+      ok: false,
+      reason: "invalid",
+    });
+    expect(await scopeRows(person.userId)).toEqual([]);
+    expect(
+      await db.membership.count({ where: { userId: person.userId } }),
+    ).toBe(0);
   });
 });
 

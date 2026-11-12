@@ -20,13 +20,27 @@ import { Input } from "@/components/ui/input";
 
 import { inviteAction, type InviteState } from "./actions";
 import { RoleCheckboxes, type RoleOption } from "./role-checkboxes";
+import { ScopeFields, type MemberScope, type ScopeChoice } from "./scope-form";
 
 const initialState: InviteState = {
   fieldErrors: {},
   values: { email: "", roles: [] },
 };
 
-export function InviteDialog({ roleOptions }: { roleOptions: RoleOption[] }) {
+export function InviteDialog({
+  roleOptions,
+  scopeChoices,
+  everywhereAllowed,
+  scopeDefault,
+}: {
+  roleOptions: RoleOption[];
+  /** Warehouses to limit the person to; empty = nothing to choose. */
+  scopeChoices: ScopeChoice[];
+  /** False when who invites is limited: they cannot hand out everything. */
+  everywhereAllowed: boolean;
+  /** What comes chosen: nothing, or the scope of a limited inviter. */
+  scopeDefault: MemberScope;
+}) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(
     async (prev: InviteState, formData: FormData) => {
@@ -103,6 +117,31 @@ export function InviteDialog({ roleOptions }: { roleOptions: RoleOption[] }) {
             defaultSelected={state.values.roles}
             error={state.fieldErrors.roles}
           />
+          {scopeChoices.length > 0 && (
+            <>
+              <ScopeFields
+                current={scopeDefault}
+                choices={scopeChoices}
+                everywhereAllowed={everywhereAllowed}
+                errorId={
+                  state.fieldErrors.scope ? "invite-scope-error" : undefined
+                }
+              />
+              {state.fieldErrors.scope && (
+                <p
+                  id="invite-scope-error"
+                  role="alert"
+                  className="flex items-start gap-1.5 text-sm text-destructive"
+                >
+                  <CircleAlert
+                    aria-hidden="true"
+                    className="mt-0.5 size-4 shrink-0"
+                  />
+                  {state.fieldErrors.scope}
+                </p>
+              )}
+            </>
+          )}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">

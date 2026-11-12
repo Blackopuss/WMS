@@ -7,6 +7,12 @@ const ROLE_HINTS: Record<string, string> = {
   warehouse: "Productos, ubicaciones, movimientos y conteos.",
   buyer: "Proveedores, órdenes de compra, recepciones y costos.",
   viewer: "Solo consulta. No ve precios ni costos.",
+  supervisor:
+    "Reparte y revisa las tareas, recibe mercancía y corrige existencias.",
+  operator:
+    "Recibe, guarda, surte y cuenta. No corrige existencias ni ve costos.",
+  forklift: "Solo ve y hace las tareas de mover que le tocan.",
+  manager: "Ve y descarga todo, incluidos costos. No cambia nada.",
 };
 
 /** Role choices as large checkboxes; several roles join their permissions. */

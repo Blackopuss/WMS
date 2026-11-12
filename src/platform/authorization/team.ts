@@ -5,7 +5,8 @@ import { recordAuditEvent } from "@/platform/audit";
 import { db, forOrganization } from "@/server";
 
 import { isRole, type Role } from "./catalog";
-import { buildScope, can, inScope, knownRoles, type Scope } from "./policy";
+import { buildScope, can, inScope, knownRoles } from "./policy";
+import { resolveScopeRows } from "./scope-rows";
 import { SeatLimitError, assertSeatAvailable } from "./seats";
 import {
   TEAM_RULE_MESSAGES,
@@ -255,8 +256,6 @@ export type MemberScopeInput = {
   }[];
 };
 
-const MAX_SCOPE_ROWS = 500;
-
 const scopeKey = (
   rows: readonly { facilityId: string; locationId: string | null }[],
 ) =>
@@ -283,87 +282,14 @@ export async function setMemberScope(
     input.userId,
     { kind: "set_scope" },
     async (tx, target) => {
-      // One entry per warehouse; an entry without zones opens it whole.
-      const wanted = new Map<string, Set<string>>();
-      for (const entry of Array.isArray(input.facilities)
-        ? input.facilities.slice(0, MAX_SCOPE_ROWS)
-        : []) {
-        const facilityId = String(entry?.facilityId ?? "").slice(0, 36);
-        if (facilityId === "") return fail("invalid_scope");
-        const zones = wanted.get(facilityId) ?? new Set<string>();
-        for (const zoneId of Array.isArray(entry.zoneIds)
-          ? entry.zoneIds.slice(0, MAX_SCOPE_ROWS)
-          : []) {
-          const id = String(zoneId ?? "").slice(0, 36);
-          if (id === "") return fail("invalid_scope");
-          zones.add(id);
-        }
-        wanted.set(facilityId, zones);
-      }
-      const rows = [...wanted].flatMap(([facilityId, zones]) =>
-        zones.size === 0
-          ? [{ facilityId, locationId: null as string | null }]
-          : [...zones].map((locationId) => ({ facilityId, locationId })),
+      const resolved = await resolveScopeRows(
+        tx,
+        organizationId,
+        { userId: actorUserId, isOwner: target.actorIsOwner === true },
+        input.facilities,
       );
-      if (rows.length > MAX_SCOPE_ROWS) return fail("invalid_scope");
-
-      // Everything named must exist in this company, active; a zone must
-      // sit directly in its warehouse. Ids from the form are never trusted.
-      const facilities = await tx.facility.findMany({
-        where: { organizationId, id: { in: [...wanted.keys()] } },
-        select: { id: true, name: true, archivedAt: true },
-      });
-      if (
-        facilities.length !== wanted.size ||
-        facilities.some((facility) => facility.archivedAt !== null)
-      ) {
-        return fail("invalid_scope");
-      }
-      const zoneIds = rows.flatMap((row) =>
-        row.locationId ? [row.locationId] : [],
-      );
-      const zones = await tx.location.findMany({
-        where: {
-          organizationId,
-          id: { in: zoneIds },
-          parentId: null,
-          archivedAt: null,
-        },
-        select: { id: true, name: true, facilityId: true },
-      });
-      const zoneOf = new Map(zones.map((zone) => [zone.id, zone]));
-      if (
-        rows.some(
-          (row) =>
-            row.locationId !== null &&
-            zoneOf.get(row.locationId)?.facilityId !== row.facilityId,
-        )
-      ) {
-        return fail("invalid_scope");
-      }
-
-      // Someone limited hands out only what they have, never «everything».
-      const actorScope: Scope | null =
-        target.actorIsOwner === true
-          ? null
-          : buildScope(
-              await tx.membershipScope.findMany({
-                where: { organizationId, membership: { userId: actorUserId } },
-                select: { facilityId: true, locationId: true },
-              }),
-            );
-      if (actorScope !== null) {
-        const actor = { isOwner: false, roles: [], scope: actorScope };
-        const within = rows.every((row) =>
-          row.locationId === null
-            ? actorScope.facilities.get(row.facilityId) === null
-            : inScope(actor, {
-                facilityId: row.facilityId,
-                path: [row.locationId],
-              }),
-        );
-        if (rows.length === 0 || !within) return fail("scope_exceeds");
-      }
+      if (!resolved.ok) return fail(resolved.reason);
+      const { rows, facilityName, zoneName } = resolved;
 
       const previous = await tx.membershipScope.findMany({
         where: { organizationId, membershipId: target.membershipId },
@@ -390,7 +316,6 @@ export async function setMemberScope(
           })),
         });
       }
-      const facilityName = new Map(facilities.map((f) => [f.id, f.name]));
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId,
@@ -409,7 +334,7 @@ export async function setMemberScope(
                 rows.map((row) => ({
                   facility: facilityName.get(row.facilityId) ?? "",
                   zone: row.locationId
-                    ? (zoneOf.get(row.locationId)?.name ?? "")
+                    ? (zoneName.get(row.locationId) ?? "")
                     : null,
                 })),
               ),

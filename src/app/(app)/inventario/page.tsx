@@ -281,7 +281,11 @@ export default async function InventarioPage({
               ? "1 producto se está acabando."
               : `${lowCount.toLocaleString("es-MX")} productos se están acabando.`}
           </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
+          {/* Not the primary blue: on the warning tint it does not reach
+              the contrast a text needs (verify:a11y). */}
+          <span className="font-medium underline underline-offset-4">
+            Ver cuáles
+          </span>
         </Link>
       )}
       {unplacedCount > 0 && (
