@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
   countMyTasks,
+  getDaySummary,
   getFirstSteps,
   listLowStock,
   listRecentMovements,
@@ -32,6 +33,7 @@ import {
   usageLevel,
 } from "@/platform/billing";
 
+import { DaySummaryBlock } from "./day-summary";
 import { FirstStepsGuide } from "./first-steps-guide";
 
 export const metadata: Metadata = { title: "Inicio" };
@@ -74,6 +76,10 @@ export default async function InicioPage() {
   const showIncoming =
     access.moduleState("purchasing") !== "none" &&
     access.can("purchasing.receipt.read");
+
+  // WMS-73: what the day has done so far, for who runs or supervises.
+  const showSummary = inventory && access.can("inventory.summary.read");
+  const summary = showSummary ? await getDaySummary(actor) : null;
 
   const [low, movements, plan, firstSteps, tasks, incoming] = await Promise.all(
     [
@@ -159,7 +165,7 @@ export default async function InicioPage() {
         )}
       </>
     ) : undefined;
-  const nothing = !low && !movements && !plan && today.length === 0;
+  const nothing = !low && !movements && !plan && !summary && today.length === 0;
   const products = plan?.products;
   const level = products ? usageLevel(products.used, products.limit) : "ok";
   // Day to day the plan is noise: it shows up only when it needs attention,
@@ -250,6 +256,17 @@ export default async function InicioPage() {
             ))}
           </ul>
         </section>
+      )}
+
+      {summary && (
+        <DaySummaryBlock
+          summary={summary}
+          links={{
+            movements: showMovements,
+            tasks: showTasks,
+            orders: access.can("inventory.outbound.read"),
+          }}
+        />
       )}
 
       <div className="grid gap-4">

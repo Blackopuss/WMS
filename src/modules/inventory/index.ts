@@ -197,6 +197,7 @@ export {
   type ExportResult,
 } from "./exports";
 export { getFirstSteps, type FirstSteps } from "./first-steps";
+export { getDaySummary, type DayCount, type DaySummary } from "./day-summary";
 export {
   TASK_PAGE_SIZE,
   acceptTask,
