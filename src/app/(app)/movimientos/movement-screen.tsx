@@ -116,7 +116,7 @@ export async function MovementScreen({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const { producto, q } = await searchParams;
+  const { producto, q, origen } = await searchParams;
 
   if (typeof producto !== "string" || producto === "") {
     const list = await listProducts(actor, {
@@ -347,7 +347,12 @@ export async function MovementScreen({
             id: location.id,
             label: `${location.path} — hay ${holding(location.id)}`,
           }))}
-          defaultLocationId={sources[0]?.id ?? ""}
+          // WMS-72: «Sin acomodar» arrives with the place to move from.
+          defaultLocationId={
+            sources.find((location) => location.id === origen)?.id ??
+            sources[0]?.id ??
+            ""
+          }
         />
       </PageContainer>
     );
