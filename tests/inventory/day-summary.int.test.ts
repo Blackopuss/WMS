@@ -117,6 +117,8 @@ async function entry(
     productId,
     locationId,
     quantity,
+    // These tests repeat identical entries on purpose (WMS-71).
+    acceptRepeat: true,
   });
   if (!result.ok) throw new Error(JSON.stringify(result));
 }
