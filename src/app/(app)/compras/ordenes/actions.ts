@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { isAppError } from "@/lib";
+import { fingerprint, isAppError } from "@/lib";
 import {
   addOrderLine,
   cancelPurchaseOrder,
@@ -387,6 +387,12 @@ export type ReceiveFormState = {
   formError?: string;
   /** Problem of each line, by the id of the order line. */
   lineErrors?: Record<string, string>;
+  /**
+   * A location would be left above its capacity and the company only warns
+   * (WMS-22B): nothing was received. `stamp` marks what the warning is
+   * about; the button that accepts it sends it back.
+   */
+  capacityWarning?: { message: string; stamp: string };
   values: {
     locationId: string;
     reference: string;
@@ -435,6 +441,16 @@ export async function receivePurchaseOrderAction(
     places,
   };
   const answers = prev.answers + 1;
+  // What a capacity warning would be about: what goes where.
+  const stamp = fingerprint([
+    String(orderId),
+    values.locationId,
+    ...Object.entries(quantities).flatMap(([id, quantity]) => [
+      id,
+      quantity,
+      places[id] ?? "",
+    ]),
+  ]);
   let result;
   try {
     result = await receivePurchaseOrder(
@@ -452,6 +468,8 @@ export async function receivePurchaseOrderAction(
           0,
           64,
         ),
+        // Only the button of the warning about these values carries it.
+        acceptCapacity: formData.get("acceptCapacity") === stamp,
       },
     );
   } catch (error) {
@@ -459,6 +477,17 @@ export async function receivePurchaseOrderAction(
       return { fieldErrors: {}, formError: error.message, values, answers };
     }
     throw error;
+  }
+  if (!result.ok && result.reason === "over_capacity") {
+    return {
+      fieldErrors: {},
+      capacityWarning: {
+        message: result.formError ?? "Una ubicación pasaría su capacidad.",
+        stamp,
+      },
+      values,
+      answers,
+    };
   }
   if (!result.ok) {
     return {

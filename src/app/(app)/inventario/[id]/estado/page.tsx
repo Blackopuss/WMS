@@ -15,6 +15,7 @@ import {
   MANUAL_STOCK_STATUSES,
   STOCK_STATUS_LABELS,
   getProductStock,
+  listStockLocations,
   permissionForStatusChange,
   type StockStatus,
 } from "@/modules/inventory";
@@ -75,9 +76,14 @@ export default async function CambiarEstadoPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const [product, stock] = await Promise.all([
+  // WMS-22B: who may relocate may also say where the stock ends up.
+  const mayMove =
+    access.allows("inventory.transfer.create") &&
+    access.can("inventory.location.read");
+  const [product, stock, places] = await Promise.all([
     getProduct(actor, id),
     access.can("inventory.stock.read") ? getProductStock(actor, id) : null,
+    mayMove ? listStockLocations(actor) : [],
   ]);
   if (!product || product.status !== "ACTIVE" || !stock) {
     return (
@@ -145,6 +151,10 @@ export default async function CambiarEstadoPage({
           unitLabel={getUnit(product.unitCode).plural}
           sources={sources}
           targets={targets}
+          destinations={places.map((place) => ({
+            id: place.id,
+            label: place.path,
+          }))}
         />
       )}
     </PageContainer>

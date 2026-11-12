@@ -36,6 +36,7 @@ const MODES = {
     location: "¿Dónde lo guardas?",
     reference: "Remisión, factura o nota con la que llegó.",
     submit: "Registrar entrada",
+    anyway: "Registrar de todos modos",
     busy: "Registrando…",
     cancel: "/movimientos",
   },
@@ -45,6 +46,7 @@ const MODES = {
     location: "¿De dónde sale?",
     reference: "Nota de venta, pedido o a quién se entregó.",
     submit: "Registrar salida",
+    anyway: "Registrar de todos modos",
     busy: "Registrando…",
     cancel: "/movimientos",
   },
@@ -54,6 +56,7 @@ const MODES = {
     location: "¿Dónde lo contaste?",
     reference: null,
     submit: "Guardar ajuste",
+    anyway: "Guardar de todos modos",
     busy: "Guardando…",
     cancel: "/movimientos",
   },
@@ -63,6 +66,7 @@ const MODES = {
     location: "¿De dónde sale?",
     reference: null,
     submit: "Reubicar",
+    anyway: "Reubicar de todos modos",
     busy: "Reubicando…",
     cancel: "/movimientos",
   },
@@ -72,6 +76,7 @@ const MODES = {
     location: "¿Dónde está?",
     reference: null,
     submit: "Guardar saldo inicial",
+    anyway: "Guardar de todos modos",
     busy: "Guardando…",
     cancel: "/movimientos/saldo-inicial",
   },
@@ -217,8 +222,10 @@ export function EntryForm({
   // After a refusal, take the person back to the quantity when it is the problem.
   useEffect(() => {
     if (state.fieldErrors.quantity) quantityRef.current?.focus();
-    // WMS-71: the warning sits next to the button that answers it.
-    if (state.repeatWarning) acceptRef.current?.focus();
+    // WMS-71, WMS-22B: a warning sits next to the button that answers it.
+    if (state.repeatWarning || state.capacityWarning) {
+      acceptRef.current?.focus();
+    }
   }, [state]);
 
   /** Asks the server for the equivalence a moment after the person stops typing. */
@@ -414,7 +421,9 @@ export function EntryForm({
               defaultValue={state.values.toLocationId ?? ""}
               key={`destination-${state.values.toLocationId ?? ""}-${answers}`}
             >
-              <option value="">Elige una ubicación</option>
+              <option key="" value="">
+                Elige una ubicación
+              </option>
               {destinations.map((location) => (
                 <option key={location.id} value={location.id}>
                   {location.label}
@@ -480,20 +489,56 @@ export function EntryForm({
           </p>
         </div>
       )}
+      {state.capacityWarning && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground"
+        >
+          <TriangleAlert
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-warning"
+          />
+          <p>
+            <span className="font-medium">{state.capacityWarning.message}</span>{" "}
+            Todavía no se guarda. Si de verdad cabe, continúa; si no, cambia la
+            ubicación o la cantidad.
+          </p>
+        </div>
+      )}
+      {/* The capacity warning of these values was accepted while another
+          warning is answered (WMS-22B): the acceptance travels with them. */}
+      {state.capacityAccepted && (
+        <input
+          type="hidden"
+          name="acceptCapacity"
+          value={state.capacityAccepted}
+        />
+      )}
       <div className="flex flex-wrap gap-2">
         <Button
           ref={acceptRef}
           type="submit"
-          // Only this button says the person saw the warning (WMS-71).
-          name={state.repeatWarning ? "acceptRepeat" : undefined}
-          value={state.repeatWarning ? "1" : undefined}
+          // Only this button says the person saw the warning (WMS-71,
+          // WMS-22B); the capacity one carries the stamp of what was sent.
+          name={
+            state.repeatWarning
+              ? "acceptRepeat"
+              : state.capacityWarning
+                ? "acceptCapacity"
+                : undefined
+          }
+          value={
+            state.repeatWarning
+              ? "1"
+              : (state.capacityWarning?.stamp ?? undefined)
+          }
           disabled={pending || lost === "checking" || lost === "unknown"}
         >
           {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
           {pending
             ? texts.busy
-            : state.repeatWarning
-              ? "Registrar de todos modos"
+            : state.repeatWarning || state.capacityWarning
+              ? texts.anyway
               : texts.submit}
         </Button>
         <Button asChild variant="outline">

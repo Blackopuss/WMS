@@ -11,12 +11,14 @@ export {
   moveLocation,
   renameLocation,
   restoreLocation,
+  setLocationLimits,
 } from "./hierarchy";
 export type {
   CreateLocationInput,
   EditLocationInput,
   LevelsInput,
   LocationField,
+  LocationLimitsInput,
   LocationNode,
   LocationResult,
   LocationTree,
@@ -39,6 +41,23 @@ export {
   normalizeLocationCode,
 } from "./levels";
 export type { LevelRef, LocationType, LocationWithParents } from "./levels";
+export {
+  CAPACITY_MEASURES,
+  CAPACITY_SCALE,
+  LITERS_PER_CUBIC_METER,
+  MAX_CAPACITY,
+  MAX_RESTRICTED_PRODUCTS,
+  NO_CAPACITY,
+  describeCapacity,
+  foldCode,
+  formatCapacityAmount,
+  formatCapacityUse,
+  isUnlimited,
+  parseCapacity,
+  scaleToTell,
+  splitProductCodes,
+} from "./limits";
+export type { CapacityLimits, CapacityMeasure } from "./limits";
 export { getDefaultLocation } from "./locations";
 export { STAGING_NAME, ensureStagingLocation } from "./staging";
 export {

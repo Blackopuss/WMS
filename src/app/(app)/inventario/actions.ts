@@ -39,6 +39,8 @@ export async function createProductAction(
     barcode: value("barcode"),
     unit: value("unit"),
     step: value("step"),
+    weight: value("weight"),
+    volume: value("volume"),
   };
 
   let result;
@@ -83,6 +85,8 @@ export async function updateProductAction(
     barcode: value("barcode"),
     unit: value("unit"),
     step: value("step"),
+    weight: value("weight"),
+    volume: value("volume"),
   };
 
   let result;

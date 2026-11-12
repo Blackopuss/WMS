@@ -214,7 +214,15 @@ export async function deliverPick(
     picked: Decimal;
     unitCode: string;
   },
-): Promise<{ ok: true; movementId: string } | { ok: false; error: string }> {
+): Promise<
+  | {
+      ok: true;
+      movementId: string;
+      /** Locations left above their capacity (WMS-22B). */
+      notes: string[];
+    }
+  | { ok: false; error: string }
+> {
   const reservation = await reservationOf(tx, task);
   const held = dec(reservation?.remaining.toString() ?? 0);
   if (!reservation || held.lessThan(task.picked)) {
@@ -251,7 +259,7 @@ export async function deliverPick(
   });
   if (!kept.ok) throw new Error(`Picked stock of task ${task.id} not free`);
   await releasePickReservation(tx, task, task.picked);
-  return { ok: true, movementId: moved.movementId };
+  return { ok: true, movementId: moved.movementId, notes: moved.notes ?? [] };
 }
 
 /**

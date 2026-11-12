@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { isAppError } from "@/lib";
+import { fingerprint, isAppError } from "@/lib";
 import {
   findConfirmation,
   registerAdjustment,
@@ -25,6 +25,15 @@ export type EntryFormState = {
    * and the form offers «Registrar de todos modos».
    */
   repeatWarning?: string;
+  /**
+   * What was sent would leave a location above its capacity and the
+   * company only warns (WMS-22B): nothing was saved. `stamp` marks the
+   * values the warning is about; the button that accepts it sends it back,
+   * so the acceptance never applies to something else.
+   */
+  capacityWarning?: { message: string; stamp: string };
+  /** The capacity warning of these values was already accepted (its stamp). */
+  capacityAccepted?: string;
   values: {
     locationId: string;
     quantity: string;
@@ -71,6 +80,14 @@ export async function registerEntryAction(
  */
 const acceptsRepeat = (formData: FormData) =>
   formData.get("acceptRepeat") === "1";
+
+/**
+ * Whether the form accepts the capacity warning of exactly these values
+ * (WMS-22B): the button of the warning, or the acceptance kept while
+ * another warning is answered, carries their stamp.
+ */
+const acceptsCapacity = (formData: FormData, stamp: string) =>
+  formData.getAll("acceptCapacity").includes(stamp);
 
 /** Registers an exit; the service refuses more than the location holds (INV-19). */
 export async function registerExitAction(
@@ -122,6 +139,15 @@ async function receive(
     reason: text("reason"),
     unitCost: text("unitCost"),
   };
+  // What a capacity warning would be about: product, place and quantity.
+  const stamp = fingerprint([
+    kind,
+    String(productId),
+    values.locationId,
+    values.quantity,
+    values.capture,
+  ]);
+  const acceptCapacity = acceptsCapacity(formData, stamp);
   let result;
   try {
     result = await SERVICES[kind](
@@ -139,6 +165,8 @@ async function receive(
         ...captureFields(values.capture),
         // Only entries look at it (WMS-71).
         ...(kind === "entry" ? { acceptRepeat: acceptsRepeat(formData) } : {}),
+        // Only what brings stock in looks at it (WMS-22B).
+        ...(kind === "entry" || kind === "initial" ? { acceptCapacity } : {}),
       },
     );
   } catch (error) {
@@ -148,7 +176,20 @@ async function receive(
     throw error;
   }
   if (!result.ok && result.reason === "repeated_recently") {
-    return { fieldErrors: {}, repeatWarning: result.formError, values };
+    return {
+      fieldErrors: {},
+      repeatWarning: result.formError,
+      // Asked after the capacity: keep that answer for the same values.
+      capacityAccepted: acceptCapacity ? stamp : undefined,
+      values,
+    };
+  }
+  if (!result.ok && result.reason === "over_capacity") {
+    return {
+      fieldErrors: {},
+      capacityWarning: { message: result.formError, stamp },
+      values,
+    };
   }
   if (!result.ok) {
     return {
@@ -251,6 +292,14 @@ export async function registerTransferAction(
     reference: "",
     reason: text("reason"),
   };
+  const stamp = fingerprint([
+    "transfer",
+    String(productId),
+    values.locationId,
+    values.toLocationId,
+    values.quantity,
+    values.capture,
+  ]);
   let result;
   try {
     result = await registerTransfer(
@@ -263,6 +312,7 @@ export async function registerTransferAction(
         reason: values.reason,
         idempotencyKey: text("idempotencyKey"),
         ...captureFields(values.capture),
+        acceptCapacity: acceptsCapacity(formData, stamp),
       },
     );
   } catch (error) {
@@ -270,6 +320,13 @@ export async function registerTransferAction(
       return { fieldErrors: {}, formError: error.message, values };
     }
     throw error;
+  }
+  if (!result.ok && result.reason === "over_capacity") {
+    return {
+      fieldErrors: {},
+      capacityWarning: { message: result.formError, stamp },
+      values,
+    };
   }
   if (!result.ok) {
     return {

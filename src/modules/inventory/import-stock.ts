@@ -5,6 +5,7 @@ import { parseQuantity } from "@/platform/catalog";
 import { locationsOutOfScope } from "@/platform/locations";
 import type { TenantDb } from "@/server";
 
+import { checkPlacement, type PlacementRules } from "./placement";
 import { lineCost, openCostBook } from "./valuation";
 import { AVAILABLE_STOCK } from "./stock-status";
 
@@ -55,6 +56,20 @@ export async function checkImportedStock(
   hasPresentation: boolean,
   /** Who confirmed the file: its stock enters only in their scope (WMS-20). */
   userId: string,
+  /**
+   * WMS-22B: the rules of the locations of the batch (read once for all its
+   * products) and what the row says of the product. Only restrictions are
+   * asked — a quarantine location, one limited to other products — and
+   * they stop the product; capacity is not: this stock is what there
+   * already was, and nobody is there to accept a warning.
+   */
+  placement?: {
+    rules: PlacementRules;
+    /** Name of the product in the file, for the refusal. */
+    name: string;
+    /** Category the row gives the product; null = it does not say. */
+    category: string | null;
+  },
 ): Promise<string | null> {
   if (lines.length === 0) return null;
   const ids = [...new Set(lines.map((line) => line.locationId))];
@@ -88,6 +103,34 @@ export async function checkImportedStock(
       dec(line.captured).greaterThan(MAX_BALANCE)
     ) {
       return `La existencia de la fila ${line.row} no es una cantidad válida.`;
+    }
+  }
+  if (placement) {
+    // The category the product will have: the one of the row, or the one
+    // it has; a new product without one has none.
+    let categoryId: string | null | undefined = product ? undefined : null;
+    if (placement.category && placement.rules.restrictions.size > 0) {
+      const category = await tx.productCategory.findFirst({
+        where: { name: placement.category },
+        select: { id: true },
+      });
+      categoryId = category?.id ?? null;
+    }
+    const placed = await checkPlacement(
+      tx,
+      lines.map((line) => ({
+        productId: product?.id ?? null,
+        categoryId,
+        label: placement.name,
+        quantity: dec(line.base),
+        toLocationId: line.locationId,
+        status: "AVAILABLE" as const,
+      })),
+      { mode: "skip" },
+      placement.rules,
+    );
+    if (!placed.ok) {
+      return `${placed.message} (Fila ${lines[placed.index]!.row}).`;
     }
   }
   if (!product) return null;

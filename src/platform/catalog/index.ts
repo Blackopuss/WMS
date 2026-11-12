@@ -49,6 +49,15 @@ export {
 } from "./quantity";
 export type { ParsedQuantity, QuantityRule, QuantityStep } from "./quantity";
 export {
+  MAX_MEASURE,
+  MEASURE_SCALE,
+  measuresVolumeByUnit,
+  parseMeasure,
+  unitVolumeOf,
+  unitWeightOf,
+  weighsByUnit,
+} from "./measures";
+export {
   changePresentationFactor,
   createPresentation,
   listPresentationVersions,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AppError, NotFoundError, isAppError } from "./errors";
+import { fingerprint } from "./fingerprint";
 import { isId, newId } from "./ids";
 import { formatDateTime, formatRelative, toIsoUtc } from "./time";
 
@@ -54,5 +55,20 @@ describe("time", () => {
     expect(formatRelative(ago(5 * 60_000), now)).toBe("hace 5 minutos");
     expect(formatRelative(ago(3 * 3_600_000), now)).toBe("hace 3 horas");
     expect(formatRelative(ago(24 * 3_600_000), now)).toBe("ayer");
+  });
+});
+
+describe("fingerprint", () => {
+  it("is the same for the same values and differs when one changes", () => {
+    const mark = fingerprint(["entry", "p1", "loc", "500", "base"]);
+    expect(mark).toMatch(/^[0-9a-f]{16}$/);
+    expect(fingerprint(["entry", "p1", "loc", "500", "base"])).toBe(mark);
+    expect(fingerprint(["entry", "p1", "loc", "501", "base"])).not.toBe(mark);
+    expect(fingerprint(["entry", "p1", "other", "500", "base"])).not.toBe(mark);
+  });
+
+  it("does not confuse where one value ends and the next begins", () => {
+    expect(fingerprint(["ab", "c"])).not.toBe(fingerprint(["a", "bc"]));
+    expect(fingerprint(["", "x"])).not.toBe(fingerprint(["x", ""]));
   });
 });

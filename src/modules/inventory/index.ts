@@ -325,7 +325,19 @@ export type {
   StartOutboundImportResult,
 } from "./outbound-import";
 export {
+  CAPACITY_MODE,
   ENTRY_REPEAT_WINDOW,
   INVENTORY_SETTINGS,
   PICKING_STRATEGY,
 } from "./settings";
+export { checkPlacement, loadPlacementRules } from "./placement";
+export type {
+  Arrival,
+  CapacityPolicy,
+  OverCapacity,
+  PlacementProblem,
+  PlacementResult,
+  PlacementRules,
+} from "./placement";
+export { getLocationOccupancy } from "./location-occupancy";
+export type { LocationOccupancy, OccupancyReport } from "./location-occupancy";

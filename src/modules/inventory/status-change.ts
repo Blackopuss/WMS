@@ -22,6 +22,7 @@ import {
   isStockStatus,
   type StockStatus,
 } from "./stock-status";
+import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
 import { freeToTake, reservedMessage } from "./reservations";
 import { lineCost, openCostBook } from "./valuation";
 
@@ -31,6 +32,12 @@ import { lineCost, openCostBook } from "./valuation";
  * movement with two lines and a reason; the value of the product does not
  * change (it covers every state). Locks product → location, like every
  * movement, and a repeated key answers `repeated`.
+ *
+ * WMS-22B: the change may also say where the stock ends up (`toLocationId`,
+ * in the same warehouse): it leaves one location in one state and arrives
+ * at another in the new one, in the same movement. It is how stock goes
+ * into a quarantine location (which takes nothing available) and how it
+ * comes out when released. Moving it also needs `inventory.transfer.create`.
  *
  * Who may do what:
  * - `inventory.damage.report`: only available → damaged (the floor).
@@ -66,6 +73,13 @@ const schema = z.object({
   locationId: z.string().trim().min(1, "Elige la ubicación.").max(36),
   from: statusSchema,
   to: statusSchema,
+  /** Where it ends up; empty = it stays where it is (WMS-22B). */
+  toLocationId: z
+    .string()
+    .trim()
+    .max(36)
+    .optional()
+    .transform((value) => value || null),
   quantity: z.string().trim().min(1, "Escribe la cantidad que cambia."),
   reason: z
     .string()
@@ -153,8 +167,12 @@ async function assertAnyPermission(
 
 export async function changeStockStatus(
   actor: InventoryActor,
-  input: StatusChangeInput,
-): Promise<StatusChangeResult> {
+  /**
+   * `acceptCapacity`: where it ends up would go over its capacity and the
+   * person wants it anyway (WMS-22B); only counts where the company warns.
+   */
+  input: StatusChangeInput & { acceptCapacity?: boolean },
+): Promise<StatusChangeResult | OverCapacity> {
   const { organizationId, userId } = actor;
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
@@ -188,13 +206,30 @@ export async function changeStockStatus(
       fieldErrors: { to: "Elige un estado distinto al de ahora." },
     };
   }
+  // WMS-22B: it may end up somewhere else; that is also a relocation.
+  const toLocationId = data.toLocationId ?? data.locationId;
+  const moves = toLocationId !== data.locationId;
+  if (moves) {
+    await assertModulePermission(
+      organizationId,
+      userId,
+      "inventory.transfer.create",
+    );
+  }
 
   try {
     return await forOrganization(organizationId).$transaction(async (tx) => {
       const [productId] = await lockRows(tx, "product", [data.productId]);
-      const [locationId] = await lockRows(tx, "location", [data.locationId]);
-      // WMS-20: only stock of a location inside the person's scope.
-      await assertLocationsInScope(tx, userId, [data.locationId]);
+      // Both ends at once: `lockRows` takes them in id order.
+      const lockedPlaces = await lockRows(tx, "location", [
+        data.locationId,
+        toLocationId,
+      ]);
+      const locationId = lockedPlaces.includes(data.locationId)
+        ? data.locationId
+        : null;
+      // WMS-20: only stock of locations inside the person's scope.
+      await assertLocationsInScope(tx, userId, [data.locationId, toLocationId]);
 
       const replay = await tx.stockMovement.findFirst({
         where: { idempotencyKey: data.idempotencyKey },
@@ -230,6 +265,7 @@ export async function changeStockStatus(
           !into ||
           out.productId !== data.productId ||
           out.locationId !== data.locationId ||
+          into.locationId !== toLocationId ||
           out.status !== data.from ||
           into.status !== data.to ||
           !same
@@ -261,11 +297,43 @@ export async function changeStockStatus(
       const location = locationId
         ? await tx.location.findFirst({
             where: { id: locationId },
-            select: { id: true, name: true },
+            select: { id: true, name: true, facilityId: true },
           })
         : null;
       if (!location) {
         return refuse("not_found", "locationId", "Esa ubicación ya no existe.");
+      }
+      const destination = moves
+        ? await tx.location.findFirst({
+            where: { id: toLocationId },
+            select: {
+              id: true,
+              name: true,
+              facilityId: true,
+              archivedAt: true,
+            },
+          })
+        : { ...location, archivedAt: null };
+      if (!destination) {
+        return refuse(
+          "not_found",
+          "toLocationId",
+          "Esa ubicación ya no existe. Elige otra.",
+        );
+      }
+      if (destination.archivedAt) {
+        return refuse(
+          "not_allowed",
+          "toLocationId",
+          `«${destination.name}» está archivada. Elige otra ubicación.`,
+        );
+      }
+      if (destination.facilityId !== location.facilityId) {
+        return refuse(
+          "not_allowed",
+          "toLocationId",
+          "Esa ubicación es de otro almacén: entre almacenes se hace un traslado.",
+        );
       }
       const quantity = parseQuantity(
         {
@@ -280,14 +348,20 @@ export async function changeStockStatus(
       const balances = await tx.stockBalance.findMany({
         where: {
           productId: product.id,
-          locationId: location.id,
-          status: { in: [data.from, data.to] },
           lotKey: "",
+          OR: [
+            { locationId: location.id, status: data.from },
+            { locationId: destination.id, status: data.to },
+          ],
         },
-        select: { id: true, status: true, quantity: true },
+        select: { id: true, locationId: true, status: true, quantity: true },
       });
-      const source = balances.find((row) => row.status === data.from);
-      const target = balances.find((row) => row.status === data.to);
+      const source = balances.find(
+        (row) => row.locationId === location.id && row.status === data.from,
+      );
+      const target = balances.find(
+        (row) => row.locationId === destination.id && row.status === data.to,
+      );
       const there = dec(source?.quantity.toString() ?? 0);
       if (there.lessThan(base)) {
         return refuse(
@@ -318,6 +392,35 @@ export async function changeStockStatus(
         );
       }
 
+      // WMS-22B: the place it ends up in must admit it in its new state
+      // (a quarantine location takes nothing available) and, when it
+      // moves, the product itself and its room.
+      const placed = await checkPlacement(
+        tx,
+        [
+          {
+            productId: product.id,
+            quantity: base,
+            toLocationId: destination.id,
+            fromLocationId: location.id,
+            status: data.to,
+          },
+        ],
+        { mode: "ask", accepted: input.acceptCapacity === true },
+      );
+      if (!placed.ok) {
+        if (placed.reason === "over_capacity" && !placed.blocked) {
+          throw new CapacityNotice(placed.message);
+        }
+        return refuse(
+          "not_allowed",
+          moves ? "toLocationId" : "to",
+          !moves && data.to === "AVAILABLE"
+            ? `${placed.message} Para liberarlas, elige también dónde quedan.`
+            : placed.message,
+        );
+      }
+
       // The value covers every state: nothing changes but where it counts.
       const costs = await openCostBook(tx, organizationId, [product.id]);
       const price = lineCost(costs.price(product.id));
@@ -337,7 +440,6 @@ export async function changeStockStatus(
         organizationId,
         movementId,
         productId: product.id,
-        locationId: location.id,
         capturedQuantity: base.toString(),
         factor: "1",
         baseQuantity: base.toString(),
@@ -349,6 +451,7 @@ export async function changeStockStatus(
           ...line,
           id: newId(),
           lineNumber: 1,
+          locationId: location.id,
           direction: "OUT",
           status: data.from,
         },
@@ -358,6 +461,7 @@ export async function changeStockStatus(
           ...line,
           id: newId(),
           lineNumber: 2,
+          locationId: destination.id,
           direction: "IN",
           status: data.to,
         },
@@ -381,7 +485,7 @@ export async function changeStockStatus(
             id: newId(),
             organizationId,
             productId: product.id,
-            locationId: location.id,
+            locationId: destination.id,
             status: data.to,
             quantity: base.toString(),
           },
@@ -397,6 +501,7 @@ export async function changeStockStatus(
         metadata: {
           producto: product.name,
           ubicacion: location.name,
+          ...(moves ? { destino: destination.name } : {}),
           de: STOCK_STATUS_LABELS[data.from],
           a: STOCK_STATUS_LABELS[data.to],
           cantidad: formatStock(base.toString(), product.unitCode),
@@ -406,11 +511,16 @@ export async function changeStockStatus(
       return {
         ok: true as const,
         movementId,
-        summary: `${formatStock(base.toString(), product.unitCode)} de ${product.name} en ${location.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}.`,
+        summary:
+          (moves
+            ? `${formatStock(base.toString(), product.unitCode)} de ${product.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} en ${location.name} a ${STOCK_STATUS_LABELS[data.to]} en ${destination.name}.`
+            : `${formatStock(base.toString(), product.unitCode)} de ${product.name} en ${location.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}.`) +
+          placed.notes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
     if (error instanceof Rejected) return error.result;
+    if (error instanceof CapacityNotice) return error.result;
     if (
       (error as { code?: string }).code === "P2002" &&
       JSON.stringify((error as { meta?: unknown }).meta ?? "").includes(

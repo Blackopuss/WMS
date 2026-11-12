@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { isAppError } from "@/lib";
+import { fingerprint, isAppError } from "@/lib";
 import { changeStockStatus, type StatusChangeField } from "@/modules/inventory";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
@@ -11,10 +11,18 @@ export type StatusChangeState = {
   fieldErrors?: Partial<Record<StatusChangeField, string>>;
   /** What happened, after a change that went through. */
   saved?: string;
+  /**
+   * Where it ends up would be left above its capacity and the company only
+   * warns (WMS-22B): nothing changed. `stamp` marks the values the warning
+   * is about; the button that accepts it sends it back.
+   */
+  capacityWarning?: { message: string; stamp: string };
   values: {
     locationId: string;
     from: string;
     to: string;
+    /** Where it ends up; "" = it stays where it is (WMS-22B). */
+    toLocationId: string;
     quantity: string;
     reason: string;
   };
@@ -42,10 +50,19 @@ export async function changeStatusAction(
     locationId: locationId.slice(0, 36),
     from: from.slice(0, 20),
     to: text(formData, "to", 20),
+    toLocationId: text(formData, "toLocationId", 36),
     quantity: text(formData, "quantity", 40),
     reason: text(formData, "reason", 600),
   };
   const answers = previous.answers + 1;
+  const stamp = fingerprint([
+    String(productId),
+    values.locationId,
+    values.from,
+    values.to,
+    values.toLocationId,
+    values.quantity,
+  ]);
   let result;
   try {
     result = await changeStockStatus(
@@ -54,6 +71,8 @@ export async function changeStatusAction(
         ...values,
         productId: String(productId).slice(0, 36),
         idempotencyKey: text(formData, "idempotencyKey", 64),
+        // Only the button of the warning about these values carries it.
+        acceptCapacity: formData.get("acceptCapacity") === stamp,
       },
     );
   } catch (error) {
@@ -61,6 +80,13 @@ export async function changeStatusAction(
       return { error: error.message, values, answers };
     }
     throw error;
+  }
+  if (!result.ok && result.reason === "over_capacity") {
+    return {
+      capacityWarning: { message: result.formError, stamp },
+      values,
+      answers,
+    };
   }
   if (!result.ok) {
     return {

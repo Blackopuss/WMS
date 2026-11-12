@@ -179,6 +179,9 @@ describe("product", () => {
       "sku",
       "status",
       "unitCode",
+      // WMS-22B: what one unit takes and weighs, not how many there are.
+      "unitVolume",
+      "unitWeight",
       "updatedAt",
     ]);
   });

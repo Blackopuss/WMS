@@ -12,11 +12,20 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
-import { getModuleAccess } from "@/platform/billing";
 import {
+  getLocationOccupancy,
+  type LocationOccupancy,
+} from "@/modules/inventory";
+import { getModuleAccess } from "@/platform/billing";
+import { listProductFilterOptions } from "@/platform/catalog";
+import {
+  CAPACITY_MEASURES,
   LOCATION_TYPES,
   LOCATION_TYPE_LABELS,
   canContain,
+  describeCapacity,
+  formatCapacityAmount,
+  formatCapacityUse,
   levelsInside,
   listLocations,
   type LevelRef,
@@ -61,6 +70,55 @@ function detailOf(location: LocationNode): string {
     .join(" · ");
 }
 
+/** «Solo: Químicos, TOR-001 y 3 más», or null when it admits anything. */
+function restrictionOf(location: LocationNode): string | null {
+  const names = [
+    ...location.restrictedTo.categories.map((category) => category.name),
+    ...location.restrictedTo.products.map((product) => product.sku),
+  ];
+  if (names.length === 0) return null;
+  const shown = names.slice(0, 3).join(", ");
+  return names.length > 3
+    ? `Solo: ${shown} y ${names.length - 3} más`
+    : `Solo: ${shown}`;
+}
+
+/**
+ * How full a location is, with everything inside it (WMS-22B, PC-11):
+ * «120 de 500 unidades · 80 de 1,000 kg». Units always; weight and volume
+ * only where the location limits them.
+ */
+function occupancyOf(
+  location: LocationNode,
+  held: LocationOccupancy | undefined,
+): { text: string; over: boolean; missing: string | null } | null {
+  const limited = CAPACITY_MEASURES.filter(
+    (measure) => location.capacity[measure] !== null,
+  );
+  if (!held && limited.length === 0) return null;
+  const parts = CAPACITY_MEASURES.filter(
+    (measure) => measure === "units" || location.capacity[measure] !== null,
+  ).map((measure) => {
+    const now = held?.[measure] ?? "0";
+    const limit = location.capacity[measure];
+    // «120 de 500 unidades»: the unit is said once, by the limit.
+    return limit === null
+      ? formatCapacityAmount(measure, now)
+      : formatCapacityUse(measure, now, limit);
+  });
+  const missing =
+    held?.unweighed && location.capacity.weight !== null
+      ? "Hay productos sin peso en su ficha: no cuentan."
+      : held?.unsized && location.capacity.volume !== null
+        ? "Hay productos sin volumen en su ficha: no cuentan."
+        : null;
+  return {
+    text: parts.join(" · "),
+    over: (held?.over.length ?? 0) > 0,
+    missing,
+  };
+}
+
 /** The locations of the warehouse, in its own levels (INV-13/14, WMS-22A). */
 export default async function UbicacionesPage({
   searchParams,
@@ -82,10 +140,21 @@ export default async function UbicacionesPage({
     );
   }
   const showArchived = (await searchParams).archivadas === "1";
-  const tree = await listLocations(
-    { organizationId: access.organization.id, userId: access.user.id },
-    { includeArchived: showArchived },
-  );
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  const [tree, occupancy, groups] = await Promise.all([
+    listLocations(actor, { includeArchived: showArchived }),
+    // WMS-22B: how full each one is, for who may see stock.
+    access.can("inventory.stock.read") ? getLocationOccupancy(actor) : null,
+    // Categories a location may be limited to, for who may change it.
+    access.allows("inventory.location.update") &&
+    access.can("inventory.product.read")
+      ? listProductFilterOptions(actor)
+      : null,
+  ]);
+  const categories = groups?.categories ?? [];
   if (!tree) {
     return (
       <PageContainer>
@@ -152,7 +221,11 @@ export default async function UbicacionesPage({
         description={`Niveles: ${tree.levels.map((level) => level.name).join(" › ")}.`}
         actions={
           canCreate && !showArchived ? (
-            <AddLocationDialog places={places} types={types} />
+            <AddLocationDialog
+              places={places}
+              types={types}
+              categories={categories}
+            />
           ) : undefined
         }
       />
@@ -189,6 +262,18 @@ export default async function UbicacionesPage({
             {list.map((location) => {
               const Icon = location.isDefault ? MapPin : Rows3;
               const holds = levelOptions(location.level).length > 0;
+              const restriction = restrictionOf(location);
+              const capacity = describeCapacity(location.capacity);
+              const held = showArchived
+                ? null
+                : occupancy
+                  ? occupancyOf(location, occupancy.byLocation[location.id])
+                  : // Who may not see stock sees the limit, not how full.
+                    capacity && {
+                      text: `Capacidad: ${capacity}`,
+                      over: false,
+                      missing: null,
+                    };
               return (
                 <li
                   key={location.id}
@@ -206,7 +291,27 @@ export default async function UbicacionesPage({
                     </h3>
                     <p className="text-sm break-words text-muted-foreground">
                       {detailOf(location)}
+                      {restriction && ` · ${restriction}`}
                     </p>
+                    {held && (
+                      <p
+                        className={`text-sm break-words tabular-nums ${
+                          held.over
+                            ? "text-foreground"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {held.over ? (
+                          <>
+                            <span className="font-medium">{held.text}</span> ·
+                            por encima de su capacidad
+                          </>
+                        ) : (
+                          held.text
+                        )}
+                        {held.missing && ` · ${held.missing}`}
+                      </p>
+                    )}
                   </div>
                   {location.isDefault && (
                     <Badge variant="secondary">Fija</Badge>
@@ -223,6 +328,7 @@ export default async function UbicacionesPage({
                         <AddLocationDialog
                           places={places}
                           types={types}
+                          categories={categories}
                           insideId={location.id}
                           insideName={location.name}
                         />
@@ -238,8 +344,20 @@ export default async function UbicacionesPage({
                             isStaging: location.isStaging,
                             parentId: location.parentId ?? "",
                             children: location.children,
+                            limits: {
+                              maxUnits: location.capacity.units ?? "",
+                              maxWeight: location.capacity.weight ?? "",
+                              maxVolume: location.capacity.volume ?? "",
+                              products: location.restrictedTo.products
+                                .map((product) => product.sku)
+                                .join("\n"),
+                              categoryIds: location.restrictedTo.categories.map(
+                                (category) => category.id,
+                              ),
+                            },
                           }}
                           types={types}
+                          categories={categories}
                           destinations={destinationsFor(location.level)}
                           canUpdate={canUpdate}
                           canArchive={canArchive}
@@ -256,6 +374,12 @@ export default async function UbicacionesPage({
               {canCreate
                 ? "Puedes trabajar solo con «General» y agregar ubicaciones cuando las necesites."
                 : "Tu almacén todavía no tiene otras ubicaciones: todo está en «General»."}
+            </p>
+          )}
+          {occupancy?.truncated && !showArchived && (
+            <p className="border-t p-4 text-sm text-muted-foreground sm:px-5">
+              Hay más existencias de las que se suman de una vez: las cantidades
+              de esta lista están incompletas.
             </p>
           )}
         </section>

@@ -26,6 +26,13 @@ import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { COST_FORMAT_ERROR, parseCost } from "./average-cost";
 import { agoText } from "./entry-repeat";
+import {
+  CapacityNotice,
+  checkPlacement,
+  type Arrival,
+  type CapacityPolicy,
+  type OverCapacity,
+} from "./placement";
 import { ENTRY_REPEAT_WINDOW } from "./settings";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { AVAILABLE_STOCK } from "./stock-status";
@@ -166,7 +173,7 @@ export type RepeatedEntry = {
   recent: { movementId: string; authorName: string | null; minutesAgo: number };
 };
 
-export type EntryResult = MovementResult | RepeatedEntry;
+export type EntryResult = MovementResult | RepeatedEntry | OverCapacity;
 
 /** Carries the warning out of the transaction; only entries ask for it. */
 class RepeatNotice extends Error {
@@ -213,20 +220,26 @@ export async function registerEntry(
    * `acceptRepeat`: the person saw that the same entry was registered a
    * moment ago and wants this one too (WMS-71).
    */
-  input: EntryInput & { acceptRepeat?: boolean },
+  input: EntryInput & {
+    acceptRepeat?: boolean;
+    /** The person saw that it goes over a capacity and wants it (WMS-22B). */
+    acceptCapacity?: boolean;
+  },
 ): Promise<EntryResult> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
     "inventory.entry.create",
   );
-  const { acceptRepeat, ...entry } = input;
+  const { acceptRepeat, acceptCapacity, ...entry } = input;
   try {
     return await post(actor, entry, "ENTRY", {
       warnRepeat: acceptRepeat !== true,
+      acceptCapacity: acceptCapacity === true,
     });
   } catch (error) {
     if (error instanceof RepeatNotice) return error.result;
+    if (error instanceof CapacityNotice) return error.result;
     throw error;
   }
 }
@@ -300,14 +313,23 @@ async function warnRepeatedEntry(
  */
 export async function registerInitialBalance(
   actor: InventoryActor,
-  input: EntryInput,
-): Promise<MovementResult> {
+  /** `acceptCapacity`: it goes over a capacity and the person wants it (WMS-22B). */
+  input: EntryInput & { acceptCapacity?: boolean },
+): Promise<MovementResult | OverCapacity> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
     "inventory.opening.create",
   );
-  return post(actor, input, "INITIAL");
+  const { acceptCapacity, ...balance } = input;
+  try {
+    return await post(actor, balance, "INITIAL", {
+      acceptCapacity: acceptCapacity === true,
+    });
+  } catch (error) {
+    if (error instanceof CapacityNotice) return error.result;
+    throw error;
+  }
 }
 
 /**
@@ -356,8 +378,12 @@ async function post(
   actor: InventoryActor,
   input: EntryInput,
   type: keyof typeof KINDS,
-  /** `warnRepeat`: only manual entries (WMS-71); throws `RepeatNotice`. */
-  options: { warnRepeat?: boolean } = {},
+  /**
+   * `warnRepeat`: only manual entries (WMS-71); throws `RepeatNotice`.
+   * `acceptCapacity`: what comes in may go over a capacity the company
+   * only warns about (WMS-22B); without it, throws `CapacityNotice`.
+   */
+  options: { warnRepeat?: boolean; acceptCapacity?: boolean } = {},
 ): Promise<MovementResult> {
   const { organizationId, userId } = actor;
   const kind = KINDS[type];
@@ -557,6 +583,31 @@ async function post(
         );
       }
 
+      // WMS-22B: what comes in must be allowed in that location (its
+      // restrictions always stop) and fit in it (as the company decided).
+      let capacityNotes: string[] = [];
+      if (kind.direction === "IN") {
+        const placed = await checkPlacement(
+          tx,
+          [
+            {
+              productId: product.id,
+              quantity: base,
+              toLocationId: location.id,
+              status: "AVAILABLE",
+            },
+          ],
+          { mode: "ask", accepted: options.acceptCapacity === true },
+        );
+        if (!placed.ok) {
+          if (placed.reason === "over_capacity" && !placed.blocked) {
+            throw new CapacityNotice(placed.message);
+          }
+          return reject("not_allowed", "locationId", placed.message);
+        }
+        capacityNotes = placed.notes;
+      }
+
       // WMS-71: the last question, once the entry is known to be valid.
       if (options.warnRepeat) {
         await warnRepeatedEntry(tx, actor, {
@@ -645,11 +696,12 @@ async function post(
         movementId,
         // «3 cajas × 100 = 300 piezas» when it was not captured as is.
         summary:
-          type === "INITIAL"
+          (type === "INITIAL"
             ? `Saldo inicial de ${product.name} en ${location.name}: ${moved}${how}.`
             : type === "EXIT"
               ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name} de ${location.name}${how}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left} ahí.`
-              : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name} a ${location.name}${how}. Ahora hay ${left} ahí.`,
+              : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name} a ${location.name}${how}. Ahora hay ${left} ahí.`) +
+          capacityNotes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -1187,7 +1239,14 @@ export type TransferInput = z.input<typeof transferSchema>;
 export type TransferField = keyof TransferInput;
 
 export type TransferResult =
-  | { ok: true; movementId: string; summary: string; repeated?: true }
+  | {
+      ok: true;
+      movementId: string;
+      summary: string;
+      repeated?: true;
+      /** Locations left above their capacity (WMS-22B), one sentence each. */
+      notes?: string[];
+    }
   | {
       ok: false;
       reason: "invalid" | "not_found" | "not_allowed";
@@ -1223,8 +1282,9 @@ const refuse = (
  */
 export async function registerTransfer(
   actor: InventoryActor,
-  input: TransferInput,
-): Promise<TransferResult> {
+  /** `acceptCapacity`: it goes over a capacity and the person wants it (WMS-22B). */
+  input: TransferInput & { acceptCapacity?: boolean },
+): Promise<TransferResult | OverCapacity> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
     organizationId,
@@ -1281,11 +1341,16 @@ export async function registerTransfer(
 
   try {
     return await forOrganization(organizationId).$transaction(
-      (tx) => transferWithin(tx, actor, data, capture),
+      (tx) =>
+        transferWithin(tx, actor, data, capture, {
+          mode: "ask",
+          accepted: input.acceptCapacity === true,
+        }),
       LOCKING_TRANSACTION,
     );
   } catch (error) {
     if (error instanceof TransferRejected) return error.result;
+    if (error instanceof CapacityNotice) return error.result;
     if (
       data.idempotencyKey &&
       (error as { code?: string }).code === "P2002" &&
@@ -1321,6 +1386,12 @@ async function transferWithin(
   actor: InventoryActor,
   data: TransferData,
   capture: Capture,
+  /**
+   * WMS-22B: what to do if the destination would go over its capacity. A
+   * relocation asks the person (`CapacityNotice` when it only warns); the
+   * delivery of a task reports it, because the load is already there.
+   */
+  capacity: CapacityPolicy,
 ): Promise<Extract<TransferResult, { ok: true }>> {
   const { organizationId, userId } = actor;
   // Same order as every movement: the product, then the locations
@@ -1492,6 +1563,28 @@ async function transferWithin(
     );
   }
 
+  // WMS-22B: the destination must admit the product (always) and have
+  // room for it (as the company decided).
+  const placed = await checkPlacement(
+    tx,
+    [
+      {
+        productId: product.id,
+        quantity: base,
+        toLocationId: to.id,
+        fromLocationId: from.id,
+        status: "AVAILABLE",
+      },
+    ],
+    capacity,
+  );
+  if (!placed.ok) {
+    if (placed.reason === "over_capacity" && !placed.blocked) {
+      throw new CapacityNotice(placed.message);
+    }
+    return refuse("not_allowed", "toLocationId", placed.message);
+  }
+
   // VAL-04: moving it to another place does not change its value.
   const costs = await openCostBook(tx, organizationId, [product.id]);
   const price = lineCost(costs.price(product.id));
@@ -1571,7 +1664,10 @@ async function transferWithin(
   return {
     ok: true as const,
     movementId,
-    summary: `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.`,
+    summary:
+      `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.` +
+      placed.notes.map((note) => ` ${note}`).join(""),
+    notes: placed.notes,
   };
 }
 
@@ -2069,6 +2165,28 @@ export async function reverseMovement(
       ]);
       const productOf = new Map(products.map((p) => [p.id, p]));
       const locationOf = new Map(locations.map((l) => [l.id, l]));
+      // WMS-22B: what the reversal puts back must still be admitted where
+      // it returns (a restriction stops it); a capacity does not stop it —
+      // undoing a mistake is not new stock — and the answer says it.
+      const pair =
+        (original.type === "TRANSFER" || original.type === "STATUS_CHANGE") &&
+        original.lines.length === 2
+          ? original.lines.find((line) => line.direction === "IN")
+          : undefined;
+      const returning: Arrival[] = original.lines
+        .filter((line) => line.direction === "OUT")
+        .map((line) => ({
+          productId: line.productId,
+          quantity: dec(line.baseQuantity.toString()),
+          toLocationId: line.locationId,
+          // Undoing a relocation brings it back from where it went.
+          fromLocationId: pair?.locationId ?? null,
+          status: line.status,
+        }));
+      const placed = await checkPlacement(tx, returning, { mode: "report" });
+      if (!placed.ok) {
+        return stop("not_allowed", `No se puede reversar: ${placed.message}`);
+      }
       // VAL-04: read before any balance changes, under the products' locks.
       const costs = await openCostBook(
         tx,
@@ -2214,7 +2332,7 @@ export async function reverseMovement(
           `${MOVEMENT_TYPE_LABELS[original.type]} reversada: ${effects.join("; ")}.`.replace(
             /^(Ajuste|Saldo inicial) reversada/,
             "$1 reversado",
-          ),
+          ) + placed.notes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -2456,6 +2574,9 @@ export async function postTaskTransfer(
         unitCost: null,
       } as TransferData,
       { kind: "base", quantity: input.quantity },
+      // WMS-22B: the load is already at its destination; a capacity does
+      // not stop the delivery, the answer says it. Restrictions do.
+      { mode: "report" },
     );
   } catch (error) {
     if (error instanceof TransferRejected) return error.result;

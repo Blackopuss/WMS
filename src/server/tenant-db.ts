@@ -36,7 +36,9 @@ export const TENANT_MODELS = [
   "Invitation",
   "Job",
   "Location",
+  "LocationCapacity",
   "LocationLevel",
+  "LocationRestriction",
   "ManualPayment",
   "Membership",
   "MembershipRole",
@@ -272,6 +274,7 @@ export const LOCKING_TRANSACTION = { isolationLevel: "ReadCommitted" } as const;
 const LOCKABLE = {
   facility: "facility",
   location: "location",
+  locationCapacity: "location_capacity",
   product: "product",
   exitImport: "exit_import",
   productImport: "product_import",

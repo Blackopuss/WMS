@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { isAppError } from "@/lib";
+import { fingerprint, isAppError } from "@/lib";
 import {
   acceptTask,
   assignTask,
@@ -27,6 +27,12 @@ import { requireOrganizationContext } from "@/platform/tenancy";
 
 export type CreateTaskState = {
   error?: string;
+  /**
+   * Where it goes would be left above its capacity and the company only
+   * warns (WMS-22B): the task was not created. `stamp` marks the values the
+   * warning is about; the button that accepts it sends it back.
+   */
+  capacityWarning?: { message: string; stamp: string };
   fieldErrors?: Partial<Record<TaskField, string>>;
   values: {
     fromLocationId: string;
@@ -56,17 +62,36 @@ export async function createTaskAction(
     assignToUserId: text(formData, "assignToUserId", 36),
     note: text(formData, "note", 400),
   };
-  let result: TaskResult;
+  const productId = text(formData, "productId", 36);
+  const stamp = fingerprint([
+    productId,
+    values.fromLocationId,
+    values.toLocationId,
+    values.quantity,
+  ]);
+  let result;
   try {
     result = await createTask(
       { organizationId: organization.id, userId: user.id },
-      { ...values, productId: text(formData, "productId", 36) },
+      {
+        ...values,
+        productId,
+        // Only the button of the warning about these values carries it.
+        acceptCapacity: formData.get("acceptCapacity") === stamp,
+      },
     );
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {
       return { error: error.message, values, answers: previous.answers + 1 };
     }
     throw error;
+  }
+  if (!result.ok && result.reason === "over_capacity") {
+    return {
+      capacityWarning: { message: result.formError, stamp },
+      values,
+      answers: previous.answers + 1,
+    };
   }
   if (!result.ok) {
     return {

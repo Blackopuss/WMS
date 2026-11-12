@@ -32,6 +32,8 @@ import {
   editLocationAction,
   moveLocationAction,
   restoreLocationAction,
+  setLocationLimitsAction,
+  type LimitValues,
   type LocationFormState,
 } from "./actions";
 
@@ -47,13 +49,155 @@ export type PlaceOption = {
 /** Uses a person may give a location, built in the server. */
 export type TypeOption = { value: string; label: string };
 
+/** A category a location may be limited to, built in the server. */
+export type CategoryOption = { id: string; name: string };
+
+const EMPTY_LIMITS: LimitValues = {
+  maxUnits: "",
+  maxWeight: "",
+  maxVolume: "",
+  products: "",
+  categoryIds: [],
+};
+
 const EMPTY_VALUES = {
   name: "",
   level: "",
   parentId: "",
   code: "",
   type: "STORAGE",
+  limits: EMPTY_LIMITS,
 };
+
+const hasLimits = (limits: LimitValues) =>
+  Boolean(
+    limits.maxUnits ||
+    limits.maxWeight ||
+    limits.maxVolume ||
+    limits.products.trim() ||
+    limits.categoryIds.length > 0,
+  );
+
+const SUMMARY =
+  "-m-1 flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+
+/**
+ * Capacity and restrictions of a location (WMS-22B), in the add and edit
+ * dialogs: how much it may hold and what it admits. Everything is optional.
+ */
+function LimitFields({
+  prefix,
+  categories,
+  values,
+  errors,
+  answers,
+}: {
+  prefix: string;
+  categories: CategoryOption[];
+  values: LimitValues;
+  errors: LocationFormState["fieldErrors"];
+  answers: number;
+}) {
+  const amount = (
+    name: "maxUnits" | "maxWeight" | "maxVolume",
+    label: string,
+  ) => (
+    <FormField id={`${prefix}-${name}`} label={label} error={errors[name]}>
+      {(control) => (
+        <Input
+          {...control}
+          name={name}
+          defaultValue={values[name]}
+          key={`${name}-${values[name]}-${answers}`}
+          inputMode="decimal"
+          autoComplete="off"
+          maxLength={20}
+        />
+      )}
+    </FormField>
+  );
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Vacío = sin límite. Cuenta todo lo que hay dentro, también en sus
+        ubicaciones.
+      </p>
+      {/* One per row: the dialog is narrow and an error needs its line. */}
+      <div className="grid gap-3">
+        {amount("maxUnits", "Unidades")}
+        {amount("maxWeight", "Peso (kg)")}
+        {amount("maxVolume", "Volumen (m³)")}
+      </div>
+      {categories.length > 0 && (
+        <fieldset
+          className="space-y-2"
+          aria-describedby={
+            errors.categoryIds ? `${prefix}-categories-error` : undefined
+          }
+        >
+          <legend className="text-sm font-medium">
+            Solo admite estas categorías
+          </legend>
+          <div className="grid max-h-40 gap-1 overflow-y-auto rounded-lg border p-2">
+            {categories.map((category) => (
+              <label
+                key={category.id}
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-1 has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+              >
+                <input
+                  type="checkbox"
+                  name="categoryIds"
+                  value={category.id}
+                  defaultChecked={values.categoryIds.includes(category.id)}
+                  key={`${category.id}-${answers}`}
+                  className="size-5 shrink-0 accent-primary outline-none"
+                />
+                <span className="min-w-0 break-words">{category.name}</span>
+              </label>
+            ))}
+          </div>
+          {errors.categoryIds && (
+            <p
+              id={`${prefix}-categories-error`}
+              className="text-sm text-destructive"
+            >
+              {errors.categoryIds}
+            </p>
+          )}
+        </fieldset>
+      )}
+      <FormField
+        id={`${prefix}-products`}
+        label="Solo admite estos productos"
+        hint="Sus claves, una por línea. Sin nada marcado ni escrito, admite cualquiera."
+        error={errors.products}
+      >
+        {(control) => (
+          <textarea
+            {...control}
+            name="products"
+            defaultValue={values.products}
+            key={`products-${answers}`}
+            rows={2}
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive md:text-sm"
+          />
+        )}
+      </FormField>
+    </div>
+  );
+}
+
+/** True when a refused form has a problem in its capacity or restrictions. */
+const limitProblem = (errors: LocationFormState["fieldErrors"]) =>
+  Boolean(
+    errors.maxUnits ||
+    errors.maxWeight ||
+    errors.maxVolume ||
+    errors.products ||
+    errors.categoryIds,
+  );
 
 function FormError({ message }: { message?: string }) {
   if (!message) return null;
@@ -95,11 +239,13 @@ function Submit({
 export function AddLocationDialog({
   places,
   types,
+  categories,
   insideId = "",
   insideName,
 }: {
   places: PlaceOption[];
   types: TypeOption[];
+  categories: CategoryOption[];
   /** Place preselected when the dialog opens from a row. */
   insideId?: string;
   /** Name of that row: the trigger becomes its small «add inside» button. */
@@ -152,7 +298,7 @@ export function AddLocationDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Agregar ubicación</DialogTitle>
           <DialogDescription>
@@ -233,6 +379,26 @@ export function AddLocationDialog({
             errors={state.fieldErrors}
             answers={answers}
           />
+          {/* Rarely set: folded unless something was typed or refused. */}
+          <details
+            className="rounded-lg border p-3"
+            open={
+              hasLimits(state.values.limits) || limitProblem(state.fieldErrors)
+            }
+          >
+            <summary className={SUMMARY}>
+              Capacidad y restricciones (opcional)
+            </summary>
+            <div className="mt-3">
+              <LimitFields
+                prefix={prefix}
+                categories={categories}
+                values={state.values.limits}
+                errors={state.fieldErrors}
+                answers={answers}
+              />
+            </div>
+          </details>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">
@@ -318,6 +484,7 @@ function CodeAndType({
 export function EditLocationDialog({
   location,
   types,
+  categories,
   destinations,
   canUpdate,
   canArchive,
@@ -332,8 +499,11 @@ export function EditLocationDialog({
     parentId: string;
     /** Locations directly inside it. */
     children: number;
+    /** Its capacity and restrictions today (WMS-22B). */
+    limits: LimitValues;
   };
   types: TypeOption[];
+  categories: CategoryOption[];
   /** Places this location could be moved to (its current one included). */
   destinations: { id: string; label: string }[];
   canUpdate: boolean;
@@ -375,6 +545,24 @@ export function EditLocationDialog({
     },
     empty,
   );
+  const [limitState, limitAction, limiting] = useActionState(
+    async (
+      prev: LocationFormState & { answers: number },
+      formData: FormData,
+    ) => {
+      const next = await setLocationLimitsAction(location.id, prev, formData);
+      if (next.done) {
+        toast.success("Capacidad y restricciones guardadas.");
+        setOpen(false);
+      }
+      return { ...next, answers: prev.answers + 1 };
+    },
+    {
+      fieldErrors: {},
+      values: { ...EMPTY_VALUES, limits: location.limits },
+      answers: 0,
+    },
+  );
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiving, startArchive] = useTransition();
 
@@ -402,7 +590,7 @@ export function EditLocationDialog({
           <Pencil aria-hidden="true" />
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{location.name}</DialogTitle>
           <DialogDescription>
@@ -446,6 +634,32 @@ export function EditLocationDialog({
               Guardar cambios
             </Submit>
           </form>
+        )}
+        {canUpdate && (
+          // Rarely changed: folded unless it has something or was refused.
+          <details
+            className="border-t pt-4"
+            open={
+              hasLimits(limitState.values.limits) ||
+              limitProblem(limitState.fieldErrors) ||
+              Boolean(limitState.formError)
+            }
+          >
+            <summary className={SUMMARY}>Capacidad y restricciones</summary>
+            <form action={limitAction} noValidate className="mt-3 space-y-4">
+              <FormError message={limitState.formError} />
+              <LimitFields
+                prefix={`limits-${location.id}`}
+                categories={categories}
+                values={limitState.values.limits}
+                errors={limitState.fieldErrors}
+                answers={limitState.answers}
+              />
+              <Submit pending={limiting} busy="Guardando…">
+                Guardar capacidad
+              </Submit>
+            </form>
+          </details>
         )}
         {canUpdate && destinations.length > 1 && (
           <form

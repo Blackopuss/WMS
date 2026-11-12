@@ -10,12 +10,24 @@ import {
   moveLocation,
   restoreLocation,
   saveLocationLevels,
+  setLocationLimits,
   type LocationField,
   type LocationResult,
 } from "@/platform/locations";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 const LOCATIONS_PATH = "/ubicaciones";
+
+/** Capacity and restrictions as the form sends them (WMS-22B). */
+export type LimitValues = {
+  maxUnits: string;
+  maxWeight: string;
+  maxVolume: string;
+  /** Codes (SKU) of the only products admitted, one per line. */
+  products: string;
+  /** Ids of the only categories admitted. */
+  categoryIds: string[];
+};
 
 export type LocationFormState = {
   /** True right after the change was applied (the dialog closes). */
@@ -29,7 +41,16 @@ export type LocationFormState = {
     parentId: string;
     code: string;
     type: string;
+    limits: LimitValues;
   };
+};
+
+const NO_LIMITS: LimitValues = {
+  maxUnits: "",
+  maxWeight: "",
+  maxVolume: "",
+  products: "",
+  categoryIds: [],
 };
 
 const NO_VALUES: LocationFormState["values"] = {
@@ -38,6 +59,7 @@ const NO_VALUES: LocationFormState["values"] = {
   parentId: "",
   code: "",
   type: "",
+  limits: NO_LIMITS,
 };
 
 export type LocationActionResult = { ok: true } | { ok: false; error: string };
@@ -99,6 +121,19 @@ const simple = (result: LocationResult): LocationActionResult =>
 const text = (formData: FormData, name: string) =>
   String(formData.get(name) ?? "");
 
+/** The capacity and restriction fields of a form, bounded. */
+const limitsOf = (formData: FormData): LimitValues => ({
+  maxUnits: text(formData, "maxUnits").slice(0, 40),
+  maxWeight: text(formData, "maxWeight").slice(0, 40),
+  maxVolume: text(formData, "maxVolume").slice(0, 40),
+  products: text(formData, "products").slice(0, 20_000),
+  categoryIds: formData
+    .getAll("categoryIds")
+    .filter((value): value is string => typeof value === "string")
+    .slice(0, 500)
+    .map((value) => value.slice(0, 36)),
+});
+
 /** Adds a location in the warehouse the person works in. */
 export async function createLocationAction(
   _prev: LocationFormState,
@@ -110,13 +145,14 @@ export async function createLocationAction(
     parentId: text(formData, "parentId"),
     code: text(formData, "code"),
     type: text(formData, "type"),
+    limits: limitsOf(formData),
   };
   const result = await change((actor) => createLocation(actor, values));
   // After adding, ready for the next one in the same place; after a
   // refusal, what was typed stays.
   return formState(
     result,
-    result.ok ? { ...values, name: "", code: "" } : values,
+    result.ok ? { ...values, name: "", code: "", limits: NO_LIMITS } : values,
   );
 }
 
@@ -140,6 +176,25 @@ export async function editLocationAction(
         code: values.code,
         type: values.type,
       }),
+    ),
+    values,
+  );
+}
+
+/**
+ * Sets the capacity and the restrictions of a location (WMS-22B). Its id
+ * is bound by the page and looked for only inside the company of the
+ * session; products and categories too.
+ */
+export async function setLocationLimitsAction(
+  locationId: string,
+  _prev: LocationFormState,
+  formData: FormData,
+): Promise<LocationFormState> {
+  const values = { ...NO_VALUES, limits: limitsOf(formData) };
+  return formState(
+    await change((actor) =>
+      setLocationLimits(actor, String(locationId), values.limits),
     ),
     values,
   );
