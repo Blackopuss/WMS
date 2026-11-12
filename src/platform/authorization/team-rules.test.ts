@@ -198,3 +198,45 @@ describe("other roles and invalid input", () => {
     });
   });
 });
+
+// WMS-20: limiting a person to warehouses or zones follows the same rules.
+describe("limiting where a person works", () => {
+  const person = (userId: string, isOwner: boolean, ...roles: string[]) => ({
+    userId,
+    isOwner,
+    roles,
+  });
+  const boss = person("boss", true);
+  const manager = person("manager", false, "administrator");
+  const colleague = person("colleague", false, "administrator");
+  const picker = person("picker", false, "warehouse");
+  const change = { kind: "set_scope" } as const;
+
+  it("never the titular, never oneself", () => {
+    expect(checkTeamChange(manager, boss, change)).toEqual({
+      ok: false,
+      reason: "owner_protected",
+    });
+    expect(checkTeamChange(boss, boss, change)).toEqual({
+      ok: false,
+      reason: "owner_protected",
+    });
+    expect(checkTeamChange(manager, manager, change)).toEqual({
+      ok: false,
+      reason: "self",
+    });
+  });
+
+  it("administrators only by the titular; the rest by who assigns roles", () => {
+    expect(checkTeamChange(manager, colleague, change)).toEqual({
+      ok: false,
+      reason: "administrator_reserved",
+    });
+    expect(checkTeamChange(boss, colleague, change)).toEqual({ ok: true });
+    expect(checkTeamChange(manager, picker, change)).toEqual({ ok: true });
+    expect(checkTeamChange(picker, manager, change)).toEqual({
+      ok: false,
+      reason: "forbidden",
+    });
+  });
+});

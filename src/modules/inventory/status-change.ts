@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import type { Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
+import { assertLocationsInScope } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import {
@@ -192,6 +193,8 @@ export async function changeStockStatus(
     return await forOrganization(organizationId).$transaction(async (tx) => {
       const [productId] = await lockRows(tx, "product", [data.productId]);
       const [locationId] = await lockRows(tx, "location", [data.locationId]);
+      // WMS-20: only stock of a location inside the person's scope.
+      await assertLocationsInScope(tx, userId, [data.locationId]);
 
       const replay = await tx.stockMovement.findFirst({
         where: { idempotencyKey: data.idempotencyKey },

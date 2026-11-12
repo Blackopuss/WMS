@@ -12,8 +12,12 @@ import {
 } from "@/platform/catalog";
 import {
   LOCATION_PARENTS,
+  type LocationScopeReader,
   type LocationWithParents,
+  assertLocationsInScope,
+  isLimited,
   locationPath,
+  locationScopeWhere,
 } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
@@ -37,6 +41,16 @@ import { AVAILABLE_STOCK } from "./stock-status";
  * then, so later steps can tell what moved afterwards (INV-32) before
  * anything is adjusted (INV-33).
  */
+
+/**
+ * WMS-20: a count belongs to its location. For someone limited to
+ * warehouses or zones, a count of a location outside does not exist: this
+ * goes into the `where` of every read of `stockCount`.
+ */
+async function countScope(client: LocationScopeReader, userId: string) {
+  const scoped = await locationScopeWhere(client, userId);
+  return isLimited(scoped) ? { location: scoped } : {};
+}
 
 export const COUNT_STATUS_LABELS = {
   OPEN: "Abierto",
@@ -137,6 +151,7 @@ export async function openCount(
           "locationId",
         );
       }
+      await assertLocationsInScope(tx, userId, [location.id]);
       if (location.archivedAt) {
         return reject(
           "not_allowed",
@@ -255,7 +270,7 @@ export async function captureCount(
       const [countId] = await lockRows(tx, "stockCount", [data.countId]);
       const count = countId
         ? await tx.stockCount.findFirst({
-            where: { id: countId },
+            where: { id: countId, ...(await countScope(tx, userId)) },
             select: { id: true, status: true, locationId: true },
           })
         : null;
@@ -446,7 +461,7 @@ export async function removeCapture(
       ]);
       const count = countId
         ? await tx.stockCount.findFirst({
-            where: { id: countId },
+            where: { id: countId, ...(await countScope(tx, userId)) },
             select: { id: true, status: true },
           })
         : null;
@@ -494,7 +509,7 @@ export async function cancelCount(
       ]);
       const count = id
         ? await tx.stockCount.findFirst({
-            where: { id },
+            where: { id, ...(await countScope(tx, userId)) },
             select: { id: true, status: true },
           })
         : null;
@@ -564,9 +579,9 @@ export async function listCounts(
     actor.userId,
     "inventory.count.read",
   );
-  const counts = await forOrganization(
-    actor.organizationId,
-  ).stockCount.findMany({
+  const client = forOrganization(actor.organizationId);
+  const counts = await client.stockCount.findMany({
+    where: await countScope(client, actor.userId),
     orderBy: [{ startedAt: "desc" }, { id: "desc" }],
     take: Math.min(Math.max(options.limit ?? 30, 1), 100),
     select: {
@@ -690,10 +705,12 @@ export async function getCount(
     actor.userId,
     "inventory.count.read",
   );
-  const count = await forOrganization(
-    actor.organizationId,
-  ).stockCount.findFirst({
-    where: { id: String(countId).slice(0, 36) },
+  const scopeClient = forOrganization(actor.organizationId);
+  const count = await scopeClient.stockCount.findFirst({
+    where: {
+      id: String(countId).slice(0, 36),
+      ...(await countScope(scopeClient, actor.userId)),
+    },
     select: {
       id: true,
       status: true,
@@ -1027,7 +1044,7 @@ export async function applyCount(
           const [countId] = await lockRows(tx, "stockCount", [data.countId]);
           const count = countId
             ? await tx.stockCount.findFirst({
-                where: { id: countId },
+                where: { id: countId, ...(await countScope(tx, userId)) },
                 select: {
                   id: true,
                   status: true,

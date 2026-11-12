@@ -40,6 +40,7 @@ export const TENANT_MODELS = [
   "ManualPayment",
   "Membership",
   "MembershipRole",
+  "MembershipScope",
   "OwnershipTransfer",
   "PresentationVersion",
   "Product",

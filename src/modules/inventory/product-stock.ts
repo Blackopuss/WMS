@@ -6,7 +6,9 @@ import { describeInPresentation } from "@/platform/catalog";
 import {
   LOCATION_PARENTS,
   compareLocationNames,
+  isLimited,
   locationPath,
+  locationScopeWhere,
 } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
@@ -95,8 +97,16 @@ export async function getProductStock(
   });
   if (!product) return null;
 
+  // WMS-20: someone limited to warehouses or zones sees the stock of
+  // their locations only; totals and what is set aside count what is there.
+  const scoped = await locationScopeWhere(client, actor.userId);
+  const limited = isLimited(scoped);
   const balances = await client.stockBalance.findMany({
-    where: { productId: product.id, quantity: { gt: 0 } },
+    where: {
+      productId: product.id,
+      quantity: { gt: 0 },
+      ...(limited ? { location: scoped } : {}),
+    },
     take: 2_000,
     select: {
       quantity: true,
@@ -116,7 +126,11 @@ export async function getProductStock(
   const { unitCode } = product;
   // WMS-12: reservations subtract from what is available.
   const reservations = await client.stockReservation.findMany({
-    where: { productId: product.id, state: "ACTIVE" },
+    where: {
+      productId: product.id,
+      state: "ACTIVE",
+      ...(limited ? { location: scoped } : {}),
+    },
     select: { locationId: true, remaining: true },
   });
   const reservedAt = new Map<string, ReturnType<typeof dec>>();

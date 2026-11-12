@@ -12,6 +12,7 @@ import { db, forOrganization } from "@/server";
 
 import type { Permission, Role } from "./catalog";
 import {
+  buildScope,
   can,
   isOwnerOnly,
   knownRoles,
@@ -41,7 +42,10 @@ export async function loadSubject(
   const membership = await forOrganization(organizationId).membership.findFirst(
     {
       where: { userId, status: "ACTIVE" },
-      select: { roles: { select: { role: true } } },
+      select: {
+        roles: { select: { role: true } },
+        scopes: { select: { facilityId: true, locationId: true } },
+      },
     },
   );
   if (!membership) {
@@ -53,9 +57,14 @@ export async function loadSubject(
     where: { id: organizationId },
     select: { ownerUserId: true },
   });
+  const isOwner = organization?.ownerUserId === userId;
+  // Where the person may work (WMS-20); the titular is never limited, and
+  // without a limit the subject carries no scope at all.
+  const scope = isOwner ? null : buildScope(membership.scopes);
   return {
-    isOwner: organization?.ownerUserId === userId,
+    isOwner,
     roles: membership.roles.map((r) => r.role),
+    ...(scope ? { scope } : {}),
   };
 }
 

@@ -2,6 +2,7 @@ import "server-only";
 
 import { dec, newId } from "@/lib";
 import { resolveConversion, type Capture } from "@/platform/catalog";
+import { activeFacilityOf, assertLocationsInScope } from "@/platform/locations";
 import { lockRows, type TenantDb } from "@/server";
 
 import { MAX_BALANCE, formatStock, type InventoryActor } from "./movements";
@@ -102,14 +103,26 @@ export async function postReceiptEntry(
   ];
   await lockRows(tx, "location", chosen);
 
+  // Without a location, General of the warehouse the person works in.
+  const active = await activeFacilityOf(tx, userId);
   const places = await tx.location.findMany({
-    where: { OR: [{ id: { in: chosen } }, { isDefault: true }] },
-    select: { id: true, name: true, archivedAt: true, isDefault: true },
+    where: {
+      OR: [{ id: { in: chosen } }, { isDefault: true, facilityId: active.id }],
+    },
+    select: {
+      id: true,
+      name: true,
+      archivedAt: true,
+      isDefault: true,
+      facilityId: true,
+    },
   });
   const placeOf = (id: string | null | undefined) =>
     id
       ? places.find((place) => place.id === id)
-      : places.find((place) => place.isDefault === true);
+      : places.find(
+          (place) => place.isDefault === true && place.facilityId === active.id,
+        );
   const problemOf = (place: (typeof places)[number] | undefined) =>
     !place
       ? "Esa ubicación ya no existe. Elige otra."
@@ -117,6 +130,8 @@ export async function postReceiptEntry(
         ? `«${place.name}» está archivada. Elige otra ubicación.`
         : null;
   const location = placeOf(input.locationId);
+  // WMS-20: nothing is received into a location outside the person's scope.
+  await assertLocationsInScope(tx, userId, [...chosen, location?.id]);
   const locationProblem = problemOf(location);
   if (locationProblem || !location) {
     return {

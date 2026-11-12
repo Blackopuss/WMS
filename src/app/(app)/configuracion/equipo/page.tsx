@@ -11,6 +11,7 @@ import {
   getAccess,
   getSeatUsage,
   listPendingInvitations,
+  listScopeOptions,
   listTeamMembers,
 } from "@/platform/authorization";
 
@@ -50,9 +51,11 @@ export default async function EquipoPage() {
   }
 
   const organizationId = access.organization.id;
-  const [members, seats, invitations] = await Promise.all([
+  const [members, seats, scopeOptions, invitations] = await Promise.all([
     listTeamMembers(organizationId),
     getSeatUsage(organizationId),
+    // Warehouses and zones this person may hand out (WMS-20).
+    listScopeOptions(organizationId, access.user.id),
     access.can("platform.team.invite")
       ? listPendingInvitations(organizationId)
       : Promise.resolve([]),
@@ -76,15 +79,20 @@ export default async function EquipoPage() {
   // The server decides what each row offers; the actions check it again.
   const allows = (
     target: (typeof members)[number],
-    kind: "assign_roles" | "disable",
+    kind: "assign_roles" | "disable" | "set_scope",
   ) =>
     checkTeamChange(
       me,
       target,
-      kind === "disable"
-        ? { kind }
-        : { kind, roles: offered.length > 0 ? [offered[0]!] : [] },
+      kind === "assign_roles"
+        ? { kind, roles: offered.length > 0 ? [offered[0]!] : [] }
+        : { kind },
     ).ok;
+  // Limiting by warehouse only makes sense with something to choose from:
+  // more than one warehouse, or zones in the only one.
+  const scopeUseful =
+    scopeOptions.options.length > 1 ||
+    scopeOptions.options.some((option) => option.zones.length > 1);
   const handlesAdministrators = access.organization.isOwner;
 
   return (
@@ -102,6 +110,8 @@ export default async function EquipoPage() {
 
       <MembersPanel
         roleOptions={roleOptions}
+        scopeChoices={scopeOptions.options}
+        everywhereAllowed={!scopeOptions.actorLimited}
         seats={{
           limit: seats.limit,
           taken: seats.members + seats.pendingInvitations,
@@ -121,6 +131,24 @@ export default async function EquipoPage() {
           canAssign:
             member.status === "ACTIVE" && allows(member, "assign_roles"),
           canDisable: allows(member, "disable"),
+          scope: member.limitedTo.map((entry) => ({
+            facilityId: entry.facilityId,
+            zoneIds: entry.zones?.map((zone) => zone.id) ?? null,
+          })),
+          scopeText:
+            member.limitedTo.length === 0
+              ? null
+              : member.limitedTo
+                  .map((entry) =>
+                    entry.zones
+                      ? `${entry.facilityName} (${entry.zones.map((zone) => zone.name).join(", ")})`
+                      : entry.facilityName,
+                  )
+                  .join(" · "),
+          canScope:
+            member.status === "ACTIVE" &&
+            allows(member, "set_scope") &&
+            (scopeUseful || member.limitedTo.length > 0),
         }))}
       />
 

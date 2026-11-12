@@ -5,6 +5,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { resolveConversion, type Capture } from "@/platform/catalog";
 import type { JobHandlers } from "@/platform/jobs";
+import { locationsOutOfScope } from "@/platform/locations";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -161,6 +162,13 @@ async function registerRow(
     select: { id: true, name: true, archivedAt: true },
   });
   if (!location) return { kind: "failed", error: "La ubicación ya no existe." };
+  // WMS-20: the file is applied in the name of who confirmed it.
+  if ((await locationsOutOfScope(tx, actor.userId, [location.id])).length > 0) {
+    return {
+      kind: "failed",
+      error: `«${location.name}» ya no está entre los almacenes o zonas de quien confirmó el archivo.`,
+    };
+  }
   if (location.archivedAt) {
     return {
       kind: "failed",

@@ -6,7 +6,11 @@ import { dec, newId, type Decimal } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
-import { activeFacilityOf, ensureStagingLocation } from "@/platform/locations";
+import {
+  activeFacilityOf,
+  ensureStagingLocation,
+  isFacilityInScope,
+} from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
@@ -122,7 +126,11 @@ async function inOrder(
   }
 }
 
-async function lockOrder(tx: Tx, orderId: string) {
+/**
+ * The order under its lock. An order of a warehouse outside the scope of
+ * who asks does not exist for them (WMS-20).
+ */
+async function lockOrder(tx: Tx, orderId: string, userId: string) {
   const [id] = await lockRows(tx, "outboundOrder", [String(orderId ?? "")]);
   const order = id
     ? await tx.outboundOrder.findFirst({
@@ -149,6 +157,9 @@ async function lockOrder(tx: Tx, orderId: string) {
       })
     : null;
   if (!order) return stop("not_found", "Este pedido no existe.");
+  if (!(await isFacilityInScope(tx, userId, order.facilityId))) {
+    return stop("not_found", "Este pedido no existe.");
+  }
   return order;
 }
 
@@ -291,7 +302,7 @@ export async function updateOutboundOrder(
   }
   const { data } = header;
   return inOrder(organizationId, async (tx) => {
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, orderId, userId);
     draftOnly(order.status);
     await tx.outboundOrder.update({
       where: { id: order.id },
@@ -340,7 +351,7 @@ export async function setOutboundLine(
   }
   return inOrder(organizationId, async (tx) => {
     const [locked] = await lockRows(tx, "product", [productId]);
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, orderId, userId);
     draftOnly(order.status);
     const product = locked
       ? await tx.product.findFirst({
@@ -417,7 +428,7 @@ export async function removeOutboundLine(
     "inventory.outbound.create",
   );
   return inOrder(organizationId, async (tx) => {
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, orderId, userId);
     draftOnly(order.status);
     const line = order.lines.find((row) => row.id === String(lineId ?? ""));
     if (!line) return stop("not_found", "Esa línea ya no está en el pedido.");
@@ -495,9 +506,13 @@ function releaseLocked(
     );
     // Where picked goods wait (WMS-14); created the first time.
     if (!facilityId) return stop("not_found", "Este pedido no existe.");
+    // WMS-20: before touching anything of a warehouse closed to the person.
+    if (!(await isFacilityInScope(tx, userId, facilityId))) {
+      return stop("not_found", "Este pedido no existe.");
+    }
     // Where picked goods of its warehouse wait (WMS-14/18).
     const staging = await ensureStagingLocation(tx, organizationId, facilityId);
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, orderId, userId);
     if (order.facilityId !== facilityId) {
       return stop(
         "not_allowed",
@@ -648,7 +663,7 @@ export async function cancelOutboundOrder(
     };
   }
   return inOrder(organizationId, async (tx) => {
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, orderId, userId);
     if (order.status === "CANCELLED") {
       return {
         ok: true,
@@ -841,6 +856,17 @@ export async function getOutboundOrder(
     "inventory.outbound.read",
   );
   const client = forOrganization(actor.organizationId);
+  // WMS-20: an order of a warehouse closed to the person does not exist.
+  const placed = await client.outboundOrder.findFirst({
+    where: { id: String(orderId ?? "") },
+    select: { facilityId: true },
+  });
+  if (
+    !placed ||
+    !(await isFacilityInScope(client, actor.userId, placed.facilityId))
+  ) {
+    return null;
+  }
   const row = await client.outboundOrder.findFirst({
     where: { id: String(orderId ?? "") },
     select: {

@@ -296,6 +296,7 @@ export async function applyImport(
                 : null,
               stock,
               data.presentation !== null,
+              actor.userId,
             );
             if (problem) {
               await fail(item.id, problem);

@@ -206,6 +206,10 @@ export async function acceptOwnershipTransfer(
       where: { id: organizationId },
       data: { ownerUserId: userId },
     });
+    // The titular is never limited to warehouses or zones (WMS-20).
+    await tx.membershipScope.deleteMany({
+      where: { organizationId, membershipId: transfer.toMembership.id },
+    });
     // The titular needs no roles; the previous one keeps only the chosen ones.
     await tx.membershipRole.deleteMany({
       where: {

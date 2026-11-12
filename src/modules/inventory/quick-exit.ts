@@ -5,6 +5,7 @@ import { z } from "zod";
 import { dec, newId } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
 import { resolveConversion, type Capture } from "@/platform/catalog";
+import { activeFacilityOf, assertLocationsInScope } from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import {
@@ -259,10 +260,18 @@ export async function registerQuickExit(
       );
       const general = data.lines.some((line) => !line.locationId)
         ? await tx.location.findFirst({
-            where: { isDefault: true },
+            where: {
+              isDefault: true,
+              facilityId: (await activeFacilityOf(tx, userId)).id,
+            },
             select: locationSelect,
           })
         : null;
+      // WMS-20: every location of the exit inside the person's scope.
+      await assertLocationsInScope(tx, userId, [
+        ...chosenLocations,
+        general?.id,
+      ]);
 
       const lineErrors: Record<number, string> = {};
       let reason: Failure["reason"] = "invalid";

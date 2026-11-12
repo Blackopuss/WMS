@@ -88,6 +88,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "team.invitation_cancelled": "Canceló una invitación",
   "team.invitation_accepted": "Aceptó la invitación y entró al equipo",
   "team.roles_changed": "Cambió los roles de una persona",
+  "team.scope_changed": "Cambió los almacenes o zonas de una persona",
   "team.member_disabled": "Desactivó a una persona",
   "team.member_reactivated": "Reactivó a una persona",
 };

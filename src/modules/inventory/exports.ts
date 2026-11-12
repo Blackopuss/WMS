@@ -7,7 +7,13 @@ import type { Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
 import { buildCsv, buildXlsx, type Cell } from "@/platform/files";
-import { LOCATION_PARENTS, locationPath } from "@/platform/locations";
+import {
+  LOCATION_PARENTS,
+  type LocationScopeWhere,
+  isLimited,
+  locationPath,
+  locationScopeWhere,
+} from "@/platform/locations";
 import { forOrganization } from "@/server";
 
 import {
@@ -194,12 +200,18 @@ async function catalogRows(client: Client): Promise<Cell[][]> {
 async function stockRows(
   client: Client,
   withCosts: boolean,
+  scoped: LocationScopeWhere,
 ): Promise<Cell[][]> {
   const [balances, paths] = await Promise.all([
     readAll(
       (after) =>
         client.stockBalance.findMany({
-          where: { ...afterId(after), quantity: { gt: 0 } },
+          where: {
+            ...afterId(after),
+            quantity: { gt: 0 },
+            // WMS-20: only the stock of the person's warehouses or zones.
+            ...(isLimited(scoped) ? { location: scoped } : {}),
+          },
           orderBy: { id: "asc" },
           take: PAGE,
           select: {
@@ -305,7 +317,10 @@ const nextDay = (day: string) => {
 async function movementRows(
   client: Client,
   range: { from?: string; to?: string },
+  scoped: LocationScopeWhere,
 ): Promise<Cell[][]> {
+  // WMS-20: only the lines in the person's warehouses or zones.
+  const inside = isLimited(scoped) ? { location: scoped } : null;
   const company = await client.membership.findFirst({
     select: { organization: { select: { timeZone: true } } },
   });
@@ -339,6 +354,7 @@ async function movementRows(
         where: {
           ...afterId(after),
           ...(from || until ? { createdAt: created } : {}),
+          ...(inside ? { lines: { some: inside } } : {}),
         },
         orderBy: { id: "asc" },
         take: PAGE,
@@ -350,6 +366,7 @@ async function movementRows(
           reason: true,
           reference: true,
           lines: {
+            ...(inside ? { where: inside } : {}),
             orderBy: { lineNumber: "asc" },
             select: {
               locationId: true,
@@ -455,8 +472,16 @@ export async function buildExport(
       input.kind === "catalogo"
         ? await catalogRows(client)
         : input.kind === "existencias"
-          ? await stockRows(client, await mayReadInventoryCosts(actor))
-          : await movementRows(client, { from: input.from, to: input.to });
+          ? await stockRows(
+              client,
+              await mayReadInventoryCosts(actor),
+              await locationScopeWhere(client, userId),
+            )
+          : await movementRows(
+              client,
+              { from: input.from, to: input.to },
+              await locationScopeWhere(client, userId),
+            );
   } catch (error) {
     if (error instanceof Refused) return error.result;
     throw error;

@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, UserCheck, UserCog, UserX } from "lucide-react";
+import { Loader2, UserCheck, UserCog, UserX, Warehouse } from "lucide-react";
 import {
   useActionState,
   useEffect,
@@ -28,9 +28,11 @@ import {
   assignRolesAction,
   disableMemberAction,
   reactivateMemberAction,
+  setMemberScopeAction,
   type TeamActionState,
 } from "./actions";
 import { RoleCheckboxes, type RoleOption } from "./role-checkboxes";
+import { ScopeForm, type MemberScope, type ScopeChoice } from "./scope-form";
 
 export type MemberRow = {
   userId: string;
@@ -42,9 +44,17 @@ export type MemberRow = {
   roles: RoleOption[];
   canAssign: boolean;
   canDisable: boolean;
+  /** Where they may work (WMS-20); empty = every warehouse. */
+  scope: MemberScope;
+  /** «Norte · Sur (Zona A, Zona B)»; null without a limit. */
+  scopeText: string | null;
+  canScope: boolean;
 };
 
-type Editing = { kind: "roles" | "disable"; member: MemberRow } | null;
+type Editing = {
+  kind: "roles" | "disable" | "scope";
+  member: MemberRow;
+} | null;
 
 /** Seats of the plan: active people plus pending invitations (MOD-08). */
 export type SeatSummary = {
@@ -70,10 +80,15 @@ export function MembersPanel({
   members,
   roleOptions,
   seats,
+  scopeChoices,
+  everywhereAllowed,
 }: {
   members: MemberRow[];
   roleOptions: RoleOption[];
   seats: SeatSummary;
+  /** Warehouses and zones that can be handed out (WMS-20). */
+  scopeChoices: ScopeChoice[];
+  everywhereAllowed: boolean;
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -129,8 +144,13 @@ export function MembersPanel({
                   <Badge variant="warning">Sin rol</Badge>
                 )}
               </p>
+              {member.scopeText && (
+                <p className="mt-2 text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                  Solo trabaja en: {member.scopeText}
+                </p>
+              )}
             </div>
-            {(member.canAssign || member.canDisable) && (
+            {(member.canAssign || member.canDisable || member.canScope) && (
               <div className="flex flex-wrap gap-2">
                 {member.canAssign && (
                   <Button
@@ -140,6 +160,16 @@ export function MembersPanel({
                   >
                     <UserCog aria-hidden="true" data-icon="inline-start" />
                     Roles
+                  </Button>
+                )}
+                {member.canScope && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditing({ kind: "scope", member })}
+                    aria-label={`Cambiar almacenes de ${member.name}`}
+                  >
+                    <Warehouse aria-hidden="true" data-icon="inline-start" />
+                    Almacenes
                   </Button>
                 )}
                 {member.canDisable &&
@@ -189,6 +219,15 @@ export function MembersPanel({
               onDone={() => setEditing(null)}
             />
           )}
+          {editing?.kind === "scope" && (
+            <ScopeDialog
+              key={editing.member.userId}
+              member={editing.member}
+              choices={scopeChoices}
+              everywhereAllowed={everywhereAllowed}
+              onDone={() => setEditing(null)}
+            />
+          )}
           {editing?.kind === "disable" && (
             <DisableForm
               key={editing.member.userId}
@@ -224,6 +263,35 @@ function useTeamAction(
     formAction,
     pending,
   };
+}
+
+function ScopeDialog({
+  member,
+  choices,
+  everywhereAllowed,
+  onDone,
+}: {
+  member: MemberRow;
+  choices: ScopeChoice[];
+  everywhereAllowed: boolean;
+  onDone: () => void;
+}) {
+  const { error, formAction, pending } = useTeamAction(
+    setMemberScopeAction,
+    onDone,
+  );
+  return (
+    <ScopeForm
+      memberName={member.name}
+      memberUserId={member.userId}
+      current={member.scope}
+      choices={choices}
+      everywhereAllowed={everywhereAllowed}
+      error={error}
+      formAction={formAction}
+      pending={pending}
+    />
+  );
 }
 
 function RolesForm({

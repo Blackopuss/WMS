@@ -7,6 +7,8 @@
  * - Only the titular names, changes or removes administrators.
  * - An administrator manages Almacén, Comprador and Consulta of other
  *   people, never their own roles.
+ * - The same holds for limiting a person to warehouses or zones (WMS-20):
+ *   never the titular, never oneself, administrators only by the titular.
  */
 import { ROLES, isRole, type Permission, type Role } from "./catalog";
 import { can, type Subject } from "./policy";
@@ -14,7 +16,10 @@ import { can, type Subject } from "./policy";
 export type TeamPerson = Subject & { userId: string };
 
 export type TeamChange =
-  { kind: "assign_roles"; roles: readonly string[] } | { kind: "disable" };
+  | { kind: "assign_roles"; roles: readonly string[] }
+  | { kind: "disable" }
+  /** Limiting a person to warehouses or zones (WMS-20). */
+  | { kind: "set_scope" };
 
 export type TeamRuleReason =
   | "forbidden"
@@ -39,6 +44,8 @@ export const TEAM_RULE_MESSAGES: Record<TeamRuleReason, string> = {
 const PERMISSION_OF: Record<TeamChange["kind"], Permission> = {
   assign_roles: "platform.team.assign_roles",
   disable: "platform.team.disable",
+  // Where a person may work is part of what they may do: same permission.
+  set_scope: "platform.team.assign_roles",
 };
 
 const deny = (reason: TeamRuleReason): TeamRuleResult => ({

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { dec, newId } from "@/lib";
+import { assertLocationsInScope } from "@/platform/locations";
 import { lockRows, type TenantDb } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
@@ -70,6 +71,12 @@ export async function postReturnExit(
   await lockRows(
     tx,
     "location",
+    input.lines.map((line) => line.locationId),
+  );
+  // WMS-20: nothing leaves a location outside the person's scope.
+  await assertLocationsInScope(
+    tx,
+    userId,
     input.lines.map((line) => line.locationId),
   );
 
