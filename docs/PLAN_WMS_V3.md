@@ -59,7 +59,7 @@ x.y» citadas son de [`ESPECIFICACION_WMS_v5.md`](ESPECIFICACION_WMS_v5.md).
 
 | Fase | Pasos (en orden) | Para qué |
 | --- | --- | --- |
-| 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, WMS-22B, WMS-20, WMS-21, WMS-51 | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
+| 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, WMS-20, WMS-71, WMS-72, WMS-73, WMS-22B, WMS-21, WMS-51 | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, WMS-52, WMS-53, WMS-15, WMS-16, WMS-17, WMS-19, WMS-54, WMS-55, WMS-26, WMS-36, WMS-23, WMS-24, WMS-25 | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
 | 3. Gestión empresarial | WMS-56, WMS-57, WMS-58, WMS-41, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
@@ -218,6 +218,96 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
   esa carpeta.
 - **Pruebas:** una prueba compara la lista de tablas del modelo documentado con
   el esquema.
+
+## Retroalimentación de campo (2026-11-12)
+
+Tres conversaciones del fundador con el encargado de producto terminado de una
+planta que hoy lleva su almacén en una macro de Excel (unas 100 personas, de
+las que unas 10 usarían el sistema, repartidas en materias primas, material
+cortado, subensambles y producto terminado/embarque). Se anota en términos
+generales: sirve a cualquier empresa que fabrica, no a un giro.
+
+| Lo que pidieron | Dónde queda en el plan |
+| --- | --- |
+| Que tocar varias veces un botón, o que falle la red, no registre dos veces | Ya cubierto (claves de confirmación y verificación por clave). **WMS-71** agrega el aviso cuando alguien vuelve a registrar la misma entrada al poco rato. |
+| Un aviso claro («verde») de que sí se registró | Ya cubierto (aviso al confirmar). |
+| Recibir y que cuente en inventario, pero «en piso» hasta que se acomode; saber al cierre del turno qué sigue sin ubicar | **WMS-72** (lista «Sin acomodar») ahora; el acomodo guiado es WMS-52. |
+| Cada persona solo ve y mueve lo de su área | **WMS-20**. |
+| Un usuario para quien dirige, que ve todo y no opera | Ya cubierto (rol Gerencia, WMS-50). |
+| Ver desde su escritorio qué se hizo hoy: entradas, salidas, tareas, quién hizo qué | **WMS-73** (resumen del día) ahora; indicadores y gráficas son WMS-32 y WMS-34. |
+| Historial de quién movió qué | Ya cubierto (movimientos y bitácora). |
+| Calidad libera con foto obligatoria y queda quién liberó | WMS-30 (inspección y liberación) con WMS-37 (fotos). |
+| Etiqueta o QR por lote, tarima o serie y recibir escaneando | WMS-21 (lotes y series), WMS-26 (etiquetas), WMS-53 (tarimas). |
+| Materia prima → corte → subensamble → producto terminado, produciendo contra una orden que se cierra al cumplirse | WMS-27..31 y WMS-59. |
+| Producir de más según el historial, no solo contra pedido | WMS-33 y WMS-23/24 (reposición), después de producción. |
+| Avisos entre áreas («calidad ya liberó») | WMS-39. |
+| Convivir con un ERP (SAP) | WMS-60 y WMS-62. |
+| Sencillo: capturo y guardo, escaneo y guardo | Regla KISS vigente (`docs/ux/AUDITORIA_KISS.md`). |
+
+**Orden recomendado por esta retroalimentación** (el fundador pidió avanzar
+varios pasos a la vez, cada uno en su rama, que se une a `pruebas` y se borra):
+primero, en paralelo, WMS-20, WMS-71, WMS-72 y WMS-73 (no se pisan entre sí);
+después, uno tras otro porque tocan el corazón de las existencias, WMS-22B,
+WMS-21 y WMS-52; luego WMS-26, WMS-37 y WMS-39; y producción y calidad
+(WMS-59, WMS-27..31) antes que el resto de la Fase 3. Producción no empieza sin
+escribir aquí su flujo (regla 15).
+
+### WMS-71 · Aviso de entrada repetida
+
+- **Flujo:** alguien registra una entrada (teléfono o escritorio). Si en los
+  últimos minutos ya se registró una entrada del mismo producto, con la misma
+  cantidad y en el mismo almacén, la pantalla no la guarda todavía: dice quién
+  la registró y hace cuánto («Hace 2 minutos Olivia registró 500 piezas de
+  este producto») y ofrece «Registrar de todos modos» o cancelar. No es un
+  bloqueo: dos entregas reales seguidas se registran con un toque más.
+- **Qué:** la comprobación vive en el servicio de entradas (no en la pantalla),
+  dentro de su transacción y después del candado del producto; responde un
+  motivo propio sin escribir nada y solo guarda si llega la aceptación
+  explícita (mismo patrón que el proveedor duplicado). La ventana es un ajuste
+  de operación de la empresa (WMS-49): sin aviso, 10, 30 (por omisión) o 120
+  minutos. Las recepciones de órdenes de compra no lo necesitan: nunca reciben
+  más de lo pendiente.
+- **Depende de:** WMS-49.
+- **Listo cuando:** la segunda entrada idéntica dentro de la ventana pide
+  confirmar y la primera fuera de la ventana no; con el ajuste apagado nunca
+  avisa; un reintento con la misma clave sigue respondiendo como hasta hoy.
+- **Pruebas:** dentro y fuera de la ventana, otra cantidad, otro almacén,
+  ajuste apagado, aceptación explícita; reconciliación.
+
+### WMS-72 · Existencias sin acomodar
+
+- **Flujo:** quien supervisa abre «Sin acomodar» (enlace bajo el título de
+  Inventario y aviso en Inicio cuando hay algo): ve lo que está en el almacén
+  activo pero todavía en la ubicación inicial («General») o en una ubicación
+  de uso recepción, con producto, cantidad y desde cuándo. La fila abre
+  «Cambiar de lugar» con el producto y el origen ya elegidos.
+- **Qué:** una consulta derivada de los saldos (nada guardado, sin banderas),
+  paginada, del almacén activo. Un almacén que solo tiene «General» (sin otras
+  ubicaciones de almacenamiento) no tiene nada «sin acomodar»: ahí General es
+  su bodega. Usa permisos existentes de lectura de existencias.
+- **Depende de:** WMS-18 y WMS-22A.
+- **Listo cuando:** lo recibido en General o en recepción aparece hasta que se
+  reubica; un almacén sin ubicaciones no muestra aviso; nada de otro almacén ni
+  de otra empresa aparece.
+- **Pruebas:** con y sin ubicaciones, tras reubicar, dos almacenes, dos
+  empresas, sin permiso.
+
+### WMS-73 · Resumen del día
+
+- **Flujo:** quien dirige (titular, administración, Gerencia, supervisión)
+  abre Inicio y ve «Hoy»: cuántas entradas, salidas, recepciones de órdenes,
+  tareas terminadas y pedidos surtidos lleva el día, y qué hizo cada persona.
+  Cada número abre su lista ya filtrada por hoy. Es el primer paso del tablero
+  de WMS-34; las gráficas e indicadores llegan con WMS-32.
+- **Qué:** un servicio de lectura con agregados por día del calendario de la
+  empresa (su zona horaria), del almacén activo, que no suma cantidades de
+  unidades distintas (cuenta documentos y líneas). Solo para quien tiene el
+  permiso de verlo; el piso no lo ve.
+- **Depende de:** WMS-50.
+- **Listo cuando:** los números coinciden con las listas de Movimientos, Tareas
+  y Pedidos filtradas por hoy; un operador no ve el bloque ni puede pedirlo.
+- **Pruebas:** frontera del día en la zona horaria de la empresa, dos
+  empresas, dos almacenes, sin permiso.
 
 ## Fase 2. Operación logística
 
@@ -494,4 +584,4 @@ Después: piloto en una empresa real; medir y corregir antes de escalar.
 | Etapa G (WMS-35..42) | Transversal; WMS-36 con la Fase 2, WMS-41 con aprobaciones |
 | Etapa H (WMS-43..48) | Fase 5 y transversal (WMS-47) |
 | Etapa I (API, CFDI) | Fase 3 (WMS-60, WMS-61) |
-| — | Nuevos: WMS-49..70 |
+| — | Nuevos: WMS-49..70 y, de la retroalimentación de campo, WMS-71..73 |
