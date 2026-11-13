@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-21B** · Números de serie y trazabilidad (ADR 0041): control por serie
+  por producto, unidades en `serial_unit` y `serial_move`, series en todas las
+  operaciones de existencias y pantalla «Rastrear lote, serie o pedido». Cierra
+  la Fase 1.
 - **WMS-21A (pendientes)** · Lo que caduca antes sale antes siempre (decisión
   del fundador; ADR 0040): el surtido y los selectores ordenan por caducidad;
   lote y caducidad en la importación de existencias y de salidas y en las
