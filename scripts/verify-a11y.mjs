@@ -66,6 +66,9 @@ const SCREENS = [
   // WMS-19: transfers between warehouses and starting one.
   "/movimientos/traslados",
   "/movimientos/traslados/nuevo",
+  // WMS-23/24: replenishment rules and adding one.
+  "/inventario/reposicion",
+  "/inventario/reposicion/nueva",
   "/configuracion/operacion",
   "/configuracion/almacenes",
   "/compras",

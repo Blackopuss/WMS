@@ -202,7 +202,7 @@ export const AREAS = [
     title: "Inventario › Tareas, reservas y pedidos de salida",
     doc: "inventory",
     summary:
-      "Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento, los pedidos de salida y lo que faltó al empacarlos.",
+      "Tareas de traslado, surtido y reposición (con las series que tomaron), lo apartado para un documento, los pedidos de salida, lo que faltó al empacarlos y las reglas de reposición de las ubicaciones de surtido.",
     models: [
       "WarehouseTask",
       "WarehouseTaskSerial",
@@ -210,6 +210,7 @@ export const AREAS = [
       "OutboundOrder",
       "OutboundOrderLine",
       "OutboundPackShortage",
+      "ReplenishmentRule",
     ],
   },
   {

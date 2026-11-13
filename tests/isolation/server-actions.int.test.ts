@@ -583,6 +583,25 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (getModuleAccess); el producto se busca solo en esa empresa",
     coveredBy: "tests/inventory/counts.int.test.ts",
   },
+  saveRuleAction: {
+    input:
+      "id de regla ligado por la pantalla (vacío = nueva), clave o código del producto, id de ubicación de surtido, mínimo, máximo y múltiplo (WMS-23)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); regla, producto y ubicación se buscan solo en esa empresa, almacén activo y zonas; permiso inventory.minimum.update en el servicio",
+    coveredBy: "tests/inventory/replenishment.int.test.ts",
+  },
+  removeRuleAction: {
+    input: "id de regla ligado por la pantalla (WMS-23)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la regla se busca solo en esa empresa y dentro de las zonas de esa persona",
+    coveredBy: "tests/inventory/replenishment.int.test.ts",
+  },
+  replenishNowAction: {
+    input: "nada: crea las tareas de reposición que hacen falta (WMS-24)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); almacén activo y zonas de esa persona, permiso inventory.task.create en el servicio",
+    coveredBy: "tests/inventory/replenishment.int.test.ts",
+  },
   setMinimumAction: {
     input: "id de producto y cantidad mínima (vacía = quitarla)",
     identity:

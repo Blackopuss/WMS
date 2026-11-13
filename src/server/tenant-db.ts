@@ -86,6 +86,7 @@ export const TENANT_MODELS = [
   "FacilityTransferReceiptLine",
   "OrganizationSetting",
   "WarehouseTask",
+  "ReplenishmentRule",
   "StockCount",
   "StockCountCapture",
   "StockCountLine",

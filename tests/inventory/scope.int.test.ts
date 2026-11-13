@@ -79,6 +79,11 @@ import {
   listContainers,
   moveContainer,
   packStock,
+  getReplenishmentRule,
+  listReplenishmentRules,
+  removeReplenishmentRule,
+  replenishNow,
+  saveReplenishmentRule,
 } from "@/modules/inventory";
 import {
   addOrderLine,
@@ -1142,6 +1147,78 @@ describe("limited to a zone of a warehouse", () => {
       CONTAINERS_MODE.key,
       "off",
     );
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("replenishment rules and «Reponer ahora» stay inside the zone (WMS-23/24)", async () => {
+    await switchFacility(owner, facilityB);
+    const faceIn = await createLocation(owner, {
+      level: 3,
+      name: "Surtido Z1",
+      parentId: zoneId,
+      type: "PICKING",
+    });
+    const faceOut = await createLocation(owner, {
+      level: 3,
+      name: "Surtido B1",
+      type: "PICKING",
+    });
+    if (!faceIn.ok || !faceOut.ok) throw new Error("places");
+    const { sku } = await db.product.findUniqueOrThrow({
+      where: { id: productId },
+      select: { sku: true },
+    });
+    const outside = await saveReplenishmentRule(owner, {
+      productCode: sku,
+      locationId: faceOut.locationId,
+      minQuantity: "1",
+      maxQuantity: "3",
+    });
+    if (!outside.ok) throw new Error(JSON.stringify(outside));
+    await switchFacility(owner, facilityA);
+    // A place outside the zone is not found; the zone's is.
+    expect(
+      await saveReplenishmentRule(zoned, {
+        productCode: sku,
+        locationId: faceOut.locationId,
+        minQuantity: "1",
+        maxQuantity: "3",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    const inside = await saveReplenishmentRule(zoned, {
+      productCode: sku,
+      locationId: faceIn.locationId,
+      minQuantity: "1",
+      maxQuantity: "2",
+    });
+    if (!inside.ok) throw new Error(JSON.stringify(inside));
+    expect(await getReplenishmentRule(zoned, outside.ruleId)).toBeNull();
+    expect(await removeReplenishmentRule(zoned, outside.ruleId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(
+      (await listReplenishmentRules(zoned)).items.map((rule) => rule.id),
+    ).toEqual([inside.ruleId]);
+    // Only the zone's rule, and only from storage inside the zone.
+    expect(await replenishNow(zoned)).toMatchObject({ ok: true, created: 1 });
+    const tasks = await db.warehouseTask.findMany({
+      where: {
+        organizationId: owner.organizationId,
+        kind: "REPLENISH",
+        status: "PENDING",
+      },
+    });
+    expect(
+      tasks.map((task) => [task.fromLocationId, task.toLocationId]),
+    ).toEqual([[inZone, faceIn.locationId]]);
+    for (const task of tasks) {
+      expect(
+        await cancelTask(owner, task.id, "Fin de la prueba"),
+      ).toMatchObject({ ok: true });
+    }
+    await removeReplenishmentRule(owner, outside.ruleId);
+    await removeReplenishmentRule(owner, inside.ruleId);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

@@ -514,6 +514,7 @@ export {
   CUSTOMER_RETURN_WITHOUT_ORDER,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
+  REPLENISHMENT_MODE,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -613,3 +614,26 @@ export {
   containerName,
   formatContainerNumber,
 } from "./container-rules";
+export {
+  REPLENISHMENT_PAGE_SIZE,
+  ROUND_NOTE,
+  getReplenishmentRule,
+  listPickingPlaces,
+  listReplenishmentRules,
+  removeReplenishmentRule,
+  replenishNow,
+  replenishmentVisible,
+  runReplenishmentRound,
+  saveReplenishmentRule,
+} from "./replenishment";
+export type {
+  ReplenishNowResult,
+  ReplenishmentField,
+  ReplenishmentRoundResult,
+  ReplenishmentRuleInput,
+  ReplenishmentRulePage,
+  ReplenishmentRuleResult,
+  ReplenishmentRuleView,
+} from "./replenishment";
+export { REPLENISHMENT_STATE_LABELS } from "./replenishment-rules";
+export type { ReplenishmentState } from "./replenishment-rules";

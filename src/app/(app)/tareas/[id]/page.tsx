@@ -139,7 +139,11 @@ export default async function TareaPage({
   const stepNames = [
     "Tomarla",
     task.kind === "PICK" ? "Surtir" : "Recoger",
-    task.kind === "PUTAWAY" ? "Acomodar" : "Entregar",
+    task.kind === "PUTAWAY"
+      ? "Acomodar"
+      : task.kind === "REPLENISH"
+        ? "Reponer"
+        : "Entregar",
   ];
 
   return (
@@ -216,7 +220,9 @@ export default async function TareaPage({
               ? "Surtir"
               : task.kind === "PUTAWAY"
                 ? "Acomodar"
-                : "Mover"}
+                : task.kind === "REPLENISH"
+                  ? "Reponer"
+                  : "Mover"}
           </p>
           {task.container ? (
             <>

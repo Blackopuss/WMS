@@ -10,7 +10,7 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | `index.ts` | `moduleRegistry` (contratos de `inventory`, `purchasing` y `crm` anunciado), `ModuleId` | guard, consola interna, `provisionCompany` |
 | `announced.ts` | `crmModule` (`availability: "unavailable"`, sin permisos) | `index.ts` |
 | `jobs.ts` | `jobHandlers` | el worker |
-| `rounds.ts` | `scheduledRounds` (vacío hoy) | el worker |
+| `rounds.ts` | `scheduledRounds` (hoy, `inventory.replenishment`, WMS-24) | el worker |
 | `settings.ts` | `operationSettings` (validados al cargar) | Configuración › Operación |
 | `open-work.ts` | `moduleOpenWork` | `provisionCompany` al quitar un módulo |
 

@@ -110,8 +110,8 @@ Los permisos comerciales del titular autorizan su consentimiento o solicitud, no
 | `inventory.location.archive` | Archivar ubicación sin stock ni pendientes, conservando referencias; sección 3, INV-14. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.stock.read` | Consultar existencias totales y por ubicación, con equivalencias; INV-15/26. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
 | `inventory.movement.read` | Ver historial y filtros por fecha, producto, usuario y tipo; INV-27. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | No | Sí |
-| `inventory.minimum.read` | Consultar mínimos y productos con existencias bajas; INV-30. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | No | Sí |
-| `inventory.minimum.update` | Configurar mínimo por producto; INV-30. | Sí | Sí | Sí | No | No | Sí | No | No | No |
+| `inventory.minimum.read` | Consultar mínimos y productos con existencias bajas, y las reglas de reposición de las ubicaciones de surtido; INV-30, WMS-23. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | No | Sí |
+| `inventory.minimum.update` | Configurar mínimo por producto y las reglas de reposición (mínimo, máximo y múltiplo por producto y ubicación de surtido); INV-30, WMS-23. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.cost.read` | Consultar costo promedio, valor del inventario y costo de cada movimiento; VAL-05 (ADR 0031). Sin él el dato no existe en ninguna pantalla, exportación ni respuesta. | Sí | Sí | No | Sí | No | No | No | No | Sí |
 | `inventory.cost.record` | Capturar el costo de una entrada, saldo inicial o importación, que mueve el costo promedio; VAL-03 (ADR 0031). | Sí | Sí | No | Sí | No | No | No | No | No |
 | `inventory.dashboard.read` | Panel con existencias bajas, últimos movimientos y uso del cupo; INV-35. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | No | Sí |
