@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-26** · Etiquetas e impresión (ADR 0047): PDF de etiquetas con Code 128
+  propio y QR para ubicaciones, productos, lotes, series, tarimas, bultos,
+  pedidos y embarques; tres tamaños y ajustes por empresa.
 - **WMS-17** · Devoluciones de clientes (ADR 0046): devolución `DV-…` con o
   sin pedido, entra en inspección y se decide disponible, dañado o rechazado;
   nada devuelto queda disponible sin decisión (PC-5). Arreglado
