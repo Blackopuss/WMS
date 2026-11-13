@@ -7,6 +7,7 @@ import { lockRows, type TenantDb } from "@/server";
 
 import { MAX_BALANCE, formatStock, type InventoryActor } from "./movements";
 import { checkPlacement } from "./placement";
+import { createPutawayTasks } from "./putaway";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForEntry } from "./lot-resolve";
@@ -100,8 +101,13 @@ export type ReceiptEntryResult =
       locationId: string;
       locationName: string;
       lines: ReceiptEntryLine[];
-      /** Locations left above their capacity (WMS-22B), one sentence each. */
+      /**
+       * Locations left above their capacity (WMS-22B), one sentence each,
+       * and the put-away tasks created (WMS-52).
+       */
       notes: string[];
+      /** Put-away tasks created for what arrived (WMS-52). */
+      putawayTasks: number;
     }
   | {
       ok: false;
@@ -432,12 +438,26 @@ export async function postReceiptEntry(
       });
     }
   }
+  // WMS-52: what arrived at a place «de paso» gets its put-away tasks,
+  // when the company works that way: nothing stays there without one.
+  const putaway = await createPutawayTasks(
+    tx,
+    actor,
+    lines.map((line) => ({
+      productId: line.productId,
+      locationId: line.locationId,
+      lotId: line.lotId,
+      quantity: line.baseQuantity,
+      status: "AVAILABLE" as const,
+    })),
+  );
   return {
     ok: true,
     movementId,
     locationId: location.id,
     locationName: location.name,
     lines,
-    notes: placed.notes,
+    notes: [...placed.notes, ...(putaway.note ? [putaway.note] : [])],
+    putawayTasks: putaway.tasks.length,
   };
 }

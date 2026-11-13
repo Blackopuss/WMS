@@ -86,6 +86,19 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); producto, pedido y tarea se bloquean solo en esa empresa y la tarea debe ser de esa persona; las series se buscan solo entre las unidades de esa empresa",
     coveredBy: "tests/inventory/serials.int.test.ts",
   },
+  putawayAction: {
+    input:
+      "id de la tarea de acomodo, la ubicación donde quedó (código, ruta o nombre, escaneado o escrito) y, tras el aviso, la marca que acepta pasar la capacidad (WMS-52)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea, el producto y las ubicaciones se buscan y bloquean solo en esa empresa, la ubicación solo dentro del almacén de la tarea y del alcance de esa persona, y la tarea debe ser suya",
+    coveredBy: "tests/inventory/putaway.int.test.ts",
+  },
+  createPutawayTasksAction: {
+    input: "nada: crea las tareas de acomodo que faltan (WMS-52)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); almacén activo y zonas de esa persona, permiso inventory.task.create en el servicio",
+    coveredBy: "tests/inventory/putaway.int.test.ts",
+  },
   confirmPickAction: {
     input:
       "id de la tarea de surtido, clave o código de barras del producto, ubicación y cantidad surtida (y motivo si es menos)",

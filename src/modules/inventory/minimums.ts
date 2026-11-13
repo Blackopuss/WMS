@@ -7,6 +7,7 @@ import { parseQuantity } from "@/platform/catalog";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
+import { PRODUCT_HOLDS } from "./reservations";
 import { AVAILABLE_ANY_LOT } from "./stock-status";
 
 /**
@@ -206,6 +207,8 @@ async function lowStock(
       where: {
         productId: { in: ids.slice(start, start + 1_000) },
         state: "ACTIVE",
+        // WMS-52: what a put-away task holds is still the product's.
+        ...PRODUCT_HOLDS,
       },
       _sum: { remaining: true },
     });

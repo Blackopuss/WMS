@@ -270,6 +270,7 @@ model Location {
   returnLines    PurchaseReturnLine[]
   tasksFrom      WarehouseTask[]       @relation("TaskFrom")
   tasksTo        WarehouseTask[]       @relation("TaskTo")
+  tasksPlaced    WarehouseTask[]       @relation("TaskPlaced")
   reservations   StockReservation[]
   serialUnits    SerialUnit[]
   serialMoves    SerialMove[]
@@ -2063,6 +2064,8 @@ enum WarehouseTaskPriority {
 enum WarehouseTaskKind {
   TRANSFER
   PICK
+  /// Puts away what waits in «General» or a receiving location (WMS-52).
+  PUTAWAY
 }
 
 /// A move of stock from one location to another that a person executes
@@ -2092,6 +2095,11 @@ model WarehouseTask {
   fromLocation     Location              @relation("TaskFrom", fields: [organizationId, fromLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   toLocationId     String                @db.Char(36)
   toLocation       Location              @relation("TaskTo", fields: [organizationId, toLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// PUTAWAY only (WMS-52, ADR 0042): where the goods were really left,
+  /// written once by the delivery. `toLocationId` is the recommended place
+  /// (the origin itself when there was none).
+  placedLocationId String?               @db.Char(36)
+  placedLocation   Location?             @relation("TaskPlaced", fields: [organizationId, placedLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The lot it moves, for a product by lot (WMS-21); never changes.
   lotId            String?               @db.Char(36)
   lot              Lot?                  @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
@@ -2127,6 +2135,7 @@ model WarehouseTask {
   @@index([organizationId, assignedToUserId, status])
   @@index([organizationId, productId])
   @@index([organizationId, outboundLineId])
+  @@index([organizationId, placedLocationId])
   @@map("warehouse_task")
 }
 

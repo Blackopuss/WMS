@@ -233,6 +233,7 @@ export default async function TareasPage({
                       <span className="text-sm text-muted-foreground tabular-nums">
                         {task.numberText}
                         {task.order ? ` · Surtir ${task.order.numberText}` : ""}
+                        {task.kind === "PUTAWAY" ? " · Acomodar" : ""}
                       </span>
                     </span>
                     <span className="block text-base font-medium [overflow-wrap:anywhere]">

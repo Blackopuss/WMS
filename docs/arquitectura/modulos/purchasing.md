@@ -23,7 +23,11 @@ Reglas que no se rompen:
   devoluciones y sus líneas son inmutables.
 - Una recepción escribe su movimiento con `postReceiptEntry` y una devolución
   con `postReturnExit` (de Inventario) en la misma transacción. Un movimiento
-  `RECEIPT` o `RETURN` no se reversa desde Inventario.
+  `RECEIPT` o `RETURN` no se reversa desde Inventario. Con el acomodo por
+  tareas (WMS-52, ADR 0042) `postReceiptEntry` crea ahí mismo las tareas de
+  acomodo de lo que entra a un lugar «de paso»; `receivePurchaseOrder` repite
+  la recepción entera si otra operación tomó a la vez el mismo número de
+  tarea (`isTaskNumberClash`).
 - Los costos solo existen en la respuesta para quien tiene
   `purchasing.cost.read`.
 - Cada servicio empieza con `assertModulePermission`;

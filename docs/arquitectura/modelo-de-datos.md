@@ -1297,6 +1297,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `productId` | `String · Char(36)` |  |  |
 | `fromLocationId` | `String · Char(36)` |  |  |
 | `toLocationId` | `String · Char(36)` |  |  |
+| `placedLocationId` | `String? · Char(36)` |  | PUTAWAY only (WMS-52, ADR 0042): where the goods were really left, written once by the delivery. `toLocationId` is the recommended place (the origin itself when there was none). |
 | `lotId` | `String? · Char(36)` |  | The lot it moves, for a product by lot (WMS-21); never changes. |
 | `quantity` | `Decimal · Decimal(12, 3)` |  | In the product's unit (base), checked with its quantity rule. |
 | `unitCode` | `String · VarChar(12)` |  |  |
@@ -1316,8 +1317,8 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
-- Índices: (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`).
-- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`).
+- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
 
 ### WarehouseTaskSerial · `warehouse_task_serial`
 
@@ -1422,7 +1423,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `WarehouseTaskStatus`: `PENDING`, `ASSIGNED`, `ACCEPTED`, `PICKED_UP`, `DELIVERED`, `BLOCKED`, `CANCELLED`.
 - `WarehouseTaskPriority`: `NORMAL`, `URGENT`.
-- `WarehouseTaskKind`: `TRANSFER`, `PICK`.
+- `WarehouseTaskKind`: `TRANSFER`, `PICK`, `PUTAWAY`.
 - `StockReservationState`: `ACTIVE`, `CLOSED`.
 - `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKED`, `SHIPPED`, `CANCELLED`.
 

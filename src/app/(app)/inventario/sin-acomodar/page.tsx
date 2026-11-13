@@ -20,6 +20,8 @@ import { formatDateTime } from "@/lib";
 import { UNPLACED_PAGE_SIZE, listUnplacedStock } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
+import { CreateTasksButton } from "./create-tasks-button";
+
 export const metadata: Metadata = { title: "Sin acomodar" };
 
 /**
@@ -77,6 +79,13 @@ export default async function SinAcomodarPage({
   // Who cannot relocate still sees the list: the row opens the product.
   const canMove = access.allows("inventory.transfer.create");
   const timeZone = access.organization.timeZone;
+  // WMS-52: with put-away tasks, a row with its task opens it; and what has
+  // none can get it from here.
+  const seesTasks = access.can("inventory.task.read");
+  const offerTasks =
+    list.withTasks &&
+    access.allows("inventory.task.create") &&
+    list.items.some((item) => !item.task?.covers);
 
   return (
     <PageContainer>
@@ -85,6 +94,7 @@ export default async function SinAcomodarPage({
       <PageHeader
         title="Sin acomodar"
         description={`Lo que ya está en ${list.facilityName} pero sigue en «General» o en recepción.`}
+        actions={offerTasks ? <CreateTasksButton /> : undefined}
       />
       {list.total === 0 ? (
         list.hasPlaces ? (
@@ -132,9 +142,11 @@ export default async function SinAcomodarPage({
                   <p className="font-medium">
                     <Link
                       href={
-                        canMove
-                          ? `/movimientos/reubicar?producto=${item.productId}&origen=${item.locationId}`
-                          : `/inventario/${item.productId}`
+                        item.task && seesTasks
+                          ? `/tareas/${item.task.id}`
+                          : canMove
+                            ? `/movimientos/reubicar?producto=${item.productId}&origen=${item.locationId}`
+                            : `/inventario/${item.productId}`
                       }
                       className="rounded underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
@@ -144,6 +156,13 @@ export default async function SinAcomodarPage({
                   <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
                     {item.sku} · {item.locationPath}
                   </p>
+                  {item.task && (
+                    <p className="text-sm [overflow-wrap:anywhere]">
+                      {item.task.covers
+                        ? `Con tarea de acomodo ${item.task.numberText}`
+                        : `Con tarea ${item.task.numberText} para ${item.task.coveredLabel}`}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right text-sm">
                   <p className="font-medium tabular-nums">

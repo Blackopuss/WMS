@@ -18,6 +18,7 @@ import { getUnit } from "@/platform/catalog";
 
 import { PickForm } from "./pick-form";
 import { PickUpForm } from "./pick-up-form";
+import { PutawayForm } from "./putaway-form";
 import {
   AssignTask,
   CancelTask,
@@ -101,9 +102,9 @@ export default async function TareaPage({
     ? null
     : task.status === "PENDING" || (task.status === "ASSIGNED" && mine)
       ? ({ step: "accept", label: "Tomar tarea" } as const)
-      : task.status === "ACCEPTED" && mine && task.kind === "TRANSFER"
+      : task.status === "ACCEPTED" && mine && task.kind !== "PICK"
         ? ({ step: "pickUp", label: "Ya recogí la carga" } as const)
-        : task.status === "PICKED_UP" && mine
+        : task.status === "PICKED_UP" && mine && task.kind !== "PUTAWAY"
           ? ({
               step: "deliver",
               label:
@@ -114,6 +115,9 @@ export default async function TareaPage({
           : null;
   const picking =
     executes && mine && task.kind === "PICK" && task.status === "ACCEPTED";
+  // WMS-52: the last step of a put-away is scanning where it was left.
+  const puttingAway =
+    executes && mine && task.kind === "PUTAWAY" && task.status === "PICKED_UP";
   const canReport =
     executes &&
     mine &&
@@ -135,7 +139,7 @@ export default async function TareaPage({
   const stepNames = [
     "Tomarla",
     task.kind === "PICK" ? "Surtir" : "Recoger",
-    "Entregar",
+    task.kind === "PUTAWAY" ? "Acomodar" : "Entregar",
   ];
 
   return (
@@ -208,7 +212,11 @@ export default async function TareaPage({
         )}
         <div>
           <p className="text-sm text-muted-foreground">
-            {task.kind === "PICK" ? "Surtir" : "Mover"}
+            {task.kind === "PICK"
+              ? "Surtir"
+              : task.kind === "PUTAWAY"
+                ? "Acomodar"
+                : "Mover"}
           </p>
           <p className="text-2xl font-semibold [overflow-wrap:anywhere]">
             {task.quantityText}
@@ -232,10 +240,43 @@ export default async function TareaPage({
             aria-hidden="true"
             className="size-5 text-muted-foreground"
           />
-          <p className="text-sm text-muted-foreground">A</p>
-          <p className="text-lg font-medium [overflow-wrap:anywhere]">
-            {task.toPath}
-          </p>
+          {task.kind !== "PUTAWAY" ? (
+            <>
+              <p className="text-sm text-muted-foreground">A</p>
+              <p className="text-lg font-medium [overflow-wrap:anywhere]">
+                {task.toPath}
+              </p>
+            </>
+          ) : task.placedPath ? (
+            <>
+              <p className="text-sm text-muted-foreground">Quedó en</p>
+              <p className="text-lg font-medium [overflow-wrap:anywhere]">
+                {task.placedPath}
+              </p>
+              {task.recommendedPath &&
+                task.recommendedPath !== task.placedPath && (
+                  <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                    Se recomendó {task.recommendedPath}
+                  </p>
+                )}
+            </>
+          ) : task.recommendedPath ? (
+            <>
+              <p className="text-sm text-muted-foreground">Llévalo a</p>
+              <p className="text-lg font-medium [overflow-wrap:anywhere]">
+                {task.recommendedPath}
+              </p>
+              {task.recommendedCode && (
+                <p className="text-sm text-muted-foreground">
+                  Código {task.recommendedCode}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-lg font-medium">
+              Sin lugar recomendado: elige uno
+            </p>
+          )}
         </div>
         {task.note && (
           <p className="rounded-lg bg-muted p-3 text-sm [overflow-wrap:anywhere]">
@@ -283,6 +324,17 @@ export default async function TareaPage({
           lotCode={task.lotCode}
           bySerial={task.bySerial}
           place={task.fromPath.split(" › ").at(-1) ?? task.fromPath}
+        />
+      )}
+
+      {puttingAway && (
+        <PutawayForm
+          taskId={task.id}
+          hint={
+            task.recommendedPath
+              ? `Escanea la etiqueta de ${task.recommendedPath}${task.recommendedCode ? ` o escribe ${task.recommendedCode}` : ""}. Si lo dejaste en otro lugar, escanea ese.`
+              : "Escanea la etiqueta del lugar donde lo dejaste o escribe su código."
+          }
         />
       )}
 
