@@ -244,3 +244,7 @@ formulario con `SerialsField` (traslados, cambio de estado, salida, ajuste…).
   qué guarda, qué intercepta, versión), `src/components/scan-rules.test.ts`,
   `src/lib/csp.test.ts`, `tests/platform/pwa.int.test.ts` (rutas, manifiesto,
   cabeceras) y la comprobación en navegador `scripts/verify-pwa.mjs`.
+
+## Decisión del fundador (2026-11-13)
+
+Se escanea con lector USB y con la cámara en Android desde Chrome. El iPhone no es requisito: no se agrega una librería de decodificación (`barcode-detector` queda descartada).

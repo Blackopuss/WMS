@@ -208,3 +208,7 @@ Quien autoriza necesita `inventory.count.apply` y
   y pedir podría cambiar el saldo; dentro, bajo sus candados, no.
 - **Que la plataforma conozca los ajustes:** rompe la arquitectura; el
   efecto lo registra el módulo.
+
+## Decisión del fundador (2026-11-13)
+
+El Almacenista de piso no pide correcciones de existencias: no se agrega un permiso de «pedir ajuste» para ese rol.

@@ -64,19 +64,23 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
 
-**Decisiones que esperan al fundador:** si el Almacenista de piso puede pedir compras y correcciones; si el piso usará iPhone (escaneo con cámara, ADR 0049); confirmar que el Montacarguista reporte incidencias (ADR 0057).
+**Decisiones del fundador (2026-11-13):**
+
+- El Almacenista de piso **no** pide compras ni correcciones de existencias: su rol se queda como está (ADR 0053 y 0055).
+- El escaneo se hace con **lector USB** y con la **cámara en Android desde Chrome**; el iPhone no es requisito y no se agrega una librería de decodificación (ADR 0049).
+- El Montacarguista **sí** reporta incidencias: el permiso se queda (ADR 0057).
 
 - Avisos por correo como segundo canal y resumen diario de lotes por caducar y existencias bajas (ADR 0057).
 - Tipos de incidencia configurables por empresa y fotos de evidencia (WMS-37; ADR 0057).
 - Campos personalizados en documentos (órdenes de compra, pedidos de salida), filtros en ubicaciones y proveedores, y en las exportaciones de existencias y movimientos (ADR 0056).
 - Surtir directo de una tarima; quien está limitado a zonas no ve tareas de surtido si «Preparación» queda fuera de su zona; agregar o quitar pedidos de una ola (ADR 0054, ADR 0043).
 - Conteo de productos por serie; los conteos programados que nadie hizo no se cancelan solos (ADR 0050).
-- Evidencia con fotos en aprobaciones; permiso para que el piso pida ajustes; umbral por valor (ADR 0053).
+- Evidencia con fotos en aprobaciones; umbral por valor (ADR 0053).
 - El mensaje al archivar un producto puede nombrar órdenes de un almacén fuera del alcance (ADR 0055).
 - Repartir por cross-docking lo que llega en tarima o a pedidos ya surtidos; mandar lo dañado directo a cuarentena al recibir (ADR 0052).
 - Reponer desde una tarima; reposición por demanda (ADR 0051).
 - Trasladar una tarima entera entre almacenes; PDF del traslado (ADR 0048).
-- Escaneo con cámara en iPhone (decisión del fundador); operar sin conexión (ADR 0049).
+- Operar sin conexión (ADR 0049).
 - Impresión directa a impresoras de etiquetas (ADR 0047).
 - Devolver al proveedor lo que un cliente regresó y se rechazó (ADR 0046).
 - Reconciliación, productos sin existencias y guía de primer uso siguen sin
@@ -177,7 +181,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-55 | Conteos cíclicos | Hecho (2026-11-13, ADR 0050); pendiente: conteo por serie |
 | WMS-23 / WMS-24 | Reglas de reposición y reabastecimiento automático | Hecho (2026-11-13, ADR 0051); pendiente: reponer desde una tarima |
 | WMS-19 | Traslados entre almacenes | Hecho (2026-11-13, ADR 0048); pendiente: trasladar una tarima entera |
-| WMS-35 / WMS-36 | PWA instalable y escaneo con cámara | Hecho (2026-11-13, ADR 0049); el escaneo no funciona en iPhone sin una librería (decisión del fundador) |
+| WMS-35 / WMS-36 | PWA instalable y escaneo con cámara | Hecho (2026-11-13, ADR 0049); se escanea con lector USB y con la cámara en Android desde Chrome (decisión del fundador: el iPhone no es requisito) |
 | WMS-26 | Etiquetas e impresión | Hecho (2026-11-13, ADR 0047); pendiente: impresión directa (ZPL) |
 | WMS-17 | Devoluciones de clientes | Hecho (2026-11-13, ADR 0046); pendiente: daños al recibir de proveedor |
 | WMS-16 | Despacho y embarques | Hecho (2026-11-13, ADR 0045); pendiente: despacho parcial, andenes |

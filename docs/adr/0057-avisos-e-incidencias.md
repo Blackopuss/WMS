@@ -171,3 +171,7 @@ almacén, tipo, descripción, a qué se refiere, quién) no cambia.
 - **Guardar avisos con el texto en plantillas por tipo:** el texto fijo al
   crearse no cambia si después cambia el nombre de algo, igual que la
   bitácora.
+
+## Decisión del fundador (2026-11-13)
+
+El Montacarguista sí reporta incidencias: `inventory.incident.create` se queda en ese rol.

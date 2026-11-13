@@ -28,7 +28,7 @@ abajo son de ese documento).
 | Capacidad y restricciones de ubicación | Hecho (WMS-22B, ADR 0039, 2026-11-12) |
 | Lotes y caducidad | Hecho (WMS-21A, ADR 0040, 2026-11-13) |
 | Números de serie y trazabilidad por lote, serie o pedido | Hecho (WMS-21B, ADR 0041, 2026-11-13) |
-| App instalable y escaneo con cámara | Hecho (WMS-35/36, ADR 0049); el escaneo no funciona en iPhone |
+| App instalable y escaneo con cámara | Hecho (WMS-35/36, ADR 0049); se escanea con lector USB y con la cámara en Android desde Chrome (decisión del fundador) |
 | Fotos de evidencia, PIN en terminales compartidas, API y webhooks | Falta (WMS-37, 38, 60) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 

@@ -191,3 +191,7 @@ sugerencia; al convertirla, su borrador sí cuenta (como todo borrador).
   la solicitud de aprobación basta.
 - **Guardar cumplimiento y tiempo de entrega por proveedor:** se
   desactualizan con cada recepción; derivados en la consulta, con tope, no.
+
+## Decisión del fundador (2026-11-13)
+
+El Almacenista de piso no pide compras: `operator` se queda sin `purchasing.request.create`.
