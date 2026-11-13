@@ -61,16 +61,27 @@ export const LOT_REQUIRED = (name: string) =>
 const blank = (value: unknown) => String(value ?? "").trim() === "";
 
 /**
- * The lot of stock that comes in. Null for a product without lots. Creates
- * the lot when the product does not have it yet; the caller holds the lock
- * of the product, so two entries of a new lot never create it twice.
+ * Whether stock of a product may come in with that lot, without writing
+ * anything: the lot it would reuse (`existing`), or the code and date of
+ * the lot it would create. `lotForEntry` asks this and then creates; an
+ * import asks it for every row before touching the product, so a product
+ * whose stock cannot enter is left whole (IMP-09).
  */
-export async function lotForEntry(
-  tx: Tx,
-  actor: { organizationId: string; userId: string },
+export async function checkLotEntry(
+  client: Reader,
   product: LotRuleProduct,
   input: { lotCode?: string | null; lotExpiresOn?: string | null },
-): Promise<{ ok: true; lot: ResolvedLot | null } | LotProblem> {
+): Promise<
+  | {
+      ok: true;
+      /** Null for a product without lots. */
+      lot:
+        | { existing: ResolvedLot }
+        | { existing: null; code: string; expiresOn: string | null }
+        | null;
+    }
+  | LotProblem
+> {
   if (product.tracking !== "LOT") {
     if (!blank(input.lotCode) || !blank(input.lotExpiresOn)) {
       return {
@@ -110,7 +121,7 @@ export async function lotForEntry(
   }
   // The collation of the column decides what «the same code» is, as the
   // unique index does.
-  const existing = await tx.lot.findFirst({
+  const existing = await client.lot.findFirst({
     where: { productId: product.id, code: code.code },
     select: { id: true, code: true, expiresOn: true },
   });
@@ -134,7 +145,9 @@ export async function lotForEntry(
     }
     return {
       ok: true,
-      lot: { id: existing.id, code: existing.code, expiresOn: kept },
+      lot: {
+        existing: { id: existing.id, code: existing.code, expiresOn: kept },
+      },
     };
   }
   if (!typed && product.lotExpiry === "REQUIRED") {
@@ -144,18 +157,40 @@ export async function lotForEntry(
       error: "Escribe la caducidad del lote.",
     };
   }
+  return {
+    ok: true,
+    lot: { existing: null, code: code.code, expiresOn: typed },
+  };
+}
+
+/**
+ * The lot of stock that comes in. Null for a product without lots. Creates
+ * the lot when the product does not have it yet; the caller holds the lock
+ * of the product, so two entries of a new lot never create it twice.
+ */
+export async function lotForEntry(
+  tx: Tx,
+  actor: { organizationId: string; userId: string },
+  product: LotRuleProduct,
+  input: { lotCode?: string | null; lotExpiresOn?: string | null },
+): Promise<{ ok: true; lot: ResolvedLot | null } | LotProblem> {
+  const checked = await checkLotEntry(tx, product, input);
+  if (!checked.ok) return checked;
+  if (!checked.lot) return { ok: true, lot: null };
+  if (checked.lot.existing) return { ok: true, lot: checked.lot.existing };
+  const { code, expiresOn } = checked.lot;
   const id = newId();
   await tx.lot.create({
     data: {
       id,
       organizationId: actor.organizationId,
       productId: product.id,
-      code: code.code,
-      expiresOn: typed ? lotDayToDate(typed) : null,
+      code,
+      expiresOn: expiresOn ? lotDayToDate(expiresOn) : null,
       createdByUserId: actor.userId,
     },
   });
-  return { ok: true, lot: { id, code: code.code, expiresOn: typed } };
+  return { ok: true, lot: { id, code, expiresOn } };
 }
 
 /**

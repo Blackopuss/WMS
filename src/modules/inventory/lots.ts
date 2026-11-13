@@ -152,6 +152,41 @@ export async function listLotStock(
     );
 }
 
+/**
+ * The choices of «de dónde sale» for a product by lot (salida, salida
+ * rápida, reubicación, tarea de traslado): one per lot and location, in
+ * the order of `listLotStock` — what expires first on top, so the option a
+ * screen starts with is the one to take (founder, 2026-11-13). Only the
+ * locations given (the warehouse the person works in). The text starts
+ * with what tells two options apart — lot, date and place, by its code
+ * when it has one (shorter than its path) — because a closed select on a
+ * phone shows only its beginning.
+ */
+export function lotSourceChoices(
+  lots: readonly LotStock[],
+  locations: readonly { id: string; path: string; code?: string | null }[],
+  unitCode: string,
+): { id: string; place: string; label: string }[] {
+  const placeOf = new Map(
+    locations.map((location) => [location.id, location.code || location.path]),
+  );
+  return lots.flatMap((row) => {
+    const where = placeOf.get(row.locationId);
+    if (where === undefined) return [];
+    // «cad. 03/12/26», as packaging says it: short enough for a phone.
+    const when = row.expiresOn
+      ? ` · ${row.expired ? "caducó" : "cad."} ${formatLotDay(row.expiresOn).replace(/\/\d\d(\d\d)$/, "/$1")}`
+      : "";
+    return [
+      {
+        id: `${row.locationId}|${row.lotId}`,
+        place: row.locationId,
+        label: `Lote ${row.code}${when} · ${where} — hay ${formatStock(row.free, unitCode)}`,
+      },
+    ];
+  });
+}
+
 export type ProductLot = {
   id: string;
   code: string;

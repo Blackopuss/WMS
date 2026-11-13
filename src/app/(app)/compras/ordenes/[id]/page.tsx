@@ -475,9 +475,12 @@ ${order.closeReason ?? ""}`,
                         id: line.receiptLineId,
                         productName: line.productName,
                         sku: line.sku,
-                        detail: line.returnedText
-                          ? `puedes devolver ${line.returnableText} (ya devolviste ${line.returnedText})`
-                          : `llegaron ${line.returnableText}`,
+                        // WMS-21: two lots of one product read apart.
+                        detail: `${line.lotText ? `${line.lotText} · ` : ""}${
+                          line.returnedText
+                            ? `puedes devolver ${line.returnableText} (ya devolviste ${line.returnedText})`
+                            : `llegaron ${line.returnableText}`
+                        }`,
                         unitText: line.unitText,
                         locationId: line.locationId,
                       }))}

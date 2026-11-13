@@ -195,6 +195,8 @@ export async function confirmImport(
                       inPresentation: line.stock.inPresentation,
                       locationId: line.stock.locationId,
                       unitCost: line.stock.unitCost,
+                      lotCode: line.stock.lotCode ?? null,
+                      lotExpiresOn: line.stock.lotExpiresOn ?? null,
                     },
                   ]
                 : [],

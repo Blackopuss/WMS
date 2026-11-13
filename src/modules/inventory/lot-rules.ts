@@ -44,6 +44,34 @@ export function parseLotDay(value: unknown): string | null {
   return year >= 2000 && year <= 2200 ? text : null;
 }
 
+/**
+ * A day written in a file (IMP-10, and lots in imports): «2026-10-09» or
+ * «09/10/2026» (day/month/year, never month/day). «2026-10-09», or null
+ * when it is not a real day from the year 2000.
+ */
+export function parseCalendarDay(text: string): string | null {
+  const value = text.trim();
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+  const local = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(value);
+  const parts = iso
+    ? [iso[1]!, iso[2]!, iso[3]!]
+    : local
+      ? [local[3]!, local[2]!, local[1]!]
+      : null;
+  if (!parts) return null;
+  const [year, month, day] = parts.map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    year < 2000 ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 /** A calendar day as the DATE column takes it. */
 export const lotDayToDate = (day: string) => new Date(`${day}T00:00:00Z`);
 

@@ -4,6 +4,7 @@ import {
   CircleAlert,
   Loader2,
   PackageCheck,
+  Plus,
   TriangleAlert,
 } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
@@ -123,6 +124,10 @@ export function ReceiveOrder({
     },
   );
   const { answers } = state;
+  // WMS-21: a product by lot may arrive in several lots — one more part
+  // per lot, each with its quantity, lot and expiry (`<id>~1`, `<id>~2`…).
+  const [parts, setParts] = useState<Record<string, number>>({});
+  const partsOf = (id: string) => parts[id] ?? 1;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -244,55 +249,90 @@ export function ReceiveOrder({
                     </div>
                   )}
                   {line.byLot && (
-                    <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
-                      <div>
-                        <label
-                          htmlFor={`${fieldId}-lot`}
-                          className="mb-1 block text-sm text-muted-foreground"
+                    <LotFields
+                      line={line}
+                      fieldKey={line.id}
+                      fieldId={fieldId}
+                      answers={answers}
+                      values={state.values}
+                      wrong={wrong}
+                      describedBy={error ? `${fieldId}-error` : undefined}
+                    />
+                  )}
+                  {line.byLot &&
+                    Array.from({ length: partsOf(line.id) - 1 }, (_, i) => {
+                      const key = `${line.id}~${i + 1}`;
+                      const partId = `${fieldId}-${i + 1}`;
+                      return (
+                        <fieldset
+                          key={key}
+                          className="grid gap-2 border-t pt-2 sm:col-span-2"
                         >
-                          Lote
-                        </label>
-                        <Input
-                          key={`${line.id}-lot-${answers}`}
-                          id={`${fieldId}-lot`}
-                          name={`lot:${line.id}`}
-                          autoComplete="off"
-                          autoCapitalize="characters"
-                          spellCheck={false}
-                          maxLength={64}
-                          defaultValue={state.values.lots[line.id] ?? ""}
-                          aria-invalid={wrong === "lotCode" ? true : undefined}
-                          aria-describedby={
-                            error ? `${fieldId}-error` : undefined
-                          }
-                        />
-                      </div>
-                      {line.lotExpiry !== "NONE" && (
-                        <div>
-                          <label
-                            htmlFor={`${fieldId}-expiry`}
-                            className="mb-1 block text-sm text-muted-foreground"
-                          >
-                            {line.lotExpiry === "REQUIRED"
-                              ? "Caducidad"
-                              : "Caducidad (opcional)"}
-                          </label>
-                          <Input
-                            key={`${line.id}-expiry-${answers}`}
-                            id={`${fieldId}-expiry`}
-                            name={`exp:${line.id}`}
-                            type="date"
-                            defaultValue={state.values.expiries[line.id] ?? ""}
-                            aria-invalid={
-                              wrong === "lotExpiresOn" ? true : undefined
-                            }
-                            aria-describedby={
-                              error ? `${fieldId}-error` : undefined
-                            }
+                          <legend className="sr-only">
+                            Otro lote de {line.productName}
+                          </legend>
+                          <div className="flex items-center gap-2">
+                            <label
+                              htmlFor={partId}
+                              className="shrink-0 text-sm text-muted-foreground"
+                            >
+                              Otro lote
+                            </label>
+                            <Input
+                              key={`${key}-${answers}`}
+                              id={partId}
+                              name={`q:${key}`}
+                              inputMode="decimal"
+                              autoComplete="off"
+                              defaultValue={state.values.quantities[key] ?? ""}
+                              className="tabular-nums"
+                            />
+                            <span className="shrink-0 text-sm text-muted-foreground">
+                              {line.unitText}
+                            </span>
+                          </div>
+                          <LotFields
+                            line={line}
+                            fieldKey={key}
+                            fieldId={partId}
+                            answers={answers}
+                            values={state.values}
+                            wrong={undefined}
+                            describedBy={error ? `${fieldId}-error` : undefined}
                           />
-                        </div>
-                      )}
-                    </div>
+                          {i === partsOf(line.id) - 2 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="justify-self-start"
+                              onClick={() =>
+                                setParts((now) => ({
+                                  ...now,
+                                  [line.id]: partsOf(line.id) - 1,
+                                }))
+                              }
+                            >
+                              Quitar este lote
+                            </Button>
+                          )}
+                        </fieldset>
+                      );
+                    })}
+                  {line.byLot && partsOf(line.id) < MAX_LOTS && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-self-start sm:col-span-2"
+                      onClick={() =>
+                        setParts((now) => ({
+                          ...now,
+                          [line.id]: partsOf(line.id) + 1,
+                        }))
+                      }
+                    >
+                      <Plus aria-hidden="true" data-icon="inline-start" />
+                      Llegó en otro lote
+                    </Button>
                   )}
                   {error && (
                     <p
@@ -377,5 +417,74 @@ export function ReceiveOrder({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Lots one line may arrive in, in one receipt (`RECEIPT_LOTS_PER_LINE`). */
+const MAX_LOTS = 10;
+
+/** Lot and expiry of one part of a line of a product by lot (WMS-21). */
+function LotFields({
+  line,
+  fieldKey,
+  fieldId,
+  answers,
+  values,
+  wrong,
+  describedBy,
+}: {
+  line: PendingReceiptLine;
+  /** `<id>` or, for another lot of the line, `<id>~1`. */
+  fieldKey: string;
+  fieldId: string;
+  answers: number;
+  values: ReceiveFormState["values"];
+  wrong: "lotCode" | "lotExpiresOn" | undefined;
+  describedBy: string | undefined;
+}) {
+  return (
+    <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
+      <div>
+        <label
+          htmlFor={`${fieldId}-lot`}
+          className="mb-1 block text-sm text-muted-foreground"
+        >
+          Lote
+        </label>
+        <Input
+          key={`${fieldKey}-lot-${answers}`}
+          id={`${fieldId}-lot`}
+          name={`lot:${fieldKey}`}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={64}
+          defaultValue={values.lots[fieldKey] ?? ""}
+          aria-invalid={wrong === "lotCode" ? true : undefined}
+          aria-describedby={describedBy}
+        />
+      </div>
+      {line.lotExpiry !== "NONE" && (
+        <div>
+          <label
+            htmlFor={`${fieldId}-expiry`}
+            className="mb-1 block text-sm text-muted-foreground"
+          >
+            {line.lotExpiry === "REQUIRED"
+              ? "Caducidad"
+              : "Caducidad (opcional)"}
+          </label>
+          <Input
+            key={`${fieldKey}-expiry-${answers}`}
+            id={`${fieldId}-expiry`}
+            name={`exp:${fieldKey}`}
+            type="date"
+            defaultValue={values.expiries[fieldKey] ?? ""}
+            aria-invalid={wrong === "lotExpiresOn" ? true : undefined}
+            aria-describedby={describedBy}
+          />
+        </div>
+      )}
+    </div>
   );
 }

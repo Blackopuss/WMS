@@ -4,6 +4,7 @@ import { newId } from "@/lib";
 import {
   IMPORT_COLUMNS,
   applyImport,
+  classifyImport,
   confirmImport,
   getImport,
   importPermissions,
@@ -13,6 +14,7 @@ import {
   registerInitialBalance,
   saveImportMapping,
   startImport,
+  validateImport,
   type ImportColumnKey,
   type InventoryActor,
 } from "@/modules/inventory";
@@ -22,6 +24,7 @@ import {
   changePresentationFactor,
   createPresentation,
   createProduct,
+  updateProduct,
 } from "@/platform/catalog";
 import { getQuotaUsage, invalidateEntitlements } from "@/platform/entitlements";
 import { buildCsv } from "@/platform/files";
@@ -679,5 +682,205 @@ describe("what a file needs to be confirmed", () => {
       "inventory.opening.create",
       "inventory.product.update",
     ]);
+  });
+});
+
+// WMS-21A (ADR 0040): the file may say the lot of each stock, and its
+// expiry. A product by lot without it, or any other product with it, is
+// refused with its reason; nothing ever enters without a lot or mixes two.
+describe("lots in the file", () => {
+  /** An import with its columns chosen, not confirmed. */
+  async function mapped(owner: InventoryActor, rows: Row[]) {
+    const started = await startImport(owner, {
+      name: "inventario.csv",
+      bytes: buildCsv(
+        [HEADERS, ...rows.map((line) => KEYS.map((key) => line[key] ?? ""))],
+        { neutralize: false },
+      ),
+    });
+    if (!started.ok) throw new Error(started.error);
+    const saved = await saveImportMapping(owner, {
+      importId: started.importId,
+      mapping: MAPPING,
+      decimalSeparator: ".",
+    });
+    if (!saved.ok) throw new Error("mapping not saved");
+    return started.importId;
+  }
+
+  async function byLot(
+    actor: InventoryActor,
+    sku: string,
+    lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED" = "OPTIONAL",
+  ) {
+    const made = await createProduct(actor, {
+      sku,
+      name: `Producto ${sku}`,
+      tracking: "LOT",
+      lotExpiry,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    return made.productId;
+  }
+
+  /** «SKU @ location · lot (expiry) = quantity». */
+  async function lotBalances(owner: InventoryActor) {
+    const rows = await db.stockBalance.findMany({
+      where: { organizationId: owner.organizationId },
+      select: {
+        quantity: true,
+        product: { select: { sku: true } },
+        location: { select: { name: true } },
+        lot: { select: { code: true, expiresOn: true } },
+      },
+    });
+    return rows
+      .map(
+        (balance) =>
+          `${balance.product.sku} @ ${balance.location.name} · ${balance.lot?.code ?? "-"} (${balance.lot?.expiresOn?.toISOString().slice(0, 10) ?? "-"}) = ${balance.quantity.toString()}`,
+      )
+      .sort();
+  }
+
+  it("enters each stock in its lot, creating the lot once", async () => {
+    const actor = await company(10);
+    await shelf(actor);
+    const gel = await byLot(actor, "GEL-1");
+    // A lot that already exists (without stock: its stock left) keeps its
+    // date; the file may leave it empty.
+    await db.lot.create({
+      data: {
+        id: newId(),
+        organizationId: actor.organizationId,
+        productId: gel,
+        code: "L-0",
+        expiresOn: new Date("2099-01-31T00:00:00Z"),
+        createdByUserId: actor.userId,
+      },
+    });
+    const importId = await confirmed(actor, [
+      // Two lots in the same place; the date as day/month/year.
+      row("GEL-1", { initialStock: "40", lot: "l-1", lotExpiry: "05/03/2099" }),
+      row("GEL-1", { initialStock: "10", lot: "L-2", lotExpiry: "2099-09-30" }),
+      // The first lot in another place: its date was given above.
+      row("GEL-1", {
+        initialStock: "6",
+        lot: "L-1",
+        location: "Zona A › Estante 3",
+      }),
+      row("GEL-1", {
+        initialStock: "3",
+        lot: "L-0",
+        location: "Zona A › Estante 3",
+      }),
+      row("TOR-2", { initialStock: "8" }),
+    ]);
+    expect(await applyImport(actor.organizationId, importId)).toMatchObject({
+      ok: true,
+      processed: 2,
+      failed: 0,
+    });
+    expect(await lotBalances(actor)).toEqual([
+      "GEL-1 @ Estante 3 · L-0 (2099-01-31) = 3",
+      "GEL-1 @ Estante 3 · L-1 (2099-03-05) = 6",
+      "GEL-1 @ General · L-1 (2099-03-05) = 40",
+      "GEL-1 @ General · L-2 (2099-09-30) = 10",
+      "TOR-2 @ General · - (-) = 8",
+    ]);
+    expect(await db.lot.count({ where: { productId: gel } })).toBe(3);
+    expect(await reconcileStock(actor.organizationId)).toEqual([]);
+  });
+
+  it("says which rows are wrong before anything is confirmed", async () => {
+    const actor = await company(10);
+    const importId = await mapped(actor, [
+      // A lot without stock, a date without a lot, a date that is not one.
+      row("A-1", { lot: "L-1" }),
+      row("B-2", { initialStock: "1", lotExpiry: "2099-01-01" }),
+      row("C-3", { initialStock: "1", lot: "L-1", lotExpiry: "03/31/2099" }),
+      // The same place and lot twice; one lot with two dates.
+      row("D-4", { initialStock: "1", lot: "L-1" }),
+      row("D-4", { initialStock: "2", lot: "l-1" }),
+      row("E-5", { initialStock: "1", lot: "L-1", lotExpiry: "2099-01-01" }),
+      row("E-5", {
+        initialStock: "1",
+        lot: "L-1",
+        lotExpiry: "2099-02-01",
+        location: "General",
+      }),
+    ]);
+    const checked = await validateImport(actor, importId);
+    if (!checked.ok) throw new Error(checked.error);
+    expect(
+      checked.issues.map((issue) => [issue.row, issue.column, issue.message]),
+    ).toEqual([
+      [2, "lot", expect.stringContaining("solo se usa con una existencia")],
+      [3, "lotExpiry", expect.stringContaining("va con su lote")],
+      [4, "lotExpiry", expect.stringContaining("día/mes/año")],
+      [6, "sku", expect.stringContaining("misma ubicación y el mismo lote")],
+      [8, "sku", expect.stringContaining("misma ubicación y el mismo lote")],
+      [8, "lotExpiry", expect.stringContaining("otra caducidad")],
+    ]);
+  });
+
+  it("a product by lot needs its lot; any other product takes none", async () => {
+    const actor = await company(10);
+    await byLot(actor, "LOT-1", "REQUIRED");
+    const plain = await createProduct(actor, {
+      sku: "SIN-2",
+      name: "Sin lote",
+    });
+    if (!plain.ok) throw new Error("product setup failed");
+    const importId = await mapped(actor, [
+      row("LOT-1", { initialStock: "5" }),
+      row("LOT-1", { initialStock: "5", lot: "L-9" }),
+      row("SIN-2", { initialStock: "5", lot: "L-1" }),
+      row("NUE-3", { initialStock: "5", lot: "L-1" }),
+    ]);
+    const classified = await classifyImport(actor, importId);
+    if (!classified.ok) throw new Error(classified.error);
+    expect(classified.ready).toBe(false);
+    expect(
+      classified.conflicts.map((issue) => [
+        issue.row,
+        issue.column,
+        issue.message,
+      ]),
+    ).toEqual([
+      [
+        2,
+        "lot",
+        "LOT-1 se controla por lote: escribe el lote de esta existencia.",
+      ],
+      [3, "lotExpiry", "Escribe la caducidad del lote."],
+      [4, "lot", "SIN-2 no se controla por lote: no lleva lote."],
+      [5, "lot", expect.stringContaining("NUE-3 es nuevo")],
+    ]);
+    // Nothing of it can be confirmed.
+    expect(await confirmImport(actor, importId)).toMatchObject({ ok: false });
+  });
+
+  it("a product whose control changed after confirming fails whole, with its reason", async () => {
+    const actor = await company(10);
+    const plain = await createProduct(actor, { sku: "CAM-1", name: "Cambia" });
+    if (!plain.ok) throw new Error("product setup failed");
+    const importId = await confirmed(actor, [
+      row("CAM-1", { name: "Cambia", initialStock: "5" }),
+    ]);
+    expect(
+      await updateProduct(actor, plain.productId, {
+        sku: "CAM-1",
+        name: "Cambia",
+        tracking: "LOT",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await applyImport(actor.organizationId, importId)).toMatchObject({
+      ok: true,
+      failed: 1,
+    });
+    const [failure] = await listImportFailures(actor, importId);
+    expect(failure!.error).toContain("no dice de qué lote");
+    expect(await balances(actor)).toEqual([]);
+    expect(await reconcileStock(actor.organizationId)).toEqual([]);
   });
 });

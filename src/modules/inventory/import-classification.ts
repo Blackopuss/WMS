@@ -16,6 +16,7 @@ import {
   TEMPLATE_EXAMPLE_KEYS,
   type ImportColumnKey,
 } from "./import-template";
+import { LOT_RULE_SELECT, checkLotEntry } from "./lot-resolve";
 import type { InventoryActor } from "./movements";
 
 /**
@@ -193,6 +194,7 @@ export async function planImport(
     description: true,
     category: { select: { name: true } },
     brand: { select: { name: true } },
+    ...LOT_RULE_SELECT,
   } as const;
   type Existing = Awaited<
     ReturnType<typeof client.product.findMany<{ select: typeof select }>>
@@ -295,6 +297,42 @@ export async function planImport(
             `${current.sku} ya tiene movimientos: su existencia ya no es «inicial». Deja vacía esta celda y corrige la cantidad con un ajuste o un conteo.`,
           );
         }
+      }
+    }
+    // WMS-21 (ADR 0040): a product by lot says the lot of each stock; any
+    // other product never takes one. A product born from the file is
+    // without lots: its control is chosen in its card.
+    for (const line of rows) {
+      const stock = line.stock;
+      if (!stock) continue;
+      const lotHeader = (problem: { field: string }) =>
+        problem.field === "lotExpiresOn" ? "lotExpiry" : "lot";
+      if (!current) {
+        if (stock.lotCode) {
+          conflict(
+            line,
+            "lot",
+            stock.lotCode,
+            `${first.sku} es nuevo y un producto nuevo entra sin lote. Deja vacío el lote, o da de alta el producto, márcalo «por lote» en su ficha e importa después sus existencias.`,
+          );
+        }
+        continue;
+      }
+      const checked = await checkLotEntry(
+        client,
+        { ...current, name: current.sku },
+        { lotCode: stock.lotCode, lotExpiresOn: stock.lotExpiresOn },
+      );
+      if (!checked.ok) {
+        const column = lotHeader(checked);
+        conflict(
+          line,
+          column,
+          column === "lot" ? (stock.lotCode ?? "") : (stock.lotExpiresOn ?? ""),
+          current.tracking === "LOT" && !stock.lotCode
+            ? `${current.sku} se controla por lote: escribe el lote de esta existencia.`
+            : checked.error,
+        );
       }
     }
     for (const line of rows) {

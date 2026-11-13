@@ -798,6 +798,44 @@ export async function updateProduct(
             },
           });
         }
+        // Nor while something started with the old control is still
+        // open: it could not finish (a count to apply, a task to deliver,
+        // exits of a file to register). Each one says what to do.
+        const [counting, moving, importing] = await Promise.all([
+          tx.stockCountLine.findFirst({
+            where: { productId: id, count: { status: "OPEN" } },
+            select: { id: true },
+          }),
+          tx.warehouseTask.findFirst({
+            where: {
+              productId: id,
+              status: { notIn: ["DELIVERED", "CANCELLED"] },
+            },
+            select: { id: true },
+          }),
+          tx.exitImportRow.findFirst({
+            where: {
+              productId: id,
+              status: "PENDING",
+              import: { status: { in: ["CONFIRMED", "RUNNING"] } },
+            },
+            select: { id: true },
+          }),
+        ]);
+        const pending = counting
+          ? "Este producto está en un conteo abierto: aplícalo o cancélalo antes de cambiar su control por lote."
+          : moving
+            ? "Este producto tiene una tarea sin terminar: entrégala o cancélala antes de cambiar su control por lote."
+            : importing
+              ? "Hay salidas de este producto por registrar de un archivo: espera a que termine antes de cambiar su control por lote."
+              : null;
+        if (pending) {
+          throw new Rejected({
+            ok: false,
+            reason: "invalid",
+            fieldErrors: { tracking: pending },
+          });
+        }
       }
       // The first movement fixes the unit (INV-15): the stock already
       // recorded is in it. The precision may only become finer, so every

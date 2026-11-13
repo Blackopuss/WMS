@@ -51,11 +51,15 @@ export type PickSource = {
 
 /**
  * Where to pick a quantity of a product from — location and, for a product
- * by lot, which lot: the strategy of assignment, in one place. The company
- * chooses it (WMS-49, `PICKING_STRATEGY`): the fullest location first
- * (fewer trips), the emptiest (frees places), what expires first (FEFO) or
- * the oldest lot (FIFO; WMS-21, ADR 0040). A product without lots has no
- * dates: with FEFO or FIFO it is picked from the fullest location.
+ * by lot, which lot: the strategy of assignment, in one place.
+ *
+ * What expires first always leaves first (founder, 2026-11-13; ADR 0040):
+ * lots are ranked by their expiry date, those without one last, whatever
+ * the company chose. The company's choice (WMS-49, `PICKING_STRATEGY`)
+ * decides the rest — between locations of the same lot, and for products
+ * whose lots carry no date or that have no lots: the fullest location
+ * first (fewer trips), the emptiest (frees places) or the oldest lot
+ * (FIFO).
  *
  * Only AVAILABLE stock that nothing reserves in its location, never the
  * staging location itself, never more than is free of the product, and —
@@ -107,16 +111,13 @@ export async function pickSources(
   // Lot ids are UUIDv7: their order is the order the lots were registered.
   const byAge = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
     (a.lotId ?? "").localeCompare(b.lotId ?? "");
+  // No date goes last: it is not about to expire.
+  const byExpiry = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    (a.expiresOn ?? "9999-12-31").localeCompare(b.expiresOn ?? "9999-12-31");
   const ranked = rows.sort(
     (a, b) =>
-      (strategy === "fefo"
-        ? // No date goes last: it is not about to expire.
-          (a.expiresOn ?? "9999-12-31").localeCompare(
-            b.expiresOn ?? "9999-12-31",
-          ) || byAge(a, b)
-        : strategy === "fifo"
-          ? byAge(a, b)
-          : 0) ||
+      byExpiry(a, b) ||
+      (strategy === "fifo" ? byAge(a, b) : 0) ||
       byQuantity(a, b) ||
       a.locationId.localeCompare(b.locationId) ||
       byAge(a, b),

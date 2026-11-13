@@ -104,6 +104,20 @@ export const IMPORT_COLUMNS = [
     example: "",
   },
   {
+    key: "lot",
+    header: "Lote",
+    required: false,
+    help: "Solo para productos que se controlan por lote: el lote de esa existencia. Vacío en los demás. Varios lotes en la misma ubicación van en una fila por lote.",
+    example: "",
+  },
+  {
+    key: "lotExpiry",
+    header: "Caducidad",
+    required: false,
+    help: "La caducidad de ese lote, como 2027-03-05 o 05/03/2027 (día/mes/año). Solo si sus lotes la llevan; si el lote ya existe, puede quedar vacía.",
+    example: "",
+  },
+  {
     key: "minimum",
     header: "Mínimo",
     required: false,
@@ -212,7 +226,7 @@ export async function buildImportTemplate(
       "Decimales con punto (2.75). No escribas separador de miles ni la unidad dentro de la cantidad.",
     ],
     [
-      "Un producto con existencias en varias ubicaciones se repite en una fila por ubicación, con la misma clave.",
+      "Un producto con existencias en varias ubicaciones (o de varios lotes) se repite en una fila por ubicación y lote, con la misma clave.",
     ],
     [],
     ["Columna", "¿Obligatoria?", "Qué poner", "Ejemplo"],

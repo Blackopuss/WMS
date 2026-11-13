@@ -169,7 +169,10 @@ describe("suggestMapping", () => {
       initialStockIn: 10,
       unitCost: 11,
       location: 12,
-      minimum: 13,
+      // WMS-21: the lot of each stock and its expiry.
+      lot: 13,
+      lotExpiry: 14,
+      minimum: 15,
     });
   });
 

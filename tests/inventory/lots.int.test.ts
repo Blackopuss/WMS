@@ -16,12 +16,15 @@ import {
   createTask,
   deliverTask,
   getCount,
+  buildExport,
   getLot,
+  getOutboundOrder,
   getProductStock,
   getStockByLocation,
   listExpiringLots,
   listLotStock,
   listMovements,
+  lotSourceChoices,
   listProductLots,
   openCount,
   pickUpTask,
@@ -49,6 +52,7 @@ import { setMemberScope } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct, updateProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
+import { readSpreadsheet } from "@/platform/files";
 import {
   createLocation,
   getActiveFacility,
@@ -288,6 +292,39 @@ describe("the control of a product", () => {
       ok: false,
       error: expect.stringContaining("cambió su control por lote"),
     });
+  });
+});
+
+describe("changing the control with work open", () => {
+  it("is refused while a count, a task or a file of exits is open", async () => {
+    const actor = await company();
+    const plain = await product(actor, {});
+    const general = (await getDefaultLocation(actor))!.id;
+    const card = await db.product.findUniqueOrThrow({ where: { id: plain } });
+    const change = () =>
+      updateProduct(actor, plain, {
+        sku: card.sku,
+        name: card.name,
+        tracking: "LOT",
+      });
+    // Counted while it had nothing: the count is still open.
+    const opened = await openCount(actor, { locationId: general });
+    if (!opened.ok) throw new Error(JSON.stringify(opened));
+    expect(
+      await captureCount(actor, {
+        countId: opened.countId,
+        productId: plain,
+        quantity: "0",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await change()).toMatchObject({
+      ok: false,
+      fieldErrors: { tracking: expect.stringContaining("conteo abierto") },
+    });
+    expect(
+      await applyCount(actor, { countId: opened.countId, reason: "Cierre" }),
+    ).toMatchObject({ ok: true });
+    expect(await change()).toMatchObject({ ok: true });
   });
 });
 
@@ -700,6 +737,69 @@ describe("what takes, moves or corrects stock", () => {
     expect(await held(productId, general, l2)).toBe("10");
   });
 
+  it("an adjustment gives a lot the system did not know, born with its stock", async () => {
+    const { actor, productId, zone, l1 } = await scenario();
+    const adjust = (input: {
+      quantity: string;
+      lotCode?: string;
+      lotExpiresOn?: string;
+      lotId?: string;
+      idempotencyKey?: string;
+    }) =>
+      registerAdjustment(actor, {
+        productId,
+        locationId: zone,
+        reason: "Apareció en el conteo",
+        ...input,
+      });
+    // Not both a lot of the list and a new one.
+    expect(
+      await adjust({ quantity: "4", lotId: l1, lotCode: "L-NUEVO" }),
+    ).toMatchObject({ ok: false, fieldErrors: { lotId: expect.any(String) } });
+    // Counted zero of a new lot: nothing to adjust, and no lot is left
+    // behind (the refusal rolls it back).
+    expect(await adjust({ quantity: "0", lotCode: "L-NUEVO" })).toMatchObject({
+      ok: false,
+    });
+    expect(await db.lot.count({ where: { productId, code: "L-NUEVO" } })).toBe(
+      0,
+    );
+    // A date that is not one is said on its field.
+    expect(
+      await adjust({
+        quantity: "4",
+        lotCode: "L-NUEVO",
+        lotExpiresOn: "mañana",
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { lotExpiresOn: expect.any(String) },
+    });
+
+    const idempotencyKey = key();
+    const made = await adjust({
+      quantity: "4",
+      lotCode: "l-nuevo",
+      lotExpiresOn: LATER,
+      idempotencyKey,
+    });
+    expect(made).toMatchObject({ ok: true });
+    const born = await db.lot.findFirstOrThrow({
+      where: { productId, code: "L-NUEVO" },
+    });
+    expect(born.expiresOn?.toISOString().slice(0, 10)).toBe(LATER);
+    expect(await held(productId, zone, born.id)).toBe("4");
+    // A retry answers with what it already did; the same key with another
+    // lot is not a retry.
+    expect(
+      await adjust({ quantity: "4", lotCode: "L-NUEVO", idempotencyKey }),
+    ).toMatchObject({ ok: true, repeated: true });
+    expect(
+      await adjust({ quantity: "4", lotCode: "L-OTRO", idempotencyKey }),
+    ).toMatchObject({ ok: false });
+    expect(await db.lot.count({ where: { productId } })).toBe(3);
+  });
+
   it("a reversal puts each line back in its lot", async () => {
     const { actor, productId, general, zone, l1, l2 } = await scenario();
     const moved = await registerTransfer(actor, {
@@ -853,9 +953,8 @@ describe("picking", () => {
       include: { lot: true, product: true, fromLocation: true },
     });
 
-  it("FEFO takes what expires first and never what already expired", async () => {
+  it("what expires first leaves first by default, never what already expired", async () => {
     const { actor, productId } = await scenario();
-    await setting(actor, PICKING_STRATEGY.key, "fefo");
     const { result } = await release(actor, productId, "35");
     expect(result).toMatchObject({ ok: true });
     const tasks = await picks(actor.organizationId);
@@ -880,8 +979,17 @@ describe("picking", () => {
     ]);
   });
 
-  it("FIFO takes the oldest lot; the fullest location is the default", async () => {
-    const { actor, productId } = await scenario();
+  it("FIFO takes the oldest lot of what has no date; dates always come first", async () => {
+    // Lots without expiry: the company's choice decides.
+    const actor = await company();
+    const productId = await product(actor, {
+      tracking: "LOT",
+      lotExpiry: "NONE",
+    });
+    const a = await place(actor, "Zona A");
+    const b = await place(actor, "Zona B");
+    await enter(actor, productId, a, "10", "VIEJO");
+    await enter(actor, productId, b, "30", "NUEVO");
     await setting(actor, PICKING_STRATEGY.key, "fifo");
     expect((await release(actor, productId, "12")).result).toMatchObject({
       ok: true,
@@ -896,18 +1004,89 @@ describe("picking", () => {
       ["NUEVO", "2"],
     ]);
 
-    const other = await scenario();
+    // By default the fullest location goes first.
+    const other = await company();
+    const plain = await product(other, {
+      tracking: "LOT",
+      lotExpiry: "NONE",
+    });
+    const c = await place(other, "Zona A");
+    const d = await place(other, "Zona B");
+    await enter(other, plain, c, "10", "VIEJO");
+    await enter(other, plain, d, "30", "NUEVO");
+    expect((await release(other, plain, "12")).result).toMatchObject({
+      ok: true,
+    });
     expect(
-      (await release(other.actor, other.productId, "12")).result,
+      (await picks(other.organizationId)).map((task) => task.lot?.code),
+    ).toEqual(["NUEVO"]);
+
+    // With dates, FIFO does not win over what expires first: the oldest
+    // lot (VIEJO) expires last and leaves last.
+    const dated = await scenario();
+    await setting(dated.actor, PICKING_STRATEGY.key, "fifo");
+    expect(
+      (await release(dated.actor, dated.productId, "12")).result,
     ).toMatchObject({ ok: true });
     expect(
-      (await picks(other.actor.organizationId)).map((task) => task.lot?.code),
+      (await picks(dated.actor.organizationId)).map((task) => task.lot?.code),
     ).toEqual(["NUEVO"]);
+  });
+
+  it("the founder's case: five lots, an order of 500, what expires first leaves first", async () => {
+    const actor = await company();
+    const productId = await product(actor);
+    const a = await place(actor, "Zona A");
+    const b = await place(actor, "Zona B");
+    const c = await place(actor, "Zona C");
+    // Five lots of the same product, each with its own expiry, spread so
+    // that the fullest location would choose otherwise.
+    for (const [locationId, quantity, code, expiry] of [
+      [a, "150", "L-MAYO", "2099-05-31"],
+      [b, "120", "L-ENERO", "2099-01-31"],
+      [a, "200", "L-MARZO", "2099-03-31"],
+      [c, "100", "L-FEBRERO", "2099-02-28"],
+      [b, "300", "L-ABRIL", "2099-04-30"],
+    ] as const) {
+      await enter(actor, productId, locationId, quantity, code, expiry);
+    }
+    // Default strategy («fullest»): nothing set.
+    expect((await release(actor, productId, "500")).result).toMatchObject({
+      ok: true,
+    });
+    expect(
+      (await picks(actor.organizationId)).map((task) => [
+        task.lot?.code,
+        task.quantity.toString(),
+      ]),
+    ).toEqual([
+      ["L-ENERO", "120"],
+      ["L-FEBRERO", "100"],
+      ["L-MARZO", "200"],
+      ["L-ABRIL", "80"],
+    ]);
+    // By hand, «de dónde sale» starts with what expires first too: the
+    // first option of the selector is the one to take.
+    const locations = [
+      { id: a, path: "Zona A" },
+      { id: b, path: "Zona B" },
+      { id: c, path: "Zona C" },
+    ];
+    const choices = lotSourceChoices(
+      await listLotStock(actor, productId),
+      locations,
+      "piece",
+    );
+    // L-ENERO, L-FEBRERO and L-MARZO are fully set aside for the order.
+    expect(choices.map((choice) => choice.label)).toEqual([
+      "Lote L-ABRIL · cad. 30/04/99 · Zona B — hay 220 piezas",
+      "Lote L-MAYO · cad. 31/05/99 · Zona A — hay 150 piezas",
+    ]);
+    expect(choices[0]!.id).toBe(`${b}|${await lotOf(productId, "L-ABRIL")}`);
   });
 
   it("what expired is not proposed unless the company says so", async () => {
     const { actor, productId } = await scenario();
-    await setting(actor, PICKING_STRATEGY.key, "fefo");
     // 40 are good; the 5 expired ones do not count.
     expect((await release(actor, productId, "45")).result).toMatchObject({
       ok: false,
@@ -924,7 +1103,6 @@ describe("picking", () => {
 
   it("the picker confirms the lot and delivers it reserved for the order", async () => {
     const { actor, productId, a, b } = await scenario();
-    await setting(actor, PICKING_STRATEGY.key, "fefo");
     await release(actor, productId, "35");
     const [first, second] = await picks(actor.organizationId);
     const nuevo = await lotOf(productId, "NUEVO");
@@ -1020,7 +1198,7 @@ describe("picking", () => {
     ] as const) {
       await registerEntry(actor, { productId: plain, locationId, quantity });
     }
-    await setting(actor, PICKING_STRATEGY.key, "fefo");
+    await setting(actor, PICKING_STRATEGY.key, "fifo");
     expect((await release(actor, plain, "40")).result).toMatchObject({
       ok: true,
     });
@@ -1145,6 +1323,225 @@ describe("a purchase order of a product by lot", () => {
       }),
     ).toMatchObject({ ok: false });
     expect(await held(productId, general, second)).toBe("4");
+  });
+});
+
+describe("one receipt, several lots of a line", () => {
+  async function order() {
+    const actor = await company(["inventory", "purchasing"]);
+    const productId = await product(actor, {
+      tracking: "LOT",
+      lotExpiry: "REQUIRED",
+    });
+    const general = (await getDefaultLocation(actor))!.id;
+    const supplier = await createSupplier(actor, { name: "Proveedor" });
+    if (!supplier.ok) throw new Error("supplier setup failed");
+    const made = await createPurchaseOrder(actor, {
+      supplierId: supplier.supplierId,
+    });
+    if (!made.ok) throw new Error("order setup failed");
+    const added = await addOrderLine(actor, made.orderId, {
+      productId,
+      capture: "base",
+      quantity: "10",
+    });
+    if (!added.ok) throw new Error(JSON.stringify(added));
+    expect(await submitPurchaseOrder(actor, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    const line = await db.purchaseOrderLine.findFirstOrThrow({
+      where: { orderId: made.orderId },
+    });
+    return { actor, productId, general, orderId: made.orderId, line };
+  }
+
+  it("splits a line among its lots, never past what is pending", async () => {
+    const { actor, productId, general, orderId, line } = await order();
+    const receive = (
+      parts: { quantity: string; lotCode: string; lotExpiresOn?: string }[],
+      idempotencyKey = key(),
+    ) =>
+      receivePurchaseOrder(actor, orderId, {
+        idempotencyKey,
+        locationId: general,
+        lines: parts.map((part) => ({
+          orderLineId: line.id,
+          lotExpiresOn: part.lotExpiresOn ?? SOON,
+          ...part,
+        })),
+      });
+    // Together more than pending: refused, nothing written.
+    expect(
+      await receive([
+        { quantity: "6", lotCode: "R-1" },
+        { quantity: "5", lotCode: "R-2" },
+      ]),
+    ).toMatchObject({
+      ok: false,
+      lineErrors: {
+        [line.id]: expect.stringContaining("entre todos sus lotes"),
+      },
+    });
+    // The same lot twice: add them up.
+    expect(
+      await receive([
+        { quantity: "2", lotCode: "R-1" },
+        { quantity: "3", lotCode: "r-1" },
+      ]),
+    ).toMatchObject({
+      ok: false,
+      lineErrors: { [line.id]: expect.stringContaining("dos veces") },
+    });
+    expect(await db.lot.count({ where: { productId } })).toBe(0);
+
+    const idempotencyKey = key();
+    const parts = [
+      { quantity: "6", lotCode: "R-1" },
+      { quantity: "4", lotCode: "R-2", lotExpiresOn: LATER },
+    ];
+    expect(await receive(parts, idempotencyKey)).toMatchObject({
+      ok: true,
+      status: "RECEIVED",
+    });
+    const r1 = await lotOf(productId, "R-1");
+    const r2 = await lotOf(productId, "R-2");
+    expect(await held(productId, general, r1)).toBe("6");
+    expect(await held(productId, general, r2)).toBe("4");
+    const receiptLines = await db.purchaseReceiptLine.findMany({
+      where: { orderLineId: line.id },
+      orderBy: { lineNumber: "asc" },
+    });
+    expect(
+      receiptLines.map((item) => [
+        item.lotId,
+        item.capturedQuantity.toString(),
+      ]),
+    ).toEqual([
+      [r1, "6"],
+      [r2, "4"],
+    ]);
+
+    // A retry with the same lots is the same receipt; with another lot, the
+    // key was reused.
+    expect(await receive(parts, idempotencyKey)).toMatchObject({
+      ok: true,
+      repeated: true,
+    });
+    expect(
+      await receive(
+        [
+          { quantity: "6", lotCode: "R-1" },
+          { quantity: "4", lotCode: "R-3" },
+        ],
+        idempotencyKey,
+      ),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+
+    // Each part goes back from its own lot.
+    expect(
+      await returnToSupplier(actor, receiptLines[1]!.receiptId, {
+        reason: "Llegó golpeado",
+        idempotencyKey: key(),
+        lines: [{ receiptLineId: receiptLines[1]!.id, quantity: "1" }],
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await held(productId, general, r1)).toBe("6");
+    expect(await held(productId, general, r2)).toBe("3");
+  });
+
+  it("a product without lots still comes once per receipt", async () => {
+    const actor = await company(["inventory", "purchasing"]);
+    const plain = await product(actor, {});
+    const supplier = await createSupplier(actor, { name: "Proveedor" });
+    if (!supplier.ok) throw new Error("supplier setup failed");
+    const made = await createPurchaseOrder(actor, {
+      supplierId: supplier.supplierId,
+    });
+    if (!made.ok) throw new Error("order setup failed");
+    await addOrderLine(actor, made.orderId, {
+      productId: plain,
+      capture: "base",
+      quantity: "10",
+    });
+    await submitPurchaseOrder(actor, made.orderId);
+    const line = await db.purchaseOrderLine.findFirstOrThrow({
+      where: { orderId: made.orderId },
+    });
+    expect(
+      await receivePurchaseOrder(actor, made.orderId, {
+        idempotencyKey: key(),
+        lines: [
+          { orderLineId: line.id, quantity: "3" },
+          { orderLineId: line.id, quantity: "3" },
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("Recarga"),
+    });
+  });
+});
+
+describe("what leaves the system says the lot", () => {
+  it("the exports of stock and movements, and the picking of an order", async () => {
+    const actor = await company();
+    const productId = await product(actor);
+    const plain = await product(actor, {});
+    const general = (await getDefaultLocation(actor))!.id;
+    await enter(actor, productId, general, "5", "L-B", LATER);
+    await enter(actor, productId, general, "7", "L-A", SOON);
+    await registerEntry(actor, {
+      productId: plain,
+      locationId: general,
+      quantity: "2",
+    });
+    const sheet = async (kind: "existencias" | "movimientos") => {
+      const file = await buildExport(actor, { kind, format: "csv" });
+      if (!file.ok) throw new Error("export failed");
+      const read = readSpreadsheet(`${kind}.csv`, file.bytes);
+      if (!read.ok) throw new Error("export not readable");
+      return read.rows;
+    };
+    const stock = await sheet("existencias");
+    expect(stock[0]).toEqual([
+      "Clave (SKU)",
+      "Producto",
+      "Ubicación",
+      "Estado",
+      "Lote",
+      "Caducidad",
+      "Cantidad",
+      "Unidad",
+      "Costo promedio",
+      "Valor",
+    ]);
+    // One row per lot, what expires first on top; no lot for the other.
+    expect(stock.slice(1).map((row) => row.slice(4, 7))).toEqual(
+      expect.arrayContaining([
+        ["L-A", SOON, "7"],
+        ["L-B", LATER, "5"],
+        ["", "", "2"],
+      ]),
+    );
+    const movements = await sheet("movimientos");
+    expect(movements[0]!.slice(4, 6)).toEqual(["Ubicación", "Lote"]);
+    expect(
+      movements
+        .slice(1)
+        .map((row) => row[5])
+        .sort(),
+    ).toEqual(["", "L-A", "L-B"]);
+
+    const made = await createOutboundOrder(actor, { recipient: "Sucursal" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await setOutboundLine(actor, made.orderId, { productId, quantity: "3" });
+    expect(await releaseOutboundOrder(actor, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    const view = await getOutboundOrder(actor, made.orderId);
+    expect(view?.tasks.map((task) => task.lotText)).toEqual([
+      `Lote L-A · caduca ${SOON.split("-").reverse().join("/")}`,
+    ]);
   });
 });
 

@@ -17,6 +17,7 @@ import { enqueueJob } from "@/platform/jobs";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { foldName, foldPath, locationFinder } from "./import-validation";
+import { normalizeLotCode, parseCalendarDay } from "./lot-rules";
 import { normalizeDecimal, type DecimalSeparator } from "./imports";
 import {
   formatStock,
@@ -91,6 +92,13 @@ export const EXIT_COLUMNS = [
     help: "De dónde salió: «Zona A › Estante 3». Vacía = General.",
     example: "",
   },
+  {
+    key: "lot",
+    header: "Lote",
+    required: false,
+    help: "Solo para productos que se controlan por lote: de qué lote salió (uno que ya esté registrado). Vacío en los demás.",
+    example: "",
+  },
 ] as const;
 
 export type ExitColumnKey = (typeof EXIT_COLUMNS)[number]["key"];
@@ -118,6 +126,7 @@ const SYNONYMS: Record<ExitColumnKey, string[]> = {
   quantity: ["cantidad", "piezas", "unidades", "vendido", "cant"],
   presentation: ["presentacion", "empaque"],
   location: ["ubicacion", "estante", "anaquel"],
+  lot: ["lote", "numero de lote", "no de lote", "no lote", "batch"],
 };
 
 /** Title without accents, case or punctuation. */
@@ -162,26 +171,7 @@ export function matchExitColumns(headers: readonly string[]): {
 
 /** A day written as 2026-10-09, 09/10/2026 or 9-10-2026 (day first); null if it is not one. */
 export function parseExitDay(text: string): string | null {
-  const value = text.trim();
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
-  const local = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(value);
-  const parts = iso
-    ? [iso[1]!, iso[2]!, iso[3]!]
-    : local
-      ? [local[3]!, local[2]!, local[1]!]
-      : null;
-  if (!parts) return null;
-  const [year, month, day] = parts.map(Number) as [number, number, number];
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (
-    year < 2000 ||
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  return date.toISOString().slice(0, 10);
+  return parseCalendarDay(text);
 }
 
 /** «9 de octubre de 2026», from a day as 2026-10-09. */
@@ -229,6 +219,9 @@ export type ExitProduct = {
   quantityStep: string;
   /** With the content in force (`factor`), only to show the equivalence. */
   presentations: { id: string; name: string; factor: string }[];
+  /** WMS-21: whether it is by lot, and those of its lots the file names. */
+  tracking?: "NONE" | "LOT";
+  lots?: { id: string; code: string }[];
 };
 
 /** A row that passed, as it will be registered. */
@@ -246,6 +239,9 @@ export type ValidExitRow = {
   quantity: string;
   locationId: string;
   locationPath: string;
+  /** WMS-21: the lot it left from, for a product by lot; null otherwise. */
+  lotId: string | null;
+  lotCode: string | null;
 };
 
 export type ExitRowsValidation = {
@@ -430,6 +426,40 @@ export function validateExitRows(
       );
     }
 
+    // WMS-21 (ADR 0040): a product by lot says from which lot it left —
+    // one already registered; any other product takes none.
+    const lotText = cell("lot");
+    let lot: { id: string; code: string } | null = null;
+    if (product) {
+      if (product.tracking === "LOT") {
+        const code = normalizeLotCode(lotText);
+        if (lotText === "") {
+          issue(
+            "lot",
+            `${product.sku} se controla por lote: escribe de qué lote salió.`,
+          );
+        } else if (!code.ok) {
+          issue("lot", code.error);
+        } else {
+          lot =
+            product.lots?.find(
+              (item) => foldName(item.code) === foldName(code.code),
+            ) ?? null;
+          if (!lot) {
+            issue(
+              "lot",
+              `${product.sku} no tiene un lote «${code.code.slice(0, 64)}». Revisa el lote; uno nuevo se registra con una entrada.`,
+            );
+          }
+        }
+      } else if (lotText !== "") {
+        issue(
+          "lot",
+          `${product.sku} no se controla por lote: deja vacío el lote.`,
+        );
+      }
+    }
+
     if (product && externalId !== "") {
       const key = exitKey(product.id, externalId);
       const first = seen.get(key);
@@ -459,6 +489,8 @@ export function validateExitRows(
       quantity,
       locationId: location.id,
       locationPath: location.path,
+      lotId: lot?.id ?? null,
+      lotCode: lot?.code ?? null,
     });
   }
   return { valid, issues, invalidRows };
@@ -479,7 +511,7 @@ export async function buildExitTemplate(
   const headers = EXIT_COLUMNS.map((column) => column.header);
   const examples: Cell[][] = [
     EXIT_COLUMNS.map((column) => column.example),
-    ["2026-10-09", "T-000123", "CAB-012", "", "12.5", "", ""],
+    ["2026-10-09", "T-000123", "CAB-012", "", "12.5", "", "", ""],
     [
       "2026-10-09",
       "T-000124",
@@ -488,6 +520,7 @@ export async function buildExitTemplate(
       "2",
       "Caja",
       "Zona A › Estante 3",
+      "",
     ],
   ];
   if (format === "csv") {
@@ -716,6 +749,7 @@ export async function checkExitImport(
           status: true,
           unitCode: true,
           quantityStep: true,
+          tracking: true,
           presentations: {
             select: {
               id: true,
@@ -743,6 +777,38 @@ export async function checkExitImport(
   };
   await load("sku", column("sku"));
   await load("barcode", column("barcode"));
+  // WMS-21: the lots the file names, of its products by lot.
+  const byLot = [...found.values()].filter(
+    (product) => product.tracking === "LOT",
+  );
+  const codes = [
+    ...new Set(
+      column("lot").flatMap((text) => {
+        const code = normalizeLotCode(text);
+        return code.ok ? [code.code] : [];
+      }),
+    ),
+  ];
+  if (byLot.length > 0 && codes.length > 0) {
+    for (let start = 0; start < codes.length; start += CHUNK) {
+      const lots = await client.lot.findMany({
+        where: {
+          productId: { in: byLot.map((product) => product.id) },
+          code: { in: codes.slice(start, start + CHUNK) },
+        },
+        select: { id: true, code: true, productId: true },
+      });
+      for (const lot of lots) {
+        const product = found.get(lot.productId);
+        if (product) {
+          product.lots = [
+            ...(product.lots ?? []),
+            { id: lot.id, code: lot.code },
+          ];
+        }
+      }
+    }
+  }
 
   const result = validateExitRows(table.data, {
     headers: table.headers,
@@ -889,7 +955,7 @@ export async function reviewExitImport(
           line.presentation
             ? `${line.quantity} × ${line.presentation.name} (${formatStock(dec(line.quantity).times(line.presentation.factor).toString(), line.unitCode)})`
             : formatStock(line.quantity, line.unitCode)
-        } de ${line.locationPath}${checked.alreadyImported.has(line.row) ? " · ya importada" : ""}`,
+        } de ${line.locationPath}${line.lotCode ? ` · lote ${line.lotCode}` : ""}${checked.alreadyImported.has(line.row) ? " · ya importada" : ""}`,
       })),
       ready: valid.length > 0 && invalidRows === 0,
     };
@@ -1022,6 +1088,7 @@ export async function confirmExitImport(
           presentationId: line.presentation?.id ?? null,
           quantity: line.quantity,
           locationId: line.locationId,
+          lotId: line.lotId,
         }));
         for (let start = 0; start < rows.length; start += CHUNK) {
           await tx.exitImportRow.createMany({

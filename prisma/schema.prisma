@@ -1654,6 +1654,10 @@ model ExitImportRow {
   quantity       String              @db.VarChar(24)
   locationId     String              @db.Char(36)
   location       Location            @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict)
+  /// The lot it left from, for a product by lot (WMS-21, ADR 0040): fixed
+  /// at confirmation from the code in the file; null for any other product.
+  lotId          String?             @db.Char(36)
+  lot            Lot?                @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   status         ExitImportRowStatus @default(PENDING)
   error          String?             @db.VarChar(300)
   /// The exit it became, once registered.
@@ -2150,6 +2154,7 @@ model Lot {
   tasks           WarehouseTask[]
   countLines      StockCountLine[]
   receiptLines    PurchaseReceiptLine[]
+  exitImportRows  ExitImportRow[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, productId, code])

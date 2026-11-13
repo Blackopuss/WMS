@@ -412,6 +412,9 @@ export type ReceiveFormState = {
   done?: string;
 };
 
+/** The order line of a field: `<id>` or, for another lot of it, `<id>~1`. */
+const orderLineOf = (key: string) => key.split("~")[0]!.slice(0, 36);
+
 /**
  * Receives what is pending of an order into one location (CMP-07). The
  * order and the location are looked for only inside the company of the
@@ -430,18 +433,22 @@ export async function receivePurchaseOrderAction(
   // WMS-21: `lot:<id>` and `exp:<id>`, only for products by lot.
   const lots: Record<string, string> = {};
   const expiries: Record<string, string> = {};
+  // A product by lot may arrive in several lots: its extra parts are
+  // `q:<id>~1`, `lot:<id>~1`, `exp:<id>~1`… (WMS-21); the place is the
+  // line's.
+  const MAX = 2_000;
   for (const [name, value] of formData.entries()) {
     if (typeof value !== "string") continue;
-    if (name.startsWith("lot:") && Object.keys(lots).length < 200) {
-      lots[name.slice(4, 40)] = value.slice(0, 100);
+    if (name.startsWith("lot:") && Object.keys(lots).length < MAX) {
+      lots[name.slice(4, 44)] = value.slice(0, 100);
       continue;
     }
-    if (name.startsWith("exp:") && Object.keys(expiries).length < 200) {
-      expiries[name.slice(4, 40)] = value.slice(0, 20);
+    if (name.startsWith("exp:") && Object.keys(expiries).length < MAX) {
+      expiries[name.slice(4, 44)] = value.slice(0, 20);
       continue;
     }
-    if (name.startsWith("q:") && Object.keys(quantities).length < 200) {
-      quantities[name.slice(2, 38)] = value.slice(0, 40);
+    if (name.startsWith("q:") && Object.keys(quantities).length < MAX) {
+      quantities[name.slice(2, 42)] = value.slice(0, 40);
     } else if (
       name.startsWith("l:") &&
       value &&
@@ -463,11 +470,11 @@ export async function receivePurchaseOrderAction(
   const stamp = fingerprint([
     String(orderId),
     values.locationId,
-    ...Object.entries(quantities).flatMap(([id, quantity]) => [
-      id,
+    ...Object.entries(quantities).flatMap(([key, quantity]) => [
+      key,
       quantity,
-      places[id] ?? "",
-      lots[id] ?? "",
+      places[orderLineOf(key)] ?? "",
+      lots[key] ?? "",
     ]),
   ]);
   let result;
@@ -478,12 +485,12 @@ export async function receivePurchaseOrderAction(
       {
         locationId: values.locationId,
         reference: values.reference,
-        lines: Object.entries(quantities).map(([orderLineId, quantity]) => ({
-          orderLineId,
+        lines: Object.entries(quantities).map(([key, quantity]) => ({
+          orderLineId: orderLineOf(key),
           quantity,
-          locationId: places[orderLineId],
-          lotCode: lots[orderLineId],
-          lotExpiresOn: expiries[orderLineId],
+          locationId: places[orderLineOf(key)],
+          lotCode: lots[key],
+          lotExpiresOn: expiries[key],
         })),
         idempotencyKey: String(formData.get("idempotencyKey") ?? "").slice(
           0,

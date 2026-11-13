@@ -217,6 +217,7 @@ export default async function PedidoPage({
                     </span>
                     <span className="block text-muted-foreground">
                       {task.numberText} · de {task.fromName}
+                      {task.lotText ? ` · ${task.lotText}` : ""}
                       {task.pickedText ? ` · surtido ${task.pickedText}` : ""}
                       {task.shortReason ? ` · ${task.shortReason}` : ""}
                     </span>

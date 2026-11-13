@@ -6,8 +6,10 @@ import type { SettingDefinition } from "@/platform/settings";
  */
 
 /**
- * Where picking takes stock from first (`pickSources`). FEFO and FIFO
- * choose by lot (WMS-21, ADR 0040).
+ * Where picking takes stock from first (`pickSources`). What expires first
+ * always leaves first (ADR 0040): this decides between locations of the
+ * same lot and for products without an expiry date. A stored «fefo» (an
+ * option until 2026-11-13) reads as the default.
  */
 export const PICKING_STRATEGY = {
   key: "inventory.picking.strategy",
@@ -18,22 +20,17 @@ export const PICKING_STRATEGY = {
     {
       value: "fullest",
       label: "La ubicación con más existencias",
-      help: "Menos viajes: se junta todo de pocos lugares.",
+      help: "Menos viajes. Lo que caduca antes sale primero siempre.",
     },
     {
       value: "emptiest",
       label: "La ubicación con menos existencias",
-      help: "Libera lugares: se vacían primero las ubicaciones casi agotadas.",
-    },
-    {
-      value: "fefo",
-      label: "Lo que caduca primero (FEFO)",
-      help: "Para productos por lote con caducidad. Los demás salen de la ubicación más llena.",
+      help: "Vacía primero lo casi agotado. Lo que caduca antes sale primero siempre.",
     },
     {
       value: "fifo",
       label: "El lote más antiguo (FIFO)",
-      help: "Para productos por lote: sale primero el que se registró antes. Los demás salen de la ubicación más llena.",
+      help: "Sale primero el lote registrado antes. Lo que caduca antes sale primero siempre.",
     },
   ],
   defaultValue: "fullest",

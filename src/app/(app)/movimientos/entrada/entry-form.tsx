@@ -28,6 +28,9 @@ import {
   type EntryPreview,
 } from "../actions";
 
+/** The adjustment's choice for a lot the system does not know (WMS-21). */
+const NEW_LOT = "new";
+
 /** Texts and action of each use of the form. */
 const MODES = {
   entry: {
@@ -99,6 +102,7 @@ export function EntryForm({
   locationLabel,
   lotEntry,
   lotChoices,
+  newLot,
 }: {
   mode?: keyof typeof MODES;
   productId: string;
@@ -132,6 +136,11 @@ export function EntryForm({
   lotEntry?: { expiry: "NONE" | "OPTIONAL" | "REQUIRED" };
   /** WMS-21, an adjustment of a product by lot: its lots, to choose one. */
   lotChoices?: { id: string; label: string }[];
+  /**
+   * WMS-21, an adjustment that may give a lot the system does not know
+   * (found on the shelf): its expiry rule. Only who may adjust sees it.
+   */
+  newLot?: { expiry: "NONE" | "OPTIONAL" | "REQUIRED" };
 }) {
   const router = useRouter();
   /** What is happening when a confirmation got no answer. */
@@ -230,6 +239,9 @@ export function EntryForm({
   const quantityRef = useRef<HTMLInputElement>(null);
   const acceptRef = useRef<HTMLButtonElement>(null);
   const [capture, setCapture] = useState(state.values.capture);
+  // WMS-21: which lot an adjustment names; «new» shows its lot fields.
+  const [pickedLot, setPickedLot] = useState<string | null>(null);
+  const lotChoice = pickedLot ?? state.values.lotId ?? "";
   const [preview, setPreview] = useState<EntryPreview | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef(0);
@@ -272,6 +284,56 @@ export function EntryForm({
   const chosen =
     captures.find((option) => option.value === capture) ?? captures[0];
   const texts = MODES[mode];
+
+  /** Lot and expiry of what comes in (WMS-21). */
+  const lotFields = (entry: { expiry: "NONE" | "OPTIONAL" | "REQUIRED" }) => (
+    <div
+      className={
+        entry.expiry === "NONE" ? undefined : "grid gap-5 sm:grid-cols-2"
+      }
+    >
+      <FormField
+        id="lotCode"
+        label="Lote"
+        hint="Como viene en la etiqueta o en el empaque."
+        error={state.fieldErrors.lotCode}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            name="lotCode"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            defaultValue={state.values.lotCode ?? ""}
+            key={`lot-${state.values.lotCode ?? ""}-${answers}`}
+            maxLength={64}
+            required
+          />
+        )}
+      </FormField>
+      {entry.expiry !== "NONE" && (
+        <FormField
+          id="lotExpiresOn"
+          label={
+            entry.expiry === "REQUIRED" ? "Caducidad" : "Caducidad (opcional)"
+          }
+          hint="Si el lote ya existe, puedes dejarla vacía."
+          error={state.fieldErrors.lotExpiresOn}
+        >
+          {(control) => (
+            <Input
+              {...control}
+              name="lotExpiresOn"
+              type="date"
+              defaultValue={state.values.lotExpiresOn ?? ""}
+              key={`expiry-${state.values.lotExpiresOn ?? ""}-${answers}`}
+            />
+          )}
+        </FormField>
+      )}
+    </div>
+  );
 
   return (
     <form action={formAction} noValidate className="max-w-xl space-y-5">
@@ -414,56 +476,7 @@ export function EntryForm({
           )}
         </FormField>
       )}
-      {lotEntry && (
-        <div
-          className={
-            lotEntry.expiry === "NONE" ? undefined : "grid gap-5 sm:grid-cols-2"
-          }
-        >
-          <FormField
-            id="lotCode"
-            label="Lote"
-            hint="Como viene en la etiqueta o en el empaque."
-            error={state.fieldErrors.lotCode}
-          >
-            {(control) => (
-              <Input
-                {...control}
-                name="lotCode"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                defaultValue={state.values.lotCode ?? ""}
-                key={`lot-${state.values.lotCode ?? ""}-${answers}`}
-                maxLength={64}
-                required
-              />
-            )}
-          </FormField>
-          {lotEntry.expiry !== "NONE" && (
-            <FormField
-              id="lotExpiresOn"
-              label={
-                lotEntry.expiry === "REQUIRED"
-                  ? "Caducidad"
-                  : "Caducidad (opcional)"
-              }
-              hint="Si el lote ya existe, puedes dejarla vacía."
-              error={state.fieldErrors.lotExpiresOn}
-            >
-              {(control) => (
-                <Input
-                  {...control}
-                  name="lotExpiresOn"
-                  type="date"
-                  defaultValue={state.values.lotExpiresOn ?? ""}
-                  key={`expiry-${state.values.lotExpiresOn ?? ""}-${answers}`}
-                />
-              )}
-            </FormField>
-          )}
-        </div>
-      )}
+      {lotEntry && lotFields(lotEntry)}
       {lotChoices && (
         <FormField
           id="lotId"
@@ -475,6 +488,7 @@ export function EntryForm({
               {...control}
               name="lotId"
               defaultValue={state.values.lotId ?? ""}
+              onChange={(event) => setPickedLot(event.currentTarget.value)}
               key={`lot-${state.values.lotId ?? ""}-${answers}`}
             >
               <option key="" value="">
@@ -485,10 +499,16 @@ export function EntryForm({
                   {lot.label}
                 </option>
               ))}
+              {newLot && (
+                <option key={NEW_LOT} value={NEW_LOT}>
+                  Un lote que no está en la lista
+                </option>
+              )}
             </NativeSelect>
           )}
         </FormField>
       )}
+      {newLot && lotChoice === NEW_LOT && lotFields(newLot)}
       <FormField
         id="locationId"
         label={locationLabel ?? texts.location}

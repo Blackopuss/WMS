@@ -150,7 +150,16 @@ export default async function ConteoPage({
         </div>
       )}
 
-      {canCapture && <CaptureForm countId={count.id} />}
+      {canCapture && (
+        <CaptureForm
+          countId={count.id}
+          // WMS-21: a lot the system does not know is given an adjustment.
+          canAddLot={
+            moduleState === "active" &&
+            access.can("inventory.adjustment.create")
+          }
+        />
+      )}
 
       <section aria-labelledby="contado" className="rounded-xl border bg-card">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b p-4 sm:px-5">

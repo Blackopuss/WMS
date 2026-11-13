@@ -19,6 +19,7 @@ import {
   type DecimalSeparator,
   type ImportMapping,
 } from "./imports";
+import { normalizeLotCode, parseCalendarDay } from "./lot-rules";
 import {
   formatStock,
   listStockLocations,
@@ -67,6 +68,13 @@ export type ValidImportRow = {
     locationPath: string;
     /** Cost of one unit of the product, before taxes (VAL-03B); null if not given. */
     unitCost: string | null;
+    /**
+     * WMS-21: the lot of this stock, as it is kept («L-01»), and its expiry
+     * («2027-03-05»); null when the row does not give them. Whether the
+     * product takes a lot is the catalog's to say (classification).
+     */
+    lotCode?: string | null;
+    lotExpiresOn?: string | null;
   } | null;
   minimum: string | null;
 };
@@ -159,6 +167,8 @@ export function validateImportRows(
       locations: Set<string>;
       /** The presentation the product brings, from the first row that has one. */
       presentation: { name: string; content: string } | null;
+      /** WMS-21: the expiry each lot of it was given, and in which row. */
+      lots: Map<string, { row: number; expiresOn: string | null }>;
     }
   >();
   const skuByBarcode = new Map<string, { sku: string; row: number }>();
@@ -364,6 +374,43 @@ export function validateImportRows(
       }
     }
 
+    // WMS-21: the lot of that stock and its expiry, a day of the calendar.
+    const lotText = cell("lot");
+    let lotCode: string | null = null;
+    if (lotText !== "") {
+      const code = normalizeLotCode(lotText);
+      if (!code.ok) issue("lot", code.error);
+      else if (stockText === null) {
+        issue(
+          "lot",
+          "El lote solo se usa con una existencia: escribe cuánto hay o deja el lote vacío.",
+        );
+      } else lotCode = code.code;
+    }
+    const expiryText = cell("lotExpiry");
+    let lotExpiresOn: string | null = null;
+    if (expiryText !== "") {
+      const day = parseCalendarDay(expiryText);
+      if (lotText === "") {
+        issue(
+          "lotExpiry",
+          "La caducidad va con su lote: escribe el lote o deja la caducidad vacía.",
+        );
+      } else if (!day || day > "2200-12-31") {
+        issue(
+          "lotExpiry",
+          /^\d{5}(\.\d+)?$/.test(expiryText)
+            ? "La fecha viene como número de Excel. Da a la columna formato de texto y escríbela como 2027-03-05 o 05/03/2027."
+            : "No se entiende la fecha. Escríbela como 2027-03-05 o 05/03/2027 (día/mes/año).",
+        );
+      } else lotExpiresOn = day;
+    }
+    // Only a row that gives a lot says it: the others keep their shape.
+    if (stock && lotCode) {
+      stock.lotCode = lotCode;
+      stock.lotExpiresOn = lotExpiresOn;
+    }
+
     // VAL-03B: the cost of that stock, per unit of the product.
     const costText = number("unitCost");
     if (costText !== null) {
@@ -390,7 +437,8 @@ export function validateImportRows(
     if (sku !== "" && unitCode) {
       const key = foldName(sku);
       const first = firstBySku.get(key);
-      const place = stock?.locationId ?? "";
+      // A product repeats for another location, or another lot (WMS-21).
+      const place = stock ? `${stock.locationId}|${stock.lotCode ?? ""}` : "";
       if (!first) {
         firstBySku.set(key, {
           row,
@@ -398,6 +446,9 @@ export function validateImportRows(
           unitCode,
           locations: new Set([place]),
           presentation,
+          lots: new Map(
+            lotCode ? [[lotCode, { row, expiresOn: lotExpiresOn }]] : [],
+          ),
         });
       } else if (
         foldName(first.name) !== foldName(name) ||
@@ -411,11 +462,30 @@ export function validateImportRows(
         issue(
           "sku",
           place === ""
-            ? `La clave ya está en la fila ${first.row}. Una clave solo se repite para dar la existencia de otra ubicación.`
-            : `La clave ya está en la fila ${first.row} con la misma ubicación. Suma las existencias en una sola fila.`,
+            ? `La clave ya está en la fila ${first.row}. Una clave solo se repite para dar la existencia de otra ubicación o de otro lote.`
+            : lotCode
+              ? `La clave ya está en la fila ${first.row} con la misma ubicación y el mismo lote. Suma las existencias en una sola fila.`
+              : `La clave ya está en la fila ${first.row} con la misma ubicación. Suma las existencias en una sola fila.`,
         );
       } else {
         first.locations.add(place);
+      }
+      // A lot has one expiry date, whatever row gives it.
+      if (first && lotCode) {
+        const seen = first.lots.get(lotCode);
+        if (!seen) first.lots.set(lotCode, { row, expiresOn: lotExpiresOn });
+        else if (
+          lotExpiresOn &&
+          seen.expiresOn &&
+          seen.expiresOn !== lotExpiresOn
+        ) {
+          issue(
+            "lotExpiry",
+            `El lote ${lotCode} ya trae otra caducidad en la fila ${seen.row}. Un lote tiene una sola caducidad.`,
+          );
+        } else if (lotExpiresOn && !seen.expiresOn) {
+          seen.expiresOn = lotExpiresOn;
+        }
       }
       // A product brings one presentation: its rows repeat it or leave it
       // empty, so the stock counted in it has a single content.
@@ -632,7 +702,7 @@ export async function validateImport(
               line.stock.inPresentation && line.presentation
                 ? `${formatDecimal(line.stock.captured)} ${pluralizeName(line.presentation.name, dec(line.stock.captured))} × ${formatDecimal(line.presentation.content)} = `
                 : ""
-            }${formatStock(line.stock.base, line.unitCode)} en ${line.stock.locationPath}`
+            }${formatStock(line.stock.base, line.unitCode)} en ${line.stock.locationPath}${line.stock.lotCode ? ` · lote ${line.stock.lotCode}` : ""}`
           : null,
         minimum: line.minimum ? formatStock(line.minimum, line.unitCode) : null,
       };

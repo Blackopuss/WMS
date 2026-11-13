@@ -239,6 +239,39 @@ describe("operation settings", () => {
       ),
     ).toBe("fullest");
   });
+
+  it("«fefo» is no longer a choice: what expires first always leaves first (ADR 0040)", async () => {
+    const owner = await company();
+    expect(PICKING_STRATEGY.options.map((option) => option.value)).toEqual([
+      "fullest",
+      "emptiest",
+      "fifo",
+    ]);
+    expect(
+      await updateOperationSetting(
+        owner,
+        operationSettings,
+        PICKING_STRATEGY.key,
+        "fefo",
+      ),
+    ).toEqual({ ok: false, error: "Elige una de las opciones." });
+    // A company that had chosen it reads the default.
+    await db.organizationSetting.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        key: PICKING_STRATEGY.key,
+        value: "fefo",
+        updatedByUserId: owner.userId,
+      },
+    });
+    expect(
+      await readSetting(
+        forOrganization(owner.organizationId),
+        PICKING_STRATEGY,
+      ),
+    ).toBe("fullest");
+  });
 });
 
 describe("picking follows the company's choice", () => {

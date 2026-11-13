@@ -130,6 +130,9 @@ export async function registerAdjustmentAction(
   return receive("adjustment", productId, prev, formData);
 }
 
+/** The choice of an adjustment for a lot the system does not know (WMS-21). */
+const NEW_LOT = "new";
+
 const SERVICES = {
   adjustment: registerAdjustment,
   entry: registerEntry,
@@ -177,10 +180,12 @@ async function receive(
         quantity: values.quantity,
         reference: values.reference,
         reason: values.reason,
-        // WMS-21: only the forms of a product by lot send them.
-        lotCode: values.lotCode,
-        lotExpiresOn: values.lotExpiresOn,
-        lotId: from.lotId || values.lotId,
+        // WMS-21: only the forms of a product by lot send them. An
+        // adjustment names a lot of the list, or a new one («new») by code.
+        ...(kind !== "adjustment" || values.lotId === NEW_LOT
+          ? { lotCode: values.lotCode, lotExpiresOn: values.lotExpiresOn }
+          : {}),
+        lotId: from.lotId || (values.lotId === NEW_LOT ? "" : values.lotId),
         // Only the forms that show the field send it (VAL-03).
         unitCost: values.unitCost,
         // Created with the form and resent on every retry (INV-21).

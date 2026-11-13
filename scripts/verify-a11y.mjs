@@ -40,6 +40,7 @@ const SCREENS = [
   "/inventario",
   "/inventario/nuevo",
   "/inventario/sin-acomodar",
+  "/inventario/por-caducar",
   "/movimientos",
   "/movimientos/entrada",
   "/movimientos/salida-rapida",
@@ -261,11 +262,13 @@ try {
       }
     }
 
-    // The detail screens of what exists: the first product, order and count.
+    // The detail screens of what exists: the first product, order, count and lot.
     for (const [list, pattern] of [
       ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/],
       ["/compras", /^\/compras\/ordenes\/[0-9a-f-]{36}$/],
       ["/conteos", /^\/conteos\/[0-9a-f-]{36}$/],
+      // WMS-21: the card of a lot about to expire.
+      ["/inventario/por-caducar", /^\/inventario\/lotes\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

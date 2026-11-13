@@ -71,6 +71,8 @@ type Company = {
   organizationId: string;
   email: string;
   productIds: string[];
+  /** Lots of the products by lot (WMS-21): for «Ficha del lote». */
+  lotIds: string[];
 };
 
 /** The company of a previous run, with a new password for its reader. */
@@ -94,11 +96,16 @@ async function reuse(size: number): Promise<Company | null> {
     where: { organizationId },
     select: { id: true },
   });
+  const lots = await db.lot.findMany({
+    where: { organizationId },
+    select: { id: true },
+  });
   return {
     size,
     organizationId,
     email: reader.email,
     productIds: products.map((p) => p.id),
+    lotIds: lots.map((lot) => lot.id),
   };
 }
 
@@ -199,6 +206,10 @@ async function seed(size: number): Promise<Company> {
         name: nameOf(n),
         barcode: `750${String(size).padStart(5, "0")}${String(n).padStart(5, "0")}`,
         categoryId: categories[n % categories.length]!.id,
+        // WMS-21: one product in twenty is controlled by lot.
+        ...(n % 20 === 0
+          ? { tracking: "LOT" as const, lotExpiry: "OPTIONAL" as const }
+          : {}),
       });
     }
     await db.product.createMany({ data: rows });
@@ -208,8 +219,29 @@ async function seed(size: number): Promise<Company> {
     const done = await result;
     if (!done.ok) throw new Error(JSON.stringify(done));
   };
+  /** A day from today, for the expiry of a lot: «2026-12-01». */
+  const inDays = (days: number) =>
+    new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
   let n = 0;
   for (const productId of productIds) {
+    if (n % 20 === 0) {
+      // Two lots, one about to expire: «Por caducar» has something.
+      for (const [code, days] of [
+        [`A${n}`, 10 + (n % 15)],
+        [`B${n}`, 200],
+      ] as const) {
+        await must(
+          registerInitialBalance(actor, {
+            productId,
+            quantity: String(20 + (n % 50)),
+            lotCode: code,
+            lotExpiresOn: inDays(days),
+          }),
+        );
+      }
+      n++;
+      continue;
+    }
     await must(
       registerInitialBalance(actor, {
         productId,
@@ -225,7 +257,17 @@ async function seed(size: number): Promise<Company> {
     n++;
   }
 
-  return { size, organizationId, email, productIds };
+  const lots = await db.lot.findMany({
+    where: { organizationId },
+    select: { id: true },
+  });
+  return {
+    size,
+    organizationId,
+    email,
+    productIds,
+    lotIds: lots.map((lot) => lot.id),
+  };
 }
 
 /** Signs in through the real form and returns the session cookie header. */
@@ -251,7 +293,7 @@ async function signIn(email: string): Promise<string> {
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]!;
 
 /** The common reads of a day of work, with what varies in each. */
-function screens(company: Company) {
+function screens(company: Company): Record<string, () => string> {
   const pages = Math.max(1, Math.ceil(company.size / 25));
   return {
     Inicio: () => "/inicio",
@@ -264,6 +306,11 @@ function screens(company: Company) {
     Movimientos: () => "/movimientos",
     "Movimientos de un producto": () =>
       `/movimientos?producto=${pick(company.productIds)}`,
+    // WMS-21: lots about to expire and the card of one lot.
+    "Por caducar": () => "/inventario/por-caducar",
+    ...(company.lotIds.length > 0
+      ? { "Ficha del lote": () => `/inventario/lotes/${pick(company.lotIds)}` }
+      : {}),
   };
 }
 
@@ -283,13 +330,13 @@ async function load(
       ? new Promise((done) => setTimeout(done, 1_000 + Math.random() * 3_000))
       : null;
   const kinds = screens(company);
-  const names = Object.keys(kinds) as (keyof typeof kinds)[];
+  const names = Object.keys(kinds);
   const times = new Map<string, number[]>(names.map((name) => [name, []]));
   let errors = 0;
   // Warm up: the first render of each screen compiles nothing in
   // production, but fills caches like a real morning would.
   for (const name of names) {
-    await fetch(`${BASE}${kinds[name]()}`, { headers: { cookie } });
+    await fetch(`${BASE}${kinds[name]!()}`, { headers: { cookie } });
   }
   const started = performance.now();
   await Promise.all(
@@ -298,7 +345,7 @@ async function load(
         await pause();
         const name = pick(names);
         const t0 = performance.now();
-        const response = await fetch(`${BASE}${kinds[name]()}`, {
+        const response = await fetch(`${BASE}${kinds[name]!()}`, {
           headers: { cookie },
           redirect: "manual",
         });
