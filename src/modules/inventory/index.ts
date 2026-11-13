@@ -361,6 +361,25 @@ export type {
 export { buildShipmentPdf } from "./shipment-pdf";
 export type { ShipmentPdf } from "./shipment-pdf";
 export {
+  LABELS_MAX,
+  LABEL_COPIES_MAX,
+  LABEL_KINDS,
+  TOO_MANY_MESSAGE,
+  buildLabels,
+  isLabelKind,
+  labelDefaults,
+  previewLocationLabels,
+  productLabelOptions,
+} from "./labels";
+export type {
+  LabelKind,
+  LocationLabelPreview,
+  LabelPdf,
+  LabelRequest,
+  LabelsResult,
+  ProductLabelOptions,
+} from "./labels";
+export {
   SHIPMENT_STATUSES,
   SHIPMENT_STATUS_LABELS,
   formatShipmentNumber,
@@ -413,6 +432,8 @@ export {
   CONTAINERS_MODE,
   PACKING_MODE,
   SHIPMENT_DETAILS,
+  LABEL_FORMAT,
+  LABEL_CODES_SETTING,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {

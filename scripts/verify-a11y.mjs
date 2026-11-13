@@ -68,6 +68,8 @@ const SCREENS = [
   "/configuracion",
   "/ubicaciones",
   "/ubicaciones/niveles",
+  // WMS-26: labels of the locations.
+  "/ubicaciones/etiquetas",
   "/configuracion/equipo",
   "/configuracion/plan",
 ];
@@ -272,6 +274,8 @@ try {
     // The detail screens of what exists: the first product, order, count and lot.
     for (const [list, pattern, suffix] of [
       ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/],
+      // WMS-26: the labels of a product.
+      ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/, "/etiquetas"],
       ["/compras", /^\/compras\/ordenes\/[0-9a-f-]{36}$/],
       ["/conteos", /^\/conteos\/[0-9a-f-]{36}$/],
       // WMS-21: the card of a lot about to expire.

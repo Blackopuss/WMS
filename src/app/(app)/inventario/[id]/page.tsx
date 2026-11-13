@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Pencil,
+  Printer,
   Scale,
   ShieldAlert,
 } from "lucide-react";
@@ -205,6 +206,15 @@ export default async function ProductoPage({
           },
       ].filter((item) => item !== false)
     : [];
+  // WMS-26: its label, and those of its lots or serials; reading is enough.
+  const links = [
+    ...occasional,
+    {
+      href: `/inventario/${product.id}/etiquetas`,
+      label: "Imprimir etiquetas",
+      icon: Printer,
+    },
+  ];
 
   const facts: [string, string][] = [
     ["Clave (SKU)", product.sku],
@@ -244,9 +254,9 @@ export default async function ProductoPage({
         description={product.description ?? undefined}
         actions={actions}
       />
-      {occasional.length > 0 && (
+      {links.length > 0 && (
         <p className="-mt-2 flex flex-wrap gap-x-6">
-          {occasional.map(({ href, label, icon: Icon }) => (
+          {links.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}

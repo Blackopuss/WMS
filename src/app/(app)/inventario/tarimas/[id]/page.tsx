@@ -8,6 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PrintLabelLink,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
@@ -129,6 +130,10 @@ export default async function TarimaPage({
           Etiqueta y lugar
         </h2>
         <CopyCode code={box.code} />
+        {/* WMS-26: the label to stick on it. */}
+        <PrintLabelLink
+          href={`/api/etiquetas/contenedor?id=${idPath(box.id)}`}
+        />
         <p className="[overflow-wrap:anywhere]">
           <span className="text-muted-foreground">
             {box.open ? "Está en " : "Se desarmó en "}

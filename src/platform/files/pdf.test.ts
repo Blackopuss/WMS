@@ -170,4 +170,30 @@ describe("text", () => {
     }
     expect(wrapText("", 100, 10, "regular")).toEqual([""]);
   });
+
+  it("draws pages of another size and many boxes at once (WMS-26)", () => {
+    const page = new PdfPageWriter({ width: 283.46, height: 141.73 });
+    page.text(8, 20, "Etiqueta");
+    page.fillRects([
+      { x: 10, y: 100, width: 1.5, height: 30 },
+      { x: 13, y: 100, width: 3, height: 30 },
+    ]);
+    page.fillRects([]);
+    const file = buildPdf([page, new PdfPageWriter()], { title: "x" });
+    const objects = objectsOf(file);
+    expect(objects[6]).toContain("/MediaBox [0 0 283.46 141.73]");
+    // The other page is still letter.
+    expect(objects[8]).toContain(
+      `/MediaBox [0 0 ${PDF_PAGE.width} ${PDF_PAGE.height}]`,
+    );
+    // Coordinates flip with the height of that page; one fill for both.
+    expect(objects[7]).toContain("Td (Etiqueta) Tj");
+    expect(objects[7]).toContain("8 121.73 Td");
+    expect(objects[7]).toContain(
+      "0 g\n10 11.73 1.5 30 re\n13 11.73 3 30 re\nf",
+    );
+    expect(objects[7]!.match(/\bf\b/g)).toHaveLength(1);
+    expect(() => new PdfPageWriter({ width: 0, height: 10 })).toThrow();
+    expect(() => new PdfPageWriter({ width: 10, height: 99_999 })).toThrow();
+  });
 });

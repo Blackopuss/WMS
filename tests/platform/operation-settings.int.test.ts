@@ -10,6 +10,8 @@ import {
   CONTAINERS_MODE,
   PACKING_MODE,
   SHIPMENT_DETAILS,
+  LABEL_FORMAT,
+  LABEL_CODES_SETTING,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   createOutboundOrder,
@@ -194,6 +196,13 @@ describe("operation settings", () => {
         value: "optional",
         defaultValue: "optional",
       },
+      // WMS-26: letter sheets with barcode and QR unless the company says.
+      {
+        key: LABEL_FORMAT.key,
+        value: "letter_10",
+        defaultValue: "letter_10",
+      },
+      { key: LABEL_CODES_SETTING.key, value: "both", defaultValue: "both" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -206,6 +215,8 @@ describe("operation settings", () => {
       { key: CONTAINERS_MODE.key, value: "off" },
       { key: PACKING_MODE.key, value: "off" },
       { key: SHIPMENT_DETAILS.key, value: "optional" },
+      { key: LABEL_FORMAT.key, value: "letter_10" },
+      { key: LABEL_CODES_SETTING.key, value: "both" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

@@ -8,6 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PrintLabelLink,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
@@ -140,6 +141,15 @@ export default async function PedidoPage({
             .join(" · ")}
         </span>
       </div>
+      {/* WMS-26: the order's label and, once packed, those of its packages. */}
+      <p className="-mt-2 flex flex-wrap gap-x-6">
+        <PrintLabelLink href={`/api/etiquetas/pedido?id=${order.id}`} />
+        {(order.status === "PACKING" || order.status === "PACKED") && (
+          <PrintLabelLink href={`/api/etiquetas/bultos?pedido=${order.id}`}>
+            Imprimir etiquetas de los bultos
+          </PrintLabelLink>
+        )}
+      </p>
       {(order.address || order.note) && (
         <div className="max-w-3xl space-y-1 text-sm [overflow-wrap:anywhere]">
           {order.address && <p>{order.address}</p>}

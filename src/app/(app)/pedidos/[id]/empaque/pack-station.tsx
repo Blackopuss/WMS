@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { PrintLabelLink } from "@/components/label-print-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -347,6 +348,7 @@ function OpenPackage({
         <Badge variant="secondary">En {box.locationName}</Badge>
       </div>
       <CopyCode code={box.code} />
+      <PrintLabelLink href={`/api/etiquetas/contenedor?id=${box.id}`} />
       {box.items.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Está vacía: escanea lo que va dentro.

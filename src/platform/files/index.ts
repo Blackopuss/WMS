@@ -32,4 +32,28 @@ export {
   textWidth,
   wrapText,
 } from "./pdf";
-export type { PdfFont, PdfTextOptions } from "./pdf";
+export type { PdfFont, PdfRect, PdfTextOptions } from "./pdf";
+export {
+  CODE128_MAX_LENGTH,
+  CODE128_QUIET_ZONE,
+  decodeCode128,
+  encodeCode128,
+} from "./code128";
+export type { Code128, Code128Result } from "./code128";
+export {
+  LABEL_CODES,
+  LABEL_CODE_IDS,
+  LABEL_FORMATS,
+  LABEL_FORMAT_IDS,
+  buildLabelsPdf,
+  drawCode128,
+  drawQr,
+  isLabelCodes,
+  isLabelFormat,
+} from "./labels";
+export type {
+  LabelCodes,
+  LabelContent,
+  LabelFormat,
+  LabelFormatSpec,
+} from "./labels";

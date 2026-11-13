@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * The label of a container, big and easy to read out or copy (WMS-53).
- * Printing it is WMS-26.
+ * Printing it: «Imprimir etiqueta» (WMS-26).
  */
 export function CopyCode({ code }: { code: string }) {
   return (

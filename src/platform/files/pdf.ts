@@ -260,9 +260,27 @@ export type PdfTextOptions = {
   gray?: number;
 };
 
-/** One page being drawn. Coordinates from the top-left corner. */
+/** A rectangle, from its top-left corner, in points. */
+export type PdfRect = { x: number; y: number; width: number; height: number };
+
+/**
+ * One page being drawn. Coordinates from the top-left corner. Letter
+ * unless another size is given (labels, WMS-26).
+ */
 export class PdfPageWriter {
   private readonly operations: string[] = [];
+  readonly size: { width: number; height: number };
+
+  constructor(size: { width: number; height: number } = PDF_PAGE) {
+    if (
+      !(size.width > 0 && size.height > 0) ||
+      size.width > 14_400 ||
+      size.height > 14_400
+    ) {
+      throw new Error("Invalid PDF page size");
+    }
+    this.size = { width: size.width, height: size.height };
+  }
 
   /** Writes one line of text; `y` is its baseline. */
   text(x: number, y: number, value: string, options: PdfTextOptions = {}) {
@@ -276,7 +294,7 @@ export class PdfPageWriter {
           ? x - width / 2
           : x;
     this.operations.push(
-      `BT ${number(options.gray ?? 0)} g /${font === "bold" ? "F2" : "F1"} ${number(size)} Tf ${number(left)} ${number(PDF_PAGE.height - y)} Td ${literal(value)} Tj ET`,
+      `BT ${number(options.gray ?? 0)} g /${font === "bold" ? "F2" : "F1"} ${number(size)} Tf ${number(left)} ${number(this.size.height - y)} Td ${literal(value)} Tj ET`,
     );
   }
 
@@ -289,15 +307,28 @@ export class PdfPageWriter {
     options: { width?: number; gray?: number } = {},
   ) {
     this.operations.push(
-      `${number(options.gray ?? 0)} G ${number(options.width ?? 0.5)} w ${number(x1)} ${number(PDF_PAGE.height - y1)} m ${number(x2)} ${number(PDF_PAGE.height - y2)} l S`,
+      `${number(options.gray ?? 0)} G ${number(options.width ?? 0.5)} w ${number(x1)} ${number(this.size.height - y1)} m ${number(x2)} ${number(this.size.height - y2)} l S`,
     );
   }
 
   /** A filled box. */
   box(x: number, y: number, width: number, height: number, gray: number) {
     this.operations.push(
-      `${number(gray)} g ${number(x)} ${number(PDF_PAGE.height - y - height)} ${number(width)} ${number(height)} re f`,
+      `${number(gray)} g ${number(x)} ${number(this.size.height - y - height)} ${number(width)} ${number(height)} re f`,
     );
+  }
+
+  /**
+   * Many filled boxes of one gray in a single operation: the bars of a
+   * barcode or the modules of a QR code (WMS-26).
+   */
+  fillRects(rects: readonly PdfRect[], gray = 0) {
+    if (rects.length === 0) return;
+    const parts = rects.map(
+      (rect) =>
+        `${number(rect.x)} ${number(this.size.height - rect.y - rect.height)} ${number(rect.width)} ${number(rect.height)} re`,
+    );
+    this.operations.push(`${number(gray)} g\n${parts.join("\n")}\nf`);
   }
 
   /** The drawing of the page, as its content stream. */
@@ -337,7 +368,7 @@ export function buildPdf(
     const id = pageIds[index]!;
     const stream = page.content();
     objects[id] =
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PAGE.width} ${PDF_PAGE.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${id + 1} 0 R >>`;
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${number(page.size.width)} ${number(page.size.height)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${id + 1} 0 R >>`;
     // The stream is bytes: every character of it is one byte (latin1).
     objects[id + 1] =
       `<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`;

@@ -8,6 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PrintLabelLink,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
@@ -120,6 +121,9 @@ export default async function EmbarquePage({
             Descargar PDF
           </a>
         )}
+        <PrintLabelLink
+          href={`/api/etiquetas/embarque?id=${idPath(shipment.id)}`}
+        />
       </div>
 
       {shipment.status === "CANCELLED" && shipment.cancelReason && (

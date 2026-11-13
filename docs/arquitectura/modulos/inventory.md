@@ -93,6 +93,7 @@ código»):
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
+| Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido y embarque, con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar |
 | Importar salidas | `exit-import.ts`, `exit-import-apply.ts` | `startExitImport` → `reviewExitImport` → `confirmExitImport` → `applyExitImport` (worker); `getExitCoverage` |
@@ -124,6 +125,10 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Embarques: `shipment.read|create|dispatch|export` (WMS-16: ver, armar,
   confirmar la salida, PDF).
 - Archivos: `import.create|read|confirm|cancel`, `export.create`.
+- Etiquetas (WMS-26): sin permiso propio; imprimir pide la lectura de lo que
+  se etiqueta (`location.read`, `product.read`, `stock.read`,
+  `outbound.read`, `shipment.read`, y `purchasing.receipt.read` para las
+  series de una recepción).
 
 Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 [catalog](catalog.md) y [locations](locations.md), pero son de este módulo
@@ -160,6 +165,8 @@ la transacción que decide:
 | `inventory.containers.mode` | **`off`**, `on` (tarimas y cajas, WMS-53) |
 | `inventory.packing.mode` | **`off`**, `on` (verificar y empacar antes de despachar, WMS-15) |
 | `inventory.shipment.details` | **`optional`**, `required` (transportista y quién se lo lleva antes de confirmar la salida, WMS-16) |
+| `inventory.labels.format` | **`letter_10`** (hoja carta, 10 por hoja), `100x50`, `100x150` (mm; WMS-26) |
+| `inventory.labels.codes` | **`both`** (barras y QR), `barcode`, `qr` (WMS-26) |
 
 ## Trabajos en segundo plano
 
@@ -175,14 +182,16 @@ salidas), 0031 (costo promedio), 0032 (sin Ventas), 0033 (estado y lote del
 saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 (capacidad), 0040 (lotes y caducidad), 0041 (números de serie y
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
-contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques).
+contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques), 0047 (etiquetas e
+impresión).
 
 ## Pruebas
 
 `tests/inventory/*.int.test.ts` (terminan con `reconcileStock` vacío) y las
 unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`).
-Acomodo en `putaway.int.test.ts`; empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`. Casos de alcance en
+Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
+vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`. Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara
