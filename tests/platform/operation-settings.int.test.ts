@@ -15,6 +15,7 @@ import {
   LABEL_CODES_SETTING,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
+  REPLENISHMENT_MODE,
   createOutboundOrder,
   registerEntry,
   releaseOutboundOrder,
@@ -210,6 +211,8 @@ describe("operation settings", () => {
         defaultValue: "letter_10",
       },
       { key: LABEL_CODES_SETTING.key, value: "both", defaultValue: "both" },
+      // WMS-24: picking places are replenished only when someone asks.
+      { key: REPLENISHMENT_MODE.key, value: "off", defaultValue: "off" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -225,6 +228,7 @@ describe("operation settings", () => {
       { key: CUSTOMER_RETURN_WITHOUT_ORDER.key, value: "allow" },
       { key: LABEL_FORMAT.key, value: "letter_10" },
       { key: LABEL_CODES_SETTING.key, value: "both" },
+      { key: REPLENISHMENT_MODE.key, value: "off" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

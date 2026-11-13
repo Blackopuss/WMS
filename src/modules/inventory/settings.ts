@@ -361,6 +361,31 @@ export const LABEL_CODES_SETTING = {
   defaultValue: "both",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-24 (ADR 0051): whether the worker fills picking locations by itself
+ * once an hour (`runReplenishmentRound`). Off by default: rules are only
+ * applied when someone presses «Reponer ahora».
+ */
+export const REPLENISHMENT_MODE = {
+  key: "inventory.replenishment.mode",
+  module: "inventory",
+  area: "Reposición",
+  label: "Reposición de surtido",
+  options: [
+    {
+      value: "off",
+      label: "Solo al pulsar «Reponer ahora»",
+      help: "Las tareas de reposición se crean cuando alguien lo pide.",
+    },
+    {
+      value: "round",
+      label: "Cada hora, automáticamente",
+      help: "El sistema crea las tareas de las ubicaciones de surtido que están bajo su mínimo.",
+    },
+  ],
+  defaultValue: "off",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -375,4 +400,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   CUSTOMER_RETURN_WITHOUT_ORDER,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
+  REPLENISHMENT_MODE,
 ];

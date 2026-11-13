@@ -20,6 +20,7 @@ import { dayWindow } from "./calendar-day";
 import { isExpired, lotDayOf } from "./lot-rules";
 import { PICKING_STRATEGY, PICK_EXPIRED } from "./settings";
 import { AVAILABLE_ANY_LOT } from "./stock-status";
+import { rankStockSources } from "./stock-sources";
 import { formatTaskNumber } from "./task-states";
 
 /**
@@ -105,24 +106,9 @@ export async function pickSources(
     }))
     // A lot is good through its expiry day (the company's calendar).
     .filter((row) => !today || !isExpired(row.expiresOn, today));
-  const byQuantity = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
-    strategy === "emptiest"
-      ? a.quantity.comparedTo(b.quantity)
-      : b.quantity.comparedTo(a.quantity);
-  // Lot ids are UUIDv7: their order is the order the lots were registered.
-  const byAge = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
-    (a.lotId ?? "").localeCompare(b.lotId ?? "");
-  // No date goes last: it is not about to expire.
-  const byExpiry = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
-    (a.expiresOn ?? "9999-12-31").localeCompare(b.expiresOn ?? "9999-12-31");
-  const ranked = rows.sort(
-    (a, b) =>
-      byExpiry(a, b) ||
-      (strategy === "fifo" ? byAge(a, b) : 0) ||
-      byQuantity(a, b) ||
-      a.locationId.localeCompare(b.locationId) ||
-      byAge(a, b),
-  );
+  // WMS-21A: what expires first, then the company's choice (one rule,
+  // shared with replenishment, WMS-24).
+  const ranked = rankStockSources(rows, strategy);
   const sources: PickSource[] = [];
   // What this plan already takes of each location, across its lots.
   const takenAt = new Map<string, Decimal>();

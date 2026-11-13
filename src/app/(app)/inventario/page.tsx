@@ -5,6 +5,7 @@ import {
   CircleCheck,
   Package,
   Plus,
+  Repeat,
   ScanSearch,
   Search,
   Upload,
@@ -32,6 +33,7 @@ import {
   formatStock,
   getInventoryValue,
   getStockTotals,
+  replenishmentVisible,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import {
@@ -144,6 +146,11 @@ export default async function InventarioPage({
     !showArchived &&
     access.can("inventory.stock.read") &&
     (await containersVisible(actor));
+  // WMS-23: replenishment, only for a warehouse with picking places.
+  const showReplenishment =
+    !showArchived &&
+    access.can("inventory.minimum.read") &&
+    (await replenishmentVisible(actor));
   // WMS-21: lots with stock that expired or are about to.
   const expiringCount =
     !showArchived && access.can("inventory.stock.read")
@@ -239,7 +246,9 @@ export default async function InventarioPage({
         }
       />
       {!showArchived &&
-        (access.can("inventory.movement.read") || showContainers) && (
+        (access.can("inventory.movement.read") ||
+          showContainers ||
+          showReplenishment) && (
           <p className="-mt-2 flex flex-wrap gap-x-6">
             {access.can("inventory.movement.read") && (
               <Link
@@ -257,6 +266,15 @@ export default async function InventarioPage({
               >
                 <Boxes aria-hidden="true" className="size-4" />
                 Tarimas y cajas
+              </Link>
+            )}
+            {showReplenishment && (
+              <Link
+                href="/inventario/reposicion"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <Repeat aria-hidden="true" className="size-4" />
+                Reposición de surtido
               </Link>
             )}
           </p>

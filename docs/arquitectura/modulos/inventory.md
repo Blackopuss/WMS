@@ -101,7 +101,7 @@ código»):
 | Salida rápida | `quick-exit.ts` | `registerQuickExit`: varias líneas en un movimiento |
 | Existencias de un producto | `product-stock.ts`, `stock-status.ts` | `getProductStock` («hay», «disponible», apartado); estados del saldo y filtros `availableOfLot`, `AVAILABLE_ANY_LOT` |
 | Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo), `permissionForStatusChange` |
-| Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `releaseReservationPart`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento. `TASK_HOLD` (fuente de lo que aparta una tarea de acomodo) y `PRODUCT_HOLDS` (filtro de lo apartado de todo un producto) |
+| Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `releaseReservationPart`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento. `TASK_HOLD` (fuente de lo que aparta una tarea de acomodo o de reposición) y `PRODUCT_HOLDS` (filtro de lo apartado de todo un producto) |
 | Acomodo | `putaway.ts`, `putaway-rules.ts` | `putawayTarget` (la única que decide el lugar recomendado), `createPutawayTasks` (dentro de la transacción de una recepción o entrada), `createContainerPutawayTask` (una tarea por tarima, WMS-53), `createPendingPutawayTasks` («Crear tareas de acomodo», también para tarimas), `isTaskNumberClash`; orden puro `rankPutawayPlaces` |
 | Lotes | `lots.ts`, `lot-rules.ts` | lotes con existencias, ficha, por caducar (`listExpiringLots`, `countExpiringLots`), `changeLotExpiry`; reglas puras del código y la fecha del lote |
 | Series y trazabilidad | `serials.ts`, `serial-rules.ts`, `traceability.ts` | reglas puras de la serie (`normalizeSerial`, `parseSerialList`, `MAX_SERIALS_PER_OPERATION`, `serialsText`); `serialUnitsOfLines` (para Compras); `findTraceMatches` (un cuadro: lote, serie, `PS-…`, `EM-…`, `DV-…`, `OC-…`), `traceSerial`, `traceLot` (ambos dicen en qué embarque salió y con qué devolución volvió), `tracePurchaseOrder`, `listProductSerials`; `listMovements` filtra por `serialUnitId` y cada línea trae sus `serials` |
@@ -110,8 +110,9 @@ código»):
 | Costo y valor | `average-cost.ts`, `inventory-value.ts` | `parseCost`, `getInventoryValue`, `getProductCost`, `mayReadInventoryCosts` |
 | Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`) y `postReturnExit` (`RETURN`), dentro de la transacción de la recepción o devolución |
 | Mínimos | `minimums.ts` | `setMinimum`, `getMinimum`, `listLowStock`, `countLowStock` |
+| Reposición de surtido | `replenishment.ts`, `replenishment-rules.ts`, `stock-sources.ts` | Reglas por producto y ubicación de surtido (`saveReplenishmentRule`, `removeReplenishmentRule`, `listReplenishmentRules`, `getReplenishmentRule`, `listPickingPlaces`, `replenishmentVisible`); `replenishNow` («Reponer ahora») y `runReplenishmentRound` (la ronda del worker) crean tareas `REPLENISH`; `replenishmentPlan` (interna) es la única que decide cuánto y de dónde; piezas puras `replenishQuantity`, `largestThatFits`, `splitAmongSources`, `replenishmentStateOf` y el orden de orígenes `rankStockSources`, compartido con el surtido (WMS-23/24) |
 | Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount`, `cancelCount`, `getCount`, `listCounts` |
-| Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK` y `PUTAWAY`; una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
+| Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY` y `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
 | Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; transiciones `FACILITY_TRANSFER_TRANSITIONS` |
@@ -127,7 +128,7 @@ código»):
 | Ajustes y trabajos | `settings.ts`, `import-apply.ts`, `exit-import-apply.ts` | `INVENTORY_SETTINGS` y cada ajuste; `inventoryJobHandlers`, `exitImportJobHandlers` |
 
 Internos que no se exportan pero deciden reglas: `picking.ts` (`pickSources`:
-de dónde y de qué lote se surte), `lot-resolve.ts`, `serials.ts` (qué
+de dónde y de qué lote se surte, con el orden de `stock-sources.ts`), `lot-resolve.ts`, `serials.ts` (qué
 unidades por serie mueve una operación), `entry-repeat.ts` (aviso de
 entrada repetida), `calendar-day.ts` (`dayWindow`: un día del calendario de la
 empresa), `valuation.ts`.
@@ -143,7 +144,9 @@ Todos los `inventory.*` del catálogo, por grupo:
   `transfer.create`, `adjustment.create`, `movement.reverse`.
 - Estados: `status.change`, `status.release`, `damage.report`.
 - Conteos: `count.read|create|update|apply`.
-- Tareas: `task.read|create|execute|cancel`.
+- Tareas: `task.read|create|execute|cancel` («Reponer ahora» pide `task.create`).
+- Reposición de surtido (WMS-23): sin permiso propio; ver las reglas es
+  `minimum.read` y crearlas, cambiarlas o quitarlas, `minimum.update`.
 - Pedidos: `outbound.read|create|release|cancel|pack` (`pack`: verificar y
   empacar, WMS-15).
 - Embarques: `shipment.read|create|dispatch|export` (WMS-16: ver, armar,
@@ -170,7 +173,8 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `serial_unit`, `serial_move`, `warehouse_task_serial`, `container`,
 `container_item`, `container_event`,
 `product_cost`, `stock_minimum`, `stock_count`, `stock_count_line`,
-`stock_count_capture`, `warehouse_task`, `stock_reservation`,
+`stock_count_capture`, `warehouse_task`, `replenishment_rule`,
+`stock_reservation`,
 `outbound_order`, `outbound_order_line`, `outbound_pack_shortage`,
 `shipment`, `shipment_order`, `shipment_line`, `customer_return`,
 `customer_return_line`, `customer_return_decision`, `facility_transfer`,
@@ -201,6 +205,7 @@ la transacción que decide:
 | `inventory.customer_return.without_order` | **`allow`**, `forbid` (devoluciones de clientes sin pedido, WMS-17) |
 | `inventory.labels.format` | **`letter_10`** (hoja carta, 10 por hoja), `100x50`, `100x150` (mm; WMS-26) |
 | `inventory.labels.codes` | **`both`** (barras y QR), `barcode`, `qr` (WMS-26) |
+| `inventory.replenishment.mode` | **`off`** (solo con «Reponer ahora»), `round` (la ronda del worker, cada hora; WMS-24) |
 
 ## Trabajos en segundo plano
 
@@ -208,6 +213,12 @@ la transacción que decide:
 | --- | --- | --- |
 | `inventory.import_products` | `inventoryJobHandlers` (`import-apply.ts`) | Aplica una importación confirmada por lotes; `onFailed` devuelve el cupo apartado |
 | `inventory.import_exits` | `exitImportJobHandlers` (`exit-import-apply.ts`) | Registra las salidas de un archivo confirmado; el folio evita descontar dos veces |
+
+Rondas (`scheduledRounds` de `src/modules/registry/rounds.ts`, cada hora):
+
+| Ronda | Función | Qué hace |
+| --- | --- | --- |
+| `inventory.replenishment` | `runReplenishmentRound` (`replenishment.ts`) | Con `inventory.replenishment.mode = round` y el módulo con escritura, crea en cada almacén activo las tareas de reposición que hacen falta, como el titular; repetirla o correrla dos veces a la vez no duplica (ADR 0051) |
 
 ## ADR
 
@@ -218,13 +229,15 @@ saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
 contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
-entre almacenes).
+entre almacenes), 0051 (reposición de surtido).
 
 ## Pruebas
 
 `tests/inventory/*.int.test.ts` (terminan con `reconcileStock` vacío) y las
 unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
-`lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`).
+`lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`,
+`replenishment-rules.test.ts`). Reposición de surtido en
+`replenishment.int.test.ts`.
 Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en

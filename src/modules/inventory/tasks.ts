@@ -1042,6 +1042,9 @@ export async function deliverTask(
       if (task.kind === "PUTAWAY") {
         return deliverPutaway(tx, actor, ofProduct(task), destination, input);
       }
+      if (task.kind === "REPLENISH") {
+        return deliverReplenish(tx, actor, ofProduct(task));
+      }
       const product = ofProduct(task);
       const moved = await postTaskTransfer(tx, actor, {
         productId: product.productId,
@@ -1279,6 +1282,64 @@ async function deliverPutaway(
     taskId: task.id,
     summary:
       `Acomodaste ${formatStock(quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} en ${place.name}.` +
+      (moved.notes ?? []).map((note) => ` ${note}`).join(""),
+  };
+}
+
+/**
+ * WMS-24 (ADR 0051): a replenishment left at its picking location (the
+ * caller locked product → locations → task). Like a put-away, the goods
+ * leave their hold and move with the transfer of every task; the capacity
+ * only reports (it was asked when the task was decided).
+ */
+async function deliverReplenish(
+  tx: Tx,
+  actor: InventoryActor,
+  task: ProductTask,
+): Promise<TaskResult> {
+  const hold = await tx.stockReservation.findFirst({
+    where: { sourceType: TASK_HOLD, sourceId: task.id, state: "ACTIVE" },
+    select: { id: true, remaining: true },
+  });
+  const quantity = dec(task.quantity.toString());
+  if (!hold || dec(hold.remaining.toString()).lessThan(quantity)) {
+    return stop(
+      "not_allowed",
+      `Lo apartado para esta tarea ya no está completo en ${task.fromLocation.name}. Si no puedes entregarla, reporta el problema.`,
+    );
+  }
+  // First let go of the hold, so the move may take it.
+  await consumeReservation(tx, hold.id, quantity);
+  const moved = await postTaskTransfer(tx, actor, {
+    productId: task.productId,
+    fromLocationId: task.fromLocationId,
+    toLocationId: task.toLocationId,
+    quantity: quantity.toString(),
+    lotId: task.lotId,
+    serials: await taskSerials(tx, task.id),
+    taskId: task.id,
+    idempotencyKey: `task:${task.id}`,
+    reference: formatTaskNumber(task.number),
+  });
+  if (!moved.ok) {
+    return stop(
+      "not_allowed",
+      `${moved.formError ?? Object.values(moved.fieldErrors)[0] ?? "No se pudo mover la carga."} Si no puedes entregarla, reporta el problema.`,
+    );
+  }
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "DELIVERED",
+      deliveredAt: new Date(),
+      movementId: moved.movementId,
+    },
+  });
+  return {
+    ok: true,
+    taskId: task.id,
+    summary:
+      `Repusiste ${formatStock(quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} en ${task.toLocation.name}.` +
       (moved.notes ?? []).map((note) => ` ${note}`).join(""),
   };
 }
@@ -1545,8 +1606,9 @@ export function cancelTask(
       );
       await settlePickedOrder(tx, task.outboundLine.orderId);
     }
-    // WMS-52: what a put-away held in its place is free again.
-    if (task.kind === "PUTAWAY") {
+    // WMS-52/24: what a put-away or a replenishment held in its place is
+    // free again.
+    if (task.kind === "PUTAWAY" || task.kind === "REPLENISH") {
       await releaseReservations(tx, { type: TASK_HOLD, id: task.id });
     }
     await recordAuditEvent(tx, {
@@ -1575,9 +1637,10 @@ export type TaskSummary = {
   urgent: boolean;
   /**
    * «TRANSFER» (a move asked by someone), «PICK» (an order, WMS-14) or
-   * «PUTAWAY» (what waits in «General» or receiving, WMS-52).
+   * «PUTAWAY» (what waits in «General» or receiving, WMS-52) or
+   * «REPLENISH» (fills a picking location from storage, WMS-24).
    */
-  kind: "TRANSFER" | "PICK" | "PUTAWAY";
+  kind: "TRANSFER" | "PICK" | "PUTAWAY" | "REPLENISH";
   /** PICK: the order it picks for. */
   order: { id: string; numberText: string; recipient: string } | null;
   /**
@@ -1678,7 +1741,7 @@ type SummaryRow = {
   number: number;
   status: WarehouseTaskStatus;
   priority: TaskPriority;
-  kind: "TRANSFER" | "PICK" | "PUTAWAY";
+  kind: "TRANSFER" | "PICK" | "PUTAWAY" | "REPLENISH";
   outboundLine: {
     order: { id: string; number: number; recipient: string };
   } | null;

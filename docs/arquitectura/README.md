@@ -173,7 +173,7 @@ mismo código de servidor. Hace cuatro cosas:
 | --- | --- | --- |
 | Corre trabajos de la cola, uno a la vez por worker (pueden correr varios) | `runWorker(jobHandlers)` de `platform/jobs` | continuo |
 | Cierra trabajos que fallaron en definitiva (`onFailed` devuelve lo apartado) | `settleFailedJobs` | cada 30 s y tras cada fallo |
-| Rondas programadas de los módulos, empresa por empresa | `runScheduledRounds(scheduledRounds)` | cada hora (hoy no hay ninguna) |
+| Rondas programadas de los módulos, empresa por empresa | `runScheduledRounds(scheduledRounds)` | cada hora (hoy, la reposición de surtido de Inventario, WMS-24) |
 | Latido para `/api/salud` y alertas operativas por correo | `writeWorkerHeartbeat`, `runAlertRound` de `platform/ops` | 15 s y 1 min |
 
 Un trabajo es una fila de `job` (ADR 0013): se encola con `enqueueJob(tx,

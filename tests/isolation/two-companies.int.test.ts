@@ -908,6 +908,19 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A replenishment rule of that rack (WMS-23).
+    await db.replenishmentRule.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId,
+        locationId: rackId,
+        minQuantity: "2",
+        maxQuantity: "6",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+        updatedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // A product by serial with one unit inside, its move and a task that
     // took it (WMS-21B): the move is written before its line.
     const serialProductId = newId();
