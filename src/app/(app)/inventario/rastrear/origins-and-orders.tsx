@@ -2,7 +2,11 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
-import type { TraceOrder, TraceOrigin } from "@/modules/inventory";
+import type {
+  TraceOrder,
+  TraceOrigin,
+  TraceShipment,
+} from "@/modules/inventory";
 
 /** An id as it may go into an address: nothing but its own characters. */
 const idPath = (value: string) =>
@@ -12,23 +16,27 @@ const idPath = (value: string) =>
 
 /**
  * WMS-21B: the receipts that brought a lot or a unit by serial (with the
- * purchase order and supplier for who may see them) and the orders it was
- * picked for. Shared by the card of a lot and the traceability of a serial.
+ * purchase order and supplier for who may see them), the orders it was
+ * picked for and (WMS-16) the shipments it left with. Shared by the card
+ * of a lot and the traceability of a serial.
  */
 export function OriginsAndOrders({
   origins,
   orders,
+  shipments = [],
   timeZone,
 }: {
   origins: TraceOrigin[];
   orders: TraceOrder[];
+  shipments?: TraceShipment[];
   timeZone: string;
 }) {
-  if (origins.length === 0 && orders.length === 0) return null;
+  if (origins.length === 0 && orders.length === 0 && shipments.length === 0)
+    return null;
   return (
     <section aria-labelledby="origen" className="rounded-xl border bg-card">
       <h2 id="origen" className="border-b p-4 font-medium sm:px-5">
-        Compras y pedidos
+        Compras, pedidos y embarques
       </h2>
       <ul className="divide-y">
         {origins.map((origin) => (
@@ -63,6 +71,36 @@ export function OriginsAndOrders({
               <Badge variant={order.delivered ? "secondary" : "outline"}>
                 {order.taskStatus}
               </Badge>
+            </Link>
+          </li>
+        ))}
+        {shipments.map((shipment, index) => (
+          <li key={`${shipment.shipmentId}:${index}`} className="relative">
+            <Link
+              href={`/pedidos/embarques/${idPath(shipment.shipmentId)}`}
+              className="flex min-h-14 flex-col justify-center gap-y-1 p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+            >
+              <span className="block font-medium [overflow-wrap:anywhere]">
+                Salió con el embarque {shipment.numberText} ·{" "}
+                {shipment.quantityText}
+              </span>
+              <span className="block [overflow-wrap:anywhere] text-muted-foreground">
+                {[
+                  `${shipment.orderNumberText} para ${shipment.recipient}`,
+                  shipment.carrier,
+                  shipment.trackingNumber && `Guía ${shipment.trackingNumber}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {shipment.shippedAt && (
+                  <>
+                    {" · "}
+                    <time dateTime={shipment.shippedAt.toISOString()}>
+                      {formatDateTime(shipment.shippedAt, timeZone)}
+                    </time>
+                  </>
+                )}
+              </span>
             </Link>
           </li>
         ))}

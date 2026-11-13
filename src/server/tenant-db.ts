@@ -74,6 +74,9 @@ export const TENANT_MODELS = [
   "OutboundOrderLine",
   "OutboundImport",
   "OutboundPackShortage",
+  "Shipment",
+  "ShipmentOrder",
+  "ShipmentLine",
   "OrganizationSetting",
   "WarehouseTask",
   "StockCount",
@@ -291,6 +294,7 @@ const LOCKABLE = {
   warehouseTask: "warehouse_task",
   outboundOrder: "outbound_order",
   outboundImport: "outbound_import",
+  shipment: "shipment",
 } as const;
 
 /**

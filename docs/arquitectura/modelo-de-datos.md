@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-77 tablas en 19 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+80 tablas en 20 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -23,6 +23,7 @@
 | Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Tareas, reservas y pedidos de salida | 6 | [inventory](modulos/inventory.md) |
+| Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 8 | [purchasing](modulos/purchasing.md) |
 
@@ -1190,7 +1191,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Inventario › Existencias y movimientos
 
-- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`.
+- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`.
 - `StockDirection`: `IN`, `OUT`.
 - `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`.
 
@@ -1285,7 +1286,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `ContainerPurpose`: `STORAGE`, `PACKING`.
 - `ContainerStatus`: `OPEN`, `CLOSED`.
-- `ContainerEventKind`: `CREATED`, `PACKED`, `UNPACKED`, `MOVED`, `CLOSED`, `SEALED`, `REOPENED`.
+- `ContainerEventKind`: `CREATED`, `PACKED`, `UNPACKED`, `MOVED`, `CLOSED`, `SEALED`, `REOPENED`, `SHIPPED`.
 
 ## Inventario › Conteos
 
@@ -1548,6 +1549,95 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `WarehouseTaskKind`: `TRANSFER`, `PICK`, `PUTAWAY`.
 - `StockReservationState`: `ACTIVE`, `CLOSED`.
 - `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKING`, `PACKED`, `SHIPPED`, `CANCELLED`.
+
+## Inventario › Embarques
+
+Embarques que sacan uno o varios pedidos del almacén con su transporte, sus pedidos y lo que salió con cada uno (producto, lote, series y bulto).
+
+Documento: [modulos/inventory.md](modulos/inventory.md).
+
+### Shipment · `shipment`
+
+A shipment (WMS-16, ADR 0045): one or several outbound orders that leave together from one warehouse, with who takes them. Confirming it writes one exit (`SHIPMENT`, key `ship:<id>`), consumes what the orders held in the staging place and ships them. Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | Consecutive per company («EM-0001»). |
+| `status` | `ShipmentStatus` | `DRAFT` |  |
+| `facilityId` | `String · Char(36)` |  | The warehouse it leaves from: its orders are of that warehouse. |
+| `carrier` | `String? · VarChar(120)` |  | Free text: there is no list of carriers. |
+| `trackingNumber` | `String? · VarChar(120)` |  | Guide or tracking number of the carrier. |
+| `vehiclePlate` | `String? · VarChar(20)` |  |  |
+| `driverName` | `String? · VarChar(160)` |  | Who takes it (driver or who picks it up). |
+| `note` | `String? · VarChar(500)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `shippedAt` | `DateTime? · DateTime(3)` |  |  |
+| `shippedByUserId` | `String? · Char(36)` |  |  |
+| `movementId` | `String? · Char(36)` |  | Its exit; null while a draft, or when nothing physical left. |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelledByUserId` | `String? · Char(36)` |  |  |
+| `cancelReason` | `String? · VarChar(300)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `status`, `shippedAt`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+### ShipmentOrder · `shipment_order`
+
+An outbound order in a shipment (WMS-16). `openOrderId` is the order while the shipment is not cancelled: unique in the company, so an order is in one open shipment at most. Removed only while its shipment is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `shipmentId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `openOrderId` | `String? · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `shipmentId`, `orderId`); (`organizationId`, `openOrderId`).
+- Índices: (`organizationId`, `orderId`).
+- Relaciones: `shipment` → `Shipment` por (`organizationId`, `shipmentId`) (al borrar: Restrict); `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict).
+
+### ShipmentLine · `shipment_line`
+
+What left with a shipment (WMS-16): one per line of its exit, with the order and line it was for, its lot, its units by serial and the package it travelled in. Immutable.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `shipmentId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `orderLineId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `locationId` | `String · Char(36)` |  | Where it left from (the staging place). |
+| `lotId` | `String? · Char(36)` |  |  |
+| `containerId` | `String? · Char(36)` |  | The package it travelled in; null when it left loose. |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | In the product's unit; always more than zero. |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `serials` | `String? · Text` |  | Serials of the units, «A1, A2», for a product by serial. |
+| `movementLineId` | `String · Char(36)` |  | The line of the exit that took it out of stock. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementLineId`).
+- Índices: (`organizationId`, `shipmentId`, `id`); (`organizationId`, `orderId`); (`organizationId`, `orderLineId`); (`organizationId`, `lotId`); (`organizationId`, `containerId`).
+- Relaciones: `shipment` → `Shipment` por (`organizationId`, `shipmentId`) (al borrar: Restrict); `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `orderLine` → `OutboundOrderLine` por (`organizationId`, `orderLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `movementLine` → `StockMovementLine` por (`organizationId`, `movementLineId`) (al borrar: Restrict).
+
+#### Enumeraciones de Inventario › Embarques
+
+- `ShipmentStatus`: `DRAFT`, `SHIPPED`, `CANCELLED`.
 
 ## Inventario › Importaciones
 

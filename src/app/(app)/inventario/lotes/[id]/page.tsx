@@ -179,6 +179,7 @@ export default async function LotePage({
         <OriginsAndOrders
           origins={trace.origins}
           orders={trace.orders}
+          shipments={trace.shipments}
           timeZone={timeZone}
         />
       )}

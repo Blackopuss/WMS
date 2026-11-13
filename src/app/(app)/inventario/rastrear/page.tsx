@@ -44,7 +44,9 @@ const hrefOf = (match: TraceMatch) =>
         ? `/pedidos/${idPath(match.id)}`
         : match.kind === "container"
           ? `/inventario/tarimas/${idPath(match.id)}`
-          : `/inventario/rastrear?oc=${idPath(match.id)}`;
+          : match.kind === "shipment"
+            ? `/pedidos/embarques/${idPath(match.id)}`
+            : `/inventario/rastrear?oc=${idPath(match.id)}`;
 
 const titleOf = (match: TraceMatch) =>
   match.kind === "lot"
@@ -55,7 +57,9 @@ const titleOf = (match: TraceMatch) =>
         ? `Pedido ${match.numberText}`
         : match.kind === "container"
           ? match.name
-          : `Orden de compra ${match.numberText}`;
+          : match.kind === "shipment"
+            ? `Embarque ${match.numberText}`
+            : `Orden de compra ${match.numberText}`;
 
 const detailOf = (match: TraceMatch) =>
   match.kind === "lot" || match.kind === "serial"
@@ -64,14 +68,17 @@ const detailOf = (match: TraceMatch) =>
       ? match.recipient
       : match.kind === "container"
         ? "Tarima o caja"
-        : match.supplierName;
+        : match.kind === "shipment"
+          ? match.statusLabel
+          : match.supplierName;
 
 const linkClass =
   "inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * Traceability (WMS-21B, ADR 0041): one box takes a lot, a serial, an
- * order «PS-0001» or a purchase order «OC-0007». A lot opens its card and
+ * order «PS-0001», a shipment «EM-0001» (WMS-16) or a purchase order
+ * «OC-0007». A lot opens its card and
  * an order its page (they tell the whole route); a serial and a purchase
  * order are told here. Read only.
  */
@@ -141,7 +148,7 @@ export default async function RastrearPage({
         className="flex max-w-xl items-center gap-2"
       >
         <label htmlFor="q" className="sr-only">
-          Lote, número de serie o número de pedido
+          Lote, número de serie, de pedido o de embarque
         </label>
         <Input
           id="q"
@@ -149,7 +156,7 @@ export default async function RastrearPage({
           type="search"
           defaultValue={found.query}
           key={found.query}
-          placeholder="Lote, serie, PS-0001 u OC-0001"
+          placeholder="Lote, serie, PS-0001, EM-0001 u OC-0001"
           maxLength={100}
           autoComplete="off"
           autoCapitalize="characters"
@@ -166,13 +173,13 @@ export default async function RastrearPage({
         <EmptyState
           icon={ScanSearch}
           title="Escanea o escribe qué rastrear"
-          description="Un lote o un número de serie muestra de dónde vino, por dónde pasó, dónde está hoy y a qué pedido se fue. Un pedido muestra qué lotes y series se surtieron."
+          description="Un lote o un número de serie muestra de dónde vino, por dónde pasó, dónde está hoy y en qué embarque salió. Un pedido o un embarque muestra qué lotes y series llevó."
         />
       ) : found.matches.length === 0 ? (
         <EmptyState
           icon={Search}
           title="No encontramos nada con ese código"
-          description="Revisa cómo está escrito. Se busca el lote o la serie completos, o el número de pedido como PS-0001."
+          description="Revisa cómo está escrito. Se busca el lote o la serie completos, o el número de pedido o de embarque como PS-0001 o EM-0001."
         />
       ) : (
         <section
@@ -278,6 +285,7 @@ async function SerialCard({
       <OriginsAndOrders
         origins={unit.origins}
         orders={unit.orders}
+        shipments={unit.shipments}
         timeZone={timeZone}
       />
       <section

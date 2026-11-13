@@ -1862,7 +1862,8 @@ export type ContainerEventView = {
     | "MOVED"
     | "CLOSED"
     | "SEALED"
-    | "REOPENED";
+    | "REOPENED"
+    | "SHIPPED";
   /** «Se armó en Estante 1», «Se puso 20 piezas de Tornillo (lote L-01)». */
   text: string;
   movementId: string | null;
@@ -1945,7 +1946,9 @@ export async function listContainerEvents(
                   ? "Se cerró para salir"
                   : row.kind === "REOPENED"
                     ? "Se volvió a abrir"
-                    : `Se desarmó en ${row.location.name}`,
+                    : row.kind === "SHIPPED"
+                      ? `Salió del almacén con su embarque: ${what(row)}`
+                      : `Se desarmó en ${row.location.name}`,
       movementId: row.movementId,
       taskId: row.taskId,
       taskNumberText: row.task ? formatTaskNumber(row.task.number) : null,

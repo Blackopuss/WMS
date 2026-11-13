@@ -213,6 +213,14 @@ export const AREAS = [
     ],
   },
   {
+    id: "inventory-shipments",
+    title: "Inventario › Embarques",
+    doc: "inventory",
+    summary:
+      "Embarques que sacan uno o varios pedidos del almacén con su transporte, sus pedidos y lo que salió con cada uno (producto, lote, series y bulto).",
+    models: ["Shipment", "ShipmentOrder", "ShipmentLine"],
+  },
+  {
     id: "inventory-imports",
     title: "Inventario › Importaciones",
     doc: "inventory",

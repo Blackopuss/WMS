@@ -25,6 +25,13 @@ import {
   getOutboundOrder,
   getPackingView,
   finishPacking,
+  addShipmentOrders,
+  buildShipmentPdf,
+  cancelShipment,
+  createShipment,
+  dispatchShipment,
+  getShipment,
+  listShipments,
   packScan,
   startPacking,
   getProductStock,
@@ -586,6 +593,32 @@ describe("PC-12: limited to warehouse B", () => {
     expect(await getOutboundOrder(owner, order.orderId)).toMatchObject({
       status: "DRAFT",
     });
+    // Nor its shipments (WMS-16): a shipment of A does not exist for them.
+    const shipmentId = newId();
+    await db.shipment.create({
+      data: {
+        id: shipmentId,
+        organizationId: owner.organizationId,
+        number: 901,
+        facilityId: facilityA,
+        createdByUserId: owner.userId,
+      },
+    });
+    expect(await getShipment(limited, shipmentId)).toBeNull();
+    expect(await getShipment(owner, shipmentId)).toMatchObject({
+      numberText: "EM-0901",
+    });
+    expect(await buildShipmentPdf(limited, shipmentId)).toBeNull();
+    expect((await listShipments(limited)).items).toEqual([]);
+    expect((await findTraceMatches(limited, "EM-0901")).matches).toEqual([]);
+    for (const result of [
+      await dispatchShipment(limited, shipmentId),
+      await cancelShipment(limited, shipmentId, "No es de mi almacén"),
+      await addShipmentOrders(limited, shipmentId, [order.orderId]),
+      await createShipment(limited, { orderIds: [order.orderId] }),
+    ]) {
+      expect(result).toMatchObject({ ok: false, reason: "not_found" });
+    }
     // Their own order is of B.
     const own = await createOutboundOrder(limited, { recipient: "Cliente" });
     if (!own.ok) throw new Error(JSON.stringify(own));

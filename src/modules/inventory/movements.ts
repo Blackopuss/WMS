@@ -1119,6 +1119,7 @@ export const MOVEMENT_TYPE_LABELS = {
   RECEIPT: "Recepción de compra",
   RETURN: "Devolución a proveedor",
   STATUS_CHANGE: "Cambio de estado",
+  SHIPMENT: "Despacho",
 } as const;
 
 export type MovementType = keyof typeof MOVEMENT_TYPE_LABELS;
@@ -2624,6 +2625,14 @@ export async function reverseMovement(
         return stop(
           "not_allowed",
           "Este movimiento movió una tarima o caja completa: no se reversa. Muévela de regreso escaneando su etiqueta.",
+        );
+      }
+      // Nor a dispatch (WMS-16): its shipment and orders would still say
+      // they left.
+      if (original.type === "SHIPMENT") {
+        return stop(
+          "not_allowed",
+          "Esta salida es el despacho de un embarque: no se reversa desde Inventario. Lo que regrese entra como devolución del cliente.",
         );
       }
       // Nor a return (CMP-12): its document would still say it went back.

@@ -40,6 +40,9 @@ describe("outbound order transitions", () => {
     // WMS-15: packing is a step of its own, and is not cancelled.
     expect(canOutboundTransition("PICKED", "PACKED")).toBe(false);
     expect(canOutboundTransition("PACKING", "CANCELLED")).toBe(false);
+    // WMS-16: without packing, a picked order ships; a packing one never.
+    expect(canOutboundTransition("PICKED", "SHIPPED")).toBe(true);
+    expect(canOutboundTransition("PACKING", "SHIPPED")).toBe(false);
     expect(outboundTransitionProblem("PICKING", "PACKING")).toMatch(
       /todavía no termina de surtirse/,
     );

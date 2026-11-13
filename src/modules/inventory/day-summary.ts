@@ -11,6 +11,7 @@ import { forOrganization } from "@/server";
 import { dayWindow } from "./calendar-day";
 import type { InventoryActor } from "./movements";
 import { pickedOnWhere } from "./outbound-orders";
+import { shippedOnWhere } from "./shipment-ready";
 import { deliveredOnWhere } from "./tasks";
 
 /**
@@ -27,6 +28,8 @@ import { deliveredOnWhere } from "./tasks";
  *   (transfers and picking alike); cancelled ones are not work done.
  * - An order is picked today when it has left picking and its last
  *   picking task closed today (the order keeps no date of its own).
+ * - An order is shipped today when the shipment it left in left today
+ *   (WMS-16).
  */
 
 export type DayCount = { documents: number; lines: number };
@@ -40,6 +43,8 @@ export type DaySummary = {
   receipts: DayCount;
   tasksDone: number;
   ordersPicked: DayCount;
+  /** Orders whose shipment left today (WMS-16). */
+  ordersShipped: DayCount;
   /** Who did something today, the busiest first. */
   people: {
     userId: string;
@@ -85,6 +90,7 @@ export async function getDaySummary(
     });
   const delivered = deliveredOnWhere(window, place);
   const picked = pickedOnWhere(facility.id, window);
+  const shipped = shippedOnWhere(facility.id, window);
 
   const [
     byType,
@@ -95,6 +101,8 @@ export async function getDaySummary(
     byWorker,
     ordersPicked,
     orderLines,
+    ordersShipped,
+    shippedLines,
   ] = await Promise.all([
     client.stockMovement.groupBy({
       by: ["type"],
@@ -119,6 +127,8 @@ export async function getDaySummary(
     }),
     client.outboundOrder.count({ where: picked }),
     client.outboundOrderLine.count({ where: { order: picked } }),
+    client.outboundOrder.count({ where: shipped }),
+    client.outboundOrderLine.count({ where: { order: shipped } }),
   ]);
 
   const documents = (type: string) =>
@@ -159,6 +169,7 @@ export async function getDaySummary(
     receipts: { documents: documents("RECEIPT"), lines: receiptLines },
     tasksDone,
     ordersPicked: { documents: ordersPicked, lines: orderLines },
+    ordersShipped: { documents: ordersShipped, lines: shippedLines },
     people: [...people.entries()]
       .map(([userId, done]) => ({
         userId,

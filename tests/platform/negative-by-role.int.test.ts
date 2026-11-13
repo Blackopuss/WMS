@@ -104,7 +104,11 @@ afterAll(async () => {
 
 describe("Consulta no escribe (NEG-01, NEG-02)", () => {
   it("is denied every write of Inventario", async () => {
-    const allowed = new Set<Permission>(["inventory.export.create"]);
+    // WMS-16: Consulta downloads the PDF of a shipment (no prices).
+    const allowed = new Set<Permission>([
+      "inventory.export.create",
+      "inventory.shipment.export",
+    ]);
     for (const permission of writes("inventory.")) {
       if (!allowed.has(permission)) await denied(org, viewer, permission);
     }
