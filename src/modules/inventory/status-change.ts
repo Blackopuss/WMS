@@ -27,6 +27,15 @@ import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { lotColumns } from "./stock-status";
 import { freeToTake, reservedMessage } from "./reservations";
 import { lineCost, openCostBook } from "./valuation";
+import { SERIALS_FIELD } from "./movements";
+import {
+  hasSerials,
+  ofSerials,
+  sameSerials,
+  serialsForTake,
+  serialsOfLines,
+  writeSerialMoves,
+} from "./serials";
 
 /**
  * Changing the state of stock in a location (WMS-11, ADR 0033): out of one
@@ -90,6 +99,8 @@ const schema = z.object({
     .optional()
     .transform((value) => value || null),
   quantity: z.string().trim().min(1, "Escribe la cantidad que cambia."),
+  /** The units that change, for a product by serial (WMS-21B). */
+  serials: SERIALS_FIELD,
   reason: z
     .string()
     .trim()
@@ -249,6 +260,7 @@ export async function changeStockStatus(
           lines: {
             orderBy: { lineNumber: "asc" },
             select: {
+              id: true,
               productId: true,
               locationId: true,
               status: true,
@@ -261,6 +273,16 @@ export async function changeStockStatus(
       });
       if (replay) {
         const [out, into] = replay.lines;
+        // WMS-21B: the same key with other serials is another change.
+        const stored = out
+          ? ((await serialsOfLines(tx, [out.id])).get(out.id) ?? [])
+          : [];
+        if (
+          (stored.length > 0 || hasSerials(data.serials)) &&
+          !sameSerials(stored, data.serials)
+        ) {
+          return refuse("not_allowed", null, KEY_REUSED);
+        }
         let same = false;
         try {
           same =
@@ -361,6 +383,23 @@ export async function changeStockStatus(
       const lotAnswer = await lotForTake(tx, product, data.lotId);
       if (!lotAnswer.ok) return refuse("invalid", "lotId", lotAnswer.error);
       const lot = lotAnswer.lot;
+      // WMS-21B: the units that change state, right there in that state.
+      const serialAnswer = await serialsForTake(
+        tx,
+        product,
+        data.serials,
+        base,
+        {
+          locationId: location.id,
+          locationName: location.name,
+          status: data.from,
+        },
+        { verb: "se mueven" },
+      );
+      if (!serialAnswer.ok) {
+        return refuse("invalid", "serials", serialAnswer.error);
+      }
+      const units = serialAnswer.units ?? [];
 
       const balances = await tx.stockBalance.findMany({
         where: {
@@ -464,10 +503,30 @@ export async function changeStockStatus(
         ...lotColumns(lot?.id),
         unitCost: price,
       };
+      const outId = newId();
+      const inId = newId();
+      await writeSerialMoves(tx, actor, [
+        {
+          lineId: outId,
+          productId: product.id,
+          locationId: location.id,
+          status: data.from,
+          direction: "OUT",
+          units,
+        },
+        {
+          lineId: inId,
+          productId: product.id,
+          locationId: destination.id,
+          status: data.to,
+          direction: "IN",
+          units,
+        },
+      ]);
       await tx.stockMovementLine.create({
         data: {
           ...line,
-          id: newId(),
+          id: outId,
           lineNumber: 1,
           locationId: location.id,
           direction: "OUT",
@@ -477,7 +536,7 @@ export async function changeStockStatus(
       await tx.stockMovementLine.create({
         data: {
           ...line,
-          id: newId(),
+          id: inId,
           lineNumber: 2,
           locationId: destination.id,
           direction: "IN",
@@ -521,6 +580,7 @@ export async function changeStockStatus(
           producto: product.name,
           ubicacion: location.name,
           ...(lot ? { lote: lot.code } : {}),
+          ...(units.length > 0 ? { series: units.map((u) => u.serial) } : {}),
           ...(moves ? { destino: destination.name } : {}),
           de: STOCK_STATUS_LABELS[data.from],
           a: STOCK_STATUS_LABELS[data.to],
@@ -533,8 +593,8 @@ export async function changeStockStatus(
         movementId,
         summary:
           (moves
-            ? `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} pasaron de ${STOCK_STATUS_LABELS[data.from]} en ${location.name} a ${STOCK_STATUS_LABELS[data.to]} en ${destination.name}.`
-            : `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} en ${location.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}.`) +
+            ? `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)}${ofSerials(units)} pasaron de ${STOCK_STATUS_LABELS[data.from]} en ${location.name} a ${STOCK_STATUS_LABELS[data.to]} en ${destination.name}.`
+            : `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)}${ofSerials(units)} en ${location.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}.`) +
           placed.notes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);

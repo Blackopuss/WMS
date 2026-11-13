@@ -174,6 +174,10 @@ export async function checkImportedStock(
     select: { id: true, sku: true, ...LOT_RULE_SELECT },
   });
   if (!ruled) return "El producto ya no existe.";
+  // WMS-21B (ADR 0041): its stock comes in by hand, with its serials.
+  if (ruled.tracking === "SERIAL") {
+    return "El producto se controla por número de serie: su existencia se captura a mano, con la serie de cada unidad.";
+  }
   /** The lot each line goes to: its id, «new» for a lot to create. */
   const lotKeyOf = new Map<ImportedStockLine, string>();
   const expiryOf = lotExpiries(lines);

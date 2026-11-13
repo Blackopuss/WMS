@@ -11,10 +11,20 @@ import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 import {
   IDEMPOTENCY_KEY,
   KEY_REUSED,
+  SERIALS_FIELD,
   formatStock,
   optionalText,
   type InventoryActor,
 } from "./movements";
+import {
+  hasSerials,
+  sameSerials,
+  serialKey,
+  serialsForTake,
+  serialsOfLines,
+  writeSerialMoves,
+  type SerialPick,
+} from "./serials";
 import { lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake } from "./lot-resolve";
@@ -47,6 +57,8 @@ const lineSchema = z.object({
   unitCode: optionalId(12),
   /** The lot it leaves from, for a product by lot (WMS-21). */
   lotId: optionalId(36),
+  /** The units that leave, for a product by serial (WMS-21B). */
+  serials: SERIALS_FIELD,
 });
 
 const quickExitSchema = z.object({
@@ -208,6 +220,7 @@ export async function registerQuickExit(
               orderBy: { lineNumber: "asc" },
               take: QUICK_EXIT_MAX_LINES + 1,
               select: {
+                id: true,
                 productId: true,
                 locationId: true,
                 capturedQuantity: true,
@@ -219,6 +232,11 @@ export async function registerQuickExit(
           },
         });
         if (replay) {
+          // WMS-21B: the same key with other serials is another exit.
+          const storedSerials = await serialsOfLines(
+            tx,
+            replay.lines.map((line) => line.id),
+          );
           const same =
             replay.type === "EXIT" &&
             replay.createdByUserId === userId &&
@@ -232,7 +250,15 @@ export async function registerQuickExit(
                 (stored.presentationId ?? null) === line.presentationId &&
                 (stored.capturedUnitCode ?? null) === line.unitCode &&
                 (stored.lotId ?? null) === line.lotId &&
-                sameQuantity(line.quantity, stored.capturedQuantity.toString())
+                sameQuantity(
+                  line.quantity,
+                  stored.capturedQuantity.toString(),
+                ) &&
+                (!(
+                  storedSerials.get(stored.id)?.length ||
+                  hasSerials(line.serials)
+                ) ||
+                  sameSerials(storedSerials.get(stored.id) ?? [], line.serials))
               );
             });
           if (!same) return refuse(KEY_REUSED);
@@ -302,7 +328,11 @@ export async function registerQuickExit(
         presentationId: string | null;
         presentationVersionId: string | null;
         factor: string;
+        /** The units that leave, for a product by serial (WMS-21B). */
+        units: SerialPick[];
       }[] = [];
+      // WMS-21B: one unit leaves once, whatever line names it.
+      const namedSerials = new Set<string>();
       for (const [index, line] of data.lines.entries()) {
         const product = products.get(line.productId);
         if (!product) {
@@ -355,7 +385,39 @@ export async function registerQuickExit(
           continue;
         }
         const c = conversion.conversion;
+        // WMS-21B: a product by serial says which units leave, right there.
+        const serialAnswer = await serialsForTake(
+          tx,
+          product,
+          line.serials,
+          c.baseQuantity,
+          {
+            locationId: location.id,
+            locationName: location.name,
+            status: "AVAILABLE",
+          },
+        );
+        if (!serialAnswer.ok) {
+          fail(index, "invalid", serialAnswer.error);
+          continue;
+        }
+        const units = serialAnswer.units ?? [];
+        const twice = units.find((unit) =>
+          namedSerials.has(`${product.id} ${serialKey(unit.serial)}`),
+        );
+        if (twice) {
+          fail(
+            index,
+            "invalid",
+            `La serie ${twice.serial} ya está en otra línea de esta salida.`,
+          );
+          continue;
+        }
+        for (const unit of units) {
+          namedSerials.add(`${product.id} ${serialKey(unit.serial)}`);
+        }
         resolved.push({
+          units,
           index,
           productId: product.id,
           productName: product.name,
@@ -515,10 +577,23 @@ export async function registerQuickExit(
           createdByUserId: userId,
         },
       });
+      const lineIds = resolved.map(() => newId());
+      await writeSerialMoves(
+        tx,
+        actor,
+        resolved.map((line, position) => ({
+          lineId: lineIds[position]!,
+          productId: line.productId,
+          locationId: line.locationId,
+          status: "AVAILABLE" as const,
+          direction: "OUT" as const,
+          units: line.units,
+        })),
+      );
       for (const [position, line] of resolved.entries()) {
         await tx.stockMovementLine.create({
           data: {
-            id: newId(),
+            id: lineIds[position]!,
             organizationId,
             movementId,
             lineNumber: position + 1,

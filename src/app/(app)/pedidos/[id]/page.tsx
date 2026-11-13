@@ -221,6 +221,12 @@ export default async function PedidoPage({
                       {task.pickedText ? ` · surtido ${task.pickedText}` : ""}
                       {task.shortReason ? ` · ${task.shortReason}` : ""}
                     </span>
+                    {task.serials.length > 0 && (
+                      <span className="block font-mono text-muted-foreground">
+                        {task.serials.length === 1 ? "Serie" : "Series"}{" "}
+                        {task.serials.join(", ")}
+                      </span>
+                    )}
                   </span>
                   <Badge
                     variant={
@@ -235,6 +241,56 @@ export default async function PedidoPage({
           </ul>
         </section>
       )}
+
+      {/* WMS-21B: what was picked, to follow each lot or unit. */}
+      {access.can("inventory.movement.read") &&
+        order.tasks.some(
+          (task) =>
+            task.status !== "CANCELLED" &&
+            (task.lot || task.serialUnits.length > 0),
+        ) && (
+          <section
+            aria-labelledby="rastrear-surtido"
+            className="max-w-3xl rounded-xl border bg-card"
+          >
+            <h2
+              id="rastrear-surtido"
+              className="border-b p-4 font-medium sm:px-5"
+            >
+              Lotes y series surtidos
+            </h2>
+            <ul className="flex flex-wrap gap-x-5 px-4 py-2 sm:px-5">
+              {order.tasks
+                .filter((task) => task.status !== "CANCELLED")
+                .flatMap((task) => [
+                  ...(task.lot
+                    ? [
+                        {
+                          key: `${task.id}:lot`,
+                          href: `/inventario/lotes/${task.lot.id}`,
+                          label: `Lote ${task.lot.code}`,
+                        },
+                      ]
+                    : []),
+                  ...task.serialUnits.map((unit) => ({
+                    key: `${task.id}:${unit.id}`,
+                    href: `/inventario/rastrear?serie=${unit.id}`,
+                    label: `Serie ${unit.serial}`,
+                  })),
+                ])
+                .map((item) => (
+                  <li key={item.key}>
+                    <Link
+                      href={item.href}
+                      className="inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
 
       {canRelease && (
         <div className="max-w-3xl">

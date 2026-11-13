@@ -142,6 +142,7 @@ describe("listMovements", () => {
       userId: null,
       type: null,
       lotId: null,
+      serialUnitId: null,
     });
   });
 

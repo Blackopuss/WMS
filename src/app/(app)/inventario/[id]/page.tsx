@@ -26,6 +26,8 @@ import {
   formatLotDay,
   formatStock,
   getMinimum,
+  listProductSerials,
+  serialsText,
   getProductCost,
   getProductStock,
   listProductLots,
@@ -33,7 +35,12 @@ import {
 } from "@/modules/inventory";
 import { listSuppliersOfProduct } from "@/modules/purchasing";
 import { getModuleAccess } from "@/platform/billing";
-import { getProduct, getUnit, listPresentations } from "@/platform/catalog";
+import {
+  TRACKING_LABELS,
+  getProduct,
+  getUnit,
+  listPresentations,
+} from "@/platform/catalog";
 
 import { MinimumForm } from "./minimum-form";
 
@@ -45,6 +52,7 @@ export const metadata: Metadata = { title: "Producto" };
  */
 export default async function ProductoPage({
   params,
+  searchParams,
 }: PageProps<"/inventario/[id]">) {
   const access = await getModuleAccess();
   const back = (
@@ -112,6 +120,21 @@ export default async function ProductoPage({
         ? listProductLots(actor, product.id)
         : null,
     ]);
+  // WMS-21B: a product by serial lists its units inside, by page.
+  const { series } = await searchParams;
+  const serialPage =
+    product.tracking === "SERIAL" && access.can("inventory.stock.read")
+      ? await listProductSerials(actor, product.id, {
+          page:
+            typeof series === "string" && /^\d{1,6}$/.test(series)
+              ? Number(series)
+              : 1,
+        })
+      : null;
+  const seriesHref = (page: number) =>
+    page > 1
+      ? `/inventario/${product.id}?series=${page}#series-producto`
+      : `/inventario/${product.id}#series-producto`;
   // Low = what is available is at or below the minimum (INV-30, ADR 0033).
   const low =
     active &&
@@ -192,6 +215,10 @@ export default async function ProductoPage({
       "Se controla en",
       `${unit.plural}${unit.fractional ? `, en pasos de ${Number(product.quantityStep)}` : ", en enteros"}`,
     ],
+    // WMS-21/21B: only when it is controlled by lot or by serial.
+    ...(product.tracking !== "NONE"
+      ? ([["Control", TRACKING_LABELS[product.tracking]]] as [string, string][])
+      : []),
     // WMS-22B: shown only when the card says them.
     ...(product.unitWeight
       ? ([
@@ -407,6 +434,88 @@ export default async function ProductoPage({
         </section>
       )}
 
+      {serialPage && (
+        <section
+          id="series-producto"
+          aria-labelledby="series-producto-titulo"
+          className="rounded-xl border bg-card"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b p-4 sm:px-5">
+            <h2 id="series-producto-titulo" className="font-medium">
+              Series en existencia
+            </h2>
+            <p className="text-sm text-muted-foreground tabular-nums">
+              {serialPage.total === 1
+                ? "1 unidad"
+                : `${serialPage.total.toLocaleString("es-MX")} unidades`}
+            </p>
+          </div>
+          {serialPage.items.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground sm:px-5">
+              No hay unidades en tus ubicaciones. Cada una entra con su serie al
+              registrar su entrada.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {serialPage.items.map((unit) => (
+                <li
+                  key={unit.id}
+                  className="relative flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 p-4 hover:bg-muted/50 sm:px-5"
+                >
+                  <p className="min-w-0 flex-1 basis-40 font-mono font-medium">
+                    {access.can("inventory.movement.read") ? (
+                      <Link
+                        href={`/inventario/rastrear?serie=${unit.id}`}
+                        className="rounded underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        {unit.serial}
+                      </Link>
+                    ) : (
+                      unit.serial
+                    )}
+                  </p>
+                  <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                    {unit.path}
+                    {unit.statusLabel !== "Disponible" &&
+                      ` · ${unit.statusLabel}`}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {serialPage.pageCount > 1 && (
+            <nav
+              aria-label="Páginas de series"
+              className="flex items-center justify-between gap-3 border-t p-4 sm:px-5"
+            >
+              {serialPage.page > 1 ? (
+                <Button asChild variant="outline">
+                  <Link href={seriesHref(serialPage.page - 1)} rel="prev">
+                    <ChevronLeft aria-hidden="true" data-icon="inline-start" />
+                    Anterior
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+              <p className="text-sm text-muted-foreground tabular-nums">
+                Página {serialPage.page} de {serialPage.pageCount}
+              </p>
+              {serialPage.page < serialPage.pageCount ? (
+                <Button asChild variant="outline">
+                  <Link href={seriesHref(serialPage.page + 1)} rel="next">
+                    Siguiente
+                    <ChevronRight aria-hidden="true" data-icon="inline-end" />
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+            </nav>
+          )}
+        </section>
+      )}
+
       {access.can("inventory.movement.read") && (
         <section
           aria-labelledby="movimientos-producto"
@@ -458,6 +567,8 @@ export default async function ProductoPage({
                         <span className="text-muted-foreground">
                           · {line.location}
                           {line.lot && ` · Lote ${line.lot}`}
+                          {line.serials.length > 0 &&
+                            ` · ${line.serials.length === 1 ? "Serie" : "Series"} ${serialsText(line.serials)}`}
                         </span>
                       </p>
                     ))}

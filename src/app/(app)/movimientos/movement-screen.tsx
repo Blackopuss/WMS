@@ -268,6 +268,8 @@ export async function MovementScreen({
   const total = totals[product.id];
   // WMS-21: a product by lot says which lot in every movement.
   const byLot = product.tracking === "LOT";
+  // WMS-21B: a product by serial names each unit that moves.
+  const bySerial = product.tracking === "SERIAL";
   const lotStock =
     byLot && (kind === "exit" || kind === "transfer")
       ? await listLotStock(actor, product.id)
@@ -368,6 +370,16 @@ export async function MovementScreen({
           captures={captureOptions(product, presentations)}
           locations={sources.map(({ id, label }) => ({ id, label }))}
           locationLabel={byLot ? "¿De dónde sale y de qué lote?" : undefined}
+          serials={
+            bySerial
+              ? {
+                  label:
+                    kind === "transfer"
+                      ? "Series de las unidades que mueves"
+                      : "Series de las unidades que salen",
+                }
+              : undefined
+          }
           // WMS-72: «Sin acomodar» arrives with the place to move from.
           defaultLocationId={
             sources.find((source) => source.place === origen)?.id ??
@@ -386,9 +398,11 @@ export async function MovementScreen({
       <p className="text-sm text-muted-foreground">
         {kind === "adjustment"
           ? `El sistema tiene ${formatStock(total ?? "0", product.unitCode)} en total. Escribe lo que contaste en una ubicación: se registrará la diferencia, con tu motivo.`
-          : total
-            ? `Hoy hay ${formatStock(total, product.unitCode)} en total.`
-            : "Todavía no tiene existencias."}
+          : kind === "entry" && bySerial
+            ? `Hoy hay ${formatStock(total ?? "0", product.unitCode)} en total. Escribe cuántas unidades entran y la serie de cada una.`
+            : total
+              ? `Hoy hay ${formatStock(total, product.unitCode)} en total.`
+              : "Todavía no tiene existencias."}
       </p>
       <EntryForm
         idempotencyKey={newId()}
@@ -417,6 +431,16 @@ export async function MovementScreen({
                 id: lot.id,
                 label: `${lot.label} — hay ${lot.totalLabel} en total`,
               }))
+            : undefined
+        }
+        serials={
+          bySerial
+            ? kind === "adjustment"
+              ? {
+                  label: "Series de todas las unidades que hay ahí",
+                  hint: "Escanea cada unidad que está en esa ubicación, una por renglón. Las que falten saldrán y las nuevas entrarán.",
+                }
+              : { label: "Series de las unidades que entran" }
             : undefined
         }
         // WMS-21: a lot found on the shelf that the system does not know.

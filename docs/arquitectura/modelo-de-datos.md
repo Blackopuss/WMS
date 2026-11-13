@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-70 tablas en 18 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+73 tablas en 18 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -19,9 +19,9 @@
 | Plataforma › Almacenes y ubicaciones | 5 | [locations](modulos/locations.md) |
 | Plataforma › Catálogo de productos | 6 | [catalog](modulos/catalog.md) |
 | Plataforma › Contactos | 1 | [contacts](modulos/contacts.md) |
-| Inventario › Existencias y movimientos | 6 | [inventory](modulos/inventory.md) |
+| Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 3 | [inventory](modulos/inventory.md) |
-| Inventario › Tareas, reservas y pedidos de salida | 4 | [inventory](modulos/inventory.md) |
+| Inventario › Tareas, reservas y pedidos de salida | 5 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 8 | [purchasing](modulos/purchasing.md) |
 
@@ -967,7 +967,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 #### Enumeraciones de Plataforma › Catálogo de productos
 
 - `ProductStatus`: `ACTIVE`, `ARCHIVED`.
-- `ProductTracking`: `NONE`, `LOT`.
+- `ProductTracking`: `NONE`, `LOT`, `SERIAL`.
 - `LotExpiryRule`: `NONE`, `OPTIONAL`, `REQUIRED`.
 
 ## Plataforma › Contactos
@@ -1006,7 +1006,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Existencias y movimientos
 
-Movimientos inmutables, sus líneas, el saldo por producto + ubicación + estado + lote, lotes, costo promedio y mínimos.
+Movimientos inmutables, sus líneas, el saldo por producto + ubicación + estado + lote, lotes, unidades por número de serie y sus movimientos, costo promedio y mínimos.
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1105,6 +1105,49 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Únicas: (`organizationId`, `id`); (`organizationId`, `productId`, `code`).
 - Índices: (`organizationId`, `expiresOn`).
 - Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### SerialUnit · `serial_unit`
+
+One unit of a product controlled by serial number: its serial — normalized like a lot code, unique per product in the company — and where it is now (location and state) or null while it is out of the warehouse. Only the trigger of `serial_move` changes where it is, so it always follows its moves; product and serial never change and a unit is never deleted (triggers). Units inside a location and state add up to the balance of that product there (reconciliation).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `serial` | `String · VarChar(64)` |  |  |
+| `locationId` | `String? · Char(36)` |  | Where it is; null = out of the warehouse (it left, or not yet in). |
+| `status` | `StockStatus?` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `productId`, `serial`).
+- Índices: (`organizationId`, `productId`, `locationId`, `status`); (`organizationId`, `serial`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
+
+### SerialMove · `serial_move`
+
+Which unit a movement line moved (WMS-21B): one row per unit and line. Written right before its line, in the same transaction; the trigger of `stock_movement_line` checks that a line of a product by serial has exactly one per unit it moves, all with its product, location, state and direction, and the trigger of this table moves the unit (out of where it is, or into the line's location). Never changes nor is deleted. `movementLineId` has no foreign key: the line is inserted after its rows.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `serialUnitId` | `String · Char(36)` |  |  |
+| `movementLineId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `locationId` | `String · Char(36)` |  |  |
+| `status` | `StockStatus` |  |  |
+| `direction` | `StockDirection` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementLineId`, `serialUnitId`).
+- Índices: (`organizationId`, `serialUnitId`, `id`).
+- Relaciones: `serialUnit` → `SerialUnit` por (`organizationId`, `serialUnitId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
 
 ### ProductCost · `product_cost`
 
@@ -1230,7 +1273,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Tareas, reservas y pedidos de salida
 
-Tareas de traslado y surtido, lo apartado para un documento y los pedidos de salida.
+Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento y los pedidos de salida.
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1275,6 +1318,24 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
 - Índices: (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`).
 - Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+### WarehouseTaskSerial · `warehouse_task_serial`
+
+Units by serial a warehouse task took (WMS-21B): scanned when the person confirms a pick or picks up a transfer; its delivery moves exactly these. While the task is open nobody else takes them.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `taskId` | `String · Char(36)` |  |  |
+| `serialUnitId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `taskId`, `serialUnitId`).
+- Índices: (`organizationId`, `serialUnitId`).
+- Relaciones: `task` → `WarehouseTask` por (`organizationId`, `taskId`) (al borrar: Restrict); `serialUnit` → `SerialUnit` por (`organizationId`, `serialUnitId`) (al borrar: Restrict).
 
 ### StockReservation · `stock_reservation`
 

@@ -17,6 +17,7 @@ import { getModuleAccess } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
 
 import { PickForm } from "./pick-form";
+import { PickUpForm } from "./pick-up-form";
 import {
   AssignTask,
   CancelTask,
@@ -263,6 +264,15 @@ export default async function TareaPage({
         </p>
       )}
 
+      {task.serials.length > 0 && (
+        <p className="max-w-xl rounded-xl border bg-card p-4 text-sm [overflow-wrap:anywhere]">
+          <span className="font-medium">
+            {task.serials.length === 1 ? "Serie tomada:" : "Series tomadas:"}
+          </span>{" "}
+          <span className="font-mono">{task.serials.join(", ")}</span>
+        </p>
+      )}
+
       {picking && (
         <PickForm
           taskId={task.id}
@@ -271,15 +281,24 @@ export default async function TareaPage({
           unit={getUnit(task.unitCode).plural}
           sku={task.sku}
           lotCode={task.lotCode}
+          bySerial={task.bySerial}
           place={task.fromPath.split(" › ").at(-1) ?? task.fromPath}
         />
       )}
 
       {(step || canReport) && (
         <div className="flex max-w-xl flex-col gap-3">
-          {step && (
-            <TaskStep taskId={task.id} step={step.step} label={step.label} />
-          )}
+          {step &&
+            (step.step === "pickUp" && task.bySerial ? (
+              // WMS-21B: the units taken are scanned when picking up.
+              <PickUpForm
+                taskId={task.id}
+                asked={task.quantityText}
+                label={step.label}
+              />
+            ) : (
+              <TaskStep taskId={task.id} step={step.step} label={step.label} />
+            ))}
           {canReport && <ReportProblem taskId={task.id} />}
         </div>
       )}

@@ -123,7 +123,7 @@ export function lotLabel(lot: {
     : `Lote ${lot.code}`;
 }
 
-export const PRODUCT_TRACKINGS = ["NONE", "LOT"] as const;
+export const PRODUCT_TRACKINGS = ["NONE", "LOT", "SERIAL"] as const;
 export type ProductTracking = (typeof PRODUCT_TRACKINGS)[number];
 
 export const LOT_EXPIRY_RULES = ["NONE", "OPTIONAL", "REQUIRED"] as const;

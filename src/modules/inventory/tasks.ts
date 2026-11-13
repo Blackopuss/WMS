@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { dec, newId } from "@/lib";
+import { dec, newId, type Decimal } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { isAllowed, type Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
@@ -47,6 +47,7 @@ import { availableOfLot } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { lotDayOf, lotLabel, normalizeLotCode } from "./lot-rules";
 import { freeToMoveFrom, reservedMessage } from "./reservations";
+import { ofSerials, serialsForTake } from "./serials";
 
 /**
  * Warehouse tasks (WMS-06, especificación WMS v5 5.3): a supervisor asks
@@ -85,6 +86,7 @@ export type TaskField =
   | "productCode"
   | "locationCode"
   | "shortReason"
+  | "serials"
   | "lotId"
   | "lotCode";
 
@@ -170,6 +172,7 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
               barcode: true,
               unitCode: true,
               quantityStep: true,
+              tracking: true,
             },
           },
           fromLocation: {
@@ -206,6 +209,64 @@ async function pickOrderOf(
     select: { outboundLine: { select: { orderId: true } } },
   });
   return row?.outboundLine?.orderId ?? null;
+}
+
+/**
+ * WMS-21B: the units by serial a task took, with their serials; empty for
+ * any other product or before they are scanned.
+ */
+async function taskSerials(tx: Tx, taskId: string): Promise<string[]> {
+  const rows = await tx.warehouseTaskSerial.findMany({
+    where: { taskId },
+    orderBy: { id: "asc" },
+    select: { serialUnit: { select: { serial: true } } },
+  });
+  return rows.map((row) => row.serialUnit.serial);
+}
+
+/**
+ * WMS-21B: the person scans the units of a product by serial they take
+ * (as many as `quantity`, right at the origin, free of other tasks): they
+ * stay with this task until it is delivered, released or cancelled.
+ */
+async function holdSerials(
+  tx: Tx,
+  actor: InventoryActor,
+  task: LockedTask,
+  input: unknown,
+  quantity: Decimal,
+): Promise<{ serial: string }[]> {
+  // The step locked the product: movements of it wait.
+  const answer = await serialsForTake(
+    tx,
+    {
+      id: task.productId,
+      name: task.product.name,
+      tracking: task.product.tracking,
+    },
+    input,
+    quantity,
+    {
+      locationId: task.fromLocationId,
+      locationName: task.fromLocation.name,
+      status: "AVAILABLE",
+    },
+    { verb: "tomaste", taskId: task.id },
+  );
+  if (!answer.ok) return stop("invalid", answer.error, "serials");
+  const units = answer.units ?? [];
+  await tx.warehouseTaskSerial.deleteMany({ where: { taskId: task.id } });
+  if (units.length > 0) {
+    await tx.warehouseTaskSerial.createMany({
+      data: units.map((unit) => ({
+        id: newId(),
+        organizationId: actor.organizationId,
+        taskId: task.id,
+        serialUnitId: unit.id!,
+      })),
+    });
+  }
+  return units;
 }
 
 type LockedTask = Awaited<ReturnType<typeof lockTask>>;
@@ -503,10 +564,25 @@ async function step(
   taskId: string,
   permission: Permission,
   work: (tx: Tx, task: LockedTask) => Promise<TaskResult>,
+  /**
+   * WMS-21B: the step reads units by serial of the product (picking up,
+   * confirming a pick), so it locks the product first, like a movement:
+   * product → order → task.
+   */
+  options: { lockProduct?: boolean } = {},
 ): Promise<TaskResult> {
   await assertModulePermission(actor.organizationId, actor.userId, permission);
   const orderId = await pickOrderOf(actor.organizationId, taskId);
+  const productId = options.lockProduct
+    ? ((
+        await forOrganization(actor.organizationId).warehouseTask.findFirst({
+          where: { id: String(taskId ?? "") },
+          select: { productId: true },
+        })
+      )?.productId ?? null)
+    : null;
   return inTask(actor.organizationId, async (tx) => {
+    if (productId) await lockRows(tx, "product", [productId]);
     await lockPickOrder(tx, orderId);
     return work(tx, await lockTask(tx, taskId, actor.userId));
   });
@@ -548,40 +624,57 @@ export function acceptTask(
   });
 }
 
-/** The load is in hand. */
+/**
+ * The load is in hand. For a product by serial (WMS-21B) the person scans
+ * the serials of the units they took (`serials`).
+ */
 export function pickUpTask(
   actor: InventoryActor,
   taskId: string,
+  input: { serials?: unknown } = {},
 ): Promise<TaskResult> {
-  return step(actor, taskId, "inventory.task.execute", async (tx, task) => {
-    if (task.assignedToUserId !== actor.userId) {
-      return stop("not_allowed", "Esta tarea la tiene otra persona.");
-    }
-    if (task.status === "PICKED_UP") {
+  return step(
+    actor,
+    taskId,
+    "inventory.task.execute",
+    async (tx, task) => {
+      if (task.assignedToUserId !== actor.userId) {
+        return stop("not_allowed", "Esta tarea la tiene otra persona.");
+      }
+      if (task.status === "PICKED_UP") {
+        return {
+          ok: true,
+          taskId: task.id,
+          repeated: true,
+          summary: "Ya habías confirmado que recogiste la carga.",
+        };
+      }
+      if (task.kind === "PICK") {
+        return stop(
+          "not_allowed",
+          "Confirma el producto, la ubicación y cuánto surtiste.",
+        );
+      }
+      ensure(task, "PICKED_UP");
+      const units = await holdSerials(
+        tx,
+        actor,
+        task,
+        input.serials,
+        dec(task.quantity.toString()),
+      );
+      await tx.warehouseTask.update({
+        where: { id: task.id },
+        data: { status: "PICKED_UP", pickedUpAt: new Date() },
+      });
       return {
         ok: true,
         taskId: task.id,
-        repeated: true,
-        summary: "Ya habías confirmado que recogiste la carga.",
+        summary: `Recogiste la carga${ofSerials(units)}. Llévala a ${task.toLocation.name}.`,
       };
-    }
-    if (task.kind === "PICK") {
-      return stop(
-        "not_allowed",
-        "Confirma el producto, la ubicación y cuánto surtiste.",
-      );
-    }
-    ensure(task, "PICKED_UP");
-    await tx.warehouseTask.update({
-      where: { id: task.id },
-      data: { status: "PICKED_UP", pickedUpAt: new Date() },
-    });
-    return {
-      ok: true,
-      taskId: task.id,
-      summary: `Recogiste la carga. Llévala a ${task.toLocation.name}.`,
-    };
-  });
+    },
+    { lockProduct: true },
+  );
 }
 
 export type ConfirmPickInput = {
@@ -595,6 +688,11 @@ export type ConfirmPickInput = {
   quantity: string;
   /** Why less than asked; required then. */
   shortReason?: string;
+  /**
+   * The serials of the units taken, one per line (WMS-21B), for a product
+   * by serial: as many as `quantity`.
+   */
+  serials?: unknown;
 };
 
 /**
@@ -608,133 +706,151 @@ export function confirmPick(
   taskId: string,
   input: ConfirmPickInput,
 ): Promise<TaskResult> {
-  return step(actor, taskId, "inventory.task.execute", async (tx, task) => {
-    if (task.kind !== "PICK") {
-      return stop("not_allowed", "Esta tarea no es de surtido.");
-    }
-    if (task.assignedToUserId !== actor.userId) {
-      return stop("not_allowed", "Esta tarea la tiene otra persona.");
-    }
-    const parsed = parseQuantity(
-      {
-        unitCode: task.product.unitCode,
-        quantityStep: task.product.quantityStep.toString(),
-      },
-      String(input.quantity ?? ""),
-    );
-    if (task.status === "PICKED_UP") {
-      const same =
-        parsed.ok &&
-        task.pickedQuantity !== null &&
-        parsed.quantity.equals(task.pickedQuantity.toString());
-      if (same) {
-        return {
-          ok: true,
-          taskId: task.id,
-          repeated: true,
-          summary: "Ya habías confirmado lo que surtiste.",
-        };
+  return step(
+    actor,
+    taskId,
+    "inventory.task.execute",
+    async (tx, task) => {
+      if (task.kind !== "PICK") {
+        return stop("not_allowed", "Esta tarea no es de surtido.");
       }
-    }
-    ensure(task, "PICKED_UP");
-    const code = foldName(String(input.productCode ?? "").slice(0, 80));
-    if (code === "") {
-      return stop(
-        "invalid",
-        `Escanea el producto o escribe su clave (${task.product.sku}).`,
-        "productCode",
+      if (task.assignedToUserId !== actor.userId) {
+        return stop("not_allowed", "Esta tarea la tiene otra persona.");
+      }
+      const parsed = parseQuantity(
+        {
+          unitCode: task.product.unitCode,
+          quantityStep: task.product.quantityStep.toString(),
+        },
+        String(input.quantity ?? ""),
       );
-    }
-    if (
-      code !== foldName(task.product.sku) &&
-      code !== foldName(task.product.barcode ?? "")
-    ) {
-      return stop(
-        "invalid",
-        `Ese no es el producto de la tarea: busca ${task.product.name} (${task.product.sku}).`,
-        "productCode",
-      );
-    }
-    // Its code (WMS-22A) is what is scanned; without one, its name or path.
-    const typed = String(input.locationCode ?? "").slice(0, 200);
-    const place = foldPath(typed);
-    const from = task.fromLocation;
-    const path = locationPath(from);
-    const byCode =
-      from.code !== null && typed.trim().toUpperCase() === from.code;
-    if (!byCode && place === "") {
-      return stop(
-        "invalid",
-        from.code
-          ? `Escanea la etiqueta del lugar o escribe su código (${from.code}).`
-          : `Escribe dónde estás (${from.name}).`,
-        "locationCode",
-      );
-    }
-    if (!byCode && place !== foldPath(from.name) && place !== foldPath(path)) {
-      return stop(
-        "invalid",
-        from.code
-          ? `No es la ubicación de la tarea: ve a ${path} (código ${from.code}).`
-          : `No es la ubicación de la tarea: ve a ${path}.`,
-        "locationCode",
-      );
-    }
-    // WMS-21: the lot in hand is the one set aside for the order.
-    if (task.lot) {
-      const typedLot = normalizeLotCode(input.lotCode);
-      if (!typedLot.ok) {
+      if (task.status === "PICKED_UP") {
+        const same =
+          parsed.ok &&
+          task.pickedQuantity !== null &&
+          parsed.quantity.equals(task.pickedQuantity.toString());
+        if (same) {
+          return {
+            ok: true,
+            taskId: task.id,
+            repeated: true,
+            summary: "Ya habías confirmado lo que surtiste.",
+          };
+        }
+      }
+      ensure(task, "PICKED_UP");
+      const code = foldName(String(input.productCode ?? "").slice(0, 80));
+      if (code === "") {
         return stop(
           "invalid",
-          `Escanea o escribe el lote que tomaste (${task.lot.code}).`,
-          "lotCode",
+          `Escanea el producto o escribe su clave (${task.product.sku}).`,
+          "productCode",
         );
       }
-      if (typedLot.code !== task.lot.code) {
+      if (
+        code !== foldName(task.product.sku) &&
+        code !== foldName(task.product.barcode ?? "")
+      ) {
         return stop(
           "invalid",
-          `Ese no es el lote de la tarea: busca el lote ${task.lot.code}. Si no está, reporta el problema.`,
-          "lotCode",
+          `Ese no es el producto de la tarea: busca ${task.product.name} (${task.product.sku}).`,
+          "productCode",
         );
       }
-    }
-    if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
-    const asked = dec(task.quantity.toString());
-    if (parsed.quantity.greaterThan(asked)) {
-      return stop(
-        "invalid",
-        `La tarea pide ${formatStock(asked.toString(), task.unitCode)}: no surtas de más.`,
-        "quantity",
+      // Its code (WMS-22A) is what is scanned; without one, its name or path.
+      const typed = String(input.locationCode ?? "").slice(0, 200);
+      const place = foldPath(typed);
+      const from = task.fromLocation;
+      const path = locationPath(from);
+      const byCode =
+        from.code !== null && typed.trim().toUpperCase() === from.code;
+      if (!byCode && place === "") {
+        return stop(
+          "invalid",
+          from.code
+            ? `Escanea la etiqueta del lugar o escribe su código (${from.code}).`
+            : `Escribe dónde estás (${from.name}).`,
+          "locationCode",
+        );
+      }
+      if (
+        !byCode &&
+        place !== foldPath(from.name) &&
+        place !== foldPath(path)
+      ) {
+        return stop(
+          "invalid",
+          from.code
+            ? `No es la ubicación de la tarea: ve a ${path} (código ${from.code}).`
+            : `No es la ubicación de la tarea: ve a ${path}.`,
+          "locationCode",
+        );
+      }
+      // WMS-21: the lot in hand is the one set aside for the order.
+      if (task.lot) {
+        const typedLot = normalizeLotCode(input.lotCode);
+        if (!typedLot.ok) {
+          return stop(
+            "invalid",
+            `Escanea o escribe el lote que tomaste (${task.lot.code}).`,
+            "lotCode",
+          );
+        }
+        if (typedLot.code !== task.lot.code) {
+          return stop(
+            "invalid",
+            `Ese no es el lote de la tarea: busca el lote ${task.lot.code}. Si no está, reporta el problema.`,
+            "lotCode",
+          );
+        }
+      }
+      if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
+      const asked = dec(task.quantity.toString());
+      if (parsed.quantity.greaterThan(asked)) {
+        return stop(
+          "invalid",
+          `La tarea pide ${formatStock(asked.toString(), task.unitCode)}: no surtas de más.`,
+          "quantity",
+        );
+      }
+      const short = parsed.quantity.lessThan(asked);
+      let reason: string | null = null;
+      if (short) {
+        const why = reasonSchema.safeParse(input.shortReason ?? "");
+        if (!why.success) {
+          return stop(
+            "invalid",
+            "Surtiste menos de lo que pide la tarea: escribe por qué.",
+            "shortReason",
+          );
+        }
+        reason = why.data;
+      }
+      // WMS-21B: the units in hand, by their serials (set aside from here).
+      const units = await holdSerials(
+        tx,
+        actor,
+        task,
+        input.serials,
+        parsed.quantity,
       );
-    }
-    const short = parsed.quantity.lessThan(asked);
-    let reason: string | null = null;
-    if (short) {
-      const why = reasonSchema.safeParse(input.shortReason ?? "");
-      if (!why.success) {
-        return stop(
-          "invalid",
-          "Surtiste menos de lo que pide la tarea: escribe por qué.",
-          "shortReason",
-        );
-      }
-      reason = why.data;
-    }
-    await tx.warehouseTask.update({
-      where: { id: task.id },
-      data: {
-        status: "PICKED_UP",
-        pickedUpAt: new Date(),
-        pickedQuantity: parsed.quantity.toString(),
-        shortReason: reason,
-      },
-    });
-    return {
-      ok: true,
-      taskId: task.id,
-      summary: `Surtiste ${formatStock(parsed.quantity.toString(), task.unitCode)} de ${task.product.name}. Llévalo a ${task.toLocation.name}.`,
-    };
-  });
+      await tx.warehouseTask.update({
+        where: { id: task.id },
+        data: {
+          status: "PICKED_UP",
+          pickedUpAt: new Date(),
+          pickedQuantity: parsed.quantity.toString(),
+          shortReason: reason,
+        },
+      });
+      return {
+        ok: true,
+        taskId: task.id,
+        summary: `Surtiste ${formatStock(parsed.quantity.toString(), task.unitCode)} de ${task.product.name}${ofSerials(units)}. Llévalo a ${task.toLocation.name}.`,
+      };
+    },
+    { lockProduct: true },
+  );
 }
 
 /**
@@ -801,6 +917,7 @@ export async function deliverTask(
         quantity: dec(task.quantity.toString()),
         picked,
         unitCode: task.unitCode,
+        serials: await taskSerials(tx, task.id),
       });
       if (!delivered.ok) {
         return stop(
@@ -831,6 +948,8 @@ export async function deliverTask(
       toLocationId: task.toLocationId,
       quantity: task.quantity.toString(),
       lotId: task.lotId,
+      serials: await taskSerials(tx, task.id),
+      taskId: task.id,
       idempotencyKey: `task:${task.id}`,
       reference: formatTaskNumber(task.number),
     });
@@ -991,6 +1110,8 @@ export function releaseTask(
         shortReason: null,
       },
     });
+    // WMS-21B: and scans again the units they take.
+    await tx.warehouseTaskSerial.deleteMany({ where: { taskId: task.id } });
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -1119,6 +1240,10 @@ export type TaskView = TaskSummary & {
   cancelledAt: Date | null;
   cancelReason: string | null;
   movementId: string | null;
+  /** WMS-21B: the product is by serial: picking up asks the serials. */
+  bySerial: boolean;
+  /** The serials of the units it took, once scanned. */
+  serials: string[];
 };
 
 /** «mine»: what this person has; «available»: what anyone may take. */
@@ -1389,6 +1514,12 @@ export async function getTask(
       movementId: true,
       pickedQuantity: true,
       shortReason: true,
+      product: { select: { name: true, sku: true, tracking: true } },
+      serials: {
+        orderBy: { id: "asc" },
+        take: 1_000,
+        select: { serialUnit: { select: { serial: true } } },
+      },
     },
   });
   if (!row) return null;
@@ -1415,6 +1546,8 @@ export async function getTask(
     cancelledAt: row.cancelledAt,
     cancelReason: row.cancelReason,
     movementId: row.movementId,
+    bySerial: row.product.tracking === "SERIAL",
+    serials: row.serials.map((item) => item.serialUnit.serial),
   };
 }
 

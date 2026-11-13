@@ -28,6 +28,11 @@ export type ExitProduct = {
    * id «<location>|<lot>».
    */
   locations: { id: string; label: string }[];
+  /**
+   * WMS-21B: a product by serial leaves naming each unit; its quantity is
+   * the number of serials scanned.
+   */
+  bySerial: boolean;
 };
 
 /** Null when the product does not exist in the company or is archived. */
@@ -54,6 +59,7 @@ export async function loadExitProduct(
       locations: lotSourceChoices(lots, locations, product.unitCode).map(
         ({ id, label }) => ({ id, label }),
       ),
+      bySerial: false,
     };
   }
   return {
@@ -67,5 +73,6 @@ export async function loadExitProduct(
         id: location.id,
         label: `${location.path} — hay ${formatStock(stock[location.id]!, product.unitCode)}`,
       })),
+    bySerial: product.tracking === "SERIAL",
   };
 }

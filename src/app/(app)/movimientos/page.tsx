@@ -32,6 +32,7 @@ import {
   listMovementAuthors,
   listMovements,
   listRecentMovements,
+  serialsText,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
@@ -468,6 +469,8 @@ export default async function MovimientosPage({
                           <span className="text-muted-foreground">
                             ({line.sku}) · {line.location}
                             {line.lot && ` · Lote ${line.lot}`}
+                            {line.serials.length > 0 &&
+                              ` · ${line.serials.length === 1 ? "Serie" : "Series"} ${serialsText(line.serials)}`}
                           </span>
                         </p>
                       </li>

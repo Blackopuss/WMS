@@ -192,6 +192,11 @@ export default async function SaldoInicialPage({
           }))}
           defaultLocationId={pending[0]?.id ?? ""}
           lotEntry={byLot ? { expiry: product.lotExpiry } : undefined}
+          serials={
+            product.tracking === "SERIAL"
+              ? { label: "Series de las unidades que hay" }
+              : undefined
+          }
         />
       </PageContainer>
     );

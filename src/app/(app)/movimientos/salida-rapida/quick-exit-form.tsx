@@ -35,7 +35,13 @@ type Line = {
   /** "base", "p:<presentation id>" or "u:<unit code>". */
   capture: string;
   locationId: string;
+  /** WMS-21B: the serials scanned for this line, one per line of text. */
+  serials: string;
 };
+
+/** How many serials a text names: one per line, blank lines aside. */
+const serialCount = (text: string) =>
+  text.split(/[\r\n\t,;]+/).filter((piece) => piece.trim() !== "").length;
 
 const OTHER = "Otro";
 const REASONS = [
@@ -73,6 +79,7 @@ export function QuickExitForm({
     quantity: "1",
     capture: "base",
     locationId: product.locations[0]?.id ?? "",
+    serials: "",
   });
 
   const [lines, setLines] = useState<Line[]>(() =>
@@ -84,6 +91,7 @@ export function QuickExitForm({
             quantity: "1",
             capture: "base",
             locationId: initial.locations[0]!.id,
+            serials: "",
           },
         ]
       : [],
@@ -124,6 +132,17 @@ export function QuickExitForm({
     }
     // Scanned or chosen again: one more of the same, when it is counted
     // in whole units of the product.
+    // WMS-21B: a product by serial counts the serials of its line.
+    const serialLine = product.bySerial
+      ? now.find((line) => line.product.id === product.id)
+      : undefined;
+    if (serialLine) {
+      setNotice(
+        `${product.name} ya está en la salida: escanea sus series en su línea.`,
+      );
+      document.getElementById(`${serialLine.key}-serials`)?.focus();
+      return;
+    }
     const again = now.find(
       (line) =>
         line.product.id === product.id &&
@@ -298,8 +317,12 @@ export function QuickExitForm({
       key: line.key,
       productId: line.product.id,
       locationId: line.locationId,
-      quantity: line.quantity,
+      // WMS-21B: as many units as serials scanned.
+      quantity: line.product.bySerial
+        ? String(serialCount(line.serials))
+        : line.quantity,
       capture: line.capture,
+      ...(line.product.bySerial ? { serials: line.serials } : {}),
     })),
   );
   const problems = Object.keys(lineErrors).length;
@@ -497,38 +520,73 @@ export function QuickExitForm({
                         <Trash2 aria-hidden="true" />
                       </Button>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <div className="w-28">
+                    {line.product.bySerial && (
+                      <div className="space-y-1">
                         <label
-                          htmlFor={`${line.key}-quantity`}
-                          className="sr-only"
+                          htmlFor={`${line.key}-serials`}
+                          className="text-sm font-medium"
                         >
-                          Cantidad de {line.product.name}
+                          Series de {line.product.name}, una por renglón
                         </label>
-                        <Input
-                          id={`${line.key}-quantity`}
-                          value={line.quantity}
+                        <textarea
+                          id={`${line.key}-serials`}
+                          value={line.serials}
                           onChange={(event) =>
-                            change(line.key, { quantity: event.target.value })
+                            change(line.key, { serials: event.target.value })
                           }
-                          onFocus={(event) => event.target.select()}
-                          onKeyDown={(event) => {
-                            // Enter here goes back to the search, not to
-                            // confirming the whole exit by accident.
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              searchRef.current?.focus();
-                            }
-                          }}
-                          inputMode="decimal"
+                          rows={3}
                           autoComplete="off"
-                          maxLength={40}
+                          autoCapitalize="characters"
+                          spellCheck={false}
                           aria-invalid={Boolean(error)}
                           aria-describedby={error ? errorId : undefined}
-                          className="tabular-nums"
+                          className="w-full rounded-lg border border-input bg-card px-3 py-2 font-mono text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive md:text-sm dark:bg-input/30"
                         />
+                        <p
+                          aria-live="polite"
+                          className="text-sm text-muted-foreground"
+                        >
+                          {serialCount(line.serials) === 1
+                            ? "Sale 1 unidad"
+                            : `Salen ${serialCount(line.serials)} unidades`}
+                        </p>
                       </div>
-                      {line.product.captures.length > 1 ? (
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {!line.product.bySerial && (
+                        <div className="w-28">
+                          <label
+                            htmlFor={`${line.key}-quantity`}
+                            className="sr-only"
+                          >
+                            Cantidad de {line.product.name}
+                          </label>
+                          <Input
+                            id={`${line.key}-quantity`}
+                            value={line.quantity}
+                            onChange={(event) =>
+                              change(line.key, { quantity: event.target.value })
+                            }
+                            onFocus={(event) => event.target.select()}
+                            onKeyDown={(event) => {
+                              // Enter here goes back to the search, not to
+                              // confirming the whole exit by accident.
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                searchRef.current?.focus();
+                              }
+                            }}
+                            inputMode="decimal"
+                            autoComplete="off"
+                            maxLength={40}
+                            aria-invalid={Boolean(error)}
+                            aria-describedby={error ? errorId : undefined}
+                            className="tabular-nums"
+                          />
+                        </div>
+                      )}
+                      {line.product.bySerial ? null : line.product.captures
+                          .length > 1 ? (
                         <div className="min-w-36 flex-1">
                           <label
                             htmlFor={`${line.key}-capture`}

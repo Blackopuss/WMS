@@ -13,7 +13,12 @@ import {
   type TenantDb,
 } from "@/server";
 
-import { EXIT_IMPORT_JOB_TYPE, exitKey, formatExitDay } from "./exit-import";
+import {
+  EXIT_IMPORT_JOB_TYPE,
+  SERIAL_NOT_IN_FILES,
+  exitKey,
+  formatExitDay,
+} from "./exit-import";
 import { formatStock } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
 import { availableOfLot, lotColumns } from "./stock-status";
@@ -160,6 +165,10 @@ async function registerRow(
     },
   });
   if (!product) return { kind: "failed", error: "El producto ya no existe." };
+  // WMS-21B (ADR 0041): its units leave by hand, naming their serials.
+  if (product.tracking === "SERIAL") {
+    return { kind: "failed", error: SERIAL_NOT_IN_FILES(product.sku) };
+  }
   // WMS-21 (ADR 0040): the lot fixed at confirmation. A product whose
   // control changed since (only possible without stock) fails here.
   const lotAnswer = await lotForTake(

@@ -27,6 +27,8 @@ export type StatusChangeState = {
     toLocationId: string;
     quantity: string;
     reason: string;
+    /** WMS-21B: the serials of the units that change, one per line. */
+    serials?: string;
   };
   /** Bumped on every answer, so selects show what was sent. */
   answers: number;
@@ -61,6 +63,7 @@ export async function changeStatusAction(
     toLocationId: text(formData, "toLocationId", 36),
     quantity: text(formData, "quantity", 40),
     reason: text(formData, "reason", 600),
+    serials: text(formData, "serials", 40_000),
   };
   const answers = previous.answers + 1;
   const stamp = fingerprint([
@@ -110,7 +113,7 @@ export async function changeStatusAction(
   // Empty the form for the next change; keep the place chosen.
   return {
     saved: result.summary,
-    values: { ...values, quantity: "", reason: "" },
+    values: { ...values, quantity: "", reason: "", serials: "" },
     answers,
   };
 }

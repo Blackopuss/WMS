@@ -3,7 +3,7 @@
 import { Loader2, TriangleAlert } from "lucide-react";
 import { useActionState } from "react";
 
-import { FormField } from "@/components";
+import { FormField, SerialsField } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -24,6 +24,7 @@ export function StatusForm({
   sources,
   targets,
   destinations,
+  bySerial = false,
 }: {
   productId: string;
   /** Created by the server when the screen is painted (INV-21). */
@@ -39,6 +40,8 @@ export function StatusForm({
    * relocate: then it always stays where it is.
    */
   destinations: Option[];
+  /** WMS-21B: a product by serial names each unit that changes. */
+  bySerial?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     changeStatusAction.bind(null, productId),
@@ -151,6 +154,15 @@ export function StatusForm({
           />
         )}
       </FormField>
+      {bySerial && (
+        <SerialsField
+          label="Series de las unidades que cambian"
+          error={errors.serials}
+          defaultValue={state.values.serials ?? ""}
+          key={key("serials")}
+          rows={3}
+        />
+      )}
       <FormField id="reason" label="Por qué" error={errors.reason}>
         {(control) => (
           <Input

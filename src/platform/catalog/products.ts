@@ -89,11 +89,12 @@ export const productSchema = z.object({
     .optional()
     .transform((value) => value || ""),
   /**
-   * How its stock is controlled (WMS-21, ADR 0040): without a lot or by
-   * lot. Absent = «NONE» for a new product; an edit keeps what it has.
+   * How its stock is controlled (WMS-21, ADR 0040 and 0041): as a whole,
+   * by lot or by serial number. Absent = «NONE» for a new product; an edit
+   * keeps what it has.
    */
   tracking: z
-    .enum(["NONE", "LOT"], { message: "Elige cómo se controla." })
+    .enum(["NONE", "LOT", "SERIAL"], { message: "Elige cómo se controla." })
     .optional(),
   /** Whether its lots carry an expiry date; only read when it is by lot. */
   lotExpiry: z
@@ -107,7 +108,18 @@ export const productSchema = z.object({
 export const TRACKING_LABELS = {
   NONE: "Sin lote",
   LOT: "Por lote",
+  SERIAL: "Por número de serie",
 } as const;
+
+/**
+ * A product by serial is counted in whole units, one serial each
+ * (WMS-21B): the precision of its quantities is 1. The sentence, or null.
+ */
+function serialStepProblem(tracking: string, step: string): string | null {
+  return tracking === "SERIAL" && Number(step) !== 1
+    ? "Un producto por número de serie se cuenta en unidades enteras: su precisión debe ser 1."
+    : null;
+}
 export const LOT_EXPIRY_LABELS = {
   NONE: "No lleva caducidad",
   OPTIONAL: "Caducidad opcional",
@@ -218,6 +230,13 @@ export async function createProduct(
       reason: "invalid",
       fieldErrors: { step: rule.problem },
     };
+  }
+  const serialStep = serialStepProblem(
+    data.tracking ?? "NONE",
+    rule.quantityStep,
+  );
+  if (serialStep) {
+    return { ok: false, reason: "invalid", fieldErrors: { step: serialStep } };
   }
   const measures = measuresOf(data);
   if (!measures.ok) {
@@ -567,7 +586,7 @@ export type ProductCard = ProductSummary & {
   /** Liters one unit takes, as kept in the card; null = not said. */
   unitVolume: string | null;
   /** How its stock is controlled (WMS-21): without a lot or by lot. */
-  tracking: "NONE" | "LOT";
+  tracking: "NONE" | "LOT" | "SERIAL";
   /** Whether its lots carry an expiry date. */
   lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
   status: "ACTIVE" | "ARCHIVED";
@@ -644,7 +663,7 @@ const FIELD_LABELS: Record<ProductField, string> = {
   step: "Precisión",
   weight: "Peso por unidad (kg)",
   volume: "Volumen por unidad (litros)",
-  tracking: "Control por lote",
+  tracking: "Control por lote o serie",
   lotExpiry: "Caducidad de sus lotes",
 };
 
@@ -764,6 +783,20 @@ export async function updateProduct(
       const changed = (Object.keys(before) as ProductField[]).filter(
         (field) => before[field] !== after[field],
       );
+      // WMS-21B: a product by serial moves whole units.
+      const serialStep = serialStepProblem(tracking, rule.quantityStep);
+      if (
+        serialStep &&
+        (changed.includes("tracking") || changed.includes("step"))
+      ) {
+        throw new Rejected({
+          ok: false,
+          reason: "invalid",
+          fieldErrors: {
+            [changed.includes("step") ? "step" : "tracking"]: serialStep,
+          },
+        });
+      }
       if (changed.length === 0) {
         throw new Rejected({
           ok: false,
@@ -793,8 +826,8 @@ export async function updateProduct(
             reason: "invalid",
             fieldErrors: {
               tracking: stock
-                ? "Este producto tiene existencias: su control por lote solo se cambia cuando no queda nada. Sácalas o ajústalas a cero primero."
-                : "Este producto tiene existencias apartadas para pedidos: su control por lote no se puede cambiar.",
+                ? "Este producto tiene existencias: su control por lote o serie solo se cambia cuando no queda nada. Sácalas o ajústalas a cero primero."
+                : "Este producto tiene existencias apartadas para pedidos: su control por lote o serie no se puede cambiar.",
             },
           });
         }
@@ -823,11 +856,11 @@ export async function updateProduct(
           }),
         ]);
         const pending = counting
-          ? "Este producto está en un conteo abierto: aplícalo o cancélalo antes de cambiar su control por lote."
+          ? "Este producto está en un conteo abierto: aplícalo o cancélalo antes de cambiar su control por lote o serie."
           : moving
-            ? "Este producto tiene una tarea sin terminar: entrégala o cancélala antes de cambiar su control por lote."
+            ? "Este producto tiene una tarea sin terminar: entrégala o cancélala antes de cambiar su control por lote o serie."
             : importing
-              ? "Hay salidas de este producto por registrar de un archivo: espera a que termine antes de cambiar su control por lote."
+              ? "Hay salidas de este producto por registrar de un archivo: espera a que termine antes de cambiar su control por lote o serie."
               : null;
         if (pending) {
           throw new Rejected({

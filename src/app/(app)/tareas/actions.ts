@@ -163,6 +163,55 @@ export async function taskStepAction(
   return run(taskId, work);
 }
 
+export type PickUpState = {
+  ok?: true;
+  summary?: string;
+  error?: string;
+  fieldErrors?: Partial<Record<TaskField, string>>;
+  values: { serials: string };
+  answers: number;
+};
+
+/**
+ * Picking up the load of a task of a product by serial (WMS-21B): the
+ * serials of the units taken, scanned at the origin. The task is looked
+ * for only inside the company of the session.
+ */
+export async function pickUpSerialsAction(
+  taskId: string,
+  previous: PickUpState,
+  formData: FormData,
+): Promise<PickUpState> {
+  const { user, organization } = await requireOrganizationContext();
+  const id = String(taskId ?? "").slice(0, 36);
+  const values = { serials: text(formData, "serials", 40_000) };
+  const answers = previous.answers + 1;
+  let result: TaskResult;
+  try {
+    result = await pickUpTask(
+      { organizationId: organization.id, userId: user.id },
+      id,
+      values,
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { error: error.message, values, answers };
+    }
+    throw error;
+  }
+  if (!result.ok) {
+    return {
+      error: result.formError,
+      fieldErrors: result.fieldErrors,
+      values,
+      answers,
+    };
+  }
+  revalidatePath("/tareas");
+  revalidatePath(`/tareas/${id}`);
+  return { ok: true, summary: result.summary, values, answers };
+}
+
 export async function blockTaskAction(
   taskId: string,
   reason: string,
@@ -209,6 +258,8 @@ export type ConfirmPickState = {
     shortReason: string;
     /** The lot taken, when the task names one (WMS-21). */
     lotCode: string;
+    /** The serials of the units taken, for a product by serial (WMS-21B). */
+    serials: string;
   };
   answers: number;
 };
@@ -232,6 +283,7 @@ export async function confirmPickAction(
     quantity: text(formData, "quantity", 40),
     shortReason: text(formData, "shortReason", 400),
     lotCode: text(formData, "lotCode", 100),
+    serials: text(formData, "serials", 40_000),
   };
   const answers = previous.answers + 1;
   let result: TaskResult;

@@ -79,6 +79,13 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona",
     coveredBy: "tests/inventory/tasks.int.test.ts",
   },
+  pickUpSerialsAction: {
+    input:
+      "id de la tarea de traslado y las series de las unidades que se toman (WMS-21B)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); producto, pedido y tarea se bloquean solo en esa empresa y la tarea debe ser de esa persona; las series se buscan solo entre las unidades de esa empresa",
+    coveredBy: "tests/inventory/serials.int.test.ts",
+  },
   confirmPickAction: {
     input:
       "id de la tarea de surtido, clave o código de barras del producto, ubicación y cantidad surtida (y motivo si es menos)",

@@ -388,7 +388,7 @@ export type ReceiveFormState = {
   /** Problem of each line, by the id of the order line. */
   lineErrors?: Record<string, string>;
   /** WMS-21: the problem of that line is its lot or its expiry date. */
-  lineFields?: Record<string, "lotCode" | "lotExpiresOn">;
+  lineFields?: Record<string, "lotCode" | "lotExpiresOn" | "serials">;
   /**
    * A location would be left above its capacity and the company only warns
    * (WMS-22B): nothing was received. `stamp` marks what the warning is
@@ -405,6 +405,8 @@ export type ReceiveFormState = {
     /** WMS-21: lot and expiry typed for a line of a product by lot. */
     lots: Record<string, string>;
     expiries: Record<string, string>;
+    /** WMS-21B: serials typed for a line of a product by serial. */
+    serials: Record<string, string>;
   };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
@@ -433,6 +435,8 @@ export async function receivePurchaseOrderAction(
   // WMS-21: `lot:<id>` and `exp:<id>`, only for products by lot.
   const lots: Record<string, string> = {};
   const expiries: Record<string, string> = {};
+  // WMS-21B: `ser:<id>`, only for products by serial.
+  const serials: Record<string, string> = {};
   // A product by lot may arrive in several lots: its extra parts are
   // `q:<id>~1`, `lot:<id>~1`, `exp:<id>~1`… (WMS-21); the place is the
   // line's.
@@ -441,6 +445,10 @@ export async function receivePurchaseOrderAction(
     if (typeof value !== "string") continue;
     if (name.startsWith("lot:") && Object.keys(lots).length < MAX) {
       lots[name.slice(4, 44)] = value.slice(0, 100);
+      continue;
+    }
+    if (name.startsWith("ser:") && Object.keys(serials).length < MAX) {
+      serials[name.slice(4, 44)] = value.slice(0, 40_000);
       continue;
     }
     if (name.startsWith("exp:") && Object.keys(expiries).length < MAX) {
@@ -464,6 +472,7 @@ export async function receivePurchaseOrderAction(
     places,
     lots,
     expiries,
+    serials,
   };
   const answers = prev.answers + 1;
   // What a capacity warning would be about: what goes where.
@@ -475,6 +484,7 @@ export async function receivePurchaseOrderAction(
       quantity,
       places[orderLineOf(key)] ?? "",
       lots[key] ?? "",
+      serials[key] ?? "",
     ]),
   ]);
   let result;
@@ -491,6 +501,7 @@ export async function receivePurchaseOrderAction(
           locationId: places[orderLineOf(key)],
           lotCode: lots[key],
           lotExpiresOn: expiries[key],
+          serials: serials[key],
         })),
         idempotencyKey: String(formData.get("idempotencyKey") ?? "").slice(
           0,
@@ -558,6 +569,8 @@ export type ReturnFormState = {
     quantities: Record<string, string>;
     /** Where a line is taken from, when not where it was received. */
     places: Record<string, string>;
+    /** WMS-21B: serials of the units that go back, by receipt line. */
+    serials: Record<string, string>;
   };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
@@ -580,8 +593,13 @@ export async function returnToSupplierAction(
   // One field per receipt line: `q:<id>`, and `l:<id>` for where from.
   const quantities: Record<string, string> = {};
   const places: Record<string, string> = {};
+  const serials: Record<string, string> = {};
   for (const [name, value] of formData.entries()) {
     if (typeof value !== "string") continue;
+    if (name.startsWith("ser:") && Object.keys(serials).length < 200) {
+      serials[name.slice(4, 40)] = value.slice(0, 40_000);
+      continue;
+    }
     if (name.startsWith("q:") && Object.keys(quantities).length < 200) {
       quantities[name.slice(2, 38)] = value.slice(0, 40);
     } else if (
@@ -596,6 +614,7 @@ export async function returnToSupplierAction(
     reason: String(formData.get("reason") ?? "").slice(0, 1000),
     quantities,
     places,
+    serials,
   };
   const answers = prev.answers + 1;
   let result;
@@ -609,6 +628,7 @@ export async function returnToSupplierAction(
           receiptLineId,
           quantity,
           locationId: places[receiptLineId],
+          serials: serials[receiptLineId],
         })),
         idempotencyKey: String(formData.get("idempotencyKey") ?? "").slice(
           0,

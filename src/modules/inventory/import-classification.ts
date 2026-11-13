@@ -318,6 +318,16 @@ export async function planImport(
         }
         continue;
       }
+      // WMS-21B (ADR 0041): a file does not carry serials.
+      if (current.tracking === "SERIAL") {
+        conflict(
+          line,
+          "initialStock",
+          stock.captured,
+          `${current.sku} se controla por número de serie: su existencia se captura a mano, con la serie de cada unidad (saldo inicial o entrada). Deja vacía esta celda.`,
+        );
+        continue;
+      }
       const checked = await checkLotEntry(
         client,
         { ...current, name: current.sku },

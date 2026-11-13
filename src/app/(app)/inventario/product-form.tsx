@@ -362,23 +362,25 @@ export function ProductForm({
         </details>
       )}
 
-      {/* WMS-21: most products have no lots; folded unless this one does. */}
+      {/* WMS-21: most products have no lots nor serials; folded unless
+          this one has. */}
       <details
         className="rounded-lg border p-3"
         open={Boolean(
           state.values.tracking === "LOT" ||
+          state.values.tracking === "SERIAL" ||
           state.fieldErrors.tracking ||
           state.fieldErrors.lotExpiry,
         )}
       >
         <summary className="-m-1 flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-          Lotes y caducidad (opcional)
+          Lotes, caducidad o números de serie (opcional)
         </summary>
         <div className="mt-4 grid gap-5 sm:grid-cols-2">
           <FormField
             id="tracking"
-            label="Control por lote"
-            hint="Por lote: cada entrada y cada salida dice de qué lote es."
+            label="Control"
+            hint="Por lote: cada movimiento dice de qué lote es. Por número de serie: cada unidad lleva el suyo, en piezas enteras."
             error={state.fieldErrors.tracking}
           >
             {(control) => (
@@ -388,8 +390,9 @@ export function ProductForm({
                 key={`tracking-${attempt}`}
                 defaultValue={state.values.tracking || "NONE"}
               >
-                <option value="NONE">Sin lote</option>
+                <option value="NONE">Sin lote ni serie</option>
                 <option value="LOT">Por lote</option>
+                <option value="SERIAL">Por número de serie</option>
               </NativeSelect>
             )}
           </FormField>

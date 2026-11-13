@@ -8,7 +8,8 @@ Carpeta `src/modules/inventory`. Contrato `inventoryModule` (`contract.ts`):
 ## Responsabilidad
 
 Todo lo que cambia o explica existencias: movimientos y saldos (por producto,
-ubicación, estado y lote), costo promedio, lotes y caducidad, capacidad de
+ubicación, estado y lote), costo promedio, lotes y caducidad, números de
+serie y trazabilidad, capacidad de
 ubicaciones al meter mercancía, reservas, tareas de traslado y surtido,
 pedidos de salida, conteos, mínimos, importaciones y exportaciones, y los
 resúmenes de Inicio. Productos y ubicaciones son del núcleo
@@ -28,6 +29,12 @@ código»):
   `AVAILABLE_ANY_LOT`.
 - Lo que entra resuelve su lote con `lotForEntry`, lo que sale con
   `lotForTake` (`lot-resolve.ts`), bajo el candado del producto.
+- Un producto por serie (WMS-21B, ADR 0041) dice qué unidades mueve:
+  `serialsForEntry` (lo que entra) o `serialsForTake` (lo que sale, se mueve
+  o cambia de estado) de `serials.ts`, bajo el candado del producto, y
+  `writeSerialMoves` **antes** de escribir sus líneas (con el id que tendrán).
+  Los disparadores rechazan una línea de un producto por serie sin una
+  `serial_move` por unidad, y mueven cada `serial_unit`.
 - Lo que mete existencias llama `checkPlacement` una vez por transacción.
 - Cada formulario que confirma un movimiento manda `idempotencyKey`.
 
@@ -41,6 +48,7 @@ código»):
 | Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo), `permissionForStatusChange` |
 | Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento |
 | Lotes | `lots.ts`, `lot-rules.ts` | lotes con existencias, ficha, por caducar (`listExpiringLots`, `countExpiringLots`), `changeLotExpiry`; reglas puras del código y la fecha del lote |
+| Series y trazabilidad | `serials.ts`, `serial-rules.ts`, `traceability.ts` | reglas puras de la serie (`normalizeSerial`, `parseSerialList`, `MAX_SERIALS_PER_OPERATION`, `serialsText`); `serialUnitsOfLines` (para Compras); `findTraceMatches` (un cuadro: lote, serie, `PS-…`, `OC-…`), `traceSerial`, `traceLot`, `tracePurchaseOrder`, `listProductSerials`; `listMovements` filtra por `serialUnitId` y cada línea trae sus `serials` |
 | Capacidad | `placement.ts`, `location-occupancy.ts` | `checkPlacement`, `loadPlacementRules`; `getLocationOccupancy` (ocupación derivada) |
 | Costo y valor | `average-cost.ts`, `inventory-value.ts` | `parseCost`, `getInventoryValue`, `getProductCost`, `mayReadInventoryCosts` |
 | Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`) y `postReturnExit` (`RETURN`), dentro de la transacción de la recepción o devolución |
@@ -57,7 +65,8 @@ código»):
 | Ajustes y trabajos | `settings.ts`, `import-apply.ts`, `exit-import-apply.ts` | `INVENTORY_SETTINGS` y cada ajuste; `inventoryJobHandlers`, `exitImportJobHandlers` |
 
 Internos que no se exportan pero deciden reglas: `picking.ts` (`pickSources`:
-de dónde y de qué lote se surte), `lot-resolve.ts`, `entry-repeat.ts` (aviso de
+de dónde y de qué lote se surte), `lot-resolve.ts`, `serials.ts` (qué
+unidades por serie mueve una operación), `entry-repeat.ts` (aviso de
 entrada repetida), `calendar-day.ts` (`dayWindow`: un día del calendario de la
 empresa), `valuation.ts`.
 
@@ -83,6 +92,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 ## Tablas
 
 `stock_movement`, `stock_movement_line`, `stock_balance`, `lot`,
+`serial_unit`, `serial_move`, `warehouse_task_serial`,
 `product_cost`, `stock_minimum`, `stock_count`, `stock_count_line`,
 `stock_count_capture`, `warehouse_task`, `stock_reservation`,
 `outbound_order`, `outbound_order_line`, `product_import`,
@@ -115,7 +125,8 @@ la transacción que decide:
 0012 (movimientos y saldos), 0013 (cola), 0014 (archivos), 0015 (importación de
 salidas), 0031 (costo promedio), 0032 (sin Ventas), 0033 (estado y lote del
 saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
-(capacidad), 0040 (lotes y caducidad).
+(capacidad), 0040 (lotes y caducidad), 0041 (números de serie y
+trazabilidad).
 
 ## Pruebas
 
@@ -123,4 +134,7 @@ saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `lot-rules.test.ts`, `entry-repeat.test.ts`). Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
-lotes en `lots.int.test.ts`.
+lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
+trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara
+cada saldo de un producto por serie con sus unidades dentro (`source:
+"serial_units"` y `"serial_moves"`).
