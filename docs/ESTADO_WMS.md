@@ -144,7 +144,7 @@ En resumen:
   restricciones (WMS-22B, hecho), lotes,
   caducidad, series y trazabilidad (WMS-21) y documentación técnica base
   (WMS-51).
-- **Fase 2 (operación logística):** acomodo con recomendación (WMS-52), tarimas
+- **Fase 2 (operación logística):** acomodo con recomendación (WMS-52, hecho), tarimas
   (WMS-53), empaque (WMS-15), despacho y embarques (WMS-16), devoluciones de
   clientes (WMS-17), traslados entre almacenes (WMS-19), cross-docking (WMS-54),
   conteos cíclicos (WMS-55), etiquetas (WMS-26), cámara (WMS-36), reposición

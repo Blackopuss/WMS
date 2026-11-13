@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-52** · Acomodo con recomendación (ADR 0042): ajuste por empresa, tareas
+  `PUTAWAY` desde la recepción y la entrada, lugar recomendado por una sola
+  función y confirmación escaneando dónde quedó.
 - **WMS-21B** · Números de serie y trazabilidad (ADR 0041): control por serie
   por producto, unidades en `serial_unit` y `serial_move`, series en todas las
   operaciones de existencias y pantalla «Rastrear lote, serie o pedido». Cierra
