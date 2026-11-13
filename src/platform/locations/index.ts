@@ -72,6 +72,7 @@ export {
   isLimited,
   locationScopeWhere,
   locationsOutOfScope,
+  placeOfLocation,
 } from "./scope";
 export type { LocationScopeReader, LocationScopeWhere } from "./scope";
 export type { LocationActor } from "./locations";

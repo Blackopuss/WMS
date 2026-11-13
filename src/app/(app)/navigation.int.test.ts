@@ -45,6 +45,8 @@ describe("menu by role", () => {
       "Inventario",
       "Movimientos",
       "Conteos",
+      // WMS-39: the floor reports problems; supervision attends them.
+      "Incidencias",
       "Configuración",
     ]);
   });
@@ -77,6 +79,7 @@ describe("menu by role", () => {
       "Inicio",
       "Tareas",
       "Inventario",
+      "Incidencias",
       "Configuración",
     ]);
   });

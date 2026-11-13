@@ -18,6 +18,7 @@ import {
   locationScopeWhere,
   locationsOutOfScope,
 } from "@/platform/locations";
+import { memberName, notify } from "@/platform/notifications";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { dayWindow, type DayWindow } from "./calendar-day";
@@ -67,6 +68,7 @@ import {
 import { containerName, theContainer } from "./container-rules";
 import { compareRoute, inRouteOrder, routeKey } from "./pick-route";
 import { formatWaveNumber } from "./wave-states";
+import { TASK_ASSIGNED_NOTICE, TASK_BLOCKED_NOTICE } from "./notices";
 import { settleWaveOf } from "./wave-settle";
 
 /**
@@ -614,6 +616,17 @@ export async function createTask(
             assignedToUserId: data.assignToUserId,
           },
         });
+        // WMS-39: given to someone when created, they hear it.
+        if (data.assignToUserId) {
+          await notify(tx, TASK_ASSIGNED_NOTICE, {
+            organizationId,
+            actorUserId: userId,
+            to: { userIds: [data.assignToUserId] },
+            text: `${await memberName(tx, userId)} te asignó la tarea ${formatTaskNumber(number)}: ${product.name} de ${from.name} a ${to.name}.`,
+            href: `/tareas/${id}`,
+            key: `task:${id}:assigned:${data.assignToUserId}`,
+          });
+        }
         return {
           ok: true,
           taskId: id,
@@ -1462,6 +1475,19 @@ export function blockTask(
         blockedReason: why.data,
       },
     });
+    // WMS-39: supervision of where it leaves from hears it now. A task can
+    // be blocked again after being released: each report is its own fact.
+    await notify(tx, TASK_BLOCKED_NOTICE, {
+      organizationId: actor.organizationId,
+      actorUserId: actor.userId,
+      to: {
+        permissions: ["inventory.task.create"],
+        locationId: task.fromLocationId,
+      },
+      text: `${await memberName(tx, actor.userId)} reportó un problema en la tarea ${formatTaskNumber(task.number)}: ${why.data}`,
+      href: `/tareas/${task.id}`,
+      key: `task:${task.id}:blocked:${newId()}`,
+    });
     return {
       ok: true,
       taskId: task.id,
@@ -1872,6 +1898,21 @@ export async function assignTasks(
         data: { status: "ASSIGNED", assignedToUserId: target },
       });
     }
+    // WMS-39: whoever gets them hears it once for the whole group.
+    if (tasks.length > 0) {
+      const first = tasks[0]!;
+      await notify(tx, TASK_ASSIGNED_NOTICE, {
+        organizationId,
+        actorUserId: userId,
+        to: { userIds: [target] },
+        text:
+          tasks.length === 1
+            ? `${await memberName(tx, userId)} te asignó la tarea ${formatTaskNumber(first.number)}.`
+            : `${await memberName(tx, userId)} te asignó ${tasks.length} tareas.`,
+        href: tasks.length === 1 ? `/tareas/${first.id}` : "/tareas?vista=mine",
+        key: `task:${first.id}:assigned:${target}:${tasks.length}`,
+      });
+    }
     return tasks.length === 0
       ? {
           ok: true,
@@ -1940,6 +1981,17 @@ export async function assignTask(
         assignedToUserId: target,
       },
     });
+    // WMS-39: who gets the task hears it (once per task and person).
+    if (target) {
+      await notify(tx, TASK_ASSIGNED_NOTICE, {
+        organizationId: actor.organizationId,
+        actorUserId: actor.userId,
+        to: { userIds: [target] },
+        text: `${await memberName(tx, actor.userId)} te asignó la tarea ${formatTaskNumber(task.number)}.`,
+        href: `/tareas/${task.id}`,
+        key: `task:${task.id}:assigned:${target}`,
+      });
+    }
     return {
       ok: true,
       taskId: task.id,

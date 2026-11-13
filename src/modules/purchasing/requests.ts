@@ -18,6 +18,7 @@ import { loadScope } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { pluralizeName, resolveConversion } from "@/platform/catalog";
 import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
+import { notify, type NotifyTx } from "@/platform/notifications";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -26,6 +27,7 @@ import {
 } from "@/server";
 
 import { PURCHASE_REQUEST_APPROVAL } from "./approval-keys";
+import { REQUEST_ANSWERED_NOTICE, REQUEST_TO_ATTEND_NOTICE } from "./notices";
 import { PURCHASE_ORDER_STATUS_LABELS } from "./order-states";
 import {
   OrderNumberTaken,
@@ -569,6 +571,48 @@ function summaryOf(
 }
 
 /**
+ * WMS-39: a request reached «Por atender»: who buys for its warehouse
+ * hears it, never who caused it. Never with costs.
+ */
+async function noticeToAttend(
+  tx: NotifyTx,
+  organizationId: string,
+  actorUserId: string,
+  request: { id: string; facilityId: string },
+  text: string,
+) {
+  await notify(tx, REQUEST_TO_ATTEND_NOTICE, {
+    organizationId,
+    actorUserId,
+    to: {
+      permissions: ["purchasing.order.create"],
+      facilityId: request.facilityId,
+    },
+    text: `Por atender: ${text}`,
+    href: `/compras/solicitudes/${request.id}`,
+    key: `purchase_request:${request.id}:to_attend`,
+  });
+}
+
+/** WMS-39: who asked hears what Compras did with the request. */
+async function noticeAnswered(
+  tx: NotifyTx,
+  organizationId: string,
+  actorUserId: string,
+  request: { id: string; requestedByUserId: string },
+  text: string,
+) {
+  await notify(tx, REQUEST_ANSWERED_NOTICE, {
+    organizationId,
+    actorUserId,
+    to: { userIds: [request.requestedByUserId] },
+    text,
+    href: `/compras/solicitudes/${request.id}`,
+    key: `purchase_request:${request.id}:answered`,
+  });
+}
+
+/**
  * Sends the person's draft (or sends again one whose authorization was
  * withdrawn or expired). With the approval rule of the company off it
  * reaches Compras («por atender»); on, it waits for an authorization,
@@ -698,6 +742,13 @@ export async function submitPurchaseRequest(
       target: { type: "purchase_request", id: request.id },
       metadata: { solicitud: numberText },
     });
+    await noticeToAttend(
+      tx,
+      organizationId,
+      userId,
+      request,
+      summaryOf(request.number, lines.length, request.neededOn, request.notes),
+    );
     return { ok: true as const, status: "APPROVED" as const };
   });
 }
@@ -845,6 +896,13 @@ export async function rejectPurchaseRequest(
       reason: parsed.data.reason,
       metadata: { solicitud: formatRequestNumber(request.number) },
     });
+    await noticeAnswered(
+      tx,
+      organizationId,
+      userId,
+      request,
+      `Compras no va a comprar ${formatRequestNumber(request.number)}. Motivo: ${parsed.data.reason}`,
+    );
     return { ok: true as const, status: "REJECTED" as const };
   });
 }
@@ -867,6 +925,7 @@ async function lockForDecision(tx: ApprovalTx, context: ApprovalContext) {
           id: true,
           number: true,
           status: true,
+          facilityId: true,
           requestedByUserId: true,
         },
       })
@@ -908,6 +967,13 @@ export async function approveRequestEffect(
       autorizacion: context.request.id,
     },
   });
+  await noticeToAttend(
+    tx,
+    context.organizationId,
+    context.decidedByUserId,
+    { id: request.id, facilityId: request.facilityId },
+    context.request.summary,
+  );
   return { outcome: `${numberText} pasó a Compras para atenderse.` };
 }
 
@@ -1185,6 +1251,14 @@ export async function convertPurchaseRequest(
             ordenes: orders.map((order) => order.numberText).join(", "),
           },
         });
+        // Who asked may not see orders or suppliers: only that it is done.
+        await noticeAnswered(
+          tx,
+          organizationId,
+          userId,
+          request,
+          `Compras ya pidió lo de ${numberText}: se convirtió en orden de compra.`,
+        );
         return {
           ok: true as const,
           orders,

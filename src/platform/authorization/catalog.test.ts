@@ -186,8 +186,12 @@ describe("operational roles (WMS-05)", () => {
   });
 
   it("Montacarguista reads and does its tasks: it never types quantities freely", () => {
+    // WMS-39: reporting a problem of the floor (an incident) moves nothing
+    // and types no quantity.
     for (const permission of of("forklift")) {
-      expect(permission).toMatch(/\.read$|^inventory\.task\.execute$/);
+      expect(permission).toMatch(
+        /\.read$|^inventory\.task\.execute$|^inventory\.incident\.create$/,
+      );
     }
     expect(of("forklift").has("inventory.task.execute")).toBe(true);
     expect(of("forklift").has("inventory.transfer.create")).toBe(false);

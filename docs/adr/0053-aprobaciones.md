@@ -184,7 +184,10 @@ Quien autoriza necesita `inventory.count.apply` y
 ## Pendientes
 
 - **Aviso por correo** a quien puede autorizar (con `enqueueJob` y la regla
-  de «Correo a terceros»): hoy lo ven en Inicio y en Aprobaciones.
+  de «Correo a terceros»). Dentro de la app ya avisa (WMS-39, ADR 0057):
+  pedir avisa a quien puede decidir (roles de la regla vigente o titular, con
+  los permisos del tipo, dentro del alcance) y decidir o vencer avisa a quien
+  pidió.
 - **Evidencia** (WMS-37, fotos): la solicitud tendrá sus archivos con
   `storeFile`; el resumen ya deja el lugar.
 - Umbral por valor (cantidad × costo promedio), como criterio interno.

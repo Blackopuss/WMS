@@ -156,6 +156,8 @@ código»):
 | Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; transiciones `FACILITY_TRANSFER_TRANSITIONS` |
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
+| Incidencias (WMS-39) | `incidents.ts`, `incident-states.ts` | `reportIncident` (del almacén activo; ubicación y producto escaneados; tarea o pedido opcionales; clave de confirmación), `startIncident` («Atender»), `resolveIncident` (qué se hizo), `dismissIncident` (motivo), `addIncidentNote`, `listIncidents` (`open`, `closed`, `mine`), `getIncident`, `countOpenIncidents` (Inicio, para quien atiende); transiciones `INCIDENT_TRANSITIONS`, tipos `INCIDENT_KINDS`, número `INC-0001`. No tocan existencias |
+| Avisos (WMS-39) | `notices.ts` | `INVENTORY_NOTIFICATION_TYPES`: los tipos que este módulo manda con `notify` (ver «Avisos») |
 | Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido y embarque, con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar |
@@ -197,6 +199,8 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Traslados entre almacenes: `facility_transfer.read|create|send|receive|resolve`
   (WMS-19: ver, armar y cancelar el borrador, enviar, recibir y resolver lo
   que no llegó).
+- Incidencias (WMS-39): `incident.read|create|manage` (ver las del almacén,
+  reportar y comentar, atender y cerrar).
 - Archivos: `import.create|read|confirm|cancel`, `export.create`.
 - Etiquetas (WMS-26): sin permiso propio; imprimir pide la lectura de lo que
   se etiqueta (`location.read`, `product.read`, `stock.read`,
@@ -221,6 +225,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `customer_return_line`, `customer_return_decision`, `facility_transfer`,
 `facility_transfer_line`, `facility_transfer_receipt`,
 `facility_transfer_receipt_line`,
+`incident`, `incident_note`,
 `product_import`,
 `product_import_item`, `exit_import`, `exit_import_row`, `outbound_import`.
 Detalle en [modelo-de-datos.md](../modelo-de-datos.md).
@@ -268,6 +273,22 @@ Tipos declarados en `approvals.ts` (`INVENTORY_APPROVAL_TYPES`), registrados en
 | `inventory.adjustment` («Corregir existencias») | `registerAdjustment` con la regla encendida y la diferencia sobre `inventory.adjustment.approval_threshold` | `inventory.adjustment.create` | `applyApprovedAdjustment`: el mismo ajuste, a nombre de quien lo pidió, solo si nada se movió de ese producto en esa ubicación desde que se pidió (si no, vence) |
 | `inventory.count_apply` («Aplicar conteos con diferencias grandes») | `applyCount` con la regla encendida y líneas sobre `inventory.count.review_threshold` (el conteo queda congelado mientras espera) | `inventory.count.apply` e `inventory.adjustment.create` | `applyApprovedCount`: el mismo `applyCount`, a nombre de quien lo pidió, si lo capturado no cambió |
 
+## Avisos
+
+Tipos en `notices.ts` (`INVENTORY_NOTIFICATION_TYPES`), registrados en
+`src/modules/registry/notifications.ts`; cada servicio llama `notify` de
+`@/platform/notifications` en su transacción (WMS-39, ADR 0057):
+
+| Tipo | Quién lo manda | A quién |
+| --- | --- | --- |
+| `inventory.task_assigned` | `createTask` con persona, `assignTask`, `assignTasks` (uno por grupo) | a quien se le asigna |
+| `inventory.task_blocked` | `blockTask` | `inventory.task.create` que alcance el origen de la tarea |
+| `inventory.customer_return` | `receiveCustomerReturn` | `inventory.status.release` o `inventory.status.change` en su ubicación |
+| `inventory.transfer_incoming` | `sendFacilityTransfer` | `inventory.facility_transfer.receive` del almacén de destino |
+| `inventory.transfer_differences` | `receiveFacilityTransfer` (con algo dañado), `resolveFacilityTransfer` (`LOST`) | quien lo envió |
+| `inventory.incident_reported` | `reportIncident` | `inventory.incident.manage` que alcance su ubicación o su almacén |
+| `inventory.incident_changed` | atender, resolver, descartar, nota | quien la reportó |
+
 ## Trabajos en segundo plano
 
 | Tipo | Manejador | Qué hace |
@@ -293,7 +314,7 @@ contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
-0054 (surtido por olas).
+0054 (surtido por olas), 0057 (avisos e incidencias).
 
 ## Pruebas
 

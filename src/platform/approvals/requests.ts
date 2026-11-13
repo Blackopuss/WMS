@@ -20,6 +20,7 @@ import {
   locationScopeWhere,
   locationsOutOfScope,
 } from "@/platform/locations";
+import { memberName, notify } from "@/platform/notifications";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import {
@@ -28,6 +29,7 @@ import {
   type ApprovalTx,
   type ApprovalType,
 } from "./definitions";
+import { APPROVAL_DECIDED_NOTICE, APPROVAL_PENDING_NOTICE } from "./notices";
 import { readApprovalRule, type ApprovalRuleValue } from "./rules";
 import { APPROVAL_STATUS_LABELS, type ApprovalStatus } from "./states";
 
@@ -81,7 +83,7 @@ export type OpenApprovalResult =
  */
 export async function openApprovalRequest(
   tx: Client,
-  type: Pick<ApprovalType, "key" | "label">,
+  type: Pick<ApprovalType, "key" | "label" | "decidePermissions">,
   actor: Actor,
   input: OpenApprovalInput,
 ): Promise<OpenApprovalResult> {
@@ -118,6 +120,22 @@ export async function openApprovalRequest(
     action: "approval.requested",
     target: { type: "approval_request", id },
     metadata: { tipo: type.label, resumen: summary },
+  });
+  // WMS-39: who may decide it hears it now (the rule in force, its roles
+  // or the titular, what deciding takes, inside their scope).
+  const rule = await readApprovalRule(tx, type.key);
+  await notify(tx, APPROVAL_PENDING_NOTICE, {
+    organizationId: actor.organizationId,
+    actorUserId: actor.userId,
+    to: {
+      permissions: type.decidePermissions,
+      roles: rule.roles,
+      facilityId: input.facilityId ?? null,
+      locationId: input.locationId ?? null,
+    },
+    text: `${await memberName(tx, actor.userId)} pide autorizar: ${summary}`,
+    href: `/aprobaciones/${id}`,
+    key: `approval:${id}:pending`,
   });
   return { ok: true, requestId: id };
 }
@@ -480,6 +498,18 @@ export async function decideApproval(
             ...(outcome ? { resultado: outcome } : {}),
           },
         });
+        // WMS-39: who asked hears the answer.
+        await notify(tx, APPROVAL_DECIDED_NOTICE, {
+          organizationId,
+          actorUserId: userId,
+          to: { userIds: [request.requestedByUserId] },
+          text:
+            status === "APPROVED"
+              ? `Se autorizó: ${request.summary}`
+              : `Se rechazó: ${request.summary}. Motivo: ${data.reason ?? ""}`,
+          href: `/aprobaciones/${request.id}`,
+          key: `approval:${request.id}:decided`,
+        });
         return {
           ok: true as const,
           status,
@@ -513,7 +543,13 @@ async function expire(
     if (!locked) return;
     const request = await tx.approvalRequest.findFirst({
       where: { id: locked },
-      select: { id: true, status: true, typeKey: true, summary: true },
+      select: {
+        id: true,
+        status: true,
+        typeKey: true,
+        summary: true,
+        requestedByUserId: true,
+      },
     });
     if (!request || request.status !== "PENDING") return;
     await tx.approvalRequest.updateMany({
@@ -538,6 +574,14 @@ async function expire(
           request.typeKey,
         resumen: request.summary,
       },
+    });
+    await notify(tx, APPROVAL_DECIDED_NOTICE, {
+      organizationId: actor.organizationId,
+      actorUserId: actor.userId,
+      to: { userIds: [request.requestedByUserId] },
+      text: `Venció lo que pediste autorizar: ${request.summary}. ${why}`,
+      href: `/aprobaciones/${request.id}`,
+      key: `approval:${request.id}:decided`,
     });
   }, LOCKING_TRANSACTION);
 }

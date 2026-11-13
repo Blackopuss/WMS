@@ -129,6 +129,10 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "purchase_request.rejected": "Rechazó una solicitud de compra",
   "purchase_request.cancelled": "Canceló una solicitud de compra",
   "purchase_request.converted": "Convirtió una solicitud de compra en orden",
+  "inventory.incident_reported": "Reportó una incidencia",
+  "inventory.incident_attended": "Tomó una incidencia para atenderla",
+  "inventory.incident_resolved": "Resolvió una incidencia",
+  "inventory.incident_dismissed": "Descartó una incidencia",
 };
 
 export function describeAuditAction(action: string): string {

@@ -16,6 +16,7 @@ import {
   locationPath,
   locationScopeWhere,
 } from "@/platform/locations";
+import { memberName, notify } from "@/platform/notifications";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -30,6 +31,10 @@ import {
   type FacilityTransferStatus,
 } from "./facility-transfer-states";
 import { LOT_RULE_SELECT, lotForTake } from "./lot-resolve";
+import {
+  TRANSFER_DIFFERENCES_NOTICE,
+  TRANSFER_INCOMING_NOTICE,
+} from "./notices";
 import { lotDayOf, lotLabel } from "./lot-rules";
 import {
   IDEMPOTENCY_KEY,
@@ -1160,6 +1165,18 @@ export async function sendFacilityTransfer(
           ...(carrier.data ? { lleva: carrier.data } : {}),
         },
       });
+      // WMS-39: who receives at the destination hears it is on its way.
+      await notify(tx, TRANSFER_INCOMING_NOTICE, {
+        organizationId,
+        actorUserId: userId,
+        to: {
+          permissions: ["inventory.facility_transfer.receive"],
+          facilityId: transfer.toFacilityId,
+        },
+        text: `${await memberName(tx, userId)} envió el traslado ${numberText} desde ${transfer.fromFacility.name}: viene en camino.`,
+        href: `/movimientos/traslados/${transfer.id}`,
+        key: `facility_transfer:${transfer.id}:sent`,
+      });
       return {
         ok: true as const,
         transferId: transfer.id,
@@ -1440,6 +1457,7 @@ export async function receiveFacilityTransfer(
                 fromFacilityId: true,
                 toFacilityId: true,
                 transitLocationId: true,
+                sentByUserId: true,
                 toFacility: { select: { name: true } },
               },
             })
@@ -1762,6 +1780,17 @@ export async function receiveFacilityTransfer(
               : {}),
           },
         });
+        // WMS-39: who sent it hears when something arrived damaged.
+        if (parts.some((part) => part.status === "DAMAGED")) {
+          await notify(tx, TRANSFER_DIFFERENCES_NOTICE, {
+            organizationId,
+            actorUserId: userId,
+            to: { userIds: [transfer.sentByUserId] },
+            text: `El traslado ${numberText} se recibió en ${transfer.toFacility.name} con mercancía dañada.`,
+            href: `/movimientos/traslados/${transfer.id}`,
+            key: `facility_transfer:${transfer.id}:damaged:${receiptId}`,
+          });
+        }
         return {
           ok: true as const,
           transferId: transfer.id,
@@ -1917,6 +1946,8 @@ export async function resolveFacilityTransfer(
                 fromFacilityId: true,
                 toFacilityId: true,
                 transitLocationId: true,
+                sentByUserId: true,
+                toFacility: { select: { name: true } },
               },
             })
           : null;
@@ -2161,6 +2192,17 @@ export async function resolveFacilityTransfer(
           },
         });
         const amount = formatStock(quantity.toString(), product.unitCode);
+        // WMS-39: who sent it hears that part of it was lost on the way.
+        if (outcome === "LOST") {
+          await notify(tx, TRANSFER_DIFFERENCES_NOTICE, {
+            organizationId,
+            actorUserId: userId,
+            to: { userIds: [transfer.sentByUserId] },
+            text: `En ${transfer.toFacility.name} dieron por perdido parte del traslado ${numberText}: ${amount} de ${product.name}.`,
+            href: `/movimientos/traslados/${transfer.id}`,
+            key: `facility_transfer:${transfer.id}:lost:${newId()}`,
+          });
+        }
         return {
           ok: true as const,
           transferId: transfer.id,

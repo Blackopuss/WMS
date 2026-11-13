@@ -171,6 +171,9 @@ sugerencia; al convertirla, su borrador sí cuenta (como todo borrador).
 ## Pendientes
 
 - Aviso por correo a Compras de una solicitud nueva (como en ADR 0053).
+  Dentro de la app ya avisa (WMS-39, ADR 0057): a quien compra en ese
+  almacén cuando la solicitud llega a «Por atender», y a quien la pidió
+  cuando se convierte en orden o se rechaza.
 - Que el piso (Almacenista) pida: decisión del fundador.
 - Ventana de la comparación como ajuste, y medir el tiempo de entrega contra
   la fecha esperada de la orden.

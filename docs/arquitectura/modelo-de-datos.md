@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-95 tablas en 23 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+99 tablas en 25 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -15,6 +15,7 @@
 | Plataforma › Aceptación de documentos | 1 | [legal](modulos/legal.md) |
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
+| Plataforma › Avisos | 2 | [notifications](modulos/notifications.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
 | Plataforma › Almacenes y ubicaciones | 5 | [locations](modulos/locations.md) |
@@ -27,6 +28,7 @@
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
+| Inventario › Incidencias | 2 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
 
@@ -735,6 +737,51 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 #### Enumeraciones de Plataforma › Aprobaciones
 
 - `ApprovalStatus`: `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXPIRED`.
+
+## Plataforma › Avisos
+
+Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído») y los tipos que cada persona apagó; los tipos los declara cada módulo.
+
+Documento: [modulos/notifications.md](modulos/notifications.md).
+
+### Notification · `notification`
+
+A notice for one person inside the app (WMS-39, ADR 0057). Written only by `notify` of platform/notifications, inside the transaction of the fact that causes it. Text and destination are fixed when created; only `readAt` changes, once (trigger). Read notices older than 90 days are removed by a round; unread ones stay.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `recipientUserId` | `String · Char(36)` |  | Who it is for: only that person sees it. |
+| `typeKey` | `String · VarChar(80)` |  | «inventory.task_assigned»: the type declared by its module. |
+| `text` | `String · VarChar(300)` |  | What happened, one line, never with costs. |
+| `href` | `String · VarChar(300)` |  | Internal path of the app it leads to («/tareas/…»). |
+| `dedupeKey` | `String · VarChar(160)` |  | Same fact → same key: a person gets it once. |
+| `actorUserId` | `String? · Char(36)` |  | Who caused it (never notified about it); null = the system. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `readAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `recipientUserId`, `dedupeKey`).
+- Índices: (`organizationId`, `recipientUserId`, `readAt`); (`organizationId`, `recipientUserId`, `createdAt`, `id`); (`organizationId`, `readAt`).
+
+### NotificationPreference · `notification_preference`
+
+A person turned a type of notice off (or on, if it is off by default) (WMS-39). Without a row the type's default applies.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `userId` | `String · Char(36)` |  |  |
+| `typeKey` | `String · VarChar(80)` |  |  |
+| `enabled` | `Boolean` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `userId`, `typeKey`).
 
 ## Plataforma › Archivos
 
@@ -2001,6 +2048,69 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `FacilityTransferStatus`: `DRAFT`, `SENT`, `RECEIVED`, `CANCELLED`.
 - `FacilityTransferReceiptKind`: `RECEIVED`, `LOST`, `RETURNED`.
+
+## Inventario › Incidencias
+
+Problemas del almacén que alguien reportó (mercancía dañada, algo fuera de lugar, una ubicación insegura, un equipo descompuesto), quién los atendió y cómo se cerraron, con sus notas; no tocan existencias.
+
+Documento: [modulos/inventory.md](modulos/inventory.md).
+
+### Incident · `incident`
+
+A problem of the warehouse that someone reported (WMS-39, ADR 0057): damaged goods found, something out of place, an unsafe location, broken equipment. It never changes stock. What was reported does not change; states with INCIDENT_TRANSITIONS and the trigger `incident_transition`. Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | Consecutive per company («INC-0001»). |
+| `facilityId` | `String · Char(36)` |  |  |
+| `kind` | `IncidentKind` |  |  |
+| `status` | `IncidentStatus` | `OPEN` |  |
+| `description` | `String · VarChar(1000)` |  |  |
+| `locationId` | `String? · Char(36)` |  | What it is about, all optional; the location is of its warehouse. |
+| `productId` | `String? · Char(36)` |  |  |
+| `taskId` | `String? · Char(36)` |  |  |
+| `outboundOrderId` | `String? · Char(36)` |  |  |
+| `idempotencyKey` | `String · VarChar(64)` |  | The confirmation of the form: a retry finds the same incident. |
+| `reportedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `attendedByUserId` | `String? · Char(36)` |  | Who took it («en atención») and when. |
+| `attendedAt` | `DateTime? · DateTime(3)` |  |  |
+| `closedByUserId` | `String? · Char(36)` |  | Resolved (what was done) or dismissed (why). |
+| `closedAt` | `DateTime? · DateTime(3)` |  |  |
+| `resolution` | `String? · VarChar(500)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `idempotencyKey`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `reportedByUserId`, `number`); (`organizationId`, `locationId`); (`organizationId`, `productId`); (`organizationId`, `taskId`); (`organizationId`, `outboundOrderId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `facilityId`, `locationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `task` → `WarehouseTask` por (`organizationId`, `taskId`) (al borrar: Restrict); `outboundOrder` → `OutboundOrder` por (`organizationId`, `outboundOrderId`) (al borrar: Restrict).
+
+### IncidentNote · `incident_note`
+
+A follow-up note of an incident (WMS-39): never changed or deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `incidentId` | `String · Char(36)` |  |  |
+| `text` | `String · VarChar(1000)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `incidentId`, `createdAt`, `id`).
+- Relaciones: `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict).
+
+#### Enumeraciones de Inventario › Incidencias
+
+- `IncidentKind`: `DAMAGED_GOODS`, `MISPLACED`, `UNSAFE_LOCATION`, `BROKEN_EQUIPMENT`, `OTHER`.
+- `IncidentStatus`: `OPEN`, `IN_PROGRESS`, `RESOLVED`, `DISMISSED`.
 
 ## Inventario › Importaciones
 

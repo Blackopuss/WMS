@@ -18,11 +18,18 @@ import {
 } from "../ui/sheet";
 import { NAV_ITEMS, isActive, type NavItem } from "./nav";
 import {
+  BellButton,
+  NotificationSheet,
+  useNotificationBell,
+  type NotificationBellProps,
+} from "./notification-bell";
+import {
   OrganizationSwitcher,
   type ShellOrganization,
 } from "./organization-switcher";
 
 export type ShellUser = { name: string; email: string };
+export type { BellNotice, NotificationBellProps } from "./notification-bell";
 export type { ShellOrganization };
 
 type SwitchAction = (id: string) => Promise<{ error: string }>;
@@ -43,7 +50,10 @@ export function AppShell({
   facility = null,
   facilities = [],
   switchFacilityAction,
+  notifications,
 }: {
+  /** The bell (WMS-39): unread count and its actions, from the layout. */
+  notifications: NotificationBellProps;
   /** The warehouse the person works in (WMS-18), when there are several. */
   facility?: ShellOrganization | null;
   facilities?: ShellOrganization[];
@@ -74,6 +84,7 @@ export function AppShell({
       )}
     </>
   );
+  const bell = useNotificationBell(notifications);
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href));
   // The bottom bar holds 4 sections; the rest go to «Más».
@@ -92,7 +103,10 @@ export function AppShell({
 
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r bg-sidebar md:flex print:hidden">
         <Brand />
-        <div className="-mt-2 px-3 pb-2">{switcher}</div>
+        <div className="-mt-2 px-3 pb-2">
+          {switcher}
+          <BellButton bell={bell} />
+        </div>
         <nav aria-label="Principal" className="flex-1 px-3 pb-4">
           <ul className="space-y-1">
             {items.map((item) => (
@@ -113,8 +127,11 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md md:hidden print:hidden">
           <Warehouse aria-hidden="true" className="size-5 text-primary" />
-          <span className="font-semibold">{current?.label ?? "WMS"}</span>
-          <ThemeToggle className="ml-auto" />
+          <span className="min-w-0 truncate font-semibold">
+            {current?.label ?? "WMS"}
+          </span>
+          <BellButton bell={bell} compact className="ml-auto" />
+          <ThemeToggle />
         </header>
         <OfflineNotice />
 
@@ -126,6 +143,8 @@ export function AppShell({
           {children}
         </main>
       </div>
+
+      <NotificationSheet bell={bell} openAction={notifications.openAction} />
 
       <nav
         aria-label="Principal"

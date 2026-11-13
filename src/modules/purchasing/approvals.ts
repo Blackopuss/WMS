@@ -15,8 +15,6 @@ export const PURCHASING_APPROVAL_TYPES: readonly ApprovalType[] = [
     description:
       "Una solicitud de compra espera a que alguien la autorice antes de llegar a Compras. Sin esto, llega directo para atenderse.",
     requestPermissions: ["purchasing.request.create"],
-    // Authorizing a purchase takes being able to buy.
-    decidePermissions: ["purchasing.order.create"],
     approve: approveRequestEffect,
     reject: rejectRequestEffect,
     href: (request) =>

@@ -165,3 +165,4 @@ export type {
 } from "./supplier-comparison";
 export { PURCHASING_APPROVAL_TYPES } from "./approvals";
 export { COMPARE_MIN_FULFILLMENT, PURCHASING_SETTINGS } from "./settings";
+export { PURCHASING_NOTIFICATION_TYPES } from "./notices";

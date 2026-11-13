@@ -52,6 +52,23 @@ const limitedSubject = (scope: Scope) => ({
   scope,
 });
 
+/**
+ * The place the policy decides about for a location (its warehouse and the
+ * ids of it and every location that contains it), read from the database;
+ * null when it is not a location of the company. For deciding about
+ * several people at once (WMS-39: who receives a notice).
+ */
+export async function placeOfLocation(
+  client: Pick<Tx, "location">,
+  locationId: string,
+): Promise<{ facilityId: string; path: string[] } | null> {
+  const row = await client.location.findFirst({
+    where: { id: String(locationId).slice(0, 36) },
+    select: { id: true, facilityId: true, parent: ANCESTORS },
+  });
+  return row ? { facilityId: row.facilityId, path: pathIds(row) } : null;
+}
+
 /** True when the person may work somewhere in that warehouse. */
 export function facilityInScope(
   scope: Scope | null,

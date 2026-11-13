@@ -20,6 +20,7 @@ export {
 export type { ErrorKind } from "./errors";
 export { fingerprint } from "./fingerprint";
 export { isId, newId } from "./ids";
+export { isInternalHref } from "./internal-href";
 export {
   DEFAULT_TIME_ZONE,
   formatDate,

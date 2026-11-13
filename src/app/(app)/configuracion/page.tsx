@@ -1,4 +1,5 @@
 import {
+  Bell,
   ChevronRight,
   Gauge,
   History,
@@ -123,6 +124,18 @@ export default async function ConfiguracionPage() {
           />
         )}
       </section>
+      {/* WMS-39: which notices of the bell the person receives. */}
+      <section aria-labelledby="avisos" className="space-y-3">
+        <h2 id="avisos" className="text-lg font-semibold">
+          Avisos
+        </h2>
+        <SettingsLink
+          href="/configuracion/avisos"
+          icon={Bell}
+          title="Avisos que recibo"
+          description="Qué avisos te llegan a la campana."
+        />
+      </section>
       {support && (
         <section aria-labelledby="soporte" className="space-y-3">
           <h2 id="soporte" className="text-lg font-semibold">
@@ -210,6 +223,7 @@ function SettingsLink({
     | "/configuracion/almacenes"
     | "/configuracion/operacion"
     | "/configuracion/equipo"
+    | "/configuracion/avisos"
     | "/configuracion/plan"
     | "/configuracion/bitacora"
     | "/aprobaciones"

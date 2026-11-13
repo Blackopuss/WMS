@@ -1078,6 +1078,56 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; exige purchasing.order.create; los proveedores se buscan solo entre los de esa empresa; los costos los pone el servidor solo para quien puede registrarlos",
     coveredBy: "tests/purchasing/requests.int.test.ts",
   },
+  loadNotificationsAction: {
+    input: "nada",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo lee los avisos de esa persona en esa empresa",
+    coveredBy: "tests/platform/notifications.int.test.ts",
+  },
+  countNotificationsAction: {
+    input: "nada",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); cuenta solo los avisos sin leer de esa persona en esa empresa",
+    coveredBy: "tests/platform/notifications.int.test.ts",
+  },
+  openNotificationAction: {
+    input: "id del aviso",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el aviso se busca solo entre los de esa persona en esa empresa (el de otra persona no existe) y se redirige solo a su ruta interna validada",
+    coveredBy: "tests/platform/notifications.int.test.ts",
+  },
+  markAllNotificationsReadAction: {
+    input: "nada",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); marca solo los avisos de esa persona en esa empresa",
+    coveredBy: "tests/platform/notifications.int.test.ts",
+  },
+  markAllReadFormAction: {
+    input: "nada",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); marca solo los avisos de esa persona en esa empresa",
+    coveredBy: "tests/platform/notifications.int.test.ts",
+  },
+  setNotificationPreferenceAction: {
+    input: "clave del tipo de aviso y si se recibe",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); cambia solo la preferencia de esa persona; solo acepta tipos del registro",
+    coveredBy: "tests/platform/notifications.int.test.ts",
+  },
+  reportIncidentAction: {
+    input:
+      "tipo, descripción, ubicación y producto escaneados o escritos, tarea o pedido (fijados por la página) y clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén es el activo de la persona; ubicación, producto, tarea y pedido se buscan solo en esa empresa, en ese almacén y dentro de su alcance; exige inventory.incident.create",
+    coveredBy: "tests/inventory/incidents.int.test.ts",
+  },
+  incidentStepAction: {
+    input:
+      "id de la incidencia y el paso (fijados por la página) y el texto de la resolución, el motivo o la nota",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create",
+    coveredBy: "tests/inventory/incidents.int.test.ts",
+  },
 };
 
 function actionFiles(dir: string): string[] {

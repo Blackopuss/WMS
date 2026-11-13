@@ -721,3 +721,32 @@ export {
   takeTasks,
 } from "./tasks";
 export type { TaskGroupResult } from "./tasks";
+export { INVENTORY_NOTIFICATION_TYPES } from "./notices";
+export {
+  INCIDENT_PAGE_SIZE,
+  addIncidentNote,
+  countOpenIncidents,
+  dismissIncident,
+  getIncident,
+  listIncidents,
+  reportIncident,
+  resolveIncident,
+  startIncident,
+} from "./incidents";
+export type {
+  IncidentDetail,
+  IncidentField,
+  IncidentPage,
+  IncidentResult,
+  IncidentSummary,
+  IncidentView,
+  ReportIncidentInput,
+} from "./incidents";
+export {
+  INCIDENT_KINDS,
+  INCIDENT_KIND_LABELS,
+  INCIDENT_STATUS_LABELS,
+  formatIncidentNumber,
+  isIncidentKind,
+} from "./incident-states";
+export type { IncidentKind, IncidentStatus } from "./incident-states";

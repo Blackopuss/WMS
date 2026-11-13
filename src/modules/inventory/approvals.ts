@@ -20,8 +20,6 @@ export const INVENTORY_APPROVAL_TYPES: readonly ApprovalType[] = [
     description:
       "Una corrección de existencias espera a que alguien la autorice antes de cambiar el inventario.",
     requestPermissions: ["inventory.adjustment.create"],
-    // Authorizing a correction takes being able to correct.
-    decidePermissions: ["inventory.adjustment.create"],
     settings: [ADJUSTMENT_APPROVAL_THRESHOLD],
     approve: applyApprovedAdjustment,
   },
@@ -34,7 +32,6 @@ export const INVENTORY_APPROVAL_TYPES: readonly ApprovalType[] = [
       "inventory.count.apply",
       "inventory.adjustment.create",
     ],
-    decidePermissions: ["inventory.count.apply", "inventory.adjustment.create"],
     settings: [COUNT_REVIEW_THRESHOLD],
     approve: applyApprovedCount,
     href: (request) =>
