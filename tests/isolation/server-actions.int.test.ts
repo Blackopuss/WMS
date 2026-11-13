@@ -296,6 +296,45 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); almacén activo y zonas de esa persona, permiso inventory.task.create en el servicio",
     coveredBy: "tests/inventory/putaway.int.test.ts",
   },
+  createWaveAction: {
+    input: "ids de los pedidos marcados (casillas)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); los pedidos se bloquean solo en esa empresa y en el almacén activo de la persona, dentro de su alcance",
+    coveredBy: "tests/inventory/waves.int.test.ts",
+  },
+  cancelWaveAction: {
+    input: "id de la ola y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la ola se bloquea solo en esa empresa y su almacén debe estar en el alcance de la persona",
+    coveredBy:
+      "tests/inventory/waves.int.test.ts,tests/inventory/scope.int.test.ts",
+  },
+  confirmWavePickAction: {
+    input:
+      "id de la ola, ids de las tareas que la pantalla juntó, clave o código de barras del producto, ubicación y lote",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo tareas abiertas de esa ola dentro del alcance de la persona, bloqueadas en esa empresa (producto → pedidos → tareas)",
+    coveredBy: "tests/inventory/waves.int.test.ts",
+  },
+  deliverWavePicksAction: {
+    input: "id de la ola e ids de las tareas surtidas que se dejan",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo tareas de esa ola que tiene esa persona, bloqueadas en esa empresa",
+    coveredBy: "tests/inventory/waves.int.test.ts",
+  },
+  takeWaveTasksAction: {
+    input: "id de la ola y zona (opcional)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); las tareas disponibles se calculan en el servidor dentro del alcance de la persona",
+    coveredBy:
+      "tests/inventory/waves.int.test.ts,tests/inventory/scope.int.test.ts",
+  },
+  assignWaveTasksAction: {
+    input: "id de la ola, zona (opcional) y persona a quien se asignan",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la persona debe poder hacer tareas y alcanzar cada una; las tareas se calculan en el servidor",
+    coveredBy: "tests/inventory/waves.int.test.ts",
+  },
   confirmPickAction: {
     input:
       "id de la tarea de surtido, clave o código de barras del producto, ubicación y cantidad surtida (y motivo si es menos)",

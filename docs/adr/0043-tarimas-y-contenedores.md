@@ -234,8 +234,9 @@ en la historia del contenedor.
   después se arma en la misma ubicación (dos pasos). La recepción de una
   orden de compra sí lo hace en uno.
 - **Surtir directo de una tarima** (tomar piezas escaneando el contenedor):
-  hoy se saca de la tarima primero. Llegará con el reabastecimiento
-  (WMS-24) o el empaque (WMS-15).
+  hoy se saca de la tarima primero. No llegó con el reabastecimiento (WMS-24)
+  ni con las olas (WMS-25): ADR 0054 explica lo que exige y queda para un
+  paso propio.
 - **Tarea de traslado de una tarima creada a mano** (`/tareas/nueva`): el
   modelo y la entrega ya la admiten; hoy solo el acomodo las crea. Mover a
   mano una tarima es un escaneo.

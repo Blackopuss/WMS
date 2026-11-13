@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-91 tablas en 23 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+93 tablas en 23 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -23,7 +23,7 @@
 | Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
 | Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 4 | [inventory](modulos/inventory.md) |
-| Inventario › Tareas, reservas y pedidos de salida | 7 | [inventory](modulos/inventory.md) |
+| Inventario › Tareas, reservas y pedidos de salida | 9 | [inventory](modulos/inventory.md) |
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
@@ -1464,7 +1464,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Tareas, reservas y pedidos de salida
 
-Tareas de traslado, surtido y reposición (con las series que tomaron), lo apartado para un documento, los pedidos de salida, lo que faltó al empacarlos y las reglas de reposición de las ubicaciones de surtido.
+Tareas de traslado, surtido y reposición (con las series que tomaron), lo apartado para un documento, los pedidos de salida, lo que faltó al empacarlos, las reglas de reposición de las ubicaciones de surtido y las olas que agrupan pedidos para surtirlos juntos (WMS-25).
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1661,6 +1661,49 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `locationId`).
 - Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
 
+### PickWave · `pick_wave`
+
+A picking wave (WMS-25, ADR 0054): outbound orders of a warehouse picked together. It only groups, orders and shares out their PICK tasks: every task stays of one line of one order. Ends by itself when none of its picking tasks is open; cancelling it only ungroups. Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | Consecutive per company («OL-0001»). |
+| `status` | `PickWaveStatus` | `OPEN` |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `doneAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelledByUserId` | `String? · Char(36)` |  |  |
+| `cancelReason` | `String? · VarChar(300)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
+
+### PickWaveOrder · `pick_wave_order`
+
+An outbound order in a picking wave (WMS-25). `openOrderId` is the order while the wave is open: unique in the company, so an order is in one open wave at most. It only lets go of its order (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `waveId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `openOrderId` | `String? · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `waveId`, `orderId`); (`organizationId`, `openOrderId`).
+- Índices: (`organizationId`, `orderId`).
+- Relaciones: `wave` → `PickWave` por (`organizationId`, `waveId`) (al borrar: Restrict); `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict).
+
 #### Enumeraciones de Inventario › Tareas, reservas y pedidos de salida
 
 - `WarehouseTaskStatus`: `PENDING`, `ASSIGNED`, `ACCEPTED`, `PICKED_UP`, `DELIVERED`, `BLOCKED`, `CANCELLED`.
@@ -1668,6 +1711,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `WarehouseTaskKind`: `TRANSFER`, `PICK`, `PUTAWAY`, `REPLENISH`.
 - `StockReservationState`: `ACTIVE`, `CLOSED`.
 - `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKING`, `PACKED`, `SHIPPED`, `CANCELLED`.
+- `PickWaveStatus`: `OPEN`, `DONE`, `CANCELLED`.
 
 ## Inventario › Embarques
 

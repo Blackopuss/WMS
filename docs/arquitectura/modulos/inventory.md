@@ -107,6 +107,24 @@ código»):
   por línea (`DAMAGED` para la parte dañada: su propia línea, no va en la
   tarima, no lleva tarea de acomodo ni se reparte) y `postReturnExit` sale del
   estado de la línea de recepción.
+- Surtido por olas (WMS-25, ADR 0054): con `inventory.picking.mode = waves`
+  (`orders` por omisión: nada cambia), una ola (`pick_wave`, `OL-0001`, del
+  almacén) agrupa pedidos en borrador o liberados (`pick_wave_order`, un
+  pedido en una sola ola abierta por `openOrderId` único); crearla libera los
+  borradores con el mismo núcleo de la liberación (`releaseUnderLock`).
+  **Cada tarea `PICK` sigue siendo de una línea de un pedido**: la ola solo
+  agrupa, ordena (`pick-route.ts`, por el código de la ubicación de origen en
+  orden natural) y reparte (por persona o por zona = la raíz del almacén que
+  contiene el origen). Lo del mismo producto, origen y lote se confirma junto
+  (`confirmPickGroup`: toma y confirma cada tarea con su cantidad completa en
+  una transacción; todo o nada) y se deja junto en preparación
+  (`deliverPickGroup`: un movimiento `task:<id>` por tarea). La ola se
+  termina sola (`settleWaveOf`, al cerrar una tarea de surtido o cancelar un
+  pedido) y cancelarla solo desagrupa. Candados: productos → ubicaciones →
+  pedidos → contenedor → tareas → capacidad → ola.
+- El surtido prefiere las ubicaciones de uso `PICKING` entre iguales de
+  caducidad (`rankStockSources`, ADR 0054); sin ellas, el orden es el de
+  antes.
 - Cada formulario que confirma un movimiento manda `idempotencyKey`.
 
 ## Servicios públicos (`index.ts`)
@@ -132,7 +150,8 @@ código»):
 | Aprobaciones (WMS-41) | `approvals.ts`, `approval-keys.ts`, `approval-rules.ts` | `INVENTORY_APPROVAL_TYPES` (`inventory.adjustment` con `applyApprovedAdjustment` de `movements.ts`, `inventory.count_apply` con `applyApprovedCount`), `ADJUSTMENT_APPROVAL`, `COUNT_APPROVAL`; regla pura del umbral `exceedsThreshold` |
 | Conteos cíclicos (WMS-55) | `cycle-counts.ts`, `abc-rules.ts`, `count-accuracy.ts` | `createCountProgram`, `updateCountProgram`, `setCountProgramPaused`, `listCountPrograms`, `getCountProgram` (con lo que generaría hoy), `generateTodayCounts` («Generar los de hoy»), `runCycleCountRound` (la ronda del worker), `countTodayCounts` (Inicio); `getCountAccuracy` (exactitud por semana o mes contra el periodo anterior, por programa; tope `ACCURACY_MAX_ROWS`); reglas puras `classifyAbc`, `locationClass`, `parseAbcCuts` |
 | Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY` y `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
-| Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
+| Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS`; `releaseUnderLock` y `lockedOutboundOrder` (internas, para las olas) |
+| Olas de surtido (WMS-25) | `waves.ts`, `wave-states.ts`, `wave-settle.ts`, `pick-route.ts` | `createWave` (libera los borradores; todo o nada), `cancelWave` (solo desagrupa), `listWaves`, `listWaveCandidates`, `listOpenWaves`, `getWave` (lo que sigue, recorrido agrupado por producto + origen + lote, zonas, pedidos), `confirmWavePick`, `deliverWavePicks`, `takeWaveTasks`, `assignWaveTasks`, `waveOfOrder`, `wavesEnabled`; transiciones `PICK_WAVE_TRANSITIONS`; orden de recorrido `inRouteOrder`/`compareRoute` (puro); en `tasks.ts`, `confirmPickGroup`, `deliverPickGroup`, `takeTasks`, `assignTasks` y `nextTaskFor` («Siguiente tarea»); «Mis tareas» va en orden de recorrido |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
 | Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; transiciones `FACILITY_TRANSFER_TRANSITIONS` |
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
@@ -197,6 +216,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `stock_count_capture`, `count_program`, `warehouse_task`, `replenishment_rule`,
 `stock_reservation`,
 `outbound_order`, `outbound_order_line`, `outbound_pack_shortage`,
+`pick_wave`, `pick_wave_order`,
 `shipment`, `shipment_order`, `shipment_line`, `customer_return`,
 `customer_return_line`, `customer_return_decision`, `facility_transfer`,
 `facility_transfer_line`, `facility_transfer_receipt`,
@@ -232,6 +252,7 @@ la transacción que decide:
 | `inventory.abc.period` | `30`, **`90`**, `180`, `365` (días de salidas que mira la clasificación) |
 | `inventory.count.review_threshold` | **`off`**, `any`, `10`, `25`, `50` (% de diferencia de un producto que pide revisar el conteo antes de aplicarlo) |
 | `inventory.crossdock.mode` | **`off`**, `on` (lo que llega para un pedido que espera va directo a preparación; WMS-54) |
+| `inventory.picking.mode` | **`orders`** (pedido por pedido), `waves` (por olas; WMS-25) |
 | `inventory.adjustment.approval_threshold` | **`any`**, `10`, `25`, `50` (% de lo que hay en la ubicación que, con la regla de `inventory.adjustment` encendida, hace esperar una corrección; WMS-41) |
 
 `inventory.count.review_threshold` e `inventory.adjustment.approval_threshold` se muestran en Configuración › Reglas de aprobación, junto a la
@@ -271,7 +292,8 @@ trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
 contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
-(cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización).
+(cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
+0054 (surtido por olas).
 
 ## Pruebas
 
@@ -290,5 +312,6 @@ trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara
 cada saldo de un producto por serie con sus unidades dentro (`source:
 "serial_units"` y `"serial_moves"`), y lo que dicen los contenedores contra el
 saldo, su ubicación y sus series (`source: "containers"`). Tarimas en
-`containers.int.test.ts`. Conteos cíclicos (ronda repetida y simultánea,
+`containers.int.test.ts`. Olas, recorrido, juntar por estante y zonas en
+`waves.int.test.ts` (y `pick-route.test.ts`, `stock-sources.test.ts`). Conteos cíclicos (ronda repetida y simultánea,
 vuelta completa, ABC, exactitud, revisión) en `cycle-counts.int.test.ts`.

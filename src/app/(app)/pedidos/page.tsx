@@ -2,6 +2,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileUp,
+  Layers,
   PackageCheck,
   Plus,
   Truck,
@@ -26,6 +27,7 @@ import {
   TO_SHIP,
   listOutboundOrders,
   packingEnabled,
+  wavesEnabled,
   type OutboundOrderStatus,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
@@ -107,6 +109,8 @@ export default async function PedidosPage({
     userId: access.user.id,
   };
   const filters = (await packingEnabled(actor)) ? PACKING_FILTERS : FILTERS;
+  // WMS-25: picking waves, when the company organizes picking that way.
+  const waves = await wavesEnabled(actor);
   const list = await listOutboundOrders(actor, {
     status: typeof estado === "string" ? estado : undefined,
     pickedOn: typeof dia === "string" ? dia : undefined,
@@ -146,9 +150,19 @@ export default async function PedidosPage({
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader title="Pedidos" actions={newButton} />
       {(newButton ||
+        waves ||
         access.can("inventory.shipment.read") ||
         access.can("inventory.customer_return.read")) && (
         <p className="-mt-2 flex flex-wrap gap-x-6">
+          {waves && (
+            <Link
+              href="/pedidos/olas"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <Layers aria-hidden="true" className="size-4" />
+              Olas de surtido
+            </Link>
+          )}
           {access.can("inventory.shipment.read") && (
             <Link
               href="/pedidos/embarques"

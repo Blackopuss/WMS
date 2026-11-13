@@ -577,6 +577,26 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A picking wave with the order (WMS-25).
+    const waveId = newId();
+    await db.pickWave.create({
+      data: {
+        id: waveId,
+        organizationId,
+        number: 1,
+        facilityId: outboundFacility,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.pickWaveOrder.create({
+      data: {
+        id: newId(),
+        organizationId,
+        waveId,
+        orderId: outboundId,
+        openOrderId: outboundId,
+      },
+    });
     const shipmentMovementId = newId();
     await db.stockMovement.create({
       data: {

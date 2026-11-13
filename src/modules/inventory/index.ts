@@ -680,3 +680,44 @@ export type { CrossDockSent } from "./cross-docking";
 export { INVENTORY_APPROVAL_TYPES } from "./approvals";
 export { ADJUSTMENT_APPROVAL, COUNT_APPROVAL } from "./approval-keys";
 export type { AdjustmentResult, PendingApproval } from "./movements";
+// WMS-25 (ADR 0054): picking waves, walking order and several tasks at once.
+export { PICKING_MODE } from "./settings";
+export {
+  WAVE_CANDIDATES_MAX,
+  WAVE_MAX_ORDERS,
+  WAVE_PICKS_PAGE_SIZE,
+  assignWaveTasks,
+  cancelWave,
+  confirmWavePick,
+  createWave,
+  deliverWavePicks,
+  getWave,
+  listOpenWaves,
+  listWaveCandidates,
+  listWaves,
+  takeWaveTasks,
+  waveOfOrder,
+  wavesEnabled,
+} from "./waves";
+export type {
+  WaveCandidate,
+  WaveField,
+  WavePage,
+  WavePick,
+  WavePickPart,
+  WaveResult,
+  WaveSummary,
+  WaveView,
+} from "./waves";
+export { PICK_WAVE_STATUS_LABELS, formatWaveNumber } from "./wave-states";
+export type { PickWaveStatus } from "./wave-states";
+export { compareRoute, inRouteOrder } from "./pick-route";
+export {
+  TASK_GROUP_MAX,
+  assignTasks,
+  confirmPickGroup,
+  deliverPickGroup,
+  nextTaskFor,
+  takeTasks,
+} from "./tasks";
+export type { TaskGroupResult } from "./tasks";

@@ -561,6 +561,31 @@ export const ADJUSTMENT_APPROVAL_THRESHOLD = {
   defaultValue: "any",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-25 (ADR 0054): how picking is organized. By order (default) nothing
+ * changes from WMS-14; by waves, a supervisor groups orders in a wave and
+ * the floor picks them together, in walking order and by shelf.
+ */
+export const PICKING_MODE = {
+  key: "inventory.picking.mode",
+  module: "inventory",
+  area: "Surtido",
+  label: "Cómo se organiza el surtido",
+  options: [
+    {
+      value: "orders",
+      label: "Pedido por pedido",
+      help: "Cada pedido liberado se surte por separado.",
+    },
+    {
+      value: "waves",
+      label: "Por olas (varios pedidos a la vez)",
+      help: "Supervisión agrupa pedidos en una ola; se surten juntos, en el orden de las ubicaciones y juntando lo del mismo lugar.",
+    },
+  ],
+  defaultValue: "orders",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -582,4 +607,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   COUNT_REVIEW_THRESHOLD,
   CROSS_DOCK_MODE,
   ADJUSTMENT_APPROVAL_THRESHOLD,
+  PICKING_MODE,
 ];

@@ -12,7 +12,7 @@ import {
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
-import { getTask, listTaskPeople } from "@/modules/inventory";
+import { getTask, listTaskPeople, nextTaskFor } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
 
@@ -92,6 +92,11 @@ export default async function TareaPage({
   const people =
     supervises && (task.status === "PENDING" || task.status === "ASSIGNED")
       ? await listTaskPeople(actor)
+      : null;
+  // WMS-25: once this one is done, the next one in walking order.
+  const next =
+    executes && (task.status === "DELIVERED" || !mine)
+      ? await nextTaskFor(actor, task.id)
       : null;
   const timeZone = access.organization.timeZone;
   const when = (date: Date) => (
@@ -196,6 +201,27 @@ export default async function TareaPage({
             </li>
           ))}
         </ol>
+      )}
+
+      {(next || task.wave) && (
+        <p className="flex max-w-xl flex-wrap gap-x-6">
+          {next && (
+            <Link
+              href={`/tareas/${next.id}`}
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg font-medium [overflow-wrap:anywhere] text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Siguiente tarea: {next.numberText} en {next.fromPath}
+            </Link>
+          )}
+          {task.wave && (
+            <Link
+              href={`/tareas/olas/${task.wave.id}`}
+              className="inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Volver a la ola {task.wave.numberText}
+            </Link>
+          )}
+        </p>
       )}
 
       <section

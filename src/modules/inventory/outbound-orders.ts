@@ -33,6 +33,7 @@ import {
 } from "./picking";
 import { releaseReservations, type ReservationSource } from "./reservations";
 import { CROSS_DOCK_MODE } from "./settings";
+import { settleWaveOf } from "./wave-settle";
 import { TO_SHIP, readyStatuses, shippedOnWhere } from "./shipment-ready";
 import {
   SHIPMENT_STATUS_LABELS,
@@ -537,123 +538,189 @@ function releaseLocked(
         summary: `El pedido ${formatOutboundNumber(order.number)} ya estaba liberado.`,
       };
     }
-    const problem = outboundTransitionProblem(order.status, "RELEASED");
-    if (problem) return stop("not_allowed", problem);
-    if (order.lines.length === 0) {
-      return stop("invalid", "Agrega al menos un producto antes de liberar.");
-    }
-    // A product added after the first read is not locked: try again.
-    const lockedIds = new Set(draft.map((line) => line.productId));
-    if (order.lines.some((line) => !lockedIds.has(line.productId))) {
-      return stop(
-        "not_allowed",
-        "El pedido cambió mientras se liberaba. Inténtalo de nuevo.",
-      );
-    }
-    const archived = order.lines.find(
-      (line) => line.product.status !== "ACTIVE",
+    const done = await releaseUnderLock(
+      tx,
+      actor,
+      order,
+      staging.id,
+      new Set(draft.map((line) => line.productId)),
+      options,
     );
-    if (archived) {
-      return stop(
-        "not_allowed",
-        `${archived.product.name} está archivado: quítalo del pedido o reactívalo.`,
-      );
-    }
+    if (!done.ok) throw new Rejected(done);
+    return done;
+  });
+}
 
-    const plan: {
-      line: (typeof order.lines)[number];
-      sources: PickSource[];
-      take: Decimal;
-    }[] = [];
-    const shortages: OutboundShortage[] = [];
-    // Several lines of the same product are not possible (unique index),
-    // so each line asks its product once. Where it is picked from decides
-    // what can be taken: stock already in the staging location or held
-    // elsewhere does not count.
-    for (const line of order.lines) {
-      const asked = dec(line.quantity.toString());
-      const sources = await pickSources(tx, line.productId, asked, {
-        stagingId: staging.id,
-        facilityId,
-      });
-      const take = sources.reduce(
-        (sum, source) => sum.plus(source.quantity),
-        dec(0),
-      );
-      if (take.lessThan(asked)) {
-        shortages.push({
-          lineId: line.id,
-          productName: line.product.name,
-          asked: formatStock(asked.toString(), line.unitCode),
-          free: formatStock(take.toString(), line.unitCode),
-        });
-      }
-      plan.push({ line, sources, take });
-    }
-    if (shortages.length > 0 && !options.takeWhatThereIs) {
-      throw new Rejected({
-        ok: false,
-        reason: "short",
-        formError:
-          shortages.length === 1
-            ? "Un producto no alcanza."
-            : `${shortages.length} productos no alcanzan.`,
-        shortages,
-      });
-    }
-    // WMS-54 (ADR 0052): with cross-docking, an order may wait for what
-    // arrives with nothing set aside yet; without it, nothing to release.
-    const waitsForAll = plan.every((step) => step.take.isZero());
-    if (waitsForAll && (await readSetting(tx, CROSS_DOCK_MODE)) !== "on") {
-      return stop(
-        "not_allowed",
-        "No hay nada disponible de este pedido: no se apartó nada.",
-      );
-    }
-    // Released first: a picking task only comes from a released order
-    // (trigger).
-    await tx.outboundOrder.update({
-      where: { id: order.id },
-      data: {
-        status: "RELEASED",
-        releasedAt: new Date(),
-        releasedByUserId: userId,
-      },
+/** An outbound order read under its lock (`lockOrder`). */
+export type LockedOutboundOrder = Awaited<ReturnType<typeof lockOrder>>;
+
+/**
+ * The order under its lock, or null when it does not exist for this
+ * person (another company, a warehouse outside their scope). For
+ * documents that group orders (WMS-25): they lock all of them first.
+ */
+export async function lockedOutboundOrder(
+  tx: Tx,
+  orderId: string,
+  userId: string,
+): Promise<LockedOutboundOrder | null> {
+  try {
+    return await lockOrder(tx, orderId, userId);
+  } catch (error) {
+    if (error instanceof Rejected) return null;
+    throw error;
+  }
+}
+
+/**
+ * Releases a draft whose products, staging location and order the caller
+ * already locked (products → locations → order), in its transaction:
+ * reserves each line where it is picked from and creates its PICK tasks.
+ * Shared by `releaseOutboundOrder` and the waves (WMS-25), so there is one
+ * release. A refusal is answered before anything is written; the caller
+ * decides whether it stops everything.
+ */
+export async function releaseUnderLock(
+  tx: Tx,
+  actor: InventoryActor,
+  order: LockedOutboundOrder,
+  stagingId: string,
+  /** The products the caller locked: a line of another one is refused. */
+  lockedIds: ReadonlySet<string>,
+  options: { takeWhatThereIs?: boolean } = {},
+): Promise<OutboundResult> {
+  try {
+    return await releaseCore(tx, actor, order, stagingId, lockedIds, options);
+  } catch (error) {
+    if (error instanceof Rejected) return error.result;
+    throw error;
+  }
+}
+
+async function releaseCore(
+  tx: Tx,
+  actor: InventoryActor,
+  order: LockedOutboundOrder,
+  stagingId: string,
+  lockedIds: ReadonlySet<string>,
+  options: { takeWhatThereIs?: boolean },
+): Promise<OutboundResult> {
+  const { userId } = actor;
+  const facilityId = order.facilityId;
+  const staging = { id: stagingId };
+  const problem = outboundTransitionProblem(order.status, "RELEASED");
+  if (problem) return stop("not_allowed", problem);
+  if (order.lines.length === 0) {
+    return stop("invalid", "Agrega al menos un producto antes de liberar.");
+  }
+  // A product added after the first read is not locked: try again.
+  if (order.lines.some((line) => !lockedIds.has(line.productId))) {
+    return stop(
+      "not_allowed",
+      "El pedido cambió mientras se liberaba. Inténtalo de nuevo.",
+    );
+  }
+  const archived = order.lines.find((line) => line.product.status !== "ACTIVE");
+  if (archived) {
+    return stop(
+      "not_allowed",
+      `${archived.product.name} está archivado: quítalo del pedido o reactívalo.`,
+    );
+  }
+
+  const plan: {
+    line: (typeof order.lines)[number];
+    sources: PickSource[];
+    take: Decimal;
+  }[] = [];
+  const shortages: OutboundShortage[] = [];
+  // Several lines of the same product are not possible (unique index),
+  // so each line asks its product once. Where it is picked from decides
+  // what can be taken: stock already in the staging location or held
+  // elsewhere does not count.
+  for (const line of order.lines) {
+    const asked = dec(line.quantity.toString());
+    const sources = await pickSources(tx, line.productId, asked, {
+      stagingId: staging.id,
+      facilityId,
     });
-    const firstTask = await nextTaskNumber(tx);
-    let nextNumber = firstTask;
-    for (const step of plan) {
-      nextNumber = await createPickTasks(tx, actor, {
-        order: {
-          number: formatOutboundNumber(order.number),
-          recipient: order.recipient,
-          priority: order.priority,
-        },
-        line: step.line,
-        sources: step.sources,
-        stagingId: staging.id,
-        nextNumber,
+    const take = sources.reduce(
+      (sum, source) => sum.plus(source.quantity),
+      dec(0),
+    );
+    if (take.lessThan(asked)) {
+      shortages.push({
+        lineId: line.id,
+        productName: line.product.name,
+        asked: formatStock(asked.toString(), line.unitCode),
+        free: formatStock(take.toString(), line.unitCode),
       });
     }
-    if (waitsForAll) {
-      return {
-        ok: true,
-        orderId: order.id,
-        summary: `Se liberó el pedido ${formatOutboundNumber(order.number)} sin nada apartado: lo que llegue para él irá directo a preparación.`,
-      };
-    }
+    plan.push({ line, sources, take });
+  }
+  if (shortages.length > 0 && !options.takeWhatThereIs) {
+    throw new Rejected({
+      ok: false,
+      reason: "short",
+      formError:
+        shortages.length === 1
+          ? "Un producto no alcanza."
+          : `${shortages.length} productos no alcanzan.`,
+      shortages,
+    });
+  }
+  // WMS-54 (ADR 0052): with cross-docking, an order may wait for what
+  // arrives with nothing set aside yet; without it, nothing to release.
+  const waitsForAll = plan.every((step) => step.take.isZero());
+  if (waitsForAll && (await readSetting(tx, CROSS_DOCK_MODE)) !== "on") {
+    return stop(
+      "not_allowed",
+      "No hay nada disponible de este pedido: no se apartó nada.",
+    );
+  }
+  // Released first: a picking task only comes from a released order
+  // (trigger).
+  await tx.outboundOrder.update({
+    where: { id: order.id },
+    data: {
+      status: "RELEASED",
+      releasedAt: new Date(),
+      releasedByUserId: userId,
+    },
+  });
+  const firstTask = await nextTaskNumber(tx);
+  let nextNumber = firstTask;
+  for (const step of plan) {
+    nextNumber = await createPickTasks(tx, actor, {
+      order: {
+        number: formatOutboundNumber(order.number),
+        recipient: order.recipient,
+        priority: order.priority,
+      },
+      line: step.line,
+      sources: step.sources,
+      stagingId: staging.id,
+      nextNumber,
+    });
+  }
+  if (waitsForAll) {
     return {
       ok: true,
       orderId: order.id,
-      summary:
-        (shortages.length === 0
-          ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó apartado`
-          : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay (${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`})`) +
-        (nextNumber - firstTask === 1
-          ? " y hay 1 tarea de surtido."
-          : ` y hay ${nextNumber - firstTask} tareas de surtido.`),
+      summary: `Se liberó el pedido ${formatOutboundNumber(order.number)} sin nada apartado: lo que llegue para él irá directo a preparación.`,
     };
-  });
+  }
+  return {
+    ok: true,
+    orderId: order.id,
+    summary:
+      (shortages.length === 0
+        ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó apartado`
+        : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay (${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`})`) +
+      (nextNumber - firstTask === 1
+        ? " y hay 1 tarea de surtido."
+        : ` y hay ${nextNumber - firstTask} tareas de surtido.`),
+  };
 }
 
 export async function cancelOutboundOrder(
@@ -721,6 +788,8 @@ export async function cancelOutboundOrder(
         cancelReason: why,
       },
     });
+    // WMS-25: its wave ends when this was the last of its open work.
+    await settleWaveOf(tx, order.id);
     await recordAuditEvent(tx, {
       organizationId,
       actorUserId: userId,

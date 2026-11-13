@@ -176,10 +176,9 @@ forma de mover existencias.
   lleve la tarima de origen, bloquear el contenedor entre el documento y la
   tarea en cada paso y un apartado que no reste dos veces lo contenido; queda
   para un paso propio.
-- **Surtir primero de las ubicaciones de surtido**: `pickSources` no
-  distingue el uso de la ubicación (sigue el ajuste de surtido en todo el
-  almacén). Con reposición, convendría preferir el surtido; es otro criterio de
-  esa misma función.
+- ~~**Surtir primero de las ubicaciones de surtido**~~: cerrado en WMS-25
+  (ADR 0054): `rankStockSources` prefiere las ubicaciones `PICKING` entre
+  iguales de caducidad; la reposición no cambia (solo ve orígenes `STORAGE`).
 - **Reposición por demanda** (lo apartado por pedidos liberados que aún no se
   surten) y cercanía o recorrido.
 - **Una ronda más frecuente** que la de cada hora: el mecanismo de rondas es

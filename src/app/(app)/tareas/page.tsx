@@ -20,7 +20,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   countMyTasks,
+  listOpenWaves,
   listTasks,
+  wavesEnabled,
   type TaskListView,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
@@ -77,7 +79,7 @@ export default async function TareasPage({
       : asked === "mine" || executes
         ? "mine"
         : "open";
-  const [list, counts] = await Promise.all([
+  const [list, counts, waves] = await Promise.all([
     listTasks(actor, {
       view,
       day: typeof dia === "string" ? dia : undefined,
@@ -87,6 +89,8 @@ export default async function TareasPage({
           : undefined,
     }),
     countMyTasks(actor),
+    // WMS-25: open waves with work here, when the company picks in waves.
+    wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : [])),
   ]);
   const tabs: { id: TaskListView; label: string; count?: number }[] = [
     ...(executes
@@ -154,6 +158,24 @@ export default async function TareasPage({
           </span>{" "}
           — búscala en Abiertas para liberarla o cancelarla.
         </p>
+      )}
+
+      {waves.length > 0 && (
+        <nav
+          aria-label="Olas abiertas"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1"
+        >
+          <span className="text-sm text-muted-foreground">Olas abiertas:</span>
+          {waves.map((wave) => (
+            <Link
+              key={wave.id}
+              href={`/tareas/olas/${wave.id}`}
+              className="inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary tabular-nums underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Ola {wave.numberText}
+            </Link>
+          ))}
+        </nav>
       )}
 
       <nav aria-label="Qué tareas ver" className="flex flex-wrap gap-2">
