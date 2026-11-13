@@ -15,9 +15,10 @@ import { forOrganization } from "@/server";
 
 import { containerName, normalizeContainerCode } from "./container-rules";
 import { formatLotDay, lotDayOf, normalizeLotCode } from "./lot-rules";
-import type { InventoryActor } from "./movements";
 import { formatOutboundNumber } from "./outbound-states";
+import { formatStock, type InventoryActor } from "./movements";
 import { normalizeSerial } from "./serial-rules";
+import { formatShipmentNumber } from "./shipment-states";
 import { STOCK_STATUS_LABELS } from "./stock-status";
 import { formatTaskNumber } from "./task-states";
 
@@ -60,7 +61,14 @@ export type TraceMatch =
       supplierName: string;
     }
   /** WMS-53: a pallet or box by its label. */
-  | { kind: "container"; id: string; code: string; name: string };
+  | { kind: "container"; id: string; code: string; name: string }
+  /** WMS-16: a shipment by its number. */
+  | {
+      kind: "shipment";
+      id: string;
+      numberText: string;
+      statusLabel: string;
+    };
 
 const MATCHES_SHOWN = 20;
 
@@ -81,7 +89,10 @@ async function mayReadPurchasing(actor: InventoryActor): Promise<boolean> {
 
 async function mayRead(
   actor: InventoryActor,
-  permission: "inventory.outbound.read" | "inventory.stock.read",
+  permission:
+    | "inventory.outbound.read"
+    | "inventory.stock.read"
+    | "inventory.shipment.read",
 ): Promise<boolean> {
   try {
     await assertModulePermission(
@@ -97,7 +108,7 @@ async function mayRead(
 }
 
 /** «PS-12», «ps 0012» → 12; null when it is not that kind of number. */
-function numberOf(prefix: "PS" | "OC", text: string): number | null {
+function numberOf(prefix: "PS" | "OC" | "EM", text: string): number | null {
   const match = new RegExp(`^${prefix}[\\s-]*0*(\\d{1,9})$`, "i").exec(
     text.trim(),
   );
@@ -208,6 +219,25 @@ export async function findTraceMatches(
         id: order.id,
         numberText: `OC-${String(order.number).padStart(4, "0")}`,
         supplierName: order.contact.name,
+      });
+    }
+  }
+  // WMS-16: a shipment by its number, of a warehouse the person may see.
+  const shipmentNumber = numberOf("EM", text);
+  if (shipmentNumber && (await mayRead(actor, "inventory.shipment.read"))) {
+    const shipment = await client.shipment.findFirst({
+      where: { number: shipmentNumber },
+      select: { id: true, number: true, status: true, facilityId: true },
+    });
+    if (
+      shipment &&
+      (await isFacilityInScope(client, actor.userId, shipment.facilityId))
+    ) {
+      matches.push({
+        kind: "shipment",
+        id: shipment.id,
+        numberText: formatShipmentNumber(shipment.number),
+        statusLabel: SHIPMENT_STATUS_TEXT[shipment.status],
       });
     }
   }
@@ -355,9 +385,89 @@ async function ordersOf(
   return result;
 }
 
+const SHIPMENT_STATUS_TEXT = {
+  DRAFT: "Por confirmar",
+  SHIPPED: "Despachado",
+  CANCELLED: "Cancelado",
+} as const;
+
+/** A shipment the lot or the unit left the warehouse with (WMS-16). */
+export type TraceShipment = {
+  shipmentId: string;
+  numberText: string;
+  shippedAt: Date | null;
+  orderId: string;
+  orderNumberText: string;
+  recipient: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  /** «12 piezas». */
+  quantityText: string;
+};
+
+async function shipmentsOf(
+  actor: InventoryActor,
+  where: { lotId: string } | { movementLineIds: string[] },
+): Promise<TraceShipment[]> {
+  if (!(await mayRead(actor, "inventory.shipment.read"))) return [];
+  if ("movementLineIds" in where && where.movementLineIds.length === 0) {
+    return [];
+  }
+  const client = forOrganization(actor.organizationId);
+  const lines = await client.shipmentLine.findMany({
+    where:
+      "lotId" in where
+        ? { lotId: where.lotId }
+        : { movementLineId: { in: where.movementLineIds } },
+    orderBy: { id: "asc" },
+    take: 100,
+    select: {
+      quantity: true,
+      unitCode: true,
+      shipment: {
+        select: {
+          id: true,
+          number: true,
+          shippedAt: true,
+          carrier: true,
+          trackingNumber: true,
+          facilityId: true,
+        },
+      },
+      order: { select: { id: true, number: true, recipient: true } },
+    },
+  });
+  const facilities = new Map<string, boolean>();
+  const result: TraceShipment[] = [];
+  for (const line of lines) {
+    const { facilityId } = line.shipment;
+    if (!facilities.has(facilityId)) {
+      facilities.set(
+        facilityId,
+        await isFacilityInScope(client, actor.userId, facilityId),
+      );
+    }
+    if (!facilities.get(facilityId)) continue;
+    result.push({
+      shipmentId: line.shipment.id,
+      numberText: formatShipmentNumber(line.shipment.number),
+      shippedAt: line.shipment.shippedAt,
+      orderId: line.order.id,
+      orderNumberText: formatOutboundNumber(line.order.number),
+      recipient: line.order.recipient,
+      carrier: line.shipment.carrier,
+      trackingNumber: line.shipment.trackingNumber,
+      quantityText: formatStock(line.quantity.toString(), line.unitCode),
+    });
+  }
+  return result;
+}
+
 export type LotTrace = {
   origins: TraceOrigin[];
   orders: TraceOrder[];
+  /** Where it left the warehouse to (WMS-16). */
+  shipments: TraceShipment[];
 };
 
 /**
@@ -394,11 +504,12 @@ export async function traceLot(
     select: { id: true },
   });
   if (!anyLine) return null;
-  const [origins, orders] = await Promise.all([
+  const [origins, orders, shipments] = await Promise.all([
     originsOf(actor, [...new Set(lines.map((line) => line.movementId))]),
     ordersOf(actor, { lotId: String(lotId).slice(0, 36) }),
+    shipmentsOf(actor, { lotId: String(lotId).slice(0, 36) }),
   ]);
-  return { origins, orders };
+  return { origins, orders, shipments };
 }
 
 export type SerialTrace = {
@@ -416,6 +527,8 @@ export type SerialTrace = {
     | { kind: "elsewhere" };
   origins: TraceOrigin[];
   orders: TraceOrder[];
+  /** The shipments it left with (WMS-16). */
+  shipments: TraceShipment[];
 };
 
 /**
@@ -477,9 +590,19 @@ export async function traceSerial(
             statusLabel: STOCK_STATUS_LABELS[unit.status],
           };
   }
-  const [origins, orders] = await Promise.all([
+  // WMS-16: the lines that took it out, for the shipments it left with.
+  const exits = await client.serialMove.findMany({
+    where: { serialUnitId: unit.id, direction: "OUT" },
+    orderBy: { id: "asc" },
+    take: 500,
+    select: { movementLineId: true },
+  });
+  const [origins, orders, shipments] = await Promise.all([
     originsOf(actor, [...new Set(lines.map((line) => line.movementId))]),
     ordersOf(actor, { serialUnitId: unit.id }),
+    shipmentsOf(actor, {
+      movementLineIds: exits.map((move) => move.movementLineId),
+    }),
   ]);
   return {
     id: unit.id,
@@ -488,6 +611,7 @@ export async function traceSerial(
     now,
     origins,
     orders,
+    shipments,
   };
 }
 

@@ -6,10 +6,12 @@
  *
  *   DRAFT → RELEASED → PICKING → PICKED → PACKING → PACKED → SHIPPED
  *     ╰───────╰───────────╰→ CANCELLED (with a reason)
+ *   PICKED → SHIPPED (a company that does not pack, WMS-16)
  *
  * WMS-15 (ADR 0044): packing is its own step (PACKING) between picked and
- * packed. Shipping straight from PICKED, for companies that do not pack,
- * is added by WMS-16 together with its trigger.
+ * packed. WMS-16 (ADR 0045): a company that does not pack ships straight
+ * from PICKED; an order ships only inside a shipment (the trigger checks
+ * it too).
  */
 
 export const OUTBOUND_ORDER_STATUSES = [
@@ -33,7 +35,7 @@ export const OUTBOUND_ORDER_TRANSITIONS: Record<
   // Once picking starts, cancelling means putting goods back: that is the
   // job of WMS-14, which will widen this table if it allows it.
   PICKING: ["PICKED"],
-  PICKED: ["PACKING"],
+  PICKED: ["PACKING", "SHIPPED"],
   PACKING: ["PACKED"],
   PACKED: ["SHIPPED"],
   SHIPPED: [],
@@ -84,6 +86,11 @@ export function outboundTransitionProblem(
     if (from === "PACKED") return "Este pedido ya está empacado.";
     if (from === "PACKING" && to === "PACKING")
       return "Este pedido ya se está empacando.";
+    return "Este pedido todavía no termina de surtirse.";
+  }
+  if (to === "SHIPPED") {
+    if (from === "PACKING")
+      return "Este pedido se está empacando: termina el empaque antes de que salga.";
     return "Este pedido todavía no termina de surtirse.";
   }
   return "Este pedido ya cambió. Vuelve a abrirlo.";

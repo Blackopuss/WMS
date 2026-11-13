@@ -8,6 +8,7 @@ import {
   PackageCheck,
   PackageOpen,
   TriangleAlert,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -20,6 +21,7 @@ import { formatDateTime } from "@/lib";
 import {
   countMyTasks,
   countOrdersToPack,
+  countOrdersToShip,
   countExpiringLots,
   countUnplacedStock,
   getDaySummary,
@@ -114,6 +116,13 @@ export default async function InicioPage() {
     access.allows("inventory.outbound.pack")
       ? await countOrdersToPack(actor)
       : 0;
+  // WMS-16: orders ready to leave, for who dispatches, only if any.
+  const toShip =
+    inventory &&
+    access.can("inventory.shipment.read") &&
+    access.allows("inventory.shipment.dispatch")
+      ? await countOrdersToShip(actor)
+      : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -157,6 +166,16 @@ export default async function InicioPage() {
             label: "Pedidos por empacar",
             count: toPack,
             icon: PackageCheck,
+          },
+        ]
+      : []),
+    ...(toShip > 0
+      ? [
+          {
+            href: "/pedidos?estado=por-despachar",
+            label: "Pedidos por despachar",
+            count: toShip,
+            icon: Truck,
           },
         ]
       : []),

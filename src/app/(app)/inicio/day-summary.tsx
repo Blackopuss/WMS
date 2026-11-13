@@ -62,6 +62,12 @@ export function DaySummaryBlock({
       detail: lines(summary.ordersPicked.lines),
       href: links.orders ? `/pedidos?dia=${summary.day}` : null,
     },
+    {
+      label: "Pedidos despachados",
+      value: summary.ordersShipped.documents,
+      detail: lines(summary.ordersShipped.lines),
+      href: links.orders ? `/pedidos?salio=${summary.day}` : null,
+    },
   ];
 
   return (
@@ -69,7 +75,7 @@ export function DaySummaryBlock({
       <h2 id="inicio-resumen" className="font-medium">
         Lo que se hizo hoy
       </h2>
-      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map(({ label, value, detail, href }) => {
           const body = (
             <>

@@ -329,6 +329,45 @@ export type {
   UnpackPackageInput,
 } from "./packing";
 export {
+  READY_PAGE_SIZE,
+  SHIPMENT_MAX_ORDERS,
+  SHIPMENT_PAGE_SIZE,
+  addShipmentOrders,
+  cancelShipment,
+  countOrdersToShip,
+  createShipment,
+  dispatchShipment,
+  getShipment,
+  listReadyOrders,
+  listShipments,
+  removeShipmentOrder,
+  shipmentDetailsRequired,
+  shipmentOfOrder,
+  updateShipment,
+} from "./shipments";
+export type {
+  ReadyOrder,
+  ReadyPage,
+  ShipmentField,
+  ShipmentHeaderInput,
+  ShipmentLineView,
+  ShipmentOrderView,
+  ShipmentPackageView,
+  ShipmentPage,
+  ShipmentResult,
+  ShipmentSummary,
+  ShipmentView,
+} from "./shipments";
+export { buildShipmentPdf } from "./shipment-pdf";
+export type { ShipmentPdf } from "./shipment-pdf";
+export {
+  SHIPMENT_STATUSES,
+  SHIPMENT_STATUS_LABELS,
+  formatShipmentNumber,
+} from "./shipment-states";
+export type { ShipmentStatus } from "./shipment-states";
+export { TO_SHIP } from "./shipment-ready";
+export {
   OUTBOUND_ORDER_STATUSES,
   OUTBOUND_ORDER_STATUS_LABELS,
   OUTBOUND_ORDER_TRANSITIONS,
@@ -373,6 +412,7 @@ export {
   PUTAWAY_PREFERENCE,
   CONTAINERS_MODE,
   PACKING_MODE,
+  SHIPMENT_DETAILS,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -433,6 +473,7 @@ export type {
   TraceMatch,
   TraceOrder,
   TraceOrigin,
+  TraceShipment,
 } from "./traceability";
 export {
   CONTAINER_EVENT_PAGE_SIZE,

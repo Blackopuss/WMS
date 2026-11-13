@@ -4,6 +4,7 @@ import {
   FileUp,
   PackageCheck,
   Plus,
+  Truck,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import {
   OUTBOUND_ORDER_STATUS_LABELS,
   TO_PACK,
+  TO_SHIP,
   listOutboundOrders,
   packingEnabled,
   type OutboundOrderStatus,
@@ -32,30 +34,41 @@ export const metadata: Metadata = { title: "Pedidos" };
 const chip =
   "inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
-/** States worth filtering by, in the order work flows. */
-const FILTERS: OutboundOrderStatus[] = [
+type Filter = OutboundOrderStatus | typeof TO_PACK | typeof TO_SHIP;
+
+/**
+ * States worth filtering by, in the order work flows. WMS-16: what is
+ * ready to leave is «Por despachar» (picked, or packed), then «Despachado».
+ */
+const FILTERS: Filter[] = [
   "DRAFT",
   "RELEASED",
   "PICKING",
-  "PICKED",
+  TO_SHIP,
+  "SHIPPED",
   "CANCELLED",
 ];
 
 /**
- * WMS-15: when the company packs, «Surtido» becomes «Por empacar» (picked
- * or being packed) and «Empacado» follows it.
+ * WMS-15: when the company packs, picked orders wait «Por empacar» (picked
+ * or being packed) and only packed ones are «Por despachar».
  */
-const PACKING_FILTERS: (OutboundOrderStatus | typeof TO_PACK)[] = [
+const PACKING_FILTERS: Filter[] = [
   "DRAFT",
   "RELEASED",
   "PICKING",
   TO_PACK,
-  "PACKED",
+  TO_SHIP,
+  "SHIPPED",
   "CANCELLED",
 ];
 
-const filterLabel = (value: OutboundOrderStatus | typeof TO_PACK) =>
-  value === TO_PACK ? "Por empacar" : OUTBOUND_ORDER_STATUS_LABELS[value];
+const filterLabel = (value: Filter) =>
+  value === TO_PACK
+    ? "Por empacar"
+    : value === TO_SHIP
+      ? "Por despachar"
+      : OUTBOUND_ORDER_STATUS_LABELS[value];
 
 /** «12 nov 2026» for a day written as year-month-day. */
 const dayText = (day: string) =>
@@ -87,7 +100,7 @@ export default async function PedidosPage({
       </PageContainer>
     );
   }
-  const { estado, pagina, dia } = await searchParams;
+  const { estado, pagina, dia, salio } = await searchParams;
   const actor = {
     organizationId: access.organization.id,
     userId: access.user.id,
@@ -96,12 +109,14 @@ export default async function PedidosPage({
   const list = await listOutboundOrders(actor, {
     status: typeof estado === "string" ? estado : undefined,
     pickedOn: typeof dia === "string" ? dia : undefined,
+    shippedOn: typeof salio === "string" ? salio : undefined,
     page:
       typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
         ? Number(pagina)
         : undefined,
   });
-  const current = list.toPack ? TO_PACK : list.status;
+  const current = list.toPack ? TO_PACK : list.toShip ? TO_SHIP : list.status;
+  const narrowed = list.pickedOn ?? list.shippedOn;
   // The day only travels between the pages of the same narrowed list.
   const href = (
     page: number,
@@ -109,7 +124,7 @@ export default async function PedidosPage({
     day: string | null = null,
   ) => {
     const params = new URLSearchParams();
-    if (day) params.set("dia", day);
+    if (day) params.set(list.shippedOn ? "salio" : "dia", day);
     else if (status) params.set("estado", status);
     if (page > 1) params.set("pagina", String(page));
     const query = params.toString();
@@ -129,28 +144,37 @@ export default async function PedidosPage({
     <PageContainer>
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader title="Pedidos" actions={newButton} />
-      {newButton && (
+      {(newButton || access.can("inventory.shipment.read")) && (
         <p className="-mt-2 flex flex-wrap gap-x-6">
-          <Link
-            href="/pedidos/importar"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <FileUp aria-hidden="true" className="size-4" />
-            Importar pedidos
-          </Link>
+          {access.can("inventory.shipment.read") && (
+            <Link
+              href="/pedidos/embarques"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <Truck aria-hidden="true" className="size-4" />
+              Embarques
+            </Link>
+          )}
+          {newButton && (
+            <Link
+              href="/pedidos/importar"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <FileUp aria-hidden="true" className="size-4" />
+              Importar pedidos
+            </Link>
+          )}
         </p>
       )}
-      {(list.total > 0 || current || list.pickedOn) && (
+      {(list.total > 0 || current || narrowed) && (
         <nav
           aria-label="Estado de los pedidos"
           className="flex flex-wrap gap-2"
         >
           <Link
             href={href(1, null)}
-            aria-current={
-              current === null && !list.pickedOn ? "true" : undefined
-            }
-            className={`${chip} ${current === null && !list.pickedOn ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
+            aria-current={current === null && !narrowed ? "true" : undefined}
+            className={`${chip} ${current === null && !narrowed ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
           >
             Todos
           </Link>
@@ -166,9 +190,9 @@ export default async function PedidosPage({
           ))}
         </nav>
       )}
-      {list.pickedOn && (
+      {narrowed && (
         <p className="text-sm text-muted-foreground">
-          Surtidos el {dayText(list.pickedOn)}.{" "}
+          {list.shippedOn ? "Despachados" : "Surtidos"} el {dayText(narrowed)}.{" "}
           <Link
             href={href(1, null)}
             className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -181,14 +205,16 @@ export default async function PedidosPage({
         <EmptyState
           icon={PackageCheck}
           title={
-            list.pickedOn
-              ? "Ningún pedido se terminó de surtir ese día"
-              : current
-                ? "No hay pedidos en ese estado"
-                : "Sin pedidos de salida"
+            list.shippedOn
+              ? "Ningún pedido salió ese día"
+              : list.pickedOn
+                ? "Ningún pedido se terminó de surtir ese día"
+                : current
+                  ? "No hay pedidos en ese estado"
+                  : "Sin pedidos de salida"
           }
           description={
-            list.pickedOn
+            narrowed
               ? "Mira todos los pedidos o elige un estado."
               : current
                 ? "Elige otro estado o mira todos."
@@ -249,7 +275,7 @@ export default async function PedidosPage({
               {list.page > 1 ? (
                 <Button asChild variant="outline">
                   <Link
-                    href={href(list.page - 1, current, list.pickedOn)}
+                    href={href(list.page - 1, current, narrowed)}
                     rel="prev"
                   >
                     <ChevronLeft aria-hidden="true" data-icon="inline-start" />
@@ -265,7 +291,7 @@ export default async function PedidosPage({
               {list.page < list.pageCount ? (
                 <Button asChild variant="outline">
                   <Link
-                    href={href(list.page + 1, current, list.pickedOn)}
+                    href={href(list.page + 1, current, narrowed)}
                     rel="next"
                   >
                     Siguiente

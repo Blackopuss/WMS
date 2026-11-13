@@ -534,6 +534,72 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A shipment that took the order out (WMS-16): its exit, its order and
+    // what left.
+    const shipmentId = newId();
+    const outboundFacility = (
+      await db.outboundOrder.findUniqueOrThrow({ where: { id: outboundId } })
+    ).facilityId;
+    await db.shipment.create({
+      data: {
+        id: shipmentId,
+        organizationId,
+        number: 1,
+        facilityId: outboundFacility,
+        carrier: "Fletes",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.shipmentOrder.create({
+      data: {
+        id: newId(),
+        organizationId,
+        shipmentId,
+        orderId: outboundId,
+        openOrderId: outboundId,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const shipmentMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: shipmentMovementId,
+        organizationId,
+        type: "SHIPMENT",
+        reference: "EM-0001",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const shipmentMovementLineId = newId();
+    await db.stockMovementLine.create({
+      data: {
+        id: shipmentMovementLineId,
+        organizationId,
+        movementId: shipmentMovementId,
+        lineNumber: 1,
+        productId,
+        locationId: location.id,
+        direction: "OUT",
+        capturedQuantity: "1",
+        factor: "1",
+        baseQuantity: "1",
+        unitCode: "piece",
+      },
+    });
+    await db.shipmentLine.create({
+      data: {
+        id: newId(),
+        organizationId,
+        shipmentId,
+        orderId: outboundId,
+        orderLineId: outboundLineId,
+        productId,
+        locationId: location.id,
+        quantity: "1",
+        unitCode: "piece",
+        movementLineId: shipmentMovementLineId,
+      },
+    });
     // A transfer task (WMS-06) from the default location to a rack.
     const rackId = newId();
     await db.location.create({

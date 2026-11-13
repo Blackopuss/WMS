@@ -9,6 +9,7 @@ import {
   PICKING_STRATEGY,
   CONTAINERS_MODE,
   PACKING_MODE,
+  SHIPMENT_DETAILS,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   createOutboundOrder,
@@ -187,6 +188,12 @@ describe("operation settings", () => {
       { key: CONTAINERS_MODE.key, value: "off", defaultValue: "off" },
       // WMS-15: nothing is packed unless the company turns it on.
       { key: PACKING_MODE.key, value: "off", defaultValue: "off" },
+      // WMS-16: transport data is optional unless the company asks for it.
+      {
+        key: SHIPMENT_DETAILS.key,
+        value: "optional",
+        defaultValue: "optional",
+      },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -198,6 +205,7 @@ describe("operation settings", () => {
       { key: PUTAWAY_PREFERENCE.key, value: "together" },
       { key: CONTAINERS_MODE.key, value: "off" },
       { key: PACKING_MODE.key, value: "off" },
+      { key: SHIPMENT_DETAILS.key, value: "optional" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

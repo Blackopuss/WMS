@@ -127,6 +127,49 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
     coveredBy: "tests/inventory/packing.int.test.ts",
   },
+  createShipmentAction: {
+    input:
+      "ids de los pedidos marcados y los datos del transporte (transportista, guía, placas, quién se lo lleva, notas)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque y sus pedidos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
+  updateShipmentAction: {
+    input: "id del embarque (fijado por la página) y los datos del transporte",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque y sus pedidos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
+  addShipmentOrdersAction: {
+    input: "id del embarque (fijado por la página) e ids de los pedidos",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque y sus pedidos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
+  removeShipmentOrderAction: {
+    input: "id del embarque y del pedido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque y sus pedidos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
+  cancelShipmentAction: {
+    input: "id del embarque y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque y sus pedidos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
+  dispatchShipmentAction: {
+    input: "id del embarque",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque y sus pedidos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
+  checkShipmentAction: {
+    input: "id del embarque",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el embarque se busca solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/shipments.int.test.ts",
+  },
   changeStatusAction: {
     input:
       "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, ubicación donde queda (WMS-22B), cantidad, motivo, clave de confirmación y la aceptación del aviso de capacidad",

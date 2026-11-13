@@ -255,6 +255,31 @@ export const PACKING_MODE = {
   defaultValue: "off",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-16 (ADR 0045): whether a shipment must say who carries it before its
+ * exit is confirmed. Optional by default: many companies hand orders to
+ * whoever comes for them.
+ */
+export const SHIPMENT_DETAILS = {
+  key: "inventory.shipment.details",
+  module: "inventory",
+  area: "Despacho",
+  label: "Datos del transporte al despachar",
+  options: [
+    {
+      value: "optional",
+      label: "Opcionales",
+      help: "Se confirma la salida aunque falte el transportista o quién se lo lleva.",
+    },
+    {
+      value: "required",
+      label: "Transportista y quién se lo lleva, obligatorios",
+      help: "No se confirma la salida sin esos dos datos.",
+    },
+  ],
+  defaultValue: "optional",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -265,4 +290,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PUTAWAY_PREFERENCE,
   CONTAINERS_MODE,
   PACKING_MODE,
+  SHIPMENT_DETAILS,
 ];

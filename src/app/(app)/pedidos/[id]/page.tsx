@@ -1,4 +1,4 @@
-import { ChevronLeft, PackageCheck } from "lucide-react";
+import { ChevronLeft, PackageCheck, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -102,10 +102,20 @@ export default async function PedidoPage({
       ? await packingEnabled(actor)
       : false;
   const pack =
-    order.status === "PACKING" || order.status === "PACKED"
+    order.status === "PACKING" ||
+    order.status === "PACKED" ||
+    order.status === "SHIPPED"
       ? await getPackingView(actor, order.id)
       : null;
-  const packOf = new Map(pack?.lines.map((line) => [line.id, line]) ?? []);
+  // Once shipped, the packages are empty: what left is told by its lines.
+  const packOf = new Map(
+    order.status === "SHIPPED"
+      ? []
+      : (pack?.lines.map((line) => [line.id, line]) ?? []),
+  );
+  // WMS-16: ready to leave, it goes into a shipment.
+  const mayShip =
+    active && order.readyToShip && access.allows("inventory.shipment.create");
   const mayPack =
     active &&
     access.allows("inventory.outbound.pack") &&
@@ -158,6 +168,29 @@ export default async function PedidoPage({
         </div>
       )}
 
+      {mayShip && (
+        <div className="max-w-3xl">
+          <Button asChild size="lg" className="min-h-12 w-full sm:w-auto">
+            <Link href={`/pedidos/embarques/nuevo?pedido=${order.id}`}>
+              <Truck aria-hidden="true" data-icon="inline-start" />
+              Armar embarque
+            </Link>
+          </Button>
+        </div>
+      )}
+      {order.shipment && access.can("inventory.shipment.read") && (
+        <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+          <Link
+            href={`/pedidos/embarques/${order.shipment.id}`}
+            className="inline-flex min-h-11 items-center gap-1.5 font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <Truck aria-hidden="true" className="size-4" />
+            Embarque {order.shipment.numberText}
+          </Link>{" "}
+          · {order.shipment.statusLabel}
+        </p>
+      )}
+
       <section
         aria-labelledby="lineas"
         className="max-w-3xl rounded-xl border bg-card"
@@ -187,7 +220,7 @@ export default async function PedidoPage({
                     <span className="block font-medium">
                       {line.quantityText}
                     </span>
-                    {line.reservedText && (
+                    {line.reservedText && order.status !== "SHIPPED" && (
                       <span className="block text-sm text-muted-foreground">
                         Apartado: {line.reservedText}
                       </span>
@@ -205,6 +238,11 @@ export default async function PedidoPage({
                     {packOf.get(line.id) && (
                       <span className="block text-sm text-muted-foreground">
                         Empacado: {packOf.get(line.id)!.packedText}
+                      </span>
+                    )}
+                    {line.shippedText && (
+                      <span className="block text-sm text-muted-foreground">
+                        Salió: {line.shippedText}
                       </span>
                     )}
                     {packOf.get(line.id)?.missingText && (

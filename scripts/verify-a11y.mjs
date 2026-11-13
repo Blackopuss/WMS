@@ -57,6 +57,9 @@ const SCREENS = [
   "/pedidos",
   "/pedidos/nuevo",
   "/pedidos/importar",
+  // WMS-16: shipments and putting one together.
+  "/pedidos/embarques",
+  "/pedidos/embarques/nuevo",
   "/configuracion/operacion",
   "/configuracion/almacenes",
   "/compras",
@@ -276,6 +279,8 @@ try {
       // WMS-15: an order waiting to be packed, and its packing screen.
       ["/pedidos?estado=por-empacar", /^\/pedidos\/[0-9a-f-]{36}$/],
       ["/pedidos?estado=por-empacar", /^\/pedidos\/[0-9a-f-]{36}$/, "/empaque"],
+      // WMS-16: a shipment, with what leaves.
+      ["/pedidos/embarques", /^\/pedidos\/embarques\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

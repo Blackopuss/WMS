@@ -31,6 +31,12 @@ import {
   type PickSource,
 } from "./picking";
 import { releaseReservations, type ReservationSource } from "./reservations";
+import { TO_SHIP, readyStatuses, shippedOnWhere } from "./shipment-ready";
+import {
+  SHIPMENT_STATUS_LABELS,
+  formatShipmentNumber,
+  type ShipmentStatus,
+} from "./shipment-states";
 import {
   WAREHOUSE_TASK_STATUS_LABELS,
   formatTaskNumber,
@@ -748,6 +754,10 @@ export type OutboundPage = {
   toPack: boolean;
   /** The day the list is narrowed to («2026-11-12»), if any. */
   pickedOn: string | null;
+  /** WMS-16: ready to leave («por despachar»). */
+  toShip: boolean;
+  /** The day it is narrowed to orders shipped on, if any. */
+  shippedOn: string | null;
 };
 
 /** The value of `status` that lists what waits to be packed (WMS-15). */
@@ -786,12 +796,18 @@ const ymd = (value: Date | null) =>
   value ? value.toISOString().slice(0, 10) : null;
 
 /**
- * Orders a page at a time, newest first; optionally one state, or the ones
- * picked on a day (`pickedOn`, year-month-day of the company's calendar).
+ * Orders a page at a time, newest first; optionally one state, the ones
+ * ready to leave (`status: TO_SHIP`), or the ones picked or shipped on a
+ * day (`pickedOn`, `shippedOn`: year-month-day of the company's calendar).
  */
 export async function listOutboundOrders(
   actor: InventoryActor,
-  options: { status?: unknown; page?: number; pickedOn?: unknown } = {},
+  options: {
+    status?: unknown;
+    page?: number;
+    pickedOn?: unknown;
+    shippedOn?: unknown;
+  } = {},
 ): Promise<OutboundPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -800,6 +816,7 @@ export async function listOutboundOrders(
   );
   const status = isOutboundOrderStatus(options.status) ? options.status : null;
   const toPack = options.status === TO_PACK;
+  const toShip = options.status === TO_SHIP;
   const client = forOrganization(actor.organizationId);
   // The warehouse the person works in (WMS-18).
   const facility = await activeFacilityOf(client, actor.userId);
@@ -807,14 +824,25 @@ export async function listOutboundOrders(
     typeof options.pickedOn === "string"
       ? await dayWindow(client, options.pickedOn)
       : null;
+  const shippedWindow =
+    !window && typeof options.shippedOn === "string"
+      ? await dayWindow(client, options.shippedOn)
+      : null;
   const where = window
     ? pickedOnWhere(facility.id, window)
-    : toPack
-      ? {
-          facilityId: facility.id,
-          status: { in: ["PICKED" as const, "PACKING" as const] },
-        }
-      : { facilityId: facility.id, ...(status ? { status } : {}) };
+    : shippedWindow
+      ? shippedOnWhere(facility.id, shippedWindow)
+      : toShip
+        ? {
+            facilityId: facility.id,
+            status: { in: await readyStatuses(client) },
+          }
+        : toPack
+          ? {
+              facilityId: facility.id,
+              status: { in: ["PICKED" as const, "PACKING" as const] },
+            }
+          : { facilityId: facility.id, ...(status ? { status } : {}) };
   const total = await client.outboundOrder.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / OUTBOUND_PAGE_SIZE));
   const page =
@@ -855,9 +883,11 @@ export async function listOutboundOrders(
     page,
     pageCount,
     // A day narrows by itself: the state asked along with it is not applied.
-    status: window ? null : status,
-    toPack: !window && toPack,
+    status: window || shippedWindow ? null : status,
+    toPack: !window && !shippedWindow && toPack,
     pickedOn: window?.day ?? null,
+    toShip: !window && !shippedWindow && toShip,
+    shippedOn: shippedWindow?.day ?? null,
   };
 }
 
@@ -882,7 +912,18 @@ export type OutboundView = OutboundSummary & {
     shortText: string | null;
     /** Already in the staging location (delivered picking), «8 piezas». */
     pickedText: string | null;
+    /** What left with its shipment (WMS-16), «8 piezas». */
+    shippedText: string | null;
   }[];
+  /** The shipment it is in or left with (WMS-16); null when none. */
+  shipment: {
+    id: string;
+    numberText: string;
+    status: ShipmentStatus;
+    statusLabel: string;
+  } | null;
+  /** Ready to leave and in no shipment: it can go in a new one. */
+  readyToShip: boolean;
   /** Its picking tasks (WMS-14), in order. */
   tasks: {
     id: string;
@@ -1012,6 +1053,30 @@ export async function getOutboundOrder(
             },
           },
         });
+  // WMS-16: its shipment (a draft, or the one it left in) and what left.
+  const [inShipment, shippedLines, ready] = await Promise.all([
+    client.shipmentOrder.findFirst({
+      where: { orderId: row.id, openOrderId: { not: null } },
+      select: {
+        shipment: { select: { id: true, number: true, status: true } },
+      },
+    }),
+    row.status === "SHIPPED"
+      ? client.shipmentLine.groupBy({
+          by: ["orderLineId"],
+          where: { orderId: row.id },
+          orderBy: { orderLineId: "asc" },
+          _sum: { quantity: true },
+        })
+      : Promise.resolve([]),
+    readyStatuses(client),
+  ]);
+  const shippedOf = new Map(
+    shippedLines.map((line) => [
+      line.orderLineId,
+      dec((line._sum.quantity ?? 0).toString()),
+    ]),
+  );
   const pickedOf = new Map<string, Decimal>();
   for (const task of tasks) {
     if (task.status !== "DELIVERED" || !task.outboundLineId) continue;
@@ -1059,8 +1124,24 @@ export async function getOutboundOrder(
         pickedText: pickedOf.has(line.id)
           ? formatStock(pickedOf.get(line.id)!.toString(), line.unitCode)
           : null,
+        shippedText:
+          row.status === "SHIPPED"
+            ? formatStock(
+                (shippedOf.get(line.id) ?? dec(0)).toString(),
+                line.unitCode,
+              )
+            : null,
       };
     }),
+    shipment: inShipment
+      ? {
+          id: inShipment.shipment.id,
+          numberText: formatShipmentNumber(inShipment.shipment.number),
+          status: inShipment.shipment.status,
+          statusLabel: SHIPMENT_STATUS_LABELS[inShipment.shipment.status],
+        }
+      : null,
+    readyToShip: !inShipment && ready.includes(row.status),
     tasks: tasks.map((task) => ({
       id: task.id,
       numberText: formatTaskNumber(task.number),
