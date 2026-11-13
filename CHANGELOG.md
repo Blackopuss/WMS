@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-16** · Despacho y embarques (ADR 0045): embarque de uno o varios
+  pedidos, salida `SHIPMENT` una sola vez con clave `ship:<id>`, pedidos
+  `SHIPPED`, PDF de embarque y rastreo hasta la entrega.
 - **WMS-15** · Verificación y empaque (ADR 0044): estados `PACKING` y `PACKED`,
   escaneo contra el pedido, bultos como contenedores ligados al pedido,
   faltantes con motivo y permiso `inventory.outbound.pack`.
