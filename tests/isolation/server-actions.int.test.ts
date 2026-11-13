@@ -18,6 +18,33 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  packAction: {
+    input:
+      "producto y tarima (fijados por la página), ubicación y lote elegidos, etiqueta y tipo de una tarima nueva, cantidad y series",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); producto, ubicación y tarima se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/containers.int.test.ts",
+  },
+  moveContainerAction: {
+    input:
+      "tarima (fijada por la página, o su etiqueta escaneada), etiqueta del lugar, clave de confirmación y la aceptación de un aviso de capacidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarima y el lugar se buscan solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/containers.int.test.ts",
+  },
+  unpackAction: {
+    input:
+      "tarima (fijada por la página), renglón que se saca, cantidad y series",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarima se bloquea solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/containers.int.test.ts",
+  },
+  closeContainerAction: {
+    input: "tarima (fijada por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarima se bloquea solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/containers.int.test.ts",
+  },
   changeLotExpiryAction: {
     input:
       "id del lote (fijado por la página), caducidad nueva (o vacía) y motivo",
@@ -132,7 +159,7 @@ const REVIEWED: Record<string, Review> = {
   },
   receivePurchaseOrderAction: {
     input:
-      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B)",
+      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B); si llegó en tarima, su etiqueta y tipo (WMS-53)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); la orden y la ubicación se buscan solo en esa empresa",
     coveredBy:

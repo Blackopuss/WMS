@@ -58,6 +58,11 @@ export type ProductStock = {
     availableLabel: string;
     /** What of it is not available, by state («4 piezas · Rechazado»). */
     unavailable: { status: StockStatus; label: string; quantity: string }[];
+    /**
+     * WMS-53: what of it is packed in pallets or boxes («6 piezas»); null
+     * when nothing is (always, for a company without containers).
+     */
+    inContainersLabel: string | null;
   }[];
   /**
    * The total in each presentation, with its current content:
@@ -165,6 +170,18 @@ export async function getProductStock(
       );
     }
   }
+  // WMS-53: what is packed in containers, by location.
+  const packed = await client.containerItem.groupBy({
+    by: ["locationId"],
+    where: {
+      productId: product.id,
+      ...(limited ? { location: scoped } : {}),
+    },
+    _sum: { quantity: true },
+  });
+  const packedAt = new Map(
+    packed.map((row) => [row.locationId, (row._sum.quantity ?? 0).toString()]),
+  );
   // One row per location: several balances (one per state) add up.
   const byLocation = new Map<
     string,
@@ -234,6 +251,9 @@ export async function getProductStock(
       available: location.available,
       availableLabel: formatStock(location.available, unitCode),
       unavailable: location.unavailable,
+      inContainersLabel: packedAt.has(location.id)
+        ? formatStock(packedAt.get(location.id)!, unitCode)
+        : null,
     }));
 
   // Exact sum: decimals are never added as floating point.

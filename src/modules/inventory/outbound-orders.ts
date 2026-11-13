@@ -1054,7 +1054,8 @@ export async function getOutboundOrder(
       numberText: formatTaskNumber(task.number),
       status: task.status,
       statusLabel: WAREHOUSE_TASK_STATUS_LABELS[task.status],
-      productName: task.product.name,
+      // Picking tasks always move a product (WMS-14).
+      productName: task.product!.name,
       fromName: task.fromLocation.name,
       lotText: task.lot
         ? lotLabel({
@@ -1062,11 +1063,11 @@ export async function getOutboundOrder(
             expiresOn: lotDayOf(task.lot.expiresOn),
           })
         : null,
-      quantityText: formatStock(task.quantity.toString(), task.unitCode),
+      quantityText: formatStock(task.quantity!.toString(), task.unitCode!),
       pickedText:
         task.pickedQuantity === null
           ? null
-          : formatStock(task.pickedQuantity.toString(), task.unitCode),
+          : formatStock(task.pickedQuantity.toString(), task.unitCode!),
       shortReason: task.shortReason,
       lineId: task.outboundLineId,
       serials: task.serials.map((row) => row.serialUnit.serial),

@@ -348,6 +348,7 @@ export {
   PICKING_STRATEGY,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
+  CONTAINERS_MODE,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -409,3 +410,38 @@ export type {
   TraceOrder,
   TraceOrigin,
 } from "./traceability";
+export {
+  CONTAINER_EVENT_PAGE_SIZE,
+  CONTAINER_PAGE_SIZE,
+  closeContainer,
+  containersEnabled,
+  containersVisible,
+  findContainerByCode,
+  getContainer,
+  listContainerEvents,
+  listContainers,
+  listOpenContainersAt,
+  moveContainer,
+  packStock,
+  unpackStock,
+} from "./containers";
+export type {
+  ContainerEventPage,
+  ContainerEventView,
+  ContainerField,
+  ContainerItemView,
+  ContainerPage,
+  ContainerResult,
+  ContainerSummary,
+  ContainerView,
+  MoveContainerInput,
+  MoveContainerResult,
+  PackInput,
+  UnpackInput,
+} from "./containers";
+export {
+  CONTAINER_KIND_SUGGESTIONS,
+  DEFAULT_CONTAINER_KIND,
+  containerName,
+  formatContainerNumber,
+} from "./container-rules";

@@ -42,7 +42,9 @@ const hrefOf = (match: TraceMatch) =>
       ? `/inventario/rastrear?serie=${idPath(match.id)}`
       : match.kind === "order"
         ? `/pedidos/${idPath(match.id)}`
-        : `/inventario/rastrear?oc=${idPath(match.id)}`;
+        : match.kind === "container"
+          ? `/inventario/tarimas/${idPath(match.id)}`
+          : `/inventario/rastrear?oc=${idPath(match.id)}`;
 
 const titleOf = (match: TraceMatch) =>
   match.kind === "lot"
@@ -51,14 +53,18 @@ const titleOf = (match: TraceMatch) =>
       ? `Serie ${match.serial}`
       : match.kind === "order"
         ? `Pedido ${match.numberText}`
-        : `Orden de compra ${match.numberText}`;
+        : match.kind === "container"
+          ? match.name
+          : `Orden de compra ${match.numberText}`;
 
 const detailOf = (match: TraceMatch) =>
   match.kind === "lot" || match.kind === "serial"
     ? `${match.productName} · ${match.sku}`
     : match.kind === "order"
       ? match.recipient
-      : match.supplierName;
+      : match.kind === "container"
+        ? "Tarima o caja"
+        : match.supplierName;
 
 const linkClass =
   "inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";

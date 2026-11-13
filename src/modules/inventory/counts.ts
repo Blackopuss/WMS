@@ -27,6 +27,7 @@ import {
   type InventoryActor,
   type MovementType,
 } from "./movements";
+import { containedAt } from "./contained";
 import { lineCost, openCostBook } from "./valuation";
 import { availableOfLot, lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
@@ -1217,6 +1218,9 @@ export async function applyCount(
             ).map((balance) => [slot(balance), balance]),
           );
           const conflicts: string[] = [];
+          // WMS-53 (ADR 0043): what the containers of the location hold
+          // stays; a count never leaves a balance below it.
+          const packed: string[] = [];
           const adjustments: {
             productId: string;
             lotId: string | null;
@@ -1240,6 +1244,20 @@ export async function applyCount(
               conflicts.push(`${line.product.name}${ofLot(line.lot)}`);
               continue;
             }
+            if (
+              difference.isNegative() &&
+              target.lessThan(
+                await containedAt(
+                  tx,
+                  line.productId,
+                  count.locationId,
+                  line.lotId,
+                ),
+              )
+            ) {
+              packed.push(`${line.product.name}${ofLot(line.lot)}`);
+              continue;
+            }
             adjustments.push({
               productId: line.productId,
               lotId: line.lotId,
@@ -1258,6 +1276,15 @@ export async function applyCount(
                   ? `${conflicts[0]} se movió después de contarlo y su diferencia ya no cabe. Vuelve a contarlo antes de aplicar.`
                   : `${conflicts.length} productos se movieron después de contarlos y su diferencia ya no cabe. Vuelve a contarlos antes de aplicar.`,
               conflicts,
+            } as Failure<"reason">);
+          }
+
+          if (packed.length > 0) {
+            throw new Rejected<"reason">({
+              ok: false,
+              reason: "not_allowed",
+              error: `${packed.length === 1 ? packed[0] : `${packed.length} productos`}: con lo contado quedaría menos de lo que dicen sus tarimas o cajas en esta ubicación. Saca de la tarima lo que haga falta (o desármala) y vuelve a contar.`,
+              conflicts: packed,
             } as Failure<"reason">);
           }
 

@@ -137,6 +137,11 @@ export async function serialsForTake(
   options: {
     verb?: Parameters<typeof serialCountProblem>[2];
     taskId?: string | null;
+    /**
+     * WMS-53: the container whose units these are (taking them out of
+     * it); any other unit packed in a container is refused.
+     */
+    containerId?: string | null;
   } = {},
 ): Promise<SerialAnswer> {
   const list = serialListFor(product, input, units, options.verb ?? "salen");
@@ -149,7 +154,12 @@ export async function serialsForTake(
       locationId: at.locationId,
       status: at.status,
     },
-    select: { id: true, serial: true },
+    select: {
+      id: true,
+      serial: true,
+      containerId: true,
+      container: { select: { code: true, kind: true } },
+    },
   });
   const found = new Map(there.map((unit) => [fold(unit.serial), unit]));
   const missing = list.serials.filter((serial) => !found.has(fold(serial)));
@@ -163,6 +173,29 @@ export async function serialsForTake(
     };
   }
   const picked = list.serials.map((serial) => found.get(fold(serial))!);
+  // WMS-53 (ADR 0043): what is packed is not taken loose.
+  const packed = picked.find(
+    (unit) =>
+      unit.containerId !== null &&
+      unit.containerId !== (options.containerId ?? null),
+  );
+  if (packed) {
+    return {
+      ok: false,
+      error: `La serie ${packed.serial} está en ${(packed.container?.kind ?? "la tarima").toLowerCase()} ${packed.container?.code ?? ""}: sácala de ahí primero.`,
+    };
+  }
+  if (options.containerId) {
+    const loose = picked.find(
+      (unit) => unit.containerId !== options.containerId,
+    );
+    if (loose) {
+      return {
+        ok: false,
+        error: `La serie ${loose.serial} no está en esta tarima. Revisa la etiqueta.`,
+      };
+    }
+  }
   const held = await heldByTasks(
     client,
     picked.map((unit) => unit.id),
@@ -175,7 +208,10 @@ export async function serialsForTake(
       error: `La serie ${first.serial} ya la tomó la tarea ${formatTaskNumber(first.taskNumber)}: elige otra unidad.`,
     };
   }
-  return { ok: true, units: picked };
+  return {
+    ok: true,
+    units: picked.map((unit) => ({ id: unit.id, serial: unit.serial })),
+  };
 }
 
 /**

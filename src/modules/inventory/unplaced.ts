@@ -289,7 +289,9 @@ export async function listUnplacedStock(
     taskOf.set(key, {
       id: known?.id ?? task.id,
       number: known?.number ?? task.number,
-      quantity: (known?.quantity ?? dec(0)).plus(task.quantity.toString()),
+      quantity: (known?.quantity ?? dec(0)).plus(
+        task.quantity?.toString() ?? 0,
+      ),
     });
   }
   const placeOf = new Map(

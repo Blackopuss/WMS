@@ -682,7 +682,7 @@ describe("tasks and picking", () => {
     await acceptTask(actor, task.id);
     const confirm = (serials?: string) =>
       confirmPick(actor, task.id, {
-        productCode: task.product.sku,
+        productCode: task.product!.sku,
         locationCode: task.fromLocation.name,
         quantity: "2",
         serials,

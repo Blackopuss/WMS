@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  containersVisible,
   formatStock,
   getStockByLocation,
   getStockTotals,
@@ -143,6 +144,17 @@ export async function MovementScreen({
       <PageContainer>
         {back}
         <PageHeader title={texts.title} description={texts.find} />
+        {/* WMS-53: a whole pallet moves with one scan, elsewhere. */}
+        {kind === "transfer" && (await containersVisible(actor)) && (
+          <p className="-mt-2">
+            <Link
+              href="/inventario/tarimas/mover"
+              className="inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Mover una tarima
+            </Link>
+          </p>
+        )}
         <Form
           action={texts.path}
           role="search"

@@ -29,6 +29,9 @@ export const TENANT_MODELS = [
   "AuditEvent",
   "CheckoutOrder",
   "Contact",
+  "Container",
+  "ContainerEvent",
+  "ContainerItem",
   "Entitlement",
   "ExitImport",
   "ExitImportRow",
@@ -275,6 +278,7 @@ export const LOCKING_TRANSACTION = { isolationLevel: "ReadCommitted" } as const;
 
 /** Tables whose rows a business rule may lock, by their model name. */
 const LOCKABLE = {
+  container: "container",
   facility: "facility",
   location: "location",
   locationCapacity: "location_capacity",

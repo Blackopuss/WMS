@@ -45,12 +45,13 @@ import {
   type ResolvedLot,
 } from "./lot-resolve";
 import { normalizeLotCode } from "./lot-rules";
+import { containedAt, containedMessage } from "./contained";
 import { createPutawayTasks, isTaskNumberClash } from "./putaway";
 import {
   TASK_HOLD,
   freeToMoveFrom,
   freeToTake,
-  reservedMessage,
+  blockedMessage,
 } from "./reservations";
 import {
   NO_SERIAL_PRODUCT,
@@ -711,7 +712,12 @@ async function post(
           return reject(
             "invalid",
             "quantity",
-            reservedMessage(free, unitCode, "sacar"),
+            await blockedMessage(tx, free, unitCode, "sacar", {
+              productId: product.id,
+              locationId: location.id,
+              locationName: location.name,
+              lotId: lot?.id,
+            }),
           );
         }
       }
@@ -1801,7 +1807,12 @@ async function transferWithin(
     return refuse(
       "invalid",
       "quantity",
-      reservedMessage(freeHere, unitCode, "mover"),
+      await blockedMessage(tx, freeHere, unitCode, "mover", {
+        productId: product.id,
+        locationId: from.id,
+        locationName: from.name,
+        lotId: lot?.id,
+      }),
     );
   }
   const leftInSource = inSource.minus(base);
@@ -2151,6 +2162,23 @@ export async function registerAdjustment(
       });
       const before = dec(current?.quantity.toString() ?? 0);
       const difference = counted.minus(before);
+      // WMS-53 (ADR 0043): what is in containers here stays: an
+      // adjustment never leaves the balance below it.
+      if (difference.isNegative()) {
+        const contained = await containedAt(
+          tx,
+          product.id,
+          location.id,
+          lot?.id ?? null,
+        );
+        if (counted.lessThan(contained)) {
+          return reject(
+            "invalid",
+            "quantity",
+            containedMessage(contained, unitCode, location.name),
+          );
+        }
+      }
       // WMS-21B: a product by serial says every serial that is really
       // there; what the system had and was not named went missing, what
       // was named and the system did not have appeared. One line each.
@@ -2366,7 +2394,7 @@ async function serialAdjustment(
     },
     orderBy: { serial: "asc" },
     take: 5_000,
-    select: { id: true, serial: true },
+    select: { id: true, serial: true, containerId: true },
   });
   const fold = serialKey;
   const named = new Set(names.map(fold));
@@ -2397,9 +2425,18 @@ async function serialAdjustment(
       `La serie ${held[0]!.serial} la tomó una tarea que sigue abierta: espera a que se entregue o se cancele.`,
     );
   }
+  // WMS-53: a unit packed in a container is not lost by an adjustment.
+  const packed = missing.find((unit) => unit.containerId !== null);
+  if (packed) {
+    return reject(
+      "invalid",
+      "serials",
+      `La serie ${packed.serial} está en una tarima o caja de ${location.name}: sácala de ahí antes de ajustar.`,
+    );
+  }
   const knownOf = new Map(known.map((unit) => [fold(unit.serial), unit.id]));
   return {
-    missing,
+    missing: missing.map((unit) => ({ id: unit.id, serial: unit.serial })),
     found: appearing.map((serial) => ({
       id: knownOf.get(fold(serial)) ?? null,
       serial,
@@ -2492,6 +2529,7 @@ export async function reverseMovement(
     select: {
       id: true,
       type: true,
+      containerId: true,
       lines: {
         orderBy: { lineNumber: "asc" },
         select: {
@@ -2581,6 +2619,13 @@ export async function reverseMovement(
           "Esta entrada es la recepción de una orden de compra: no se reversa desde Inventario. Lo que llegó de más o mal se devuelve al proveedor desde Compras.",
         );
       }
+      // WMS-53: a container moves back whole, with another scan.
+      if (original.containerId) {
+        return stop(
+          "not_allowed",
+          "Este movimiento movió una tarima o caja completa: no se reversa. Muévela de regreso escaneando su etiqueta.",
+        );
+      }
       // Nor a return (CMP-12): its document would still say it went back.
       if (original.type === "RETURN") {
         return stop(
@@ -2661,7 +2706,13 @@ export async function reverseMovement(
         const ids = units.map((unit) => unit.id);
         const now = await tx.serialUnit.findMany({
           where: { id: { in: ids } },
-          select: { id: true, serial: true, locationId: true, status: true },
+          select: {
+            id: true,
+            serial: true,
+            locationId: true,
+            status: true,
+            containerId: true,
+          },
         });
         if (line.direction === "IN") {
           // Undoing what came in takes those units out: they must still
@@ -2682,6 +2733,14 @@ export async function reverseMovement(
             return stop(
               "invalid",
               `No se puede reversar: la serie ${held[0]!.serial} la tomó una tarea que sigue abierta.`,
+            );
+          }
+          // WMS-53: nor is it in a container.
+          const packed = now.find((unit) => unit.containerId !== null);
+          if (packed) {
+            return stop(
+              "invalid",
+              `No se puede reversar: la serie ${packed.serial} está en una tarima o caja. Sácala de ahí primero.`,
             );
           }
         } else {
@@ -2798,7 +2857,7 @@ export async function reverseMovement(
           if (free.lessThan(base)) {
             return stop(
               "invalid",
-              `No se puede reversar: ${reservedMessage(free, line.unitCode, "sacar")}`,
+              `No se puede reversar: ${await blockedMessage(tx, free, line.unitCode, "sacar", { productId: product.id, locationId: location.id, locationName: location.name, lotId: line.lotId })}`,
             );
           }
         }

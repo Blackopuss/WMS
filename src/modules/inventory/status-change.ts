@@ -25,7 +25,7 @@ import {
 import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { lotColumns } from "./stock-status";
-import { freeToTake, reservedMessage } from "./reservations";
+import { blockedMessage, freeToTake } from "./reservations";
 import { lineCost, openCostBook } from "./valuation";
 import { SERIALS_FIELD } from "./movements";
 import {
@@ -435,7 +435,12 @@ export async function changeStockStatus(
           return refuse(
             "invalid",
             "quantity",
-            reservedMessage(free, product.unitCode, "cambiar"),
+            await blockedMessage(tx, free, product.unitCode, "cambiar", {
+              productId: product.id,
+              locationId: location.id,
+              locationName: location.name,
+              lotId: lot?.id,
+            }),
           );
         }
       }

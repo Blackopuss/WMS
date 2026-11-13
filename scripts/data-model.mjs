@@ -182,6 +182,14 @@ export const AREAS = [
     ],
   },
   {
+    id: "inventory-containers",
+    title: "Inventario › Tarimas y contenedores",
+    doc: "inventory",
+    summary:
+      "Tarimas, cajas y otros contenedores con etiqueta propia: qué parte del saldo de su ubicación agrupan (nunca más que el saldo) y su historia.",
+    models: ["Container", "ContainerItem", "ContainerEvent"],
+  },
+  {
     id: "inventory-counts",
     title: "Inventario › Conteos",
     doc: "inventory",

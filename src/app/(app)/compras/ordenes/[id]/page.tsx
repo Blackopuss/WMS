@@ -13,7 +13,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime, newId } from "@/lib";
-import { listStockLocations } from "@/modules/inventory";
+import {
+  CONTAINER_KIND_SUGGESTIONS,
+  containersEnabled,
+  listStockLocations,
+} from "@/modules/inventory";
 import {
   getOrderDeliveries,
   getOrderReceipts,
@@ -108,6 +112,11 @@ export default async function OrdenPage({
     access.can("inventory.location.read");
   const locations =
     canReceive || canReturn ? await listStockLocations(actor) : [];
+  // WMS-53: «Llegó en una tarima», only for a company that packs them.
+  const palletKinds =
+    canReceive && (await containersEnabled(actor))
+      ? CONTAINER_KIND_SUGGESTIONS
+      : null;
   // The PDF carries prices: for who may export orders (not Consulta).
   const canExport = access.can("purchasing.order.export");
   const zone = access.organization.timeZone;
@@ -164,6 +173,7 @@ export default async function OrdenPage({
                     locations[0]?.id ??
                     ""
                   }
+                  containerKinds={palletKinds}
                 />
               )}
               {canSubmit && (

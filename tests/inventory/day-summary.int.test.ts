@@ -237,9 +237,9 @@ describe("getDaySummary", () => {
       expect(await acceptTask(operator, task.id)).toMatchObject({ ok: true });
       expect(
         await confirmPick(operator, task.id, {
-          productCode: task.product.sku,
+          productCode: task.product!.sku,
           locationCode: task.fromLocation.name,
-          quantity: task.quantity.toString(),
+          quantity: task.quantity!.toString(),
         }),
       ).toMatchObject({ ok: true });
       expect(await deliverTask(operator, task.id)).toMatchObject({ ok: true });

@@ -360,6 +360,11 @@ export default async function ProductoPage({
                           {part.label}
                         </span>
                       ))}
+                      {location.inContainersLabel && (
+                        <span className="block text-sm text-muted-foreground">
+                          {location.inContainersLabel} en tarimas o cajas
+                        </span>
+                      )}
                     </span>
                   </li>
                 ))}

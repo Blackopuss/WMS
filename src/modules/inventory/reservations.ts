@@ -4,6 +4,7 @@ import { dec, newId, type Decimal } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
 import { forOrganization, type TenantDb } from "@/server";
 
+import { containedAt, containedMessage } from "./contained";
 import { formatStock, type InventoryActor } from "./movements";
 import { AVAILABLE_ANY_LOT, availableOfLot } from "./stock-status";
 
@@ -87,17 +88,25 @@ async function reservedOf(
   return dec((sum._sum.remaining ?? 0).toString());
 }
 
+/**
+ * WMS-53 (ADR 0043): in a location, what is inside its containers is not
+ * free either — like a reservation of the location, it does not subtract
+ * from the product as a whole (it is still its stock).
+ */
 async function freeOf(
   client: Reader,
   productId: string,
   locationId: string | null,
   lotId?: string,
 ): Promise<Decimal> {
-  const [available, reserved] = await Promise.all([
+  const [available, reserved, contained] = await Promise.all([
     availableOf(client, productId, locationId, lotId),
     reservedOf(client, productId, locationId, lotId),
+    locationId
+      ? containedAt(client, productId, locationId, lotId)
+      : Promise.resolve(dec(0)),
   ]);
-  return available.minus(reserved);
+  return available.minus(reserved).minus(contained);
 }
 
 const least = (values: Decimal[]) => {
@@ -147,6 +156,38 @@ export async function freeToMoveFrom(
       freeOf(client, productId, locationId),
       ...(lot ? [freeOf(client, productId, locationId, lot)] : []),
     ]),
+  );
+}
+
+/**
+ * Why an operation cannot take `free` and more from a location: what is in
+ * its containers (WMS-53) when there is any, else what is reserved. Ask it
+ * only on the way out, when `free` fell short.
+ */
+export async function blockedMessage(
+  client: Reader,
+  free: Decimal,
+  unitCode: string,
+  verb: string,
+  at: {
+    productId: string;
+    locationId: string;
+    locationName?: string | null;
+    lotId?: string | null;
+  },
+): Promise<string> {
+  const contained = await containedAt(
+    client,
+    at.productId,
+    at.locationId,
+    at.lotId ?? undefined,
+  );
+  if (contained.isZero()) return reservedMessage(free, unitCode, verb);
+  return (
+    containedMessage(contained, unitCode, at.locationName ?? null) +
+    (free.isZero()
+      ? ""
+      : ` Suelto y libre: ${formatStock(free.toString(), unitCode)}.`)
   );
 }
 

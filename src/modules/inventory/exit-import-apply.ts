@@ -19,6 +19,7 @@ import {
   exitKey,
   formatExitDay,
 } from "./exit-import";
+import { containedAt, containedMessage } from "./contained";
 import { formatStock } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
 import { availableOfLot, lotColumns } from "./stock-status";
@@ -224,6 +225,32 @@ async function registerRow(
   const { conversion } = resolved;
   const unitCode = resolved.product.unitCode;
   const base = conversion.baseQuantity;
+
+  // WMS-53 (ADR 0043): what is packed in containers there does not leave
+  // with a file: the row fails with its reason (the database would refuse).
+  const contained = await containedAt(
+    tx,
+    product.id,
+    location.id,
+    lot?.id ?? null,
+  );
+  if (!contained.isZero()) {
+    const held = await tx.stockBalance.findFirst({
+      where: {
+        productId: product.id,
+        locationId: location.id,
+        ...availableOfLot(lot?.id),
+      },
+      select: { quantity: true },
+    });
+    const loose = dec(held?.quantity.toString() ?? 0).minus(contained);
+    if (loose.lessThan(base)) {
+      return {
+        kind: "failed",
+        error: `${product.sku}${ofLot(lot)}: ${containedMessage(contained, unitCode, location.name)} Después sube el archivo de nuevo.`,
+      };
+    }
+  }
 
   // VAL-04: read before the balance changes, under the product's lock.
   const costs = await openCostBook(tx, actor.organizationId, [product.id]);

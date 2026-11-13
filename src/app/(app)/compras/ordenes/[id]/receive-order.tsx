@@ -68,6 +68,7 @@ export function ReceiveOrder({
   pending,
   locations,
   defaultLocationId,
+  containerKinds = null,
 }: {
   orderId: string;
   numberText: string;
@@ -76,6 +77,11 @@ export function ReceiveOrder({
   pending: PendingReceiptLine[];
   locations: { id: string; label: string }[];
   defaultLocationId: string;
+  /**
+   * WMS-53: the company packs pallets: «Llegó en una tarima» with these
+   * suggested kinds. Null = it does not, and nothing is shown.
+   */
+  containerKinds?: readonly string[] | null;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, busy] = useActionState(
@@ -374,6 +380,14 @@ export function ReceiveOrder({
               <p>{state.formError}</p>
             </div>
           )}
+          {containerKinds && (
+            <PalletFields
+              orderId={orderId}
+              answers={answers}
+              values={state.values}
+              kinds={containerKinds}
+            />
+          )}
           <FormField
             id={`receive-reference-${orderId}`}
             label="Remisión o factura (opcional)"
@@ -433,6 +447,83 @@ export function ReceiveOrder({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * WMS-53: «Llegó en una tarima»: everything received goes into one pallet
+ * (or box) with its label — the one it brings, or one like C-0001 — and
+ * its kind. Hidden until it is checked.
+ */
+function PalletFields({
+  orderId,
+  answers,
+  values,
+  kinds,
+}: {
+  orderId: string;
+  answers: number;
+  values: ReceiveFormState["values"];
+  kinds: readonly string[];
+}) {
+  const [onPallet, setOnPallet] = useState(values.onPallet === true);
+  return (
+    <fieldset className="space-y-3">
+      <legend className="sr-only">Tarima</legend>
+      <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+        <input
+          type="checkbox"
+          name="onPallet"
+          value="1"
+          defaultChecked={values.onPallet === true}
+          key={`onPallet-${answers}`}
+          onChange={(event) => setOnPallet(event.currentTarget.checked)}
+          className="size-5 accent-primary"
+        />
+        Llegó en una tarima (todo va al mismo lugar)
+      </label>
+      {onPallet && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField
+            id={`receive-container-${orderId}`}
+            label="Etiqueta (opcional)"
+            hint="Si trae una, escanéala; si no, se le pone una."
+          >
+            {(control) => (
+              <Input
+                {...control}
+                key={`containerCode-${answers}`}
+                name="containerCode"
+                defaultValue={values.containerCode ?? ""}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+              />
+            )}
+          </FormField>
+          <FormField id={`receive-kind-${orderId}`} label="Tipo">
+            {(control) => (
+              <>
+                <Input
+                  {...control}
+                  key={`containerKind-${answers}`}
+                  name="containerKind"
+                  list={`receive-kinds-${orderId}`}
+                  placeholder={kinds[0]}
+                  defaultValue={values.containerKind ?? ""}
+                  autoComplete="off"
+                />
+                <datalist id={`receive-kinds-${orderId}`}>
+                  {kinds.map((kind) => (
+                    <option key={kind} value={kind} />
+                  ))}
+                </datalist>
+              </>
+            )}
+          </FormField>
+        </div>
+      )}
+    </fieldset>
   );
 }
 
