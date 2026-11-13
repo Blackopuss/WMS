@@ -40,6 +40,7 @@ import {
   assertLocationsInScope,
   assertWholeFacilityInScope,
   locationScopeWhere,
+  locationsOutOfScope,
 } from "./scope";
 import type { LocationActor } from "./locations";
 
@@ -265,6 +266,7 @@ async function parseCode(
   tx: Tx,
   value: unknown,
   facilityId: string,
+  userId: string,
   exceptId?: string,
 ): Promise<string | null> {
   const parsed = normalizeLocationCode(value);
@@ -276,9 +278,15 @@ async function parseCode(
       code: parsed.code,
       ...(exceptId ? { NOT: { id: exceptId } } : {}),
     },
-    select: { name: true, archivedAt: true },
+    select: { id: true, name: true, archivedAt: true },
   });
   if (taken) {
+    // The name of a location outside the person's scope is not theirs to
+    // learn from an error (WMS-20).
+    const hidden = await locationsOutOfScope(tx, userId, [taken.id]);
+    if (hidden.length > 0) {
+      reject("duplicate", "Ese código ya está en uso. Usa otro.", "code");
+    }
     reject(
       "duplicate",
       taken.archivedAt
@@ -648,7 +656,7 @@ export async function createLocation(
         );
       }
       await checkFreeName(tx, name, parent?.id ?? null, facilityId);
-      const code = await parseCode(tx, input.code, facilityId);
+      const code = await parseCode(tx, input.code, facilityId, userId);
       const limits = input.limits ? await parseLimits(tx, input.limits) : null;
       if ((await tx.location.count()) >= MAX_LOCATIONS) {
         reject(
@@ -768,7 +776,13 @@ export async function editLocation(
     const code =
       input.code === undefined
         ? location.code
-        : await parseCode(tx, input.code, location.facilityId, location.id);
+        : await parseCode(
+            tx,
+            input.code,
+            location.facilityId,
+            userId,
+            location.id,
+          );
     if (
       name === location.name &&
       code === location.code &&
