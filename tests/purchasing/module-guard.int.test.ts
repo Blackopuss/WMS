@@ -105,6 +105,11 @@ const NOT_SERVICES = new Set([
   "advanceOrderOnReceipt",
   // Asked by the platform console (staff only) before removing the module.
   "purchasingOpenWork",
+  // WMS-57: pure helpers of the states of a purchase request.
+  "canRequestTransition",
+  "requestTransitionProblem",
+  "isPurchaseRequestStatus",
+  "formatRequestNumber",
 ]);
 
 const services = Object.entries(purchasing).filter(
@@ -123,11 +128,17 @@ describe("Compras without the module (CMP-16)", () => {
     expect(services.map(([name]) => name).sort()).toEqual(
       [
         "addOrderLine",
+        "addRequestLine",
         "buildOrderPdf",
         "buildPurchaseReport",
         "cancelPurchaseOrder",
+        "cancelPurchaseRequest",
         "closePurchaseOrder",
+        "compareSuppliers",
+        "convertPurchaseRequest",
+        "countRequestsToAttend",
         "createPurchaseOrder",
+        "createPurchaseRequest",
         "findReceiptConfirmation",
         "findReturnConfirmation",
         "generateSuggestedOrders",
@@ -136,20 +147,27 @@ describe("Compras without the module (CMP-16)", () => {
         "getPendingReport",
         "getProductSupplier",
         "getPurchaseOrder",
+        "getPurchaseRequest",
         "getPurchaseSuggestions",
         "getPurchasesBySupplier",
         "linkProductSupplier",
         "listProductsOfSupplier",
         "listPurchaseOrders",
+        "listPurchaseRequests",
         "listSuppliersOfProduct",
         "receivePurchaseOrder",
+        "rejectPurchaseRequest",
         "removeOrderLine",
+        "removeRequestLine",
         "requestOrderDelivery",
         "returnToSupplier",
         "submitPurchaseOrder",
+        "submitPurchaseRequest",
         "updateOrderLine",
         "updateProductSupplier",
         "updatePurchaseOrder",
+        "updatePurchaseRequest",
+        "updateRequestLine",
       ].sort(),
     );
   });

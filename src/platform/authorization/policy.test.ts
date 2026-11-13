@@ -165,8 +165,12 @@ describe("rules of the approved matrix", () => {
   });
 
   it("warehouse does not buy, receive or return", () => {
+    // WMS-57: asking Compras for goods (a purchase request) is not buying.
     for (const permission of PERMISSIONS) {
-      if (permission.startsWith("purchasing.")) {
+      if (
+        permission.startsWith("purchasing.") &&
+        !permission.startsWith("purchasing.request.")
+      ) {
         expect(can(member("warehouse"), permission), permission).toBe(false);
       }
     }

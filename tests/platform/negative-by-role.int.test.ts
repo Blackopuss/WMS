@@ -174,8 +174,10 @@ describe("Consulta no escribe (NEG-01, NEG-02)", () => {
 
 describe("Almacén no compra (NEG-03, NEG-04)", () => {
   it("is denied every permission of Compras, reads included", async () => {
-    for (const permission of PERMISSIONS.filter((p) =>
-      p.startsWith("purchasing."),
+    // WMS-57: asking Compras for goods is not buying (ADR 0055).
+    for (const permission of PERMISSIONS.filter(
+      (p) =>
+        p.startsWith("purchasing.") && !p.startsWith("purchasing.request."),
     )) {
       await denied(org, warehouse, permission);
     }
@@ -370,6 +372,7 @@ const NEGATIVE_CASES: Record<string, { tests?: string[]; waitsFor?: string }> =
         "tests/purchasing/reports.int.test.ts",
         "tests/purchasing/module-guard.int.test.ts",
         "tests/inventory/valuation.int.test.ts",
+        "tests/purchasing/requests.int.test.ts",
       ],
     },
     "NEG-05": { tests: ["tests/platform/negative-by-role.int.test.ts"] },

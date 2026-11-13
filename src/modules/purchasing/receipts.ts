@@ -33,6 +33,7 @@ import {
   PURCHASE_ORDER_MAX_LINES,
   advanceOrderOnReceipt,
   formatOrderNumber,
+  orderInScope,
 } from "./orders";
 import {
   PURCHASE_ORDER_STATUS_LABELS,
@@ -303,6 +304,9 @@ async function receiveOnce(
     where: { id: String(orderId).slice(0, 36) },
     select: {
       id: true,
+      // Never changes (trigger): safe to read before the locks.
+      facilityId: true,
+      facility: { select: { name: true } },
       lines: {
         orderBy: { lineNumber: "asc" },
         take: PURCHASE_ORDER_MAX_LINES,
@@ -310,7 +314,8 @@ async function receiveOnce(
       },
     },
   });
-  if (!order) {
+  // WMS-57: an order of a warehouse outside the scope does not exist.
+  if (!order || !(await orderInScope(client, userId, order.facilityId))) {
     return {
       ok: false,
       reason: "not_found",
@@ -509,6 +514,25 @@ async function receiveOnce(
           return refuseLines({ [lineId]: entry.error }, entry.error);
         }
         return refuse("invalid", "locationId", entry.error);
+      }
+
+      // WMS-57: what an order of a warehouse brings enters that warehouse.
+      if (order.facilityId) {
+        const outside = await tx.location.count({
+          where: {
+            id: {
+              in: [...new Set(entry.lines.map((line) => line.locationId))],
+            },
+            facilityId: { not: order.facilityId },
+          },
+        });
+        if (outside > 0) {
+          return refuse(
+            "invalid",
+            null,
+            `Esta orden es del almacén ${order.facility?.name ?? ""}: recíbela en una ubicación de ese almacén (cámbiate a él si hace falta).`,
+          );
+        }
       }
 
       const receiptId = newId();
@@ -988,9 +1012,23 @@ export async function findReceiptConfirmation(
     actor.organizationId,
   ).purchaseReceipt.findFirst({
     where: { idempotencyKey: key, receivedByUserId: actor.userId },
-    select: { id: true, orderId: true },
+    select: {
+      id: true,
+      orderId: true,
+      order: { select: { facilityId: true } },
+    },
   });
-  return receipt ? { receiptId: receipt.id, orderId: receipt.orderId } : null;
+  if (
+    !receipt ||
+    !(await orderInScope(
+      forOrganization(actor.organizationId),
+      actor.userId,
+      receipt.order.facilityId,
+    ))
+  ) {
+    return null;
+  }
+  return { receiptId: receipt.id, orderId: receipt.orderId };
 }
 
 export type PendingLine = {
@@ -1209,6 +1247,7 @@ export async function getOrderReceipts(
     select: {
       id: true,
       status: true,
+      facilityId: true,
       lines: {
         orderBy: { lineNumber: "asc" },
         take: PURCHASE_ORDER_MAX_LINES,
@@ -1285,7 +1324,9 @@ export async function getOrderReceipts(
       },
     },
   });
-  if (!order) return null;
+  if (!order || !(await orderInScope(client, actor.userId, order.facilityId))) {
+    return null;
+  }
 
   const received = await receivedByLine(
     client,

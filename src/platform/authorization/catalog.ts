@@ -149,6 +149,8 @@ export const PERMISSIONS = [
   "purchasing.suggestion.generate",
   "purchasing.report.read",
   "purchasing.report.export",
+  "purchasing.request.read",
+  "purchasing.request.create",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -261,6 +263,8 @@ export const OWNER_PERMISSIONS: readonly Permission[] = [
   "purchasing.suggestion.generate",
   "purchasing.report.read",
   "purchasing.report.export",
+  "purchasing.request.read",
+  "purchasing.request.create",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
@@ -363,6 +367,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.suggestion.generate",
     "purchasing.report.read",
     "purchasing.report.export",
+    "purchasing.request.read",
+    "purchasing.request.create",
   ],
   warehouse: [
     "platform.organization.read",
@@ -426,6 +432,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.import.confirm",
     "inventory.import.cancel",
     "inventory.export.create",
+    "purchasing.request.read",
+    "purchasing.request.create",
   ],
   buyer: [
     "platform.organization.read",
@@ -466,6 +474,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.suggestion.generate",
     "purchasing.report.read",
     "purchasing.report.export",
+    "purchasing.request.read",
+    "purchasing.request.create",
   ],
   viewer: [
     "platform.organization.read",
@@ -495,6 +505,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.suggestion.read",
     "purchasing.report.read",
     "purchasing.report.export",
+    "purchasing.request.read",
   ],
   supervisor: [
     "platform.organization.read",
@@ -565,6 +576,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.order.read",
     "purchasing.receipt.read",
     "purchasing.receipt.create",
+    "purchasing.request.read",
+    "purchasing.request.create",
   ],
   operator: [
     "platform.organization.read",
@@ -650,6 +663,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.suggestion.read",
     "purchasing.report.read",
     "purchasing.report.export",
+    "purchasing.request.read",
   ],
 };
 

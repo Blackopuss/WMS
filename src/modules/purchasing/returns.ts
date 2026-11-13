@@ -14,7 +14,11 @@ import {
   type TenantDb,
 } from "@/server";
 
-import { PURCHASE_ORDER_MAX_LINES, formatOrderNumber } from "./orders";
+import {
+  PURCHASE_ORDER_MAX_LINES,
+  formatOrderNumber,
+  orderInScope,
+} from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
 import { inTermsOf } from "./receipts";
 
@@ -242,10 +246,15 @@ export async function returnToSupplier(
     select: {
       id: true,
       orderId: true,
+      order: { select: { facilityId: true } },
       lines: { select: { productId: true, locationId: true } },
     },
   });
-  if (!receipt) {
+  // WMS-57: an order of a warehouse outside the scope does not exist.
+  if (
+    !receipt ||
+    !(await orderInScope(client, userId, receipt.order.facilityId))
+  ) {
     return {
       ok: false,
       reason: "not_found",
@@ -531,7 +540,20 @@ export async function findReturnConfirmation(
     actor.organizationId,
   ).purchaseReturn.findFirst({
     where: { idempotencyKey: key, returnedByUserId: actor.userId },
-    select: { id: true },
+    select: {
+      id: true,
+      receipt: { select: { order: { select: { facilityId: true } } } },
+    },
   });
-  return found ? { returnId: found.id } : null;
+  if (
+    !found ||
+    !(await orderInScope(
+      forOrganization(actor.organizationId),
+      actor.userId,
+      found.receipt.order.facilityId,
+    ))
+  ) {
+    return null;
+  }
+  return { returnId: found.id };
 }

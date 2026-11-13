@@ -3,6 +3,7 @@ import "server-only";
 import { forOrganization } from "@/server";
 
 import { formatOrderNumber } from "./orders";
+import { formatRequestNumber } from "./request-states";
 
 /**
  * What would be left halfway if Compras is taken away from a company
@@ -49,6 +50,27 @@ export async function purchasingOpenWork(
   if (drafts.length > 0) {
     lines.push(
       `${drafts.length === 1 ? "1 borrador" : `${drafts.length} borradores`} (${listed(drafts)}) sin confirmar.`,
+    );
+  }
+  // WMS-57: requests not yet turned into orders.
+  const requests = await client.purchaseRequest.findMany({
+    where: { status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] } },
+    orderBy: { number: "asc" },
+    take: 500,
+    select: { number: true, status: true },
+  });
+  const waiting = requests
+    .filter((request) => request.status !== "DRAFT")
+    .map((request) => formatRequestNumber(request.number));
+  if (waiting.length > 0) {
+    lines.push(
+      `${waiting.length === 1 ? "1 solicitud de compra espera" : `${waiting.length} solicitudes de compra esperan`} a Compras (${listed(waiting)}): ya no se podrá${waiting.length === 1 ? "" : "n"} atender ni convertir en orden.`,
+    );
+  }
+  const requestDrafts = requests.length - waiting.length;
+  if (requestDrafts > 0) {
+    lines.push(
+      `${requestDrafts === 1 ? "1 solicitud de compra" : `${requestDrafts} solicitudes de compra`} en borrador sin enviar.`,
     );
   }
   const mails = await client.purchaseOrderDelivery.count({

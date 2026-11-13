@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { getModuleAccess } from "@/platform/billing";
 import { listSuppliers } from "@/platform/contacts";
+import { getActiveFacility, listFacilities } from "@/platform/locations";
 
 import { createPurchaseOrderAction } from "../actions";
 import { OrderForm } from "../order-form";
@@ -57,10 +58,17 @@ export default async function NuevaOrdenPage({
       </PageContainer>
     );
   }
-  const suppliers = await listSuppliers(
-    { organizationId: access.organization.id, userId: access.user.id },
-    { pageSize: 100 },
-  );
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  const suppliers = await listSuppliers(actor, { pageSize: 100 });
+  // WMS-57: the order is for a warehouse; the active one unless the
+  // person works in more than one and chooses.
+  const [facilities, active] = await Promise.all([
+    access.can("inventory.location.read") ? listFacilities(actor) : [],
+    getActiveFacility(actor),
+  ]);
   const { proveedor } = await searchParams;
   // A supplier named in the address is chosen only if it is one of ours.
   const chosen =
@@ -96,7 +104,16 @@ export default async function NuevaOrdenPage({
         <>
           <OrderForm
             action={createPurchaseOrderAction}
-            initial={{ supplierId: chosen, expectedOn: "", notes: "" }}
+            initial={{
+              supplierId: chosen,
+              facilityId: active.id,
+              expectedOn: "",
+              notes: "",
+            }}
+            facilities={facilities.map((facility) => ({
+              id: facility.id,
+              name: facility.name,
+            }))}
             suppliers={suppliers.items.map((supplier) => ({
               id: supplier.id,
               name: supplier.name,

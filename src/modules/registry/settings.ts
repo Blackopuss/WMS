@@ -1,4 +1,5 @@
 import { INVENTORY_SETTINGS } from "@/modules/inventory";
+import { PURCHASING_SETTINGS } from "@/modules/purchasing";
 import {
   assertValidRegistry,
   type SettingDefinition,
@@ -11,6 +12,7 @@ import {
  */
 export const operationSettings: readonly SettingDefinition[] = [
   ...INVENTORY_SETTINGS,
+  ...PURCHASING_SETTINGS,
 ];
 
 assertValidRegistry(operationSettings);

@@ -13,7 +13,7 @@ import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { composeOrderPdf } from "./order-pdf";
 import type { PurchaseOrderStatus } from "./order-states";
-import { formatOrderNumber } from "./orders";
+import { formatOrderNumber, orderInScope } from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
 
 /**
@@ -137,11 +137,15 @@ export async function requestOrderDelivery(
               id: true,
               number: true,
               status: true,
+              facilityId: true,
               contact: { select: { name: true, email: true } },
             },
           })
         : null;
-      if (!order) throw refuse("not_found", "Esta orden ya no existe.");
+      // WMS-57: an order of a warehouse outside the scope does not exist.
+      if (!order || !(await orderInScope(tx, userId, order.facilityId))) {
+        throw refuse("not_found", "Esta orden ya no existe.");
+      }
       const problem = stateProblem(order.status);
       if (problem) throw refuse("invalid_state", problem);
       const pending = await tx.purchaseOrderDelivery.findFirst({
@@ -278,10 +282,13 @@ export async function getOrderDeliveries(
     select: {
       id: true,
       status: true,
+      facilityId: true,
       contact: { select: { name: true, email: true } },
     },
   });
-  if (!order) return null;
+  if (!order || !(await orderInScope(client, userId, order.facilityId))) {
+    return null;
+  }
   const rows = await client.purchaseOrderDelivery.findMany({
     where: { orderId: order.id },
     orderBy: [{ requestedAt: "desc" }, { id: "desc" }],

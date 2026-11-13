@@ -1,4 +1,5 @@
 import { INVENTORY_APPROVAL_TYPES } from "@/modules/inventory";
+import { PURCHASING_APPROVAL_TYPES } from "@/modules/purchasing";
 import {
   assertValidApprovalTypes,
   type ApprovalType,
@@ -12,6 +13,7 @@ import {
  */
 export const approvalTypes: readonly ApprovalType[] = [
   ...INVENTORY_APPROVAL_TYPES,
+  ...PURCHASING_APPROVAL_TYPES,
 ];
 
 assertValidApprovalTypes(approvalTypes);

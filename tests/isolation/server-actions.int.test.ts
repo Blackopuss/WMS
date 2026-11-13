@@ -386,9 +386,9 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/purchasing/order-close.int.test.ts",
   },
   createPurchaseOrderAction: {
-    input: "id de proveedor, día esperado y notas",
+    input: "id de proveedor, almacén elegido, día esperado y notas",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); el proveedor se busca solo entre los de esa empresa",
+      "sesión y empresa activa (requireOrganizationContext); el proveedor se busca solo entre los de esa empresa y el almacén solo entre los del alcance de la persona (WMS-57)",
     coveredBy: "tests/purchasing/orders.int.test.ts",
   },
   updatePurchaseOrderAction: {
@@ -987,6 +987,57 @@ const REVIEWED: Record<string, Review> = {
     identity:
       "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo del tipo, y escribe solo en esa empresa",
     coveredBy: "tests/platform/approvals.int.test.ts",
+  },
+  // WMS-57 (ADR 0055): purchase requests.
+  createPurchaseRequestAction: {
+    input:
+      "producto (fijado por la página), cómo y cuánto se pide, para cuándo y nota",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud nace del almacén activo de esa persona y el producto se busca solo en esa empresa",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  addRequestLineAction: {
+    input:
+      "solicitud y producto (fijados por la página), cómo y cuánto se pide",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; solo un borrador de esa misma persona",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  updateRequestLineAction: {
+    input: "solicitud y línea (fijadas por la página), cómo y cuánto se pide",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; solo un borrador de esa misma persona",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  removeRequestLineAction: {
+    input: "solicitud y línea (fijadas por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; solo un borrador de esa misma persona",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  submitPurchaseRequestAction: {
+    input: "id de la solicitud",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; solo quien la pidió la envía, y la regla de aprobación se lee de la base",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  cancelPurchaseRequestAction: {
+    input: "id de la solicitud",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; solo quien la pidió la retira (y su autorización pendiente, que también es suya)",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  rejectPurchaseRequestAction: {
+    input: "id de la solicitud y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; exige purchasing.order.create",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
+  },
+  convertPurchaseRequestAction: {
+    input: "id de la solicitud y el proveedor de cada línea",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea solo en esa empresa y dentro del alcance de la persona; exige purchasing.order.create; los proveedores se buscan solo entre los de esa empresa; los costos los pone el servidor solo para quien puede registrarlos",
+    coveredBy: "tests/purchasing/requests.int.test.ts",
   },
 };
 

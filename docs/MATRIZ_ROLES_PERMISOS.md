@@ -204,8 +204,12 @@ Los costos no se filtran indirectamente por ficha de producto, historial, panel,
 | `purchasing.suggestion.generate` | Generar borradores por proveedor desde sugerencias; exige `purchasing.order.create`; CMP-14. | Sí | Sí | No | Sí | No | No | No | No | No |
 | `purchasing.report.read` | Consultar pendientes y compras por proveedor; los costos e importes solo con `purchasing.cost.read`; CMP-15. | Sí | Sí | No | Sí | Sí | No | No | No | Sí |
 | `purchasing.report.export` | Exportar reportes de Compras que se pueden leer, sin costos para quien no los ve; CMP-15; preguntas 4 y 5. | Sí | Sí | No | Sí | Sí | No | No | No | Sí |
+| `purchasing.request.read` | Consultar solicitudes de compra, sus líneas, en qué van y las órdenes que salieron de ellas, sin costos; WMS-57. | Sí | Sí | Sí | Sí | Sí | Sí | No | No | Sí |
+| `purchasing.request.create` | Pedir mercancía a Compras: escribir, enviar y retirar una solicitud propia, sin costos; pedir no es comprar (convertirla en orden exige `purchasing.order.create`); WMS-57. | Sí | Sí | Sí | Sí | No | Sí | No | No | No |
 
 No se propone una aprobación separada de órdenes ni un permiso activo `purchasing.order.approve`: CMP-05 solo define borrador → enviada → parcial → recibida o cancelada. Ese identificador sería una **sugerencia de ampliación**, denegada mientras no se apruebe el flujo de la pregunta 3. No se introducen pagos a proveedores, cuentas por pagar, importación masiva de órdenes ni un módulo de contabilidad.
+
+Solicitudes de compra (WMS-57, ADR 0055): Almacén y Supervisión **piden** mercancía con `purchasing.request.create`, pero siguen sin comprar (NEG-03): no ven órdenes, costos ni proveedores por esa vía, y la comparación de proveedores existe solo con `purchasing.cost.read`. Atender, rechazar o convertir una solicitud exige `purchasing.order.create`; si la empresa enciende la regla de aprobación de solicitudes, autorizar exige lo mismo. Almacenista, Montacarguista y Consulta no piden (decisión abierta del fundador para el piso).
 
 ## Cobertura de pasos sin permiso interactivo propio
 

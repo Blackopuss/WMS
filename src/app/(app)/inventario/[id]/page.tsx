@@ -8,6 +8,7 @@ import {
   Printer,
   Scale,
   ShieldAlert,
+  ShoppingCart,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -195,6 +196,13 @@ export default async function ProductoPage({
           label: "Corregir existencias",
           icon: Scale,
         },
+        // WMS-57: ask Compras for it.
+        access.allows("purchasing.request.create") &&
+          access.moduleState("purchasing") === "active" && {
+            href: `/compras/solicitudes/nueva?producto=${product.id}`,
+            label: "Solicitar compra",
+            icon: ShoppingCart,
+          },
         // WMS-11: quarantine, damage, block or release.
         hasStock &&
           (access.allows("inventory.status.change") ||

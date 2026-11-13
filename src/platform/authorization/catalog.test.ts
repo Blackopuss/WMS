@@ -87,9 +87,13 @@ describe("founder decisions (FUN-07)", () => {
   });
 
   it("Almacén does not buy, receive or return goods (2)", () => {
+    // WMS-57: it may ask Compras for goods (a purchase request), which is
+    // not buying: it sees no orders, suppliers nor costs.
     for (const permission of of("warehouse")) {
+      if (permission.startsWith("purchasing.request.")) continue;
       expect(permission.startsWith("purchasing.")).toBe(false);
     }
+    expect(of("warehouse").has("purchasing.request.create")).toBe(true);
   });
 
   it("Almacén adjusts, reverses and applies counts (with a reason, 1)", () => {

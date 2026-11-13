@@ -5,6 +5,7 @@ import { z } from "zod";
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
 import { COST_FORMAT_ERROR, formatStock, parseCost } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
+import { loadScope } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import {
   getUnit,
@@ -12,6 +13,11 @@ import {
   resolveConversion,
   type Capture,
 } from "@/platform/catalog";
+import {
+  activeFacilityOf,
+  isFacilityInScope,
+  type LocationScopeReader,
+} from "@/platform/locations";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -27,6 +33,7 @@ import {
   type PurchaseOrderStatus,
 } from "./order-states";
 import type { PurchasingActor } from "./product-suppliers";
+import { formatRequestNumber } from "./request-states";
 
 /**
  * Purchase orders: the draft and its lines (CMP-04). An order is what the
@@ -95,6 +102,7 @@ const headerSchema = z.object({
 export type OrderHeaderInput = z.input<typeof headerSchema>;
 export type OrderField =
   | "supplierId"
+  | "facilityId"
   | "expectedOn"
   | "notes"
   | "productId"
@@ -144,13 +152,84 @@ function headerErrors(error: z.ZodError): OrderFailure {
 export type CreateOrderResult =
   { ok: true; orderId: string; number: number } | OrderFailure;
 
+// ---------------------------------------------------------------------------
+// The warehouse of an order (WMS-57, ADR 0055)
+
+/**
+ * Whether an order exists for the person: one of the whole company (no
+ * warehouse, as every order written before WMS-57) or of a warehouse in
+ * their scope. Everything that reads or changes one order asks this.
+ */
+export async function orderInScope(
+  client: LocationScopeReader,
+  userId: string,
+  facilityId: string | null,
+): Promise<boolean> {
+  return facilityId === null || isFacilityInScope(client, userId, facilityId);
+}
+
+/**
+ * `where` of the orders that exist for the person (reports, lookups by
+ * number): of the whole company, or of a warehouse in their scope.
+ */
+export async function visibleOrdersWhere(
+  client: LocationScopeReader,
+  userId: string,
+): Promise<{
+  OR?: ({ facilityId: null } | { facilityId: { in: string[] } })[];
+}> {
+  const scope = await loadScope(client, userId);
+  if (scope === null) return {};
+  return {
+    OR: [
+      { facilityId: null },
+      { facilityId: { in: [...scope.facilities.keys()] } },
+    ],
+  };
+}
+
+/** `where` of the lists (Compras, Recepción): the active warehouse and the whole company. */
+async function listedOrdersWhere(
+  client: Parameters<typeof activeFacilityOf>[0],
+  userId: string,
+) {
+  const active = await activeFacilityOf(client, userId);
+  return { OR: [{ facilityId: null }, { facilityId: active.id }] };
+}
+
+/**
+ * The warehouse a new order is for: the one chosen, when the person may
+ * work there, else their active one.
+ */
+async function facilityForNewOrder(
+  client: Pick<Tx, "facility" | "membership" | "location">,
+  userId: string,
+  chosen: unknown,
+): Promise<{ ok: true; facilityId: string } | OrderFailure> {
+  const id = typeof chosen === "string" ? chosen.trim().slice(0, 36) : "";
+  if (!id) {
+    return {
+      ok: true,
+      facilityId: (await activeFacilityOf(client, userId)).id,
+    };
+  }
+  const facility = await client.facility.findFirst({
+    where: { id, archivedAt: null },
+    select: { id: true },
+  });
+  if (!facility || !(await isFacilityInScope(client, userId, facility.id))) {
+    return refuse("invalid", "facilityId", "Elige un almacén de la lista.");
+  }
+  return { ok: true, facilityId: facility.id };
+}
+
 /**
  * Starts an order for a supplier of the company, as a draft without
  * lines. Its number is the next one of the company.
  */
 export async function createPurchaseOrder(
   actor: PurchasingActor,
-  input: OrderHeaderInput & { supplierId: string },
+  input: OrderHeaderInput & { supplierId: string; facilityId?: string },
 ): Promise<CreateOrderResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -178,6 +257,8 @@ export async function createPurchaseOrder(
       `${supplier.name} está archivado: no se le hacen órdenes.`,
     );
   }
+  const facility = await facilityForNewOrder(client, userId, input.facilityId);
+  if (!facility.ok) return facility;
   const orderId = newId();
   // The number is the next free one. Two orders started at the same
   // moment would ask for the same: the unique index keeps one and the
@@ -198,6 +279,7 @@ export async function createPurchaseOrder(
             contactId: supplier.id,
             expectedOn: parsed.data.expectedOn,
             notes: parsed.data.notes,
+            facilityId: facility.facilityId,
             createdByUserId: userId,
           },
         });
@@ -220,23 +302,132 @@ export async function createPurchaseOrder(
   throw new Error("Could not number the purchase order");
 }
 
+/** Another order took the number in the meantime: the caller starts again. */
+export class OrderNumberTaken extends Error {
+  constructor() {
+    super("purchase order number taken");
+  }
+}
+
+export type DraftOrderInput = {
+  /** The next number of the company, read in the same transaction. */
+  number: number;
+  supplierId: string;
+  supplierName: string;
+  notes: string | null;
+  expectedOn?: Date | null;
+  facilityId: string | null;
+  purchaseRequestId?: string | null;
+  /** Where it came from, for the audit log: «sugerencia desde mínimos». */
+  origin: string;
+  lines: { productId: string; capture: Capture; unitCost: string | null }[];
+};
+
+/**
+ * Writes a draft with its lines inside the caller's transaction, which
+ * already locked the products and checked the supplier, the permissions
+ * and who may record costs (CMP-14 suggestions, WMS-57 requests). Each
+ * line is converted here with the content in force (`resolveConversion`)
+ * and carries the code the supplier knows the product by. Answers the line
+ * that cannot be converted, without writing anything; throws
+ * `OrderNumberTaken` when the number was taken meanwhile.
+ */
+export async function insertDraftOrder(
+  tx: Tx,
+  actor: PurchasingActor,
+  draft: DraftOrderInput,
+): Promise<
+  { ok: true; orderId: string } | { ok: false; line: number; error: string }
+> {
+  const { organizationId, userId } = actor;
+  const resolved = [];
+  for (const [index, line] of draft.lines.entries()) {
+    const result = await resolveConversion(tx, line.productId, line.capture);
+    if (!result.ok) return { ok: false, line: index, error: result.error };
+    resolved.push(result);
+  }
+  const links = await tx.productSupplier.findMany({
+    where: {
+      productId: { in: draft.lines.map((line) => line.productId) },
+      contactId: draft.supplierId,
+    },
+    select: { productId: true, supplierSku: true },
+  });
+  const skuOf = new Map(links.map((row) => [row.productId, row.supplierSku]));
+  const orderId = newId();
+  try {
+    await tx.purchaseOrder.create({
+      data: {
+        id: orderId,
+        organizationId,
+        number: draft.number,
+        contactId: draft.supplierId,
+        notes: draft.notes,
+        expectedOn: draft.expectedOn ?? null,
+        facilityId: draft.facilityId,
+        purchaseRequestId: draft.purchaseRequestId ?? null,
+        createdByUserId: userId,
+      },
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      throw new OrderNumberTaken();
+    }
+    throw error;
+  }
+  await tx.purchaseOrderLine.createMany({
+    data: resolved.map(({ conversion, product }, index) => ({
+      id: newId(),
+      organizationId,
+      orderId,
+      lineNumber: index + 1,
+      productId: draft.lines[index]!.productId,
+      supplierSku: skuOf.get(draft.lines[index]!.productId) ?? null,
+      capturedQuantity: conversion.capturedQuantity.toString(),
+      presentationId: conversion.presentation?.id ?? null,
+      presentationVersionId: conversion.presentation?.versionId ?? null,
+      factor: conversion.factor.toString(),
+      baseQuantity: conversion.baseQuantity.toString(),
+      unitCode: product.unitCode,
+      unitCost: draft.lines[index]!.unitCost,
+    })),
+  });
+  await recordAuditEvent(tx, {
+    organizationId,
+    actorUserId: userId,
+    action: "purchase_order.created",
+    target: { type: "purchase_order", id: orderId },
+    metadata: {
+      orden: formatOrderNumber(draft.number),
+      proveedor: draft.supplierName,
+      origen: draft.origin,
+      productos: draft.lines.length,
+    },
+  });
+  return { ok: true, orderId };
+}
+
 /**
  * The order, locked for the rest of the transaction and still a draft.
  * Everything that changes an order starts here, so two changes of the
  * same order happen one after the other and none lands on an order that
  * is no longer a draft.
  */
-async function lockDraft(tx: Tx, orderId: string) {
+async function lockDraft(tx: Tx, userId: string, orderId: string) {
   const [id] = await lockRows(tx, "purchaseOrder", [
     String(orderId).slice(0, 36),
   ]);
   const order = id
     ? await tx.purchaseOrder.findFirst({
         where: { id },
-        select: { id: true, status: true, contactId: true },
+        select: { id: true, status: true, contactId: true, facilityId: true },
       })
     : null;
-  if (!order) throw new Rejected(refuse("not_found", null, NOT_FOUND));
+  // WMS-57: an order of a warehouse outside the person's scope does not
+  // exist for them.
+  if (!order || !(await orderInScope(tx, userId, order.facilityId))) {
+    throw new Rejected(refuse("not_found", null, NOT_FOUND));
+  }
   if (order.status !== "DRAFT") {
     throw new Rejected(refuse("not_draft", null, NOT_DRAFT));
   }
@@ -273,7 +464,7 @@ export async function updatePurchaseOrder(
   const parsed = headerSchema.safeParse(input);
   if (!parsed.success) return headerErrors(parsed.error);
   return inOrder(organizationId, async (tx) => {
-    const order = await lockDraft(tx, orderId);
+    const order = await lockDraft(tx, userId, orderId);
     await tx.purchaseOrder.updateMany({
       where: { id: order.id },
       data: { expectedOn: parsed.data.expectedOn, notes: parsed.data.notes },
@@ -295,7 +486,8 @@ export type OrderLineInput = {
   unitCost?: string;
 };
 
-function captureOf(text: string, quantity: string): Capture | null {
+/** What a form sent as «how it is asked for»: `base` or `p:<id>`. */
+export function captureOf(text: string, quantity: string): Capture | null {
   if (text === "base" || text === "") return { kind: "base", quantity };
   const match = /^p:([0-9a-f-]{36})$/i.exec(text);
   return match
@@ -383,7 +575,7 @@ export async function addOrderLine(
     return refuse("invalid", "productId", "Elige el producto.");
   }
   return inOrder(organizationId, async (tx) => {
-    const order = await lockDraft(tx, orderId);
+    const order = await lockDraft(tx, userId, orderId);
     const product = await tx.product.findFirst({
       where: { id: productId },
       select: { id: true, sku: true, status: true },
@@ -443,7 +635,7 @@ export async function addOrderLine(
 }
 
 /** The draft a line belongs to, locked; the line as it is. */
-async function lockLine(tx: Tx, lineId: string) {
+async function lockLine(tx: Tx, userId: string, lineId: string) {
   // The order is not known before reading the line; it is locked right
   // after and the line read again under that lock.
   const found = await tx.purchaseOrderLine.findFirst({
@@ -455,7 +647,7 @@ async function lockLine(tx: Tx, lineId: string) {
       refuse("not_found", null, "Esa línea ya no está en la orden."),
     );
   }
-  await lockDraft(tx, found.orderId);
+  await lockDraft(tx, userId, found.orderId);
   const line = await tx.purchaseOrderLine.findFirst({
     where: { id: found.id },
     select: { id: true, productId: true },
@@ -483,7 +675,7 @@ export async function updateOrderLine(
   const cost = await costOf(actor, input);
   if (!cost.ok) return cost;
   return inOrder(organizationId, async (tx) => {
-    const line = await lockLine(tx, lineId);
+    const line = await lockLine(tx, userId, lineId);
     const resolved = await resolveLine(tx, line.productId, input);
     await tx.purchaseOrderLine.updateMany({
       where: { id: line.id },
@@ -508,14 +700,14 @@ export async function removeOrderLine(
     "purchasing.order.update",
   );
   return inOrder(organizationId, async (tx) => {
-    const line = await lockLine(tx, lineId);
+    const line = await lockLine(tx, userId, lineId);
     await tx.purchaseOrderLine.deleteMany({ where: { id: line.id } });
     return { ok: true as const };
   });
 }
 
 /** The order, locked for the rest of the transaction, in whatever state. */
-async function lockOrder(tx: Tx, orderId: string) {
+async function lockOrder(tx: Tx, userId: string, orderId: string) {
   const [id] = await lockRows(tx, "purchaseOrder", [
     String(orderId).slice(0, 36),
   ]);
@@ -526,11 +718,14 @@ async function lockOrder(tx: Tx, orderId: string) {
           id: true,
           number: true,
           status: true,
+          facilityId: true,
           contact: { select: { name: true } },
         },
       })
     : null;
-  if (!order) throw new Rejected(refuse("not_found", null, NOT_FOUND));
+  if (!order || !(await orderInScope(tx, userId, order.facilityId))) {
+    throw new Rejected(refuse("not_found", null, NOT_FOUND));
+  }
   return order;
 }
 
@@ -583,7 +778,7 @@ export async function submitPurchaseOrder(
         products.map((line) => line.productId),
       ),
     );
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, userId, orderId);
     if (order.status === "SENT") {
       return {
         ok: true as const,
@@ -683,7 +878,7 @@ export async function cancelPurchaseOrder(
     return refuse("invalid", "reason", parsed.error.issues[0]!.message);
   }
   return inOrder(organizationId, async (tx) => {
-    const order = await lockOrder(tx, orderId);
+    const order = await lockOrder(tx, userId, orderId);
     if (order.status === "CANCELLED") {
       return {
         ok: true as const,
@@ -819,6 +1014,10 @@ export type PurchaseOrderDetail = {
   expectedOn: string | null;
   notes: string | null;
   createdAt: Date;
+  /** Its warehouse; null for an order of the whole company (WMS-57). */
+  facilityName: string | null;
+  /** The purchase request it was made from, if any (WMS-57). */
+  request: { id: string; numberText: string } | null;
   lines: PurchaseOrderLine[];
   costsVisible: boolean;
   /** Sum of the lines with a cost; absent for who may not see costs. */
@@ -915,6 +1114,9 @@ export async function getPurchaseOrder(
       cancelReason: true,
       closedAt: true,
       closeReason: true,
+      facilityId: true,
+      facility: { select: { name: true } },
+      purchaseRequest: { select: { id: true, number: true } },
       contact: { select: { id: true, name: true } },
       lines: {
         orderBy: { lineNumber: "asc" },
@@ -924,7 +1126,16 @@ export async function getPurchaseOrder(
       },
     },
   });
-  if (!row) return null;
+  if (
+    !row ||
+    !(await orderInScope(
+      forOrganization(actor.organizationId),
+      actor.userId,
+      row.facilityId,
+    ))
+  ) {
+    return null;
+  }
   const rows: LineRow[] = row.lines;
   const detail: PurchaseOrderDetail = {
     id: row.id,
@@ -948,6 +1159,13 @@ export async function getPurchaseOrder(
       : null,
     notes: row.notes,
     createdAt: row.createdAt,
+    facilityName: row.facility?.name ?? null,
+    request: row.purchaseRequest
+      ? {
+          id: row.purchaseRequest.id,
+          numberText: formatRequestNumber(row.purchaseRequest.number),
+        }
+      : null,
     lines: rows.map((line) => toLine(line, costsVisible)),
     costsVisible,
   };
@@ -1020,12 +1238,18 @@ export async function listPurchaseOrders(
   const toReceive = options.toReceive === true;
   const status =
     !toReceive && isPurchaseOrderStatus(options.status) ? options.status : null;
-  const where = toReceive
-    ? { status: { in: [...AWAITING_RECEIPT] } }
-    : status
-      ? { status }
-      : {};
   const client = forOrganization(actor.organizationId);
+  const where = {
+    AND: [
+      toReceive
+        ? { status: { in: [...AWAITING_RECEIPT] } }
+        : status
+          ? { status }
+          : {},
+      // WMS-57: the active warehouse and the orders of the whole company.
+      await listedOrdersWhere(client, actor.userId),
+    ],
+  };
   const total = await client.purchaseOrder.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / PURCHASE_ORDER_PAGE_SIZE));
   const page =
