@@ -246,9 +246,14 @@ async function inFacilities(
 const LIMITED_MESSAGE =
   "Tu acceso está limitado a ciertos almacenes: no puedes crear uno nuevo.";
 
-/** Stops a change to a warehouse the person may not work in (WMS-20). */
+/**
+ * Stops a change to a warehouse unless the whole of it is open to the
+ * person (WMS-20): its name, code and archiving belong to the warehouse,
+ * not to one zone.
+ */
 async function checkScope(tx: Tx, userId: string, facilityId: string) {
-  if (!facilityInScope(await loadScope(tx, userId), facilityId)) {
+  const scope = await loadScope(tx, userId);
+  if (scope !== null && scope.facilities.get(facilityId) !== null) {
     stop("not_allowed", FACILITY_OUT_OF_SCOPE_MESSAGE);
   }
 }

@@ -347,6 +347,13 @@ describe("getDaySummary", () => {
     expect(
       await listTasks(owner, { view: "closed", day: "ayer" }),
     ).toMatchObject({ day: null });
+    // A day that does not exist is ignored, not an error.
+    expect(
+      await listTasks(owner, { view: "closed", day: "2026-13-45" }),
+    ).toMatchObject({ day: null });
+    expect(
+      await listOutboundOrders(owner, { pickedOn: "2026-02-30" }),
+    ).toMatchObject({ pickedOn: null });
     expect(await listOutboundOrders(owner, { pickedOn: "ayer" })).toMatchObject(
       { pickedOn: null },
     );

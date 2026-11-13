@@ -264,6 +264,9 @@ async function warnRepeatedEntry(
   const minutes = Number(await readSetting(tx, ENTRY_REPEAT_WINDOW));
   if (!Number.isInteger(minutes) || minutes <= 0) return;
   const now = Date.now();
+  // Only entries the person could see: what happened in another zone is
+  // not theirs to learn from a warning (WMS-20).
+  const scoped = await locationScopeWhere(tx, actor.userId);
   const recent = await tx.stockMovement.findFirst({
     where: {
       type: "ENTRY",
@@ -274,7 +277,9 @@ async function warnRepeatedEntry(
           productId: entry.productId,
           direction: "IN",
           baseQuantity: entry.base.toString(),
-          location: { facilityId: entry.facilityId },
+          location: isLimited(scoped)
+            ? { AND: [{ facilityId: entry.facilityId }, scoped] }
+            : { facilityId: entry.facilityId },
         },
       },
     },

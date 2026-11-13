@@ -546,6 +546,21 @@ describe("a limit and the configuration of warehouses and locations", () => {
       parentId: zoneB,
     });
     expect(inside).toMatchObject({ ok: true });
+    // A code taken outside the zone is refused without naming who has it.
+    expect(
+      await editLocation(owner, generalB, { code: "FUERA-1" }),
+    ).toMatchObject({ ok: true });
+    if (!inside.ok) throw new Error(JSON.stringify(inside));
+    const taken = await editLocation(admin, inside.locationId, {
+      code: "FUERA-1",
+    });
+    expect(taken).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(JSON.stringify(taken)).not.toContain("General");
+    expect(
+      JSON.stringify(
+        await editLocation(owner, inside.locationId, { code: "FUERA-1" }),
+      ),
+    ).toContain("General");
     // Directly in the warehouse, in General, or the levels: no.
     await expect(
       createLocation(admin, { level: 1, name: "Zona 2" }),
@@ -566,6 +581,18 @@ describe("a limit and the configuration of warehouses and locations", () => {
     expect(
       (await db.facility.findUniqueOrThrow({ where: { id: facilityA } })).name,
     ).not.toBe("Mía");
+    // Nor the warehouse they only have a zone of: its name, code and
+    // archiving are of the whole warehouse.
+    expect(
+      await updateFacility(admin, facilityB, { name: "Mía", code: "MIA" }),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect(await archiveFacility(admin, facilityB)).toMatchObject({
+      ok: false,
+      reason: "not_allowed",
+    });
+    expect(
+      await db.facility.findUniqueOrThrow({ where: { id: facilityB } }),
+    ).toMatchObject({ name: "Bodega B", archivedAt: null });
   });
 
   it("with every warehouse of the limit archived there is nowhere to work", async () => {

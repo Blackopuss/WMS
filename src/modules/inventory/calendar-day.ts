@@ -58,6 +58,14 @@ export async function dayWindow(
   let day: string;
   if (typeof of === "string") {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(of)) return null;
+    // A day that does not exist (month 13, day 45) is not a day.
+    const probe = new Date(`${of}T00:00:00Z`);
+    if (
+      Number.isNaN(probe.getTime()) ||
+      probe.toISOString().slice(0, 10) !== of
+    ) {
+      return null;
+    }
     day = of;
   } else {
     day = dayOf(of, timeZone);

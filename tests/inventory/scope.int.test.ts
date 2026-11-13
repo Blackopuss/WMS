@@ -815,4 +815,24 @@ describe("limited to a zone of a warehouse", () => {
     expect(await stockAt(shelfB)).toBeGreaterThan(0);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
+
+  it("the repeated-entry warning does not tell what happened outside the zone", async () => {
+    // Someone else just entered 7 in a shelf outside the zone.
+    await enter(shelfB, "7");
+    const first = await registerEntry(zoned, {
+      productId,
+      locationId: inZone,
+      quantity: "7",
+    });
+    expect(first).toMatchObject({ ok: true });
+    // Their own entry, inside the zone, does warn.
+    expect(
+      await registerEntry(zoned, {
+        productId,
+        locationId: inZone,
+        quantity: "7",
+      }),
+    ).toMatchObject({ ok: false, reason: "repeated_recently" });
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
 });
