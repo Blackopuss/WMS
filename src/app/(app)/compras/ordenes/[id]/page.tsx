@@ -8,6 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PrintLabelLink,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
@@ -450,6 +451,15 @@ ${order.closeReason ?? ""}`,
                       </li>
                     ))}
                   </ul>
+                  {/* WMS-26: a label for each serial that came. */}
+                  {receipt.lines.some((line) => line.bySerial) &&
+                    access.can("inventory.stock.read") && (
+                      <PrintLabelLink
+                        href={`/api/etiquetas/series?recepcion=${receipt.id}`}
+                      >
+                        Imprimir etiquetas de sus series
+                      </PrintLabelLink>
+                    )}
                   {receipt.returns && receipt.returns.length > 0 && (
                     <ul className="space-y-2 border-l-2 pl-3">
                       {receipt.returns.map((back) => (

@@ -42,6 +42,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "inventory.customer_return_received": "Registró una devolución de cliente",
   "inventory.customer_return_decided":
     "Decidió qué pasa con lo devuelto por un cliente",
+  "inventory.labels_printed": "Imprimió etiquetas",
   "inventory.outbound_imported": "Importó pedidos de salida desde un archivo",
   "settings.changed": "Cambió un ajuste de operación",
   "facility.created": "Creó un almacén",
@@ -185,6 +186,8 @@ const FACT_LABELS: readonly (readonly [string, string])[] = [
   ["efectivo", "Efectivo"],
   ["tarjeta", "Tarjeta"],
   ["transferencia", "Transferencia"],
+  ["que", "Qué"],
+  ["etiquetas", "Etiquetas"],
 ];
 
 const shown = (value: unknown): string | null =>

@@ -33,3 +33,4 @@ export { WarehouseCard } from "./warehouse-card";
 export { setTheme, useTheme } from "./theme";
 export { THEME_SCRIPT, THEME_STORAGE_KEY } from "./theme-script";
 export type { Theme } from "./theme";
+export { LabelPrintForm, PrintLabelLink } from "./label-print-form";

@@ -229,10 +229,16 @@ export default async function UbicacionesPage({
           ) : undefined
         }
       />
-      {canUpdate && !showArchived && (
-        <p className="-mt-2">
-          <Link href="/ubicaciones/niveles" className={quietLink}>
-            Cambiar niveles
+      {!showArchived && (
+        <p className="-mt-2 flex flex-wrap gap-x-6">
+          {canUpdate && (
+            <Link href="/ubicaciones/niveles" className={quietLink}>
+              Cambiar niveles
+            </Link>
+          )}
+          {/* WMS-26: what is scanned, on paper. */}
+          <Link href="/ubicaciones/etiquetas" className={quietLink}>
+            Imprimir etiquetas
           </Link>
         </p>
       )}

@@ -31,6 +31,7 @@ import {
   finishPacking,
   addShipmentOrders,
   buildShipmentPdf,
+  buildLabels,
   cancelShipment,
   createShipment,
   dispatchShipment,
@@ -613,6 +614,17 @@ describe("PC-12: limited to warehouse B", () => {
       numberText: "EM-0901",
     });
     expect(await buildShipmentPdf(limited, shipmentId)).toBeNull();
+    // Nor their labels (WMS-26).
+    for (const request of [
+      { kind: "pedido", id: order.orderId },
+      { kind: "bultos", order: order.orderId },
+      { kind: "embarque", id: shipmentId },
+    ] as const) {
+      expect(await buildLabels(limited, request)).toEqual({
+        ok: false,
+        reason: "not_found",
+      });
+    }
     expect((await listShipments(limited)).items).toEqual([]);
     expect((await findTraceMatches(limited, "EM-0901")).matches).toEqual([]);
     for (const result of [

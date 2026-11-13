@@ -8,6 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PrintLabelLink,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,6 +97,9 @@ export default async function LotePage({
         title={`Lote ${lot.code}`}
         description={`${lot.product.name} · ${lot.product.sku}`}
       />
+      <p className="-mt-2">
+        <PrintLabelLink href={`/api/etiquetas/lote?id=${lot.id}`} />
+      </p>
 
       <section
         aria-labelledby="lote-existencias"

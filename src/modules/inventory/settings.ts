@@ -305,6 +305,62 @@ export const CUSTOMER_RETURN_WITHOUT_ORDER = {
   defaultValue: "allow",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-26 (ADR 0047): the size of the labels a «Imprimir etiqueta» link
+ * downloads (the values are `LABEL_FORMATS` of `@/platform/files`). A
+ * letter sheet by default: every office has a printer for it.
+ */
+export const LABEL_FORMAT = {
+  key: "inventory.labels.format",
+  module: "inventory",
+  area: "Etiquetas",
+  label: "Tamaño de las etiquetas",
+  options: [
+    {
+      value: "letter_10",
+      label: "Hoja carta, 10 por hoja",
+      help: "Etiquetas de 4 × 2 pulgadas, para una impresora normal, en hojas adheribles o papel.",
+    },
+    {
+      value: "100x50",
+      label: "Etiqueta de 100 × 50 mm",
+      help: "Para una impresora de etiquetas.",
+    },
+    {
+      value: "100x150",
+      label: "Etiqueta de 100 × 150 mm",
+      help: "Para una impresora de etiquetas; códigos y letra más grandes.",
+    },
+  ],
+  defaultValue: "letter_10",
+} as const satisfies SettingDefinition;
+
+/** WMS-26: which codes a label carries (values: `LABEL_CODES`). */
+export const LABEL_CODES_SETTING = {
+  key: "inventory.labels.codes",
+  module: "inventory",
+  area: "Etiquetas",
+  label: "Códigos de las etiquetas",
+  options: [
+    {
+      value: "both",
+      label: "Código de barras y QR",
+      help: "Sirve con cualquier lector y con la cámara del teléfono.",
+    },
+    {
+      value: "barcode",
+      label: "Solo código de barras",
+      help: "Para lectores que solo leen barras.",
+    },
+    {
+      value: "qr",
+      label: "Solo QR",
+      help: "Más pequeño; lo lee la cámara y los lectores de 2D.",
+    },
+  ],
+  defaultValue: "both",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -317,4 +373,6 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PACKING_MODE,
   SHIPMENT_DETAILS,
   CUSTOMER_RETURN_WITHOUT_ORDER,
+  LABEL_FORMAT,
+  LABEL_CODES_SETTING,
 ];
