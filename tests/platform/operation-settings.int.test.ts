@@ -13,6 +13,10 @@ import {
   CUSTOMER_RETURN_WITHOUT_ORDER,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
+  ABC_BASIS,
+  ABC_CUTS,
+  ABC_PERIOD,
+  COUNT_REVIEW_THRESHOLD,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   createOutboundOrder,
@@ -210,6 +214,11 @@ describe("operation settings", () => {
         defaultValue: "letter_10",
       },
       { key: LABEL_CODES_SETTING.key, value: "both", defaultValue: "both" },
+      // WMS-55: ABC by exit lines, 80/15/5 over 90 days; no review asked.
+      { key: ABC_BASIS.key, value: "lines", defaultValue: "lines" },
+      { key: ABC_CUTS.key, value: "80_15_5", defaultValue: "80_15_5" },
+      { key: ABC_PERIOD.key, value: "90", defaultValue: "90" },
+      { key: COUNT_REVIEW_THRESHOLD.key, value: "off", defaultValue: "off" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -225,6 +234,10 @@ describe("operation settings", () => {
       { key: CUSTOMER_RETURN_WITHOUT_ORDER.key, value: "allow" },
       { key: LABEL_FORMAT.key, value: "letter_10" },
       { key: LABEL_CODES_SETTING.key, value: "both" },
+      { key: ABC_BASIS.key, value: "lines" },
+      { key: ABC_CUTS.key, value: "80_15_5" },
+      { key: ABC_PERIOD.key, value: "90" },
+      { key: COUNT_REVIEW_THRESHOLD.key, value: "off" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

@@ -361,6 +361,120 @@ export const LABEL_CODES_SETTING = {
   defaultValue: "both",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-55 (ADR 0050): what the ABC classification of a cycle count program
+ * measures. It is derived on each round from the exits of the period
+ * (`ABC_PERIOD`), never typed by hand nor stored.
+ */
+export const ABC_BASIS = {
+  key: "inventory.abc.basis",
+  module: "inventory",
+  area: "Conteos",
+  label: "Qué hace a un producto clase A",
+  options: [
+    {
+      value: "lines",
+      label: "Cuántas veces salió",
+      help: "Lo que más se mueve se cuenta más seguido.",
+    },
+    {
+      value: "value",
+      label: "Cuánto valía lo que salió",
+      help: "Lo que salió por cantidad, al costo promedio de hoy.",
+    },
+  ],
+  defaultValue: "lines",
+} as const satisfies SettingDefinition;
+
+/** WMS-55: where the classes A, B and C split, of what was measured. */
+export const ABC_CUTS = {
+  key: "inventory.abc.cuts",
+  module: "inventory",
+  area: "Conteos",
+  label: "Cómo se reparten las clases A, B y C",
+  options: [
+    {
+      value: "80_15_5",
+      label: "A: 80 %, B: 15 %, C: 5 %",
+      help: "Pocos productos A, que hacen la mayor parte del movimiento.",
+    },
+    {
+      value: "70_20_10",
+      label: "A: 70 %, B: 20 %, C: 10 %",
+      help: "Menos productos en A.",
+    },
+    {
+      value: "50_30_20",
+      label: "A: 50 %, B: 30 %, C: 20 %",
+      help: "Clases más parejas.",
+    },
+  ],
+  defaultValue: "80_15_5",
+} as const satisfies SettingDefinition;
+
+/** WMS-55: how far back the ABC classification looks. */
+export const ABC_PERIOD = {
+  key: "inventory.abc.period",
+  module: "inventory",
+  area: "Conteos",
+  label: "Periodo para la clasificación ABC",
+  options: [
+    {
+      value: "30",
+      label: "Últimos 30 días",
+      help: "Sigue rápido los cambios.",
+    },
+    { value: "90", label: "Últimos 90 días", help: "Un trimestre." },
+    { value: "180", label: "Últimos 180 días", help: "Medio año." },
+    {
+      value: "365",
+      label: "Último año",
+      help: "Para lo que se mueve por temporadas.",
+    },
+  ],
+  defaultValue: "90",
+} as const satisfies SettingDefinition;
+
+/**
+ * WMS-55: from which difference a count asks to be reviewed before it is
+ * applied. Off by default. Today it marks the count and applying asks to
+ * confirm the review with the reason; WMS-41 will turn it into an approval.
+ */
+export const COUNT_REVIEW_THRESHOLD = {
+  key: "inventory.count.review_threshold",
+  module: "inventory",
+  area: "Conteos",
+  label: "Pedir revisión de un conteo con diferencias grandes",
+  options: [
+    {
+      value: "off",
+      label: "Nunca",
+      help: "Un conteo se aplica con su motivo, como siempre.",
+    },
+    {
+      value: "any",
+      label: "Con cualquier diferencia",
+      help: "Toda diferencia se revisa antes de aplicar.",
+    },
+    {
+      value: "10",
+      label: "Si un producto difiere más de 10 %",
+      help: "De lo que tenía el sistema al contarlo.",
+    },
+    {
+      value: "25",
+      label: "Si un producto difiere más de 25 %",
+      help: "De lo que tenía el sistema al contarlo.",
+    },
+    {
+      value: "50",
+      label: "Si un producto difiere más de 50 %",
+      help: "De lo que tenía el sistema al contarlo.",
+    },
+  ],
+  defaultValue: "off",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -375,4 +489,8 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   CUSTOMER_RETURN_WITHOUT_ORDER,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
+  ABC_BASIS,
+  ABC_CUTS,
+  ABC_PERIOD,
+  COUNT_REVIEW_THRESHOLD,
 ];

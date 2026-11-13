@@ -19,6 +19,7 @@ import {
   locationPath,
   locationScopeWhere,
 } from "@/platform/locations";
+import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import {
@@ -31,6 +32,8 @@ import { containedAt } from "./contained";
 import { lineCost, openCostBook } from "./valuation";
 import { availableOfLot, lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
+import { COUNT_REVIEW_THRESHOLD } from "./settings";
+import { todayCountsWhere } from "./cycle-counts";
 
 /**
  * Physical counts: capture (INV-31). A count belongs to one location.
@@ -90,6 +93,29 @@ const reject = <Field extends string>(
 };
 
 const NOT_OPEN = "Este conteo ya está cerrado: no admite más cambios.";
+
+/**
+ * WMS-55 (ADR 0050): a difference that asks for a review before applying,
+ * by the company's setting (`COUNT_REVIEW_THRESHOLD`, off by default). A
+ * product the system had none of and that was found differs by «100 %».
+ */
+export function needsReview(
+  threshold: string,
+  system: Decimal,
+  difference: Decimal,
+): boolean {
+  if (threshold === "off" || difference.isZero()) return false;
+  if (threshold === "any" || system.lessThanOrEqualTo(0)) return true;
+  const percent = Number(threshold);
+  if (!Number.isFinite(percent)) return false;
+  return difference.abs().times(100).greaterThan(system.times(percent));
+}
+
+/** «Más de 10 % de diferencia», for the screen. */
+export const reviewThresholdText = (threshold: string) =>
+  threshold === "any"
+    ? "cualquier diferencia"
+    : `más de ${threshold} % de diferencia`;
 
 const openSchema = z.object({
   locationId: z.string().trim().min(1, "Elige la ubicación que vas a contar."),
@@ -606,23 +632,66 @@ export type CountSummary = {
   closedAt: Date | null;
   /** Products counted so far. */
   products: number;
+  /** WMS-55: the cycle count program that generated it, and its day. */
+  programName: string | null;
+  programDay: string | null;
 };
 
-/** Counts of the company: the open ones first, then the latest. */
-export async function listCounts(
+/** Counts shown on a page of the list. */
+export const COUNTS_PAGE_SIZE = 30;
+
+export type CountListView = "all" | "today";
+
+export type CountPage = {
+  items: CountSummary[];
+  view: CountListView;
+  /** With «De hoy», the day of the company's calendar. */
+  day: string | null;
+  total: number;
+  page: number;
+  pageCount: number;
+};
+
+/**
+ * Counts the person reaches, the open ones first, then the latest (INV-31).
+ * «De hoy» (WMS-55) keeps the ones generated for today and the ones opened
+ * by hand today, in the warehouse the person works in (`todayCountsWhere`,
+ * the same condition as Inicio).
+ */
+export async function listCountPage(
   actor: InventoryActor,
-  options: { limit?: number } = {},
-): Promise<CountSummary[]> {
+  options: { view?: unknown; page?: number; pageSize?: number } = {},
+): Promise<CountPage> {
   await assertModulePermission(
     actor.organizationId,
     actor.userId,
     "inventory.count.read",
   );
   const client = forOrganization(actor.organizationId);
+  const view: CountListView = options.view === "today" ? "today" : "all";
+  let day: string | null = null;
+  let where: object = await countScope(client, actor.userId);
+  if (view === "today") {
+    const today = await todayCountsWhere(client, actor.userId);
+    day = today.day;
+    where = today.where;
+  }
+  const pageSize = Math.min(
+    Math.max(options.pageSize ?? COUNTS_PAGE_SIZE, 1),
+    100,
+  );
+  const total = await client.stockCount.count({ where });
+  const pageCount = Math.max(Math.ceil(total / pageSize), 1);
+  const page = Math.min(
+    Math.max(Math.trunc(options.page ?? 1) || 1, 1),
+    pageCount,
+  );
   const counts = await client.stockCount.findMany({
-    where: await countScope(client, actor.userId),
-    orderBy: [{ startedAt: "desc" }, { id: "desc" }],
-    take: Math.min(Math.max(options.limit ?? 30, 1), 100),
+    where,
+    // The enum sorts as declared: OPEN first.
+    orderBy: [{ status: "asc" }, { startedAt: "desc" }, { id: "desc" }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
     select: {
       id: true,
       status: true,
@@ -630,6 +699,8 @@ export async function listCounts(
       startedAt: true,
       startedByUserId: true,
       closedAt: true,
+      programDay: true,
+      program: { select: { name: true } },
       location: { select: locationSelect },
       _count: { select: { lines: true } },
     },
@@ -638,8 +709,13 @@ export async function listCounts(
     actor.organizationId,
     counts.map((count) => count.startedByUserId),
   );
-  return counts
-    .map((count) => ({
+  return {
+    view,
+    day,
+    total,
+    page,
+    pageCount,
+    items: counts.map((count) => ({
       id: count.id,
       location: pathOf(count.location),
       status: count.status,
@@ -649,12 +725,23 @@ export async function listCounts(
       startedByName: names.get(count.startedByUserId) ?? null,
       closedAt: count.closedAt,
       products: count._count.lines,
-    }))
-    .sort(
-      (a, b) =>
-        Number(b.status === "OPEN") - Number(a.status === "OPEN") ||
-        b.startedAt.getTime() - a.startedAt.getTime(),
-    );
+      programName: count.program?.name ?? null,
+      programDay: count.programDay?.toISOString().slice(0, 10) ?? null,
+    })),
+  };
+}
+
+/** The first page of the counts (open first, then the latest). */
+export async function listCounts(
+  actor: InventoryActor,
+  options: { limit?: number; view?: unknown } = {},
+): Promise<CountSummary[]> {
+  return (
+    await listCountPage(actor, {
+      view: options.view,
+      pageSize: options.limit ?? COUNTS_PAGE_SIZE,
+    })
+  ).items;
 }
 
 export type CountLine = {
@@ -686,6 +773,17 @@ export type CountLine = {
   differenceLabel: string;
   /** Packages and loose units both captured: check nothing was counted twice. */
   mixed: boolean;
+  /**
+   * WMS-55: the difference is beyond what the company asks to review
+   * (`COUNT_REVIEW_THRESHOLD`); false while the setting is off.
+   */
+  needsReview: boolean;
+  /**
+   * WMS-53 (ADR 0043): what of it is inside pallets or boxes of the
+   * location right now, while the count is open; null when nothing is.
+   * Applying never leaves the balance below it.
+   */
+  contained: { quantity: string; label: string } | null;
   /**
    * What happened in the location after the product was counted (INV-32).
    * Only while the count is open; null once it is closed.
@@ -735,6 +833,14 @@ export type CountDetail = CountSummary & {
   movedAfter: number;
   /** Lines that cannot be applied until they are counted again. */
   conflicts: number;
+  /** WMS-55: the program that generated it, and the day it is for. */
+  program: { id: string; name: string } | null;
+  programDay: string | null;
+  /**
+   * WMS-55: lines whose difference asks for a review before applying, by
+   * the company's setting; null while the setting is off.
+   */
+  review: { lines: number; thresholdText: string } | null;
 };
 
 /** A count with everything captured, the latest product first. */
@@ -763,6 +869,8 @@ export async function getCount(
       closedAt: true,
       closedByUserId: true,
       appliedMovementId: true,
+      programDay: true,
+      program: { select: { id: true, name: true } },
       location: { select: locationSelect },
       lines: {
         orderBy: [{ countedAt: "desc" }, { id: "desc" }],
@@ -798,6 +906,7 @@ export async function getCount(
     count.startedByUserId,
     count.closedByUserId,
   ]);
+  const threshold = await readSetting(scopeClient, COUNT_REVIEW_THRESHOLD);
 
   // While the count is open, what moved after each product was counted
   // (INV-32). The balance only changes with movements and the reference
@@ -812,6 +921,8 @@ export async function getCount(
     `${row.productId}|${row.lotKey}`;
   const counted = new Set(count.lines.map(slot));
   const balances = new Map<string, string>();
+  // WMS-53: what pallets and boxes of the location hold, per product + lot.
+  const contained = new Map<string, string>();
   const later = new Map<
     string,
     {
@@ -830,7 +941,7 @@ export async function getCount(
     );
     for (let start = 0; start < productIds.length; start += 500) {
       const ids = productIds.slice(start, start + 500);
-      const [held, moved] = await Promise.all([
+      const [held, moved, packed] = await Promise.all([
         client.stockBalance.findMany({
           where: {
             locationId: count.locationId,
@@ -857,7 +968,21 @@ export async function getCount(
             movement: { select: { id: true, type: true } },
           },
         }),
+        client.containerItem.groupBy({
+          by: ["productId", "lotKey"],
+          where: {
+            locationId: count.locationId,
+            productId: { in: ids },
+            status: "AVAILABLE",
+          },
+          _sum: { quantity: true },
+        }),
       ]);
+      for (const row of packed) {
+        const quantity = dec((row._sum.quantity ?? 0).toString());
+        if (quantity.greaterThan(0))
+          contained.set(slot(row), quantity.toString());
+      }
       for (const balance of held) {
         balances.set(slot(balance), balance.quantity.toString());
       }
@@ -919,6 +1044,13 @@ export async function getCount(
           ? `${difference.abs().equals(1) ? "Falta" : "Faltan"} ${formatStock(difference.abs().toString(), unitCode)}`
           : `${difference.equals(1) ? "Sobra" : "Sobran"} ${formatStock(difference.toString(), unitCode)}`,
       mixed: isMixed(line.captures),
+      needsReview: needsReview(threshold, system, difference),
+      contained: contained.has(slot(line))
+        ? {
+            quantity: contained.get(slot(line))!,
+            label: formatStock(contained.get(slot(line))!, unitCode),
+          }
+        : null,
       since: open
         ? sinceCounted(
             unitCode,
@@ -951,6 +1083,16 @@ export async function getCount(
     movedAfter: lines.filter((line) => line.since && line.since.moved !== "0")
       .length,
     conflicts: lines.filter((line) => line.since?.conflict).length,
+    program: count.program,
+    programName: count.program?.name ?? null,
+    programDay: count.programDay?.toISOString().slice(0, 10) ?? null,
+    review:
+      threshold === "off"
+        ? null
+        : {
+            lines: lines.filter((line) => line.needsReview).length,
+            thresholdText: reviewThresholdText(threshold),
+          },
   };
 }
 
@@ -1033,9 +1175,14 @@ export type ApplyCountResult =
       /** It had already been applied: nothing was written now. */
       repeated?: true;
     }
-  | (Failure<"reason"> & {
+  | (Failure<"reason" | "reviewed"> & {
       /** Products that must be counted again before applying. */
       conflicts?: string[];
+      /**
+       * WMS-55: the count has differences the company asks to review, and
+       * the review was not confirmed. The products, for the screen.
+       */
+      review?: string[];
     });
 
 /**
@@ -1053,7 +1200,16 @@ export type ApplyCountResult =
  */
 export async function applyCount(
   actor: InventoryActor,
-  input: { countId: string; reason: string },
+  input: {
+    countId: string;
+    reason: string;
+    /**
+     * WMS-55: who applies says the differences beyond the company's review
+     * threshold were reviewed (the reason explains them). Until WMS-41
+     * (approvals) this is the review; see ADR 0050.
+     */
+    reviewed?: boolean;
+  },
 ): Promise<ApplyCountResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(organizationId, userId, "inventory.count.apply");
@@ -1288,6 +1444,29 @@ export async function applyCount(
             } as Failure<"reason">);
           }
 
+          // WMS-55 (ADR 0050): big differences ask for a confirmed review,
+          // decided with the setting read now, under the count's lock.
+          const threshold = await readSetting(tx, COUNT_REVIEW_THRESHOLD);
+          const toReview = count.lines
+            .filter((line) => {
+              const counted = line.captures.reduce(
+                (sum, capture) => sum.plus(capture.baseQuantity.toString()),
+                dec(0),
+              );
+              const system = dec(line.systemQuantity.toString());
+              return needsReview(threshold, system, counted.minus(system));
+            })
+            .map((line) => `${line.product.name}${ofLot(line.lot)}`);
+          if (toReview.length > 0 && input.reviewed !== true) {
+            throw new Rejected<"reviewed">({
+              ok: false,
+              reason: "not_allowed",
+              field: "reviewed",
+              error: `${toReview.length === 1 ? `${toReview[0]} tiene` : `${toReview.length} productos tienen`} ${reviewThresholdText(threshold)}: revisa ${toReview.length === 1 ? "su diferencia" : "sus diferencias"}, explica en el motivo qué pasó y marca «Revisé las diferencias» para aplicar.`,
+              review: toReview,
+            } as Failure<"reviewed">);
+          }
+
           let movementId: string | null = null;
           if (adjustments.length > 0) {
             // VAL-04: what appears or goes missing is valued at the average,
@@ -1391,6 +1570,9 @@ export async function applyCount(
               productosContados: count.lines.length,
               productosAjustados: adjustments.length,
               movementId,
+              ...(toReview.length > 0
+                ? { revisado: true, productosRevisados: toReview.length }
+                : {}),
             },
           });
 

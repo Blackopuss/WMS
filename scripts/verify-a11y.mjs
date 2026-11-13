@@ -51,6 +51,10 @@ const SCREENS = [
   "/inventario/importar",
   "/inventario/exportar",
   "/conteos",
+  // WMS-55: cycle count programs and inventory accuracy.
+  "/conteos/programas",
+  "/conteos/programas/nuevo",
+  "/conteos/exactitud",
   "/tareas",
   "/tareas/nueva",
   "/recepcion",

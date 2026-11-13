@@ -194,8 +194,13 @@ export const AREAS = [
     title: "Inventario › Conteos",
     doc: "inventory",
     summary:
-      "Conteos físicos: capturar no mueve nada; aplicar escribe ajustes.",
-    models: ["StockCount", "StockCountLine", "StockCountCapture"],
+      "Conteos físicos: capturar no mueve nada; aplicar escribe ajustes. Los programas de conteo cíclico generan los conteos de cada día (WMS-55).",
+    models: [
+      "StockCount",
+      "StockCountLine",
+      "StockCountCapture",
+      "CountProgram",
+    ],
   },
   {
     id: "inventory-operation",

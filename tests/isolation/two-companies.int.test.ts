@@ -1063,6 +1063,31 @@ beforeAll(async () => {
         startedByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A cycle count program and a count it generated (WMS-55).
+    const programId = newId();
+    await db.countProgram.create({
+      data: {
+        id: programId,
+        organizationId,
+        facilityId: location.facilityId,
+        name: "Ciclo",
+        everyDays: 7,
+        locationsPerDay: 5,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.stockCount.create({
+      data: {
+        id: newId(),
+        organizationId,
+        locationId: location.id,
+        status: "CANCELLED",
+        closedAt: new Date(),
+        programId,
+        programDay: new Date("2026-11-13T00:00:00Z"),
+        startedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

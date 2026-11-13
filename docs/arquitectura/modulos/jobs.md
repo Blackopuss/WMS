@@ -14,6 +14,13 @@ pasa `jobHandlers` y `scheduledRounds` de `src/modules/registry`.
 | Cola | `queue.ts` | `enqueueJob(tx, organizationId, { type, payload, … })`, `runWorker`, `runNextJob`, `settleFailedJobs`, `getJob`; tipos `JobHandler` (`handle`, `retryDelayMs?`, `onFailed?`) y `JobContext` |
 | Rondas | `rounds.ts` | `runScheduledRounds`, `organizationsWithModule`; tipo `ScheduledRound` |
 
+Rondas registradas hoy: `inventory.cycle_counts` (WMS-55, los conteos del día
+de los programas de conteo cíclico). Una ronda trabaja con
+`forOrganization(organizationId)`, revisa por sí misma lo que necesita (un
+programa en pausa o un almacén archivado no generan nada), puede correr dos
+veces o a la vez sin efecto, y lo que falla en una empresa no detiene a las
+demás (`runScheduledRounds` lo registra con `scheduled_round_failed`).
+
 Reglas: tipo `modulo.accion` en minúsculas; el `payload` lleva ids y opciones
 (máximo 64 KB), nunca secretos ni la empresa; el manejador puede correr dos
 veces (idempotente, `context.jobId` como clave) y trabaja solo con
