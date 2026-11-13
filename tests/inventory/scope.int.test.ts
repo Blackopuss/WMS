@@ -29,6 +29,13 @@ import {
   listProductSerials,
   traceSerial,
   getCount,
+  createCountProgram,
+  generateTodayCounts,
+  getCountProgram,
+  listCountPage,
+  listCountPrograms,
+  setCountProgramPaused,
+  updateCountProgram,
   countExpiringLots,
   getInventoryValue,
   getLot,
@@ -1363,4 +1370,59 @@ describe("PC-12: transfers between warehouses (WMS-19)", () => {
     ).toMatchObject({ ok: true });
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
+});
+
+describe("PC-12: cycle count programs (WMS-55)", () => {
+  it("a program of A does not exist for them, nor do its counts", async () => {
+    const created = await createCountProgram(owner, {
+      name: `Ciclo A ${stamp}`,
+      rootLocationId: shelfA,
+      basis: "EVEN",
+      everyDays: "7",
+      locationsPerDay: "5",
+    });
+    if (!created.ok) throw new Error(JSON.stringify(created));
+    const generated = await generateTodayCounts(owner, created.programId);
+    expect(generated).toMatchObject({ ok: true });
+
+    expect(
+      (await listCountPrograms(limited)).map((each) => each.id),
+    ).not.toContain(created.programId);
+    expect(await getCountProgram(limited, created.programId)).toBeNull();
+    expect(await generateTodayCounts(limited, created.programId)).toMatchObject(
+      { ok: false, reason: "not_found" },
+    );
+    expect(
+      await setCountProgramPaused(limited, created.programId, true),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await updateCountProgram(limited, created.programId, {
+        name: "Otro",
+        basis: "EVEN",
+        everyDays: "7",
+        locationsPerDay: "5",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    // A program can only cover what the person reaches: a location of
+    // A is not one of their warehouse.
+    expect(
+      await createCountProgram(limited, {
+        name: "Fuera",
+        rootLocationId: shelfA,
+        basis: "EVEN",
+        everyDays: "7",
+        locationsPerDay: "5",
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: "not_found",
+      field: "rootLocationId",
+    });
+    const today = await listCountPage(limited, { view: "today" });
+    const mine = await listCountPage(owner, { view: "today" });
+    expect(mine.total).toBeGreaterThan(0);
+    for (const count of mine.items) {
+      expect(today.items.map((each) => each.id)).not.toContain(count.id);
+    }
+  }, 60_000);
 });

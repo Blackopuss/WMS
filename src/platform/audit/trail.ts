@@ -113,6 +113,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "team.scope_changed": "Cambió los almacenes o zonas de una persona",
   "team.member_disabled": "Desactivó a una persona",
   "team.member_reactivated": "Reactivó a una persona",
+  "inventory.count_program_created": "Creó un programa de conteo cíclico",
+  "inventory.count_program_changed": "Cambió un programa de conteo cíclico",
 };
 
 export function describeAuditAction(action: string): string {

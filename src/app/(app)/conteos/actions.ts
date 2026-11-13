@@ -258,12 +258,18 @@ export type ApplyCountState =
 export async function applyCountAction(
   countId: string,
   reason: string,
+  /** WMS-55: the big differences were reviewed (only a yes counts). */
+  reviewed?: boolean,
 ): Promise<ApplyCountState> {
   const { user, organization } = await requireOrganizationContext();
   try {
     const result = await applyCount(
       { organizationId: organization.id, userId: user.id },
-      { countId: String(countId), reason: String(reason ?? "").slice(0, 600) },
+      {
+        countId: String(countId),
+        reason: String(reason ?? "").slice(0, 600),
+        reviewed: reviewed === true,
+      },
     );
     if (!result.ok) return { ok: false, error: result.error };
     revalidatePath("/conteos");

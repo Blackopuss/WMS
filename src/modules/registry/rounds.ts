@@ -1,4 +1,4 @@
-import { runReplenishmentRound } from "@/modules/inventory";
+import { runCycleCountRound, runReplenishmentRound } from "@/modules/inventory";
 import type { ScheduledRound } from "@/platform/jobs";
 
 /**
@@ -11,5 +11,11 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "inventory.replenishment",
     module: "inventory",
     run: runReplenishmentRound,
+  },
+  // WMS-55 (ADR 0050): the counts of the day of each cycle count program.
+  {
+    name: "inventory.cycle_counts",
+    module: "inventory",
+    run: (organizationId) => runCycleCountRound(organizationId),
   },
 ];

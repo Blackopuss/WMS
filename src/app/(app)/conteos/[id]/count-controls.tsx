@@ -126,20 +126,27 @@ export function CancelCount({ countId }: { countId: string }) {
 export function ApplyCount({
   countId,
   differences,
+  review,
 }: {
   countId: string;
   /** Products whose stock will be corrected. */
   differences: number;
+  /**
+   * WMS-55: products whose difference the company asks to review before
+   * applying; null when none.
+   */
+  review: { lines: number; thresholdText: string } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function apply() {
     setError(null);
     startTransition(async () => {
-      const result = await applyCountAction(countId, reason);
+      const result = await applyCountAction(countId, reason, reviewed);
       if (result.ok) {
         toast.success(result.summary);
         setOpen(false);
@@ -189,9 +196,28 @@ export function ApplyCount({
               aria-describedby={error ? "apply-error" : "apply-hint"}
             />
             <p id="apply-hint" className="text-sm text-muted-foreground">
-              Obligatorio. Por ejemplo: conteo de cierre de mes.
+              {review
+                ? "Obligatorio. Explica qué pasó con las diferencias marcadas."
+                : "Obligatorio. Por ejemplo: conteo de cierre de mes."}
             </p>
           </div>
+          {review && (
+            <label className="flex min-h-11 items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={reviewed}
+                onChange={(event) => setReviewed(event.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-primary"
+              />
+              <span>
+                Revisé las diferencias:{" "}
+                {review.lines === 1
+                  ? "1 producto tiene"
+                  : `${review.lines} productos tienen`}{" "}
+                {review.thresholdText}.
+              </span>
+            </label>
+          )}
           {error && (
             <p
               id="apply-error"

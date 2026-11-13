@@ -98,6 +98,8 @@ export {
   getCount,
   listCounts,
   openCount,
+  listCountPage,
+  COUNTS_PAGE_SIZE,
   removeCapture,
   type ApplyCountResult,
   type CaptureInput,
@@ -108,6 +110,8 @@ export {
   type CountStatus,
   type CountSummary,
   type OpenCountResult,
+  type CountPage,
+  type CountListView,
 } from "./counts";
 export { reconcileCompany, type ReconciliationReport } from "./reconciliation";
 export {
@@ -515,6 +519,10 @@ export {
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
   REPLENISHMENT_MODE,
+  ABC_BASIS,
+  ABC_CUTS,
+  ABC_PERIOD,
+  COUNT_REVIEW_THRESHOLD,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -637,3 +645,30 @@ export type {
 } from "./replenishment";
 export { REPLENISHMENT_STATE_LABELS } from "./replenishment-rules";
 export type { ReplenishmentState } from "./replenishment-rules";
+export {
+  PROGRAM_BASIS_LABELS,
+  countTodayCounts,
+  createCountProgram,
+  generateTodayCounts,
+  getCountProgram,
+  listCountPrograms,
+  runCycleCountRound,
+  setCountProgramPaused,
+  updateCountProgram,
+} from "./cycle-counts";
+export type {
+  CountProgramBasis,
+  CountProgramDetail,
+  CountProgramSummary,
+  GenerateNowResult,
+  PauseResult,
+  ProgramField,
+  ProgramInput,
+  ProgramResult,
+} from "./cycle-counts";
+export { ACCURACY_MAX_ROWS, getCountAccuracy } from "./count-accuracy";
+export type {
+  AccuracyFigures,
+  AccuracyPeriod,
+  CountAccuracy,
+} from "./count-accuracy";

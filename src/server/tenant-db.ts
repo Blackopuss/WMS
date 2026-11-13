@@ -32,6 +32,7 @@ export const TENANT_MODELS = [
   "Container",
   "ContainerEvent",
   "ContainerItem",
+  "CountProgram",
   "Entitlement",
   "ExitImport",
   "ExitImportRow",
@@ -305,6 +306,7 @@ const LOCKABLE = {
   shipment: "shipment",
   customerReturn: "customer_return",
   facilityTransfer: "facility_transfer",
+  countProgram: "count_program",
 } as const;
 
 /**

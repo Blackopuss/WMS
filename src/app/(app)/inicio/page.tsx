@@ -10,6 +10,7 @@ import {
   TriangleAlert,
   Truck,
   Undo2,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -25,6 +26,7 @@ import {
   countOrdersToShip,
   countReturnsToReview,
   countTransfersToReceive,
+  countTodayCounts,
   countExpiringLots,
   countUnplacedStock,
   getDaySummary,
@@ -139,6 +141,11 @@ export default async function InicioPage() {
     inventory && access.allows("inventory.facility_transfer.receive")
       ? await countTransfersToReceive(actor)
       : 0;
+  // WMS-55: counts of today still to do, for who counts, only if any.
+  const toCount =
+    inventory && access.allows("inventory.count.update")
+      ? await countTodayCounts(actor)
+      : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -212,6 +219,16 @@ export default async function InicioPage() {
             label: "Devoluciones por revisar",
             count: toReview,
             icon: Undo2,
+          },
+        ]
+      : []),
+    ...(toCount > 0
+      ? [
+          {
+            href: "/conteos?vista=hoy",
+            label: "Conteos de hoy",
+            count: toCount,
+            icon: ClipboardCheck,
           },
         ]
       : []),

@@ -133,6 +133,9 @@ Consultar equivalencias (INV-09) no concede permiso para confirmar el movimiento
 | `inventory.count.create` | Abrir conteo con alcance y referencia temporal; INV-31. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.count.update` | Capturar/corregir cantidades del conteo abierto y previsualizar diferencias; INV-31/32. | Sí | Sí | Sí | No | No | Sí | Sí | No | No |
 | `inventory.count.apply` | Aplicar ajustes del conteo con motivo, movimientos posteriores e idempotencia; exige también `inventory.adjustment.create`; INV-33; pregunta 1. | Sí | Sí | Sí | No | No | Sí | No | No | No |
+| `inventory.count_program.read` | Consultar los programas de conteo cíclico del almacén y qué conteos generaron; WMS-55 (ADR 0050). | Sí | Sí | Sí | No | No | Sí | No | No | Sí |
+| `inventory.count_program.manage` | Crear, cambiar, pausar y reanudar programas de conteo cíclico (qué cubren, cada cuánto, cuántas ubicaciones por día, ABC) y generar ya los conteos de hoy; WMS-55. | Sí | Sí | Sí | No | No | Sí | No | No | No |
+| `inventory.count_accuracy.read` | Exactitud de inventario: de lo contado y aplicado en la semana o el mes, qué parte coincidió con el sistema, comparada con el periodo anterior (el valor de las diferencias, solo con `inventory.cost.read`); WMS-55. | Sí | Sí | No | No | No | Sí | No | No | Sí |
 | `inventory.task.read` | Consultar tareas de traslado, su estado y quién las tiene; WMS-06. | Sí | Sí | Sí | No | Sí | Sí | Sí | Sí | Sí |
 | `inventory.task.create` | Crear tareas de traslado (producto, origen, destino, cantidad, prioridad) y asignarlas a una persona; WMS-06. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.task.execute` | Tomar una tarea, confirmar que se recogió y que se entregó (la entrega escribe la reubicación) y reportar un problema; WMS-06. No permite reubicar libremente. | Sí | Sí | Sí | No | No | Sí | Sí | Sí | No |

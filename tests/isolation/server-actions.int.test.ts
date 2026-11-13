@@ -542,10 +542,30 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/inventory/imports.int.test.ts",
   },
   applyCountAction: {
-    input: "id de conteo y motivo",
+    input: "id de conteo, motivo y si se revisaron las diferencias grandes",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el conteo se busca solo en esa empresa",
     coveredBy: "tests/inventory/count-apply.int.test.ts",
+  },
+  // WMS-55: cycle count programs.
+  saveCountProgramAction: {
+    input:
+      "id de programa (vacío al crear), nombre, id de ubicación que cubre, forma, días y ubicaciones por día",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén es el activo de la persona y el programa y la ubicación se buscan solo en esa empresa y dentro de su alcance",
+    coveredBy: "tests/inventory/cycle-counts.int.test.ts",
+  },
+  pauseCountProgramAction: {
+    input: "id de programa y si queda en pausa",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el programa se busca solo en esa empresa y dentro del alcance",
+    coveredBy: "tests/inventory/cycle-counts.int.test.ts",
+  },
+  generateTodayCountsAction: {
+    input: "id de programa",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el programa se busca solo en esa empresa y dentro del alcance; el día sale del calendario de la empresa",
+    coveredBy: "tests/inventory/cycle-counts.int.test.ts",
   },
   openCountAction: {
     input: "id de ubicación y nota",

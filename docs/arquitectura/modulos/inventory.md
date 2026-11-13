@@ -13,7 +13,7 @@ serie y trazabilidad, capacidad de
 ubicaciones al meter mercancía, reservas, tareas de traslado, surtido y
 acomodo con recomendación, tarimas y contenedores,
 pedidos de salida con su verificación, empaque y despacho en embarques,
-devoluciones de clientes, conteos, mínimos, importaciones y exportaciones, y los
+devoluciones de clientes, conteos (también cíclicos, con su exactitud), mínimos, importaciones y exportaciones, y los
 resúmenes de Inicio. Productos y ubicaciones son del núcleo
 ([catalog](catalog.md), [locations](locations.md)); Inventario los usa.
 
@@ -111,7 +111,8 @@ código»):
 | Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`) y `postReturnExit` (`RETURN`), dentro de la transacción de la recepción o devolución |
 | Mínimos | `minimums.ts` | `setMinimum`, `getMinimum`, `listLowStock`, `countLowStock` |
 | Reposición de surtido | `replenishment.ts`, `replenishment-rules.ts`, `stock-sources.ts` | Reglas por producto y ubicación de surtido (`saveReplenishmentRule`, `removeReplenishmentRule`, `listReplenishmentRules`, `getReplenishmentRule`, `listPickingPlaces`, `replenishmentVisible`); `replenishNow` («Reponer ahora») y `runReplenishmentRound` (la ronda del worker) crean tareas `REPLENISH`; `replenishmentPlan` (interna) es la única que decide cuánto y de dónde; piezas puras `replenishQuantity`, `largestThatFits`, `splitAmongSources`, `replenishmentStateOf` y el orden de orígenes `rankStockSources`, compartido con el surtido (WMS-23/24) |
-| Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount`, `cancelCount`, `getCount`, `listCounts` |
+| Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount` (con `reviewed` cuando la empresa pide revisar diferencias grandes, WMS-55), `cancelCount`, `getCount` (programa, líneas por revisar y lo que está en tarimas), `listCountPage` (paginada; vista «De hoy»), `listCounts` (su primera página) |
+| Conteos cíclicos (WMS-55) | `cycle-counts.ts`, `abc-rules.ts`, `count-accuracy.ts` | `createCountProgram`, `updateCountProgram`, `setCountProgramPaused`, `listCountPrograms`, `getCountProgram` (con lo que generaría hoy), `generateTodayCounts` («Generar los de hoy»), `runCycleCountRound` (la ronda del worker), `countTodayCounts` (Inicio); `getCountAccuracy` (exactitud por semana o mes contra el periodo anterior, por programa; tope `ACCURACY_MAX_ROWS`); reglas puras `classifyAbc`, `locationClass`, `parseAbcCuts` |
 | Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY` y `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
@@ -143,7 +144,9 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Movimientos: `entry.create`, `opening.create`, `exit.create`,
   `transfer.create`, `adjustment.create`, `movement.reverse`.
 - Estados: `status.change`, `status.release`, `damage.report`.
-- Conteos: `count.read|create|update|apply`.
+- Conteos: `count.read|create|update|apply`; programas de conteo cíclico
+  `count_program.read|manage` y exactitud `count_accuracy.read` (WMS-55; el
+  valor de las diferencias, solo con `cost.read`).
 - Tareas: `task.read|create|execute|cancel` («Reponer ahora» pide `task.create`).
 - Reposición de surtido (WMS-23): sin permiso propio; ver las reglas es
   `minimum.read` y crearlas, cambiarlas o quitarlas, `minimum.update`.
@@ -173,7 +176,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `serial_unit`, `serial_move`, `warehouse_task_serial`, `container`,
 `container_item`, `container_event`,
 `product_cost`, `stock_minimum`, `stock_count`, `stock_count_line`,
-`stock_count_capture`, `warehouse_task`, `replenishment_rule`,
+`stock_count_capture`, `count_program`, `warehouse_task`, `replenishment_rule`,
 `stock_reservation`,
 `outbound_order`, `outbound_order_line`, `outbound_pack_shortage`,
 `shipment`, `shipment_order`, `shipment_line`, `customer_return`,
@@ -206,6 +209,10 @@ la transacción que decide:
 | `inventory.labels.format` | **`letter_10`** (hoja carta, 10 por hoja), `100x50`, `100x150` (mm; WMS-26) |
 | `inventory.labels.codes` | **`both`** (barras y QR), `barcode`, `qr` (WMS-26) |
 | `inventory.replenishment.mode` | **`off`** (solo con «Reponer ahora»), `round` (la ronda del worker, cada hora; WMS-24) |
+| `inventory.abc.basis` | **`lines`** (veces que salió), `value` (cantidad que salió × costo promedio de hoy) (WMS-55) |
+| `inventory.abc.cuts` | **`80_15_5`**, `70_20_10`, `50_30_20` (reparto A/B/C) |
+| `inventory.abc.period` | `30`, **`90`**, `180`, `365` (días de salidas que mira la clasificación) |
+| `inventory.count.review_threshold` | **`off`**, `any`, `10`, `25`, `50` (% de diferencia de un producto que pide revisar el conteo antes de aplicarlo) |
 
 ## Trabajos en segundo plano
 
@@ -219,6 +226,7 @@ Rondas (`scheduledRounds` de `src/modules/registry/rounds.ts`, cada hora):
 | Ronda | Función | Qué hace |
 | --- | --- | --- |
 | `inventory.replenishment` | `runReplenishmentRound` (`replenishment.ts`) | Con `inventory.replenishment.mode = round` y el módulo con escritura, crea en cada almacén activo las tareas de reposición que hacen falta, como el titular; repetirla o correrla dos veces a la vez no duplica (ADR 0051) |
+| `inventory.cycle_counts` | `runCycleCountRound` (`cycle-counts.ts`) | Genera los conteos de hoy de cada programa activo; repetirla no duplica (programa bloqueado, cupo del día contado bajo el candado y llave única programa + día + ubicación). |
 
 ## ADR
 
@@ -229,7 +237,7 @@ saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
 contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
-entre almacenes), 0051 (reposición de surtido).
+entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido).
 
 ## Pruebas
 
@@ -248,4 +256,5 @@ trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara
 cada saldo de un producto por serie con sus unidades dentro (`source:
 "serial_units"` y `"serial_moves"`), y lo que dicen los contenedores contra el
 saldo, su ubicación y sus series (`source: "containers"`). Tarimas en
-`containers.int.test.ts`.
+`containers.int.test.ts`. Conteos cíclicos (ronda repetida y simultánea,
+vuelta completa, ABC, exactitud, revisión) en `cycle-counts.int.test.ts`.

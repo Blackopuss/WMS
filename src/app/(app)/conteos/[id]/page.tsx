@@ -88,7 +88,13 @@ export default async function ConteoPage({
         description={count.note ?? undefined}
         actions={
           canApply ? (
-            <ApplyCount countId={count.id} differences={count.differences} />
+            <ApplyCount
+              countId={count.id}
+              differences={count.differences}
+              review={
+                count.review && count.review.lines > 0 ? count.review : null
+              }
+            />
           ) : undefined
         }
       />
@@ -101,7 +107,9 @@ export default async function ConteoPage({
           <time dateTime={count.startedAt.toISOString()}>
             {formatDateTime(count.startedAt)}
           </time>{" "}
-          por {person(count.startedByName)}
+          {count.program
+            ? `por el programa «${count.program.name}»`
+            : `por ${person(count.startedByName)}`}
         </span>
         {count.closedAt && (
           <span>
@@ -148,6 +156,20 @@ export default async function ConteoPage({
             antes de aplicar. Están marcados abajo.
           </p>
         </div>
+      )}
+
+      {open && count.review && count.review.lines > 0 && (
+        <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+          <CircleAlert
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-warning"
+          />
+          {count.review.lines === 1
+            ? "1 producto tiene"
+            : `${count.review.lines} productos tienen`}{" "}
+          {count.review.thresholdText}: revísalo antes de aplicar. Están
+          marcados abajo.
+        </p>
       )}
 
       {canCapture && (
@@ -253,7 +275,19 @@ export default async function ConteoPage({
                   >
                     {line.differenceLabel}
                   </Badge>
+                  {open && line.needsReview && (
+                    <Badge variant="destructive">Revisar</Badge>
+                  )}
                 </p>
+                {line.contained && (
+                  <p className="text-sm tabular-nums">
+                    De lo que tiene el sistema, {line.contained.label}{" "}
+                    {line.contained.quantity === "1" ? "está" : "están"} en
+                    tarimas o cajas de esta ubicación: cuéntalo también. Si
+                    falta algo de ahí, sácalo de la tarima o desármala antes de
+                    aplicar.
+                  </p>
+                )}
                 {line.since &&
                   (line.since.movedLabel || line.since.conflict) && (
                     <div className="space-y-1 rounded-lg border bg-muted/50 p-3 text-sm">

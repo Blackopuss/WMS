@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-88 tablas en 22 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+89 tablas en 22 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -21,7 +21,7 @@
 | Plataforma › Contactos | 1 | [contacts](modulos/contacts.md) |
 | Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
 | Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
-| Inventario › Conteos | 3 | [inventory](modulos/inventory.md) |
+| Inventario › Conteos | 4 | [inventory](modulos/inventory.md) |
 | Inventario › Tareas, reservas y pedidos de salida | 7 | [inventory](modulos/inventory.md) |
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
@@ -1293,7 +1293,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Conteos
 
-Conteos físicos: capturar no mueve nada; aplicar escribe ajustes.
+Conteos físicos: capturar no mueve nada; aplicar escribe ajustes. Los programas de conteo cíclico generan los conteos de cada día (WMS-55).
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1316,10 +1316,12 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `closedAt` | `DateTime? · DateTime(3)` |  |  |
 | `closedByUserId` | `String? · Char(36)` |  |  |
 | `appliedMovementId` | `String? · Char(36)` |  | The adjustment that applied its differences (INV-33); null when it was applied without differences, cancelled or still open. |
+| `programId` | `String? · Char(36)` |  | The cycle count program that generated it (WMS-55, ADR 0050); null for a count opened by hand. |
+| `programDay` | `DateTime? · Date` |  | The day of the company's calendar it was generated for; with the program and the location, unique: a round never generates it twice. |
 
-- Únicas: (`organizationId`, `id`); (`organizationId`, `openLocationId`); (`organizationId`, `appliedMovementId`).
-- Índices: (`organizationId`, `status`, `startedAt`).
-- Relaciones: `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `appliedMovement` → `StockMovement` por (`organizationId`, `appliedMovementId`) (al borrar: Restrict).
+- Únicas: (`organizationId`, `id`); (`organizationId`, `openLocationId`); (`organizationId`, `appliedMovementId`); (`organizationId`, `programId`, `programDay`, `locationId`).
+- Índices: (`organizationId`, `status`, `startedAt`); (`organizationId`, `programDay`).
+- Relaciones: `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `appliedMovement` → `StockMovement` por (`organizationId`, `appliedMovementId`) (al borrar: Restrict); `program` → `CountProgram` por (`organizationId`, `programId`) (al borrar: Restrict).
 
 ### StockCountLine · `stock_count_line`
 
@@ -1367,9 +1369,36 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `lineId`).
 - Relaciones: `line` → `StockCountLine` por (`organizationId`, `productId`, `lineId`) (al borrar: Restrict); `presentation` → `ProductPresentation` por (`organizationId`, `productId`, `presentationId`) (al borrar: Restrict); `presentationVersion` → `PresentationVersion` por (`organizationId`, `presentationId`, `presentationVersionId`) (al borrar: Restrict).
 
+### CountProgram · `count_program`
+
+A cycle count program of a warehouse (WMS-55, ADR 0050): what it covers (a location with everything it holds, or the whole warehouse), how often each location is counted and how many locations a day. The round of the worker generates the counts of each day; it is never deleted, it is paused.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(80)` |  |  |
+| `rootLocationId` | `String? · Char(36)` |  | The zone or location it covers, with all it holds; null = the whole warehouse. Always of the program's warehouse. |
+| `basis` | `CountProgramBasis` | `EVEN` |  |
+| `everyDays` | `Int` |  | Days between two counts of a location (of class A with ABC). |
+| `everyDaysB` | `Int?` |  | With ABC: days between counts of class B and of class C. |
+| `everyDaysC` | `Int?` |  |  |
+| `locationsPerDay` | `Int` |  | Locations it generates at most each day. |
+| `pausedAt` | `DateTime? · DateTime(3)` |  | Paused: the round skips it. Null = active. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `facilityId`, `name`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `rootLocation` → `Location` por (`organizationId`, `facilityId`, `rootLocationId`) (al borrar: Restrict).
+
 #### Enumeraciones de Inventario › Conteos
 
 - `StockCountStatus`: `OPEN`, `APPLIED`, `CANCELLED`.
+- `CountProgramBasis`: `EVEN`, `ABC`.
 
 ## Inventario › Tareas, reservas y pedidos de salida
 

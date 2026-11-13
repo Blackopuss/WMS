@@ -14,6 +14,7 @@ import {
   findContainerByCode,
   findTraceMatches,
   getContainer,
+  getCount,
   listContainerEvents,
   listContainers,
   moveContainer,
@@ -451,6 +452,11 @@ describe("packing", () => {
         quantity: "2",
       }),
     ).toMatchObject({ ok: true });
+    // WMS-55: the count says what of the system is inside the pallet.
+    const counted = await getCount(actor, count.countId);
+    expect(
+      counted?.lines.find((line) => line.productId === scene.plain)?.contained,
+    ).toEqual({ quantity: "6", label: expect.stringContaining("6") });
     expect(
       await applyCount(actor, { countId: count.countId, reason: "Cierre" }),
     ).toMatchObject({

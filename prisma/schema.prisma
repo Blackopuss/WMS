@@ -189,6 +189,7 @@ model Organization {
   facilityTransferReceipts FacilityTransferReceipt[]
   facilityTransferReceiptLines FacilityTransferReceiptLine[]
   replenishmentRules      ReplenishmentRule[]
+  countPrograms           CountProgram[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -224,6 +225,8 @@ model Facility {
   /// Transfers that leave from it and that come to it (WMS-19).
   transfersOut    FacilityTransfer[] @relation("TransferFrom")
   transfersIn     FacilityTransfer[] @relation("TransferTo")
+  /// Its cycle count programs (WMS-55).
+  countPrograms   CountProgram[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -287,6 +290,8 @@ model Location {
   movementLines       StockMovementLine[]
   balances            StockBalance[]
   counts              StockCount[]
+  /// Cycle count programs that cover it and all it holds (WMS-55).
+  countPrograms       CountProgram[]
   exitImportRows      ExitImportRow[]
   receiptLines        PurchaseReceiptLine[]
   returnLines         PurchaseReturnLine[]
@@ -1417,12 +1422,66 @@ model StockCount {
   appliedMovementId String?          @db.Char(36)
   appliedMovement   StockMovement?   @relation(fields: [organizationId, appliedMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   lines             StockCountLine[]
+  /// The cycle count program that generated it (WMS-55, ADR 0050); null
+  /// for a count opened by hand.
+  programId         String?          @db.Char(36)
+  program           CountProgram?    @relation(fields: [organizationId, programId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The day of the company's calendar it was generated for; with the
+  /// program and the location, unique: a round never generates it twice.
+  programDay        DateTime?        @db.Date
 
   @@unique([organizationId, id])
   @@unique([organizationId, openLocationId])
   @@unique([organizationId, appliedMovementId])
+  @@unique([organizationId, programId, programDay, locationId])
   @@index([organizationId, status, startedAt])
+  @@index([organizationId, programDay])
   @@map("stock_count")
+}
+
+/// How a cycle count program decides how often a location is counted
+/// (WMS-55, ADR 0050).
+enum CountProgramBasis {
+  /// Every location as often as the others.
+  EVEN
+  /// By the ABC class of what it holds: A more often than B, B than C.
+  ABC
+}
+
+/// A cycle count program of a warehouse (WMS-55, ADR 0050): what it
+/// covers (a location with everything it holds, or the whole warehouse),
+/// how often each location is counted and how many locations a day. The
+/// round of the worker generates the counts of each day; it is never
+/// deleted, it is paused.
+model CountProgram {
+  id              String            @id @db.Char(36)
+  organizationId  String            @db.Char(36)
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId      String            @db.Char(36)
+  facility        Facility          @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  name            String            @db.VarChar(80)
+  /// The zone or location it covers, with all it holds; null = the whole
+  /// warehouse. Always of the program's warehouse.
+  rootLocationId  String?           @db.Char(36)
+  rootLocation    Location?         @relation(fields: [organizationId, facilityId, rootLocationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  basis           CountProgramBasis @default(EVEN)
+  /// Days between two counts of a location (of class A with ABC).
+  everyDays       Int
+  /// With ABC: days between counts of class B and of class C.
+  everyDaysB      Int?
+  everyDaysC      Int?
+  /// Locations it generates at most each day.
+  locationsPerDay Int
+  /// Paused: the round skips it. Null = active.
+  pausedAt        DateTime?         @db.DateTime(3)
+  createdByUserId String            @db.Char(36)
+  createdAt       DateTime          @default(now()) @db.DateTime(3)
+  updatedAt       DateTime          @updatedAt @db.DateTime(3)
+  counts          StockCount[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, facilityId, name])
+  @@map("count_program")
 }
 
 /// One product in a count. It keeps the reference of the comparison: the
