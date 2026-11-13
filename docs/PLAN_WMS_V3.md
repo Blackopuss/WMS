@@ -60,7 +60,7 @@ x.y» citadas son de [`ESPECIFICACION_WMS_v5.md`](ESPECIFICACION_WMS_v5.md).
 Lo que sigue sin hacer después de los pasos cerrados, con el ADR de donde sale.
 Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
-**Qué sigue, en el orden de la tabla de fases:** WMS-54 y WMS-25 cierran la Fase 2.
+**Qué sigue, en el orden de la tabla de fases:** WMS-25 cierra la Fase 2; de la Fase 3, WMS-56 y WMS-41 (en curso), WMS-57 y WMS-58.
 
 - Las órdenes de compra, las recepciones y las devoluciones no tienen almacén: se
   ven todas (ADR 0038, ADR 0035).
@@ -123,7 +123,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | Fase | Pasos (en orden) | Para qué |
 | --- | --- | --- |
 | 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, ~~WMS-20~~, ~~WMS-71~~, ~~WMS-72~~, ~~WMS-73~~, ~~WMS-22B~~, ~~WMS-21A~~, ~~WMS-21B~~, ~~WMS-51~~ | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
-| 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, ~~WMS-19~~, WMS-54, ~~WMS-55~~, ~~WMS-26~~, ~~WMS-36~~, ~~WMS-23~~, ~~WMS-24~~, WMS-25 | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
+| 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, ~~WMS-19~~, ~~WMS-54~~, ~~WMS-55~~, ~~WMS-26~~, ~~WMS-36~~, ~~WMS-23~~, ~~WMS-24~~, WMS-25 | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
 | 3. Gestión empresarial | WMS-56, WMS-57, WMS-58, WMS-41, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
 | Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, WMS-37, WMS-38, WMS-39, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
@@ -153,6 +153,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-73 | Resumen del día | Hecho (2026-11-12) |
 | WMS-21A | Lotes y caducidad | Hecho (2026-11-13, ADR 0040); series y trazabilidad por serie o pedido quedan en WMS-21B |
 | WMS-21B | Números de serie y trazabilidad | Hecho (2026-11-13, ADR 0041); pendiente: conteo por serie, series en importaciones |
+| WMS-54 | Cross-docking (y daños al recibir de proveedor) | Hecho (2026-11-13, ADR 0052) |
 | WMS-55 | Conteos cíclicos | Hecho (2026-11-13, ADR 0050); pendiente: conteo por serie |
 | WMS-23 / WMS-24 | Reglas de reposición y reabastecimiento automático | Hecho (2026-11-13, ADR 0051); pendiente: reponer desde una tarima |
 | WMS-19 | Traslados entre almacenes | Hecho (2026-11-13, ADR 0048); pendiente: trasladar una tarima entera |

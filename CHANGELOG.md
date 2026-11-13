@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-54** · Cross-docking y daños al recibir (ADR 0052): lo dañado de un
+  proveedor entra en `DAMAGED` como línea propia y se devuelve desde ahí; lo
+  recibido que espera un pedido liberado va directo a su surtido.
 - **WMS-55** · Conteos cíclicos (ADR 0050): programas de conteo, clase ABC
   derivada, conteos del día generados por una ronda sin duplicar, revisión por
   diferencia y exactitud de inventario por semana y mes.
