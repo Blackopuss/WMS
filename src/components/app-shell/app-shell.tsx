@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { motion, transitions } from "../motion";
+import { OfflineNotice } from "../pwa";
 import { ThemeToggle } from "../theme-toggle";
 import {
   Sheet,
@@ -115,6 +116,7 @@ export function AppShell({
           <span className="font-semibold">{current?.label ?? "WMS"}</span>
           <ThemeToggle className="ml-auto" />
         </header>
+        <OfflineNotice />
 
         <main
           id="contenido"

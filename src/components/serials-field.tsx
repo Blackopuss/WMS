@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { CameraScanButton } from "./camera-scan";
 import { FormField } from "./form-field";
 
 /** Serials one operation takes at most (the server checks it again). */
@@ -18,7 +19,7 @@ function countSerials(text: string): number {
  * scanner sends Enter after each reading, which here is a new line, so
  * scanning one label after another just works. It says how many there are
  * so the person sees when they match the quantity. Only forms of a product
- * by serial show it.
+ * by serial show it. With a camera (WMS-36) each reading is one more line.
  */
 export function SerialsField({
   id = "serials",
@@ -66,6 +67,11 @@ export function SerialsField({
           <p aria-live="polite" className="text-sm text-muted-foreground">
             {count === 1 ? "1 serie" : `${count} series`}
           </p>
+          <CameraScanButton
+            target={control.id}
+            title={`Escanear: ${label}`}
+            continuous
+          />
         </div>
       )}
     </FormField>

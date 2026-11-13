@@ -4,6 +4,7 @@ import { CircleAlert, Equal, Loader2, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -218,6 +219,10 @@ export function CaptureForm({
               spellCheck={false}
               enterKeyHint="search"
               autoFocus
+            />
+            <CameraScanButton
+              target="buscar-contado"
+              title="Escanear el producto que contaste"
             />
             <Button
               type="button"

@@ -34,3 +34,16 @@ export { formatIp, isLoopbackHost } from "./ip";
 export { contentSecurityPolicy, newNonce } from "./csp";
 export { log, pathWithoutQuery, recentErrorCount } from "./log";
 export type { LogFields } from "./log";
+export {
+  BRAND_ICON_PATHS,
+  CACHE_PREFIX,
+  MANIFEST_ICONS,
+  OFFLINE_CACHE_URLS,
+  OFFLINE_PATH,
+  PWA_COLORS,
+  SERVICE_WORKER_PATH,
+  offlinePageHtml,
+  pwaVersion,
+  serviceWorkerSource,
+  shortHash,
+} from "./pwa";

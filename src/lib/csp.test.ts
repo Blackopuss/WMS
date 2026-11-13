@@ -21,6 +21,16 @@ describe("contentSecurityPolicy", () => {
     expect(policy).toMatch(/upgrade-insecure-requests$/);
   });
 
+  it("lets the installable app load its worker and manifest from here only (WMS-35)", () => {
+    const policy = contentSecurityPolicy("n", {
+      development: false,
+      https: true,
+    });
+    expect(policy).toContain("worker-src 'self' blob:;");
+    expect(policy).toContain("manifest-src 'self';");
+    expect(policy).not.toMatch(/(^|;\s*)[a-z-]+ [^;]*\*/);
+  });
+
   it("adds eval and the reload socket only in development", () => {
     const policy = contentSecurityPolicy("n", {
       development: true,

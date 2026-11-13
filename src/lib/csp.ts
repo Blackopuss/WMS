@@ -18,7 +18,9 @@ export function contentSecurityPolicy(
     "font-src 'self'",
     // Development reloads over a websocket to the same server.
     `connect-src 'self'${options.development ? " ws: wss:" : ""}`,
+    // WMS-35: the service worker (/sw.js) and the manifest, same origin.
     "worker-src 'self' blob:",
+    "manifest-src 'self'",
     "media-src 'self'",
     "object-src 'none'",
     "frame-src 'none'",

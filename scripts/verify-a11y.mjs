@@ -77,7 +77,13 @@ const SCREENS = [
   "/configuracion/plan",
 ];
 /** Screens before signing in. */
-const PUBLIC = ["/ingresar", "/registro", "/recuperar-contrasena"];
+// WMS-35: the offline page (shown by the service worker) is public too.
+const PUBLIC = [
+  "/ingresar",
+  "/registro",
+  "/recuperar-contrasena",
+  "/sin-conexion",
+];
 
 /** Forms sent empty: the focus must land on a described, invalid field. */
 const FORMS = [

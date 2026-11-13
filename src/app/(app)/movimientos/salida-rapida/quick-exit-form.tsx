@@ -13,6 +13,7 @@ import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useRef, useState } from "react";
 
 import { FormField } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -358,6 +359,11 @@ export function QuickExitForm({
             enterKeyHint="search"
             autoFocus
           />
+          <CameraScanButton
+            target="buscar-producto"
+            title="Escanear productos que salen"
+            continuous
+          />
           <Button
             type="button"
             variant="outline"
@@ -550,6 +556,11 @@ export function QuickExitForm({
                             ? "Sale 1 unidad"
                             : `Salen ${serialCount(line.serials)} unidades`}
                         </p>
+                        <CameraScanButton
+                          target={`${line.key}-serials`}
+                          title={`Escanear series de ${line.product.name}`}
+                          continuous
+                        />
                       </div>
                     )}
                     <div className="flex flex-wrap gap-2">

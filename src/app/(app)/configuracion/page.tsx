@@ -12,7 +12,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PageContainer, PageHeader } from "@/components";
+import { InstallAppPanel, PageContainer, PageHeader } from "@/components";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { getMfaStatus, listActiveSessions } from "@/platform/auth";
@@ -167,6 +167,12 @@ export default async function ConfiguracionPage() {
             lastActiveAt: s.lastActiveAt.toISOString(),
           }))}
         />
+      </section>
+      <section aria-labelledby="telefono" className="space-y-3">
+        <h2 id="telefono" className="text-lg font-semibold">
+          En tu teléfono
+        </h2>
+        <InstallAppPanel />
       </section>
     </PageContainer>
   );
