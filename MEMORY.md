@@ -1,6 +1,6 @@
 # Memoria del proyecto
 
-Actualizada: 2026-11-10, zona America/Mexico_City.
+Actualizada: 2026-11-13, zona America/Mexico_City. Para arrancar un chat nuevo: `docs/RELEVO.md`.
 
 ## WMS (desde 2026-11-09)
 

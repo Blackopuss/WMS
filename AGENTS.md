@@ -14,6 +14,7 @@ Este repositorio (`Blackopuss/WMS`) es un sistema de gestión de almacenes (WMS)
 
 Contexto compartido por Claude Code y Codex. Leer antes de trabajar, en este orden:
 
+- **`docs/RELEVO.md`: dónde quedó el trabajo, cómo levantar el entorno en un contenedor nuevo y cómo se coordina a los subagentes.** Es lo primero que lee un chat nuevo; se pone al día cada vez que se detiene el trabajo.
 - **`docs/INSTRUCCIONES_WMS.md`: instrucciones generales del fundador (2026-11-10). Mandan sobre todo lo demás.** WMS global para cualquier industria, núcleo único configurable por empresa, módulos independientes, fases de desarrollo y reglas obligatorias para los agentes (sección 11). **No hay otro plan que seguir:** nada de etapas PIL, BIL, VEN, COT, PAG o CRM, cobro en línea ni nada pensado para un giro (ferreterías): las convenciones de abajo vienen del código existente, el rumbo solo de estas instrucciones y del plan v3.
 - `docs/ESTADO_WMS.md`: lo que hay y lo que falta, por área y por sección de la especificación.
 - `docs/PLAN_WMS_V3.md`: los pasos que siguen, ordenados por las fases de las instrucciones, con su flujo, dependencias, «Listo cuando» y pruebas. Trabajar **un paso a la vez**, en orden, y cerrarlo solo con su criterio verificado. Manda sobre los planes anteriores (`PLAN_WMS_V2.md` queda como detalle de los pasos WMS-09..14 ya cerrados).
