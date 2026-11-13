@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-56 / WMS-41** · Aprobaciones y ajustes con autorización (ADR 0053):
+  motor de aprobaciones de plataforma (regla por empresa y tipo, solicitud,
+  decisión una sola vez) y sus primeros usos: correcciones de existencias y
+  aplicación de conteos sobre el umbral (PC-7).
 - **WMS-54** · Cross-docking y daños al recibir (ADR 0052): lo dañado de un
   proveedor entra en `DAMAGED` como línea propia y se devuelve desde ahí; lo
   recibido que espera un pedido liberado va directo a su surtido.
