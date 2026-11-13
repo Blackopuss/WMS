@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-39** · Avisos e incidencias (ADR 0057): motor de avisos de plataforma
+  (`notify` dentro de la transacción, campana y `/avisos`, preferencias),
+  conectado a aprobaciones, solicitudes de compra, tareas, devoluciones y
+  traslados; incidencias `INC-…` reportadas desde el piso.
 - **WMS-57** · Solicitudes de compra y comparación de proveedores (ADR 0055):
   solicitud `SC-…` sin costos, aprobación con el motor de WMS-56, comparación
   derivada de las recepciones y conversión en una orden por proveedor; las
