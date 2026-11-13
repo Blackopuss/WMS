@@ -2,7 +2,7 @@
 
 Fecha: 2026-11-14 · Estado: aceptada · Paso: WMS-55 · Completa INV-31..33
 (conteos), ADR 0034 (ajustes), ADR 0038 (alcance), ADR 0040 (lotes) y ADR
-0043 (tarimas) · Prepara WMS-41 (autorizaciones)
+0043 (tarimas) · Prepara WMS-41 (autorizaciones, hecho en ADR 0053)
 
 ## Contexto
 
@@ -129,10 +129,15 @@ ajuste leído bajo el candado del conteo, rechaza (`field: "reviewed"`) si
 llega sin `reviewed: true`; con él aplica y deja `revisado` y
 `productosRevisados` en la bitácora. Aplicar sigue exigiendo
 `inventory.count.apply` + `inventory.adjustment.create` y el motivo. No se
-inventa un flujo de aprobaciones. **Con WMS-41**, la misma condición
-(`needsReview`) creará una solicitud de autorización en vez de pedir la
-casilla, y aplicar quedará esperando a quien tenga el permiso de aprobar; el
-umbral y la marca no cambian.
+inventa un flujo de aprobaciones. **Con WMS-41 (ADR 0053, 2026-11-14)**, si la
+empresa enciende la regla de `inventory.count_apply` (Configuración › Reglas
+de aprobación, donde ahora vive también este umbral), la misma condición
+(`needsReview`) crea una solicitud de autorización en vez de pedir la
+casilla: el conteo sigue abierto pero congelado (sin capturas, sin cancelarse
+ni aplicarse a mano) hasta que alguien con la regla y con
+`inventory.count.apply` + `inventory.adjustment.create` lo autorice; entonces
+se aplica con `applyCount`, a nombre de quien lo pidió. Con la regla apagada
+se queda la casilla. El umbral y la marca no cambian.
 
 ## Exactitud
 

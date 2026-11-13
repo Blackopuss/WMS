@@ -217,6 +217,11 @@ async function receive(
       values,
     };
   }
+  if (!result.ok && result.reason === "pending_approval") {
+    // WMS-41: nothing moved; the correction waits for an authorization.
+    revalidatePath("/aprobaciones");
+    redirect(`/aprobaciones/${result.requestId}?pedida=1`);
+  }
   if (!result.ok && result.reason === "over_capacity") {
     return {
       fieldErrors: {},

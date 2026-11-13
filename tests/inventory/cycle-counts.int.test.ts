@@ -635,6 +635,8 @@ describe("review of big differences", () => {
     expect(count?.review).toEqual({
       lines: 1,
       thresholdText: "más de 25 % de diferencia",
+      // WMS-41: without the company's approval rule, the review box.
+      byApproval: false,
     });
     expect(count?.lines.find((line) => line.productId === a)?.needsReview).toBe(
       true,

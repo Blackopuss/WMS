@@ -525,6 +525,42 @@ export const CROSS_DOCK_MODE = {
   defaultValue: "off",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-41 (ADR 0053): which corrections («Corregir existencias») wait for an
+ * authorization, when the company turns on that approval. A percent of
+ * what the system has in that location (and lot); no amount of money,
+ * which would need a number per company (pending).
+ */
+export const ADJUSTMENT_APPROVAL_THRESHOLD = {
+  key: "inventory.adjustment.approval_threshold",
+  module: "inventory",
+  area: "Ajustes",
+  label: "Qué correcciones esperan autorización",
+  options: [
+    {
+      value: "any",
+      label: "Todas",
+      help: "Toda corrección de existencias espera a que alguien la autorice.",
+    },
+    {
+      value: "10",
+      label: "Si cambian más de 10 %",
+      help: "De lo que tiene el sistema en esa ubicación.",
+    },
+    {
+      value: "25",
+      label: "Si cambian más de 25 %",
+      help: "De lo que tiene el sistema en esa ubicación.",
+    },
+    {
+      value: "50",
+      label: "Si cambian más de 50 %",
+      help: "De lo que tiene el sistema en esa ubicación.",
+    },
+  ],
+  defaultValue: "any",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -545,4 +581,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
   CROSS_DOCK_MODE,
+  ADJUSTMENT_APPROVAL_THRESHOLD,
 ];

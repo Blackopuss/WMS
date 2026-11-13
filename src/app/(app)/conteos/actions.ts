@@ -249,7 +249,13 @@ export async function cancelCountAction(
 }
 
 export type ApplyCountState =
-  { ok: true; summary: string } | { ok: false; error: string };
+  | {
+      ok: true;
+      summary: string;
+      /** WMS-41: it was not applied; it waits for an authorization. */
+      waiting?: true;
+    }
+  | { ok: false; error: string };
 
 /**
  * Applies a count: its differences become one adjustment, with the reason
@@ -271,6 +277,12 @@ export async function applyCountAction(
         reviewed: reviewed === true,
       },
     );
+    if (!result.ok && result.reason === "pending_approval") {
+      // WMS-41: nothing was applied; it waits for an authorization.
+      revalidatePath(`/conteos/${String(countId)}`);
+      revalidatePath("/aprobaciones");
+      return { ok: true, summary: result.error, waiting: true };
+    }
     if (!result.ok) return { ok: false, error: result.error };
     revalidatePath("/conteos");
     revalidatePath(`/conteos/${String(countId)}`);

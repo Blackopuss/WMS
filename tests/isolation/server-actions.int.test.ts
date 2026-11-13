@@ -967,6 +967,27 @@ const REVIEWED: Record<string, Review> = {
     identity: "sesión propia; prohibido si la MFA es obligatoria",
     coveredBy: "tests/platform/mfa-recovery.int.test.ts",
   },
+  // WMS-56/41 (ADR 0053): approvals.
+  decideApprovalAction: {
+    input: "id de la solicitud, autorizar o rechazar y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud se bloquea y lee solo en esa empresa, y bajo su candado se leen de la base los roles, el alcance y la regla vigente; el efecto corre con quien la pidió, no con datos del formulario",
+    coveredBy:
+      "tests/platform/approvals.int.test.ts, tests/inventory/adjustment-approval.int.test.ts",
+  },
+  cancelApprovalAction: {
+    input: "id de la solicitud",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo encuentra solicitudes de esa empresa pedidas por esa persona",
+    coveredBy: "tests/platform/approvals.int.test.ts",
+  },
+  updateApprovalRuleAction: {
+    input:
+      "tipo de aprobación, si pide autorización, roles que autorizan y si quien pide puede autorizar",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo del tipo, y escribe solo en esa empresa",
+    coveredBy: "tests/platform/approvals.int.test.ts",
+  },
 };
 
 function actionFiles(dir: string): string[] {

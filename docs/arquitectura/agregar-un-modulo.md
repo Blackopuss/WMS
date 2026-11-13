@@ -131,6 +131,7 @@ que llama cada función exportada en una empresa sin el módulo y espera rechazo
 | corre algo cada hora por empresa | `ScheduledRound` en `src/modules/registry/rounds.ts` | — |
 | sube o genera archivos | propósito nuevo en `FILE_PURPOSES` (`src/platform/files/files.ts`) con sus permisos | descargas por ruta `GET` en `src/app/api/…` y en `PROTECTED` de `src/proxy.ts` |
 | deja trabajo a medias al quitarse | función en `src/modules/registry/open-work.ts` | como `purchasingOpenWork`; nunca se cancela ni se borra nada |
+| pide autorización para algo | `ApprovalType` en su módulo (como `INVENTORY_APPROVAL_TYPES`) y su lista en `approvalTypes` (`src/modules/registry/approvals.ts`) | clave `<id>.cosa`; `decidePermissions` = lo que hace falta para hacer la operación; pedir con `openApprovalRequest(tx, …)` dentro de la transacción de la operación, después de sus candados, cuando `approvalRequired(tx, clave)`; `approve(tx, …)` aplica con el mismo servicio y lanza `ApprovalExpired` si ya no aplica; el resumen nunca lleva costos ([approvals](modulos/approvals.md)) |
 
 ## 7. Pantallas y menú
 

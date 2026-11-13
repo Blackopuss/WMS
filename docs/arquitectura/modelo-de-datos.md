@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-89 tablas en 22 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+91 tablas en 23 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -14,6 +14,7 @@
 | Plataforma › Bitácora | 2 | [audit](modulos/audit.md) |
 | Plataforma › Aceptación de documentos | 1 | [legal](modulos/legal.md) |
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
+| Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
 | Plataforma › Almacenes y ubicaciones | 5 | [locations](modulos/locations.md) |
@@ -673,6 +674,67 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `key`).
+
+## Plataforma › Aprobaciones
+
+Qué pide autorización en cada empresa (regla por tipo) y cada solicitud con su decisión; los tipos los declara cada módulo.
+
+Documento: [modulos/approvals.md](modulos/approvals.md).
+
+### ApprovalRule · `approval_rule`
+
+What a company asks to authorize for one approval type (WMS-56, ADR 0053). Without a row the type asks for nothing. It is configuration: it changes, and every change goes to the audit log.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `typeKey` | `String · VarChar(80)` |  | «inventory.adjustment»: the key of a registered approval type. |
+| `enabled` | `Boolean` | `false` |  |
+| `approverRoles` | `String · VarChar(200)` | `""` | Roles of the matrix that may decide, separated by commas. |
+| `allowSelfApproval` | `Boolean` | `false` | Who asked may also decide (false by default: four eyes). |
+| `updatedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `typeKey`).
+
+### ApprovalRequest · `approval_request`
+
+One request to authorize something (WMS-56, ADR 0053). Fixed when it is asked for; only its state and decision change, once (trigger), and it is never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `typeKey` | `String · VarChar(80)` |  |  |
+| `sourceType` | `String? · VarChar(40)` |  | What it is about: «stock_count» + its id; null when it is new. |
+| `sourceId` | `String? · Char(36)` |  |  |
+| `openKey` | `String? · VarChar(120)` |  | While pending: one open request per thing (unique); null after. |
+| `idempotencyKey` | `String? · VarChar(64)` |  | The confirmation of the form that asked for it: a retry finds it. |
+| `facilityId` | `String? · Char(36)` |  | Warehouse and location it is about (scope, WMS-20). |
+| `locationId` | `String? · Char(36)` |  |  |
+| `summary` | `String · VarChar(1000)` |  | What the approver reads, fixed when asked (never with costs). |
+| `payload` | `Json` |  | What the module needs to apply it; it checks it again then. |
+| `status` | `ApprovalStatus` | `PENDING` |  |
+| `requestedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `decidedByUserId` | `String? · Char(36)` |  |  |
+| `decidedAt` | `DateTime? · DateTime(3)` |  |  |
+| `decisionReason` | `String? · VarChar(500)` |  |  |
+| `outcome` | `String? · VarChar(1000)` |  | What happened: the module's sentence, or why it expired. |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `openKey`); (`organizationId`, `idempotencyKey`).
+- Índices: (`organizationId`, `status`, `createdAt`, `id`); (`organizationId`, `requestedByUserId`, `createdAt`, `id`); (`organizationId`, `sourceType`, `sourceId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `facilityId`, `locationId`) (al borrar: Restrict).
+
+#### Enumeraciones de Plataforma › Aprobaciones
+
+- `ApprovalStatus`: `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXPIRED`.
 
 ## Plataforma › Archivos
 

@@ -2,7 +2,15 @@ import "server-only";
 
 import { z } from "zod";
 
-import { dec, formatDecimal, newId, type Decimal } from "@/lib";
+import { dec, formatDecimal, isAppError, newId, type Decimal } from "@/lib";
+import {
+  ApprovalExpired,
+  approvalRequired,
+  findApprovalByKey,
+  openApprovalRequest,
+  type ApprovalContext,
+  type ApprovalTx,
+} from "@/platform/approvals";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -33,12 +41,15 @@ import {
   type CapacityPolicy,
   type OverCapacity,
 } from "./placement";
-import { ENTRY_REPEAT_WINDOW } from "./settings";
+import { ADJUSTMENT_APPROVAL_THRESHOLD, ENTRY_REPEAT_WINDOW } from "./settings";
+import { ADJUSTMENT_APPROVAL } from "./approval-keys";
+import { exceedsThreshold } from "./approval-rules";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { AVAILABLE_ANY_LOT, availableOfLot, lotColumns } from "./stock-status";
 import {
   LOT_RULE_SELECT,
   NO_LOT_PRODUCT,
+  checkLotEntry,
   lotForEntry,
   lotForTake,
   ofLot,
@@ -2007,6 +2018,37 @@ const adjustmentSchema = entrySchema.extend({
 });
 
 export type AdjustmentInput = z.input<typeof adjustmentSchema>;
+type AdjustmentData = z.output<typeof adjustmentSchema>;
+
+/**
+ * WMS-41 (ADR 0053): the correction passed the company's threshold and
+ * waits for an authorization; nothing was written. Not `ok`: whoever
+ * expects a movement never believes there was one.
+ */
+export type PendingApproval = {
+  ok: false;
+  reason: "pending_approval";
+  /** The request, to open it in Aprobaciones. */
+  requestId: string;
+  fieldErrors: Partial<Record<EntryField, string>>;
+  /** «Quedó pendiente de autorización: …». */
+  formError: string;
+  /** The same confirmation had already asked for it. */
+  repeated?: true;
+};
+
+export type AdjustmentResult = MovementResult | PendingApproval;
+
+type AdjustmentMode =
+  | { kind: "direct" }
+  | {
+      kind: "approved";
+      requestId: string;
+      requestedAt: Date;
+      /** What the system had when it was asked for. */
+      before: string;
+      authorizedByName: string | null;
+    };
 
 /**
  * Corrects the stock of a product in a location to what was really
@@ -2018,7 +2060,7 @@ export type AdjustmentInput = z.input<typeof adjustmentSchema>;
 export async function registerAdjustment(
   actor: InventoryActor,
   input: AdjustmentInput,
-): Promise<MovementResult> {
+): Promise<AdjustmentResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
     organizationId,
@@ -2051,337 +2093,12 @@ export async function registerAdjustment(
       },
     };
   }
-  const isZero = /^0+(\.0+)?$/.test(data.quantity);
-  const capture: Capture = data.presentationId
-    ? {
-        kind: "presentation",
-        quantity: data.quantity,
-        presentationId: data.presentationId,
-      }
-    : data.unitCode
-      ? { kind: "unit", quantity: data.quantity, unitCode: data.unitCode }
-      : { kind: "base", quantity: data.quantity };
 
   try {
-    return await forOrganization(organizationId).$transaction(async (tx) => {
-      const [productId] = await lockRows(tx, "product", [data.productId]);
-      if (data.locationId) await lockRows(tx, "location", [data.locationId]);
-
-      if (data.idempotencyKey) {
-        const replay = await findReplay(tx, data.idempotencyKey);
-        if (replay) {
-          const line = replay.lines[0];
-          if (
-            !line ||
-            replay.type !== "ADJUSTMENT" ||
-            replay.createdByUserId !== userId ||
-            line.productId !== data.productId ||
-            (data.locationId !== null && line.locationId !== data.locationId) ||
-            !sameLot(line, {
-              lotId: data.lotId || null,
-              lotCode: data.lotCode || null,
-            })
-          ) {
-            return reject("not_allowed", null, KEY_REUSED);
-          }
-          return {
-            ok: true as const,
-            movementId: replay.id,
-            repeated: true as const,
-            summary: `Este ajuste ya estaba registrado: ${formatStock(line.baseQuantity.toString(), line.unitCode)} de ${line.product.name} en ${line.location.name}. No se registró de nuevo.`,
-          };
-        }
-      }
-
-      const product = productId
-        ? await tx.product.findFirst({
-            where: { id: productId },
-            select: {
-              id: true,
-              name: true,
-              sku: true,
-              status: true,
-              unitCode: true,
-              ...LOT_RULE_SELECT,
-            },
-          })
-        : null;
-      if (!product) {
-        return reject("not_found", "productId", "Este producto ya no existe.");
-      }
-      if (product.status !== "ACTIVE") {
-        return reject(
-          "not_allowed",
-          "productId",
-          "Este producto está archivado. Reactívalo para ajustar sus existencias.",
-        );
-      }
-      const location = await tx.location.findFirst({
-        where: data.locationId
-          ? { id: data.locationId }
-          : {
-              isDefault: true,
-              facilityId: (await activeFacilityOf(tx, userId)).id,
-            },
-        select: { id: true, name: true, archivedAt: true },
-      });
-      if (!location) {
-        return reject(
-          "not_found",
-          "locationId",
-          "Esa ubicación ya no existe. Elige otra.",
-        );
-      }
-      // WMS-20: never a location outside the person's warehouses or zones.
-      await assertLocationsInScope(tx, userId, [location.id]);
-      if (location.archivedAt) {
-        return reject(
-          "not_allowed",
-          "locationId",
-          `«${location.name}» está archivada. Elige otra ubicación.`,
-        );
-      }
-
-      // What was counted, in the product's unit. Zero needs no conversion.
-      let counted = dec(0);
-      let how = "";
-      if (!isZero) {
-        const resolved = await resolveConversion(tx, product.id, capture);
-        if (!resolved.ok) return reject("invalid", "quantity", resolved.error);
-        counted = resolved.conversion.baseQuantity;
-        if (
-          resolved.conversion.presentation ||
-          resolved.conversion.capturedUnitCode
-        ) {
-          how = ` (${resolved.conversion.preview})`;
-        }
-      }
-      if (counted.greaterThan(MAX_BALANCE)) {
-        return reject(
-          "invalid",
-          "quantity",
-          "Esa cantidad es demasiado grande. Revisa lo que escribiste.",
-        );
-      }
-
-      // WMS-21: a product by lot is corrected lot by lot. A lot the system
-      // does not know — found on the shelf or in a count — is given by
-      // its code: it is born here, with the movement that brings its stock
-      // (a refusal rolls it back), so no lot exists without one.
-      const newLot = Boolean(data.lotCode || data.lotExpiresOn);
-      if (newLot && data.lotId) {
-        return reject(
-          "invalid",
-          "lotId",
-          "Elige un lote de la lista o escribe uno nuevo, no los dos.",
-        );
-      }
-      const lotAnswer = newLot
-        ? await lotForEntry(tx, actor, product, data)
-        : await lotForTake(tx, product, data.lotId);
-      if (!lotAnswer.ok) {
-        return reject("invalid", lotAnswer.field, lotAnswer.error);
-      }
-      const lot = lotAnswer.lot;
-
-      const unitCode = product.unitCode;
-      const current = await tx.stockBalance.findFirst({
-        where: {
-          productId: product.id,
-          locationId: location.id,
-          ...availableOfLot(lot?.id),
-        },
-        select: { id: true, quantity: true },
-      });
-      const before = dec(current?.quantity.toString() ?? 0);
-      const difference = counted.minus(before);
-      // WMS-53 (ADR 0043): what is in containers here stays: an
-      // adjustment never leaves the balance below it.
-      if (difference.isNegative()) {
-        const contained = await containedAt(
-          tx,
-          product.id,
-          location.id,
-          lot?.id ?? null,
-        );
-        if (counted.lessThan(contained)) {
-          return reject(
-            "invalid",
-            "quantity",
-            containedMessage(contained, unitCode, location.name),
-          );
-        }
-      }
-      // WMS-21B: a product by serial says every serial that is really
-      // there; what the system had and was not named went missing, what
-      // was named and the system did not have appeared. One line each.
-      const serialParts =
-        product.tracking === "SERIAL"
-          ? await serialAdjustment(tx, product, location, data.serials, counted)
-          : null;
-      if (!serialParts && hasSerials(data.serials)) {
-        return reject("invalid", "serials", NO_SERIAL_PRODUCT(product.name));
-      }
-      const parts: {
-        direction: "IN" | "OUT";
-        amount: Decimal;
-        units: SerialPick[];
-      }[] = serialParts
-        ? [
-            ...(serialParts.missing.length > 0
-              ? [
-                  {
-                    direction: "OUT" as const,
-                    amount: dec(serialParts.missing.length),
-                    units: serialParts.missing,
-                  },
-                ]
-              : []),
-            ...(serialParts.found.length > 0
-              ? [
-                  {
-                    direction: "IN" as const,
-                    amount: dec(serialParts.found.length),
-                    units: serialParts.found,
-                  },
-                ]
-              : []),
-          ]
-        : difference.isZero()
-          ? []
-          : [
-              {
-                direction: difference.isPositive() ? "IN" : "OUT",
-                amount: difference.abs(),
-                units: [],
-              },
-            ];
-      if (parts.length === 0) {
-        return reject(
-          "invalid",
-          "quantity",
-          serialParts
-            ? `El sistema ya tiene esas mismas series de ${product.name} en ${location.name}: no hay nada que ajustar.`
-            : `El sistema ya tiene ${formatStock(before.toString(), unitCode)}${ofLot(lot)} en ${location.name}: no hay nada que ajustar.`,
-        );
-      }
-      const direction = difference.isNegative() ? "OUT" : "IN";
-      const amount = difference.abs();
-      // VAL-04: what appears or goes missing is valued at the average.
-      const costs = await openCostBook(tx, organizationId, [product.id]);
-      const unitCosts = parts.map((part) =>
-        part.direction === "IN"
-          ? costs.entry(product.id, part.amount, null)
-          : costs.exit(product.id, part.amount),
-      );
-
-      const movementId = newId();
-      await tx.stockMovement.create({
-        data: {
-          id: movementId,
-          organizationId,
-          type: "ADJUSTMENT",
-          reason: data.reason,
-          reference: data.reference,
-          idempotencyKey: data.idempotencyKey,
-          createdByUserId: userId,
-        },
-      });
-      // The line carries the difference, in the product's unit: that is
-      // what moved. What was counted goes to the audit record below.
-      const lineIds = parts.map(() => newId());
-      await writeSerialMoves(
-        tx,
-        actor,
-        parts.map((part, index) => ({
-          lineId: lineIds[index]!,
-          productId: product.id,
-          locationId: location.id,
-          status: "AVAILABLE" as const,
-          direction: part.direction,
-          units: part.units,
-        })),
-      );
-      for (const [index, part] of parts.entries()) {
-        await tx.stockMovementLine.create({
-          data: {
-            id: lineIds[index]!,
-            organizationId,
-            movementId,
-            lineNumber: index + 1,
-            productId: product.id,
-            locationId: location.id,
-            direction: part.direction,
-            capturedQuantity: part.amount.toString(),
-            capturedUnitCode: null,
-            presentationId: null,
-            presentationVersionId: null,
-            factor: "1",
-            baseQuantity: part.amount.toString(),
-            unitCode,
-            ...lotColumns(lot?.id),
-            unitCost: lineCost(unitCosts[index]!),
-          },
-        });
-      }
-      await costs.save();
-      if (current) {
-        const changed = await tx.stockBalance.updateMany({
-          where: { id: current.id, quantity: before.toString() },
-          data: { quantity: counted.toString() },
-        });
-        if (changed.count !== 1) {
-          throw new Error(`Balance of ${product.id} changed under its lock`);
-        }
-      } else {
-        await tx.stockBalance.create({
-          data: {
-            id: newId(),
-            organizationId,
-            productId: product.id,
-            locationId: location.id,
-            ...lotColumns(lot?.id),
-            quantity: counted.toString(),
-          },
-        });
-      }
-      await recordAuditEvent(tx, {
-        organizationId,
-        actorUserId: userId,
-        action: "inventory.adjusted",
-        target: { type: "product", id: product.id },
-        reason: data.reason,
-        metadata: {
-          sku: product.sku,
-          producto: product.name,
-          ubicacion: location.name,
-          ...(lot ? { lote: lot.code } : {}),
-          antes: formatStock(before.toString(), unitCode),
-          contado: formatStock(counted.toString(), unitCode),
-          diferencia: `${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}`,
-          ...(serialParts
-            ? {
-                seriesFaltantes: serialParts.missing.map((u) => u.serial),
-                seriesEncontradas: serialParts.found.map((u) => u.serial),
-              }
-            : {}),
-          movementId,
-        },
-      });
-
-      return {
-        ok: true as const,
-        movementId,
-        summary:
-          `Ajuste de ${product.name}${ofLot(lot)} en ${location.name}: había ${formatStock(before.toString(), unitCode)} y ahora hay ${formatStock(counted.toString(), unitCode)}${how} (${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}).` +
-          (serialParts && serialParts.missing.length > 0
-            ? ` Faltaron${ofSerials(serialParts.missing)}.`
-            : "") +
-          (serialParts && serialParts.found.length > 0
-            ? ` Aparecieron${ofSerials(serialParts.found)}.`
-            : ""),
-      };
-    }, LOCKING_TRANSACTION);
+    return await forOrganization(organizationId).$transaction(
+      (tx) => adjustIn(tx, actor, data, { kind: "direct" }),
+      LOCKING_TRANSACTION,
+    );
   } catch (error) {
     if (error instanceof Rejected) return error.result;
     if (
@@ -2397,6 +2114,554 @@ export async function registerAdjustment(
         fieldErrors: {},
         formError: KEY_REUSED,
       };
+    }
+    throw error;
+  }
+}
+
+/**
+ * The adjustment itself, inside its transaction (INV-24). `direct` is a
+ * person correcting now: above the company's threshold, with the rule of
+ * `inventory.adjustment` on, it asks for an authorization instead of
+ * writing (WMS-41, ADR 0053). `approved` applies a request that was
+ * authorized: it is written in the name of who asked, and only if nothing
+ * moved in that location since then (otherwise the request expires).
+ */
+async function adjustIn(
+  tx: TransferTx,
+  actor: InventoryActor,
+  data: AdjustmentData,
+  mode: AdjustmentMode,
+): Promise<AdjustmentResult> {
+  const { organizationId, userId } = actor;
+  const isZero = /^0+(\.0+)?$/.test(data.quantity);
+  const capture: Capture = data.presentationId
+    ? {
+        kind: "presentation",
+        quantity: data.quantity,
+        presentationId: data.presentationId,
+      }
+    : data.unitCode
+      ? { kind: "unit", quantity: data.quantity, unitCode: data.unitCode }
+      : { kind: "base", quantity: data.quantity };
+  const [productId] = await lockRows(tx, "product", [data.productId]);
+  if (data.locationId) await lockRows(tx, "location", [data.locationId]);
+
+  if (data.idempotencyKey) {
+    const replay = await findReplay(tx, data.idempotencyKey);
+    if (replay) {
+      const line = replay.lines[0];
+      if (
+        mode.kind === "approved" ||
+        !line ||
+        replay.type !== "ADJUSTMENT" ||
+        replay.createdByUserId !== userId ||
+        line.productId !== data.productId ||
+        (data.locationId !== null && line.locationId !== data.locationId) ||
+        !sameLot(line, {
+          lotId: data.lotId || null,
+          lotCode: data.lotCode || null,
+        })
+      ) {
+        return reject("not_allowed", null, KEY_REUSED);
+      }
+      return {
+        ok: true as const,
+        movementId: replay.id,
+        repeated: true as const,
+        summary: `Este ajuste ya estaba registrado: ${formatStock(line.baseQuantity.toString(), line.unitCode)} de ${line.product.name} en ${line.location.name}. No se registró de nuevo.`,
+      };
+    }
+    // WMS-41: the same confirmation already asked for an authorization.
+    const asked =
+      mode.kind === "direct"
+        ? await findApprovalByKey(tx, data.idempotencyKey)
+        : null;
+    if (asked) {
+      if (
+        asked.typeKey !== ADJUSTMENT_APPROVAL.key ||
+        asked.requestedByUserId !== userId
+      ) {
+        return reject("not_allowed", null, KEY_REUSED);
+      }
+      return {
+        ok: false as const,
+        reason: "pending_approval" as const,
+        requestId: asked.id,
+        repeated: true as const,
+        fieldErrors: {},
+        formError: `Esta corrección ya se había pedido: ${asked.summary}`,
+      };
+    }
+  }
+
+  const product = productId
+    ? await tx.product.findFirst({
+        where: { id: productId },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          status: true,
+          unitCode: true,
+          ...LOT_RULE_SELECT,
+        },
+      })
+    : null;
+  if (!product) {
+    return reject("not_found", "productId", "Este producto ya no existe.");
+  }
+  if (product.status !== "ACTIVE") {
+    return reject(
+      "not_allowed",
+      "productId",
+      "Este producto está archivado. Reactívalo para ajustar sus existencias.",
+    );
+  }
+  const location = await tx.location.findFirst({
+    where: data.locationId
+      ? { id: data.locationId }
+      : {
+          isDefault: true,
+          facilityId: (await activeFacilityOf(tx, userId)).id,
+        },
+    select: { id: true, name: true, archivedAt: true, facilityId: true },
+  });
+  if (!location) {
+    return reject(
+      "not_found",
+      "locationId",
+      "Esa ubicación ya no existe. Elige otra.",
+    );
+  }
+  // WMS-20: never a location outside the person's warehouses or zones.
+  await assertLocationsInScope(tx, userId, [location.id]);
+  if (location.archivedAt) {
+    return reject(
+      "not_allowed",
+      "locationId",
+      `«${location.name}» está archivada. Elige otra ubicación.`,
+    );
+  }
+
+  // What was counted, in the product's unit. Zero needs no conversion.
+  let counted = dec(0);
+  let how = "";
+  if (!isZero) {
+    const resolved = await resolveConversion(tx, product.id, capture);
+    if (!resolved.ok) return reject("invalid", "quantity", resolved.error);
+    counted = resolved.conversion.baseQuantity;
+    if (
+      resolved.conversion.presentation ||
+      resolved.conversion.capturedUnitCode
+    ) {
+      how = ` (${resolved.conversion.preview})`;
+    }
+  }
+  if (counted.greaterThan(MAX_BALANCE)) {
+    return reject(
+      "invalid",
+      "quantity",
+      "Esa cantidad es demasiado grande. Revisa lo que escribiste.",
+    );
+  }
+
+  // WMS-21: a product by lot is corrected lot by lot. A lot the system
+  // does not know — found on the shelf or in a count — is given by
+  // its code: it is born here, with the movement that brings its stock
+  // (a refusal or a request for authorization leaves it unborn), so no
+  // lot exists without one.
+  const newLot = Boolean(data.lotCode || data.lotExpiresOn);
+  if (newLot && data.lotId) {
+    return reject(
+      "invalid",
+      "lotId",
+      "Elige un lote de la lista o escribe uno nuevo, no los dos.",
+    );
+  }
+  let lot: ResolvedLot | null = null;
+  /** A lot the product does not have yet: created only when writing. */
+  let unbornLot: { code: string; expiresOn: string | null } | null = null;
+  if (newLot) {
+    const checked = await checkLotEntry(tx, product, data);
+    if (!checked.ok) return reject("invalid", checked.field, checked.error);
+    if (checked.lot?.existing) lot = checked.lot.existing;
+    else if (checked.lot) {
+      unbornLot = { code: checked.lot.code, expiresOn: checked.lot.expiresOn };
+    }
+  } else {
+    const taken = await lotForTake(tx, product, data.lotId);
+    if (!taken.ok) return reject("invalid", taken.field, taken.error);
+    lot = taken.lot;
+  }
+  const lotText = ofLot(lot ?? unbornLot);
+
+  const unitCode = product.unitCode;
+  const current = unbornLot
+    ? null
+    : await tx.stockBalance.findFirst({
+        where: {
+          productId: product.id,
+          locationId: location.id,
+          ...availableOfLot(lot?.id),
+        },
+        select: { id: true, quantity: true },
+      });
+  const before = dec(current?.quantity.toString() ?? 0);
+  const difference = counted.minus(before);
+  // WMS-41 (ADR 0053): an authorized request is applied only against what
+  // there was when it was asked for; anything that moved this product here
+  // since then makes it expire (count again), as INV-32 does with counts.
+  if (mode.kind === "approved") {
+    const movedSince = await tx.stockMovementLine.count({
+      where: {
+        productId: product.id,
+        locationId: location.id,
+        createdAt: { gte: mode.requestedAt },
+      },
+    });
+    if (movedSince > 0 || !before.equals(mode.before)) {
+      throw new ApprovalExpired(
+        `Desde que se pidió hubo movimientos de ${product.name} en ${location.name}: ya no se sabe si lo contado sigue siendo cierto. Cuenta de nuevo y vuelve a pedir la corrección.`,
+      );
+    }
+  }
+  // WMS-53 (ADR 0043): what is in containers here stays: an
+  // adjustment never leaves the balance below it.
+  if (difference.isNegative()) {
+    const contained = await containedAt(
+      tx,
+      product.id,
+      location.id,
+      lot?.id ?? null,
+    );
+    if (counted.lessThan(contained)) {
+      return reject(
+        "invalid",
+        "quantity",
+        containedMessage(contained, unitCode, location.name),
+      );
+    }
+  }
+  // WMS-21B: a product by serial says every serial that is really
+  // there; what the system had and was not named went missing, what
+  // was named and the system did not have appeared. One line each.
+  const serialParts =
+    product.tracking === "SERIAL"
+      ? await serialAdjustment(tx, product, location, data.serials, counted)
+      : null;
+  if (!serialParts && hasSerials(data.serials)) {
+    return reject("invalid", "serials", NO_SERIAL_PRODUCT(product.name));
+  }
+  const parts: {
+    direction: "IN" | "OUT";
+    amount: Decimal;
+    units: SerialPick[];
+  }[] = serialParts
+    ? [
+        ...(serialParts.missing.length > 0
+          ? [
+              {
+                direction: "OUT" as const,
+                amount: dec(serialParts.missing.length),
+                units: serialParts.missing,
+              },
+            ]
+          : []),
+        ...(serialParts.found.length > 0
+          ? [
+              {
+                direction: "IN" as const,
+                amount: dec(serialParts.found.length),
+                units: serialParts.found,
+              },
+            ]
+          : []),
+      ]
+    : difference.isZero()
+      ? []
+      : [
+          {
+            direction: difference.isPositive() ? "IN" : "OUT",
+            amount: difference.abs(),
+            units: [],
+          },
+        ];
+  if (parts.length === 0) {
+    return reject(
+      "invalid",
+      "quantity",
+      serialParts
+        ? `El sistema ya tiene esas mismas series de ${product.name} en ${location.name}: no hay nada que ajustar.`
+        : `El sistema ya tiene ${formatStock(before.toString(), unitCode)}${ofLot(lot)} en ${location.name}: no hay nada que ajustar.`,
+    );
+  }
+  const direction = difference.isNegative() ? "OUT" : "IN";
+  const amount = difference.abs();
+  const sign = `${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}`;
+
+  // WMS-41 (ADR 0053): above the company's threshold, with the rule on,
+  // nothing is written: the correction waits for who may authorize it.
+  if (
+    mode.kind === "direct" &&
+    (await approvalRequired(tx, ADJUSTMENT_APPROVAL.key))
+  ) {
+    const threshold = await readSetting(tx, ADJUSTMENT_APPROVAL_THRESHOLD);
+    const changed = serialParts
+      ? dec(serialParts.missing.length + serialParts.found.length)
+      : amount;
+    if (exceedsThreshold(threshold, before, changed)) {
+      const serialText = serialParts
+        ? (serialParts.missing.length > 0
+            ? ` Faltan${ofSerials(serialParts.missing)}.`
+            : "") +
+          (serialParts.found.length > 0
+            ? ` Aparecen${ofSerials(serialParts.found)}.`
+            : "")
+        : "";
+      const summary = `${product.name} (${product.sku})${lotText} en ${location.name}: el sistema tiene ${formatStock(before.toString(), unitCode)} y se contaron ${formatStock(counted.toString(), unitCode)} (${sign}).${serialText} Motivo: ${data.reason}`;
+      const asked = await openApprovalRequest(tx, ADJUSTMENT_APPROVAL, actor, {
+        openKey: `adj:${product.id}:${location.id}:${lot?.id ?? `new:${unbornLot?.code ?? ""}`}`,
+        idempotencyKey: data.idempotencyKey,
+        facilityId: location.facilityId,
+        locationId: location.id,
+        summary,
+        payload: {
+          v: 1,
+          productId: product.id,
+          locationId: location.id,
+          lotId: lot?.id ?? null,
+          lotCode: unbornLot?.code ?? null,
+          lotExpiresOn: unbornLot?.expiresOn ?? null,
+          serials: serialParts ? (data.serials ?? null) : null,
+          counted: counted.toString(),
+          before: before.toString(),
+          reason: data.reason,
+          reference: data.reference ?? null,
+          idempotencyKey: data.idempotencyKey ?? null,
+        },
+      });
+      if (!asked.ok) {
+        return reject(
+          "not_allowed",
+          null,
+          `Ya hay una corrección de ${product.name}${lotText} en ${location.name} esperando autorización. Espera a que se decida o retírala en Aprobaciones.`,
+        );
+      }
+      return {
+        ok: false as const,
+        reason: "pending_approval" as const,
+        requestId: asked.requestId,
+        fieldErrors: {},
+        formError: `Quedó pendiente de autorización: ${summary}`,
+      };
+    }
+  }
+  if (unbornLot) {
+    const created = await lotForEntry(tx, actor, product, data);
+    if (!created.ok) return reject("invalid", created.field, created.error);
+    lot = created.lot;
+  }
+
+  // VAL-04: what appears or goes missing is valued at the average.
+  const costs = await openCostBook(tx, organizationId, [product.id]);
+  const unitCosts = parts.map((part) =>
+    part.direction === "IN"
+      ? costs.entry(product.id, part.amount, null)
+      : costs.exit(product.id, part.amount),
+  );
+
+  const movementId = newId();
+  await tx.stockMovement.create({
+    data: {
+      id: movementId,
+      organizationId,
+      type: "ADJUSTMENT",
+      reason: data.reason,
+      reference: data.reference,
+      idempotencyKey: data.idempotencyKey,
+      createdByUserId: userId,
+    },
+  });
+  // The line carries the difference, in the product's unit: that is
+  // what moved. What was counted goes to the audit record below.
+  const lineIds = parts.map(() => newId());
+  await writeSerialMoves(
+    tx,
+    actor,
+    parts.map((part, index) => ({
+      lineId: lineIds[index]!,
+      productId: product.id,
+      locationId: location.id,
+      status: "AVAILABLE" as const,
+      direction: part.direction,
+      units: part.units,
+    })),
+  );
+  for (const [index, part] of parts.entries()) {
+    await tx.stockMovementLine.create({
+      data: {
+        id: lineIds[index]!,
+        organizationId,
+        movementId,
+        lineNumber: index + 1,
+        productId: product.id,
+        locationId: location.id,
+        direction: part.direction,
+        capturedQuantity: part.amount.toString(),
+        capturedUnitCode: null,
+        presentationId: null,
+        presentationVersionId: null,
+        factor: "1",
+        baseQuantity: part.amount.toString(),
+        unitCode,
+        ...lotColumns(lot?.id),
+        unitCost: lineCost(unitCosts[index]!),
+      },
+    });
+  }
+  await costs.save();
+  if (current) {
+    const changed = await tx.stockBalance.updateMany({
+      where: { id: current.id, quantity: before.toString() },
+      data: { quantity: counted.toString() },
+    });
+    if (changed.count !== 1) {
+      throw new Error(`Balance of ${product.id} changed under its lock`);
+    }
+  } else {
+    await tx.stockBalance.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId: product.id,
+        locationId: location.id,
+        ...lotColumns(lot?.id),
+        quantity: counted.toString(),
+      },
+    });
+  }
+  await recordAuditEvent(tx, {
+    organizationId,
+    actorUserId: userId,
+    action: "inventory.adjusted",
+    target: { type: "product", id: product.id },
+    reason: data.reason,
+    metadata: {
+      sku: product.sku,
+      producto: product.name,
+      ubicacion: location.name,
+      ...(lot ? { lote: lot.code } : {}),
+      antes: formatStock(before.toString(), unitCode),
+      contado: formatStock(counted.toString(), unitCode),
+      diferencia: sign,
+      // WMS-41: who authorized it, when it waited for an authorization.
+      ...(mode.kind === "approved"
+        ? {
+            autorizadoPor: mode.authorizedByName ?? "otra persona",
+            solicitud: mode.requestId,
+          }
+        : {}),
+      ...(serialParts
+        ? {
+            seriesFaltantes: serialParts.missing.map((u) => u.serial),
+            seriesEncontradas: serialParts.found.map((u) => u.serial),
+          }
+        : {}),
+      movementId,
+    },
+  });
+
+  return {
+    ok: true as const,
+    movementId,
+    summary:
+      `Ajuste de ${product.name}${ofLot(lot)} en ${location.name}: había ${formatStock(before.toString(), unitCode)} y ahora hay ${formatStock(counted.toString(), unitCode)}${how} (${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}).` +
+      (serialParts && serialParts.missing.length > 0
+        ? ` Faltaron${ofSerials(serialParts.missing)}.`
+        : "") +
+      (serialParts && serialParts.found.length > 0
+        ? ` Aparecieron${ofSerials(serialParts.found)}.`
+        : ""),
+  };
+}
+
+/** What a request of `inventory.adjustment` keeps to apply it later. */
+const adjustmentPayload = z.object({
+  v: z.literal(1),
+  productId: z.string().max(36),
+  locationId: z.string().max(36),
+  lotId: z.string().max(36).nullable(),
+  lotCode: z.string().max(200).nullable(),
+  lotExpiresOn: z.string().max(20).nullable(),
+  serials: z.union([z.string(), z.array(z.string()), z.null()]),
+  counted: z.string().max(40),
+  before: z.string().max(40),
+  reason: z.string().max(500),
+  reference: z.string().max(120).nullable(),
+  idempotencyKey: z.string().max(64).nullable(),
+});
+
+const NO_LONGER = "Esta corrección ya no se puede aplicar.";
+
+/**
+ * Applies an authorized correction (WMS-41, ADR 0053), inside the
+ * transaction of the decision, after the request's lock. What was stored
+ * is checked again like a new adjustment, in the name of who asked for
+ * it; anything that no longer holds makes the request expire.
+ */
+export async function applyApprovedAdjustment(
+  tx: ApprovalTx,
+  context: ApprovalContext,
+): Promise<{ outcome: string }> {
+  const stored = adjustmentPayload.safeParse(context.request.payload);
+  const parsed = stored.success
+    ? adjustmentSchema.safeParse({
+        productId: stored.data.productId,
+        locationId: stored.data.locationId,
+        quantity: stored.data.counted,
+        reason: stored.data.reason,
+        reference: stored.data.reference ?? "",
+        lotId: stored.data.lotId ?? "",
+        lotCode: stored.data.lotCode ?? "",
+        lotExpiresOn: stored.data.lotExpiresOn ?? "",
+        serials: stored.data.serials ?? undefined,
+        idempotencyKey: stored.data.idempotencyKey ?? "",
+      })
+    : null;
+  if (!stored.success || !parsed?.success) throw new ApprovalExpired(NO_LONGER);
+  const actor = {
+    organizationId: context.organizationId,
+    userId: context.request.requestedByUserId,
+  };
+  const failed = (result: {
+    fieldErrors: Partial<Record<string, string>>;
+    formError?: string;
+  }) =>
+    new ApprovalExpired(
+      result.formError ?? Object.values(result.fieldErrors)[0] ?? NO_LONGER,
+    );
+  try {
+    const result = await adjustIn(
+      tx as unknown as TransferTx,
+      actor,
+      parsed.data,
+      {
+        kind: "approved",
+        requestId: context.request.id,
+        requestedAt: context.request.createdAt,
+        before: stored.data.before,
+        authorizedByName: context.decidedByName,
+      },
+    );
+    if (!result.ok) throw failed(result);
+    return { outcome: result.summary };
+  } catch (error) {
+    if (error instanceof Rejected) throw failed(error.result);
+    if (isAppError(error) && error.kind === "forbidden") {
+      throw new ApprovalExpired(
+        "Quien pidió la corrección ya no trabaja en esa ubicación: que la pida alguien que sí.",
+      );
     }
     throw error;
   }

@@ -2,7 +2,15 @@ import "server-only";
 
 import { z } from "zod";
 
-import { dec, formatDecimal, newId, type Decimal } from "@/lib";
+import { dec, fingerprint, formatDecimal, newId, type Decimal } from "@/lib";
+import {
+  ApprovalExpired,
+  approvalRequired,
+  findOpenApproval,
+  openApprovalRequest,
+  type ApprovalContext,
+  type ApprovalTx,
+} from "@/platform/approvals";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -20,7 +28,12 @@ import {
   locationScopeWhere,
 } from "@/platform/locations";
 import { readSetting } from "@/platform/settings";
-import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
+import {
+  LOCKING_TRANSACTION,
+  forOrganization,
+  lockRows,
+  type TenantDb,
+} from "@/server";
 
 import {
   MOVEMENT_TYPE_LABELS,
@@ -34,6 +47,7 @@ import { availableOfLot, lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { COUNT_REVIEW_THRESHOLD } from "./settings";
 import { todayCountsWhere } from "./cycle-counts";
+import { COUNT_APPROVAL } from "./approval-keys";
 
 /**
  * Physical counts: capture (INV-31). A count belongs to one location.
@@ -93,6 +107,54 @@ const reject = <Field extends string>(
 };
 
 const NOT_OPEN = "Este conteo ya está cerrado: no admite más cambios.";
+
+type CountTx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
+
+/** WMS-41: the open request of a count, while it waits (one at a time). */
+const countOpenKey = (countId: string) => `count:${countId}`;
+
+const WAITING =
+  "Este conteo espera autorización: no admite cambios hasta que se decida. Quien lo pidió puede retirar la solicitud en Aprobaciones.";
+
+/** Refuses a change while the count waits for an authorization. */
+async function refuseIfWaiting(tx: CountTx, countId: string): Promise<void> {
+  if (await findOpenApproval(tx, countOpenKey(countId))) {
+    reject("not_allowed", WAITING);
+  }
+}
+
+/**
+ * A mark of what was captured, line by line: what an authorization was
+ * asked for. If it changed, the authorization is not for this count.
+ */
+function countPrint(
+  lines: readonly {
+    productId: string;
+    lotKey: string;
+    captures: readonly { baseQuantity: { toString(): string } }[];
+  }[],
+): string {
+  return fingerprint(
+    lines
+      .map((line) => {
+        const counted = line.captures.reduce(
+          (sum, capture) => sum.plus(capture.baseQuantity.toString()),
+          dec(0),
+        );
+        return `${line.productId}|${line.lotKey}|${counted.toString()}`;
+      })
+      .sort(),
+  );
+}
+
+type ApplyMode =
+  | { kind: "direct"; reviewed: boolean }
+  | {
+      kind: "approved";
+      requestId: string;
+      fingerprint: string;
+      authorizedByName: string | null;
+    };
 
 /**
  * WMS-55 (ADR 0050): a difference that asks for a review before applying,
@@ -318,6 +380,7 @@ export async function captureCount(
         : null;
       if (!count) return reject("not_found", "Este conteo ya no existe.");
       if (count.status !== "OPEN") return reject("not_allowed", NOT_OPEN);
+      await refuseIfWaiting(tx, count.id);
 
       const product = productId
         ? await tx.product.findFirst({
@@ -532,6 +595,7 @@ export async function removeCapture(
         : null;
       if (!count) return reject("not_found", "Este conteo ya no existe.");
       if (count.status !== "OPEN") return reject("not_allowed", NOT_OPEN);
+      await refuseIfWaiting(tx, count.id);
       const capture = await tx.stockCountCapture.findFirst({
         where: {
           id: String(input.captureId).slice(0, 36),
@@ -580,6 +644,7 @@ export async function cancelCount(
         : null;
       if (!count) return reject("not_found", "Este conteo ya no existe.");
       if (count.status !== "OPEN") return reject("not_allowed", NOT_OPEN);
+      await refuseIfWaiting(tx, count.id);
       await tx.stockCount.updateMany({
         where: { id: count.id },
         data: {
@@ -840,7 +905,17 @@ export type CountDetail = CountSummary & {
    * WMS-55: lines whose difference asks for a review before applying, by
    * the company's setting; null while the setting is off.
    */
-  review: { lines: number; thresholdText: string } | null;
+  review: {
+    lines: number;
+    thresholdText: string;
+    /** WMS-41: they wait for an authorization instead of the review box. */
+    byApproval: boolean;
+  } | null;
+  /**
+   * WMS-41: the request that waits to apply it, if any; while it waits the
+   * count takes no captures and is not applied or cancelled by hand.
+   */
+  pendingApprovalId: string | null;
 };
 
 /** A count with everything captured, the latest product first. */
@@ -1092,7 +1167,13 @@ export async function getCount(
         : {
             lines: lines.filter((line) => line.needsReview).length,
             thresholdText: reviewThresholdText(threshold),
+            byApproval: await approvalRequired(scopeClient, COUNT_APPROVAL.key),
           },
+    pendingApprovalId:
+      count.status === "OPEN"
+        ? ((await findOpenApproval(scopeClient, countOpenKey(count.id)))?.id ??
+          null)
+        : null,
   };
 }
 
@@ -1175,6 +1256,16 @@ export type ApplyCountResult =
       /** It had already been applied: nothing was written now. */
       repeated?: true;
     }
+  | {
+      /**
+       * WMS-41: the differences wait for an authorization (the company's
+       * rule); nothing was written and the count stays open.
+       */
+      ok: false;
+      reason: "pending_approval";
+      requestId: string;
+      error: string;
+    }
   | (Failure<"reason" | "reviewed"> & {
       /** Products that must be counted again before applying. */
       conflicts?: string[];
@@ -1243,352 +1334,11 @@ export async function applyCount(
     });
     try {
       const result = await client.$transaction(
-        async (tx) => {
-          const locked = new Set(
-            await lockRows(
-              tx,
-              "product",
-              known.map((line) => line.productId),
-            ),
-          );
-          const [countId] = await lockRows(tx, "stockCount", [data.countId]);
-          const count = countId
-            ? await tx.stockCount.findFirst({
-                where: { id: countId, ...(await countScope(tx, userId)) },
-                select: {
-                  id: true,
-                  status: true,
-                  locationId: true,
-                  appliedMovementId: true,
-                  location: { select: { name: true } },
-                  lines: {
-                    take: COUNT_MAX_LINES,
-                    orderBy: [{ countedAt: "asc" }, { id: "asc" }],
-                    select: {
-                      productId: true,
-                      lotId: true,
-                      lotKey: true,
-                      lot: { select: { code: true } },
-                      systemQuantity: true,
-                      unitCode: true,
-                      product: { select: { name: true, tracking: true } },
-                      captures: {
-                        take: MAX_CAPTURES,
-                        select: { baseQuantity: true },
-                      },
-                    },
-                  },
-                },
-              })
-            : null;
-          if (!count) return reject("not_found", "Este conteo ya no existe.");
-          if (count.status === "APPLIED") {
-            const adjusted = count.appliedMovementId
-              ? await tx.stockMovementLine.count({
-                  where: { movementId: count.appliedMovementId },
-                })
-              : 0;
-            return {
-              ok: true as const,
-              movementId: count.appliedMovementId,
-              adjusted,
-              repeated: true as const,
-              summary: "Este conteo ya estaba aplicado. No se ajustó de nuevo.",
-            };
-          }
-          if (count.status !== "OPEN") return reject("not_allowed", NOT_OPEN);
-          if (count.lines.length === 0) {
-            return reject(
-              "not_allowed",
-              "Este conteo no tiene productos contados: no hay nada que aplicar.",
-            );
-          }
-          if (count.lines.some((line) => !locked.has(line.productId))) {
-            // Someone captured another product meanwhile: start over.
-            return "retry" as const;
-          }
-          // Nothing archived gets stock back (INV-19B, NEG-21; security
-          // audit): archiving refuses while a count is open, and this is
-          // the second check. Order: products → location, as movements.
-          await lockRows(tx, "location", [count.locationId]);
-          const location = await tx.location.findFirst({
-            where: { id: count.locationId },
-            select: { archivedAt: true },
-          });
-          if (!location || location.archivedAt) {
-            return reject(
-              "not_allowed",
-              "La ubicación de este conteo está archivada. Restáurala o cancela el conteo.",
-            );
-          }
-          const archived = await tx.product.findMany({
-            where: { id: { in: [...locked] }, status: { not: "ACTIVE" } },
-            take: 3,
-            select: { name: true },
-          });
-          if (archived.length > 0) {
-            return reject(
-              "not_allowed",
-              `Hay productos archivados en este conteo (${archived.map((product) => product.name).join(", ")}). Reactívalos o cancela el conteo.`,
-            );
-          }
-
-          // WMS-21: a line counted before its product changed how it is
-          // controlled no longer says which stock it is about.
-          const stale = count.lines.find(
-            (line) =>
-              (line.product.tracking === "LOT") !== (line.lotId !== null),
-          );
-          if (stale) {
-            return reject(
-              "not_allowed",
-              `${stale.product.name} cambió su control por lote después de contarlo. Quita sus capturas y cuéntalo de nuevo.`,
-            );
-          }
-          const serial = count.lines.find(
-            (line) => line.product.tracking === "SERIAL",
-          );
-          if (serial) {
-            return reject(
-              "not_allowed",
-              `${SERIAL_NOT_COUNTED(serial.product.name)} Quita sus capturas para aplicar el conteo.`,
-            );
-          }
-          const slot = (row: { productId: string; lotKey: string }) =>
-            `${row.productId}|${row.lotKey}`;
-          const balances = new Map(
-            (
-              await tx.stockBalance.findMany({
-                where: {
-                  locationId: count.locationId,
-                  productId: { in: [...locked] },
-                  status: "AVAILABLE",
-                },
-                select: {
-                  id: true,
-                  productId: true,
-                  lotKey: true,
-                  quantity: true,
-                },
-              })
-            ).map((balance) => [slot(balance), balance]),
-          );
-          const conflicts: string[] = [];
-          // WMS-53 (ADR 0043): what the containers of the location hold
-          // stays; a count never leaves a balance below it.
-          const packed: string[] = [];
-          const adjustments: {
-            productId: string;
-            lotId: string | null;
-            unitCode: string;
-            direction: "IN" | "OUT";
-            amount: string;
-            balanceId: string | null;
-          }[] = [];
-          for (const line of count.lines) {
-            const counted = line.captures.reduce(
-              (sum, capture) => sum.plus(capture.baseQuantity.toString()),
-              dec(0),
-            );
-            const difference = counted.minus(line.systemQuantity.toString());
-            if (difference.isZero()) continue;
-            const balance = balances.get(slot(line));
-            const target = dec(balance?.quantity.toString() ?? 0).plus(
-              difference,
-            );
-            if (target.isNegative() || target.greaterThan(MAX_BALANCE)) {
-              conflicts.push(`${line.product.name}${ofLot(line.lot)}`);
-              continue;
-            }
-            if (
-              difference.isNegative() &&
-              target.lessThan(
-                await containedAt(
-                  tx,
-                  line.productId,
-                  count.locationId,
-                  line.lotId,
-                ),
-              )
-            ) {
-              packed.push(`${line.product.name}${ofLot(line.lot)}`);
-              continue;
-            }
-            adjustments.push({
-              productId: line.productId,
-              lotId: line.lotId,
-              unitCode: line.unitCode,
-              direction: difference.isPositive() ? "IN" : "OUT",
-              amount: difference.abs().toString(),
-              balanceId: balance?.id ?? null,
-            });
-          }
-          if (conflicts.length > 0) {
-            throw new Rejected<"reason">({
-              ok: false,
-              reason: "not_allowed",
-              error:
-                conflicts.length === 1
-                  ? `${conflicts[0]} se movió después de contarlo y su diferencia ya no cabe. Vuelve a contarlo antes de aplicar.`
-                  : `${conflicts.length} productos se movieron después de contarlos y su diferencia ya no cabe. Vuelve a contarlos antes de aplicar.`,
-              conflicts,
-            } as Failure<"reason">);
-          }
-
-          if (packed.length > 0) {
-            throw new Rejected<"reason">({
-              ok: false,
-              reason: "not_allowed",
-              error: `${packed.length === 1 ? packed[0] : `${packed.length} productos`}: con lo contado quedaría menos de lo que dicen sus tarimas o cajas en esta ubicación. Saca de la tarima lo que haga falta (o desármala) y vuelve a contar.`,
-              conflicts: packed,
-            } as Failure<"reason">);
-          }
-
-          // WMS-55 (ADR 0050): big differences ask for a confirmed review,
-          // decided with the setting read now, under the count's lock.
-          const threshold = await readSetting(tx, COUNT_REVIEW_THRESHOLD);
-          const toReview = count.lines
-            .filter((line) => {
-              const counted = line.captures.reduce(
-                (sum, capture) => sum.plus(capture.baseQuantity.toString()),
-                dec(0),
-              );
-              const system = dec(line.systemQuantity.toString());
-              return needsReview(threshold, system, counted.minus(system));
-            })
-            .map((line) => `${line.product.name}${ofLot(line.lot)}`);
-          if (toReview.length > 0 && input.reviewed !== true) {
-            throw new Rejected<"reviewed">({
-              ok: false,
-              reason: "not_allowed",
-              field: "reviewed",
-              error: `${toReview.length === 1 ? `${toReview[0]} tiene` : `${toReview.length} productos tienen`} ${reviewThresholdText(threshold)}: revisa ${toReview.length === 1 ? "su diferencia" : "sus diferencias"}, explica en el motivo qué pasó y marca «Revisé las diferencias» para aplicar.`,
-              review: toReview,
-            } as Failure<"reviewed">);
-          }
-
-          let movementId: string | null = null;
-          if (adjustments.length > 0) {
-            // VAL-04: what appears or goes missing is valued at the average,
-            // read before any balance changes, under the products' locks.
-            const costs = await openCostBook(
-              tx,
-              organizationId,
-              adjustments.map((adjustment) => adjustment.productId),
-            );
-            const unitCosts = adjustments.map((adjustment) =>
-              adjustment.direction === "IN"
-                ? costs.entry(adjustment.productId, adjustment.amount, null)
-                : costs.exit(adjustment.productId, adjustment.amount),
-            );
-            movementId = newId();
-            await tx.stockMovement.create({
-              data: {
-                id: movementId,
-                organizationId,
-                type: "ADJUSTMENT",
-                reason: data.reason,
-                reference: `Conteo de ${count.location.name}`.slice(0, 120),
-                // One adjustment per count, also for the database. The
-                // colon keeps it apart from the keys forms send (letters,
-                // digits, "-" and "_"): nobody can take it beforehand.
-                idempotencyKey: `count:${count.id}`,
-                createdByUserId: userId,
-              },
-            });
-            await tx.stockMovementLine.createMany({
-              data: adjustments.map((adjustment, index) => ({
-                id: newId(),
-                organizationId,
-                movementId: movementId!,
-                lineNumber: index + 1,
-                productId: adjustment.productId,
-                locationId: count.locationId,
-                direction: adjustment.direction,
-                // The difference, in the product's unit: that is what moves.
-                capturedQuantity: adjustment.amount,
-                factor: "1",
-                baseQuantity: adjustment.amount,
-                unitCode: adjustment.unitCode,
-                ...lotColumns(adjustment.lotId),
-                unitCost: lineCost(unitCosts[index]!),
-              })),
-            });
-            await costs.save();
-            for (const adjustment of adjustments) {
-              if (adjustment.direction === "OUT") {
-                const changed = await tx.stockBalance.updateMany({
-                  where: {
-                    id: adjustment.balanceId ?? "",
-                    quantity: { gte: adjustment.amount },
-                  },
-                  data: { quantity: { decrement: adjustment.amount } },
-                });
-                if (changed.count !== 1) {
-                  throw new Error(
-                    `Balance of ${adjustment.productId} changed under its lock`,
-                  );
-                }
-              } else if (adjustment.balanceId) {
-                await tx.stockBalance.updateMany({
-                  where: { id: adjustment.balanceId },
-                  data: { quantity: { increment: adjustment.amount } },
-                });
-              } else {
-                await tx.stockBalance.create({
-                  data: {
-                    id: newId(),
-                    organizationId,
-                    productId: adjustment.productId,
-                    locationId: count.locationId,
-                    ...lotColumns(adjustment.lotId),
-                    quantity: adjustment.amount,
-                  },
-                });
-              }
-            }
-          }
-
-          await tx.stockCount.updateMany({
-            where: { id: count.id },
-            data: {
-              status: "APPLIED",
-              openLocationId: null,
-              closedAt: new Date(),
-              closedByUserId: userId,
-              appliedMovementId: movementId,
-            },
-          });
-          await recordAuditEvent(tx, {
-            organizationId,
-            actorUserId: userId,
-            action: "inventory.count_applied",
-            target: { type: "stock_count", id: count.id },
-            reason: data.reason,
-            metadata: {
-              ubicacion: count.location.name,
-              productosContados: count.lines.length,
-              productosAjustados: adjustments.length,
-              movementId,
-              ...(toReview.length > 0
-                ? { revisado: true, productosRevisados: toReview.length }
-                : {}),
-            },
-          });
-
-          const n = adjustments.length;
-          return {
-            ok: true as const,
-            movementId,
-            adjusted: n,
-            summary:
-              n === 0
-                ? "Conteo aplicado: todo coincidía, no hubo nada que ajustar."
-                : n === 1
-                  ? "Conteo aplicado: se ajustó 1 producto."
-                  : `Conteo aplicado: se ajustaron ${n.toLocaleString("es-MX")} productos.`,
-          };
-        },
+        (tx) =>
+          applyIn(tx, actor, data, known, {
+            kind: "direct",
+            reviewed: input.reviewed === true,
+          }),
         // A long count writes many lines: give it room.
         { ...LOCKING_TRANSACTION, timeout: 60_000, maxWait: 15_000 },
       );
@@ -1604,4 +1354,461 @@ export async function applyCount(
     error:
       "El conteo sigue recibiendo capturas. Espera a que terminen e inténtalo de nuevo.",
   };
+}
+
+/**
+ * Applying itself, inside its transaction (INV-33). `direct` is a person
+ * applying now: with differences beyond the review threshold and the
+ * rule of `inventory.count_apply` on, it asks for an authorization instead
+ * of writing (WMS-41, ADR 0053). `approved` applies a request that was
+ * authorized, in the name of who asked, only if the count is what it was.
+ */
+async function applyIn(
+  tx: CountTx,
+  actor: InventoryActor,
+  data: { countId: string; reason: string },
+  known: { productId: string }[],
+  mode: ApplyMode,
+): Promise<ApplyCountResult | "retry"> {
+  const { organizationId, userId } = actor;
+  const locked = new Set(
+    await lockRows(
+      tx,
+      "product",
+      known.map((line) => line.productId),
+    ),
+  );
+  const [countId] = await lockRows(tx, "stockCount", [data.countId]);
+  const count = countId
+    ? await tx.stockCount.findFirst({
+        where: { id: countId, ...(await countScope(tx, userId)) },
+        select: {
+          id: true,
+          status: true,
+          locationId: true,
+          appliedMovementId: true,
+          location: { select: { name: true, facilityId: true } },
+          lines: {
+            take: COUNT_MAX_LINES,
+            orderBy: [{ countedAt: "asc" }, { id: "asc" }],
+            select: {
+              productId: true,
+              lotId: true,
+              lotKey: true,
+              lot: { select: { code: true } },
+              systemQuantity: true,
+              unitCode: true,
+              product: { select: { name: true, tracking: true } },
+              captures: {
+                take: MAX_CAPTURES,
+                select: { baseQuantity: true },
+              },
+            },
+          },
+        },
+      })
+    : null;
+  if (!count) return reject("not_found", "Este conteo ya no existe.");
+  if (mode.kind === "approved" && count.status !== "OPEN") {
+    throw new ApprovalExpired(
+      "Este conteo ya no está abierto: ya se aplicó o se canceló.",
+    );
+  }
+  if (count.status === "APPLIED") {
+    const adjusted = count.appliedMovementId
+      ? await tx.stockMovementLine.count({
+          where: { movementId: count.appliedMovementId },
+        })
+      : 0;
+    return {
+      ok: true as const,
+      movementId: count.appliedMovementId,
+      adjusted,
+      repeated: true as const,
+      summary: "Este conteo ya estaba aplicado. No se ajustó de nuevo.",
+    };
+  }
+  if (count.status !== "OPEN") return reject("not_allowed", NOT_OPEN);
+  // WMS-41: while it waits for an authorization only the decision applies it.
+  if (mode.kind === "direct") await refuseIfWaiting(tx, count.id);
+  if (
+    mode.kind === "approved" &&
+    countPrint(count.lines) !== mode.fingerprint
+  ) {
+    throw new ApprovalExpired(
+      "Lo capturado en este conteo cambió después de pedir la autorización. Revísalo y vuelve a aplicarlo.",
+    );
+  }
+  if (count.lines.length === 0) {
+    return reject(
+      "not_allowed",
+      "Este conteo no tiene productos contados: no hay nada que aplicar.",
+    );
+  }
+  if (count.lines.some((line) => !locked.has(line.productId))) {
+    // Someone captured another product meanwhile: start over.
+    return "retry" as const;
+  }
+  // Nothing archived gets stock back (INV-19B, NEG-21; security
+  // audit): archiving refuses while a count is open, and this is
+  // the second check. Order: products → location, as movements.
+  await lockRows(tx, "location", [count.locationId]);
+  const location = await tx.location.findFirst({
+    where: { id: count.locationId },
+    select: { archivedAt: true },
+  });
+  if (!location || location.archivedAt) {
+    return reject(
+      "not_allowed",
+      "La ubicación de este conteo está archivada. Restáurala o cancela el conteo.",
+    );
+  }
+  const archived = await tx.product.findMany({
+    where: { id: { in: [...locked] }, status: { not: "ACTIVE" } },
+    take: 3,
+    select: { name: true },
+  });
+  if (archived.length > 0) {
+    return reject(
+      "not_allowed",
+      `Hay productos archivados en este conteo (${archived.map((product) => product.name).join(", ")}). Reactívalos o cancela el conteo.`,
+    );
+  }
+
+  // WMS-21: a line counted before its product changed how it is
+  // controlled no longer says which stock it is about.
+  const stale = count.lines.find(
+    (line) => (line.product.tracking === "LOT") !== (line.lotId !== null),
+  );
+  if (stale) {
+    return reject(
+      "not_allowed",
+      `${stale.product.name} cambió su control por lote después de contarlo. Quita sus capturas y cuéntalo de nuevo.`,
+    );
+  }
+  const serial = count.lines.find((line) => line.product.tracking === "SERIAL");
+  if (serial) {
+    return reject(
+      "not_allowed",
+      `${SERIAL_NOT_COUNTED(serial.product.name)} Quita sus capturas para aplicar el conteo.`,
+    );
+  }
+  const slot = (row: { productId: string; lotKey: string }) =>
+    `${row.productId}|${row.lotKey}`;
+  const balances = new Map(
+    (
+      await tx.stockBalance.findMany({
+        where: {
+          locationId: count.locationId,
+          productId: { in: [...locked] },
+          status: "AVAILABLE",
+        },
+        select: {
+          id: true,
+          productId: true,
+          lotKey: true,
+          quantity: true,
+        },
+      })
+    ).map((balance) => [slot(balance), balance]),
+  );
+  const conflicts: string[] = [];
+  // WMS-53 (ADR 0043): what the containers of the location hold
+  // stays; a count never leaves a balance below it.
+  const packed: string[] = [];
+  const adjustments: {
+    productId: string;
+    lotId: string | null;
+    unitCode: string;
+    direction: "IN" | "OUT";
+    amount: string;
+    balanceId: string | null;
+  }[] = [];
+  for (const line of count.lines) {
+    const counted = line.captures.reduce(
+      (sum, capture) => sum.plus(capture.baseQuantity.toString()),
+      dec(0),
+    );
+    const difference = counted.minus(line.systemQuantity.toString());
+    if (difference.isZero()) continue;
+    const balance = balances.get(slot(line));
+    const target = dec(balance?.quantity.toString() ?? 0).plus(difference);
+    if (target.isNegative() || target.greaterThan(MAX_BALANCE)) {
+      conflicts.push(`${line.product.name}${ofLot(line.lot)}`);
+      continue;
+    }
+    if (
+      difference.isNegative() &&
+      target.lessThan(
+        await containedAt(tx, line.productId, count.locationId, line.lotId),
+      )
+    ) {
+      packed.push(`${line.product.name}${ofLot(line.lot)}`);
+      continue;
+    }
+    adjustments.push({
+      productId: line.productId,
+      lotId: line.lotId,
+      unitCode: line.unitCode,
+      direction: difference.isPositive() ? "IN" : "OUT",
+      amount: difference.abs().toString(),
+      balanceId: balance?.id ?? null,
+    });
+  }
+  if (conflicts.length > 0) {
+    throw new Rejected<"reason">({
+      ok: false,
+      reason: "not_allowed",
+      error:
+        conflicts.length === 1
+          ? `${conflicts[0]} se movió después de contarlo y su diferencia ya no cabe. Vuelve a contarlo antes de aplicar.`
+          : `${conflicts.length} productos se movieron después de contarlos y su diferencia ya no cabe. Vuelve a contarlos antes de aplicar.`,
+      conflicts,
+    } as Failure<"reason">);
+  }
+
+  if (packed.length > 0) {
+    throw new Rejected<"reason">({
+      ok: false,
+      reason: "not_allowed",
+      error: `${packed.length === 1 ? packed[0] : `${packed.length} productos`}: con lo contado quedaría menos de lo que dicen sus tarimas o cajas en esta ubicación. Saca de la tarima lo que haga falta (o desármala) y vuelve a contar.`,
+      conflicts: packed,
+    } as Failure<"reason">);
+  }
+
+  // WMS-55 (ADR 0050): big differences ask for a confirmed review,
+  // decided with the setting read now, under the count's lock.
+  const threshold = await readSetting(tx, COUNT_REVIEW_THRESHOLD);
+  const toReview = count.lines
+    .filter((line) => {
+      const counted = line.captures.reduce(
+        (sum, capture) => sum.plus(capture.baseQuantity.toString()),
+        dec(0),
+      );
+      const system = dec(line.systemQuantity.toString());
+      return needsReview(threshold, system, counted.minus(system));
+    })
+    .map((line) => `${line.product.name}${ofLot(line.lot)}`);
+  // WMS-41 (ADR 0053): with the company's rule on, those differences wait
+  // for an authorization instead of the review box; nothing is written.
+  if (
+    toReview.length > 0 &&
+    mode.kind === "direct" &&
+    (await approvalRequired(tx, COUNT_APPROVAL.key))
+  ) {
+    const summary = `Aplicar el conteo de ${count.location.name}: ${toReview.length === 1 ? `${toReview[0]} tiene` : `${toReview.length} productos tienen (${toReview.slice(0, 5).join(", ")}${toReview.length > 5 ? "…" : ""})`} ${reviewThresholdText(threshold)}. Motivo: ${data.reason}`;
+    const asked = await openApprovalRequest(tx, COUNT_APPROVAL, actor, {
+      sourceType: "stock_count",
+      sourceId: count.id,
+      openKey: countOpenKey(count.id),
+      facilityId: count.location.facilityId,
+      locationId: count.locationId,
+      summary,
+      payload: {
+        v: 1,
+        countId: count.id,
+        reason: data.reason,
+        fingerprint: countPrint(count.lines),
+      },
+    });
+    return {
+      ok: false as const,
+      reason: "pending_approval" as const,
+      requestId: asked.requestId,
+      error: `Quedó pendiente de autorización: ${summary}`,
+    };
+  }
+  if (toReview.length > 0 && mode.kind === "direct" && !mode.reviewed) {
+    throw new Rejected<"reviewed">({
+      ok: false,
+      reason: "not_allowed",
+      field: "reviewed",
+      error: `${toReview.length === 1 ? `${toReview[0]} tiene` : `${toReview.length} productos tienen`} ${reviewThresholdText(threshold)}: revisa ${toReview.length === 1 ? "su diferencia" : "sus diferencias"}, explica en el motivo qué pasó y marca «Revisé las diferencias» para aplicar.`,
+      review: toReview,
+    } as Failure<"reviewed">);
+  }
+
+  let movementId: string | null = null;
+  if (adjustments.length > 0) {
+    // VAL-04: what appears or goes missing is valued at the average,
+    // read before any balance changes, under the products' locks.
+    const costs = await openCostBook(
+      tx,
+      organizationId,
+      adjustments.map((adjustment) => adjustment.productId),
+    );
+    const unitCosts = adjustments.map((adjustment) =>
+      adjustment.direction === "IN"
+        ? costs.entry(adjustment.productId, adjustment.amount, null)
+        : costs.exit(adjustment.productId, adjustment.amount),
+    );
+    movementId = newId();
+    await tx.stockMovement.create({
+      data: {
+        id: movementId,
+        organizationId,
+        type: "ADJUSTMENT",
+        reason: data.reason,
+        reference: `Conteo de ${count.location.name}`.slice(0, 120),
+        // One adjustment per count, also for the database. The
+        // colon keeps it apart from the keys forms send (letters,
+        // digits, "-" and "_"): nobody can take it beforehand.
+        idempotencyKey: `count:${count.id}`,
+        createdByUserId: userId,
+      },
+    });
+    await tx.stockMovementLine.createMany({
+      data: adjustments.map((adjustment, index) => ({
+        id: newId(),
+        organizationId,
+        movementId: movementId!,
+        lineNumber: index + 1,
+        productId: adjustment.productId,
+        locationId: count.locationId,
+        direction: adjustment.direction,
+        // The difference, in the product's unit: that is what moves.
+        capturedQuantity: adjustment.amount,
+        factor: "1",
+        baseQuantity: adjustment.amount,
+        unitCode: adjustment.unitCode,
+        ...lotColumns(adjustment.lotId),
+        unitCost: lineCost(unitCosts[index]!),
+      })),
+    });
+    await costs.save();
+    for (const adjustment of adjustments) {
+      if (adjustment.direction === "OUT") {
+        const changed = await tx.stockBalance.updateMany({
+          where: {
+            id: adjustment.balanceId ?? "",
+            quantity: { gte: adjustment.amount },
+          },
+          data: { quantity: { decrement: adjustment.amount } },
+        });
+        if (changed.count !== 1) {
+          throw new Error(
+            `Balance of ${adjustment.productId} changed under its lock`,
+          );
+        }
+      } else if (adjustment.balanceId) {
+        await tx.stockBalance.updateMany({
+          where: { id: adjustment.balanceId },
+          data: { quantity: { increment: adjustment.amount } },
+        });
+      } else {
+        await tx.stockBalance.create({
+          data: {
+            id: newId(),
+            organizationId,
+            productId: adjustment.productId,
+            locationId: count.locationId,
+            ...lotColumns(adjustment.lotId),
+            quantity: adjustment.amount,
+          },
+        });
+      }
+    }
+  }
+
+  await tx.stockCount.updateMany({
+    where: { id: count.id },
+    data: {
+      status: "APPLIED",
+      openLocationId: null,
+      closedAt: new Date(),
+      closedByUserId: userId,
+      appliedMovementId: movementId,
+    },
+  });
+  await recordAuditEvent(tx, {
+    organizationId,
+    actorUserId: userId,
+    action: "inventory.count_applied",
+    target: { type: "stock_count", id: count.id },
+    reason: data.reason,
+    metadata: {
+      ubicacion: count.location.name,
+      productosContados: count.lines.length,
+      productosAjustados: adjustments.length,
+      movementId,
+      ...(toReview.length > 0
+        ? { revisado: true, productosRevisados: toReview.length }
+        : {}),
+      // WMS-41: who authorized it, when it waited for an authorization.
+      ...(mode.kind === "approved"
+        ? {
+            autorizadoPor: mode.authorizedByName ?? "otra persona",
+            solicitud: mode.requestId,
+          }
+        : {}),
+    },
+  });
+
+  const n = adjustments.length;
+  return {
+    ok: true as const,
+    movementId,
+    adjusted: n,
+    summary:
+      n === 0
+        ? "Conteo aplicado: todo coincidía, no hubo nada que ajustar."
+        : n === 1
+          ? "Conteo aplicado: se ajustó 1 producto."
+          : `Conteo aplicado: se ajustaron ${n.toLocaleString("es-MX")} productos.`,
+  };
+}
+
+/** What a request of `inventory.count_apply` keeps to apply it later. */
+const countPayload = z.object({
+  v: z.literal(1),
+  countId: z.string().max(36),
+  reason: z.string().max(500),
+  fingerprint: z.string().max(40),
+});
+
+/**
+ * Applies a count whose differences were authorized (WMS-41, ADR 0053),
+ * inside the transaction of the decision, after the request's lock: the
+ * same application as always (INV-32/33), in the name of who asked, only
+ * if the count is still open with exactly what was captured then.
+ */
+export async function applyApprovedCount(
+  tx: ApprovalTx,
+  context: ApprovalContext,
+): Promise<{ outcome: string }> {
+  const stored = countPayload.safeParse(context.request.payload);
+  const reason = stored.success ? applySchema.safeParse(stored.data) : null;
+  if (!stored.success || !reason?.success) {
+    throw new ApprovalExpired("Este conteo ya no se puede aplicar así.");
+  }
+  const actor = {
+    organizationId: context.organizationId,
+    userId: context.request.requestedByUserId,
+  };
+  const client = tx as unknown as CountTx;
+  const known = await client.stockCountLine.findMany({
+    where: { countId: stored.data.countId },
+    take: COUNT_MAX_LINES,
+    select: { productId: true },
+  });
+  try {
+    const result = await applyIn(client, actor, reason.data, known, {
+      kind: "approved",
+      requestId: context.request.id,
+      fingerprint: stored.data.fingerprint,
+      authorizedByName: context.decidedByName,
+    });
+    if (result === "retry") {
+      throw new ApprovalExpired(
+        "Lo capturado en este conteo cambió después de pedir la autorización. Revísalo y vuelve a aplicarlo.",
+      );
+    }
+    if (!result.ok) throw new ApprovalExpired(result.error);
+    return { outcome: result.summary };
+  } catch (error) {
+    if (error instanceof Rejected) {
+      throw new ApprovalExpired(error.result.error);
+    }
+    throw error;
+  }
 }
