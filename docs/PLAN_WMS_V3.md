@@ -1,6 +1,6 @@
 # Plan WMS v3
 
-Actualizado: 2026-11-10. Revisión del plan v2 contra las
+Actualizado: 2026-11-13 (estado de los pasos cerrados). Revisión del plan v2 contra las
 [instrucciones generales del fundador](INSTRUCCIONES_WMS.md), que mandan sobre
 este plan. Reemplaza los pasos pendientes de [`PLAN_WMS_V2.md`](PLAN_WMS_V2.md);
 el detalle de los pasos ya cerrados sigue allí. Las secciones «especificación
@@ -55,6 +55,72 @@ x.y» citadas son de [`ESPECIFICACION_WMS_v5.md`](ESPECIFICACION_WMS_v5.md).
   (ADR 0032); desde el primer despliegue, solo expansión.
 - Pruebas críticas de la especificación 15 que cada paso deja probadas: **PC-n**.
 
+## Pendientes que dejaron los pasos cerrados
+
+Lo que sigue sin hacer después de los pasos cerrados, con el ADR de donde sale.
+Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
+
+**Qué sigue, en el orden de la tabla de fases:** WMS-17 (devoluciones de clientes,
+en curso en su rama `wms-17-devoluciones`), WMS-19, WMS-54, WMS-55, WMS-26 (en
+curso en su rama `wms-26-etiquetas`), WMS-36, WMS-23, WMS-24 y WMS-25.
+
+- Las órdenes de compra, las recepciones y las devoluciones no tienen almacén: se
+  ven todas (ADR 0038, ADR 0035).
+- Reconciliación, productos sin existencias y guía de primer uso siguen sin
+  desglose para quien tiene alcance limitado (ADR 0038).
+- Una reubicación entre dos zonas: el historial y la exportación muestran el
+  movimiento a quien alcanza solo una de ellas (ADR 0038).
+- Lo apartado sin ubicación (reservas a nivel producto) no se descuenta de lo
+  «disponible» de una persona limitada (ADR 0038).
+- Dimensiones de la ubicación (largo, ancho, alto) (ADR 0039, ADR 0042).
+- Mover existencias no disponibles sin cambiar su estado (ADR 0039, ADR 0042).
+- Mover una ubicación en el árbol no revisa la capacidad del nuevo padre, y
+  cambiar una capacidad o una restricción no revisa lo que ya hay (ADR 0039).
+- Las tareas pendientes hacia un destino no se descuentan de su capacidad al crear
+  otra (ADR 0039, ADR 0042).
+- La revisión previa de una importación no anticipa las restricciones: el producto
+  falla al aplicarse (ADR 0039).
+- Peso y volumen en la importación de productos (ADR 0039).
+- Bloquear una ubicación por mantenimiento (ADR 0039).
+- Bloqueo automático de lo caducado: hoy solo deja de proponerse al surtir (ADR 0040).
+- Un ticket de salidas con dos lotes del mismo producto no cabe en el archivo; se
+  registra a mano (ADR 0040).
+- Varios lotes de una línea de recepción en lugares distintos: la ubicación es de la
+  línea, no del lote (ADR 0040).
+- Lo no disponible sigue sin poder contarse, también por lote (ADR 0040, ADR 0033).
+- Lo que terminó con el control anterior de un producto no se reversa después del
+  cambio (ADR 0040).
+- Conteo por serie: hoy se corrige con un ajuste (ADR 0041).
+- Series en archivos de existencias y de salidas importadas (ADR 0041).
+- Elegir de una lista las series de una ubicación, además de escanearlas (ADR 0041).
+- Lote y serie a la vez en un mismo producto (ADR 0041).
+- Serie única en toda la empresa, no solo por producto (ADR 0041).
+- Garantía de una serie (ADR 0041).
+- Daños y diferencias al recibir: lo dañado entra en «Dañado» y no genera tarea (ADR 0042).
+- Cercanía de la ubicación: coordenadas, recorrido o pasillo más cercano (ADR 0042).
+- Registrar una entrada «en tarima» en un solo paso; la recepción sí lo hace (ADR 0043).
+- Surtir directo de una tarima, sin sacarla antes (ADR 0043).
+- Tarea de traslado de una tarima creada a mano (ADR 0043).
+- Conteo por tarima, y cambiar el estado de lo que va dentro sin sacarlo (ADR 0043).
+- «Sin acomodar» muestra la tarima como fila propia (ADR 0043).
+- Contenedores dentro de contenedores; peso y volumen de la tarima vacía (ADR 0043).
+- Imprimir etiquetas de tarima, bulto y embarque (WMS-26; ADR 0043, 0044 y 0045).
+- Verificar por presentación con código de barras propio (ADR 0044).
+- Volumen y dimensiones del bulto; hoy solo peso (ADR 0044).
+- Cancelar un pedido surtido o en empaque (ADR 0044).
+- Reintento con clave por escaneo (ADR 0044).
+- Andenes o puertas de salida, y mover bultos a ellos (ADR 0045).
+- Despacho parcial de un pedido (ADR 0045).
+- Catálogo de transportistas (hoy texto libre) y conexión con sus sistemas para
+  generar guías (ADR 0045).
+- Un embarque con pedidos de varios almacenes; hoy cada embarque es de su almacén
+  (ADR 0045).
+- El equipo muestra los almacenes y zonas de cada persona a quien tiene
+  `platform.team.read`, aunque esté limitado a otros: aceptado por ahora
+  (`docs/seguridad/AUDITORIA_5.md`).
+- Una invitación pendiente conserva el alcance con que se emitió; reenviarla no lo
+  revalida (`docs/seguridad/AUDITORIA_5.md`).
+
 ## Resumen por fase
 
 | Fase | Pasos (en orden) | Para qué |
@@ -95,7 +161,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-53 | Tarimas y contenedores | Hecho (2026-11-13, ADR 0043); pendiente: surtir directo de una tarima, conteo por tarima |
 | WMS-52 | Acomodo con recomendación | Hecho (2026-11-13, ADR 0042); pendiente: cantidad dañada al recibir, cercanía |
 | WMS-51 | Documentación técnica base | Hecho (2026-11-13, `docs/arquitectura/`, `CHANGELOG.md`) |
-| WMS-22B | Capacidad y restricciones de ubicación | Hecho (2026-11-12, ADR 0039); pendiente: dimensiones (WMS-52), mover existencias no disponibles sin cambiar su estado |
+| WMS-22B | Capacidad y restricciones de ubicación | Hecho (2026-11-12, ADR 0039); pendiente: dimensiones, mover existencias no disponibles sin cambiar su estado |
 
 ---
 
@@ -191,7 +257,11 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
     y ocupación que suma los nodos descendientes una sola vez (**PC-11**).
     Pruebas en `tests/inventory/capacity.int.test.ts` y
     `tests/platform/location-limits.int.test.ts`. Las dimensiones de la
-    ubicación quedan para WMS-52.
+    ubicación siguen pendientes (ADR 0039).
+
+- **Estado:** hecho. WMS-22A el 2026-11-10 (ADR 0036) y WMS-22B el 2026-11-12
+  (ADR 0039). Pendiente: dimensiones y lo demás de ADR 0039 (sección «Pendientes
+  que dejaron los pasos cerrados»).
 
 ### WMS-20 · Alcance de permisos por almacén y zona
 
@@ -205,6 +275,9 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
   pantallas, búsquedas, exportaciones ni tareas.
 - **Pruebas:** **PC-12** con ids de otro almacén en cada Server Action que
   recibe una ubicación; `REVIEWED` actualizado.
+- **Estado:** hecho (2026-11-12, ADR 0038), con alcance al invitar y cifras de
+  empresa solo para quien no tiene límite. Pendiente: las órdenes de compra no
+  tienen almacén (ADR 0038).
 
 ### WMS-21 · Lotes, caducidad y números de serie
 
@@ -221,11 +294,11 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
   trazabilidad muestra todo el recorrido.
 - **Pruebas:** FEFO elige el lote correcto; serie única por empresa;
   reconciliación por lote.
-- **Estado:** partido en dos. **WMS-21A (lotes y caducidad) hecho el
-  2026-11-13** (ADR 0040, `tests/inventory/lots.int.test.ts`). **WMS-21B,
-  pendiente:** números de serie, trazabilidad por serie o pedido, varios lotes
-  en una línea de recepción, lote en importaciones, exportaciones, PDF y
-  reportes de Compras, y alta de un lote desde un conteo.
+- **Estado:** hecho el 2026-11-13. **WMS-21A** (ADR 0040,
+  `tests/inventory/lots.int.test.ts`) y **WMS-21B** (ADR 0041,
+  `tests/inventory/serials.int.test.ts` y `traceability.int.test.ts`). Pendiente:
+  lo que dicen «Lo que quedó fuera» de los ADR 0040 y 0041 (sección «Pendientes
+  que dejaron los pasos cerrados»).
 
 ### WMS-51 · Documentación técnica base
 
@@ -239,6 +312,8 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
   esa carpeta.
 - **Pruebas:** una prueba compara la lista de tablas del modelo documentado con
   el esquema.
+- **Estado:** hecho (2026-11-13): `docs/arquitectura/` con el modelo de datos
+  generado y `CHANGELOG.md`.
 
 ## Retroalimentación de campo (2026-11-12)
 
@@ -265,13 +340,10 @@ generales: sirve a cualquier empresa que fabrica, no a un giro.
 | Convivir con un ERP (SAP) | WMS-60 y WMS-62. |
 | Sencillo: capturo y guardo, escaneo y guardo | Regla KISS vigente (`docs/ux/AUDITORIA_KISS.md`). |
 
-**Orden recomendado por esta retroalimentación** (el fundador pidió avanzar
-varios pasos a la vez, cada uno en su rama, que se une a `pruebas` y se borra):
-primero, en paralelo, WMS-20, WMS-71, WMS-72 y WMS-73 (no se pisan entre sí);
-después, uno tras otro porque tocan el corazón de las existencias, WMS-22B,
-WMS-21 y WMS-52; luego WMS-26, WMS-37 y WMS-39; y producción y calidad
-(WMS-59, WMS-27..31) antes que el resto de la Fase 3. Producción no empieza sin
-escribir aquí su flujo (regla 15).
+**Qué sigue de esta retroalimentación:** WMS-20, WMS-71, WMS-72, WMS-73, WMS-22B,
+WMS-21 y WMS-52 ya están hechos. Quedan WMS-26, WMS-37 y WMS-39, y producción y
+calidad (WMS-59, WMS-27..31) antes que el resto de la Fase 3. Producción no empieza
+sin escribir aquí su flujo (regla 15).
 
 ### WMS-71 · Aviso de entrada repetida
 
@@ -294,6 +366,7 @@ escribir aquí su flujo (regla 15).
   avisa; un reintento con la misma clave sigue respondiendo como hasta hoy.
 - **Pruebas:** dentro y fuera de la ventana, otra cantidad, otro almacén,
   ajuste apagado, aceptación explícita; reconciliación.
+- **Estado:** hecho (2026-11-12).
 
 ### WMS-72 · Existencias sin acomodar
 
@@ -312,6 +385,7 @@ escribir aquí su flujo (regla 15).
   de otra empresa aparece.
 - **Pruebas:** con y sin ubicaciones, tras reubicar, dos almacenes, dos
   empresas, sin permiso.
+- **Estado:** hecho (2026-11-12).
 
 ### WMS-73 · Resumen del día
 
@@ -329,6 +403,7 @@ escribir aquí su flujo (regla 15).
   y Pedidos filtradas por hoy; un operador no ve el bloque ni puede pedirlo.
 - **Pruebas:** frontera del día en la zona horaria de la empresa, dos
   empresas, dos almacenes, sin permiso.
+- **Estado:** hecho (2026-11-12).
 
 ## Fase 2. Operación logística
 
@@ -347,6 +422,8 @@ escribir aquí su flujo (regla 15).
   recepción sin tarea; la recomendación respeta capacidad y restricciones.
 - **Pruebas:** recomendación con escenario conocido; acomodo no se confirma dos
   veces; reconciliación.
+- **Estado:** hecho (2026-11-13, ADR 0042). Pendiente: daños y diferencias al
+  recibir, y cercanía (ADR 0042).
 
 ### WMS-53 · Tarimas y contenedores (LPN)
 
@@ -358,6 +435,8 @@ escribir aquí su flujo (regla 15).
 - **Listo cuando:** una tarima recibida se acomoda, mueve y desarma sin perder
   el detalle por producto y lote.
 - **Pruebas:** mover una tarima mueve exactamente su contenido; reconciliación.
+- **Estado:** hecho (2026-11-13, ADR 0043). Pendiente: surtir directo de una
+  tarima, entrada manual en tarima, conteo por tarima (ADR 0043).
 
 ### WMS-15 · Verificación y empaque (packing)
 
@@ -368,6 +447,9 @@ escribir aquí su flujo (regla 15).
 - **Depende de:** WMS-14, WMS-18 y WMS-53.
 - **Listo cuando:** un pedido surtido se verifica y empaca.
 - **Pruebas:** no se empaca más de lo surtido; diferencias explicadas.
+- **Estado:** hecho (2026-11-13, ADR 0044). Pendiente: imprimir la etiqueta del
+  bulto (WMS-26), código de barras por presentación, cancelar un pedido surtido
+  (ADR 0044).
 
 ### WMS-16 · Despacho y embarques
 
@@ -380,6 +462,8 @@ escribir aquí su flujo (regla 15).
 - **Listo cuando:** las existencias bajan una sola vez y el PDF se descarga.
 - **Pruebas:** despacho repetido no duplica la salida (**PC-3**); no se despacha
   sin empacar; reconciliación; texto del PDF.
+- **Estado:** hecho (2026-11-13, ADR 0045). Pendiente: andenes, despacho parcial
+  y catálogo de transportistas (ADR 0045).
 
 ### WMS-17 · Devoluciones de clientes
 
@@ -587,7 +671,7 @@ Después: piloto en una empresa real; medir y corregir antes de escalar.
 ## Decisiones del fundador que este plan necesita
 
 1. **Orden:** almacenes y ubicaciones configurables (WMS-18, WMS-22, WMS-20,
-   WMS-21) antes de empaque y despacho, como pide la Fase 1. Recomendado.
+   WMS-21) antes de empaque y despacho, como pide la Fase 1. Aprobado por el fundador el 2026-11-10.
 2. **Ventas (WMS-63):** reintegrarla como módulo opcional o dejarla fuera.
 3. **Proveedor de infraestructura y de timbrado** (WMS-47, WMS-61).
 4. **Precios del WMS** (WMS-69, WMS-48).
