@@ -387,6 +387,8 @@ export type ReceiveFormState = {
   formError?: string;
   /** Problem of each line, by the id of the order line. */
   lineErrors?: Record<string, string>;
+  /** WMS-21: the problem of that line is its lot or its expiry date. */
+  lineFields?: Record<string, "lotCode" | "lotExpiresOn">;
   /**
    * A location would be left above its capacity and the company only warns
    * (WMS-22B): nothing was received. `stamp` marks what the warning is
@@ -400,6 +402,9 @@ export type ReceiveFormState = {
     quantities: Record<string, string>;
     /** Location chosen for a line, when not the one of the receipt. */
     places: Record<string, string>;
+    /** WMS-21: lot and expiry typed for a line of a product by lot. */
+    lots: Record<string, string>;
+    expiries: Record<string, string>;
   };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
@@ -422,8 +427,19 @@ export async function receivePurchaseOrderAction(
   // and, when it goes elsewhere than the rest, `l:<id>` (CMP-09).
   const quantities: Record<string, string> = {};
   const places: Record<string, string> = {};
+  // WMS-21: `lot:<id>` and `exp:<id>`, only for products by lot.
+  const lots: Record<string, string> = {};
+  const expiries: Record<string, string> = {};
   for (const [name, value] of formData.entries()) {
     if (typeof value !== "string") continue;
+    if (name.startsWith("lot:") && Object.keys(lots).length < 200) {
+      lots[name.slice(4, 40)] = value.slice(0, 100);
+      continue;
+    }
+    if (name.startsWith("exp:") && Object.keys(expiries).length < 200) {
+      expiries[name.slice(4, 40)] = value.slice(0, 20);
+      continue;
+    }
     if (name.startsWith("q:") && Object.keys(quantities).length < 200) {
       quantities[name.slice(2, 38)] = value.slice(0, 40);
     } else if (
@@ -439,6 +455,8 @@ export async function receivePurchaseOrderAction(
     reference: String(formData.get("reference") ?? "").slice(0, 200),
     quantities,
     places,
+    lots,
+    expiries,
   };
   const answers = prev.answers + 1;
   // What a capacity warning would be about: what goes where.
@@ -449,6 +467,7 @@ export async function receivePurchaseOrderAction(
       id,
       quantity,
       places[id] ?? "",
+      lots[id] ?? "",
     ]),
   ]);
   let result;
@@ -463,6 +482,8 @@ export async function receivePurchaseOrderAction(
           orderLineId,
           quantity,
           locationId: places[orderLineId],
+          lotCode: lots[orderLineId],
+          lotExpiresOn: expiries[orderLineId],
         })),
         idempotencyKey: String(formData.get("idempotencyKey") ?? "").slice(
           0,
@@ -494,6 +515,7 @@ export async function receivePurchaseOrderAction(
       fieldErrors: result.fieldErrors,
       formError: result.formError,
       lineErrors: result.lineErrors,
+      lineFields: result.lineFields,
       values,
       answers,
     };

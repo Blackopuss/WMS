@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
   countMyTasks,
+  countExpiringLots,
   countUnplacedStock,
   getDaySummary,
   getFirstSteps,
@@ -98,6 +99,11 @@ export default async function InicioPage() {
     access.can("inventory.stock.read") &&
     access.allows("inventory.transfer.create")
       ? await countUnplacedStock(actor)
+      : 0;
+  // WMS-21: lots with stock that expired or are about to; only if any.
+  const expiring =
+    inventory && access.can("inventory.stock.read")
+      ? await countExpiringLots(actor)
       : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
@@ -226,6 +232,20 @@ export default async function InicioPage() {
             {unplaced === 1
               ? "1 producto sin acomodar."
               : `${unplaced.toLocaleString("es-MX")} productos sin acomodar.`}
+          </span>
+          <span className="font-medium text-primary">Ver cuáles</span>
+        </Link>
+      )}
+
+      {expiring > 0 && (
+        <Link
+          href="/inventario/por-caducar"
+          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="flex-1">
+            {expiring === 1
+              ? "1 lote por caducar."
+              : `${expiring.toLocaleString("es-MX")} lotes por caducar.`}
           </span>
           <span className="font-medium text-primary">Ver cuáles</span>
         </Link>

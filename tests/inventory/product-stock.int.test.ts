@@ -256,6 +256,7 @@ describe("getProductStock", () => {
       reservedLabel: "0 piezas",
       locations: [],
       equivalences: [],
+      lots: [],
     });
   });
 

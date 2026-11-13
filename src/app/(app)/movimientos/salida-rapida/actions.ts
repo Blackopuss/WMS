@@ -130,9 +130,12 @@ export async function registerQuickExitAction(
       line && typeof line === "object" ? (line as Record<string, unknown>) : {};
     const field = (name: string) =>
       typeof fields[name] === "string" ? fields[name].slice(0, 100) : "";
+    // WMS-21: «<ubicación>|<lote>» for a product by lot; only ids travel.
+    const [locationId = "", lotId = ""] = field("locationId").split("|");
     return {
       productId: field("productId"),
-      locationId: field("locationId"),
+      locationId,
+      lotId,
       quantity: field("quantity"),
       ...captureFields(field("capture")),
     };

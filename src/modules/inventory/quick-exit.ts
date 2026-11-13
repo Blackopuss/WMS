@@ -16,7 +16,8 @@ import {
   type InventoryActor,
 } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { lotColumns } from "./stock-status";
+import { LOT_RULE_SELECT, lotForTake } from "./lot-resolve";
 import { freeToTake, reservedMessage } from "./reservations";
 
 /**
@@ -44,6 +45,8 @@ const lineSchema = z.object({
   /** Only the id or the code travels; the content is read here (INV-09). */
   presentationId: optionalId(36),
   unitCode: optionalId(12),
+  /** The lot it leaves from, for a product by lot (WMS-21). */
+  lotId: optionalId(36),
 });
 
 const quickExitSchema = z.object({
@@ -210,6 +213,7 @@ export async function registerQuickExit(
                 capturedQuantity: true,
                 capturedUnitCode: true,
                 presentationId: true,
+                lotId: true,
               },
             },
           },
@@ -227,6 +231,7 @@ export async function registerQuickExit(
                   stored.locationId === line.locationId) &&
                 (stored.presentationId ?? null) === line.presentationId &&
                 (stored.capturedUnitCode ?? null) === line.unitCode &&
+                (stored.lotId ?? null) === line.lotId &&
                 sameQuantity(line.quantity, stored.capturedQuantity.toString())
               );
             });
@@ -244,7 +249,7 @@ export async function registerQuickExit(
         (
           await tx.product.findMany({
             where: { id: { in: [...lockedProducts] } },
-            select: { id: true, name: true, status: true },
+            select: { id: true, name: true, status: true, ...LOT_RULE_SELECT },
           })
         ).map((product) => [product.id, product]),
       );
@@ -287,6 +292,9 @@ export async function registerQuickExit(
         productName: string;
         locationId: string;
         locationName: string;
+        lotId: string | null;
+        /** « del lote L-01», for messages. */
+        lotText: string;
         unitCode: string;
         base: ReturnType<typeof dec>;
         capturedQuantity: string;
@@ -324,6 +332,13 @@ export async function registerQuickExit(
           );
           continue;
         }
+        // WMS-21: a product by lot leaves from one of its lots.
+        const lotAnswer = await lotForTake(tx, product, line.lotId);
+        if (!lotAnswer.ok) {
+          fail(index, "invalid", lotAnswer.error);
+          continue;
+        }
+        const lot = lotAnswer.lot;
         const capture: Capture = line.presentationId
           ? {
               kind: "presentation",
@@ -346,6 +361,8 @@ export async function registerQuickExit(
           productName: product.name,
           locationId: location.id,
           locationName: location.name,
+          lotId: lot?.id ?? null,
+          lotText: lot ? ` del lote ${lot.code}` : "",
           unitCode: conversion.product.unitCode,
           base: c.baseQuantity,
           capturedQuantity: c.capturedQuantity.toString(),
@@ -359,23 +376,30 @@ export async function registerQuickExit(
       // Second pass: the same product may come in several lines (scanned
       // twice, a box and loose pieces); together they never take more
       // than the location holds (MOV-01).
-      const pair = (line: { productId: string; locationId: string }) =>
-        `${line.productId}|${line.locationId}`;
+      const pair = (line: {
+        productId: string;
+        locationId: string;
+        lotKey?: string;
+        lotId?: string | null;
+      }) =>
+        `${line.productId}|${line.locationId}|${line.lotKey ?? line.lotId ?? ""}`;
       const pairs = new Map(resolved.map((line) => [pair(line), line]));
       const balances =
         pairs.size > 0
           ? await tx.stockBalance.findMany({
               where: {
+                status: "AVAILABLE",
                 OR: [...pairs.values()].map((line) => ({
                   productId: line.productId,
                   locationId: line.locationId,
+                  lotKey: line.lotId ?? "",
                 })),
-                ...AVAILABLE_STOCK,
               },
               select: {
                 id: true,
                 productId: true,
                 locationId: true,
+                lotKey: true,
                 quantity: true,
               },
             })
@@ -388,13 +412,19 @@ export async function registerQuickExit(
       // WMS-12: what is reserved for an order does not leave by hand, in a
       // location or across the lines of the same product.
       const freeOf = new Map<string, ReturnType<typeof dec>>();
-      const free = async (productId: string, locationId: string | null) => {
-        const slot = `${productId}|${locationId ?? "*"}`;
+      const free = async (
+        productId: string,
+        locationId: string | null,
+        lotId: string | null = null,
+      ) => {
+        const slot = `${productId}|${locationId ?? "*"}|${lotId ?? ""}`;
         if (!freeOf.has(slot)) {
-          freeOf.set(slot, await freeToTake(tx, productId, locationId));
+          freeOf.set(slot, await freeToTake(tx, productId, locationId, lotId));
         }
         return freeOf.get(slot)!;
       };
+      // Lines of the same product in one location, whatever their lots.
+      const takenOfPlace = new Map<string, ReturnType<typeof dec>>();
       const takenOfProduct = new Map<string, ReturnType<typeof dec>>();
       for (const line of resolved) {
         const key = pair(line);
@@ -407,10 +437,10 @@ export async function registerQuickExit(
             line.index,
             "invalid",
             held.isZero()
-              ? `No hay existencias de ${line.productName} en ${line.locationName}.`
+              ? `No hay existencias de ${line.productName}${line.lotText} en ${line.locationName}.`
               : before.equals(held)
-                ? `Solo hay ${formatStock(held.toString(), line.unitCode)} de ${line.productName} en ${line.locationName}: no pueden salir ${asked}.`
-                : `Con las líneas anteriores ya solo quedan ${formatStock(before.toString(), line.unitCode)} de ${line.productName} en ${line.locationName}: no pueden salir ${asked}.`,
+                ? `Solo hay ${formatStock(held.toString(), line.unitCode)} de ${line.productName}${line.lotText} en ${line.locationName}: no pueden salir ${asked}.`
+                : `Con las líneas anteriores ya solo quedan ${formatStock(before.toString(), line.unitCode)} de ${line.productName}${line.lotText} en ${line.locationName}: no pueden salir ${asked}.`,
           );
           continue;
         }
@@ -418,10 +448,22 @@ export async function registerQuickExit(
         const productTaken = (
           takenOfProduct.get(line.productId) ?? dec(0)
         ).plus(line.base);
-        const freeHere = await free(line.productId, line.locationId);
+        const place = `${line.productId}|${line.locationId}`;
+        const placeTaken = (takenOfPlace.get(place) ?? dec(0)).plus(line.base);
+        // Of this lot here, of the whole location, and of the product.
+        const freeOfLot = await free(
+          line.productId,
+          line.locationId,
+          line.lotId,
+        );
+        const freeInPlace = await free(line.productId, line.locationId);
+        const freeHere = freeOfLot.lessThan(freeInPlace)
+          ? freeOfLot
+          : freeInPlace;
         const freeAnywhere = await free(line.productId, null);
         if (
-          slotTaken.greaterThan(freeHere) ||
+          slotTaken.greaterThan(freeOfLot) ||
+          placeTaken.greaterThan(freeInPlace) ||
           productTaken.greaterThan(freeAnywhere)
         ) {
           fail(
@@ -437,6 +479,7 @@ export async function registerQuickExit(
         }
         remaining.set(key, after);
         taken.set(key, slotTaken);
+        takenOfPlace.set(place, placeTaken);
         takenOfProduct.set(line.productId, productTaken);
       }
 
@@ -489,6 +532,7 @@ export async function registerQuickExit(
             factor: line.factor,
             baseQuantity: line.base.toString(),
             unitCode: line.unitCode,
+            ...lotColumns(line.lotId),
             unitCost: lineCost(unitCosts[position]!),
           },
         });

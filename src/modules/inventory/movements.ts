@@ -35,7 +35,16 @@ import {
 } from "./placement";
 import { ENTRY_REPEAT_WINDOW } from "./settings";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { AVAILABLE_ANY_LOT, availableOfLot, lotColumns } from "./stock-status";
+import {
+  LOT_RULE_SELECT,
+  NO_LOT_PRODUCT,
+  lotForEntry,
+  lotForTake,
+  ofLot,
+  type ResolvedLot,
+} from "./lot-resolve";
+import { normalizeLotCode } from "./lot-rules";
 import { freeToMoveFrom, freeToTake, reservedMessage } from "./reservations";
 
 /**
@@ -116,6 +125,30 @@ const entrySchema = z.object({
     .string()
     .trim()
     .max(30)
+    .optional()
+    .transform((value) => value || null),
+  /**
+   * WMS-21 (ADR 0040), only for a product by lot. What comes in names its
+   * lot by code (with its expiry date, «2027-03-05», when it has one): it
+   * is created the first time. What leaves, moves or is corrected names a
+   * lot that exists, by id.
+   */
+  lotCode: z
+    .string()
+    .trim()
+    .max(200, "El lote es demasiado largo (máximo 64 caracteres).")
+    .optional()
+    .transform((value) => value || null),
+  lotExpiresOn: z
+    .string()
+    .trim()
+    .max(20, "Escribe la caducidad como una fecha: día, mes y año.")
+    .optional()
+    .transform((value) => value || null),
+  lotId: z
+    .string()
+    .trim()
+    .max(36)
     .optional()
     .transform((value) => value || null),
   /**
@@ -259,6 +292,8 @@ async function warnRepeatedEntry(
     facilityId: string;
     base: Decimal;
     unitCode: string;
+    /** WMS-21: another lot is another delivery, not the same entry. */
+    lotId: string | null;
   },
 ): Promise<void> {
   const minutes = Number(await readSetting(tx, ENTRY_REPEAT_WINDOW));
@@ -277,6 +312,7 @@ async function warnRepeatedEntry(
           productId: entry.productId,
           direction: "IN",
           baseQuantity: entry.base.toString(),
+          lotKey: entry.lotId ?? "",
           location: isLimited(scoped)
             ? { AND: [{ facilityId: entry.facilityId }, scoped] }
             : { facilityId: entry.facilityId },
@@ -477,7 +513,7 @@ async function post(
       const product = productId
         ? await tx.product.findFirst({
             where: { id: productId },
-            select: { id: true, name: true, status: true },
+            select: { id: true, name: true, status: true, ...LOT_RULE_SELECT },
           })
         : null;
       if (!product) {
@@ -525,12 +561,33 @@ async function post(
           ? ` (${conversion.preview})`
           : "";
 
+      // WMS-21: which lot, under the product's lock. What comes in names
+      // it by code (created the first time); what leaves, by id.
+      if (
+        product.tracking !== "LOT" &&
+        (data.lotId || data.lotCode || data.lotExpiresOn)
+      ) {
+        return reject("invalid", "lotCode", NO_LOT_PRODUCT(product.name));
+      }
+      const lotAnswer =
+        kind.direction === "IN"
+          ? await lotForEntry(tx, actor, product, data)
+          : await lotForTake(tx, product, data.lotId);
+      if (!lotAnswer.ok) {
+        return reject("invalid", lotAnswer.field, lotAnswer.error);
+      }
+      const lot = lotAnswer.lot;
+
       if (type === "INITIAL") {
         // The product is locked: what we read here cannot change under us.
         const earlier = await tx.stockMovementLine.findMany({
           where: { productId: product.id },
           take: 500,
-          select: { locationId: true, movement: { select: { type: true } } },
+          select: {
+            locationId: true,
+            lotKey: true,
+            movement: { select: { type: true } },
+          },
         });
         if (earlier.some((line) => line.movement.type !== "INITIAL")) {
           return reject(
@@ -539,11 +596,19 @@ async function post(
             "Este producto ya tiene movimientos: su saldo inicial ya no se captura. Usa una entrada, o un ajuste si la cantidad no coincide.",
           );
         }
-        if (earlier.some((line) => line.locationId === location.id)) {
+        if (
+          earlier.some(
+            (line) =>
+              line.locationId === location.id &&
+              line.lotKey === (lot?.id ?? ""),
+          )
+        ) {
           return reject(
             "not_allowed",
             "locationId",
-            `Ya capturaste el saldo inicial de este producto en «${location.name}». Elige otra ubicación.`,
+            lot
+              ? `Ya capturaste el saldo inicial del lote ${lot.code} en «${location.name}». Elige otra ubicación u otro lote.`
+              : `Ya capturaste el saldo inicial de este producto en «${location.name}». Elige otra ubicación.`,
           );
         }
       }
@@ -552,7 +617,7 @@ async function post(
         where: {
           productId: product.id,
           locationId: location.id,
-          ...AVAILABLE_STOCK,
+          ...availableOfLot(lot?.id),
         },
         select: { id: true, quantity: true },
       });
@@ -565,13 +630,13 @@ async function post(
           "invalid",
           "quantity",
           before.isZero()
-            ? `No hay existencias de ${product.name} en ${location.name}.`
-            : `Solo hay ${formatStock(before.toString(), unitCode)} en ${location.name}: no pueden salir ${formatStock(base.toString(), unitCode)}.`,
+            ? `No hay existencias de ${product.name}${ofLot(lot)} en ${location.name}.`
+            : `Solo hay ${formatStock(before.toString(), unitCode)}${ofLot(lot)} en ${location.name}: no pueden salir ${formatStock(base.toString(), unitCode)}.`,
         );
       }
       if (kind.direction === "OUT") {
         // WMS-12: what is reserved for an order does not leave by hand.
-        const free = await freeToTake(tx, product.id, location.id);
+        const free = await freeToTake(tx, product.id, location.id, lot?.id);
         if (free.lessThan(base)) {
           return reject(
             "invalid",
@@ -620,6 +685,7 @@ async function post(
           facilityId: location.facilityId,
           base,
           unitCode,
+          lotId: lot?.id ?? null,
         });
       }
 
@@ -662,6 +728,7 @@ async function post(
           factor: conversion.factor.toString(),
           baseQuantity: base.toString(),
           unitCode,
+          ...lotColumns(lot?.id),
           unitCost: lineCost(unitCost),
         },
       });
@@ -688,6 +755,7 @@ async function post(
             organizationId,
             productId: product.id,
             locationId: location.id,
+            ...lotColumns(lot?.id),
             quantity: base.toString(),
           },
         });
@@ -702,10 +770,10 @@ async function post(
         // «3 cajas × 100 = 300 piezas» when it was not captured as is.
         summary:
           (type === "INITIAL"
-            ? `Saldo inicial de ${product.name} en ${location.name}: ${moved}${how}.`
+            ? `Saldo inicial de ${product.name}${ofLot(lot)} en ${location.name}: ${moved}${how}.`
             : type === "EXIT"
-              ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name} de ${location.name}${how}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left} ahí.`
-              : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name} a ${location.name}${how}. Ahora hay ${left} ahí.`) +
+              ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name}${ofLot(lot)} de ${location.name}${how}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left}${lot ? " de ese lote" : ""} ahí.`
+              : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name}${ofLot(lot)} a ${location.name}${how}. Ahora hay ${left}${lot ? " de ese lote" : ""} ahí.`) +
           capacityNotes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);
@@ -754,12 +822,27 @@ async function findReplay(client: ReplayClient, idempotencyKey: string) {
           presentationId: true,
           baseQuantity: true,
           unitCode: true,
+          lotId: true,
+          lot: { select: { code: true } },
           product: { select: { name: true } },
           location: { select: { name: true } },
         },
       },
     },
   });
+}
+
+/** Whether what was sent names the lot a stored line has (WMS-21). */
+function sameLot(
+  line: { lotId: string | null; lot: { code: string } | null },
+  data: { lotId: string | null; lotCode: string | null },
+): boolean {
+  if (data.lotId) return data.lotId === line.lotId;
+  if (data.lotCode) {
+    const code = normalizeLotCode(data.lotCode);
+    return code.ok && code.code === line.lot?.code;
+  }
+  return line.lotId === null;
 }
 
 /**
@@ -792,6 +875,7 @@ function answerReplay(
     (data.locationId !== null && line.locationId !== data.locationId) ||
     (line.presentationId ?? null) !== data.presentationId ||
     (line.capturedUnitCode ?? null) !== data.unitCode ||
+    !sameLot(line, data) ||
     !sameQuantity
   ) {
     return reject("not_allowed", null, KEY_REUSED);
@@ -859,11 +943,21 @@ export async function getStockByLocation(
   const client = forOrganization(actor.organizationId);
   const id = String(productId);
   const [rows, reservations] = await Promise.all([
-    client.stockBalance.findMany({
-      where: { productId: id, ...AVAILABLE_STOCK, quantity: { gt: 0 } },
-      take: 2_000,
-      select: { locationId: true, quantity: true },
-    }),
+    // WMS-21: a product by lot has one row per lot; a location adds them.
+    client.stockBalance
+      .groupBy({
+        by: ["locationId"],
+        where: { productId: id, ...AVAILABLE_ANY_LOT, quantity: { gt: 0 } },
+        _sum: { quantity: true },
+        orderBy: { locationId: "asc" },
+        take: 2_000,
+      })
+      .then((groups) =>
+        groups.map((group) => ({
+          locationId: group.locationId,
+          quantity: group._sum.quantity ?? 0,
+        })),
+      ),
     // WMS-12: what is reserved is not there to take.
     client.stockReservation.findMany({
       where: { productId: id, state: "ACTIVE" },
@@ -948,6 +1042,9 @@ export type MovementSummary = {
      * the presentation had then: «3 cajas de 100», «275 centímetros».
      */
     captured: string | null;
+    /** Its lot, for a product by lot (WMS-21): id and code. */
+    lotId: string | null;
+    lot: string | null;
   }[];
 };
 
@@ -1029,6 +1126,8 @@ async function fetchMovements(
           factor: true,
           presentation: { select: { name: true } },
           product: { select: { name: true, sku: true } },
+          lotId: true,
+          lot: { select: { code: true } },
         },
       },
     },
@@ -1089,6 +1188,8 @@ async function fetchMovements(
         : line.capturedUnitCode
           ? formatStock(line.capturedQuantity.toString(), line.capturedUnitCode)
           : null,
+      lotId: line.lotId,
+      lot: line.lot?.code ?? null,
     })),
   }));
 }
@@ -1239,6 +1340,7 @@ const transferSchema = entrySchema.extend({
   locationId: z.string().trim().min(1, "Elige de dónde sale.").max(36),
   toLocationId: z.string().trim().min(1, "Elige a dónde va.").max(36),
 });
+// `lotId` (WMS-21): the lot that moves, for a product by lot.
 
 export type TransferInput = z.input<typeof transferSchema>;
 export type TransferField = keyof TransferInput;
@@ -1426,6 +1528,7 @@ async function transferWithin(
             presentationId: true,
             baseQuantity: true,
             unitCode: true,
+            lotId: true,
             product: { select: { name: true } },
             location: { select: { name: true } },
           },
@@ -1454,6 +1557,7 @@ async function transferWithin(
         into.locationId !== data.toLocationId ||
         (out.presentationId ?? null) !== data.presentationId ||
         (out.capturedUnitCode ?? null) !== data.unitCode ||
+        (out.lotId ?? null) !== (data.lotId ?? null) ||
         !sameQuantity
       ) {
         return refuse("not_allowed", null, KEY_REUSED);
@@ -1470,7 +1574,7 @@ async function transferWithin(
   const product = productId
     ? await tx.product.findFirst({
         where: { id: productId },
-        select: { id: true, name: true, status: true },
+        select: { id: true, name: true, status: true, ...LOT_RULE_SELECT },
       })
     : null;
   if (!product) {
@@ -1527,11 +1631,16 @@ async function transferWithin(
   const unitCode = resolved.product.unitCode;
   const base = conversion.baseQuantity;
 
+  // WMS-21: the lot that moves; it arrives as the same lot.
+  const lotAnswer = await lotForTake(tx, product, data.lotId);
+  if (!lotAnswer.ok) return refuse("invalid", "lotId", lotAnswer.error);
+  const lot: ResolvedLot | null = lotAnswer.lot;
+
   const balances = await tx.stockBalance.findMany({
     where: {
       productId: product.id,
       locationId: { in: [from.id, to.id] },
-      ...AVAILABLE_STOCK,
+      ...availableOfLot(lot?.id),
     },
     select: { id: true, locationId: true, quantity: true },
   });
@@ -1545,12 +1654,12 @@ async function transferWithin(
       "invalid",
       "quantity",
       inSource.isZero()
-        ? `No hay existencias de ${product.name} en ${from.name}.`
-        : `Solo hay ${formatStock(inSource.toString(), unitCode)} en ${from.name}: no se pueden mover ${formatStock(base.toString(), unitCode)}.`,
+        ? `No hay existencias de ${product.name}${ofLot(lot)} en ${from.name}.`
+        : `Solo hay ${formatStock(inSource.toString(), unitCode)}${ofLot(lot)} en ${from.name}: no se pueden mover ${formatStock(base.toString(), unitCode)}.`,
     );
   }
   // WMS-12: what is reserved in this location stays there.
-  const freeHere = await freeToMoveFrom(tx, product.id, from.id);
+  const freeHere = await freeToMoveFrom(tx, product.id, from.id, lot?.id);
   if (freeHere.lessThan(base)) {
     return refuse(
       "invalid",
@@ -1617,6 +1726,7 @@ async function transferWithin(
     factor: conversion.factor.toString(),
     baseQuantity: base.toString(),
     unitCode,
+    ...lotColumns(lot?.id),
     unitCost: price,
   };
   await tx.stockMovementLine.create({
@@ -1657,6 +1767,7 @@ async function transferWithin(
         organizationId,
         productId: product.id,
         locationId: to.id,
+        ...lotColumns(lot?.id),
         quantity: base.toString(),
       },
     });
@@ -1670,7 +1781,7 @@ async function transferWithin(
     ok: true as const,
     movementId,
     summary:
-      `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.` +
+      `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name}${ofLot(lot)} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.` +
       placed.notes.map((note) => ` ${note}`).join(""),
     notes: placed.notes,
   };
@@ -1764,7 +1875,8 @@ export async function registerAdjustment(
             replay.type !== "ADJUSTMENT" ||
             replay.createdByUserId !== userId ||
             line.productId !== data.productId ||
-            (data.locationId !== null && line.locationId !== data.locationId)
+            (data.locationId !== null && line.locationId !== data.locationId) ||
+            (line.lotId ?? null) !== (data.lotId ?? null)
           ) {
             return reject("not_allowed", null, KEY_REUSED);
           }
@@ -1786,6 +1898,7 @@ export async function registerAdjustment(
               sku: true,
               status: true,
               unitCode: true,
+              ...LOT_RULE_SELECT,
             },
           })
         : null;
@@ -1847,12 +1960,24 @@ export async function registerAdjustment(
         );
       }
 
+      // WMS-21: a product by lot is corrected lot by lot.
+      if (data.lotCode || data.lotExpiresOn) {
+        return reject(
+          "invalid",
+          "lotId",
+          "Un ajuste corrige un lote que ya existe: elígelo de la lista. Un lote nuevo se registra con una entrada.",
+        );
+      }
+      const lotAnswer = await lotForTake(tx, product, data.lotId);
+      if (!lotAnswer.ok) return reject("invalid", "lotId", lotAnswer.error);
+      const lot = lotAnswer.lot;
+
       const unitCode = product.unitCode;
       const current = await tx.stockBalance.findFirst({
         where: {
           productId: product.id,
           locationId: location.id,
-          ...AVAILABLE_STOCK,
+          ...availableOfLot(lot?.id),
         },
         select: { id: true, quantity: true },
       });
@@ -1862,7 +1987,7 @@ export async function registerAdjustment(
         return reject(
           "invalid",
           "quantity",
-          `El sistema ya tiene ${formatStock(before.toString(), unitCode)} en ${location.name}: no hay nada que ajustar.`,
+          `El sistema ya tiene ${formatStock(before.toString(), unitCode)}${ofLot(lot)} en ${location.name}: no hay nada que ajustar.`,
         );
       }
       const direction = difference.isPositive() ? "IN" : "OUT";
@@ -1904,6 +2029,7 @@ export async function registerAdjustment(
           factor: "1",
           baseQuantity: amount.toString(),
           unitCode,
+          ...lotColumns(lot?.id),
           unitCost: lineCost(unitCost),
         },
       });
@@ -1923,6 +2049,7 @@ export async function registerAdjustment(
             organizationId,
             productId: product.id,
             locationId: location.id,
+            ...lotColumns(lot?.id),
             quantity: counted.toString(),
           },
         });
@@ -1937,6 +2064,7 @@ export async function registerAdjustment(
           sku: product.sku,
           producto: product.name,
           ubicacion: location.name,
+          ...(lot ? { lote: lot.code } : {}),
           antes: formatStock(before.toString(), unitCode),
           contado: formatStock(counted.toString(), unitCode),
           diferencia: `${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}`,
@@ -1947,7 +2075,7 @@ export async function registerAdjustment(
       return {
         ok: true as const,
         movementId,
-        summary: `Ajuste de ${product.name} en ${location.name}: había ${formatStock(before.toString(), unitCode)} y ahora hay ${formatStock(counted.toString(), unitCode)}${how} (${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}).`,
+        summary: `Ajuste de ${product.name}${ofLot(lot)} en ${location.name}: había ${formatStock(before.toString(), unitCode)} y ahora hay ${formatStock(counted.toString(), unitCode)}${how} (${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}).`,
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -2161,7 +2289,13 @@ export async function reverseMovement(
       const [products, locations] = await Promise.all([
         tx.product.findMany({
           where: { id: { in: original.lines.map((line) => line.productId) } },
-          select: { id: true, name: true, sku: true, status: true },
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            status: true,
+            tracking: true,
+          },
         }),
         tx.location.findMany({
           where: { id: { in: original.lines.map((line) => line.locationId) } },
@@ -2170,6 +2304,20 @@ export async function reverseMovement(
       ]);
       const productOf = new Map(products.map((p) => [p.id, p]));
       const locationOf = new Map(locations.map((l) => [l.id, l]));
+      // WMS-21: a reversal puts each line back in its lot. If the product
+      // changed how it is controlled since, its old lines no longer fit.
+      const changed = original.lines.find((line) => {
+        const product = productOf.get(line.productId);
+        return (
+          product && (product.tracking === "LOT") !== (line.lotId !== null)
+        );
+      });
+      if (changed) {
+        return stop(
+          "not_allowed",
+          `${productOf.get(changed.productId)!.name} cambió su control por lote después de este movimiento: ya no se puede reversar. Registra el movimiento contrario.`,
+        );
+      }
       // WMS-22B: what the reversal puts back must still be admitted where
       // it returns (a restriction stops it); a capacity does not stop it —
       // undoing a mistake is not new stock — and the answer says it.
@@ -2368,6 +2516,8 @@ export type MovementFilters = {
   /** Person who confirmed it. */
   userId?: string;
   type?: string;
+  /** Only movements of this lot (WMS-21): the history of its card. */
+  lotId?: string;
   page?: number;
 };
 
@@ -2384,6 +2534,7 @@ export type MovementPage = {
     productSearch: string | null;
     userId: string | null;
     type: MovementType | null;
+    lotId: string | null;
   };
 };
 
@@ -2455,6 +2606,7 @@ export async function listMovements(
     ? String(filters.productId).slice(0, 36)
     : null;
   const userId = filters.userId ? String(filters.userId).slice(0, 36) : null;
+  const lotId = filters.lotId ? String(filters.lotId).slice(0, 36) : null;
   const productSearch =
     (!productId &&
       String(filters.productSearch ?? "")
@@ -2474,7 +2626,11 @@ export async function listMovements(
       : {}),
     ...(type ? { type } : {}),
     ...(userId ? { createdByUserId: userId } : {}),
-    ...(productId ? { lines: { some: { productId } } } : {}),
+    ...(lotId
+      ? { lines: { some: { lotId, ...(productId ? { productId } : {}) } } }
+      : productId
+        ? { lines: { some: { productId } } }
+        : {}),
     ...(productSearch
       ? {
           lines: {
@@ -2513,6 +2669,7 @@ export async function listMovements(
       productSearch,
       userId,
       type,
+      lotId,
     },
   };
 }
@@ -2558,6 +2715,8 @@ export async function postTaskTransfer(
     toLocationId: string;
     /** In the product's unit. */
     quantity: string;
+    /** The lot the task moves, for a product by lot (WMS-21). */
+    lotId?: string | null;
     idempotencyKey: string;
     reference: string;
   },
@@ -2577,6 +2736,9 @@ export async function postTaskTransfer(
         reference: input.reference,
         idempotencyKey: input.idempotencyKey,
         unitCost: null,
+        lotCode: null,
+        lotExpiresOn: null,
+        lotId: input.lotId ?? null,
       } as TransferData,
       { kind: "base", quantity: input.quantity },
       // WMS-22B: the load is already at its destination; a capacity does

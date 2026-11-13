@@ -10,6 +10,8 @@ export {
   PRODUCT_PAGE_SIZE,
   productSchema,
   quotaMessage,
+  LOT_EXPIRY_LABELS,
+  TRACKING_LABELS,
   reactivateProduct,
   updateProduct,
 } from "./products";

@@ -7,7 +7,7 @@ import type { TenantDb } from "@/server";
 
 import { checkPlacement, type PlacementRules } from "./placement";
 import { lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { availableOfLot } from "./stock-status";
 
 /**
  * Initial stock that comes in the file of an import (IMP-09). Each row
@@ -135,6 +135,15 @@ export async function checkImportedStock(
   }
   if (!product) return null;
 
+  // WMS-21 (ADR 0040): the file does not say which lot each quantity is.
+  const tracked = await tx.product.findFirst({
+    where: { id: product.id },
+    select: { tracking: true },
+  });
+  if (tracked?.tracking === "LOT") {
+    return "El producto se controla por lote y el archivo no dice de qué lote es cada existencia. Registra su saldo inicial a mano, lote por lote.";
+  }
+
   // The product is locked: what is read here cannot change under us.
   const moved = await tx.stockMovementLine.findFirst({
     where: { productId: product.id, movement: { type: { not: "INITIAL" } } },
@@ -231,7 +240,8 @@ export async function postImportedStock(
       where: {
         productId: product.id,
         locationId: line.locationId,
-        ...AVAILABLE_STOCK,
+        // Never a product by lot: `checkImportedStock` stops it.
+        ...availableOfLot(null),
       },
       data: { quantity: { increment: line.base } },
     });

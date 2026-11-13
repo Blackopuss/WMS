@@ -14,6 +14,7 @@ import { confirmPickAction, type ConfirmPickState } from "../actions";
 const FIELDS = [
   "productCode",
   "locationCode",
+  "lotCode",
   "quantity",
   "shortReason",
 ] as const;
@@ -30,6 +31,7 @@ export function PickForm({
   unit,
   sku,
   place,
+  lotCode,
 }: {
   taskId: string;
   /** Key of the product, to say what to type without a scanner. */
@@ -42,12 +44,20 @@ export function PickForm({
   quantity: string;
   /** «piezas». */
   unit: string;
+  /** The lot to take, for a product by lot (WMS-21); null otherwise. */
+  lotCode: string | null;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(
     confirmPickAction.bind(null, taskId),
     {
-      values: { productCode: "", locationCode: "", quantity, shortReason: "" },
+      values: {
+        productCode: "",
+        locationCode: "",
+        quantity,
+        shortReason: "",
+        lotCode: "",
+      },
       answers: 0,
     } satisfies ConfirmPickState,
   );
@@ -129,6 +139,26 @@ export function PickForm({
           />
         )}
       </FormField>
+      {lotCode && (
+        <FormField
+          id="lotCode"
+          label="Lote"
+          hint={`Escanéalo o escribe ${lotCode}.`}
+          error={errors.lotCode}
+        >
+          {(control) => (
+            <Input
+              {...control}
+              name="lotCode"
+              defaultValue={state.values.lotCode}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={64}
+            />
+          )}
+        </FormField>
+      )}
       <FormField
         id="quantity"
         label={`Cantidad surtida (${unit})`}

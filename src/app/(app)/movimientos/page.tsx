@@ -238,7 +238,8 @@ export default async function MovimientosPage({
                       (line.direction === "IN" ? "+" : "−")}
                     {line.quantity}
                   </span>{" "}
-                  de {line.productName} en {line.location}
+                  de {line.productName}
+                  {line.lot && ` (lote ${line.lot})`} en {line.location}
                 </span>
               ))
             )}
@@ -466,6 +467,7 @@ export default async function MovimientosPage({
                           de {line.productName}{" "}
                           <span className="text-muted-foreground">
                             ({line.sku}) · {line.location}
+                            {line.lot && ` · Lote ${line.lot}`}
                           </span>
                         </p>
                       </li>

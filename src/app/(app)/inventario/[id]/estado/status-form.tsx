@@ -46,6 +46,7 @@ export function StatusForm({
       values: {
         locationId: "",
         from: "",
+        lotId: "",
         to: targets[0]?.id ?? "",
         toLocationId: "",
         quantity: "",
@@ -56,7 +57,7 @@ export function StatusForm({
   );
   const errors = state.fieldErrors ?? {};
   const source = state.values.locationId
-    ? `${state.values.locationId}|${state.values.from}`
+    ? `${state.values.locationId}|${state.values.from}${state.values.lotId ? `|${state.values.lotId}` : ""}`
     : (sources[0]?.id ?? "");
   const key = (name: string) => `${name}-${state.answers}`;
   return (

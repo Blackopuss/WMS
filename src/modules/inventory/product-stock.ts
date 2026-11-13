@@ -12,6 +12,7 @@ import {
 } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
+import { lotDayOf, lotLabel } from "./lot-rules";
 import { formatStock, type InventoryActor } from "./movements";
 import {
   STOCK_STATUSES,
@@ -63,6 +64,22 @@ export type ProductStock = {
    * not a count of closed boxes. Empty when the total is less than one.
    */
   equivalences: { presentation: string; text: string }[];
+  /**
+   * WMS-21: for a product by lot, each lot in each location and state, as
+   * the balance keeps it (what is set aside is not subtracted). Empty for
+   * a product without lots.
+   */
+  lots: {
+    locationId: string;
+    path: string;
+    lotId: string;
+    /** «Lote L-01 · caduca 05/03/2027». */
+    lotLabel: string;
+    status: StockStatus;
+    quantity: string;
+    /** «40 piezas». */
+    label: string;
+  }[];
 };
 
 /** Null when the product does not exist in the company. */
@@ -111,6 +128,7 @@ export async function getProductStock(
     select: {
       quantity: true,
       status: true,
+      lot: { select: { id: true, code: true, expiresOn: true } },
       location: {
         select: {
           id: true,
@@ -258,5 +276,30 @@ export async function getProductStock(
     reservedLabel: formatStock(reserved.toString(), unitCode),
     locations,
     equivalences,
+    lots: balances
+      .flatMap((balance) =>
+        balance.lot
+          ? [
+              {
+                locationId: balance.location.id,
+                path: locationPath(balance.location),
+                lotId: balance.lot.id,
+                lotLabel: lotLabel({
+                  code: balance.lot.code,
+                  expiresOn: lotDayOf(balance.lot.expiresOn),
+                }),
+                status: balance.status,
+                quantity: balance.quantity.toString(),
+                label: formatStock(balance.quantity.toString(), unitCode),
+              },
+            ]
+          : [],
+      )
+      .sort(
+        (a, b) =>
+          compareLocationNames(a.path, b.path) ||
+          a.lotId.localeCompare(b.lotId) ||
+          STOCK_STATUSES.indexOf(a.status) - STOCK_STATUSES.indexOf(b.status),
+      ),
   };
 }

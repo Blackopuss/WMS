@@ -244,7 +244,8 @@ export {
 } from "./task-states";
 export type { WarehouseTaskStatus } from "./task-states";
 export {
-  AVAILABLE_STOCK,
+  AVAILABLE_ANY_LOT,
+  availableOfLot,
   STOCK_STATUSES,
   STOCK_STATUS_LABELS,
   isStockStatus,
@@ -326,6 +327,8 @@ export type {
 } from "./outbound-import";
 export {
   CAPACITY_MODE,
+  EXPIRY_NOTICE,
+  PICK_EXPIRED,
   ENTRY_REPEAT_WINDOW,
   INVENTORY_SETTINGS,
   PICKING_STRATEGY,
@@ -341,3 +344,27 @@ export type {
 } from "./placement";
 export { getLocationOccupancy } from "./location-occupancy";
 export type { LocationOccupancy, OccupancyReport } from "./location-occupancy";
+export {
+  EXPIRING_PAGE_SIZE,
+  changeLotExpiry,
+  countExpiringLots,
+  getLot,
+  listExpiringLots,
+  listLotStock,
+  listProductLots,
+} from "./lots";
+export type {
+  ExpiringLot,
+  ExpiringPage,
+  LotCard,
+  LotExpiryResult,
+  LotStock,
+  ProductLot,
+} from "./lots";
+export {
+  formatLotDay,
+  lotDayOf,
+  lotLabel,
+  normalizeLotCode,
+  parseLotDay,
+} from "./lot-rules";

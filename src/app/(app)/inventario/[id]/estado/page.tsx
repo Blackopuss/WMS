@@ -114,7 +114,15 @@ export default async function CambiarEstadoPage({
     id: status,
     label: STOCK_STATUS_LABELS[status],
   }));
-  const sources = stock.locations.flatMap((location) => [
+  // WMS-21: a product by lot changes state lot by lot: the choice says
+  // location, state and lot («ubicación|estado|lote»).
+  const lotSources = stock.lots
+    .filter((row) => MANUAL_STOCK_STATUSES.includes(row.status))
+    .map((row) => ({
+      id: `${row.locationId}|${row.status}|${row.lotId}`,
+      label: `${row.path} · ${row.lotLabel} · ${row.label} · ${STOCK_STATUS_LABELS[row.status]}`,
+    }));
+  const plainSources = stock.locations.flatMap((location) => [
     ...(location.available !== "0"
       ? [
           {
@@ -130,6 +138,7 @@ export default async function CambiarEstadoPage({
         label: `${location.path} · ${part.label}`,
       })),
   ]);
+  const sources = product.tracking === "LOT" ? lotSources : plainSources;
 
   return (
     <PageContainer>

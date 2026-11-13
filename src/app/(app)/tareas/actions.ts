@@ -55,7 +55,8 @@ export async function createTaskAction(
 ): Promise<CreateTaskState> {
   const { user, organization } = await requireOrganizationContext();
   const values = {
-    fromLocationId: text(formData, "fromLocationId", 36),
+    // WMS-21: «<ubicación>|<lote>» for a product by lot.
+    fromLocationId: text(formData, "fromLocationId", 80),
     toLocationId: text(formData, "toLocationId", 36),
     quantity: text(formData, "quantity", 40),
     priority: text(formData, "priority", 10),
@@ -63,6 +64,7 @@ export async function createTaskAction(
     note: text(formData, "note", 400),
   };
   const productId = text(formData, "productId", 36);
+  const [fromLocationId = "", lotId = ""] = values.fromLocationId.split("|");
   const stamp = fingerprint([
     productId,
     values.fromLocationId,
@@ -75,6 +77,8 @@ export async function createTaskAction(
       { organizationId: organization.id, userId: user.id },
       {
         ...values,
+        fromLocationId: fromLocationId.slice(0, 36),
+        lotId: lotId.slice(0, 36),
         productId,
         // Only the button of the warning about these values carries it.
         acceptCapacity: formData.get("acceptCapacity") === stamp,
@@ -203,6 +207,8 @@ export type ConfirmPickState = {
     locationCode: string;
     quantity: string;
     shortReason: string;
+    /** The lot taken, when the task names one (WMS-21). */
+    lotCode: string;
   };
   answers: number;
 };
@@ -225,6 +231,7 @@ export async function confirmPickAction(
     locationCode: text(formData, "locationCode", 200),
     quantity: text(formData, "quantity", 40),
     shortReason: text(formData, "shortReason", 400),
+    lotCode: text(formData, "lotCode", 100),
   };
   const answers = previous.answers + 1;
   let result: TaskResult;

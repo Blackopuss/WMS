@@ -20,6 +20,8 @@ export type StatusChangeState = {
   values: {
     locationId: string;
     from: string;
+    /** The lot that changes, for a product by lot (WMS-21); "" otherwise. */
+    lotId: string;
     to: string;
     /** Where it ends up; "" = it stays where it is (WMS-22B). */
     toLocationId: string;
@@ -45,10 +47,16 @@ export async function changeStatusAction(
 ): Promise<StatusChangeState> {
   const { user, organization } = await requireOrganizationContext();
   // «<ubicación>|<estado>»: one select says where and in what state.
-  const [locationId = "", from = ""] = text(formData, "source", 60).split("|");
+  // WMS-21: with a third part, the lot, for a product by lot.
+  const [locationId = "", from = "", lotId = ""] = text(
+    formData,
+    "source",
+    100,
+  ).split("|");
   const values = {
     locationId: locationId.slice(0, 36),
     from: from.slice(0, 20),
+    lotId: lotId.slice(0, 36),
     to: text(formData, "to", 20),
     toLocationId: text(formData, "toLocationId", 36),
     quantity: text(formData, "quantity", 40),
@@ -62,6 +70,7 @@ export async function changeStatusAction(
     values.to,
     values.toLocationId,
     values.quantity,
+    values.lotId,
   ]);
   let result;
   try {

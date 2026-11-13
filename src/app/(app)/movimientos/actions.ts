@@ -45,8 +45,22 @@ export type EntryFormState = {
     unitCost?: string;
     /** Destination of a relocation (INV-23). */
     toLocationId?: string;
+    /** WMS-21: lot and expiry typed for what comes in; lot chosen to adjust. */
+    lotCode?: string;
+    lotExpiresOn?: string;
+    lotId?: string;
   };
 };
+
+/**
+ * WMS-21: for a product by lot, «de dónde sale» chooses location and lot
+ * at once, as `<location id>|<lot id>`. Only ids travel; the service
+ * checks that the lot is of the product and is there.
+ */
+function placeAndLot(value: string): { locationId: string; lotId: string } {
+  const [locationId = "", lotId = ""] = value.split("|");
+  return { locationId, lotId };
+}
 
 /**
  * How the quantity is captured, as the form sends it. Only an id or a code
@@ -138,7 +152,11 @@ async function receive(
     reference: text("reference"),
     reason: text("reason"),
     unitCost: text("unitCost"),
+    lotCode: text("lotCode"),
+    lotExpiresOn: text("lotExpiresOn"),
+    lotId: text("lotId"),
   };
+  const from = placeAndLot(values.locationId);
   // What a capacity warning would be about: product, place and quantity.
   const stamp = fingerprint([
     kind,
@@ -146,6 +164,7 @@ async function receive(
     values.locationId,
     values.quantity,
     values.capture,
+    values.lotCode,
   ]);
   const acceptCapacity = acceptsCapacity(formData, stamp);
   let result;
@@ -154,10 +173,14 @@ async function receive(
       { organizationId: organization.id, userId: user.id },
       {
         productId: String(productId),
-        locationId: values.locationId,
+        locationId: from.locationId,
         quantity: values.quantity,
         reference: values.reference,
         reason: values.reason,
+        // WMS-21: only the forms of a product by lot send them.
+        lotCode: values.lotCode,
+        lotExpiresOn: values.lotExpiresOn,
+        lotId: from.lotId || values.lotId,
         // Only the forms that show the field send it (VAL-03).
         unitCost: values.unitCost,
         // Created with the form and resent on every retry (INV-21).
@@ -292,6 +315,7 @@ export async function registerTransferAction(
     reference: "",
     reason: text("reason"),
   };
+  const from = placeAndLot(values.locationId);
   const stamp = fingerprint([
     "transfer",
     String(productId),
@@ -306,7 +330,8 @@ export async function registerTransferAction(
       { organizationId: organization.id, userId: user.id },
       {
         productId: String(productId),
-        locationId: values.locationId,
+        locationId: from.locationId,
+        lotId: from.lotId,
         toLocationId: values.toLocationId,
         quantity: values.quantity,
         reason: values.reason,

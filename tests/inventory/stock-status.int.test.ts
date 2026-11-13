@@ -291,12 +291,20 @@ describe("in the database", () => {
         },
       }),
     ).rejects.toThrow();
+    // WMS-21: only a product by lot holds stock by lot (trigger), so
+    // the lot part uses one.
+    const byLot = await createProduct(owner, {
+      sku: `E-${++counter}`,
+      name: "Tablero por lote",
+      tracking: "LOT",
+    });
+    if (!byLot.ok) throw new Error("product setup failed");
     const lotId = newId();
     await db.lot.create({
       data: {
         id: lotId,
         organizationId: owner.organizationId,
-        productId,
+        productId: byLot.productId,
         code: "L-2026-11",
         createdByUserId: owner.userId,
       },
@@ -305,7 +313,7 @@ describe("in the database", () => {
       data: {
         id: newId(),
         organizationId: owner.organizationId,
-        productId,
+        productId: byLot.productId,
         locationId: general,
         status: "AVAILABLE",
         lotId,

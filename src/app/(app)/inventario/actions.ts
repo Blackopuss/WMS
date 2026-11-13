@@ -13,6 +13,7 @@ import {
   updateProduct,
   type PresentationField,
   type ProductField,
+  type ProductInput,
   type ProductStatusResult,
 } from "@/platform/catalog";
 import { requireOrganizationContext } from "@/platform/tenancy";
@@ -22,6 +23,25 @@ export type ProductFormState = {
   formError?: string;
   values: Record<ProductField, string>;
 };
+
+/**
+ * The control by lot as the service takes it (WMS-21): a value it knows,
+ * or nothing — a form without those fields keeps what the product has.
+ */
+function withControl(values: ProductFormState["values"]): ProductInput {
+  const { tracking, lotExpiry, ...card } = values;
+  return {
+    ...card,
+    ...(tracking === "NONE" || tracking === "LOT"
+      ? { tracking: tracking as "NONE" | "LOT" }
+      : {}),
+    ...(lotExpiry === "NONE" ||
+    lotExpiry === "OPTIONAL" ||
+    lotExpiry === "REQUIRED"
+      ? { lotExpiry: lotExpiry as "NONE" | "OPTIONAL" | "REQUIRED" }
+      : {}),
+  };
+}
 
 /** Creates a product. Person and company come from the session. */
 export async function createProductAction(
@@ -41,13 +61,15 @@ export async function createProductAction(
     step: value("step"),
     weight: value("weight"),
     volume: value("volume"),
+    tracking: value("tracking"),
+    lotExpiry: value("lotExpiry"),
   };
 
   let result;
   try {
     result = await createProduct(
       { organizationId: organization.id, userId: user.id },
-      values,
+      withControl(values),
     );
   } catch (error) {
     // No permission, module missing or in read-only: say it in the form.
@@ -87,6 +109,8 @@ export async function updateProductAction(
     step: value("step"),
     weight: value("weight"),
     volume: value("volume"),
+    tracking: value("tracking"),
+    lotExpiry: value("lotExpiry"),
   };
 
   let result;
@@ -94,7 +118,7 @@ export async function updateProductAction(
     result = await updateProduct(
       { organizationId: organization.id, userId: user.id },
       String(productId),
-      values,
+      withControl(values),
     );
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {

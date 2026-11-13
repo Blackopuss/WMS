@@ -88,7 +88,31 @@ export const productSchema = z.object({
     .max(30, "Máximo 30 caracteres.")
     .optional()
     .transform((value) => value || ""),
+  /**
+   * How its stock is controlled (WMS-21, ADR 0040): without a lot or by
+   * lot. Absent = «NONE» for a new product; an edit keeps what it has.
+   */
+  tracking: z
+    .enum(["NONE", "LOT"], { message: "Elige cómo se controla." })
+    .optional(),
+  /** Whether its lots carry an expiry date; only read when it is by lot. */
+  lotExpiry: z
+    .enum(["NONE", "OPTIONAL", "REQUIRED"], {
+      message: "Elige si sus lotes llevan caducidad.",
+    })
+    .optional(),
 });
+
+/** Names of the control of a product, for the card and the audit log. */
+export const TRACKING_LABELS = {
+  NONE: "Sin lote",
+  LOT: "Por lote",
+} as const;
+export const LOT_EXPIRY_LABELS = {
+  NONE: "No lleva caducidad",
+  OPTIONAL: "Caducidad opcional",
+  REQUIRED: "Caducidad obligatoria",
+} as const;
 
 /**
  * Weight and volume of a parsed card, as they are kept, or the field with
@@ -265,6 +289,10 @@ export async function createProduct(
           quantityStep: rule.quantityStep,
           unitWeight: measures.unitWeight,
           unitVolume: measures.unitVolume,
+          tracking: data.tracking ?? "NONE",
+          // A product without lots has no rule for their expiry.
+          lotExpiry:
+            data.tracking === "LOT" ? (data.lotExpiry ?? "NONE") : "NONE",
         },
       });
       await recordAuditEvent(tx, {
@@ -538,6 +566,10 @@ export type ProductCard = ProductSummary & {
   unitWeight: string | null;
   /** Liters one unit takes, as kept in the card; null = not said. */
   unitVolume: string | null;
+  /** How its stock is controlled (WMS-21): without a lot or by lot. */
+  tracking: "NONE" | "LOT";
+  /** Whether its lots carry an expiry date. */
+  lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
   status: "ACTIVE" | "ARCHIVED";
   updatedAt: Date;
 };
@@ -564,6 +596,8 @@ export async function getProduct(
       quantityStep: true,
       unitWeight: true,
       unitVolume: true,
+      tracking: true,
+      lotExpiry: true,
       status: true,
       createdAt: true,
       updatedAt: true,
@@ -588,6 +622,8 @@ export async function getProduct(
     unitVolume: row.unitVolume
       ? dec(row.unitVolume.toString()).toString()
       : null,
+    tracking: row.tracking,
+    lotExpiry: row.lotExpiry,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -608,6 +644,8 @@ const FIELD_LABELS: Record<ProductField, string> = {
   step: "Precisión",
   weight: "Peso por unidad (kg)",
   volume: "Volumen por unidad (litros)",
+  tracking: "Control por lote",
+  lotExpiry: "Caducidad de sus lotes",
 };
 
 /**
@@ -671,6 +709,8 @@ export async function updateProduct(
           quantityStep: true,
           unitWeight: true,
           unitVolume: true,
+          tracking: true,
+          lotExpiry: true,
           category: { select: { name: true } },
           brand: { select: { name: true } },
         },
@@ -698,9 +738,17 @@ export async function updateProduct(
         volume: current.unitVolume
           ? dec(current.unitVolume.toString()).toString()
           : null,
+        tracking: current.tracking,
+        lotExpiry: current.lotExpiry,
       };
+      // Absent = keep how it is controlled; without lots, no expiry rule.
+      const tracking = data.tracking ?? current.tracking;
+      const lotExpiry =
+        tracking === "LOT" ? (data.lotExpiry ?? current.lotExpiry) : "NONE";
       const after: Record<ProductField, string | null> = {
         ...data,
+        tracking,
+        lotExpiry,
         unit: rule.unitCode,
         step: Number(rule.quantityStep).toString(),
         // Absent = keep what the card says (unless the unit now says it).
@@ -723,6 +771,33 @@ export async function updateProduct(
           fieldErrors: {},
           formError: "No hay cambios que guardar.",
         });
+      }
+      // WMS-21: how a product is controlled only changes while it has no
+      // stock (in any state) and nothing set aside: the lines and balances
+      // it already has would stop saying which stock they are. The trigger
+      // `product_tracking_change` repeats it.
+      if (changed.includes("tracking")) {
+        const [stock, reserved] = await Promise.all([
+          tx.stockBalance.findFirst({
+            where: { productId: id, quantity: { gt: 0 } },
+            select: { id: true },
+          }),
+          tx.stockReservation.findFirst({
+            where: { productId: id, state: "ACTIVE" },
+            select: { id: true },
+          }),
+        ]);
+        if (stock || reserved) {
+          throw new Rejected({
+            ok: false,
+            reason: "invalid",
+            fieldErrors: {
+              tracking: stock
+                ? "Este producto tiene existencias: su control por lote solo se cambia cuando no queda nada. Sácalas o ajústalas a cero primero."
+                : "Este producto tiene existencias apartadas para pedidos: su control por lote no se puede cambiar.",
+            },
+          });
+        }
       }
       // The first movement fixes the unit (INV-15): the stock already
       // recorded is in it. The precision may only become finer, so every
@@ -802,6 +877,8 @@ export async function updateProduct(
           quantityStep: rule.quantityStep,
           unitWeight: after.weight,
           unitVolume: after.volume,
+          tracking,
+          lotExpiry,
         },
       });
       await recordAuditEvent(tx, {
@@ -819,7 +896,17 @@ export async function updateProduct(
                     antes: getUnit(before.unit!).name,
                     ahora: getUnit(after.unit!).name,
                   }
-                : { antes: before[field], ahora: after[field] },
+                : field === "tracking"
+                  ? {
+                      antes: TRACKING_LABELS[current.tracking],
+                      ahora: TRACKING_LABELS[tracking],
+                    }
+                  : field === "lotExpiry"
+                    ? {
+                        antes: LOT_EXPIRY_LABELS[current.lotExpiry],
+                        ahora: LOT_EXPIRY_LABELS[lotExpiry],
+                      }
+                    : { antes: before[field], ahora: after[field] },
             ]),
           ),
         },

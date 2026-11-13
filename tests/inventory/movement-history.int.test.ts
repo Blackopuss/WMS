@@ -141,6 +141,7 @@ describe("listMovements", () => {
       productSearch: null,
       userId: null,
       type: null,
+      lotId: null,
     });
   });
 

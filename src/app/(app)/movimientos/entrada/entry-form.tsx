@@ -96,6 +96,9 @@ export function EntryForm({
   destinations,
   idempotencyKey,
   askCost = false,
+  locationLabel,
+  lotEntry,
+  lotChoices,
 }: {
   mode?: keyof typeof MODES;
   productId: string;
@@ -120,6 +123,15 @@ export function EntryForm({
    * balances of who may record costs; the server checks it again.
    */
   askCost?: boolean;
+  /** Another question for the location select (it also chooses the lot). */
+  locationLabel?: string;
+  /**
+   * WMS-21, a product by lot that comes in: asks for its lot and, when its
+   * lots carry one, the expiry date.
+   */
+  lotEntry?: { expiry: "NONE" | "OPTIONAL" | "REQUIRED" };
+  /** WMS-21, an adjustment of a product by lot: its lots, to choose one. */
+  lotChoices?: { id: string; label: string }[];
 }) {
   const router = useRouter();
   /** What is happening when a confirmation got no answer. */
@@ -163,6 +175,9 @@ export function EntryForm({
       reference: text("reference"),
       reason: text("reason"),
       toLocationId: text("toLocationId"),
+      lotCode: text("lotCode"),
+      lotExpiresOn: text("lotExpiresOn"),
+      lotId: text("lotId"),
     };
     const outcome = await findOut();
     // The form itself says it below, next to what was typed.
@@ -222,6 +237,17 @@ export function EntryForm({
   // After a refusal, take the person back to the quantity when it is the problem.
   useEffect(() => {
     if (state.fieldErrors.quantity) quantityRef.current?.focus();
+    else if (state.fieldErrors.lotCode) {
+      document.getElementById("lotCode")?.focus();
+    } else if (state.fieldErrors.lotExpiresOn) {
+      document.getElementById("lotExpiresOn")?.focus();
+    } else if (state.fieldErrors.lotId) {
+      // Its own select in an adjustment; part of «de dónde sale» otherwise.
+      (
+        document.getElementById("lotId") ??
+        document.getElementById("locationId")
+      )?.focus();
+    }
     // WMS-71, WMS-22B: a warning sits next to the button that answers it.
     if (state.repeatWarning || state.capacityWarning) {
       acceptRef.current?.focus();
@@ -388,10 +414,88 @@ export function EntryForm({
           )}
         </FormField>
       )}
+      {lotEntry && (
+        <div
+          className={
+            lotEntry.expiry === "NONE" ? undefined : "grid gap-5 sm:grid-cols-2"
+          }
+        >
+          <FormField
+            id="lotCode"
+            label="Lote"
+            hint="Como viene en la etiqueta o en el empaque."
+            error={state.fieldErrors.lotCode}
+          >
+            {(control) => (
+              <Input
+                {...control}
+                name="lotCode"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                defaultValue={state.values.lotCode ?? ""}
+                key={`lot-${state.values.lotCode ?? ""}-${answers}`}
+                maxLength={64}
+                required
+              />
+            )}
+          </FormField>
+          {lotEntry.expiry !== "NONE" && (
+            <FormField
+              id="lotExpiresOn"
+              label={
+                lotEntry.expiry === "REQUIRED"
+                  ? "Caducidad"
+                  : "Caducidad (opcional)"
+              }
+              hint="Si el lote ya existe, puedes dejarla vacía."
+              error={state.fieldErrors.lotExpiresOn}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  name="lotExpiresOn"
+                  type="date"
+                  defaultValue={state.values.lotExpiresOn ?? ""}
+                  key={`expiry-${state.values.lotExpiresOn ?? ""}-${answers}`}
+                />
+              )}
+            </FormField>
+          )}
+        </div>
+      )}
+      {lotChoices && (
+        <FormField
+          id="lotId"
+          label="¿Qué lote contaste?"
+          error={state.fieldErrors.lotId}
+        >
+          {(control) => (
+            <NativeSelect
+              {...control}
+              name="lotId"
+              defaultValue={state.values.lotId ?? ""}
+              key={`lot-${state.values.lotId ?? ""}-${answers}`}
+            >
+              <option key="" value="">
+                Elige un lote
+              </option>
+              {lotChoices.map((lot) => (
+                <option key={lot.id} value={lot.id}>
+                  {lot.label}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+        </FormField>
+      )}
       <FormField
         id="locationId"
-        label={texts.location}
-        error={state.fieldErrors.locationId}
+        label={locationLabel ?? texts.location}
+        error={
+          state.fieldErrors.locationId ??
+          (lotChoices ? undefined : state.fieldErrors.lotId)
+        }
       >
         {(control) => (
           <NativeSelect

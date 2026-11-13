@@ -10,6 +10,7 @@ import {
   captureCount,
   openCount,
   removeCapture,
+  listProductLots,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import {
@@ -69,6 +70,11 @@ export type CountProduct = {
   name: string;
   sku: string;
   captures: CaptureOption[];
+  /**
+   * WMS-21: its lots, when it is controlled by lot (those with stock
+   * first); null for a product without lots.
+   */
+  lots: { id: string; label: string }[] | null;
 };
 
 export type CountSearch = {
@@ -96,6 +102,13 @@ async function countProduct(
     name: product.name,
     sku: product.sku,
     captures: captureOptions(product, presentations),
+    lots:
+      product.tracking === "LOT"
+        ? (await listProductLots(actor, product.id)).map((lot) => ({
+            id: lot.id,
+            label: lot.label,
+          }))
+        : null,
   };
 }
 
@@ -145,7 +158,7 @@ export async function loadCountProductAction(
 
 export type CaptureState =
   | { ok: true; summary: string; mixed: boolean }
-  | { ok: false; field?: "productId" | "quantity"; error: string };
+  | { ok: false; field?: "productId" | "quantity" | "lotId"; error: string };
 
 /**
  * Writes down what was found of a product in a count. Only ids and what
@@ -156,6 +169,8 @@ export async function captureCountAction(
   productId: string,
   capture: string,
   quantity: string,
+  /** The lot counted, for a product by lot (WMS-21). */
+  lotId?: string,
 ): Promise<CaptureState> {
   const { user, organization } = await requireOrganizationContext();
   const how = String(capture ?? "");
@@ -166,6 +181,7 @@ export async function captureCountAction(
         countId: String(countId),
         productId: String(productId),
         quantity: String(quantity ?? "").slice(0, 40),
+        lotId: String(lotId ?? "").slice(0, 36),
         ...(how.startsWith("p:")
           ? { presentationId: how.slice(2) }
           : how.startsWith("u:")

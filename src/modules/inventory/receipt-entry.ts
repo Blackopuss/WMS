@@ -8,7 +8,8 @@ import { lockRows, type TenantDb } from "@/server";
 import { MAX_BALANCE, formatStock, type InventoryActor } from "./movements";
 import { checkPlacement } from "./placement";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { lotColumns } from "./stock-status";
+import { LOT_RULE_SELECT, lotForEntry } from "./lot-resolve";
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Decimal = ReturnType<typeof dec>;
@@ -42,6 +43,12 @@ export type ReceiptEntryInput = {
     capture: Capture;
     locationId?: string | null;
     unitCost?: { toString(): string } | null;
+    /**
+     * WMS-21: the lot the line arrives in (and its expiry, «2027-03-05»),
+     * for a product by lot. Created the first time it is seen.
+     */
+    lotCode?: string | null;
+    lotExpiresOn?: string | null;
   }[];
   /** «OC-0007 · Remisión 4411»: what people see in the history. */
   reference: string | null;
@@ -66,6 +73,9 @@ export type ReceiptEntryLine = {
   baseQuantity: Decimal;
   /** Cost of one unit of the product it came in at (VAL-02); null if unknown. */
   unitCost: Decimal | null;
+  /** The lot it came in, for a product by lot (WMS-21). */
+  lotId: string | null;
+  lotCode: string | null;
   /** «3 cajas × 100 = 300 piezas», or «25 piezas». */
   text: string;
 };
@@ -85,6 +95,8 @@ export type ReceiptEntryResult =
       /** Position of the line with the problem, or null for the location of the receipt. */
       line: number | null;
       error: string;
+      /** The problem is with the lot or its expiry date of that line (WMS-21). */
+      field?: "lotCode" | "lotExpiresOn";
       /**
        * It only goes over a capacity the company warns about (WMS-22B):
        * the same receipt with `acceptCapacity` goes through.
@@ -156,7 +168,13 @@ export async function postReceiptEntry(
 
   const products = await tx.product.findMany({
     where: { id: { in: [...new Set(input.lines.map((l) => l.productId))] } },
-    select: { id: true, name: true, sku: true, status: true },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      status: true,
+      ...LOT_RULE_SELECT,
+    },
   });
   const byId = new Map(products.map((product) => [product.id, product]));
 
@@ -195,7 +213,18 @@ export async function postReceiptEntry(
     }
     const { conversion } = resolved;
     const base = conversion.baseQuantity;
-    const slot = `${product.id} ${place.id}`;
+    // WMS-21: under the product's lock; a new lot is born with the receipt.
+    const lotAnswer = await lotForEntry(tx, actor, product, line);
+    if (!lotAnswer.ok) {
+      return {
+        ok: false,
+        line: index,
+        error: lotAnswer.error,
+        field: lotAnswer.field === "lotExpiresOn" ? "lotExpiresOn" : "lotCode",
+      };
+    }
+    const lot = lotAnswer.lot;
+    const slot = `${product.id} ${place.id} ${lot?.id ?? ""}`;
     added.set(slot, (added.get(slot) ?? dec(0)).plus(base));
     lines.push({
       lineNumber: index + 1,
@@ -209,6 +238,8 @@ export async function postReceiptEntry(
       factor: conversion.factor,
       baseQuantity: base,
       unitCost: costPerUnit(line.unitCost?.toString(), conversion.factor),
+      lotId: lot?.id ?? null,
+      lotCode: lot?.code ?? null,
       text: conversion.presentation
         ? conversion.preview
         : formatStock(base.toString(), resolved.product.unitCode),
@@ -219,21 +250,34 @@ export async function postReceiptEntry(
     where: {
       productId: { in: [...new Set(lines.map((line) => line.productId))] },
       locationId: { in: [...new Set(lines.map((line) => line.locationId))] },
-      ...AVAILABLE_STOCK,
+      status: "AVAILABLE",
+      lotKey: { in: [...new Set(lines.map((line) => line.lotId ?? ""))] },
     },
-    select: { id: true, productId: true, locationId: true, quantity: true },
+    select: {
+      id: true,
+      productId: true,
+      locationId: true,
+      lotKey: true,
+      quantity: true,
+    },
   });
+  const slotOf = (line: {
+    productId: string;
+    locationId: string;
+    lotId: string | null;
+  }) => `${line.productId} ${line.locationId} ${line.lotId ?? ""}`;
   const current = new Map(
-    balances.map((row) => [`${row.productId} ${row.locationId}`, row]),
+    balances.map((row) => [
+      `${row.productId} ${row.locationId} ${row.lotKey}`,
+      row,
+    ]),
   );
   for (const [slot, quantity] of added) {
     const before = dec(current.get(slot)?.quantity.toString() ?? 0);
     if (before.plus(quantity).greaterThan(MAX_BALANCE)) {
       return {
         ok: false,
-        line: lines.findIndex(
-          (line) => `${line.productId} ${line.locationId}` === slot,
-        ),
+        line: lines.findIndex((line) => slotOf(line) === slot),
         error:
           "Con esa cantidad el saldo sería demasiado grande. Revisa lo recibido.",
       };
@@ -304,13 +348,18 @@ export async function postReceiptEntry(
       factor: line.factor.toString(),
       baseQuantity: line.baseQuantity.toString(),
       unitCode: line.unitCode,
+      ...lotColumns(line.lotId),
       unitCost: lineCost(line.unitCost),
     })),
   });
   await costs.save();
   for (const [slot, quantity] of added) {
     const row = current.get(slot);
-    const [productId, locationId] = slot.split(" ") as [string, string];
+    const [productId, locationId, lotKey = ""] = slot.split(" ") as [
+      string,
+      string,
+      string?,
+    ];
     if (row) {
       await tx.stockBalance.updateMany({
         where: { id: row.id },
@@ -323,6 +372,7 @@ export async function postReceiptEntry(
           organizationId,
           productId,
           locationId,
+          ...lotColumns(lotKey || null),
           quantity: quantity.toString(),
         },
       });

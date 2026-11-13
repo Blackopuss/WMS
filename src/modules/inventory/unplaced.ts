@@ -13,7 +13,7 @@ import {
 import { forOrganization } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { AVAILABLE_ANY_LOT } from "./stock-status";
 
 /**
  * Stock waiting to be put away (WMS-72): what the warehouse the person
@@ -114,7 +114,7 @@ const waitingIn = (locationIds: string[]) => ({
   balances: {
     some: {
       locationId: { in: locationIds },
-      ...AVAILABLE_STOCK,
+      ...AVAILABLE_ANY_LOT,
       quantity: { gt: 0 },
     },
   },
@@ -133,7 +133,7 @@ async function waitingSince(
   quantity: string,
 ): Promise<Date | null> {
   const entries = await client.stockMovementLine.findMany({
-    where: { productId, locationId, direction: "IN", ...AVAILABLE_STOCK },
+    where: { productId, locationId, direction: "IN", ...AVAILABLE_ANY_LOT },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: MAX_ENTRIES_READ,
     select: { baseQuantity: true, createdAt: true },
@@ -189,15 +189,24 @@ export async function listUnplacedStock(
     take: UNPLACED_PAGE_SIZE,
     select: { id: true, name: true, sku: true, unitCode: true },
   });
-  const balances = await client.stockBalance.findMany({
-    where: {
-      productId: { in: products.map((product) => product.id) },
-      locationId: { in: locationIds },
-      ...AVAILABLE_STOCK,
-      quantity: { gt: 0 },
-    },
-    select: { productId: true, locationId: true, quantity: true },
-  });
+  // WMS-21: a product by lot has a row per lot; a place adds them up.
+  const balances = (
+    await client.stockBalance.groupBy({
+      by: ["productId", "locationId"],
+      where: {
+        productId: { in: products.map((product) => product.id) },
+        locationId: { in: locationIds },
+        ...AVAILABLE_ANY_LOT,
+        quantity: { gt: 0 },
+      },
+      _sum: { quantity: true },
+      orderBy: [{ productId: "asc" }, { locationId: "asc" }],
+    })
+  ).map((group) => ({
+    productId: group.productId,
+    locationId: group.locationId,
+    quantity: group._sum.quantity ?? 0,
+  }));
   const placeOf = new Map(
     places.map((place) => [
       place.id,

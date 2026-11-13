@@ -110,6 +110,8 @@ export default async function EditarProductoPage({
           step: String(Number(product.quantityStep)),
           weight: product.unitWeight ?? "",
           volume: product.unitVolume ?? "",
+          tracking: product.tracking,
+          lotExpiry: product.lotExpiry,
         }}
         submitLabel="Guardar cambios"
         categories={groups.categories}

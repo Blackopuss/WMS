@@ -173,11 +173,14 @@ describe("product", () => {
       "createdAt",
       "description",
       "id",
+      // WMS-21: how it is controlled (by lot or not), not how much there is.
+      "lotExpiry",
       "name",
       "organizationId",
       "quantityStep",
       "sku",
       "status",
+      "tracking",
       "unitCode",
       // WMS-22B: what one unit takes and weighs, not how many there are.
       "unitVolume",

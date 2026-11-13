@@ -150,6 +150,8 @@ export default async function OrdenPage({
                       pendingQuantity: line.pendingQuantity,
                       unitText: line.unitText,
                       contentText: line.contentText,
+                      byLot: line.byLot,
+                      lotExpiry: line.lotExpiry,
                       orderedContentText: line.orderedContentText,
                     }))}
                   locations={locations.map((location) => ({
@@ -430,6 +432,7 @@ ${order.closeReason ?? ""}`,
                         {line.quantityText} de {line.productName}{" "}
                         <span className="text-muted-foreground">
                           ({line.sku}) · {line.locationPath}
+                          {line.lotText && ` · ${line.lotText}`}
                           {line.returnedText &&
                             ` · devuelto: ${line.returnedText}`}
                         </span>

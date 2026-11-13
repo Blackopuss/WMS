@@ -195,6 +195,7 @@ export default async function ConteoPage({
                     </span>{" "}
                     <span className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
                       {line.sku}
+                      {line.lot && ` · Lote ${line.lot}`}
                     </span>
                   </p>
                   <p className="font-medium tabular-nums">

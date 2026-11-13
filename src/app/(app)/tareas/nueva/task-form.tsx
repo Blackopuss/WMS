@@ -21,20 +21,26 @@ export function TaskForm({
   productId,
   unitLabel,
   sources,
+  sourceLabel,
   destinations,
   people,
 }: {
   productId: string;
   /** «piezas», so the quantity says what it counts. */
   unitLabel: string;
+  /** A product by lot: each id is «<location>|<lot>» (WMS-21). */
   sources: Option[];
+  /** Another question for the origin when it also chooses the lot. */
+  sourceLabel?: string;
   destinations: Option[];
   people: Option[];
 }) {
   const [state, formAction, pending] = useActionState(createTaskAction, {
     values: {
       fromLocationId: sources[0]?.id ?? "",
-      toLocationId: destinations.find((d) => d.id !== sources[0]?.id)?.id ?? "",
+      toLocationId:
+        destinations.find((d) => d.id !== sources[0]?.id.split("|")[0])?.id ??
+        "",
       quantity: "",
       priority: "NORMAL",
       assignToUserId: "",
@@ -54,8 +60,8 @@ export function TaskForm({
       )}
       <FormField
         id="fromLocationId"
-        label="De dónde sale"
-        error={errors.fromLocationId}
+        label={sourceLabel ?? "De dónde sale"}
+        error={errors.fromLocationId ?? errors.lotId}
       >
         {(control) => (
           <NativeSelect

@@ -43,7 +43,9 @@ import {
 } from "./task-states";
 import { formatOutboundNumber } from "./outbound-states";
 import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { availableOfLot } from "./stock-status";
+import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
+import { lotDayOf, lotLabel, normalizeLotCode } from "./lot-rules";
 import { freeToMoveFrom, reservedMessage } from "./reservations";
 
 /**
@@ -82,7 +84,9 @@ export type TaskField =
   | "reason"
   | "productCode"
   | "locationCode"
-  | "shortReason";
+  | "shortReason"
+  | "lotId"
+  | "lotCode";
 
 type Failure = Extract<TaskResult, { ok: false }>;
 
@@ -156,6 +160,8 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
           kind: true,
           outboundLineId: true,
           pickedQuantity: true,
+          lotId: true,
+          lot: { select: { code: true } },
           outboundLine: { select: { orderId: true } },
           product: {
             select: {
@@ -205,7 +211,7 @@ async function pickOrderOf(
 type LockedTask = Awaited<ReturnType<typeof lockTask>>;
 
 const describe = (task: LockedTask) =>
-  `${formatTaskNumber(task.number)}: ${formatStock(task.quantity.toString(), task.unitCode)} de ${task.product.name} de ${task.fromLocation.name} a ${task.toLocation.name}`;
+  `${formatTaskNumber(task.number)}: ${formatStock(task.quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} de ${task.fromLocation.name} a ${task.toLocation.name}`;
 
 function ensure(task: LockedTask, to: WarehouseTaskStatus): void {
   const problem = taskTransitionProblem(task.status, to);
@@ -236,6 +242,13 @@ const createSchema = z.object({
   fromLocationId: z.string().trim().min(1, "Elige de dónde sale.").max(36),
   toLocationId: z.string().trim().min(1, "Elige a dónde va.").max(36),
   quantity: z.string().trim().min(1, "Escribe la cantidad que se mueve."),
+  /** The lot to move, for a product by lot (WMS-21). */
+  lotId: z
+    .string()
+    .trim()
+    .max(36)
+    .optional()
+    .transform((value) => value || null),
   priority: z
     .string()
     .optional()
@@ -317,6 +330,7 @@ export async function createTask(
                 status: true,
                 unitCode: true,
                 quantityStep: true,
+                ...LOT_RULE_SELECT,
               },
             })
           : null;
@@ -374,11 +388,15 @@ export async function createTask(
             "toLocationId",
           );
         }
+        // WMS-21: a task of a product by lot says which lot to move.
+        const lotAnswer = await lotForTake(tx, product, data.lotId);
+        if (!lotAnswer.ok) return stop("invalid", lotAnswer.error, "lotId");
+        const lot = lotAnswer.lot;
         const balance = await tx.stockBalance.findFirst({
           where: {
             productId: product.id,
             locationId: from.id,
-            ...AVAILABLE_STOCK,
+            ...availableOfLot(lot?.id),
           },
           select: { quantity: true },
         });
@@ -387,13 +405,13 @@ export async function createTask(
           return stop(
             "invalid",
             there.isZero()
-              ? `No hay existencias de ${product.name} en ${from.name}.`
-              : `Solo hay ${formatStock(there.toString(), product.unitCode)} en ${from.name}.`,
+              ? `No hay existencias de ${product.name}${ofLot(lot)} en ${from.name}.`
+              : `Solo hay ${formatStock(there.toString(), product.unitCode)}${ofLot(lot)} en ${from.name}.`,
             "quantity",
           );
         }
         // WMS-12: what is reserved in that location stays there.
-        const freeHere = await freeToMoveFrom(tx, product.id, from.id);
+        const freeHere = await freeToMoveFrom(tx, product.id, from.id, lot?.id);
         if (freeHere.lessThan(quantity.quantity)) {
           return stop(
             "invalid",
@@ -453,6 +471,7 @@ export async function createTask(
             productId: product.id,
             fromLocationId: from.id,
             toLocationId: to.id,
+            lotId: lot?.id ?? null,
             quantity: quantity.quantity.toString(),
             unitCode: product.unitCode,
             note: data.note,
@@ -463,7 +482,7 @@ export async function createTask(
         return {
           ok: true,
           taskId: id,
-          summary: `Se creó la tarea ${formatTaskNumber(number)}: ${formatStock(quantity.quantity.toString(), product.unitCode)} de ${product.name} de ${from.name} a ${to.name}.`,
+          summary: `Se creó la tarea ${formatTaskNumber(number)}: ${formatStock(quantity.quantity.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} de ${from.name} a ${to.name}.`,
         };
       });
     } catch (error) {
@@ -570,6 +589,8 @@ export type ConfirmPickInput = {
   productCode: string;
   /** Scanned or typed: the code, name or path of the origin location. */
   locationCode: string;
+  /** Scanned or typed: the lot taken, when the task names one (WMS-21). */
+  lotCode?: string;
   /** What was taken, in the product's unit. */
   quantity: string;
   /** Why less than asked; required then. */
@@ -658,6 +679,24 @@ export function confirmPick(
           : `No es la ubicación de la tarea: ve a ${path}.`,
         "locationCode",
       );
+    }
+    // WMS-21: the lot in hand is the one set aside for the order.
+    if (task.lot) {
+      const typedLot = normalizeLotCode(input.lotCode);
+      if (!typedLot.ok) {
+        return stop(
+          "invalid",
+          `Escanea o escribe el lote que tomaste (${task.lot.code}).`,
+          "lotCode",
+        );
+      }
+      if (typedLot.code !== task.lot.code) {
+        return stop(
+          "invalid",
+          `Ese no es el lote de la tarea: busca el lote ${task.lot.code}. Si no está, reporta el problema.`,
+          "lotCode",
+        );
+      }
     }
     if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
     const asked = dec(task.quantity.toString());
@@ -758,6 +797,7 @@ export async function deliverTask(
         productId: task.productId,
         fromLocationId: task.fromLocationId,
         toLocationId: task.toLocationId,
+        lotId: task.lotId,
         quantity: dec(task.quantity.toString()),
         picked,
         unitCode: task.unitCode,
@@ -790,6 +830,7 @@ export async function deliverTask(
       fromLocationId: task.fromLocationId,
       toLocationId: task.toLocationId,
       quantity: task.quantity.toString(),
+      lotId: task.lotId,
       idempotencyKey: `task:${task.id}`,
       reference: formatTaskNumber(task.number),
     });
@@ -1012,6 +1053,7 @@ export function cancelTask(
         {
           outboundLineId: task.outboundLineId,
           fromLocationId: task.fromLocationId,
+          lotId: task.lotId,
           quantity: dec(task.quantity.toString()),
         },
         dec(0),
@@ -1048,6 +1090,10 @@ export type TaskSummary = {
   order: { id: string; numberText: string; recipient: string } | null;
   productName: string;
   sku: string;
+  /** «Lote L-01 · caduca 05/03/2027», for a product by lot (WMS-21). */
+  lotText: string | null;
+  /** Its code alone: what the person scans or types when picking. */
+  lotCode: string | null;
   quantityText: string;
   fromPath: string;
   toPath: string;
@@ -1105,6 +1151,7 @@ const SUMMARY_SELECT = {
   assignedToUserId: true,
   createdAt: true,
   product: { select: { name: true, sku: true } },
+  lot: { select: { code: true, expiresOn: true } },
   fromLocation: LOCATION_NAMES,
   toLocation: LOCATION_NAMES,
 } as const;
@@ -1123,6 +1170,7 @@ type SummaryRow = {
   assignedToUserId: string | null;
   createdAt: Date;
   product: { name: string; sku: string };
+  lot: { code: string; expiresOn: Date | null } | null;
   fromLocation: LocationNames;
   toLocation: LocationNames;
 };
@@ -1160,6 +1208,10 @@ const summaryOf = (
     : null,
   productName: row.product.name,
   sku: row.product.sku,
+  lotText: row.lot
+    ? lotLabel({ code: row.lot.code, expiresOn: lotDayOf(row.lot.expiresOn) })
+    : null,
+  lotCode: row.lot?.code ?? null,
   quantityText: formatStock(row.quantity.toString(), row.unitCode),
   fromPath: pathOf(row.fromLocation),
   toPath: pathOf(row.toLocation),

@@ -18,6 +18,8 @@ import {
   formatStock,
   getStockByLocation,
   getStockTotals,
+  listLotStock,
+  listProductLots,
   listStockLocations,
 } from "@/modules/inventory";
 import type { ModuleAccess } from "@/platform/billing";
@@ -263,6 +265,16 @@ export async function MovementScreen({
       : [],
   ]);
   const total = totals[product.id];
+  // WMS-21: a product by lot says which lot in every movement.
+  const byLot = product.tracking === "LOT";
+  const lotStock =
+    byLot && (kind === "exit" || kind === "transfer")
+      ? await listLotStock(actor, product.id)
+      : [];
+  const productLots =
+    byLot && kind === "adjustment"
+      ? await listProductLots(actor, product.id)
+      : [];
   const header = (
     <PageHeader
       title={texts.title}
@@ -273,8 +285,25 @@ export async function MovementScreen({
     formatStock(stock[id] ?? "0", product.unitCode);
 
   if (kind === "exit" || kind === "transfer") {
-    // Stock only leaves from where there is some.
-    const sources = locations.filter((location) => stock[location.id]);
+    // Stock only leaves from where there is some. A product by lot leaves
+    // from a lot in a location: one choice for both («ubicación|lote»).
+    const sources = byLot
+      ? locations.flatMap((location) =>
+          lotStock
+            .filter((row) => row.locationId === location.id)
+            .map((row) => ({
+              id: `${location.id}|${row.lotId}`,
+              place: location.id,
+              label: `${location.path} · ${row.label}${row.expired ? " (caducado)" : ""} — hay ${formatStock(row.free, product.unitCode)}`,
+            })),
+        )
+      : locations
+          .filter((location) => stock[location.id])
+          .map((location) => ({
+            id: location.id,
+            place: location.id,
+            label: `${location.path} — hay ${holding(location.id)}`,
+          }));
     if (kind === "transfer" && sources.length > 0 && locations.length < 2) {
       return (
         <PageContainer>
@@ -343,15 +372,36 @@ export async function MovementScreen({
           }
           productId={product.id}
           captures={captureOptions(product, presentations)}
-          locations={sources.map((location) => ({
-            id: location.id,
-            label: `${location.path} — hay ${holding(location.id)}`,
-          }))}
+          locations={sources.map(({ id, label }) => ({ id, label }))}
+          locationLabel={byLot ? "¿De dónde sale y de qué lote?" : undefined}
           // WMS-72: «Sin acomodar» arrives with the place to move from.
           defaultLocationId={
-            sources.find((location) => location.id === origen)?.id ??
+            sources.find((source) => source.place === origen)?.id ??
             sources[0]?.id ??
             ""
+          }
+        />
+      </PageContainer>
+    );
+  }
+
+  if (kind === "adjustment" && byLot && productLots.length === 0) {
+    return (
+      <PageContainer>
+        {another}
+        {header}
+        <EmptyState
+          icon={Package}
+          title="Este producto todavía no tiene lotes"
+          description="Se ajusta un lote que ya existe. Lo que llegó de un lote nuevo se registra con una entrada."
+          action={
+            access.allows("inventory.entry.create") ? (
+              <Button asChild variant="outline">
+                <Link href={`/movimientos/entrada?producto=${product.id}`}>
+                  Registrar una entrada
+                </Link>
+              </Button>
+            ) : undefined
           }
         />
       </PageContainer>
@@ -386,6 +436,17 @@ export async function MovementScreen({
           locations.find((location) => location.isDefault)?.id ??
           locations[0]?.id ??
           ""
+        }
+        lotEntry={
+          byLot && kind === "entry" ? { expiry: product.lotExpiry } : undefined
+        }
+        lotChoices={
+          byLot && kind === "adjustment"
+            ? productLots.map((lot) => ({
+                id: lot.id,
+                label: `${lot.label} — hay ${lot.totalLabel} en total`,
+              }))
+            : undefined
         }
       />
     </PageContainer>
