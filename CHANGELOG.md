@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-25** · Surtido por olas, por lotes y por zona (ADR 0054): ola `OL-…`,
+  orden de recorrido por código de ubicación, confirmar juntas las tareas del
+  mismo estante, reparto por zona; el surtido prefiere ubicaciones de surtido.
+  Cierra la Fase 2.
 - **WMS-56 / WMS-41** · Aprobaciones y ajustes con autorización (ADR 0053):
   motor de aprobaciones de plataforma (regla por empresa y tipo, solicitud,
   decisión una sola vez) y sus primeros usos: correcciones de existencias y
