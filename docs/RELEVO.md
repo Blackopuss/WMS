@@ -20,6 +20,9 @@ para arrancar sin releer la conversación anterior.
   personalizados (WMS-58). Transversales: app instalable y cámara (WMS-35/36),
   avisos e incidencias (WMS-39).
 - Sin ramas ni worktrees de pasos abiertos: todo está unido a `pruebas`.
+- `main` se avanzó hasta `pruebas` el 2026-11-13 (con autorización del
+  fundador). Si al abrir un chat `main` va atrás otra vez, trabajar sobre
+  `origin/pruebas`.
 
 ## Qué leer, en orden
 
