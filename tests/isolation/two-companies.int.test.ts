@@ -600,6 +600,112 @@ beforeAll(async () => {
         movementLineId: shipmentMovementLineId,
       },
     });
+    // A customer return of that order (WMS-17): its entry into inspection,
+    // its line and a decision (a change of state out of inspection).
+    const customerReturnMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: customerReturnMovementId,
+        organizationId,
+        type: "CUSTOMER_RETURN",
+        reference: "DV-0001",
+        reason: "No lo quiso",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const customerReturnId = newId();
+    await db.customerReturn.create({
+      data: {
+        id: customerReturnId,
+        organizationId,
+        number: 1,
+        facilityId: outboundFacility,
+        locationId: location.id,
+        orderId: outboundId,
+        returnedBy: "Sucursal",
+        reason: "No lo quiso",
+        movementId: customerReturnMovementId,
+        idempotencyKey: newId(),
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const customerReturnMovementLineId = newId();
+    await db.stockMovementLine.create({
+      data: {
+        id: customerReturnMovementLineId,
+        organizationId,
+        movementId: customerReturnMovementId,
+        lineNumber: 1,
+        productId,
+        locationId: location.id,
+        direction: "IN",
+        status: "INSPECTION",
+        capturedQuantity: "1",
+        factor: "1",
+        baseQuantity: "1",
+        unitCode: "piece",
+      },
+    });
+    const customerReturnLineId = newId();
+    await db.customerReturnLine.create({
+      data: {
+        id: customerReturnLineId,
+        organizationId,
+        returnId: customerReturnId,
+        lineNumber: 1,
+        productId,
+        orderLineId: outboundLineId,
+        quantity: "1",
+        unitCode: "piece",
+        movementLineId: customerReturnMovementLineId,
+      },
+    });
+    const decisionMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: decisionMovementId,
+        organizationId,
+        type: "STATUS_CHANGE",
+        reason: "Devolución DV-0001: en buen estado",
+        reference: "DV-0001",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    for (const [lineNumber, direction, status] of [
+      [1, "OUT", "INSPECTION"],
+      [2, "IN", "AVAILABLE"],
+    ] as const) {
+      await db.stockMovementLine.create({
+        data: {
+          id: newId(),
+          organizationId,
+          movementId: decisionMovementId,
+          lineNumber,
+          productId,
+          locationId: location.id,
+          direction,
+          status,
+          capturedQuantity: "1",
+          factor: "1",
+          baseQuantity: "1",
+          unitCode: "piece",
+        },
+      });
+    }
+    await db.customerReturnDecision.create({
+      data: {
+        id: newId(),
+        organizationId,
+        returnId: customerReturnId,
+        lineId: customerReturnLineId,
+        outcome: "AVAILABLE",
+        quantity: "1",
+        reason: "En buen estado",
+        locationId: location.id,
+        movementId: decisionMovementId,
+        decidedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // A transfer task (WMS-06) from the default location to a rack.
     const rackId = newId();
     await db.location.create({

@@ -15,6 +15,7 @@ import {
   freeToTake,
   reserveStock,
 } from "./reservations";
+import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
 import { dayWindow } from "./calendar-day";
 import { isExpired, lotDayOf } from "./lot-rules";
 import { PICKING_STRATEGY, PICK_EXPIRED } from "./settings";
@@ -39,8 +40,8 @@ type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 
 const minOf = (a: Decimal, b: Decimal) => (a.lessThan(b) ? a : b);
 
-/** Reservations of an outbound order are per line. */
-export const OUTBOUND_LINE_SOURCE = "outbound_order_line";
+/** Reservations of an outbound order are per line (WMS-14). */
+export { OUTBOUND_LINE_SOURCE };
 
 export type PickSource = {
   locationId: string;

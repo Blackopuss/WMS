@@ -493,6 +493,8 @@ export default async function MovimientosPage({
                   movement.type !== "RECEIPT" &&
                   movement.type !== "RETURN" &&
                   movement.type !== "SHIPMENT" &&
+                  movement.type !== "CUSTOMER_RETURN" &&
+                  !movement.isReturnDecision &&
                   !movement.reversedByMovementId && (
                     <div className="shrink-0">
                       <ReverseMovement

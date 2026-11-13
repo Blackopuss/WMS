@@ -180,6 +180,7 @@ export default async function LotePage({
           origins={trace.origins}
           orders={trace.orders}
           shipments={trace.shipments}
+          returns={trace.returns}
           timeZone={timeZone}
         />
       )}

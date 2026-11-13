@@ -10,6 +10,7 @@ import {
   CONTAINERS_MODE,
   PACKING_MODE,
   SHIPMENT_DETAILS,
+  CUSTOMER_RETURN_WITHOUT_ORDER,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   createOutboundOrder,
@@ -194,6 +195,12 @@ describe("operation settings", () => {
         value: "optional",
         defaultValue: "optional",
       },
+      // WMS-17: a customer may return without an order unless forbidden.
+      {
+        key: CUSTOMER_RETURN_WITHOUT_ORDER.key,
+        value: "allow",
+        defaultValue: "allow",
+      },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -206,6 +213,7 @@ describe("operation settings", () => {
       { key: CONTAINERS_MODE.key, value: "off" },
       { key: PACKING_MODE.key, value: "off" },
       { key: SHIPMENT_DETAILS.key, value: "optional" },
+      { key: CUSTOMER_RETURN_WITHOUT_ORDER.key, value: "allow" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

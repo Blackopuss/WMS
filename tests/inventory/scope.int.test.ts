@@ -2,6 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  decideCustomerReturn,
+  getCustomerReturn,
+  listCustomerReturns,
+  receiveCustomerReturn,
   PUTAWAY_MODE,
   acceptTask,
   applyCount,
@@ -1120,6 +1124,63 @@ describe("limited to a zone of a warehouse", () => {
       CONTAINERS_MODE.key,
       "off",
     );
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: customer returns (WMS-17)", () => {
+  it("a return of A does not exist from B, and nothing is received into A", async () => {
+    const product = await createProduct(owner, {
+      sku: "ALC-DEV",
+      name: "Devuelto",
+    });
+    if (!product.ok) throw new Error("product setup failed");
+    const received = await receiveCustomerReturn(owner, {
+      returnedBy: "Mostrador",
+      reason: "No lo quiso",
+      locationId: shelfA,
+      idempotencyKey: key(),
+      lines: [{ productId: product.productId, quantity: "2" }],
+    });
+    if (!received.ok) throw new Error(JSON.stringify(received));
+    const number = (await getCustomerReturn(owner, received.returnId))!
+      .numberText;
+
+    expect(await getCustomerReturn(limited, received.returnId)).toBeNull();
+    expect((await listCustomerReturns(limited)).items).toEqual([]);
+    expect((await findTraceMatches(limited, number)).matches).toEqual([]);
+    const lineId = (
+      await db.customerReturnLine.findFirstOrThrow({
+        where: { returnId: received.returnId },
+      })
+    ).id;
+    expect(
+      await decideCustomerReturn(limited, {
+        returnId: received.returnId,
+        lineId,
+        outcome: "AVAILABLE",
+        quantity: "2",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    await expect(
+      receiveCustomerReturn(limited, {
+        returnedBy: "Mostrador",
+        reason: "No lo quiso",
+        locationId: shelfA,
+        idempotencyKey: key(),
+        lines: [{ productId: product.productId, quantity: "1" }],
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    // In B they receive and decide as usual.
+    const own = await receiveCustomerReturn(limited, {
+      returnedBy: "Mostrador",
+      reason: "No lo quiso",
+      locationId: shelfB,
+      idempotencyKey: key(),
+      lines: [{ productId: product.productId, quantity: "1" }],
+    });
+    expect(own).toMatchObject({ ok: true });
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

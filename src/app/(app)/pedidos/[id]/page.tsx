@@ -1,4 +1,4 @@
-import { ChevronLeft, PackageCheck, Truck } from "lucide-react";
+import { ChevronLeft, PackageCheck, Truck, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -17,6 +17,7 @@ import {
   getOutboundOrder,
   getPackingView,
   packingEnabled,
+  returnsOfOrder,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
@@ -116,6 +117,15 @@ export default async function PedidoPage({
   // WMS-16: ready to leave, it goes into a shipment.
   const mayShip =
     active && order.readyToShip && access.allows("inventory.shipment.create");
+  // WMS-17: what left may come back.
+  const mayReturn =
+    active &&
+    order.status === "SHIPPED" &&
+    access.allows("inventory.customer_return.create");
+  const returns =
+    order.status === "SHIPPED" && access.can("inventory.customer_return.read")
+      ? await returnsOfOrder(actor, order.id)
+      : [];
   const mayPack =
     active &&
     access.allows("inventory.outbound.pack") &&
@@ -189,6 +199,27 @@ export default async function PedidoPage({
           </Link>{" "}
           · {order.shipment.statusLabel}
         </p>
+      )}
+      {(mayReturn || returns.length > 0) && (
+        <div className="flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-1">
+          {mayReturn && (
+            <Button asChild variant="outline" className="min-h-11">
+              <Link href={`/pedidos/devoluciones/nueva?pedido=${order.id}`}>
+                <Undo2 aria-hidden="true" data-icon="inline-start" />
+                Registrar devolución
+              </Link>
+            </Button>
+          )}
+          {returns.map((back) => (
+            <Link
+              key={back.id}
+              href={`/pedidos/devoluciones/${back.id}`}
+              className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Devolución {back.numberText} · {back.statusLabel}
+            </Link>
+          ))}
+        </div>
       )}
 
       <section

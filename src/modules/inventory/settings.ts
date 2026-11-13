@@ -280,6 +280,31 @@ export const SHIPMENT_DETAILS = {
   defaultValue: "optional",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-17 (ADR 0046): whether a customer may return goods without an order
+ * of the system. Allowed by default: many companies have stock from before
+ * the system, or customers who return without a reference.
+ */
+export const CUSTOMER_RETURN_WITHOUT_ORDER = {
+  key: "inventory.customer_return.without_order",
+  module: "inventory",
+  area: "Devoluciones",
+  label: "Devoluciones sin pedido",
+  options: [
+    {
+      value: "allow",
+      label: "Se permiten",
+      help: "Se puede registrar una devolución sin pedido: producto, cantidad y lote o series.",
+    },
+    {
+      value: "forbid",
+      label: "Solo con pedido",
+      help: "Toda devolución cita un pedido despachado.",
+    },
+  ],
+  defaultValue: "allow",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -291,4 +316,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   CONTAINERS_MODE,
   PACKING_MODE,
   SHIPMENT_DETAILS,
+  CUSTOMER_RETURN_WITHOUT_ORDER,
 ];

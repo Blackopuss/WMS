@@ -5,6 +5,7 @@ import {
   PackageCheck,
   Plus,
   Truck,
+  Undo2,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -144,7 +145,9 @@ export default async function PedidosPage({
     <PageContainer>
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader title="Pedidos" actions={newButton} />
-      {(newButton || access.can("inventory.shipment.read")) && (
+      {(newButton ||
+        access.can("inventory.shipment.read") ||
+        access.can("inventory.customer_return.read")) && (
         <p className="-mt-2 flex flex-wrap gap-x-6">
           {access.can("inventory.shipment.read") && (
             <Link
@@ -153,6 +156,15 @@ export default async function PedidosPage({
             >
               <Truck aria-hidden="true" className="size-4" />
               Embarques
+            </Link>
+          )}
+          {access.can("inventory.customer_return.read") && (
+            <Link
+              href="/pedidos/devoluciones"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <Undo2 aria-hidden="true" className="size-4" />
+              Devoluciones
             </Link>
           )}
           {newButton && (

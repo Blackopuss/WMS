@@ -12,7 +12,8 @@ ubicación, estado y lote), costo promedio, lotes y caducidad, números de
 serie y trazabilidad, capacidad de
 ubicaciones al meter mercancía, reservas, tareas de traslado, surtido y
 acomodo con recomendación, tarimas y contenedores,
-pedidos de salida con su verificación, empaque y despacho en embarques, conteos, mínimos, importaciones y exportaciones, y los
+pedidos de salida con su verificación, empaque y despacho en embarques,
+devoluciones de clientes, conteos, mínimos, importaciones y exportaciones, y los
 resúmenes de Inicio. Productos y ubicaciones son del núcleo
 ([catalog](catalog.md), [locations](locations.md)); Inventario los usa.
 
@@ -69,6 +70,16 @@ código»):
   de escribir **una** salida `SHIPMENT` (clave `ship:<id>`) con exactamente
   lo apartado en preparación, consume esas reservas y deja `shipment_line`
   por línea. Un movimiento `SHIPMENT` no se reversa.
+- Devoluciones de clientes (WMS-17, ADR 0046): lo que regresa entra con un
+  movimiento propio `CUSTOMER_RETURN`, **siempre en `INSPECTION`** (también
+  disparador), con o sin pedido despachado; con pedido nunca más de lo que
+  salió menos lo ya devuelto (bajo el candado del pedido), a su lote y con
+  sus mismas series, al costo con que salió; sin pedido, al costo promedio
+  vigente. Solo una decisión (`decideCustomerReturn`: un `STATUS_CHANGE`
+  escrito con el núcleo `writeStatusChange` y ligado a la devolución) lo
+  vuelve disponible, dañado o rechazado. Lo que una devolución abierta tiene
+  en inspección queda retenido (`heldForReturns`): «Cambiar estado» y la
+  reversa no lo toman. Ni `CUSTOMER_RETURN` ni sus decisiones se reversan.
 - Cada formulario que confirma un movimiento manda `idempotencyKey`.
 
 ## Servicios públicos (`index.ts`)
@@ -82,7 +93,7 @@ código»):
 | Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `releaseReservationPart`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento. `TASK_HOLD` (fuente de lo que aparta una tarea de acomodo) y `PRODUCT_HOLDS` (filtro de lo apartado de todo un producto) |
 | Acomodo | `putaway.ts`, `putaway-rules.ts` | `putawayTarget` (la única que decide el lugar recomendado), `createPutawayTasks` (dentro de la transacción de una recepción o entrada), `createContainerPutawayTask` (una tarea por tarima, WMS-53), `createPendingPutawayTasks` («Crear tareas de acomodo», también para tarimas), `isTaskNumberClash`; orden puro `rankPutawayPlaces` |
 | Lotes | `lots.ts`, `lot-rules.ts` | lotes con existencias, ficha, por caducar (`listExpiringLots`, `countExpiringLots`), `changeLotExpiry`; reglas puras del código y la fecha del lote |
-| Series y trazabilidad | `serials.ts`, `serial-rules.ts`, `traceability.ts` | reglas puras de la serie (`normalizeSerial`, `parseSerialList`, `MAX_SERIALS_PER_OPERATION`, `serialsText`); `serialUnitsOfLines` (para Compras); `findTraceMatches` (un cuadro: lote, serie, `PS-…`, `EM-…`, `OC-…`), `traceSerial`, `traceLot` (ambos dicen en qué embarque salió), `tracePurchaseOrder`, `listProductSerials`; `listMovements` filtra por `serialUnitId` y cada línea trae sus `serials` |
+| Series y trazabilidad | `serials.ts`, `serial-rules.ts`, `traceability.ts` | reglas puras de la serie (`normalizeSerial`, `parseSerialList`, `MAX_SERIALS_PER_OPERATION`, `serialsText`); `serialUnitsOfLines` (para Compras); `findTraceMatches` (un cuadro: lote, serie, `PS-…`, `EM-…`, `DV-…`, `OC-…`), `traceSerial`, `traceLot` (ambos dicen en qué embarque salió y con qué devolución volvió), `tracePurchaseOrder`, `listProductSerials`; `listMovements` filtra por `serialUnitId` y cada línea trae sus `serials` |
 | Tarimas y contenedores | `containers.ts`, `container-rules.ts`, `contained.ts` | `packStock` (armar o agregar), `unpackStock` (sacar), `closeContainer` (desarmar), `moveContainer` (un escaneo) y su núcleo `moveContainerWithin`, `prepareReceiptContainer`/`packReceived` (para la recepción), lecturas `listContainers`, `getContainer`, `listContainerEvents`, `findContainerByCode`, `listOpenContainersAt`, `containersEnabled`, `containersVisible`, `createContainer`; `containedAt` (lo que hay en contenedores de una llave; `storageOnly` sin bultos de empaque); reglas puras del código (`C-0001`), del tipo y del peso (`parseWeightKg`) |
 | Capacidad | `placement.ts`, `location-occupancy.ts` | `checkPlacement`, `loadPlacementRules`; `getLocationOccupancy` (ocupación derivada) |
 | Costo y valor | `average-cost.ts`, `inventory-value.ts` | `parseCost`, `getInventoryValue`, `getProductCost`, `mayReadInventoryCosts` |
@@ -92,6 +103,7 @@ código»):
 | Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK` y `PUTAWAY`; una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
+| Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar |
@@ -123,6 +135,9 @@ Todos los `inventory.*` del catálogo, por grupo:
   empacar, WMS-15).
 - Embarques: `shipment.read|create|dispatch|export` (WMS-16: ver, armar,
   confirmar la salida, PDF).
+- Devoluciones de clientes: `customer_return.read|create` (WMS-17: ver y
+  registrar; decidir usa `status.release` para disponible y `status.change`
+  para dañado o rechazado).
 - Archivos: `import.create|read|confirm|cancel`, `export.create`.
 
 Los de productos, presentaciones y ubicaciones los comprueban los servicios de
@@ -137,7 +152,8 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `product_cost`, `stock_minimum`, `stock_count`, `stock_count_line`,
 `stock_count_capture`, `warehouse_task`, `stock_reservation`,
 `outbound_order`, `outbound_order_line`, `outbound_pack_shortage`,
-`shipment`, `shipment_order`, `shipment_line`,
+`shipment`, `shipment_order`, `shipment_line`, `customer_return`,
+`customer_return_line`, `customer_return_decision`,
 `product_import`,
 `product_import_item`, `exit_import`, `exit_import_row`, `outbound_import`.
 Detalle en [modelo-de-datos.md](../modelo-de-datos.md).
@@ -160,6 +176,7 @@ la transacción que decide:
 | `inventory.containers.mode` | **`off`**, `on` (tarimas y cajas, WMS-53) |
 | `inventory.packing.mode` | **`off`**, `on` (verificar y empacar antes de despachar, WMS-15) |
 | `inventory.shipment.details` | **`optional`**, `required` (transportista y quién se lo lleva antes de confirmar la salida, WMS-16) |
+| `inventory.customer_return.without_order` | **`allow`**, `forbid` (devoluciones de clientes sin pedido, WMS-17) |
 
 ## Trabajos en segundo plano
 
@@ -175,14 +192,16 @@ salidas), 0031 (costo promedio), 0032 (sin Ventas), 0033 (estado y lote del
 saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 (capacidad), 0040 (lotes y caducidad), 0041 (números de serie y
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
-contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques).
+contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
+0046 (devoluciones de clientes).
 
 ## Pruebas
 
 `tests/inventory/*.int.test.ts` (terminan con `reconcileStock` vacío) y las
 unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`).
-Acomodo en `putaway.int.test.ts`; empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`. Casos de alcance en
+Acomodo en `putaway.int.test.ts`; empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; devoluciones de clientes (PC-5) en
+`customer-returns.int.test.ts`. Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara
