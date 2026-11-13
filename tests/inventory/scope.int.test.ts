@@ -23,6 +23,10 @@ import {
   getInventoryValue,
   getLot,
   getOutboundOrder,
+  getPackingView,
+  finishPacking,
+  packScan,
+  startPacking,
   getProductStock,
   getStockByLocation,
   getStockTotals,
@@ -570,6 +574,15 @@ describe("PC-12: limited to warehouse B", () => {
         quantity: "2",
       }),
     ).toMatchObject({ ok: false, reason: "not_found" });
+    // Nor packing it (WMS-15).
+    for (const result of [
+      await startPacking(limited, order.orderId),
+      await packScan(limited, order.orderId, { code: "ALC-1" }),
+      await finishPacking(limited, order.orderId),
+    ]) {
+      expect(result).toMatchObject({ ok: false, reason: "not_found" });
+    }
+    expect(await getPackingView(limited, order.orderId)).toBeNull();
     expect(await getOutboundOrder(owner, order.orderId)).toMatchObject({
       status: "DRAFT",
     });

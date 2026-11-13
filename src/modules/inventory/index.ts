@@ -287,6 +287,7 @@ export type { ReservationSource, ReserveResult } from "./reservations";
 export {
   OUTBOUND_MAX_LINES,
   OUTBOUND_PAGE_SIZE,
+  TO_PACK,
   cancelOutboundOrder,
   createOutboundOrder,
   getOutboundOrder,
@@ -305,6 +306,28 @@ export type {
   OutboundSummary,
   OutboundView,
 } from "./outbound-orders";
+export {
+  countOrdersToPack,
+  finishPacking,
+  getPackingView,
+  packScan,
+  packingEnabled,
+  reopenPackage,
+  reportPackShortage,
+  sealPackage,
+  startPacking,
+  unpackFromPackage,
+} from "./packing";
+export type {
+  PackField,
+  PackResult,
+  PackScanInput,
+  PackageView,
+  PackingLineView,
+  PackingView,
+  SealPackageInput,
+  UnpackPackageInput,
+} from "./packing";
 export {
   OUTBOUND_ORDER_STATUSES,
   OUTBOUND_ORDER_STATUS_LABELS,
@@ -349,6 +372,7 @@ export {
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   CONTAINERS_MODE,
+  PACKING_MODE,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -441,6 +465,7 @@ export type {
 } from "./containers";
 export {
   CONTAINER_KIND_SUGGESTIONS,
+  PACKAGE_KIND_SUGGESTIONS,
   DEFAULT_CONTAINER_KIND,
   containerName,
   formatContainerNumber,

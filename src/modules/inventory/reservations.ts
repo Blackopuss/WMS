@@ -91,7 +91,9 @@ async function reservedOf(
 /**
  * WMS-53 (ADR 0043): in a location, what is inside its containers is not
  * free either — like a reservation of the location, it does not subtract
- * from the product as a whole (it is still its stock).
+ * from the product as a whole (it is still its stock). WMS-15 (ADR 0044):
+ * only storage containers; a package of an order holds what its
+ * reservation already subtracts.
  */
 async function freeOf(
   client: Reader,
@@ -103,7 +105,9 @@ async function freeOf(
     availableOf(client, productId, locationId, lotId),
     reservedOf(client, productId, locationId, lotId),
     locationId
-      ? containedAt(client, productId, locationId, lotId)
+      ? containedAt(client, productId, locationId, lotId, {
+          storageOnly: true,
+        })
       : Promise.resolve(dec(0)),
   ]);
   return available.minus(reserved).minus(contained);
@@ -181,6 +185,7 @@ export async function blockedMessage(
     at.productId,
     at.locationId,
     at.lotId ?? undefined,
+    { storageOnly: true },
   );
   if (contained.isZero()) return reservedMessage(free, unitCode, verb);
   return (
@@ -271,6 +276,18 @@ export async function consumeReservation(
       ? { remaining: "0", state: "CLOSED", closedAt: new Date() }
       : { remaining: left.toString() },
   });
+}
+
+/**
+ * Frees part of one reservation (WMS-15: what was missing when packing):
+ * its remaining goes down and it closes at zero, like when consumed.
+ */
+export async function releaseReservationPart(
+  tx: Tx,
+  reservationId: string,
+  quantity: Decimal | string,
+): Promise<void> {
+  await consumeReservation(tx, reservationId, quantity);
 }
 
 /** Frees whatever a document still holds; returns how many it closed. */

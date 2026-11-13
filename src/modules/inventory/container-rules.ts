@@ -91,3 +91,47 @@ export const containerName = (container: { kind: string; code: string }) =>
 /** «la tarima C-0001», inside a sentence. */
 export const theContainer = (container: { kind: string; code: string }) =>
   `${/a$/i.test(container.kind) ? "la" : "el"} ${container.kind.toLowerCase()} ${container.code}`;
+
+/** Kinds suggested for a package of an order (WMS-15); any text is valid. */
+export const PACKAGE_KIND_SUGGESTIONS = ["Caja", "Tarima", "Sobre"] as const;
+
+export const DEFAULT_PACKAGE_KIND = "Caja";
+
+/** The largest weight a package may say, in kilograms. */
+export const PACKAGE_WEIGHT_MAX = 999_999;
+
+export type WeightResult =
+  { ok: true; weight: string | null } | { ok: false; error: string };
+
+/**
+ * The weight of a package as typed, in kilograms (WMS-15): empty = not
+ * weighed; a point or a comma for the decimals, up to three of them; more
+ * than zero. Exact text, never a floating-point number.
+ */
+export function parseWeightKg(value: unknown): WeightResult {
+  const text = String(value ?? "")
+    .trim()
+    .replace(/\s*kg$/i, "")
+    .replace(",", ".");
+  if (text === "") return { ok: true, weight: null };
+  const match = /^(\d{1,6})(?:\.(\d{1,3}))?$/.exec(text);
+  if (!match) {
+    return {
+      ok: false,
+      error: "Escribe el peso en kilos, con hasta tres decimales (12.5).",
+    };
+  }
+  const whole = match[1]!.replace(/^0+(?=\d)/, "");
+  const decimals = (match[2] ?? "").replace(/0+$/, "");
+  if (/^0+$/.test(whole) && decimals === "") {
+    return { ok: false, error: "El peso debe ser mayor que cero." };
+  }
+  return { ok: true, weight: decimals ? `${whole}.${decimals}` : whole };
+}
+
+/** «12.5 kg» for a weight kept as exact decimal text. */
+export function weightText(weight: string): string {
+  const [whole = "0", decimals = ""] = weight.split(".");
+  const trimmed = decimals.replace(/0+$/, "");
+  return `${Number(whole).toLocaleString("es-MX")}${trimmed ? `.${trimmed}` : ""} kg`;
+}

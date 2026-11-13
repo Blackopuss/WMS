@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-76 tablas en 19 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+77 tablas en 19 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -22,7 +22,7 @@
 | Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
 | Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 3 | [inventory](modulos/inventory.md) |
-| Inventario › Tareas, reservas y pedidos de salida | 5 | [inventory](modulos/inventory.md) |
+| Inventario › Tareas, reservas y pedidos de salida | 6 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 8 | [purchasing](modulos/purchasing.md) |
 
@@ -1196,7 +1196,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Tarimas y contenedores
 
-Tarimas, cajas y otros contenedores con etiqueta propia: qué parte del saldo de su ubicación agrupan (nunca más que el saldo) y su historia.
+Tarimas, cajas y otros contenedores con etiqueta propia, y los bultos de empaque de un pedido: qué parte del saldo de su ubicación agrupan (nunca más que el saldo) y su historia.
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1220,11 +1220,15 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `closedAt` | `DateTime? · DateTime(3)` |  |  |
 | `closedByUserId` | `String? · Char(36)` |  |  |
+| `outboundOrderId` | `String? · Char(36)` |  | PACKING only (WMS-15): the order it belongs to; never changes. |
+| `weightKg` | `Decimal? · Decimal(12, 3)` |  | PACKING only: weight of the package in kilograms, optional. |
+| `sealedAt` | `DateTime? · DateTime(3)` |  | PACKING only: closed and ready to leave; it takes nothing more. |
+| `sealedByUserId` | `String? · Char(36)` |  |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `code`).
-- Índices: (`organizationId`, `locationId`, `status`); (`organizationId`, `status`, `number`).
-- Relaciones: `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `locationId`, `status`); (`organizationId`, `status`, `number`); (`organizationId`, `outboundOrderId`).
+- Relaciones: `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `outboundOrder` → `OutboundOrder` por (`organizationId`, `outboundOrderId`) (al borrar: Restrict).
 
 ### ContainerItem · `container_item`
 
@@ -1279,9 +1283,9 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Inventario › Tarimas y contenedores
 
-- `ContainerPurpose`: `STORAGE`.
+- `ContainerPurpose`: `STORAGE`, `PACKING`.
 - `ContainerStatus`: `OPEN`, `CLOSED`.
-- `ContainerEventKind`: `CREATED`, `PACKED`, `UNPACKED`, `MOVED`, `CLOSED`.
+- `ContainerEventKind`: `CREATED`, `PACKED`, `UNPACKED`, `MOVED`, `CLOSED`, `SEALED`, `REOPENED`.
 
 ## Inventario › Conteos
 
@@ -1365,7 +1369,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Tareas, reservas y pedidos de salida
 
-Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento y los pedidos de salida.
+Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento, los pedidos de salida y lo que faltó al empacarlos.
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1512,13 +1516,38 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `productId`).
 - Relaciones: `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
 
+### OutboundPackShortage · `outbound_pack_shortage`
+
+What was missing of an outbound order when packing it (WMS-15, ADR 0044): of one line and lot, how much (in the product's unit), which units by serial and why. Writing it released that much of the order's reservation in the staging place: the stock stays there, loose, for an adjustment or a count. Never changes nor is deleted (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `lineId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `lotId` | `String? · Char(36)` |  |  |
+| `locationId` | `String · Char(36)` |  | Where it was expected (the staging place). |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | In the product's unit; always more than zero. |
+| `serials` | `String? · Text` |  | Serials of the missing units, «A1, A2», for a product by serial. |
+| `reason` | `String · VarChar(300)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `orderId`, `id`); (`organizationId`, `lineId`).
+- Relaciones: `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `line` → `OutboundOrderLine` por (`organizationId`, `lineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
+
 #### Enumeraciones de Inventario › Tareas, reservas y pedidos de salida
 
 - `WarehouseTaskStatus`: `PENDING`, `ASSIGNED`, `ACCEPTED`, `PICKED_UP`, `DELIVERED`, `BLOCKED`, `CANCELLED`.
 - `WarehouseTaskPriority`: `NORMAL`, `URGENT`.
 - `WarehouseTaskKind`: `TRANSFER`, `PICK`, `PUTAWAY`.
 - `StockReservationState`: `ACTIVE`, `CLOSED`.
-- `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKED`, `SHIPPED`, `CANCELLED`.
+- `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKING`, `PACKED`, `SHIPPED`, `CANCELLED`.
 
 ## Inventario › Importaciones
 

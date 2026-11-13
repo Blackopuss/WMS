@@ -84,6 +84,49 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
     coveredBy: "tests/inventory/outbound-orders.int.test.ts",
   },
+  startPackingAction: {
+    input: "id del pedido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
+  packScanAction: {
+    input:
+      "id del pedido, lo escaneado (serie, clave, código de barras o lote) y la cantidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
+  unpackPackageAction: {
+    input: "id del pedido, del bulto y del renglón, cantidad y series",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
+  sealPackageAction: {
+    input: "id del pedido y del bulto, tipo y peso",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
+  reopenPackageAction: {
+    input: "id del pedido y del bulto",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
+  reportPackShortageAction: {
+    input: "id del pedido y de la línea, y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
+  finishPackingAction: {
+    input: "id del pedido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido y sus bultos se bloquean solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/inventory/packing.int.test.ts",
+  },
   changeStatusAction: {
     input:
       "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, ubicación donde queda (WMS-22B), cantidad, motivo, clave de confirmación y la aceptación del aviso de capacidad",

@@ -3,6 +3,8 @@ import "server-only";
 import { dec } from "@/lib";
 import { forOrganization } from "@/server";
 
+import { OUTBOUND_LINE_SOURCE } from "./picking";
+
 /**
  * The balance of a product in a location, state and lot (ADR 0033) is a
  * projection of its movement lines: everything that came in minus everything that went out (INV-15).
@@ -114,7 +116,9 @@ async function reconcileContainers(
       status: true,
       lotKey: true,
       quantity: true,
-      container: { select: { locationId: true, status: true } },
+      container: {
+        select: { locationId: true, status: true, outboundOrderId: true },
+      },
       product: { select: { tracking: true } },
     },
   });
@@ -177,6 +181,7 @@ async function reconcileContainers(
       push(item, dec(item.quantity.toString()), dec(marked));
     }
   }
+  drift.push(...(await reconcilePackages(client, items)));
   // Units marked in a container that says nothing of them (or elsewhere).
   for (const row of units) {
     const id = `${row.containerId}|${row.productId}|${row.locationId}`;
@@ -190,6 +195,95 @@ async function reconcileContainers(
       balance: String(row._count._all),
       source: "containers",
     });
+  }
+  return drift;
+}
+
+/**
+ * WMS-15 (ADR 0044): the packages of an order never hold more than what
+ * its reservation sets aside there (product, place and lot): what is
+ * packed is still set aside for its order. `fromMovements` is what the
+ * packages hold; `balance`, what the reservation sets aside.
+ */
+async function reconcilePackages(
+  client: ReturnType<typeof forOrganization>,
+  items: {
+    productId: string;
+    locationId: string;
+    status: string;
+    lotKey: string;
+    quantity: { toString(): string };
+    container: { outboundOrderId: string | null };
+  }[],
+): Promise<StockDrift[]> {
+  const packed = items.filter((item) => item.container.outboundOrderId);
+  if (packed.length === 0) return [];
+  const orderIds = [
+    ...new Set(packed.map((item) => item.container.outboundOrderId!)),
+  ];
+  const lines = await client.outboundOrderLine.findMany({
+    where: { orderId: { in: orderIds } },
+    select: { id: true, orderId: true },
+  });
+  const orderOf = new Map(lines.map((line) => [line.id, line.orderId]));
+  const reservations = await client.stockReservation.findMany({
+    where: {
+      sourceType: OUTBOUND_LINE_SOURCE,
+      sourceId: { in: lines.map((line) => line.id) },
+      state: "ACTIVE",
+    },
+    select: {
+      sourceId: true,
+      productId: true,
+      locationId: true,
+      lotId: true,
+      remaining: true,
+    },
+  });
+  const key = (order: string, product: string, place: string, lot: string) =>
+    `${order}|${product}|${place}|${lot}`;
+  const held = new Map<string, ReturnType<typeof dec>>();
+  for (const row of reservations) {
+    if (!row.locationId) continue;
+    const id = key(
+      orderOf.get(row.sourceId)!,
+      row.productId,
+      row.locationId,
+      row.lotId ?? "",
+    );
+    held.set(id, (held.get(id) ?? dec(0)).plus(row.remaining.toString()));
+  }
+  const inside = new Map<
+    string,
+    { item: (typeof packed)[number]; said: ReturnType<typeof dec> }
+  >();
+  for (const item of packed) {
+    const id = key(
+      item.container.outboundOrderId!,
+      item.productId,
+      item.locationId,
+      item.lotKey,
+    );
+    const current = inside.get(id);
+    inside.set(id, {
+      item,
+      said: (current?.said ?? dec(0)).plus(item.quantity.toString()),
+    });
+  }
+  const drift: StockDrift[] = [];
+  for (const [id, { item, said }] of inside) {
+    const reserved = held.get(id) ?? dec(0);
+    if (said.greaterThan(reserved)) {
+      drift.push({
+        productId: item.productId,
+        locationId: item.locationId,
+        status: item.status,
+        lotId: item.lotKey || null,
+        fromMovements: said.toString(),
+        balance: reserved.toString(),
+        source: "containers",
+      });
+    }
   }
   return drift;
 }

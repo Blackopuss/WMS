@@ -11,12 +11,13 @@ import {
 // WMS-13: an outbound order moves forward through its steps (spec 5.2).
 
 describe("outbound order transitions", () => {
-  it("goes draft → released → picking → picked → packed → shipped", () => {
+  it("goes draft → released → picking → picked → packing → packed → shipped", () => {
     const path = [
       "DRAFT",
       "RELEASED",
       "PICKING",
       "PICKED",
+      "PACKING",
       "PACKED",
       "SHIPPED",
     ] as const;
@@ -36,6 +37,12 @@ describe("outbound order transitions", () => {
 
   it("never skips a step, and final states have no way out", () => {
     expect(canOutboundTransition("DRAFT", "SHIPPED")).toBe(false);
+    // WMS-15: packing is a step of its own, and is not cancelled.
+    expect(canOutboundTransition("PICKED", "PACKED")).toBe(false);
+    expect(canOutboundTransition("PACKING", "CANCELLED")).toBe(false);
+    expect(outboundTransitionProblem("PICKING", "PACKING")).toMatch(
+      /todavía no termina de surtirse/,
+    );
     expect(canOutboundTransition("RELEASED", "RELEASED")).toBe(false);
     expect(OUTBOUND_ORDER_TRANSITIONS.SHIPPED).toEqual([]);
     expect(OUTBOUND_ORDER_TRANSITIONS.CANCELLED).toEqual([]);

@@ -22,12 +22,19 @@ type Reader = Pick<Tx, "containerItem"> | ReturnType<typeof forOrganization>;
  * What the containers hold of a product in a location (AVAILABLE, the only
  * state containers take today); with `lotId`, of that lot. `undefined`
  * adds every lot; `null` means «without a lot».
+ *
+ * WMS-15 (ADR 0044): `storageOnly` leaves out the packages of outbound
+ * orders. What a package holds is already set aside by its order's
+ * reservation, so what is free subtracts only storage containers (it would
+ * subtract it twice otherwise); what fixes a balance without asking what
+ * is free (adjustments, counts) compares with every container.
  */
 export async function containedAt(
   client: Reader,
   productId: string,
   locationId: string,
   lotId?: string | null,
+  options: { storageOnly?: boolean } = {},
 ): Promise<Decimal> {
   const sum = await client.containerItem.aggregate({
     where: {
@@ -35,6 +42,7 @@ export async function containedAt(
       locationId,
       status: "AVAILABLE",
       ...(lotId === undefined ? {} : { lotKey: lotId ?? "" }),
+      ...(options.storageOnly ? { container: { purpose: "STORAGE" } } : {}),
     },
     _sum: { quantity: true },
   });

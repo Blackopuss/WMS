@@ -508,15 +508,30 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    const outboundLineId = newId();
     await db.outboundOrderLine.create({
       data: {
-        id: newId(),
+        id: outboundLineId,
         organizationId,
         orderId: outboundId,
         lineNumber: 1,
         productId,
         quantity: "1",
         unitCode: "piece",
+      },
+    });
+    // What was missing when packing it (WMS-15).
+    await db.outboundPackShortage.create({
+      data: {
+        id: newId(),
+        organizationId,
+        orderId: outboundId,
+        lineId: outboundLineId,
+        productId,
+        locationId: location.id,
+        quantity: "1",
+        reason: "No apareció",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
     // A transfer task (WMS-06) from the default location to a rack.

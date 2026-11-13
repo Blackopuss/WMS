@@ -11,8 +11,13 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
-import { getOutboundOrder } from "@/modules/inventory";
+import {
+  getOutboundOrder,
+  getPackingView,
+  packingEnabled,
+} from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
 import {
@@ -20,6 +25,7 @@ import {
   CancelOrder,
   ReleaseOrder,
   RemoveLine,
+  StartPacking,
 } from "./order-controls";
 
 export const metadata: Metadata = { title: "Pedido" };
@@ -60,10 +66,11 @@ export default async function PedidoPage({
     );
   }
   const { id } = await params;
-  const order = await getOutboundOrder(
-    { organizationId: access.organization.id, userId: access.user.id },
-    id,
-  );
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  const order = await getOutboundOrder(actor, id);
   if (!order) {
     return (
       <PageContainer>
@@ -89,6 +96,20 @@ export default async function PedidoPage({
     (order.status === "DRAFT" || order.status === "RELEASED") &&
     access.allows("inventory.outbound.cancel");
   const timeZone = access.organization.timeZone;
+  // WMS-15: packing, when the company packs (or the order already was).
+  const packs =
+    order.status === "PICKED" || order.status === "PACKING"
+      ? await packingEnabled(actor)
+      : false;
+  const pack =
+    order.status === "PACKING" || order.status === "PACKED"
+      ? await getPackingView(actor, order.id)
+      : null;
+  const packOf = new Map(pack?.lines.map((line) => [line.id, line]) ?? []);
+  const mayPack =
+    active &&
+    access.allows("inventory.outbound.pack") &&
+    (order.status === "PACKING" || (order.status === "PICKED" && packs));
 
   return (
     <PageContainer>
@@ -121,6 +142,20 @@ export default async function PedidoPage({
         <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm [overflow-wrap:anywhere]">
           <span className="font-medium">Cancelado:</span> {order.cancelReason}
         </p>
+      )}
+
+      {mayPack && (
+        <div className="max-w-3xl">
+          {order.status === "PICKED" ? (
+            <StartPacking orderId={order.id} />
+          ) : (
+            <Button asChild size="lg" className="min-h-12 w-full sm:w-auto">
+              <Link href={`/pedidos/${order.id}/empaque`}>
+                Seguir empacando
+              </Link>
+            </Button>
+          )}
+        </div>
       )}
 
       <section
@@ -165,6 +200,16 @@ export default async function PedidoPage({
                     {line.pickedText && (
                       <span className="block text-sm text-muted-foreground">
                         Surtido: {line.pickedText}
+                      </span>
+                    )}
+                    {packOf.get(line.id) && (
+                      <span className="block text-sm text-muted-foreground">
+                        Empacado: {packOf.get(line.id)!.packedText}
+                      </span>
+                    )}
+                    {packOf.get(line.id)?.missingText && (
+                      <span className="block text-sm text-warning">
+                        Faltó al empacar: {packOf.get(line.id)!.missingText}
                       </span>
                     )}
                   </span>
@@ -291,6 +336,84 @@ export default async function PedidoPage({
             </ul>
           </section>
         )}
+
+      {pack && pack.packages.length > 0 && (
+        <section
+          aria-labelledby="bultos"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2
+            id="bultos"
+            className="flex flex-wrap items-baseline justify-between gap-x-4 border-b p-4 font-medium sm:px-5"
+          >
+            Bultos
+            <span className="text-sm font-normal text-muted-foreground tabular-nums">
+              {pack.packages.length === 1
+                ? "1 bulto"
+                : `${pack.packages.length} bultos`}
+            </span>
+          </h2>
+          <ul className="divide-y">
+            {pack.packages.map((box) => (
+              <li key={box.id} className="space-y-1 p-4 text-sm sm:px-5">
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-mono text-base font-semibold">
+                    {box.code}
+                  </span>
+                  <span>{box.kind}</span>
+                  {box.weightText && (
+                    <span className="text-muted-foreground">
+                      {box.weightText}
+                    </span>
+                  )}
+                  <Badge variant={box.open ? "secondary" : "default"}>
+                    {box.open ? "Abierto" : "Cerrado"}
+                  </Badge>
+                </p>
+                <p className="[overflow-wrap:anywhere] text-muted-foreground">
+                  {box.items.length === 0
+                    ? "Vacío"
+                    : box.items
+                        .map(
+                          (item) =>
+                            `${item.quantityText} de ${item.productName}${item.lotText ? ` (${item.lotText})` : ""}${item.serials.length > 0 ? ` · series ${item.serials.join(", ")}` : ""}`,
+                        )
+                        .join(" · ")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {pack && pack.shortages.length > 0 && (
+        <section
+          aria-labelledby="faltantes"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2 id="faltantes" className="border-b p-4 font-medium sm:px-5">
+            Lo que faltó al empacar
+          </h2>
+          <ul className="divide-y text-sm">
+            {pack.shortages.map((row) => (
+              <li key={row.id} className="p-4 [overflow-wrap:anywhere] sm:px-5">
+                <span className="font-medium">
+                  {row.quantityText} de {row.productName}
+                </span>
+                {row.lotText ? ` · ${row.lotText}` : ""}
+                {row.serials ? ` · series ${row.serials}` : ""}
+                <span className="block text-muted-foreground">
+                  {row.reason}
+                  {row.authorName ? ` · ${row.authorName}` : ""} ·{" "}
+                  <time dateTime={row.createdAt.toISOString()}>
+                    {formatDateTime(row.createdAt, timeZone)}
+                  </time>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {canRelease && (
         <div className="max-w-3xl">

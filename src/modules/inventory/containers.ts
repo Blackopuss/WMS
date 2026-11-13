@@ -25,6 +25,7 @@ import {
 import {
   containerName,
   formatContainerNumber,
+  weightText,
   newContainerCode,
   normalizeContainerCode,
   normalizeContainerKind,
@@ -49,6 +50,7 @@ import { blockedMessage, freeToMoveFrom } from "./reservations";
 import { PLACE_NOT_FOUND, scannedPlace } from "./scanned-place";
 import { ofSerials, serialsForTake, writeSerialMoves } from "./serials";
 import { serialsText } from "./serial-rules";
+import { formatOutboundNumber } from "./outbound-states";
 import { CONTAINERS_MODE } from "./settings";
 import { lotColumns } from "./stock-status";
 import { OPEN_TASK_STATUSES, formatTaskNumber } from "./task-states";
@@ -138,6 +140,89 @@ const stop = (
 
 const NOT_FOUND = "No encontramos esa tarima o caja.";
 
+/**
+ * WMS-15 (ADR 0044): a package of an outbound order is a container too,
+ * but it is handled only from its order (packing, and later shipping).
+ */
+const PACKAGE_OF = (box: { kind: string; code: string }, order: number) =>
+  `${containerName(box)} es un bulto del pedido ${formatOutboundNumber(order)}: se maneja desde el pedido.`;
+
+const PACKAGE_SELECT = {
+  purpose: true,
+  outboundOrder: { select: { number: true } },
+} as const;
+
+/** Refuses a package of an order (WMS-15) where only storage is handled. */
+function notAPackage(
+  box: {
+    kind: string;
+    code: string;
+    purpose: "STORAGE" | "PACKING";
+    outboundOrder: { number: number } | null;
+  },
+  field?: ContainerField,
+): void {
+  if (box.purpose === "PACKING") {
+    stop("not_allowed", PACKAGE_OF(box, box.outboundOrder?.number ?? 0), field);
+  }
+}
+
+/** Only storage containers: lists and figures of pallets (WMS-15). */
+const STORAGE_ONLY = { purpose: "STORAGE" } as const;
+
+/**
+ * Creates a container (and its CREATED event) in the caller's transaction:
+ * the next number of the company, and its code — the one typed, or the
+ * system's «C-0001». A package (WMS-15) names its order. The caller tries
+ * again when two containers took the same number at once.
+ */
+export async function createContainer(
+  tx: Tx,
+  actor: InventoryActor,
+  input: {
+    kind: string;
+    code?: string | null;
+    locationId: string;
+    outboundOrderId?: string | null;
+  },
+): Promise<{ id: string; kind: string; code: string }> {
+  const last = await tx.container.findFirst({
+    orderBy: { number: "desc" },
+    select: { number: true },
+  });
+  const number = (last?.number ?? 0) + 1;
+  const id = newId();
+  const code = input.code ?? formatContainerNumber(number);
+  await tx.container.create({
+    data: {
+      id,
+      organizationId: actor.organizationId,
+      number,
+      code,
+      kind: input.kind,
+      locationId: input.locationId,
+      createdByUserId: actor.userId,
+      ...(input.outboundOrderId
+        ? {
+            purpose: "PACKING" as const,
+            outboundOrderId: input.outboundOrderId,
+          }
+        : {}),
+    },
+  });
+  await tx.containerEvent.create({
+    data: {
+      id: newId(),
+      organizationId: actor.organizationId,
+      containerId: id,
+      kind: "CREATED",
+      locationId: input.locationId,
+      createdByUserId: actor.userId,
+    },
+  });
+  return { id, kind: input.kind, code };
+}
+
 const isClash = (error: unknown, what: string) =>
   (error as { code?: string }).code === "P2002" &&
   JSON.stringify((error as { meta?: unknown }).meta ?? "").includes(what);
@@ -178,6 +263,10 @@ async function inContainer<P, T>(
     }
   }
 }
+
+/** Two containers took the same number at once: try again. */
+export const isContainerNumberClash = (error: unknown) =>
+  isClash(error, "number");
 
 /** Whether the company packs containers (`CONTAINERS_MODE`). */
 export async function containersOn(client: Client | Tx): Promise<boolean> {
@@ -262,6 +351,7 @@ export async function lockContainer(
           kind: true,
           status: true,
           locationId: true,
+          ...PACKAGE_SELECT,
           location: {
             select: {
               id: true,
@@ -278,6 +368,7 @@ export async function lockContainer(
   if ((await locationsOutOfScope(tx, userId, [box.locationId])).length > 0) {
     return stop("not_found", NOT_FOUND);
   }
+  notAPackage(box);
   const locked = new Set(plan.productIds);
   if (
     box.locationId !== plan.locationId ||
@@ -455,11 +546,13 @@ export async function packStock(
                   code: true,
                   status: true,
                   locationId: true,
+                  ...PACKAGE_SELECT,
                   location: { select: { name: true } },
                 },
               })
             : null;
           if (!row) return stop("not_found", NOT_FOUND, "containerCode");
+          notAPackage(row, "containerCode");
           if (row.status !== "OPEN") {
             return stop(
               "not_allowed",
@@ -562,35 +655,11 @@ export async function packStock(
 
         let created = false;
         if (!box) {
-          const last = await tx.container.findFirst({
-            orderBy: { number: "desc" },
-            select: { number: true },
+          box = await createContainer(tx, actor, {
+            kind: kind.kind,
+            code: newCode,
+            locationId: location.id,
           });
-          const number = (last?.number ?? 0) + 1;
-          const id = newId();
-          const code = newCode ?? formatContainerNumber(number);
-          await tx.container.create({
-            data: {
-              id,
-              organizationId,
-              number,
-              code,
-              kind: kind.kind,
-              locationId: location.id,
-              createdByUserId: userId,
-            },
-          });
-          await tx.containerEvent.create({
-            data: {
-              id: newId(),
-              organizationId,
-              containerId: id,
-              kind: "CREATED",
-              locationId: location.id,
-              createdByUserId: userId,
-            },
-          });
-          box = { id, kind: kind.kind, code };
           created = true;
         }
         await putIn(tx, actor, box.id, location.id, {
@@ -628,7 +697,7 @@ export async function packStock(
  * Writes what goes into a container that is already locked (or new), in
  * the location where it is: its item, its units by serial and its history.
  */
-async function putIn(
+export async function putIn(
   tx: Tx,
   actor: InventoryActor,
   containerId: string,
@@ -746,10 +815,12 @@ export async function prepareReceiptContainer(
       kind: true,
       status: true,
       locationId: true,
+      purpose: true,
     },
   });
   if (
     !box ||
+    box.purpose !== "STORAGE" ||
     box.status !== "OPEN" ||
     box.locationId !== location.id ||
     (await locationsOutOfScope(tx, actor.userId, [box.locationId])).length > 0
@@ -786,37 +857,13 @@ export async function packReceived(
     id = plan.id;
     label = { kind: plan.label, code: plan.code };
   } else {
-    const last = await tx.container.findFirst({
-      orderBy: { number: "desc" },
-      select: { number: true },
-    });
-    const number = (last?.number ?? 0) + 1;
-    id = newId();
-    label = {
+    const made = await createContainer(tx, actor, {
       kind: plan.label,
-      code: plan.code ?? formatContainerNumber(number),
-    };
-    await tx.container.create({
-      data: {
-        id,
-        organizationId: actor.organizationId,
-        number,
-        code: label.code,
-        kind: label.kind,
-        locationId,
-        createdByUserId: actor.userId,
-      },
+      code: plan.code,
+      locationId,
     });
-    await tx.containerEvent.create({
-      data: {
-        id: newId(),
-        organizationId: actor.organizationId,
-        containerId: id,
-        kind: "CREATED",
-        locationId,
-        createdByUserId: actor.userId,
-      },
-    });
+    id = made.id;
+    label = made;
   }
   for (const line of lines) {
     await putIn(tx, actor, id, locationId, {
@@ -952,11 +999,16 @@ export async function unpackStock(
 }
 
 /** Lowers (or removes) an item of a locked container; writes its history. */
-async function takeOut(
+export async function takeOut(
   tx: Tx,
   actor: InventoryActor,
-  box: LockedContainer,
-  item: LockedContainer["items"][number],
+  box: { id: string; locationId: string },
+  item: {
+    id: string;
+    productId: string;
+    lotId: string | null;
+    quantity: Decimal | { toString(): string };
+  },
   quantity: Decimal,
   units: { id: string | null; serial: string }[],
 ): Promise<void> {
@@ -1567,6 +1619,16 @@ export type ContainerItemView = {
 
 export type ContainerView = ContainerSummary & {
   status: "OPEN" | "CLOSED";
+  /**
+   * WMS-15: a package of an outbound order — its order, whether it is
+   * closed to leave and its weight («12.5 kg»). Null for storage.
+   */
+  package: {
+    orderId: string;
+    orderNumberText: string;
+    sealed: boolean;
+    weightText: string | null;
+  } | null;
   locationId: string;
   locationCode: string | null;
   closedAt: Date | null;
@@ -1621,6 +1683,7 @@ export async function listContainers(
   const closed = options.closed === true;
   const where = {
     status: closed ? ("CLOSED" as const) : ("OPEN" as const),
+    ...STORAGE_ONLY,
     ...(await containerScope(client, actor.userId)),
     ...(query ? { code: { contains: likeLiteral(query) } } : {}),
   };
@@ -1713,6 +1776,9 @@ export async function getContainer(
       createdAt: true,
       closedAt: true,
       locationId: true,
+      outboundOrder: { select: { id: true, number: true } },
+      sealedAt: true,
+      weightKg: true,
       location: LOCATION_NAMES,
       items: {
         orderBy: { id: "asc" },
@@ -1744,6 +1810,14 @@ export async function getContainer(
     name: containerName(row),
     open: row.status === "OPEN",
     status: row.status,
+    package: row.outboundOrder
+      ? {
+          orderId: row.outboundOrder.id,
+          orderNumberText: formatOutboundNumber(row.outboundOrder.number),
+          sealed: row.sealedAt !== null,
+          weightText: row.weightKg ? weightText(row.weightKg.toString()) : null,
+        }
+      : null,
     locationId: row.locationId,
     locationCode: row.location.code,
     locationPath: locationPath(row.location as Named),
@@ -1781,7 +1855,14 @@ export async function getContainer(
 
 export type ContainerEventView = {
   id: string;
-  kind: "CREATED" | "PACKED" | "UNPACKED" | "MOVED" | "CLOSED";
+  kind:
+    | "CREATED"
+    | "PACKED"
+    | "UNPACKED"
+    | "MOVED"
+    | "CLOSED"
+    | "SEALED"
+    | "REOPENED";
   /** «Se armó en Estante 1», «Se puso 20 piezas de Tornillo (lote L-01)». */
   text: string;
   movementId: string | null;
@@ -1860,7 +1941,11 @@ export async function listContainerEvents(
               ? `Se sacó: ${what(row)}. Quedó suelto en ${row.location.name}`
               : row.kind === "MOVED"
                 ? `Se movió de ${row.fromLocation?.name ?? "?"} a ${row.location.name}`
-                : `Se desarmó en ${row.location.name}`,
+                : row.kind === "SEALED"
+                  ? "Se cerró para salir"
+                  : row.kind === "REOPENED"
+                    ? "Se volvió a abrir"
+                    : `Se desarmó en ${row.location.name}`,
       movementId: row.movementId,
       taskId: row.taskId,
       taskNumberText: row.task ? formatTaskNumber(row.task.number) : null,
@@ -1883,7 +1968,7 @@ export async function containedByLocation(
 ): Promise<Map<string, Decimal>> {
   const rows = await client.containerItem.groupBy({
     by: ["locationId"],
-    where: { productId, status: "AVAILABLE" },
+    where: { productId, status: "AVAILABLE", container: STORAGE_ONLY },
     _sum: { quantity: true },
   });
   return new Map(
@@ -1912,7 +1997,11 @@ export async function containersVisible(
   const client = forOrganization(actor.organizationId);
   if (await containersOn(client)) return true;
   const open = await client.container.findFirst({
-    where: { status: "OPEN", ...(await containerScope(client, actor.userId)) },
+    where: {
+      status: "OPEN",
+      ...STORAGE_ONLY,
+      ...(await containerScope(client, actor.userId)),
+    },
     select: { id: true },
   });
   return open !== null;
@@ -1935,7 +2024,11 @@ export async function listOpenContainersAt(
     return [];
   }
   const rows = await client.container.findMany({
-    where: { locationId: String(locationId).slice(0, 36), status: "OPEN" },
+    where: {
+      locationId: String(locationId).slice(0, 36),
+      status: "OPEN",
+      ...STORAGE_ONLY,
+    },
     orderBy: { number: "asc" },
     take: 200,
     select: { id: true, code: true, kind: true },

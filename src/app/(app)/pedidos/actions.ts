@@ -7,6 +7,15 @@ import { isAppError } from "@/lib";
 import {
   cancelOutboundOrder,
   createOutboundOrder,
+  finishPacking,
+  packScan,
+  reopenPackage,
+  reportPackShortage,
+  sealPackage,
+  startPacking,
+  unpackFromPackage,
+  type PackField,
+  type PackResult,
   releaseOutboundOrder,
   removeOutboundLine,
   setOutboundLine,
@@ -238,4 +247,127 @@ export async function cancelOutboundAction(
   return step(orderId, (who, id) =>
     cancelOutboundOrder(who, id, String(reason ?? "").slice(0, 400)),
   );
+}
+
+// ── Packing (WMS-15) ─────────────────────────────────────────────────────
+
+export type PackStepState =
+  | { ok: true; summary: string; repeated?: boolean }
+  | {
+      ok: false;
+      error: string;
+      fieldErrors?: Partial<Record<PackField, string>>;
+    };
+
+async function packStep(
+  orderId: string,
+  work: (
+    who: { organizationId: string; userId: string },
+    id: string,
+  ) => Promise<PackResult>,
+): Promise<PackStepState> {
+  const who = await actor();
+  const id = idOf(orderId);
+  try {
+    const result = await work(who, id);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error:
+          result.formError ??
+          Object.values(result.fieldErrors ?? {})[0] ??
+          "No se pudo cambiar el empaque.",
+        fieldErrors: result.fieldErrors,
+      };
+    }
+    revalidatePath("/pedidos");
+    revalidatePath(`/pedidos/${id}`);
+    revalidatePath(`/pedidos/${id}/empaque`);
+    return { ok: true, summary: result.summary, repeated: result.repeated };
+  } catch (error) {
+    const message = forbidden(error);
+    if (message) return { ok: false, error: message };
+    throw error;
+  }
+}
+
+/** «Empacar»: a picked order starts being packed. */
+export async function startPackingAction(
+  orderId: string,
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) => startPacking(who, id));
+}
+
+/** One scan (and how many) into the order's open package. */
+export async function packScanAction(
+  orderId: string,
+  code: string,
+  quantity: string,
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) =>
+    packScan(who, id, {
+      code: String(code ?? "").slice(0, 100),
+      quantity: String(quantity ?? "").slice(0, 40),
+    }),
+  );
+}
+
+export async function unpackPackageAction(
+  orderId: string,
+  input: {
+    packageId: string;
+    itemId: string;
+    quantity: string;
+    serials?: string;
+  },
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) =>
+    unpackFromPackage(who, id, {
+      packageId: idOf(input?.packageId),
+      itemId: idOf(input?.itemId),
+      quantity: String(input?.quantity ?? "").slice(0, 40),
+      serials: String(input?.serials ?? "").slice(0, 40_000),
+    }),
+  );
+}
+
+export async function sealPackageAction(
+  orderId: string,
+  input: { packageId: string; kind: string; weight: string },
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) =>
+    sealPackage(who, id, {
+      packageId: idOf(input?.packageId),
+      kind: String(input?.kind ?? "").slice(0, 200),
+      weight: String(input?.weight ?? "").slice(0, 40),
+    }),
+  );
+}
+
+export async function reopenPackageAction(
+  orderId: string,
+  packageId: string,
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) =>
+    reopenPackage(who, id, idOf(packageId)),
+  );
+}
+
+export async function reportPackShortageAction(
+  orderId: string,
+  lineId: string,
+  reason: string,
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) =>
+    reportPackShortage(who, id, {
+      lineId: idOf(lineId),
+      reason: String(reason ?? "").slice(0, 400),
+    }),
+  );
+}
+
+export async function finishPackingAction(
+  orderId: string,
+): Promise<PackStepState> {
+  return packStep(orderId, (who, id) => finishPacking(who, id));
 }

@@ -103,7 +103,9 @@ export default async function TarimaPage({
     moduleState === "active" &&
     access.allows("inventory.transfer.create") &&
     box.open &&
-    !box.openTask;
+    !box.openTask &&
+    // WMS-15: a package of an order is handled from its order.
+    !box.package;
   const pageHref = (target: number) =>
     target > 1
       ? `/inventario/tarimas/${idPath(box.id)}?pagina=${target}`
@@ -139,6 +141,23 @@ export default async function TarimaPage({
             </span>
           )}
         </p>
+        {box.package && (
+          <p className="text-sm">
+            Bulto del pedido{" "}
+            {access.can("inventory.outbound.read") ? (
+              <Link
+                href={`/pedidos/${idPath(box.package.orderId)}`}
+                className="font-medium text-primary underline underline-offset-4"
+              >
+                {box.package.orderNumberText}
+              </Link>
+            ) : (
+              box.package.orderNumberText
+            )}
+            {box.package.sealed ? " · cerrado" : " · abierto"}
+            {box.package.weightText ? ` · ${box.package.weightText}` : ""}
+          </p>
+        )}
         {!box.open && (
           <p>
             <Badge variant="secondary">Desarmada</Badge>
