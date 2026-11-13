@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-15** · Verificación y empaque (ADR 0044): estados `PACKING` y `PACKED`,
+  escaneo contra el pedido, bultos como contenedores ligados al pedido,
+  faltantes con motivo y permiso `inventory.outbound.pack`.
 - **WMS-53** · Tarimas y contenedores (ADR 0043): contenedor como agrupación
   aparte del saldo, armar, mover con un escaneo, sacar, desarmar, recibir en
   tarima y una tarea de acomodo por tarima.
