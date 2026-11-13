@@ -16,6 +16,7 @@ import {
   registerTransfer,
   releaseReservations,
   reserveStock,
+  reverseMovement,
   setMinimum,
   type InventoryActor,
 } from "@/modules/inventory";
@@ -298,6 +299,26 @@ describe("what is reserved is not taken by hand", () => {
         quantity: "2",
       }),
     ).toMatchObject({ ok: true });
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("a reversal does not take it either", async () => {
+    const { owner, productId, rack } = await scenario();
+    const extra = await registerEntry(owner, {
+      productId,
+      locationId: rack,
+      quantity: "5",
+    });
+    if (!extra.ok) throw new Error("entry setup failed");
+    // 15 in the rack, 12 set aside: 3 free, and the entry was of 5.
+    await reserve(owner, { productId, locationId: rack, quantity: "12" });
+    const refused = await reverseMovement(owner, {
+      movementId: extra.movementId,
+      reason: "Se registró dos veces",
+    });
+    expect(refused).toMatchObject({ ok: false });
+    expect(JSON.stringify(refused)).toContain("apartado para pedidos");
+    expect((await getStockByLocation(owner, productId))[rack]).toBe("3");
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 

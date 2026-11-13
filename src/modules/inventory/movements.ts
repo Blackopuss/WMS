@@ -2399,6 +2399,20 @@ export async function reverseMovement(
             `No se puede reversar: habría que sacar ${formatStock(base.toString(), line.unitCode)} de ${product.name} de ${location.name} y solo hay ${formatStock(before.toString(), line.unitCode)}. Parte de esas existencias ya salió o se movió.`,
           );
         }
+        if (direction === "OUT" && line.status === "AVAILABLE") {
+          // WMS-12: a reversal does not take what is set aside for an
+          // order either. Undoing a relocation or a change of state keeps
+          // the product total, so only what is reserved there counts.
+          const free = pair
+            ? await freeToMoveFrom(tx, product.id, location.id, line.lotId)
+            : await freeToTake(tx, product.id, location.id, line.lotId);
+          if (free.lessThan(base)) {
+            return stop(
+              "invalid",
+              `No se puede reversar: ${reservedMessage(free, line.unitCode, "sacar")}`,
+            );
+          }
+        }
         const after =
           direction === "IN" ? before.plus(base) : before.minus(base);
         if (after.greaterThan(MAX_BALANCE)) {

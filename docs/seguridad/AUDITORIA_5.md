@@ -16,7 +16,7 @@
 
 - **Equipo muestra los almacenes y zonas de cada persona** a cualquiera con `platform.team.read`, aunque esté limitado a otros. Son solo nombres, no existencias. Aceptado por ahora; si se cierra, `listTeamMembers` recibe al actor y deja solo lo que cae en su alcance.
 - **Una invitación pendiente conserva el alcance con que se emitió** aunque después se le reduzca a quien invitó; reenviarla no lo vuelve a validar. Era legítimo al emitirse y el titular puede cancelarla. Pendiente: revalidar en `resendInvitation`.
-- **La reversa no consulta lo apartado** (anterior a este alcance, WMS-12): reversar una entrada saca existencias comprobando el saldo, no `freeToTake`, y puede dejar sin mercancía a una tarea de surtido que la tenía apartada. Exige `inventory.movement.reverse`. Pendiente: se corrige después de integrar WMS-21A, que cambia el mismo núcleo de movimientos.
+- **La reversa no consultaba lo apartado** (anterior a este alcance, WMS-12): reversar una entrada sacaba existencias comprobando el saldo, no lo libre, y podía dejar sin mercancía a una tarea de surtido. Corregido el 2026-11-13 tras integrar WMS-21A: la reversa pregunta `freeToTake` (o `freeToMoveFrom` al deshacer una reubicación o un cambio de estado). Prueba en `reservations.int.test.ts`.
 - **Una persona con zonas libera pedidos de todo su almacén** y el surtido aparta fuera de su zona: es la decisión del ADR 0038 (un pedido es del almacén, no de una zona).
 
 ## Resistieron sin fallas

@@ -23,7 +23,8 @@ abajo son de ese documento).
 | Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |
 | Alcance por almacén y zona (WMS-20), aviso de entrada repetida (WMS-71), existencias sin acomodar (WMS-72), resumen del día (WMS-73) | Hecho (2026-11-12) |
 | Capacidad y restricciones de ubicación | Hecho (WMS-22B, ADR 0039, 2026-11-12) |
-| Lotes, caducidad y series | Falta (WMS-21) |
+| Lotes y caducidad | Hecho (WMS-21A, ADR 0040, 2026-11-13) |
+| Números de serie y trazabilidad por serie o pedido | Falta (WMS-21B) |
 | PWA, escaneo con cámara, PIN | Falta (transversal: WMS-35, 36, 38) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
