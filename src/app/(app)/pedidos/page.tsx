@@ -20,7 +20,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   OUTBOUND_ORDER_STATUS_LABELS,
+  TO_PACK,
   listOutboundOrders,
+  packingEnabled,
   type OutboundOrderStatus,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
@@ -38,6 +40,22 @@ const FILTERS: OutboundOrderStatus[] = [
   "PICKED",
   "CANCELLED",
 ];
+
+/**
+ * WMS-15: when the company packs, «Surtido» becomes «Por empacar» (picked
+ * or being packed) and «Empacado» follows it.
+ */
+const PACKING_FILTERS: (OutboundOrderStatus | typeof TO_PACK)[] = [
+  "DRAFT",
+  "RELEASED",
+  "PICKING",
+  TO_PACK,
+  "PACKED",
+  "CANCELLED",
+];
+
+const filterLabel = (value: OutboundOrderStatus | typeof TO_PACK) =>
+  value === TO_PACK ? "Por empacar" : OUTBOUND_ORDER_STATUS_LABELS[value];
 
 /** «12 nov 2026» for a day written as year-month-day. */
 const dayText = (day: string) =>
@@ -70,21 +88,24 @@ export default async function PedidosPage({
     );
   }
   const { estado, pagina, dia } = await searchParams;
-  const list = await listOutboundOrders(
-    { organizationId: access.organization.id, userId: access.user.id },
-    {
-      status: typeof estado === "string" ? estado : undefined,
-      pickedOn: typeof dia === "string" ? dia : undefined,
-      page:
-        typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
-          ? Number(pagina)
-          : undefined,
-    },
-  );
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  const filters = (await packingEnabled(actor)) ? PACKING_FILTERS : FILTERS;
+  const list = await listOutboundOrders(actor, {
+    status: typeof estado === "string" ? estado : undefined,
+    pickedOn: typeof dia === "string" ? dia : undefined,
+    page:
+      typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+        ? Number(pagina)
+        : undefined,
+  });
+  const current = list.toPack ? TO_PACK : list.status;
   // The day only travels between the pages of the same narrowed list.
   const href = (
     page: number,
-    status = list.status,
+    status: string | null = current,
     day: string | null = null,
   ) => {
     const params = new URLSearchParams();
@@ -119,7 +140,7 @@ export default async function PedidosPage({
           </Link>
         </p>
       )}
-      {(list.total > 0 || list.status || list.pickedOn) && (
+      {(list.total > 0 || current || list.pickedOn) && (
         <nav
           aria-label="Estado de los pedidos"
           className="flex flex-wrap gap-2"
@@ -127,20 +148,20 @@ export default async function PedidosPage({
           <Link
             href={href(1, null)}
             aria-current={
-              list.status === null && !list.pickedOn ? "true" : undefined
+              current === null && !list.pickedOn ? "true" : undefined
             }
-            className={`${chip} ${list.status === null && !list.pickedOn ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
+            className={`${chip} ${current === null && !list.pickedOn ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
           >
             Todos
           </Link>
-          {FILTERS.map((status) => (
+          {filters.map((status) => (
             <Link
               key={status}
               href={href(1, status)}
-              aria-current={list.status === status ? "true" : undefined}
-              className={`${chip} ${list.status === status ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
+              aria-current={current === status ? "true" : undefined}
+              className={`${chip} ${current === status ? "border-primary bg-accent text-accent-foreground" : "bg-card hover:bg-muted"}`}
             >
-              {OUTBOUND_ORDER_STATUS_LABELS[status]}
+              {filterLabel(status)}
             </Link>
           ))}
         </nav>
@@ -162,18 +183,18 @@ export default async function PedidosPage({
           title={
             list.pickedOn
               ? "Ningún pedido se terminó de surtir ese día"
-              : list.status
+              : current
                 ? "No hay pedidos en ese estado"
                 : "Sin pedidos de salida"
           }
           description={
             list.pickedOn
               ? "Mira todos los pedidos o elige un estado."
-              : list.status
+              : current
                 ? "Elige otro estado o mira todos."
                 : "Registra lo que tiene que salir del almacén y para quién."
           }
-          action={list.status ? undefined : newButton}
+          action={current ? undefined : newButton}
         />
       ) : (
         <section
@@ -228,7 +249,7 @@ export default async function PedidosPage({
               {list.page > 1 ? (
                 <Button asChild variant="outline">
                   <Link
-                    href={href(list.page - 1, list.status, list.pickedOn)}
+                    href={href(list.page - 1, current, list.pickedOn)}
                     rel="prev"
                   >
                     <ChevronLeft aria-hidden="true" data-icon="inline-start" />
@@ -244,7 +265,7 @@ export default async function PedidosPage({
               {list.page < list.pageCount ? (
                 <Button asChild variant="outline">
                   <Link
-                    href={href(list.page + 1, list.status, list.pickedOn)}
+                    href={href(list.page + 1, current, list.pickedOn)}
                     rel="next"
                   >
                     Siguiente

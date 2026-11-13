@@ -4,8 +4,12 @@
  * `outbound_order_transition` repeats this same table in MySQL; changing
  * one means changing the other (new migration) and outbound-states.test.ts.
  *
- *   DRAFT → RELEASED → PICKING → PICKED → PACKED → SHIPPED
+ *   DRAFT → RELEASED → PICKING → PICKED → PACKING → PACKED → SHIPPED
  *     ╰───────╰───────────╰→ CANCELLED (with a reason)
+ *
+ * WMS-15 (ADR 0044): packing is its own step (PACKING) between picked and
+ * packed. Shipping straight from PICKED, for companies that do not pack,
+ * is added by WMS-16 together with its trigger.
  */
 
 export const OUTBOUND_ORDER_STATUSES = [
@@ -13,6 +17,7 @@ export const OUTBOUND_ORDER_STATUSES = [
   "RELEASED",
   "PICKING",
   "PICKED",
+  "PACKING",
   "PACKED",
   "SHIPPED",
   "CANCELLED",
@@ -28,7 +33,8 @@ export const OUTBOUND_ORDER_TRANSITIONS: Record<
   // Once picking starts, cancelling means putting goods back: that is the
   // job of WMS-14, which will widen this table if it allows it.
   PICKING: ["PICKED"],
-  PICKED: ["PACKED"],
+  PICKED: ["PACKING"],
+  PACKING: ["PACKED"],
   PACKED: ["SHIPPED"],
   SHIPPED: [],
   CANCELLED: [],
@@ -41,6 +47,7 @@ export const OUTBOUND_ORDER_STATUS_LABELS: Record<OutboundOrderStatus, string> =
     RELEASED: "Liberado",
     PICKING: "En surtido",
     PICKED: "Surtido",
+    PACKING: "Empacando",
     PACKED: "Empacado",
     SHIPPED: "Despachado",
     CANCELLED: "Cancelado",
@@ -73,6 +80,12 @@ export function outboundTransitionProblem(
   if (to === "RELEASED") return "Este pedido ya se liberó.";
   if (to === "CANCELLED")
     return "El surtido de este pedido ya empezó: no se puede cancelar desde aquí.";
+  if (to === "PACKING" || to === "PACKED") {
+    if (from === "PACKED") return "Este pedido ya está empacado.";
+    if (from === "PACKING" && to === "PACKING")
+      return "Este pedido ya se está empacando.";
+    return "Este pedido todavía no termina de surtirse.";
+  }
   return "Este pedido ya cambió. Vuelve a abrirlo.";
 }
 

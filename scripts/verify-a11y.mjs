@@ -267,41 +267,45 @@ try {
     }
 
     // The detail screens of what exists: the first product, order, count and lot.
-    for (const [list, pattern] of [
+    for (const [list, pattern, suffix] of [
       ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/],
       ["/compras", /^\/compras\/ordenes\/[0-9a-f-]{36}$/],
       ["/conteos", /^\/conteos\/[0-9a-f-]{36}$/],
       // WMS-21: the card of a lot about to expire.
       ["/inventario/por-caducar", /^\/inventario\/lotes\/[0-9a-f-]{36}$/],
+      // WMS-15: an order waiting to be packed, and its packing screen.
+      ["/pedidos?estado=por-empacar", /^\/pedidos\/[0-9a-f-]{36}$/],
+      ["/pedidos?estado=por-empacar", /^\/pedidos\/[0-9a-f-]{36}$/, "/empaque"],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>
         links.map((a) => a.getAttribute("href") ?? ""),
       );
-      const detail = hrefs.find((href) => pattern.test(href));
-      if (!detail) continue;
+      const found = hrefs.find((href) => pattern.test(href));
+      if (!found) continue;
+      const detail = `${found}${suffix ?? ""}`;
       await page.goto(`${BASE}${detail}`, { waitUntil: "networkidle" });
       const violations = await axe(page);
       check(
         violations.length === 0,
-        `${viewport.name}: detalle de ${list} sin fallas graves de accesibilidad`,
+        `${viewport.name}: detalle de ${list}${suffix ?? ""} sin fallas graves de accesibilidad`,
         violations.join("; "),
       );
       check(
         (await overflow(page)) <= 0,
-        `${viewport.name}: detalle de ${list} sin desbordamiento`,
+        `${viewport.name}: detalle de ${list}${suffix ?? ""} sin desbordamiento`,
       );
       const bad = await keyboard(page);
       check(
         bad.length === 0,
-        `${viewport.name}: detalle de ${list} foco visible con teclado`,
+        `${viewport.name}: detalle de ${list}${suffix ?? ""} foco visible con teclado`,
         bad.join(", "),
       );
       if (mobile) {
         const small = await smallTargets(page);
         check(
           small.length === 0,
-          `${viewport.name}: detalle de ${list} objetivos táctiles ≥ 44 px`,
+          `${viewport.name}: detalle de ${list}${suffix ?? ""} objetivos táctiles ≥ 44 px`,
           small.join(", "),
         );
       }

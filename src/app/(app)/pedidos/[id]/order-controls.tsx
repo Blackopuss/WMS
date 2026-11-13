@@ -25,6 +25,7 @@ import {
   cancelOutboundAction,
   releaseOutboundAction,
   removeOutboundLineAction,
+  startPackingAction,
   type LineFormState,
   type OutboundStepState,
 } from "../actions";
@@ -286,5 +287,44 @@ export function CancelOrder({ orderId }: { orderId: string }) {
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * «Empacar» (WMS-15): the picked order starts being packed and the
+ * packing screen opens.
+ */
+export function StartPacking({ orderId }: { orderId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="space-y-2">
+      <Button
+        type="button"
+        size="lg"
+        className="min-h-12 w-full sm:w-auto"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          startTransition(async () => {
+            const result = await startPackingAction(orderId);
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            router.push(`/pedidos/${orderId}/empaque`);
+          });
+        }}
+      >
+        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+        Empacar
+      </Button>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

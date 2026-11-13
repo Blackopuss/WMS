@@ -144,6 +144,7 @@ Consultar equivalencias (INV-09) no concede permiso para confirmar el movimiento
 | `inventory.outbound.create` | Crear y editar pedidos de salida en borrador (destinatario, fecha, líneas); WMS-13. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.outbound.release` | Liberar un pedido al almacén, que reserva sus existencias (o lo que hay, si se elige); WMS-13. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.outbound.cancel` | Cancelar un pedido con motivo antes de surtirlo; libera sus reservas; WMS-13. | Sí | Sí | Sí | No | No | Sí | No | No | No |
+| `inventory.outbound.pack` | Verificar y empacar un pedido surtido: escanear lo surtido a sus bultos, sacar, cerrar y abrir bultos, registrar lo que falta con motivo y terminar el empaque; empacar no mueve existencias; WMS-15 (ADR 0044). | Sí | Sí | Sí | No | No | Sí | Sí | No | No |
 | `inventory.import.create` | Descargar plantilla, subir CSV/XLSX, mapear, validar y previsualizar productos/saldos/salidas; IMP-02/03/04/05/06/09/10. | Sí | Sí | Sí | No | No | Sí | No | No | No |
 | `inventory.import.read` | Consultar archivo, errores, progreso, resultado parcial y fecha de actualización de una importación autorizada; IMP-02/05/08/10. | Sí | Sí | Sí | No | No | Sí | No | No | Sí |
 | `inventory.import.confirm` | Confirmar importación y reservas; exige además cada permiso de la operación importada; IMP-07/08/09/10. | Sí | Sí | Sí | No | No | Sí | No | No | No |

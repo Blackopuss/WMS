@@ -6,6 +6,8 @@ import {
   newContainerCode,
   normalizeContainerCode,
   normalizeContainerKind,
+  parseWeightKg,
+  weightText,
   theContainer,
 } from "./container-rules";
 
@@ -56,5 +58,18 @@ describe("container rules (WMS-53)", () => {
     expect(theContainer({ kind: "Contenedor", code: "X" })).toBe(
       "el contenedor X",
     );
+  });
+
+  it("a package weighs kilos with up to three decimals, or nothing (WMS-15)", () => {
+    expect(parseWeightKg("")).toEqual({ ok: true, weight: null });
+    expect(parseWeightKg(" 12,50 kg")).toEqual({ ok: true, weight: "12.5" });
+    expect(parseWeightKg("007.250")).toEqual({ ok: true, weight: "7.25" });
+    expect(parseWeightKg("0")).toMatchObject({ ok: false });
+    expect(parseWeightKg("0.000")).toMatchObject({ ok: false });
+    expect(parseWeightKg("1.2345")).toMatchObject({ ok: false });
+    expect(parseWeightKg("-3")).toMatchObject({ ok: false });
+    expect(parseWeightKg("1e3")).toMatchObject({ ok: false });
+    expect(weightText("1250.5")).toBe("1,250.5 kg");
+    expect(weightText("12.500")).toBe("12.5 kg");
   });
 });

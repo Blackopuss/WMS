@@ -744,11 +744,16 @@ export type OutboundPage = {
   page: number;
   pageCount: number;
   status: OutboundOrderStatus | null;
+  /** WMS-15: picked or being packed («por empacar»). */
+  toPack: boolean;
   /** The day the list is narrowed to («2026-11-12»), if any. */
   pickedOn: string | null;
 };
 
-const LEFT_PICKING = ["PICKED", "PACKED", "SHIPPED"] as const;
+/** The value of `status` that lists what waits to be packed (WMS-15). */
+export const TO_PACK = "por-empacar";
+
+const LEFT_PICKING = ["PICKED", "PACKING", "PACKED", "SHIPPED"] as const;
 
 /**
  * Orders of a warehouse picked on a day: they have left picking and their
@@ -794,6 +799,7 @@ export async function listOutboundOrders(
     "inventory.outbound.read",
   );
   const status = isOutboundOrderStatus(options.status) ? options.status : null;
+  const toPack = options.status === TO_PACK;
   const client = forOrganization(actor.organizationId);
   // The warehouse the person works in (WMS-18).
   const facility = await activeFacilityOf(client, actor.userId);
@@ -803,7 +809,12 @@ export async function listOutboundOrders(
       : null;
   const where = window
     ? pickedOnWhere(facility.id, window)
-    : { facilityId: facility.id, ...(status ? { status } : {}) };
+    : toPack
+      ? {
+          facilityId: facility.id,
+          status: { in: ["PICKED" as const, "PACKING" as const] },
+        }
+      : { facilityId: facility.id, ...(status ? { status } : {}) };
   const total = await client.outboundOrder.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / OUTBOUND_PAGE_SIZE));
   const page =
@@ -845,6 +856,7 @@ export async function listOutboundOrders(
     pageCount,
     // A day narrows by itself: the state asked along with it is not applied.
     status: window ? null : status,
+    toPack: !window && toPack,
     pickedOn: window?.day ?? null,
   };
 }

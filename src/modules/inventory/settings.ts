@@ -229,6 +229,32 @@ export const CONTAINERS_MODE = {
   defaultValue: "off",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-15 (ADR 0044): whether picked orders are verified and packed before
+ * they leave. Off, nothing new is offered (the order waits picked in the
+ * staging place, as before); WMS-16 ships PACKED orders when on, and also
+ * PICKED ones when off.
+ */
+export const PACKING_MODE = {
+  key: "inventory.packing.mode",
+  module: "inventory",
+  area: "Empaque",
+  label: "Verificar y empacar pedidos",
+  options: [
+    {
+      value: "off",
+      label: "No se empaca",
+      help: "Lo surtido sale tal como queda en preparación.",
+    },
+    {
+      value: "on",
+      label: "Se verifica y empaca antes de despachar",
+      help: "Se escanea lo surtido contra el pedido y se pone en cajas o tarimas con su etiqueta.",
+    },
+  ],
+  defaultValue: "off",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -238,4 +264,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   CONTAINERS_MODE,
+  PACKING_MODE,
 ];

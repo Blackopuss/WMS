@@ -8,6 +8,7 @@ import {
   PICK_EXPIRED,
   PICKING_STRATEGY,
   CONTAINERS_MODE,
+  PACKING_MODE,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   createOutboundOrder,
@@ -184,6 +185,8 @@ describe("operation settings", () => {
       },
       // WMS-53: no pallets unless the company turns them on.
       { key: CONTAINERS_MODE.key, value: "off", defaultValue: "off" },
+      // WMS-15: nothing is packed unless the company turns it on.
+      { key: PACKING_MODE.key, value: "off", defaultValue: "off" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -194,6 +197,7 @@ describe("operation settings", () => {
       { key: PUTAWAY_MODE.key, value: "manual" },
       { key: PUTAWAY_PREFERENCE.key, value: "together" },
       { key: CONTAINERS_MODE.key, value: "off" },
+      { key: PACKING_MODE.key, value: "off" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

@@ -5,6 +5,7 @@ import {
   CircleAlert,
   CircleCheck,
   ClipboardList,
+  PackageCheck,
   PackageOpen,
   TriangleAlert,
   type LucideIcon,
@@ -18,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
   countMyTasks,
+  countOrdersToPack,
   countExpiringLots,
   countUnplacedStock,
   getDaySummary,
@@ -105,6 +107,13 @@ export default async function InicioPage() {
     inventory && access.can("inventory.stock.read")
       ? await countExpiringLots(actor)
       : 0;
+  // WMS-15: orders waiting to be packed, for who packs, only if any.
+  const toPack =
+    inventory &&
+    access.can("inventory.outbound.read") &&
+    access.allows("inventory.outbound.pack")
+      ? await countOrdersToPack(actor)
+      : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -138,6 +147,16 @@ export default async function InicioPage() {
             count: tasks.blocked,
             icon: TriangleAlert,
             alert: true,
+          },
+        ]
+      : []),
+    ...(toPack > 0
+      ? [
+          {
+            href: "/pedidos?estado=por-empacar",
+            label: "Pedidos por empacar",
+            count: toPack,
+            icon: PackageCheck,
           },
         ]
       : []),

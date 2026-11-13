@@ -186,7 +186,7 @@ export const AREAS = [
     title: "Inventario › Tarimas y contenedores",
     doc: "inventory",
     summary:
-      "Tarimas, cajas y otros contenedores con etiqueta propia: qué parte del saldo de su ubicación agrupan (nunca más que el saldo) y su historia.",
+      "Tarimas, cajas y otros contenedores con etiqueta propia, y los bultos de empaque de un pedido: qué parte del saldo de su ubicación agrupan (nunca más que el saldo) y su historia.",
     models: ["Container", "ContainerItem", "ContainerEvent"],
   },
   {
@@ -202,13 +202,14 @@ export const AREAS = [
     title: "Inventario › Tareas, reservas y pedidos de salida",
     doc: "inventory",
     summary:
-      "Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento y los pedidos de salida.",
+      "Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento, los pedidos de salida y lo que faltó al empacarlos.",
     models: [
       "WarehouseTask",
       "WarehouseTaskSerial",
       "StockReservation",
       "OutboundOrder",
       "OutboundOrderLine",
+      "OutboundPackShortage",
     ],
   },
   {
