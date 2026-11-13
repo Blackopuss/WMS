@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-73 tablas en 18 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+76 tablas en 19 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -20,6 +20,7 @@
 | Plataforma › Catálogo de productos | 6 | [catalog](modulos/catalog.md) |
 | Plataforma › Contactos | 1 | [contacts](modulos/contacts.md) |
 | Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
+| Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Tareas, reservas y pedidos de salida | 5 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
@@ -1027,10 +1028,11 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `reversesMovementId` | `String? · Char(36)` |  | Movement this one undoes; a movement is reversed at most once. |
 | `createdByUserId` | `String · Char(36)` |  | Person who confirmed it (an account; not a company row). |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `containerId` | `String? · Char(36)` |  | The container this movement moved whole (WMS-53, ADR 0043); null for every other movement. Not reversed from Inventario. |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `idempotencyKey`); (`organizationId`, `reversesMovementId`).
-- Índices: (`organizationId`, `createdAt`); (`organizationId`, `type`, `createdAt`); (`organizationId`, `createdByUserId`, `createdAt`).
-- Relaciones: `reverses` → `StockMovement` por (`organizationId`, `reversesMovementId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `createdAt`); (`organizationId`, `type`, `createdAt`); (`organizationId`, `createdByUserId`, `createdAt`); (`organizationId`, `containerId`).
+- Relaciones: `reverses` → `StockMovement` por (`organizationId`, `reversesMovementId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict).
 
 ### StockMovementLine · `stock_movement_line`
 
@@ -1120,12 +1122,13 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `serial` | `String · VarChar(64)` |  |  |
 | `locationId` | `String? · Char(36)` |  | Where it is; null = out of the warehouse (it left, or not yet in). |
 | `status` | `StockStatus?` |  |  |
+| `containerId` | `String? · Char(36)` |  | The container it is packed in (WMS-53, ADR 0043); null = loose. It enters one only where the container is, available (trigger). |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `productId`, `serial`).
-- Índices: (`organizationId`, `productId`, `locationId`, `status`); (`organizationId`, `serial`).
-- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `productId`, `locationId`, `status`); (`organizationId`, `serial`); (`organizationId`, `containerId`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict).
 
 ### SerialMove · `serial_move`
 
@@ -1190,6 +1193,95 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`.
 - `StockDirection`: `IN`, `OUT`.
 - `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`.
+
+## Inventario › Tarimas y contenedores
+
+Tarimas, cajas y otros contenedores con etiqueta propia: qué parte del saldo de su ubicación agrupan (nunca más que el saldo) y su historia.
+
+Documento: [modulos/inventory.md](modulos/inventory.md).
+
+### Container · `container`
+
+A pallet, a box or a cage with its own label (an LPN) in one location (WMS-53, ADR 0043). It groups part of the stock of its location without being part of the balance's key: what its items say is never more than the balance (triggers on both sides, and the reconciliation). Moving it moves exactly its items with one movement. Never deleted: closed.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | Consecutive per company: «C-0001». |
+| `code` | `String · VarChar(40)` |  | What is scanned: «C-0001», or the label it already had (upper case). |
+| `kind` | `String · VarChar(40)` |  | «Tarima», «Caja»… free text: it changes no rule. |
+| `purpose` | `ContainerPurpose` | `STORAGE` |  |
+| `status` | `ContainerStatus` | `OPEN` |  |
+| `locationId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `closedAt` | `DateTime? · DateTime(3)` |  |  |
+| `closedByUserId` | `String? · Char(36)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `code`).
+- Índices: (`organizationId`, `locationId`, `status`); (`organizationId`, `status`, `number`).
+- Relaciones: `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
+
+### ContainerItem · `container_item`
+
+What a container holds now: one row per product, state and lot, in the location of its container. Deleted when it reaches zero (its history is in `container_event`). The sum of the items of a key (product, location, state, lot) never passes its balance (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `containerId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `locationId` | `String · Char(36)` |  | Always the location of its container (trigger). |
+| `status` | `StockStatus` | `AVAILABLE` |  |
+| `lotId` | `String? · Char(36)` |  |  |
+| `lotKey` | `String · VarChar(36)` | `""` | COALESCE(lotId, ''), like the balance. |
+| `quantity` | `Decimal · Decimal(18, 3)` |  | In the product's unit; always more than zero. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `containerId`, `productId`, `status`, `lotKey`).
+- Índices: (`organizationId`, `productId`, `locationId`, `status`, `lotKey`); (`organizationId`, `locationId`).
+- Relaciones: `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict).
+
+### ContainerEvent · `container_event`
+
+The history of a container (WMS-53): created, what was put in and taken out, where it moved (with its movement) and when it was taken apart. Never changes nor is deleted (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `containerId` | `String · Char(36)` |  |  |
+| `kind` | `ContainerEventKind` |  |  |
+| `locationId` | `String · Char(36)` |  | Where it happened (MOVED: where it arrived). |
+| `fromLocationId` | `String? · Char(36)` |  | MOVED: where it left from. |
+| `productId` | `String? · Char(36)` |  | PACKED / UNPACKED: what, in the product's unit. |
+| `lotId` | `String? · Char(36)` |  |  |
+| `quantity` | `Decimal? · Decimal(18, 3)` |  |  |
+| `serials` | `String? · Text` |  | Serials of the units, «A1, A2», for a product by serial. |
+| `movementId` | `String? · Char(36)` |  | MOVED: the movement that moved its stock, and the task, if any. |
+| `taskId` | `String? · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `containerId`, `id`).
+- Relaciones: `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `task` → `WarehouseTask` por (`organizationId`, `taskId`) (al borrar: Restrict).
+
+#### Enumeraciones de Inventario › Tarimas y contenedores
+
+- `ContainerPurpose`: `STORAGE`.
+- `ContainerStatus`: `OPEN`, `CLOSED`.
+- `ContainerEventKind`: `CREATED`, `PACKED`, `UNPACKED`, `MOVED`, `CLOSED`.
 
 ## Inventario › Conteos
 
@@ -1294,13 +1386,14 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `outboundLineId` | `String? · Char(36)` |  | PICK only: the line of the outbound order it picks. |
 | `pickedQuantity` | `Decimal? · Decimal(12, 3)` |  | PICK only: what the person confirmed they took (≤ quantity), and why it was less. |
 | `shortReason` | `String? · VarChar(300)` |  |  |
-| `productId` | `String · Char(36)` |  |  |
+| `productId` | `String? · Char(36)` |  | What it moves: a product (with its quantity and unit), or a whole container (WMS-53, ADR 0043; then no product, quantity, lot nor order). Exactly one of the two (CHECK); neither ever changes. |
+| `containerId` | `String? · Char(36)` |  |  |
 | `fromLocationId` | `String · Char(36)` |  |  |
 | `toLocationId` | `String · Char(36)` |  |  |
 | `placedLocationId` | `String? · Char(36)` |  | PUTAWAY only (WMS-52, ADR 0042): where the goods were really left, written once by the delivery. `toLocationId` is the recommended place (the origin itself when there was none). |
 | `lotId` | `String? · Char(36)` |  | The lot it moves, for a product by lot (WMS-21); never changes. |
-| `quantity` | `Decimal · Decimal(12, 3)` |  | In the product's unit (base), checked with its quantity rule. |
-| `unitCode` | `String · VarChar(12)` |  |  |
+| `quantity` | `Decimal? · Decimal(12, 3)` |  | In the product's unit (base), checked with its quantity rule; null for a container task. |
+| `unitCode` | `String? · VarChar(12)` |  |  |
 | `note` | `String? · VarChar(300)` |  | Instructions for whoever does it. |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
@@ -1317,8 +1410,8 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
-- Índices: (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`).
-- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`).
+- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
 
 ### WarehouseTaskSerial · `warehouse_task_serial`
 

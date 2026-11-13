@@ -29,6 +29,7 @@ import { TASK_HOLD, freeToTake, reserveStock } from "./reservations";
 import { PUTAWAY_MODE, PUTAWAY_PREFERENCE } from "./settings";
 import { AVAILABLE_ANY_LOT, type StockStatus } from "./stock-status";
 import { OPEN_TASK_STATUSES, formatTaskNumber } from "./task-states";
+import { theContainer } from "./container-rules";
 import {
   STORE_PLACE,
   facilityHasPlaces,
@@ -95,6 +96,12 @@ export async function putawayTarget(
     quantity: Decimal;
     fromLocationId: string;
     facilityId: string;
+    /**
+     * WMS-53: the rest of what travels together (the other products of a
+     * container): the place must admit all of it. The order of the
+     * candidates follows the first product.
+     */
+    together?: readonly { productId: string; quantity: Decimal }[];
   },
 ): Promise<{ locationId: string } | null> {
   const scoped = await locationScopeWhere(tx, input.userId);
@@ -178,8 +185,15 @@ export async function putawayTarget(
           quantity: input.quantity,
           toLocationId: place.id,
           fromLocationId: input.fromLocationId,
-          status: "AVAILABLE",
+          status: "AVAILABLE" as const,
         },
+        ...(input.together ?? []).map((other) => ({
+          productId: other.productId,
+          quantity: other.quantity,
+          toLocationId: place.id,
+          fromLocationId: input.fromLocationId,
+          status: "AVAILABLE" as const,
+        })),
       ],
       // Never stops and never locks: a note means it would not fit.
       { mode: "report" },
@@ -321,6 +335,162 @@ export async function createPutawayTasks(
   return { tasks, note: noteOf(tasks) };
 }
 
+/**
+ * WMS-53 (ADR 0043): one put-away task for a whole container that waits in
+ * a place «de paso», inside the transaction that packed or received it
+ * (after its locks, the container's included), when the company puts away
+ * with tasks. Nothing is set aside: what a container holds is not taken
+ * loose anyway, and while its task is open it does not change. Null when
+ * no task is due (tasks off, not a place «de paso», nowhere to keep it,
+ * empty, or it already has an open task).
+ */
+export async function createContainerPutawayTask(
+  tx: Tx,
+  actor: InventoryActor,
+  containerId: string,
+): Promise<{ id: string; number: number; note: string } | null> {
+  if ((await readSetting(tx, PUTAWAY_MODE)) !== "tasks") return null;
+  const box = await tx.container.findFirst({
+    where: { id: containerId, status: "OPEN" },
+    select: {
+      id: true,
+      code: true,
+      kind: true,
+      locationId: true,
+      location: {
+        select: {
+          facilityId: true,
+          isDefault: true,
+          isStaging: true,
+          type: true,
+          archivedAt: true,
+        },
+      },
+      items: {
+        where: { status: "AVAILABLE" },
+        orderBy: [{ quantity: "desc" }, { id: "asc" }],
+        select: {
+          productId: true,
+          lotId: true,
+          quantity: true,
+          product: { select: { categoryId: true } },
+        },
+      },
+    },
+  });
+  if (
+    !box ||
+    box.items.length === 0 ||
+    box.location.archivedAt ||
+    !isWaitingPlace(box.location) ||
+    !(await facilityHasPlaces(tx, box.location.facilityId))
+  ) {
+    return null;
+  }
+  const open = await tx.warehouseTask.findFirst({
+    where: { containerId: box.id, status: { in: [...OPEN_TASK_STATUSES] } },
+    select: { id: true },
+  });
+  if (open) return null;
+  const [first, ...rest] = box.items;
+  const target = await putawayTarget(tx, {
+    userId: actor.userId,
+    productId: first!.productId,
+    categoryId: first!.product.categoryId,
+    lotId: first!.lotId,
+    quantity: dec(first!.quantity.toString()),
+    fromLocationId: box.locationId,
+    facilityId: box.location.facilityId,
+    together: rest.map((item) => ({
+      productId: item.productId,
+      quantity: dec(item.quantity.toString()),
+    })),
+  });
+  const id = newId();
+  const number = await nextTaskNumber(tx);
+  await tx.warehouseTask.create({
+    data: {
+      id,
+      organizationId: actor.organizationId,
+      number,
+      kind: "PUTAWAY",
+      status: "PENDING",
+      priority: "NORMAL",
+      containerId: box.id,
+      fromLocationId: box.locationId,
+      toLocationId: target?.locationId ?? box.locationId,
+      createdByUserId: actor.userId,
+    },
+  });
+  return {
+    id,
+    number,
+    note: `Se creó la tarea de acomodo ${formatTaskNumber(number)} para ${theContainer(box)}.`,
+  };
+}
+
+/**
+ * WMS-53: «Crear tareas de acomodo» also covers containers waiting in a
+ * place «de paso» without an open task: one transaction each, with the
+ * locks of every container operation (products → locations → container).
+ */
+async function pendingContainerTasks(
+  actor: InventoryActor,
+  placeIds: readonly string[],
+): Promise<number> {
+  const client = forOrganization(actor.organizationId);
+  const boxes = await client.container.findMany({
+    where: {
+      status: "OPEN",
+      locationId: { in: [...placeIds] },
+      items: { some: {} },
+      tasks: { none: { status: { in: [...OPEN_TASK_STATUSES] } } },
+    },
+    orderBy: { number: "asc" },
+    take: PENDING_MAX_BALANCES,
+    select: {
+      id: true,
+      locationId: true,
+      items: { select: { productId: true } },
+    },
+  });
+  let created = 0;
+  for (const box of boxes) {
+    const products = [...new Set(box.items.map((item) => item.productId))];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const made = await client.$transaction(async (tx) => {
+          await lockRows(tx, "product", products);
+          await lockRows(tx, "location", [box.locationId]);
+          await lockRows(tx, "container", [box.id]);
+          // What it holds or where it is may have changed: then skip it.
+          const now = await tx.container.findFirst({
+            where: { id: box.id },
+            select: {
+              locationId: true,
+              items: { select: { productId: true } },
+            },
+          });
+          if (
+            !now ||
+            now.locationId !== box.locationId ||
+            now.items.some((item) => !products.includes(item.productId))
+          ) {
+            return null;
+          }
+          return createContainerPutawayTask(tx, actor, box.id);
+        }, LOCKING_TRANSACTION);
+        if (made) created += 1;
+        break;
+      } catch (error) {
+        if (isTaskNumberClash(error) && attempt < 4) continue;
+        throw error;
+      }
+    }
+  }
+  return created;
+}
+
 export type PendingPutawayResult =
   | { ok: true; created: number; summary: string }
   | { ok: false; reason: "not_allowed"; formError: string };
@@ -420,10 +590,14 @@ export async function createPendingPutawayTasks(
             ) => `${row.productId} ${locationId} ${row.lotId ?? ""}`;
             const covered = new Map<string, Decimal>();
             for (const task of open) {
-              const key = slot(task, task.fromLocationId);
+              // Filtered by product: never a container task.
+              const key = slot(
+                { productId: task.productId!, lotId: task.lotId },
+                task.fromLocationId,
+              );
               covered.set(
                 key,
-                (covered.get(key) ?? dec(0)).plus(task.quantity.toString()),
+                (covered.get(key) ?? dec(0)).plus(task.quantity!.toString()),
               );
             }
             const arrivals: PutawayArrival[] = [];
@@ -456,6 +630,7 @@ export async function createPendingPutawayTasks(
       }
     }
   }
+  created += await pendingContainerTasks(actor, placeIds);
   if (created === 0) {
     return {
       ...nothing,

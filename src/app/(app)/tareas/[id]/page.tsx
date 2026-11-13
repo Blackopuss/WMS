@@ -218,13 +218,34 @@ export default async function TareaPage({
                 ? "Acomodar"
                 : "Mover"}
           </p>
-          <p className="text-2xl font-semibold [overflow-wrap:anywhere]">
-            {task.quantityText}
-          </p>
-          <p className="text-lg [overflow-wrap:anywhere]">
-            {task.productName}{" "}
-            <span className="text-sm text-muted-foreground">{task.sku}</span>
-          </p>
+          {task.container ? (
+            <>
+              {/* WMS-53: the whole pallet, with everything it holds. */}
+              <p className="text-2xl font-semibold [overflow-wrap:anywhere]">
+                {task.container.name}
+              </p>
+              <p>
+                <Link
+                  href={`/inventario/tarimas/${task.container.id}`}
+                  className="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  Ver lo que trae
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-semibold [overflow-wrap:anywhere]">
+                {task.quantityText}
+              </p>
+              <p className="text-lg [overflow-wrap:anywhere]">
+                {task.productName}{" "}
+                <span className="text-sm text-muted-foreground">
+                  {task.sku}
+                </span>
+              </p>
+            </>
+          )}
           {task.lotText && (
             <p className="font-medium [overflow-wrap:anywhere]">
               {task.lotText}

@@ -175,7 +175,7 @@ async function pick(
   expect(await acceptTask(actor, taskId)).toMatchObject({ ok: true });
   expect(
     await confirmPick(actor, taskId, {
-      productCode: task.product.sku,
+      productCode: task.product!.sku,
       locationCode: input.location,
       quantity: input.quantity,
       shortReason: input.shortReason,
@@ -207,7 +207,7 @@ describe("releasing an order", () => {
       tasks.map((task) => [
         task.fromLocationId,
         task.toLocationId,
-        task.quantity.toString(),
+        task.quantity!.toString(),
         task.status,
         task.priority,
       ]),
@@ -499,7 +499,7 @@ describe("picking", () => {
       }),
     ).toMatchObject({ ok: true });
     const tasks = await tasksOf(owner.organizationId);
-    expect(tasks.at(-1)?.quantity.toString()).toBe("20");
+    expect(tasks.at(-1)?.quantity!.toString()).toBe("20");
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 

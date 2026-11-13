@@ -393,7 +393,7 @@ export async function archiveFacility(
     if (facility.isDefault) {
       stop("not_allowed", "El almacén principal no se archiva.");
     }
-    const [stock, orders, tasks] = await Promise.all([
+    const [stock, orders, tasks, boxes] = await Promise.all([
       tx.stockBalance.count({
         where: { quantity: { gt: 0 }, location: { facilityId: facility.id } },
       }),
@@ -409,6 +409,10 @@ export async function archiveFacility(
           status: { notIn: ["DELIVERED", "CANCELLED"] },
         },
       }),
+      // WMS-53: nor a pallet or box still put together (even empty).
+      tx.container.count({
+        where: { status: "OPEN", location: { facilityId: facility.id } },
+      }),
     ]);
     if (stock > 0) {
       stop("not_allowed", "Este almacén todavía tiene existencias.");
@@ -418,6 +422,12 @@ export async function archiveFacility(
     }
     if (tasks > 0) {
       stop("not_allowed", "Este almacén tiene tareas abiertas.");
+    }
+    if (boxes > 0) {
+      stop(
+        "not_allowed",
+        "Este almacén tiene tarimas o cajas armadas: desármalas primero.",
+      );
     }
     await tx.membership.updateMany({
       where: { activeFacilityId: facility.id },

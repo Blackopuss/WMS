@@ -13,6 +13,7 @@ import {
 } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
+import { containerName, normalizeContainerCode } from "./container-rules";
 import { formatLotDay, lotDayOf, normalizeLotCode } from "./lot-rules";
 import type { InventoryActor } from "./movements";
 import { formatOutboundNumber } from "./outbound-states";
@@ -57,7 +58,9 @@ export type TraceMatch =
       id: string;
       numberText: string;
       supplierName: string;
-    };
+    }
+  /** WMS-53: a pallet or box by its label. */
+  | { kind: "container"; id: string; code: string; name: string };
 
 const MATCHES_SHOWN = 20;
 
@@ -205,6 +208,25 @@ export async function findTraceMatches(
         id: order.id,
         numberText: `OC-${String(order.number).padStart(4, "0")}`,
         supplierName: order.contact.name,
+      });
+    }
+  }
+  // WMS-53: a container by its label, where the person may see it now.
+  const containerCode = normalizeContainerCode(text);
+  if (containerCode.ok && (await mayRead(actor, "inventory.stock.read"))) {
+    const box = await client.container.findFirst({
+      where: {
+        code: containerCode.code,
+        ...(limited ? { location: scoped } : {}),
+      },
+      select: { id: true, code: true, kind: true },
+    });
+    if (box) {
+      matches.push({
+        kind: "container",
+        id: box.id,
+        code: box.code,
+        name: containerName(box),
       });
     }
   }

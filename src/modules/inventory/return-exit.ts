@@ -7,7 +7,7 @@ import { lockRows, type TenantDb } from "@/server";
 import { formatStock, type InventoryActor } from "./movements";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
-import { freeToTake, reservedMessage } from "./reservations";
+import { blockedMessage, freeToTake } from "./reservations";
 import {
   serialKey,
   serialsForTake,
@@ -232,10 +232,12 @@ export async function postReturnExit(
       return {
         ok: false,
         line: index,
-        error: reservedMessage(
+        error: await blockedMessage(
+          tx,
           free.lessThan(freeAnywhere) ? free : freeAnywhere,
           line.unitCode,
           "devolver",
+          { productId, locationId, lotId: lotKey || null },
         ),
       };
     }

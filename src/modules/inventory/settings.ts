@@ -203,6 +203,32 @@ export const PUTAWAY_PREFERENCE = {
   defaultValue: "together",
 } as const satisfies SettingDefinition;
 
+/**
+ * Whether the company packs stock in pallets, boxes or other containers
+ * with their own label (WMS-53, ADR 0043). Off, nobody sees anything new
+ * and nothing is packed; containers packed before stay visible and can
+ * still be moved, emptied and taken apart.
+ */
+export const CONTAINERS_MODE = {
+  key: "inventory.containers.mode",
+  module: "inventory",
+  area: "Tarimas",
+  label: "Tarimas y cajas",
+  options: [
+    {
+      value: "off",
+      label: "No se usan",
+      help: "Todo se maneja por producto, ubicación y lote.",
+    },
+    {
+      value: "on",
+      label: "Se arman tarimas y cajas",
+      help: "Se agrupa mercancía con una etiqueta propia; moverla mueve todo lo que trae con un escaneo.",
+    },
+  ],
+  defaultValue: "off",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -211,4 +237,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   CAPACITY_MODE,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
+  CONTAINERS_MODE,
 ];

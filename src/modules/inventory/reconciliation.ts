@@ -28,7 +28,7 @@ export type StockDrift = {
    * is their count); `serial_moves`: the units whose last move left them
    * there.
    */
-  source?: "serial_units" | "serial_moves";
+  source?: "serial_units" | "serial_moves" | "containers";
 };
 
 /** Differences between balances and movement history; empty when they agree. */
@@ -89,6 +89,108 @@ export async function reconcileStock(
     }
   }
   drift.push(...(await reconcileSerials(organizationId, stored)));
+  drift.push(...(await reconcileContainers(organizationId, stored)));
+  return drift;
+}
+
+/**
+ * WMS-53 (ADR 0043): what the containers say they hold is part of the
+ * balance of its key, never more; each item is where its container is; a
+ * closed container is empty; and a product by serial has, in each
+ * container, as many units marked in it (and in its place) as the
+ * container says. `source: "containers"`; `fromMovements` is what the
+ * containers say. Empty when they agree (and for a company without them).
+ */
+async function reconcileContainers(
+  organizationId: string,
+  stored: Map<string, ReturnType<typeof dec>>,
+): Promise<StockDrift[]> {
+  const client = forOrganization(organizationId);
+  const items = await client.containerItem.findMany({
+    select: {
+      containerId: true,
+      productId: true,
+      locationId: true,
+      status: true,
+      lotKey: true,
+      quantity: true,
+      container: { select: { locationId: true, status: true } },
+      product: { select: { tracking: true } },
+    },
+  });
+  const units = await client.serialUnit.groupBy({
+    by: ["containerId", "productId", "locationId"],
+    where: { containerId: { not: null } },
+    _count: { _all: true },
+  });
+  if (items.length === 0 && units.length === 0) return [];
+  const drift: StockDrift[] = [];
+  const push = (
+    item: (typeof items)[number],
+    said: ReturnType<typeof dec>,
+    balance: ReturnType<typeof dec>,
+  ) =>
+    drift.push({
+      productId: item.productId,
+      locationId: item.locationId,
+      status: item.status,
+      lotId: item.lotKey || null,
+      fromMovements: said.toString(),
+      balance: balance.toString(),
+      source: "containers",
+    });
+  const held = new Map<string, ReturnType<typeof dec>>();
+  for (const item of items) {
+    const id = `${item.productId}|${item.locationId}|${item.status}|${item.lotKey}`;
+    held.set(id, (held.get(id) ?? dec(0)).plus(item.quantity.toString()));
+    if (
+      item.container.locationId !== item.locationId ||
+      item.container.status !== "OPEN"
+    ) {
+      push(item, dec(item.quantity.toString()), dec(0));
+    }
+  }
+  for (const [id, said] of held) {
+    const balance = stored.get(id) ?? dec(0);
+    if (said.greaterThan(balance)) {
+      const item = items.find(
+        (row) =>
+          `${row.productId}|${row.locationId}|${row.status}|${row.lotKey}` ===
+          id,
+      )!;
+      push(item, said, balance);
+    }
+  }
+  const counted = new Map(
+    units.map((row) => [
+      `${row.containerId}|${row.productId}|${row.locationId}`,
+      row._count._all,
+    ]),
+  );
+  const serialItems = new Set<string>();
+  for (const item of items) {
+    if (item.product.tracking !== "SERIAL") continue;
+    const id = `${item.containerId}|${item.productId}|${item.locationId}`;
+    serialItems.add(id);
+    const marked = counted.get(id) ?? 0;
+    if (!dec(item.quantity.toString()).equals(marked)) {
+      push(item, dec(item.quantity.toString()), dec(marked));
+    }
+  }
+  // Units marked in a container that says nothing of them (or elsewhere).
+  for (const row of units) {
+    const id = `${row.containerId}|${row.productId}|${row.locationId}`;
+    if (serialItems.has(id)) continue;
+    drift.push({
+      productId: row.productId,
+      locationId: row.locationId ?? "",
+      status: "AVAILABLE",
+      lotId: null,
+      fromMovements: "0",
+      balance: String(row._count._all),
+      source: "containers",
+    });
+  }
   return drift;
 }
 

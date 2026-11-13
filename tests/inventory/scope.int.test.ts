@@ -51,6 +51,12 @@ import {
   setMinimum,
   setOutboundLine,
   type InventoryActor,
+  CONTAINERS_MODE,
+  closeContainer,
+  getContainer,
+  listContainers,
+  moveContainer,
+  packStock,
 } from "@/modules/inventory";
 import {
   addOrderLine,
@@ -998,6 +1004,76 @@ describe("limited to a zone of a warehouse", () => {
         "manual",
       );
     }
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("a pallet outside the zone does not exist for them; inside, it moves only inside (WMS-53)", async () => {
+    const turned = await updateOperationSetting(
+      owner,
+      operationSettings,
+      CONTAINERS_MODE.key,
+      "on",
+    );
+    if (!turned.ok) throw new Error(turned.error);
+    // The owner packs one in B1 (outside the zone).
+    await switchFacility(owner, facilityB);
+    await enter(shelfB, "3");
+    const outside = await packStock(owner, {
+      locationId: shelfB,
+      productId,
+      quantity: "2",
+    });
+    if (!outside.ok) throw new Error(JSON.stringify(outside));
+    await switchFacility(owner, facilityA);
+    expect(await getContainer(zoned, outside.containerId)).toBeNull();
+    expect((await listContainers(zoned)).total).toBe(0);
+    expect(
+      await moveContainer(zoned, {
+        containerId: outside.containerId,
+        locationCode: "Estante Z1",
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({ ok: false });
+    expect(await closeContainer(zoned, outside.containerId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    // Theirs, inside the zone: never to a place outside it.
+    const mine = await packStock(zoned, {
+      locationId: inZone,
+      productId,
+      quantity: "1",
+    });
+    if (!mine.ok) throw new Error(JSON.stringify(mine));
+    expect(
+      await moveContainer(zoned, {
+        containerId: mine.containerId,
+        locationCode: "Estante B1",
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { locationCode: expect.stringContaining("No encontramos") },
+    });
+    expect(
+      await moveContainer(zoned, {
+        containerId: mine.containerId,
+        locationCode: "Zona 1",
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await closeContainer(zoned, mine.containerId)).toMatchObject({
+      ok: true,
+    });
+    expect(await closeContainer(owner, outside.containerId)).toMatchObject({
+      ok: true,
+    });
+    await updateOperationSetting(
+      owner,
+      operationSettings,
+      CONTAINERS_MODE.key,
+      "off",
+    );
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

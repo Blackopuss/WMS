@@ -407,6 +407,10 @@ export type ReceiveFormState = {
     expiries: Record<string, string>;
     /** WMS-21B: serials typed for a line of a product by serial. */
     serials: Record<string, string>;
+    /** WMS-53: everything arrived on a pallet, its label and its kind. */
+    onPallet?: boolean;
+    containerCode?: string;
+    containerKind?: string;
   };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
@@ -473,6 +477,9 @@ export async function receivePurchaseOrderAction(
     lots,
     expiries,
     serials,
+    onPallet: formData.get("onPallet") === "1",
+    containerCode: String(formData.get("containerCode") ?? "").slice(0, 200),
+    containerKind: String(formData.get("containerKind") ?? "").slice(0, 200),
   };
   const answers = prev.answers + 1;
   // What a capacity warning would be about: what goes where.
@@ -509,6 +516,10 @@ export async function receivePurchaseOrderAction(
         ),
         // Only the button of the warning about these values carries it.
         acceptCapacity: formData.get("acceptCapacity") === stamp,
+        // WMS-53: «Llegó en una tarima».
+        container: values.onPallet
+          ? { code: values.containerCode, kind: values.containerKind }
+          : undefined,
       },
     );
   } catch (error) {

@@ -959,7 +959,7 @@ describe("picking", () => {
     expect(result).toMatchObject({ ok: true });
     const tasks = await picks(actor.organizationId);
     expect(
-      tasks.map((task) => [task.lot?.code, task.quantity.toString()]),
+      tasks.map((task) => [task.lot?.code, task.quantity!.toString()]),
     ).toEqual([
       ["NUEVO", "30"],
       ["VIEJO", "5"],
@@ -997,7 +997,7 @@ describe("picking", () => {
     expect(
       (await picks(actor.organizationId)).map((task) => [
         task.lot?.code,
-        task.quantity.toString(),
+        task.quantity!.toString(),
       ]),
     ).toEqual([
       ["VIEJO", "10"],
@@ -1057,7 +1057,7 @@ describe("picking", () => {
     expect(
       (await picks(actor.organizationId)).map((task) => [
         task.lot?.code,
-        task.quantity.toString(),
+        task.quantity!.toString(),
       ]),
     ).toEqual([
       ["L-ENERO", "120"],
@@ -1137,7 +1137,7 @@ describe("picking", () => {
     await acceptTask(actor, first!.id);
     const confirm = (lotCode?: string) =>
       confirmPick(actor, first!.id, {
-        productCode: first!.product.sku,
+        productCode: first!.product!.sku,
         locationCode: first!.fromLocation.name,
         quantity: "30",
         lotCode,
@@ -1172,7 +1172,7 @@ describe("picking", () => {
     await acceptTask(actor, second!.id);
     expect(
       await confirmPick(actor, second!.id, {
-        productCode: second!.product.sku,
+        productCode: second!.product!.sku,
         locationCode: second!.fromLocation.name,
         quantity: "5",
         lotCode: "VIEJO",
@@ -1206,7 +1206,7 @@ describe("picking", () => {
       (await picks(actor.organizationId)).map((task) => [
         task.fromLocationId,
         task.lotId,
-        task.quantity.toString(),
+        task.quantity!.toString(),
       ]),
     ).toEqual([
       [a, null, "30"],

@@ -174,6 +174,9 @@ model Organization {
   stockReservations       StockReservation[]
   outboundOrders          OutboundOrder[]
   outboundOrderLines      OutboundOrderLine[]
+  containers              Container[]
+  containerItems          ContainerItem[]
+  containerEvents         ContainerEvent[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -243,53 +246,57 @@ model LocationLevel {
 }
 
 model Location {
-  id             String                @id @db.Char(36)
-  organizationId String                @db.Char(36)
-  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  facilityId     String                @db.Char(36)
-  facility       Facility              @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict)
+  id                  String                @id @db.Char(36)
+  organizationId      String                @db.Char(36)
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId          String                @db.Char(36)
+  facility            Facility              @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict)
   /// Name given by the business; unique among the locations of its parent.
-  name           String                @db.VarChar(120)
+  name                String                @db.VarChar(120)
   /// Its level in the warehouse; NULL only for General. Fixed when the
   /// location is created (trigger).
-  levelId        String?               @db.Char(36)
-  level          LocationLevel?        @relation(fields: [organizationId, facilityId, levelId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  levelId             String?               @db.Char(36)
+  level               LocationLevel?        @relation(fields: [organizationId, facilityId, levelId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
   /// What is scanned or typed to confirm the place («A-01-03»); unique in
   /// its warehouse, upper case. Optional: without it, the name or path.
-  code           String?               @db.VarChar(30)
-  type           LocationType          @default(STORAGE)
+  code                String?               @db.VarChar(30)
+  type                LocationType          @default(STORAGE)
   /// Location that contains this one, in the same facility; NULL = root.
-  parentId       String?               @db.Char(36)
-  parent         Location?             @relation("LocationTree", fields: [organizationId, facilityId, parentId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
-  children       Location[]            @relation("LocationTree")
-  movementLines  StockMovementLine[]
-  balances       StockBalance[]
-  counts         StockCount[]
-  exitImportRows ExitImportRow[]
-  receiptLines   PurchaseReceiptLine[]
-  returnLines    PurchaseReturnLine[]
-  tasksFrom      WarehouseTask[]       @relation("TaskFrom")
-  tasksTo        WarehouseTask[]       @relation("TaskTo")
-  tasksPlaced    WarehouseTask[]       @relation("TaskPlaced")
-  reservations   StockReservation[]
-  serialUnits    SerialUnit[]
-  serialMoves    SerialMove[]
-  memberScopes   MembershipScope[]
+  parentId            String?               @db.Char(36)
+  parent              Location?             @relation("LocationTree", fields: [organizationId, facilityId, parentId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  children            Location[]            @relation("LocationTree")
+  movementLines       StockMovementLine[]
+  balances            StockBalance[]
+  counts              StockCount[]
+  exitImportRows      ExitImportRow[]
+  receiptLines        PurchaseReceiptLine[]
+  returnLines         PurchaseReturnLine[]
+  tasksFrom           WarehouseTask[]       @relation("TaskFrom")
+  tasksTo             WarehouseTask[]       @relation("TaskTo")
+  tasksPlaced         WarehouseTask[]       @relation("TaskPlaced")
+  reservations        StockReservation[]
+  serialUnits         SerialUnit[]
+  serialMoves         SerialMove[]
+  memberScopes        MembershipScope[]
+  containers          Container[]
+  containerItems      ContainerItem[]
+  containerEvents     ContainerEvent[]      @relation("ContainerEventAt")
+  containerEventsFrom ContainerEvent[]      @relation("ContainerEventFrom")
   /// What it may hold at most (WMS-22B); no row = no limit.
-  capacity       LocationCapacity?
+  capacity            LocationCapacity?
   /// Products or categories it is limited to (WMS-22B); none = anything.
-  restrictions   LocationRestriction[]
+  restrictions        LocationRestriction[]
   /// True for General, NULL for other locations (never false; SQL CHECK).
   /// MySQL allows multiple NULLs in the unique key, but only one true.
-  isDefault      Boolean?
+  isDefault           Boolean?
   /// True for the place where picked goods wait to be packed and shipped
   /// (WMS-14), NULL for the others; one per facility, created when the
   /// first order is released.
-  isStaging      Boolean?
+  isStaging           Boolean?
   /// Archived locations stay for the history; nothing is deleted.
-  archivedAt     DateTime?             @db.DateTime(3)
-  createdAt      DateTime              @default(now()) @db.DateTime(3)
-  updatedAt      DateTime              @updatedAt @db.DateTime(3)
+  archivedAt          DateTime?             @db.DateTime(3)
+  createdAt           DateTime              @default(now()) @db.DateTime(3)
+  updatedAt           DateTime              @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@unique([organizationId, facilityId, id])
@@ -999,6 +1006,8 @@ model Product {
   createdAt            DateTime              @default(now()) @db.DateTime(3)
   updatedAt            DateTime              @updatedAt @db.DateTime(3)
   outboundLines        OutboundOrderLine[]
+  containerItems       ContainerItem[]
+  containerEvents      ContainerEvent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, sku])
@@ -1164,6 +1173,11 @@ model StockMovement {
   /// Person who confirmed it (an account; not a company row).
   createdByUserId    String              @db.Char(36)
   createdAt          DateTime            @default(now()) @db.DateTime(3)
+  /// The container this movement moved whole (WMS-53, ADR 0043); null for
+  /// every other movement. Not reversed from Inventario.
+  containerId        String?             @db.Char(36)
+  container          Container?          @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  containerEvents    ContainerEvent[]
   lines              StockMovementLine[]
   appliedCount       StockCount?
   purchaseReceipt    PurchaseReceipt?
@@ -1176,6 +1190,7 @@ model StockMovement {
   @@index([organizationId, createdAt])
   @@index([organizationId, type, createdAt])
   @@index([organizationId, createdByUserId, createdAt])
+  @@index([organizationId, containerId])
   @@map("stock_movement")
 }
 
@@ -2089,8 +2104,13 @@ model WarehouseTask {
   /// it was less.
   pickedQuantity   Decimal?              @db.Decimal(12, 3)
   shortReason      String?               @db.VarChar(300)
-  productId        String                @db.Char(36)
-  product          Product               @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// What it moves: a product (with its quantity and unit), or a whole
+  /// container (WMS-53, ADR 0043; then no product, quantity, lot nor
+  /// order). Exactly one of the two (CHECK); neither ever changes.
+  productId        String?               @db.Char(36)
+  product          Product?              @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  containerId      String?               @db.Char(36)
+  container        Container?            @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   fromLocationId   String                @db.Char(36)
   fromLocation     Location              @relation("TaskFrom", fields: [organizationId, fromLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   toLocationId     String                @db.Char(36)
@@ -2103,9 +2123,10 @@ model WarehouseTask {
   /// The lot it moves, for a product by lot (WMS-21); never changes.
   lotId            String?               @db.Char(36)
   lot              Lot?                  @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  /// In the product's unit (base), checked with its quantity rule.
-  quantity         Decimal               @db.Decimal(12, 3)
-  unitCode         String                @db.VarChar(12)
+  /// In the product's unit (base), checked with its quantity rule; null
+  /// for a container task.
+  quantity         Decimal?              @db.Decimal(12, 3)
+  unitCode         String?               @db.VarChar(12)
   /// Instructions for whoever does it.
   note             String?               @db.VarChar(300)
   createdByUserId  String                @db.Char(36)
@@ -2127,10 +2148,12 @@ model WarehouseTask {
   /// Units by serial the person took (WMS-21B): scanned when picking or
   /// picking up, moved by the delivery.
   serials          WarehouseTaskSerial[]
+  containerEvents  ContainerEvent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
   @@unique([organizationId, movementId])
+  @@index([organizationId, containerId])
   @@index([organizationId, status, number])
   @@index([organizationId, assignedToUserId, status])
   @@index([organizationId, productId])
@@ -2175,6 +2198,8 @@ model Lot {
   countLines      StockCountLine[]
   receiptLines    PurchaseReceiptLine[]
   exitImportRows  ExitImportRow[]
+  containerItems  ContainerItem[]
+  containerEvents ContainerEvent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, productId, code])
@@ -2203,6 +2228,10 @@ model SerialUnit {
   locationId      String?               @db.Char(36)
   location        Location?             @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   status          StockStatus?
+  /// The container it is packed in (WMS-53, ADR 0043); null = loose. It
+  /// enters one only where the container is, available (trigger).
+  containerId     String?               @db.Char(36)
+  container       Container?            @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   createdByUserId String                @db.Char(36)
   createdAt       DateTime              @default(now()) @db.DateTime(3)
   moves           SerialMove[]
@@ -2213,6 +2242,7 @@ model SerialUnit {
   @@index([organizationId, productId, locationId, status])
   /// Traceability looks a serial up across products.
   @@index([organizationId, serial])
+  @@index([organizationId, containerId])
   @@map("serial_unit")
 }
 
@@ -2448,4 +2478,136 @@ model OutboundOrderLine {
   @@unique([organizationId, orderId, productId])
   @@index([organizationId, productId])
   @@map("outbound_order_line")
+}
+
+// ── Tarimas y contenedores (WMS-53, ADR 0043) ───────────────────────────
+
+/// What a container is for. Today only storage (a pallet, a box, a cage
+/// that holds stock in a location); packing (WMS-15) adds its own value,
+/// with the order it belongs to.
+enum ContainerPurpose {
+  STORAGE
+}
+
+enum ContainerStatus {
+  /// Holds stock, or may: it can be packed, moved, emptied.
+  OPEN
+  /// Taken apart: empty for good; it stays for its history.
+  CLOSED
+}
+
+/// A pallet, a box or a cage with its own label (an LPN) in one location
+/// (WMS-53, ADR 0043). It groups part of the stock of its location without
+/// being part of the balance's key: what its items say is never more than
+/// the balance (triggers on both sides, and the reconciliation). Moving it
+/// moves exactly its items with one movement. Never deleted: closed.
+model Container {
+  id              String           @id @db.Char(36)
+  organizationId  String           @db.Char(36)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Consecutive per company: «C-0001».
+  number          Int
+  /// What is scanned: «C-0001», or the label it already had (upper case).
+  code            String           @db.VarChar(40)
+  /// «Tarima», «Caja»… free text: it changes no rule.
+  kind            String           @db.VarChar(40)
+  purpose         ContainerPurpose @default(STORAGE)
+  status          ContainerStatus  @default(OPEN)
+  locationId      String           @db.Char(36)
+  location        Location         @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdByUserId String           @db.Char(36)
+  createdAt       DateTime         @default(now()) @db.DateTime(3)
+  closedAt        DateTime?        @db.DateTime(3)
+  closedByUserId  String?          @db.Char(36)
+  updatedAt       DateTime         @updatedAt @db.DateTime(3)
+  items           ContainerItem[]
+  events          ContainerEvent[]
+  serialUnits     SerialUnit[]
+  movements       StockMovement[]
+  tasks           WarehouseTask[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, number])
+  @@unique([organizationId, code])
+  @@index([organizationId, locationId, status])
+  @@index([organizationId, status, number])
+  @@map("container")
+}
+
+/// What a container holds now: one row per product, state and lot, in the
+/// location of its container. Deleted when it reaches zero (its history is
+/// in `container_event`). The sum of the items of a key (product,
+/// location, state, lot) never passes its balance (triggers).
+model ContainerItem {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  containerId    String       @db.Char(36)
+  container      Container    @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId      String       @db.Char(36)
+  product        Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Always the location of its container (trigger).
+  locationId     String       @db.Char(36)
+  location       Location     @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  status         StockStatus  @default(AVAILABLE)
+  lotId          String?      @db.Char(36)
+  lot            Lot?         @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// COALESCE(lotId, ''), like the balance.
+  lotKey         String       @default("") @db.VarChar(36)
+  /// In the product's unit; always more than zero.
+  quantity       Decimal      @db.Decimal(18, 3)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+  updatedAt      DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, containerId, productId, status, lotKey])
+  /// What the containers of a key hold, summed by the triggers.
+  @@index([organizationId, productId, locationId, status, lotKey])
+  @@index([organizationId, locationId])
+  @@map("container_item")
+}
+
+enum ContainerEventKind {
+  CREATED
+  PACKED
+  UNPACKED
+  MOVED
+  CLOSED
+}
+
+/// The history of a container (WMS-53): created, what was put in and taken
+/// out, where it moved (with its movement) and when it was taken apart.
+/// Never changes nor is deleted (triggers).
+model ContainerEvent {
+  id              String             @id @db.Char(36)
+  organizationId  String             @db.Char(36)
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  containerId     String             @db.Char(36)
+  container       Container          @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  kind            ContainerEventKind
+  /// Where it happened (MOVED: where it arrived).
+  locationId      String             @db.Char(36)
+  location        Location           @relation("ContainerEventAt", fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// MOVED: where it left from.
+  fromLocationId  String?            @db.Char(36)
+  fromLocation    Location?          @relation("ContainerEventFrom", fields: [organizationId, fromLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// PACKED / UNPACKED: what, in the product's unit.
+  productId       String?            @db.Char(36)
+  product         Product?           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  lotId           String?            @db.Char(36)
+  lot             Lot?               @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  quantity        Decimal?           @db.Decimal(18, 3)
+  /// Serials of the units, «A1, A2», for a product by serial.
+  serials         String?            @db.Text
+  /// MOVED: the movement that moved its stock, and the task, if any.
+  movementId      String?            @db.Char(36)
+  movement        StockMovement?     @relation(fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  taskId          String?            @db.Char(36)
+  task            WarehouseTask?     @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdByUserId String             @db.Char(36)
+  createdAt       DateTime           @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, containerId, id])
+  @@map("container_event")
 }

@@ -642,6 +642,43 @@ beforeAll(async () => {
         serialUnitId,
       },
     });
+    // A pallet holding that unit, and its history (WMS-53).
+    const containerId = newId();
+    await db.container.create({
+      data: {
+        id: containerId,
+        organizationId,
+        number: 1,
+        code: "C-0001",
+        kind: "Tarima",
+        locationId: location.id,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.containerItem.create({
+      data: {
+        id: newId(),
+        organizationId,
+        containerId,
+        productId: serialProductId,
+        locationId: location.id,
+        quantity: "1",
+      },
+    });
+    await db.serialUnit.update({
+      where: { id: serialUnitId },
+      data: { containerId },
+    });
+    await db.containerEvent.create({
+      data: {
+        id: newId(),
+        organizationId,
+        containerId,
+        kind: "CREATED",
+        locationId: location.id,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // A capacity and a restriction of that rack (WMS-22B).
     await db.locationCapacity.create({
       data: { id: newId(), organizationId, locationId: rackId, maxUnits: "50" },

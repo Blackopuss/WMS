@@ -118,6 +118,16 @@ const receiveSchema = z.object({
    * and receives it anyway (WMS-22B); only counts where the company warns.
    */
   acceptCapacity: z.boolean().optional(),
+  /**
+   * WMS-53 (ADR 0043): everything arrived in one container (a pallet), with
+   * its label when it has one and its kind. Absent = loose.
+   */
+  container: z
+    .object({
+      code: z.string().trim().max(200).optional(),
+      kind: z.string().trim().max(200).optional(),
+    })
+    .optional(),
 });
 
 export type ReceiveInput = z.input<typeof receiveSchema>;
@@ -436,6 +446,12 @@ async function receiveOnce(
               500,
             ),
           acceptCapacity: data.acceptCapacity === true,
+          container: data.container
+            ? {
+                code: data.container.code ?? null,
+                kind: data.container.kind ?? null,
+              }
+            : null,
         },
       );
       if (!entry.ok) {

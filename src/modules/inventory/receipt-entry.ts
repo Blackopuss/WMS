@@ -7,7 +7,13 @@ import { lockRows, type TenantDb } from "@/server";
 
 import { MAX_BALANCE, formatStock, type InventoryActor } from "./movements";
 import { checkPlacement } from "./placement";
-import { createPutawayTasks } from "./putaway";
+import { createContainerPutawayTask, createPutawayTasks } from "./putaway";
+import {
+  packReceived,
+  prepareReceiptContainer,
+  type ReceiptContainer,
+  type ReceiptContainerInput,
+} from "./containers";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForEntry } from "./lot-resolve";
@@ -70,6 +76,12 @@ export type ReceiptEntryInput = {
    * warns about, and receives it anyway (WMS-22B).
    */
   acceptCapacity?: boolean;
+  /**
+   * WMS-53 (ADR 0043): everything arrived in one container (a pallet):
+   * its label when it has one (an open one with that code in the same
+   * place gets it added), and its kind. Null = loose.
+   */
+  container?: ReceiptContainerInput | null;
 };
 
 export type ReceiptEntryLine = {
@@ -108,6 +120,8 @@ export type ReceiptEntryResult =
       notes: string[];
       /** Put-away tasks created for what arrived (WMS-52). */
       putawayTasks: number;
+      /** The container it arrived in (WMS-53), if any. */
+      containerId: string | null;
     }
   | {
       ok: false;
@@ -183,6 +197,34 @@ export async function postReceiptEntry(
       line: null,
       error: locationProblem ?? "Esa ubicación ya no existe. Elige otra.",
     };
+  }
+
+  // WMS-53: a container is in one place, so everything goes there. It is
+  // decided (and an existing one locked) before the capacity, whose lock
+  // is always the last.
+  let box: ReceiptContainer | null = null;
+  if (input.container) {
+    const elsewhere = input.lines.findIndex(
+      (line) => line.locationId && line.locationId !== location.id,
+    );
+    if (elsewhere >= 0) {
+      return {
+        ok: false,
+        line: elsewhere,
+        error:
+          "Lo que llega en una tarima va a un solo lugar: recibe esta línea por separado o en el mismo lugar.",
+      };
+    }
+    const prepared = await prepareReceiptContainer(
+      tx,
+      actor,
+      input.container,
+      location,
+    );
+    if ("error" in prepared) {
+      return { ok: false, line: null, error: prepared.error };
+    }
+    box = prepared;
   }
 
   const products = await tx.product.findMany({
@@ -438,6 +480,37 @@ export async function postReceiptEntry(
       });
     }
   }
+  // WMS-53: everything that arrived goes into its container, now that its
+  // balances exist; and the container is what gets put away (one task).
+  if (box) {
+    const packed = await packReceived(
+      tx,
+      actor,
+      box,
+      location.id,
+      lines.map((line) => ({
+        productId: line.productId,
+        lotId: line.lotId,
+        quantity: line.baseQuantity,
+        units: line.units,
+      })),
+    );
+    const task = await createContainerPutawayTask(
+      tx,
+      actor,
+      packed.containerId,
+    );
+    return {
+      ok: true,
+      movementId,
+      locationId: location.id,
+      locationName: location.name,
+      lines,
+      notes: [...placed.notes, packed.note, ...(task ? [task.note] : [])],
+      putawayTasks: task ? 1 : 0,
+      containerId: packed.containerId,
+    };
+  }
   // WMS-52: what arrived at a place «de paso» gets its put-away tasks,
   // when the company works that way: nothing stays there without one.
   const putaway = await createPutawayTasks(
@@ -459,5 +532,6 @@ export async function postReceiptEntry(
     lines,
     notes: [...placed.notes, ...(putaway.note ? [putaway.note] : [])],
     putawayTasks: putaway.tasks.length,
+    containerId: null,
   };
 }

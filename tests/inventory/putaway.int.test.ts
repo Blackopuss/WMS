@@ -442,7 +442,7 @@ describe("tasks when goods arrive", () => {
       toLocationId: shelf,
       quantity: expect.anything(),
     });
-    expect(tasks[0]!.quantity.toString()).toBe("8");
+    expect(tasks[0]!.quantity!.toString()).toBe("8");
   }, 30_000);
 
   it("a warehouse with nowhere to keep goods gets no task", async () => {
@@ -639,7 +639,7 @@ describe("confirming a put-away", () => {
       (task) => task.status === "PENDING",
     );
     expect(open).toHaveLength(1);
-    expect(open[0]!.quantity.toString()).toBe("9");
+    expect(open[0]!.quantity!.toString()).toBe("9");
     expect(await reconcileStock(actor.organizationId)).toEqual([]);
   }, 30_000);
 });

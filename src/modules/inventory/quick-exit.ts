@@ -28,7 +28,7 @@ import {
 import { lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake } from "./lot-resolve";
-import { freeToTake, reservedMessage } from "./reservations";
+import { blockedMessage, freeToTake } from "./reservations";
 
 /**
  * Quick exit of several lines (INV-28), «salida por venta»: many products
@@ -531,10 +531,17 @@ export async function registerQuickExit(
           fail(
             line.index,
             "invalid",
-            `${line.productName}: ${reservedMessage(
+            `${line.productName}: ${await blockedMessage(
+              tx,
               freeHere.lessThan(freeAnywhere) ? freeHere : freeAnywhere,
               line.unitCode,
               "sacar",
+              {
+                productId: line.productId,
+                locationId: line.locationId,
+                locationName: line.locationName,
+                lotId: line.lotId,
+              },
             )}`,
           );
           continue;

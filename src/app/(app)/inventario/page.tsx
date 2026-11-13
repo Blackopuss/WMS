@@ -1,4 +1,5 @@
 import {
+  Boxes,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -25,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import {
   countLowStock,
   countExpiringLots,
+  containersVisible,
   countUnplacedStock,
   formatStock,
   getInventoryValue,
@@ -136,6 +138,11 @@ export default async function InventarioPage({
     !showArchived && access.can("inventory.stock.read")
       ? await countUnplacedStock(actor)
       : 0;
+  // WMS-53: pallets and boxes, only for a company that uses them.
+  const showContainers =
+    !showArchived &&
+    access.can("inventory.stock.read") &&
+    (await containersVisible(actor));
   // WMS-21: lots with stock that expired or are about to.
   const expiringCount =
     !showArchived && access.can("inventory.stock.read")
@@ -230,17 +237,29 @@ export default async function InventarioPage({
           ) : undefined
         }
       />
-      {!showArchived && access.can("inventory.movement.read") && (
-        <p className="-mt-2 flex flex-wrap gap-x-6">
-          <Link
-            href="/inventario/rastrear"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <ScanSearch aria-hidden="true" className="size-4" />
-            Rastrear lote, serie o pedido
-          </Link>
-        </p>
-      )}
+      {!showArchived &&
+        (access.can("inventory.movement.read") || showContainers) && (
+          <p className="-mt-2 flex flex-wrap gap-x-6">
+            {access.can("inventory.movement.read") && (
+              <Link
+                href="/inventario/rastrear"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <ScanSearch aria-hidden="true" className="size-4" />
+                Rastrear lote, serie o pedido
+              </Link>
+            )}
+            {showContainers && (
+              <Link
+                href="/inventario/tarimas"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <Boxes aria-hidden="true" className="size-4" />
+                Tarimas y cajas
+              </Link>
+            )}
+          </p>
+        )}
       {worth && (
         <p className="-mt-2 text-sm text-muted-foreground tabular-nums">
           Tu inventario vale {worth.total} a costo

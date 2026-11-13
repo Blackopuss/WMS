@@ -188,7 +188,7 @@ async function pickOrder(
   });
   await acceptTask(actor, task.id);
   const confirmed = await confirmPick(actor, task.id, {
-    productCode: task.product.sku,
+    productCode: task.product!.sku,
     locationCode: task.fromLocation.name,
     quantity,
     ...pick,

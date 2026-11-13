@@ -11,7 +11,7 @@ Todo lo que cambia o explica existencias: movimientos y saldos (por producto,
 ubicación, estado y lote), costo promedio, lotes y caducidad, números de
 serie y trazabilidad, capacidad de
 ubicaciones al meter mercancía, reservas, tareas de traslado, surtido y
-acomodo con recomendación,
+acomodo con recomendación, tarimas y contenedores,
 pedidos de salida, conteos, mínimos, importaciones y exportaciones, y los
 resúmenes de Inicio. Productos y ubicaciones son del núcleo
 ([catalog](catalog.md), [locations](locations.md)); Inventario los usa.
@@ -43,6 +43,15 @@ código»):
   decide solo `putawayTarget`. Un apartado de tarea (`TASK_HOLD`) solo
   cuenta en su ubicación: las lecturas de todo un producto filtran con
   `PRODUCT_HOLDS`.
+- Tarimas y contenedores (WMS-53, ADR 0043): un contenedor agrupa parte del
+  saldo de su ubicación (`container_item`) sin entrar en la llave del saldo.
+  Lo que está dentro no se toma suelto: `freeToTake`/`freeToMoveFrom` lo
+  restan como un apartado de la ubicación, `serialsForTake` rechaza sus
+  unidades y ajustes, conteos y salidas importadas comparan con
+  `containedAt`; la base rechaza cualquier saldo por debajo de lo contenido.
+  Moverlo es `moveContainerWithin` (un `TRANSFER` con `containerId`).
+  Candados: productos → ubicaciones → documento → contenedor → tarea →
+  capacidad.
 - Cada formulario que confirma un movimiento manda `idempotencyKey`.
 
 ## Servicios públicos (`index.ts`)
@@ -54,15 +63,16 @@ código»):
 | Existencias de un producto | `product-stock.ts`, `stock-status.ts` | `getProductStock` («hay», «disponible», apartado); estados del saldo y filtros `availableOfLot`, `AVAILABLE_ANY_LOT` |
 | Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo), `permissionForStatusChange` |
 | Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento. `TASK_HOLD` (fuente de lo que aparta una tarea de acomodo) y `PRODUCT_HOLDS` (filtro de lo apartado de todo un producto) |
-| Acomodo | `putaway.ts`, `putaway-rules.ts` | `putawayTarget` (la única que decide el lugar recomendado), `createPutawayTasks` (dentro de la transacción de una recepción o entrada), `createPendingPutawayTasks` («Crear tareas de acomodo»), `isTaskNumberClash`; orden puro `rankPutawayPlaces` |
+| Acomodo | `putaway.ts`, `putaway-rules.ts` | `putawayTarget` (la única que decide el lugar recomendado), `createPutawayTasks` (dentro de la transacción de una recepción o entrada), `createContainerPutawayTask` (una tarea por tarima, WMS-53), `createPendingPutawayTasks` («Crear tareas de acomodo», también para tarimas), `isTaskNumberClash`; orden puro `rankPutawayPlaces` |
 | Lotes | `lots.ts`, `lot-rules.ts` | lotes con existencias, ficha, por caducar (`listExpiringLots`, `countExpiringLots`), `changeLotExpiry`; reglas puras del código y la fecha del lote |
 | Series y trazabilidad | `serials.ts`, `serial-rules.ts`, `traceability.ts` | reglas puras de la serie (`normalizeSerial`, `parseSerialList`, `MAX_SERIALS_PER_OPERATION`, `serialsText`); `serialUnitsOfLines` (para Compras); `findTraceMatches` (un cuadro: lote, serie, `PS-…`, `OC-…`), `traceSerial`, `traceLot`, `tracePurchaseOrder`, `listProductSerials`; `listMovements` filtra por `serialUnitId` y cada línea trae sus `serials` |
+| Tarimas y contenedores | `containers.ts`, `container-rules.ts`, `contained.ts` | `packStock` (armar o agregar), `unpackStock` (sacar), `closeContainer` (desarmar), `moveContainer` (un escaneo) y su núcleo `moveContainerWithin`, `prepareReceiptContainer`/`packReceived` (para la recepción), lecturas `listContainers`, `getContainer`, `listContainerEvents`, `findContainerByCode`, `listOpenContainersAt`, `containersEnabled`, `containersVisible`; `containedAt` (lo que hay en contenedores de una llave); reglas puras del código (`C-0001`) y del tipo |
 | Capacidad | `placement.ts`, `location-occupancy.ts` | `checkPlacement`, `loadPlacementRules`; `getLocationOccupancy` (ocupación derivada) |
 | Costo y valor | `average-cost.ts`, `inventory-value.ts` | `parseCost`, `getInventoryValue`, `getProductCost`, `mayReadInventoryCosts` |
 | Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`) y `postReturnExit` (`RETURN`), dentro de la transacción de la recepción o devolución |
 | Mínimos | `minimums.ts` | `setMinimum`, `getMinimum`, `listLowStock`, `countLowStock` |
 | Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount`, `cancelCount`, `getCount`, `listCounts` |
-| Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK` y `PUTAWAY` |
+| Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK` y `PUTAWAY`; una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar |
@@ -100,7 +110,8 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 ## Tablas
 
 `stock_movement`, `stock_movement_line`, `stock_balance`, `lot`,
-`serial_unit`, `serial_move`, `warehouse_task_serial`,
+`serial_unit`, `serial_move`, `warehouse_task_serial`, `container`,
+`container_item`, `container_event`,
 `product_cost`, `stock_minimum`, `stock_count`, `stock_count_line`,
 `stock_count_capture`, `warehouse_task`, `stock_reservation`,
 `outbound_order`, `outbound_order_line`, `product_import`,
@@ -122,6 +133,7 @@ la transacción que decide:
 | `inventory.lot.expiry_notice` | `7`, `15`, **`30`**, `60`, `90` (días) |
 | `inventory.putaway.mode` | **`manual`**, `tasks` (WMS-52) |
 | `inventory.putaway.preference` | **`together`** (junto a lo mismo), `emptiest` |
+| `inventory.containers.mode` | **`off`**, `on` (tarimas y cajas, WMS-53) |
 
 ## Trabajos en segundo plano
 
@@ -136,7 +148,8 @@ la transacción que decide:
 salidas), 0031 (costo promedio), 0032 (sin Ventas), 0033 (estado y lote del
 saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 (capacidad), 0040 (lotes y caducidad), 0041 (números de serie y
-trazabilidad), 0042 (acomodo con recomendación).
+trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
+contenedores).
 
 ## Pruebas
 
@@ -148,4 +161,6 @@ Acomodo en `putaway.int.test.ts`. Casos de alcance en
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara
 cada saldo de un producto por serie con sus unidades dentro (`source:
-"serial_units"` y `"serial_moves"`).
+"serial_units"` y `"serial_moves"`), y lo que dicen los contenedores contra el
+saldo, su ubicación y sus series (`source: "containers"`). Tarimas en
+`containers.int.test.ts`.

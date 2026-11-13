@@ -128,6 +128,7 @@ type Tx = Pick<
   | "auditEvent"
   | "stockBalance"
   | "stockCount"
+  | "container"
   | "locationCapacity"
   | "locationRestriction"
   | "product"
@@ -1100,6 +1101,19 @@ export async function archiveLocation(
       reject(
         "not_allowed",
         "Hay un conteo abierto en esta ubicación. Aplícalo o cancélalo antes de archivarla.",
+      );
+    }
+    // WMS-53: nor one that still has a pallet or box (even empty): move it
+    // or take it apart first. Packing and moving lock this location too.
+    const boxes = await tx.container.count({
+      where: { locationId: location.id, status: "OPEN" },
+    });
+    if (boxes > 0) {
+      reject(
+        "not_allowed",
+        boxes === 1
+          ? "Aquí hay una tarima o caja armada. Muévela o desármala antes de archivarla."
+          : `Aquí hay ${boxes} tarimas o cajas armadas. Muévelas o desármalas antes de archivarla.`,
       );
     }
     const inside = await tx.location.count({
