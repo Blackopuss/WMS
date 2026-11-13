@@ -1,0 +1,96 @@
+# Registro de cambios
+
+Un renglón por paso cerrado del WMS, el más reciente primero, con la fecha de
+su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
+`docs/PLAN_WMS_V3.md` (y en `docs/PLAN_WMS.md` y `docs/PLAN_WMS_V2.md` los
+anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
+cerrar cada paso.
+
+## 2026-11-13
+
+- **WMS-51** · Documentación técnica base: `docs/arquitectura/` (capas,
+  petición, multiempresa, permisos, worker y base), modelo de datos generado del
+  esquema con su prueba, un documento por módulo y área de plataforma, cómo
+  agregar un módulo y este registro.
+- **WMS-21A** · Lotes y caducidad (ADR 0040): control por lote y caducidad por
+  producto, lote en saldos, movimientos, reservas, tareas y recepciones; surtido
+  FEFO/FIFO como ajuste; lista «Por caducar» y ficha del lote. Series y
+  trazabilidad quedan para WMS-21B.
+- **Seguridad** · Auditoría 5 del código nuevo del WMS
+  (`docs/seguridad/AUDITORIA_5.md`): cuatro hallazgos cerrados; la reversa
+  respeta lo apartado.
+
+## 2026-11-12
+
+- **WMS-22B** · Capacidad y restricciones de ubicación (ADR 0039): unidades,
+  peso y volumen máximos, solo ciertos productos o categorías, cuarentena solo
+  para lo no disponible; avisar o impedir según la empresa.
+- **WMS-73** · Resumen del día en Inicio: entradas, salidas, recepciones,
+  tareas, pedidos surtidos y quién hizo qué, por día de la empresa y almacén
+  activo (permiso `inventory.summary.read`).
+- **WMS-72** · Existencias sin acomodar: lo que espera en «General» o en
+  recepción, con desde cuándo, y aviso en Inicio e Inventario.
+- **WMS-71** · Aviso de entrada repetida: la misma entrada al poco rato pide
+  confirmar; la ventana es un ajuste de la empresa.
+- **WMS-20** · Alcance de permisos por almacén y zona (ADR 0038): la persona
+  limitada solo ve y mueve lo suyo, también desde la invitación; las cifras de
+  toda la empresa son para quien no tiene límite.
+
+## 2026-11-11
+
+- **Sin cobro en línea** (ADR 0037): fuera la compra del plan en línea,
+  proveedores de pago, webhook y códigos; el plan se contrata por correo y lo
+  activa la plataforma (auditoría 4).
+
+## 2026-11-10
+
+- **WMS-22A** · Niveles de ubicación por almacén con nombre libre, código de
+  ubicación que se escanea y uso de la ubicación (ADR 0036).
+- **WMS-18** · Varios almacenes por empresa, almacén activo por persona y cupo
+  de almacenes en el plan (ADR 0035).
+- **WMS-50** · Rol de Gerencia: lee y exporta todo lo operativo, nunca escribe.
+- **WMS-49** · Ajustes de operación por empresa en Configuración › Operación
+  (ADR 0034); primero, de dónde se surte.
+- **Plan v3** · Plan revisado contra las instrucciones del fundador, por fases
+  (`docs/PLAN_WMS_V3.md`).
+- **WMS-14** · Surtido con tareas hacia «Preparación»: al liberar un pedido se
+  aparta por ubicación y se crean sus tareas.
+- **WMS-13B** · Importar pedidos de salida desde Excel o CSV: todos los
+  borradores o ninguno, sin duplicar un pedido.
+
+## 2026-11-09
+
+- **WMS-13** · Pedidos de salida: borrador, liberar aparta existencias,
+  cancelar las libera; sección «Pedidos».
+- **WMS-12** · Reservas de existencias (`stock_reservation`): lo apartado no
+  sale ni se mueve a mano. Cierra la etapa A.
+- **WMS-11** · Cambio de estado de existencias con motivo (movimiento
+  `STATUS_CHANGE`).
+- **WMS-10** · Estado y lote en saldos y líneas de movimiento; operaciones
+  sobre lo disponible.
+- **WMS-09** · Dimensiones del saldo: producto, ubicación, estado y lote (ADR
+  0033).
+- **WMS-08** · Inicio por rol con el bloque «Para hoy».
+- **WMS-06/07** · Tareas de traslado (`warehouse_task`) y la sección «Tareas»
+  pensada para el teléfono.
+- **WMS-05** · Roles de piso: Supervisor de almacén, Almacenista y
+  Montacarguista.
+- **WMS-04** · Menú por tareas de almacén, sección «Recepción» y la marca «WMS».
+- **WMS-03** · Ventas fuera de la base y bases locales `wms_dev`, `wms_test`,
+  `wms_shadow`.
+- **WMS-02** · Ventas fuera del código (ADR 0032).
+- **WMS-01** · Plan del WMS, especificación v5 e identidad del repositorio.
+
+## Antes del WMS (2026-10 a 2026-11-09)
+
+El repositorio parte de un sistema de inventario anterior. Se conservó y sigue
+vigente: núcleo multiempresa (cuentas, MFA, empresas, roles y permisos,
+bitácora, módulos, plan y cupos, consola interna, acceso de soporte; ADR
+0003–0009, 0026, 0027, 0029), Inventario (productos, unidades y
+presentaciones, ubicaciones, movimientos y saldos, conteos, mínimos,
+importaciones y exportaciones, costo promedio; ADR 0010–0015, 0031), Compras
+(proveedores, órdenes, PDF y correo, recepciones, devoluciones, sugerencias y
+reportes; ADR 0016–0021), sitio público y operación (despliegue, alertas,
+correo SMTP; ADR 0022–0025). Ventas (punto de venta, caja, cotizaciones, ventas
+a plazos; ADR 0030) y el cobro en línea (ADR 0028) se quitaron después; siguen
+en el historial de git.
