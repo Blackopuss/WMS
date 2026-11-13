@@ -369,3 +369,27 @@ export {
   normalizeLotCode,
   parseLotDay,
 } from "./lot-rules";
+export {
+  MAX_SERIALS_PER_OPERATION,
+  normalizeSerial,
+  parseSerialList,
+  serialsText,
+} from "./serial-rules";
+export { serialsOfLines as serialUnitsOfLines } from "./serials";
+export {
+  SERIAL_PAGE_SIZE,
+  findTraceMatches,
+  listProductSerials,
+  traceLot,
+  tracePurchaseOrder,
+  traceSerial,
+} from "./traceability";
+export type {
+  LotTrace,
+  PurchaseTrace,
+  SerialPage,
+  SerialTrace,
+  TraceMatch,
+  TraceOrder,
+  TraceOrigin,
+} from "./traceability";

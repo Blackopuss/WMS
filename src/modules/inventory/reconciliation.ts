@@ -22,6 +22,13 @@ export type StockDrift = {
   fromMovements: string;
   /** What the balance row says ("0" when there is no row). */
   balance: string;
+  /**
+   * WMS-21B: the difference is in the units by serial, not in the lines.
+   * `serial_units`: the units that say they are there (`fromMovements`
+   * is their count); `serial_moves`: the units whose last move left them
+   * there.
+   */
+  source?: "serial_units" | "serial_moves";
 };
 
 /** Differences between balances and movement history; empty when they agree. */
@@ -78,6 +85,86 @@ export async function reconcileStock(
         lotId: lotKey || null,
         fromMovements: fromMovements.toString(),
         balance: balance.toString(),
+      });
+    }
+  }
+  drift.push(...(await reconcileSerials(organizationId, stored)));
+  return drift;
+}
+
+/**
+ * WMS-21B (ADR 0041): for a product by serial, the balance of each
+ * location and state is also the number of its units there — both as the
+ * units say (`serial_unit`) and as their last move left them
+ * (`serial_move`). Empty when they agree.
+ */
+async function reconcileSerials(
+  organizationId: string,
+  stored: Map<string, ReturnType<typeof dec>>,
+): Promise<StockDrift[]> {
+  const client = forOrganization(organizationId);
+  const serialProducts = await client.product.findMany({
+    where: { OR: [{ tracking: "SERIAL" }, { serialUnits: { some: {} } }] },
+    select: { id: true },
+  });
+  if (serialProducts.length === 0) return [];
+  const ids = new Set(serialProducts.map((product) => product.id));
+  const [inside, lastMoves] = await Promise.all([
+    client.serialUnit.groupBy({
+      by: ["productId", "locationId", "status"],
+      where: { locationId: { not: null } },
+      _count: { _all: true },
+    }),
+    client.serialMove.groupBy({ by: ["serialUnitId"], _max: { id: true } }),
+  ]);
+  const byMoves = new Map<string, number>();
+  const lastIds = lastMoves
+    .map((row) => row._max.id)
+    .filter((id): id is string => Boolean(id));
+  for (let start = 0; start < lastIds.length; start += 1_000) {
+    const moves = await client.serialMove.findMany({
+      where: { id: { in: lastIds.slice(start, start + 1_000) } },
+      select: {
+        productId: true,
+        locationId: true,
+        status: true,
+        direction: true,
+      },
+    });
+    for (const move of moves) {
+      if (move.direction !== "IN") continue;
+      const id = `${move.productId}|${move.locationId}|${move.status}|`;
+      byMoves.set(id, (byMoves.get(id) ?? 0) + 1);
+    }
+  }
+  const byUnits = new Map(
+    inside.map((row) => [
+      `${row.productId}|${row.locationId}|${row.status}|`,
+      row._count._all,
+    ]),
+  );
+  const balances = [...stored.keys()].filter((id) =>
+    ids.has(id.split("|")[0] ?? ""),
+  );
+  const drift: StockDrift[] = [];
+  for (const [source, counted] of [
+    ["serial_units", byUnits],
+    ["serial_moves", byMoves],
+  ] as const) {
+    for (const id of new Set([...balances, ...counted.keys()])) {
+      const balance = stored.get(id) ?? dec(0);
+      const units = counted.get(id) ?? 0;
+      if (balance.equals(units)) continue;
+      const [productId = "", locationId = "", status = "", lotKey = ""] =
+        id.split("|");
+      drift.push({
+        productId,
+        locationId,
+        status,
+        lotId: lotKey || null,
+        fromMovements: String(units),
+        balance: balance.toString(),
+        source,
       });
     }
   }

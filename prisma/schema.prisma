@@ -168,6 +168,9 @@ model Organization {
   supportAccesses         SupportAccess[]
   warehouseTasks          WarehouseTask[]
   lots                    Lot[]
+  serialUnits             SerialUnit[]
+  serialMoves             SerialMove[]
+  warehouseTaskSerials    WarehouseTaskSerial[]
   stockReservations       StockReservation[]
   outboundOrders          OutboundOrder[]
   outboundOrderLines      OutboundOrderLine[]
@@ -268,6 +271,8 @@ model Location {
   tasksFrom      WarehouseTask[]       @relation("TaskFrom")
   tasksTo        WarehouseTask[]       @relation("TaskTo")
   reservations   StockReservation[]
+  serialUnits    SerialUnit[]
+  serialMoves    SerialMove[]
   memberScopes   MembershipScope[]
   /// What it may hold at most (WMS-22B); no row = no limit.
   capacity       LocationCapacity?
@@ -986,6 +991,7 @@ model Product {
   returnLines          PurchaseReturnLine[]
   warehouseTasks       WarehouseTask[]
   lots                 Lot[]
+  serialUnits          SerialUnit[]
   reservations         StockReservation[]
   cost                 ProductCost?
   status               ProductStatus         @default(ACTIVE)
@@ -1004,13 +1010,15 @@ model Product {
   @@map("product")
 }
 
-/// How the stock of a product is told apart (WMS-21, ADR 0040). A serial
-/// number will be one more value (WMS-21B).
+/// How the stock of a product is told apart (WMS-21, ADR 0040 and 0041).
 enum ProductTracking {
   /// As a whole: one balance per location and state.
   NONE
   /// By lot: every line and balance names its lot.
   LOT
+  /// By serial number (WMS-21B): whole units, each one a `serial_unit`;
+  /// every line says which units it moved (`serial_move`).
+  SERIAL
 }
 
 /// Whether the lots of a product carry an expiry date (WMS-21).
@@ -2108,6 +2116,9 @@ model WarehouseTask {
   movementId       String?               @db.Char(36)
   movement         StockMovement?        @relation(fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   updatedAt        DateTime              @updatedAt @db.DateTime(3)
+  /// Units by serial the person took (WMS-21B): scanned when picking or
+  /// picking up, moved by the delivery.
+  serials          WarehouseTaskSerial[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
@@ -2161,6 +2172,86 @@ model Lot {
   /// The list of lots about to expire reads by date.
   @@index([organizationId, expiresOn])
   @@map("lot")
+}
+
+// ── Números de serie (WMS-21B, ADR 0041) ───────────────────────────────
+
+/// One unit of a product controlled by serial number: its serial —
+/// normalized like a lot code, unique per product in the company — and
+/// where it is now (location and state) or null while it is out of the
+/// warehouse. Only the trigger of `serial_move` changes where it is, so
+/// it always follows its moves; product and serial never change and a
+/// unit is never deleted (triggers). Units inside a location and state
+/// add up to the balance of that product there (reconciliation).
+model SerialUnit {
+  id              String                @id @db.Char(36)
+  organizationId  String                @db.Char(36)
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  productId       String                @db.Char(36)
+  product         Product               @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  serial          String                @db.VarChar(64)
+  /// Where it is; null = out of the warehouse (it left, or not yet in).
+  locationId      String?               @db.Char(36)
+  location        Location?             @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  status          StockStatus?
+  createdByUserId String                @db.Char(36)
+  createdAt       DateTime              @default(now()) @db.DateTime(3)
+  moves           SerialMove[]
+  tasks           WarehouseTaskSerial[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, productId, serial])
+  @@index([organizationId, productId, locationId, status])
+  /// Traceability looks a serial up across products.
+  @@index([organizationId, serial])
+  @@map("serial_unit")
+}
+
+/// Which unit a movement line moved (WMS-21B): one row per unit and line.
+/// Written right before its line, in the same transaction; the trigger of
+/// `stock_movement_line` checks that a line of a product by serial has
+/// exactly one per unit it moves, all with its product, location, state
+/// and direction, and the trigger of this table moves the unit (out of
+/// where it is, or into the line's location). Never changes nor is
+/// deleted. `movementLineId` has no foreign key: the line is inserted
+/// after its rows.
+model SerialMove {
+  id             String         @id @db.Char(36)
+  organizationId String         @db.Char(36)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  serialUnitId   String         @db.Char(36)
+  serialUnit     SerialUnit     @relation(fields: [organizationId, serialUnitId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  movementLineId String         @db.Char(36)
+  productId      String         @db.Char(36)
+  locationId     String         @db.Char(36)
+  location       Location       @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  status         StockStatus
+  direction      StockDirection
+  createdAt      DateTime       @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, movementLineId, serialUnitId])
+  @@index([organizationId, serialUnitId, id])
+  @@map("serial_move")
+}
+
+/// Units by serial a warehouse task took (WMS-21B): scanned when the
+/// person confirms a pick or picks up a transfer; its delivery moves
+/// exactly these. While the task is open nobody else takes them.
+model WarehouseTaskSerial {
+  id             String        @id @db.Char(36)
+  organizationId String        @db.Char(36)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  taskId         String        @db.Char(36)
+  task           WarehouseTask @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  serialUnitId   String        @db.Char(36)
+  serialUnit     SerialUnit    @relation(fields: [organizationId, serialUnitId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt      DateTime      @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, taskId, serialUnitId])
+  @@index([organizationId, serialUnitId])
+  @@map("warehouse_task_serial")
 }
 
 // ── Reservas (WMS-12, ADR 0033) ─────────────────────────────────────────

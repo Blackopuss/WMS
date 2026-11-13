@@ -552,6 +552,96 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A product by serial with one unit inside, its move and a task that
+    // took it (WMS-21B): the move is written before its line.
+    const serialProductId = newId();
+    await db.product.create({
+      data: {
+        id: serialProductId,
+        organizationId,
+        sku: "EQ-001",
+        name: "Equipo con serie",
+        tracking: "SERIAL",
+      },
+    });
+    const serialUnitId = newId();
+    await db.serialUnit.create({
+      data: {
+        id: serialUnitId,
+        organizationId,
+        productId: serialProductId,
+        serial: "SN-1",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const serialMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: serialMovementId,
+        organizationId,
+        type: "ENTRY",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const serialLineId = newId();
+    await db.serialMove.create({
+      data: {
+        id: newId(),
+        organizationId,
+        serialUnitId,
+        movementLineId: serialLineId,
+        productId: serialProductId,
+        locationId: location.id,
+        status: "AVAILABLE",
+        direction: "IN",
+      },
+    });
+    await db.stockMovementLine.create({
+      data: {
+        id: serialLineId,
+        organizationId,
+        movementId: serialMovementId,
+        lineNumber: 1,
+        productId: serialProductId,
+        locationId: location.id,
+        direction: "IN",
+        capturedQuantity: "1",
+        factor: "1",
+        baseQuantity: "1",
+        unitCode: "piece",
+      },
+    });
+    await db.stockBalance.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId: serialProductId,
+        locationId: location.id,
+        quantity: "1",
+      },
+    });
+    const serialTaskId = newId();
+    await db.warehouseTask.create({
+      data: {
+        id: serialTaskId,
+        organizationId,
+        number: 2,
+        productId: serialProductId,
+        fromLocationId: location.id,
+        toLocationId: rackId,
+        quantity: "1",
+        unitCode: "piece",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.warehouseTaskSerial.create({
+      data: {
+        id: newId(),
+        organizationId,
+        taskId: serialTaskId,
+        serialUnitId,
+      },
+    });
     // A capacity and a restriction of that rack (WMS-22B).
     await db.locationCapacity.create({
       data: { id: newId(), organizationId, locationId: rackId, maxUnits: "50" },

@@ -41,6 +41,7 @@ const SCREENS = [
   "/inventario/nuevo",
   "/inventario/sin-acomodar",
   "/inventario/por-caducar",
+  "/inventario/rastrear",
   "/movimientos",
   "/movimientos/entrada",
   "/movimientos/salida-rapida",

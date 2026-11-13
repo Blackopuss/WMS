@@ -9,7 +9,7 @@ import { moduleRegistry } from "./index";
 // and CRM announced but not contractable (Ventas was removed, WMS-02).
 
 describe("installed modules", () => {
-  it("starts with the four modules of the plan", () => {
+  it("starts with the three modules installed today", () => {
     expect(moduleRegistry.all.map((m) => m.id).sort()).toEqual([
       "crm",
       "inventory",

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField, SerialsField } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -16,6 +16,7 @@ const FIELDS = [
   "locationCode",
   "lotCode",
   "quantity",
+  "serials",
   "shortReason",
 ] as const;
 
@@ -32,6 +33,7 @@ export function PickForm({
   sku,
   place,
   lotCode,
+  bySerial = false,
 }: {
   taskId: string;
   /** Key of the product, to say what to type without a scanner. */
@@ -46,6 +48,8 @@ export function PickForm({
   unit: string;
   /** The lot to take, for a product by lot (WMS-21); null otherwise. */
   lotCode: string | null;
+  /** WMS-21B: a product by serial: the units taken are scanned. */
+  bySerial?: boolean;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(
@@ -57,6 +61,7 @@ export function PickForm({
         quantity,
         shortReason: "",
         lotCode: "",
+        serials: "",
       },
       answers: 0,
     } satisfies ConfirmPickState,
@@ -177,6 +182,14 @@ export function PickForm({
           />
         )}
       </FormField>
+      {bySerial && (
+        <SerialsField
+          label="Series de las unidades que tomaste"
+          error={errors.serials}
+          defaultValue={state.values.serials}
+          rows={3}
+        />
+      )}
       {(short || errors.shortReason) && (
         <FormField
           id="shortReason"

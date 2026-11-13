@@ -49,6 +49,8 @@ export type EntryFormState = {
     lotCode?: string;
     lotExpiresOn?: string;
     lotId?: string;
+    /** WMS-21B: the serials typed or scanned, one per line. */
+    serials?: string;
   };
 };
 
@@ -158,6 +160,7 @@ async function receive(
     lotCode: text("lotCode"),
     lotExpiresOn: text("lotExpiresOn"),
     lotId: text("lotId"),
+    serials: text("serials"),
   };
   const from = placeAndLot(values.locationId);
   // What a capacity warning would be about: product, place and quantity.
@@ -186,6 +189,8 @@ async function receive(
           ? { lotCode: values.lotCode, lotExpiresOn: values.lotExpiresOn }
           : {}),
         lotId: from.lotId || (values.lotId === NEW_LOT ? "" : values.lotId),
+        // WMS-21B: only the forms of a product by serial send them.
+        serials: values.serials,
         // Only the forms that show the field send it (VAL-03).
         unitCost: values.unitCost,
         // Created with the form and resent on every retry (INV-21).
@@ -319,6 +324,7 @@ export async function registerTransferAction(
     capture: text("capture") || "base",
     reference: "",
     reason: text("reason"),
+    serials: text("serials"),
   };
   const from = placeAndLot(values.locationId);
   const stamp = fingerprint([
@@ -340,6 +346,7 @@ export async function registerTransferAction(
         toLocationId: values.toLocationId,
         quantity: values.quantity,
         reason: values.reason,
+        serials: values.serials,
         idempotencyKey: text("idempotencyKey"),
         ...captureFields(values.capture),
         acceptCapacity: acceptsCapacity(formData, stamp),

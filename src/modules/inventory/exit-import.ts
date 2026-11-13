@@ -26,6 +26,13 @@ import {
 } from "./movements";
 
 /**
+ * WMS-21B (ADR 0041): the units of a product by serial leave naming their
+ * serials, by hand; a file of exits does not carry them.
+ */
+export const SERIAL_NOT_IN_FILES = (sku: string) =>
+  `${sku} se controla por número de serie: sus salidas se registran a mano, con las series de cada unidad. Quita esta fila del archivo.`;
+
+/**
  * Import of daily exits (IMP-10): what the business sold or used, kept
  * in another system or on paper, arrives as a file and leaves stock.
  *
@@ -220,7 +227,7 @@ export type ExitProduct = {
   /** With the content in force (`factor`), only to show the equivalence. */
   presentations: { id: string; name: string; factor: string }[];
   /** WMS-21: whether it is by lot, and those of its lots the file names. */
-  tracking?: "NONE" | "LOT";
+  tracking?: "NONE" | "LOT" | "SERIAL";
   lots?: { id: string; code: string }[];
 };
 
@@ -431,7 +438,10 @@ export function validateExitRows(
     const lotText = cell("lot");
     let lot: { id: string; code: string } | null = null;
     if (product) {
-      if (product.tracking === "LOT") {
+      if (product.tracking === "SERIAL") {
+        // WMS-21B (ADR 0041): a file does not say which units left.
+        issue("quantity", SERIAL_NOT_IN_FILES(product.sku));
+      } else if (product.tracking === "LOT") {
         const code = normalizeLotCode(lotText);
         if (lotText === "") {
           issue(

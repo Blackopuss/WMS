@@ -103,6 +103,11 @@ const receiveSchema = z.object({
          */
         lotCode: z.string().trim().max(200).optional(),
         lotExpiresOn: z.string().trim().max(20).optional(),
+        /**
+         * WMS-21B: the serial of each unit that arrived (one per line of
+         * text), for a product by serial.
+         */
+        serials: z.string().max(60_000).optional(),
       }),
     )
     .max(PURCHASE_ORDER_MAX_LINES * RECEIPT_LOTS_PER_LINE)
@@ -148,7 +153,7 @@ export type ReceiveResult =
        * WMS-21: when the problem of a line is its lot or its expiry date,
        * which of the two, by the id of the order line.
        */
-      lineFields?: Record<string, "lotCode" | "lotExpiresOn">;
+      lineFields?: Record<string, "lotCode" | "lotExpiresOn" | "serials">;
     };
 
 type Failure = Extract<ReceiveResult, { ok: false }>;
@@ -378,6 +383,7 @@ export async function receivePurchaseOrder(
               locationId: null as string | null,
               lotCode: null as string | null,
               lotExpiresOn: null as string | null,
+              serials: null as string | null,
             }))
             .filter((entry) => entry.quantity.greaterThan(0));
 
@@ -392,6 +398,7 @@ export async function receivePurchaseOrder(
             locationId,
             lotCode: lot.lotCode,
             lotExpiresOn: lot.lotExpiresOn,
+            serials: lot.serials,
             capture: (line.presentationId
               ? {
                   kind: "presentation",
@@ -624,6 +631,7 @@ function chosenLines(
     locationId?: string;
     lotCode?: string;
     lotExpiresOn?: string;
+    serials?: string;
   }[],
 ): {
   line: OrderLineRow;
@@ -631,6 +639,7 @@ function chosenLines(
   locationId?: string | null;
   lotCode: string | null;
   lotExpiresOn: string | null;
+  serials: string | null;
 }[] {
   const byId = new Map(lines.map((line) => [line.id, line]));
   const errors: Record<string, string> = {};
@@ -640,6 +649,7 @@ function chosenLines(
     locationId?: string | null;
     lotCode: string | null;
     lotExpiresOn: string | null;
+    serials: string | null;
   }[] = [];
   /** How many times each line came; a product by lot, once per lot. */
   const seen = new Map<string, number>();
@@ -710,6 +720,7 @@ function chosenLines(
       locationId: item.locationId || null,
       lotCode: item.lotCode || null,
       lotExpiresOn: item.lotExpiresOn || null,
+      serials: item.serials || null,
     });
   }
   if (Object.keys(errors).length > 0) return refuseLines(errors);
@@ -771,6 +782,8 @@ export type PendingLine = {
    * whether its lots carry an expiry date («none», «optional», «required»).
    */
   byLot: boolean;
+  /** WMS-21B: the product is by serial: each unit arrives with its serial. */
+  bySerial: boolean;
   lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
 };
 
@@ -798,6 +811,8 @@ export type ReceiptSummary = {
     unitText: string;
     /** «Lote L-01 · caduca 05/03/2027», for a product by lot (WMS-21). */
     lotText: string | null;
+    /** WMS-21B: a product by serial goes back naming each unit. */
+    bySerial: boolean;
   }[];
   /** Absent for who may not see returns (`purchasing.return.read`). */
   returns?: {
@@ -995,7 +1010,7 @@ export async function getOrderReceipts(
               baseQuantity: true,
               unitCode: true,
               locationId: true,
-              product: { select: { name: true, sku: true } },
+              product: { select: { name: true, sku: true, tracking: true } },
               presentation: { select: { name: true } },
               location: { select: placeSelect },
               lot: { select: { code: true, expiresOn: true } },
@@ -1068,6 +1083,7 @@ export async function getOrderReceipts(
         : null,
       pendingQuantity: left.greaterThan(0) ? left.toFixed() : "0",
       byLot: line.product.tracking === "LOT",
+      bySerial: line.product.tracking === "SERIAL",
       lotExpiry: line.product.lotExpiry,
       unitText: line.presentation
         ? pluralizeName(line.presentation.name, dec(2)).toLowerCase()
@@ -1131,6 +1147,7 @@ export async function getOrderReceipts(
               expiresOn: lotDayOf(line.lot.expiresOn),
             })
           : null,
+        bySerial: line.product.tracking === "SERIAL",
       };
     }),
     ...(seeReturns

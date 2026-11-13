@@ -160,6 +160,7 @@ export default async function CambiarEstadoPage({
           unitLabel={getUnit(product.unitCode).plural}
           sources={sources}
           targets={targets}
+          bySerial={product.tracking === "SERIAL"}
           destinations={places.map((place) => ({
             id: place.id,
             label: place.path,

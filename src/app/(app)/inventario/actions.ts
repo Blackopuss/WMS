@@ -32,8 +32,8 @@ function withControl(values: ProductFormState["values"]): ProductInput {
   const { tracking, lotExpiry, ...card } = values;
   return {
     ...card,
-    ...(tracking === "NONE" || tracking === "LOT"
-      ? { tracking: tracking as "NONE" | "LOT" }
+    ...(tracking === "NONE" || tracking === "LOT" || tracking === "SERIAL"
+      ? { tracking: tracking as "NONE" | "LOT" | "SERIAL" }
       : {}),
     ...(lotExpiry === "NONE" ||
     lotExpiry === "OPTIONAL" ||

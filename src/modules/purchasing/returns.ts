@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { dec, newId } from "@/lib";
-import { postReturnExit } from "@/modules/inventory";
+import { postReturnExit, serialUnitsOfLines } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity, pluralizeName } from "@/platform/catalog";
@@ -38,6 +38,31 @@ import { inTermsOf } from "./receipts";
  */
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
+
+/**
+ * The units by serial each line of a receipt brought (WMS-21B), by the
+ * number of its line: the receipt line and its movement line share it.
+ */
+async function serialUnitsOfReceipt(
+  tx: Tx,
+  movementId: string,
+  lineNumbers: number[],
+): Promise<Map<number, Set<string>>> {
+  const lines = await tx.stockMovementLine.findMany({
+    where: { movementId, lineNumber: { in: lineNumbers } },
+    select: { id: true, lineNumber: true },
+  });
+  const units = await serialUnitsOfLines(
+    tx,
+    lines.map((line) => line.id),
+  );
+  return new Map(
+    lines.map((line) => [
+      line.lineNumber,
+      new Set((units.get(line.id) ?? []).map((unit) => unit.id)),
+    ]),
+  );
+}
 type Decimal = ReturnType<typeof dec>;
 
 const KEY = /^[A-Za-z0-9_-]{8,64}$/;
@@ -66,6 +91,11 @@ const returnSchema = z.object({
         quantity: z.string().trim().max(40),
         /** Where it is taken from, when not where it was received. */
         locationId: z.string().trim().max(36).optional(),
+        /**
+         * WMS-21B: the serial of each unit that goes back (one per line of
+         * text), for a product by serial: units of this receipt line.
+         */
+        serials: z.string().max(60_000).optional(),
       }),
     )
     .max(PURCHASE_ORDER_MAX_LINES),
@@ -272,6 +302,7 @@ export async function returnToSupplier(
       const current = await tx.purchaseReceipt.findFirst({
         where: { id: receipt.id },
         select: {
+          movementId: true,
           order: {
             select: { number: true, contact: { select: { name: true } } },
           },
@@ -279,6 +310,7 @@ export async function returnToSupplier(
             orderBy: { lineNumber: "asc" },
             select: {
               id: true,
+              lineNumber: true,
               productId: true,
               locationId: true,
               capturedQuantity: true,
@@ -308,6 +340,7 @@ export async function returnToSupplier(
         line: (typeof current.lines)[number];
         quantity: Decimal;
         locationId: string;
+        serials: string | null;
       }[] = [];
       const seen = new Set<string>();
       for (const item of data.lines) {
@@ -353,6 +386,7 @@ export async function returnToSupplier(
           line,
           quantity: quantity.quantity,
           locationId: item.locationId || line.locationId,
+          serials: item.serials || null,
         });
       }
       if (Object.keys(errors).length > 0) return refuseLines(errors);
@@ -375,6 +409,13 @@ export async function returnToSupplier(
       }
       if (Object.keys(errors).length > 0) return refuseLines(errors);
 
+      // WMS-21B: what goes back of a product by serial are units that
+      // arrived with that receipt line (its movement line, by number).
+      const receivedUnits = await serialUnitsOfReceipt(
+        tx,
+        current.movementId,
+        chosen.map((item) => item.line.lineNumber),
+      );
       const numberText = formatOrderNumber(current.order.number);
       const exit = await postReturnExit(tx, actor, {
         lines: chosen.map((item) => ({
@@ -387,6 +428,8 @@ export async function returnToSupplier(
           unitCode: item.line.unitCode,
           unitCost: item.line.unitCost,
           lotId: item.line.lotId,
+          serials: item.serials,
+          receivedUnitIds: receivedUnits.get(item.line.lineNumber) ?? new Set(),
         })),
         reference: `${numberText} · Devolución`,
         reason: data.reason,

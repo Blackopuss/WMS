@@ -46,6 +46,20 @@ import {
 } from "./lot-resolve";
 import { normalizeLotCode } from "./lot-rules";
 import { freeToMoveFrom, freeToTake, reservedMessage } from "./reservations";
+import {
+  NO_SERIAL_PRODUCT,
+  hasSerials,
+  ofSerials,
+  sameSerials,
+  serialsForEntry,
+  serialsForTake,
+  serialsOfLines,
+  heldByTasks,
+  serialKey,
+  serialListFor,
+  writeSerialMoves,
+  type SerialPick,
+} from "./serials";
 
 /**
  * Stock movements (INV-16 on). A confirmation writes the movement, its
@@ -79,6 +93,17 @@ export const optionalText = (max: number, tooLong: string) =>
     .max(max, tooLong)
     .optional()
     .transform((value) => (value ? value : null));
+
+/** The serials of a form (WMS-21B): text or list, parsed by `serials.ts`. */
+export const SERIALS_FIELD = z
+  .union([
+    z.string().max(60_000, "Son demasiadas series para un solo movimiento."),
+    z
+      .array(z.string().max(200))
+      .max(1_000, "Son demasiadas series para un solo movimiento."),
+  ])
+  .optional()
+  .transform((value) => value ?? null);
 
 const entrySchema = z.object({
   productId: z.string().trim().min(1, "Elige un producto.").max(36),
@@ -151,6 +176,12 @@ const entrySchema = z.object({
     .max(36)
     .optional()
     .transform((value) => value || null),
+  /**
+   * WMS-21B (ADR 0041), only for a product by serial: the serial of each
+   * unit that moves, as text with one per line (a scanner sends Enter
+   * after each reading) or as a list. Parsed by `serials.ts`.
+   */
+  serials: SERIALS_FIELD,
   /**
    * Key of this confirmation (INV-21), created when the form is shown and
    * sent again on every retry: the same key never writes a second
@@ -508,7 +539,20 @@ async function post(
       // the product may have changed because of that very movement.
       if (data.idempotencyKey) {
         const replay = await findReplay(tx, data.idempotencyKey);
-        if (replay) return answerReplay(replay, type, userId, data);
+        if (replay) {
+          // WMS-21B: the same key with other serials is another movement.
+          const line = replay.lines[0];
+          const stored = line
+            ? ((await serialsOfLines(tx, [line.id])).get(line.id) ?? [])
+            : [];
+          if (
+            (stored.length > 0 || hasSerials(data.serials)) &&
+            !sameSerials(stored, data.serials)
+          ) {
+            return reject("not_allowed", null, KEY_REUSED);
+          }
+          return answerReplay(replay, type, userId, data);
+        }
       }
       const product = productId
         ? await tx.product.findFirst({
@@ -577,6 +621,21 @@ async function post(
         return reject("invalid", lotAnswer.field, lotAnswer.error);
       }
       const lot = lotAnswer.lot;
+
+      // WMS-21B: which units, under the product's lock. What comes in
+      // names its serials; what leaves names units that are right there.
+      const serialAnswer =
+        kind.direction === "IN"
+          ? await serialsForEntry(tx, product, data.serials, base)
+          : await serialsForTake(tx, product, data.serials, base, {
+              locationId: location.id,
+              locationName: location.name,
+              status: "AVAILABLE",
+            });
+      if (!serialAnswer.ok) {
+        return reject("invalid", "serials", serialAnswer.error);
+      }
+      const units = serialAnswer.units;
 
       if (type === "INITIAL") {
         // The product is locked: what we read here cannot change under us.
@@ -679,7 +738,8 @@ async function post(
       }
 
       // WMS-71: the last question, once the entry is known to be valid.
-      if (options.warnRepeat) {
+      // Units by serial never repeat: other serials are other units.
+      if (options.warnRepeat && !units) {
         await warnRepeatedEntry(tx, actor, {
           productId: product.id,
           facilityId: location.facilityId,
@@ -712,9 +772,20 @@ async function post(
           createdByUserId: userId,
         },
       });
+      const lineId = newId();
+      await writeSerialMoves(tx, actor, [
+        {
+          lineId,
+          productId: product.id,
+          locationId: location.id,
+          status: "AVAILABLE",
+          direction: kind.direction,
+          units: units ?? [],
+        },
+      ]);
       await tx.stockMovementLine.create({
         data: {
-          id: newId(),
+          id: lineId,
           organizationId,
           movementId,
           lineNumber: 1,
@@ -770,10 +841,10 @@ async function post(
         // «3 cajas × 100 = 300 piezas» when it was not captured as is.
         summary:
           (type === "INITIAL"
-            ? `Saldo inicial de ${product.name}${ofLot(lot)} en ${location.name}: ${moved}${how}.`
+            ? `Saldo inicial de ${product.name}${ofLot(lot)} en ${location.name}: ${moved}${how}${ofSerials(units)}.`
             : type === "EXIT"
-              ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name}${ofLot(lot)} de ${location.name}${how}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left}${lot ? " de ese lote" : ""} ahí.`
-              : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name}${ofLot(lot)} a ${location.name}${how}. Ahora hay ${left}${lot ? " de ese lote" : ""} ahí.`) +
+              ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name}${ofLot(lot)} de ${location.name}${how}${ofSerials(units)}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left}${lot ? " de ese lote" : ""} ahí.`
+              : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name}${ofLot(lot)} a ${location.name}${how}${ofSerials(units)}. Ahora hay ${left}${lot ? " de ese lote" : ""} ahí.`) +
           capacityNotes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);
@@ -815,6 +886,7 @@ async function findReplay(client: ReplayClient, idempotencyKey: string) {
         orderBy: { lineNumber: "asc" },
         take: 1,
         select: {
+          id: true,
           productId: true,
           locationId: true,
           capturedQuantity: true,
@@ -1045,6 +1117,8 @@ export type MovementSummary = {
     /** Its lot, for a product by lot (WMS-21): id and code. */
     lotId: string | null;
     lot: string | null;
+    /** The serials it moved, for a product by serial (WMS-21B). */
+    serials: string[];
   }[];
 };
 
@@ -1116,6 +1190,7 @@ async function fetchMovements(
       lines: {
         orderBy: { lineNumber: "asc" },
         select: {
+          id: true,
           productId: true,
           locationId: true,
           direction: true,
@@ -1162,6 +1237,11 @@ async function fetchMovements(
   const paths = new Map(
     locations.map((location) => [location.id, locationPath(location)]),
   );
+  // WMS-21B: which units by serial each line moved.
+  const serialsOf = await serialsOfLines(
+    client,
+    movements.flatMap((m) => m.lines.map((l) => l.id)),
+  );
 
   return movements.map((movement) => ({
     id: movement.id,
@@ -1190,6 +1270,7 @@ async function fetchMovements(
           : null,
       lotId: line.lotId,
       lot: line.lot?.code ?? null,
+      serials: (serialsOf.get(line.id) ?? []).map((unit) => unit.serial),
     })),
   }));
 }
@@ -1499,6 +1580,8 @@ async function transferWithin(
    * delivery of a task reports it, because the load is already there.
    */
   capacity: CapacityPolicy,
+  /** WMS-21B: the task whose units these are (they are held by it). */
+  options: { taskId?: string } = {},
 ): Promise<Extract<TransferResult, { ok: true }>> {
   const { organizationId, userId } = actor;
   // Same order as every movement: the product, then the locations
@@ -1521,6 +1604,7 @@ async function transferWithin(
         lines: {
           orderBy: { lineNumber: "asc" },
           select: {
+            id: true,
             productId: true,
             locationId: true,
             capturedQuantity: true,
@@ -1537,6 +1621,16 @@ async function transferWithin(
     });
     if (replay) {
       const [out, into] = replay.lines;
+      // WMS-21B: the same key with other serials is another movement.
+      const stored = out
+        ? ((await serialsOfLines(tx, [out.id])).get(out.id) ?? [])
+        : [];
+      if (
+        (stored.length > 0 || hasSerials(data.serials)) &&
+        !sameSerials(stored, data.serials)
+      ) {
+        return refuse("not_allowed", null, KEY_REUSED);
+      }
       let sameQuantity = false;
       try {
         sameQuantity =
@@ -1635,6 +1729,19 @@ async function transferWithin(
   const lotAnswer = await lotForTake(tx, product, data.lotId);
   if (!lotAnswer.ok) return refuse("invalid", "lotId", lotAnswer.error);
   const lot: ResolvedLot | null = lotAnswer.lot;
+  // WMS-21B: the units that move; they arrive as the same units.
+  const serialAnswer = await serialsForTake(
+    tx,
+    product,
+    data.serials,
+    base,
+    { locationId: from.id, locationName: from.name, status: "AVAILABLE" },
+    { verb: "se mueven", taskId: options.taskId ?? null },
+  );
+  if (!serialAnswer.ok) {
+    return refuse("invalid", "serials", serialAnswer.error);
+  }
+  const units = serialAnswer.units ?? [];
 
   const balances = await tx.stockBalance.findMany({
     where: {
@@ -1729,10 +1836,30 @@ async function transferWithin(
     ...lotColumns(lot?.id),
     unitCost: price,
   };
+  const outId = newId();
+  const inId = newId();
+  await writeSerialMoves(tx, actor, [
+    {
+      lineId: outId,
+      productId: product.id,
+      locationId: from.id,
+      status: "AVAILABLE",
+      direction: "OUT",
+      units,
+    },
+    {
+      lineId: inId,
+      productId: product.id,
+      locationId: to.id,
+      status: "AVAILABLE",
+      direction: "IN",
+      units,
+    },
+  ]);
   await tx.stockMovementLine.create({
     data: {
       ...line,
-      id: newId(),
+      id: outId,
       lineNumber: 1,
       locationId: from.id,
       direction: "OUT",
@@ -1741,7 +1868,7 @@ async function transferWithin(
   await tx.stockMovementLine.create({
     data: {
       ...line,
-      id: newId(),
+      id: inId,
       lineNumber: 2,
       locationId: to.id,
       direction: "IN",
@@ -1781,7 +1908,7 @@ async function transferWithin(
     ok: true as const,
     movementId,
     summary:
-      `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name}${ofLot(lot)} de ${from.name} a ${to.name}${how}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.` +
+      `${base.equals(1) ? "Se movió" : "Se movieron"} ${formatStock(base.toString(), unitCode)} de ${product.name}${ofLot(lot)} de ${from.name} a ${to.name}${how}${ofSerials(units)}. ${leftInSource.equals(1) ? "Queda" : "Quedan"} ${formatStock(leftInSource.toString(), unitCode)} en ${from.name} y hay ${formatStock(nowInTarget.toString(), unitCode)} en ${to.name}.` +
       placed.notes.map((note) => ` ${note}`).join(""),
     notes: placed.notes,
   };
@@ -1994,21 +2121,68 @@ export async function registerAdjustment(
       });
       const before = dec(current?.quantity.toString() ?? 0);
       const difference = counted.minus(before);
-      if (difference.isZero()) {
+      // WMS-21B: a product by serial says every serial that is really
+      // there; what the system had and was not named went missing, what
+      // was named and the system did not have appeared. One line each.
+      const serialParts =
+        product.tracking === "SERIAL"
+          ? await serialAdjustment(tx, product, location, data.serials, counted)
+          : null;
+      if (!serialParts && hasSerials(data.serials)) {
+        return reject("invalid", "serials", NO_SERIAL_PRODUCT(product.name));
+      }
+      const parts: {
+        direction: "IN" | "OUT";
+        amount: Decimal;
+        units: SerialPick[];
+      }[] = serialParts
+        ? [
+            ...(serialParts.missing.length > 0
+              ? [
+                  {
+                    direction: "OUT" as const,
+                    amount: dec(serialParts.missing.length),
+                    units: serialParts.missing,
+                  },
+                ]
+              : []),
+            ...(serialParts.found.length > 0
+              ? [
+                  {
+                    direction: "IN" as const,
+                    amount: dec(serialParts.found.length),
+                    units: serialParts.found,
+                  },
+                ]
+              : []),
+          ]
+        : difference.isZero()
+          ? []
+          : [
+              {
+                direction: difference.isPositive() ? "IN" : "OUT",
+                amount: difference.abs(),
+                units: [],
+              },
+            ];
+      if (parts.length === 0) {
         return reject(
           "invalid",
           "quantity",
-          `El sistema ya tiene ${formatStock(before.toString(), unitCode)}${ofLot(lot)} en ${location.name}: no hay nada que ajustar.`,
+          serialParts
+            ? `El sistema ya tiene esas mismas series de ${product.name} en ${location.name}: no hay nada que ajustar.`
+            : `El sistema ya tiene ${formatStock(before.toString(), unitCode)}${ofLot(lot)} en ${location.name}: no hay nada que ajustar.`,
         );
       }
-      const direction = difference.isPositive() ? "IN" : "OUT";
+      const direction = difference.isNegative() ? "OUT" : "IN";
       const amount = difference.abs();
       // VAL-04: what appears or goes missing is valued at the average.
       const costs = await openCostBook(tx, organizationId, [product.id]);
-      const unitCost =
-        direction === "IN"
-          ? costs.entry(product.id, amount, null)
-          : costs.exit(product.id, amount);
+      const unitCosts = parts.map((part) =>
+        part.direction === "IN"
+          ? costs.entry(product.id, part.amount, null)
+          : costs.exit(product.id, part.amount),
+      );
 
       const movementId = newId();
       await tx.stockMovement.create({
@@ -2024,26 +2198,41 @@ export async function registerAdjustment(
       });
       // The line carries the difference, in the product's unit: that is
       // what moved. What was counted goes to the audit record below.
-      await tx.stockMovementLine.create({
-        data: {
-          id: newId(),
-          organizationId,
-          movementId,
-          lineNumber: 1,
+      const lineIds = parts.map(() => newId());
+      await writeSerialMoves(
+        tx,
+        actor,
+        parts.map((part, index) => ({
+          lineId: lineIds[index]!,
           productId: product.id,
           locationId: location.id,
-          direction,
-          capturedQuantity: amount.toString(),
-          capturedUnitCode: null,
-          presentationId: null,
-          presentationVersionId: null,
-          factor: "1",
-          baseQuantity: amount.toString(),
-          unitCode,
-          ...lotColumns(lot?.id),
-          unitCost: lineCost(unitCost),
-        },
-      });
+          status: "AVAILABLE" as const,
+          direction: part.direction,
+          units: part.units,
+        })),
+      );
+      for (const [index, part] of parts.entries()) {
+        await tx.stockMovementLine.create({
+          data: {
+            id: lineIds[index]!,
+            organizationId,
+            movementId,
+            lineNumber: index + 1,
+            productId: product.id,
+            locationId: location.id,
+            direction: part.direction,
+            capturedQuantity: part.amount.toString(),
+            capturedUnitCode: null,
+            presentationId: null,
+            presentationVersionId: null,
+            factor: "1",
+            baseQuantity: part.amount.toString(),
+            unitCode,
+            ...lotColumns(lot?.id),
+            unitCost: lineCost(unitCosts[index]!),
+          },
+        });
+      }
       await costs.save();
       if (current) {
         const changed = await tx.stockBalance.updateMany({
@@ -2079,6 +2268,12 @@ export async function registerAdjustment(
           antes: formatStock(before.toString(), unitCode),
           contado: formatStock(counted.toString(), unitCode),
           diferencia: `${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}`,
+          ...(serialParts
+            ? {
+                seriesFaltantes: serialParts.missing.map((u) => u.serial),
+                seriesEncontradas: serialParts.found.map((u) => u.serial),
+              }
+            : {}),
           movementId,
         },
       });
@@ -2086,7 +2281,14 @@ export async function registerAdjustment(
       return {
         ok: true as const,
         movementId,
-        summary: `Ajuste de ${product.name}${ofLot(lot)} en ${location.name}: había ${formatStock(before.toString(), unitCode)} y ahora hay ${formatStock(counted.toString(), unitCode)}${how} (${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}).`,
+        summary:
+          `Ajuste de ${product.name}${ofLot(lot)} en ${location.name}: había ${formatStock(before.toString(), unitCode)} y ahora hay ${formatStock(counted.toString(), unitCode)}${how} (${direction === "IN" ? "+" : "−"}${formatStock(amount.toString(), unitCode)}).` +
+          (serialParts && serialParts.missing.length > 0
+            ? ` Faltaron${ofSerials(serialParts.missing)}.`
+            : "") +
+          (serialParts && serialParts.found.length > 0
+            ? ` Aparecieron${ofSerials(serialParts.found)}.`
+            : ""),
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -2107,6 +2309,72 @@ export async function registerAdjustment(
     }
     throw error;
   }
+}
+
+/**
+ * WMS-21B: the units an adjustment of a product by serial moves. `listed`
+ * is every serial really there; it must be as many as `counted`. Missing:
+ * in the system there and not named (none of them taken by an open task).
+ * Found: named and not there (never one that is inside somewhere else —
+ * that one is relocated, not adjusted).
+ */
+async function serialAdjustment(
+  tx: TransferTx,
+  product: { id: string; name: string; tracking: string },
+  location: { id: string; name: string },
+  listed: unknown,
+  counted: Decimal,
+): Promise<{ missing: SerialPick[]; found: SerialPick[] }> {
+  const wanted = serialListFor(product, listed, counted, "hay");
+  if (!wanted.ok) return reject("invalid", "serials", wanted.error);
+  const names = wanted.serials ?? [];
+  const here = await tx.serialUnit.findMany({
+    where: {
+      productId: product.id,
+      locationId: location.id,
+      status: "AVAILABLE",
+    },
+    orderBy: { serial: "asc" },
+    take: 5_000,
+    select: { id: true, serial: true },
+  });
+  const fold = serialKey;
+  const named = new Set(names.map(fold));
+  const missing = here.filter((unit) => !named.has(fold(unit.serial)));
+  const hereSet = new Set(here.map((unit) => fold(unit.serial)));
+  const appearing = names.filter((serial) => !hereSet.has(fold(serial)));
+  const known = await tx.serialUnit.findMany({
+    where: { productId: product.id, serial: { in: appearing } },
+    select: { id: true, serial: true, locationId: true },
+  });
+  const elsewhere = known.filter((unit) => unit.locationId !== null);
+  if (elsewhere.length > 0) {
+    return reject(
+      "invalid",
+      "serials",
+      `La serie ${elsewhere[0]!.serial} está registrada en otra ubicación o en otro estado: cámbiala de lugar o de estado en vez de ajustarla.`,
+    );
+  }
+  const held = await heldByTasks(
+    tx,
+    missing.map((unit) => unit.id),
+    null,
+  );
+  if (held.length > 0) {
+    return reject(
+      "invalid",
+      "serials",
+      `La serie ${held[0]!.serial} la tomó una tarea que sigue abierta: espera a que se entregue o se cancele.`,
+    );
+  }
+  const knownOf = new Map(known.map((unit) => [fold(unit.serial), unit.id]));
+  return {
+    missing,
+    found: appearing.map((serial) => ({
+      id: knownOf.get(fold(serial)) ?? null,
+      serial,
+    })),
+  };
 }
 
 const reversalSchema = z.object({
@@ -2197,6 +2465,7 @@ export async function reverseMovement(
       lines: {
         orderBy: { lineNumber: "asc" },
         select: {
+          id: true,
           productId: true,
           locationId: true,
           direction: true,
@@ -2329,6 +2598,84 @@ export async function reverseMovement(
           `${productOf.get(changed.productId)!.name} cambió su control por lote después de este movimiento: ya no se puede reversar. Registra el movimiento contrario.`,
         );
       }
+      // WMS-21B: and each line moves back the very units it moved.
+      const serialsOf = await serialsOfLines(
+        tx,
+        original.lines.map((line) => line.id),
+      );
+      const changedSerial = original.lines.find((line) => {
+        const product = productOf.get(line.productId);
+        return (
+          product &&
+          (product.tracking === "SERIAL") !==
+            (serialsOf.get(line.id) ?? []).length > 0
+        );
+      });
+      if (changedSerial) {
+        return stop(
+          "not_allowed",
+          `${productOf.get(changedSerial.productId)!.name} cambió su control por serie después de este movimiento: ya no se puede reversar. Registra el movimiento contrario.`,
+        );
+      }
+      const leaving = new Set(
+        original.lines
+          .filter((line) => line.direction === "IN")
+          .flatMap((line) => (serialsOf.get(line.id) ?? []).map((u) => u.id)),
+      );
+      const reversalLineIds = original.lines.map(() => newId());
+      const serialDrafts: Parameters<typeof writeSerialMoves>[2][number][] = [];
+      for (const [index, line] of original.lines.entries()) {
+        const units = serialsOf.get(line.id) ?? [];
+        if (units.length === 0) continue;
+        const place = locationOf.get(line.locationId);
+        const ids = units.map((unit) => unit.id);
+        const now = await tx.serialUnit.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, serial: true, locationId: true, status: true },
+        });
+        if (line.direction === "IN") {
+          // Undoing what came in takes those units out: they must still
+          // be right there, and no open task may hold them.
+          const gone = now.find(
+            (unit) =>
+              unit.locationId !== line.locationId ||
+              unit.status !== line.status,
+          );
+          if (gone) {
+            return stop(
+              "invalid",
+              `No se puede reversar: la serie ${gone.serial} ya no está en ${place?.name ?? "esa ubicación"}. Ya salió o se movió.`,
+            );
+          }
+          const held = await heldByTasks(tx, ids, null);
+          if (held.length > 0) {
+            return stop(
+              "invalid",
+              `No se puede reversar: la serie ${held[0]!.serial} la tomó una tarea que sigue abierta.`,
+            );
+          }
+        } else {
+          // Undoing what left brings those units back: they must be out
+          // of the warehouse (or leaving with this same reversal).
+          const back = now.find(
+            (unit) => unit.locationId !== null && !leaving.has(unit.id),
+          );
+          if (back) {
+            return stop(
+              "invalid",
+              `No se puede reversar: la serie ${back.serial} volvió a entrar después y está en existencias.`,
+            );
+          }
+        }
+        serialDrafts.push({
+          lineId: reversalLineIds[index]!,
+          productId: line.productId,
+          locationId: line.locationId,
+          status: line.status,
+          direction: line.direction === "IN" ? "OUT" : "IN",
+          units: units.map((unit) => ({ id: unit.id, serial: unit.serial })),
+        });
+      }
       // WMS-22B: what the reversal puts back must still be admitted where
       // it returns (a restriction stops it); a capacity does not stop it —
       // undoing a mistake is not new stock — and the answer says it.
@@ -2371,6 +2718,7 @@ export async function reverseMovement(
         },
       });
 
+      await writeSerialMoves(tx, actor, serialDrafts);
       const effects: string[] = [];
       let lineNumber = 0;
       for (const line of original.lines) {
@@ -2440,7 +2788,7 @@ export async function reverseMovement(
         // Same capture, same version, same factor as the original line.
         await tx.stockMovementLine.create({
           data: {
-            id: newId(),
+            id: reversalLineIds[lineNumber]!,
             organizationId,
             movementId,
             lineNumber: ++lineNumber,
@@ -2483,7 +2831,7 @@ export async function reverseMovement(
           });
         }
         effects.push(
-          `${direction === "IN" ? "volvieron" : "salieron"} ${formatStock(base.toString(), line.unitCode)} de ${product.name} ${direction === "IN" ? "a" : "de"} ${location.name}`,
+          `${direction === "IN" ? "volvieron" : "salieron"} ${formatStock(base.toString(), line.unitCode)} de ${product.name} ${direction === "IN" ? "a" : "de"} ${location.name}${ofSerials(serialsOf.get(line.id) ?? null)}`,
         );
       }
 
@@ -2543,6 +2891,11 @@ export type MovementFilters = {
   type?: string;
   /** Only movements of this lot (WMS-21): the history of its card. */
   lotId?: string;
+  /**
+   * Only movements that moved this unit by serial (WMS-21B): its
+   * traceability.
+   */
+  serialUnitId?: string;
   page?: number;
 };
 
@@ -2560,6 +2913,7 @@ export type MovementPage = {
     userId: string | null;
     type: MovementType | null;
     lotId: string | null;
+    serialUnitId: string | null;
   };
 };
 
@@ -2632,6 +2986,21 @@ export async function listMovements(
     : null;
   const userId = filters.userId ? String(filters.userId).slice(0, 36) : null;
   const lotId = filters.lotId ? String(filters.lotId).slice(0, 36) : null;
+  const serialUnitId = filters.serialUnitId
+    ? String(filters.serialUnitId).slice(0, 36)
+    : null;
+  // WMS-21B: the lines that moved the unit (`serial_move` has no relation
+  // to its line: it is written before it).
+  const serialLineIds = serialUnitId
+    ? (
+        await client.serialMove.findMany({
+          where: { serialUnitId },
+          orderBy: { id: "asc" },
+          take: 5_000,
+          select: { movementLineId: true },
+        })
+      ).map((move) => move.movementLineId)
+    : null;
   const productSearch =
     (!productId &&
       String(filters.productSearch ?? "")
@@ -2639,8 +3008,15 @@ export async function listMovements(
         .slice(0, 100)) ||
     null;
 
+  const scope = await movementScope(actor.organizationId, actor.userId);
   const where = {
-    ...(await movementScope(actor.organizationId, actor.userId)),
+    // WMS-20 and WMS-21B: both conditions on the lines, side by side.
+    AND: [
+      ...(("AND" in scope && scope.AND) || []),
+      ...(serialLineIds
+        ? [{ lines: { some: { id: { in: serialLineIds } } } }]
+        : []),
+    ],
     ...(from || until
       ? {
           createdAt: {
@@ -2651,6 +3027,7 @@ export async function listMovements(
       : {}),
     ...(type ? { type } : {}),
     ...(userId ? { createdByUserId: userId } : {}),
+
     ...(lotId
       ? { lines: { some: { lotId, ...(productId ? { productId } : {}) } } }
       : productId
@@ -2695,6 +3072,7 @@ export async function listMovements(
       userId,
       type,
       lotId,
+      serialUnitId,
     },
   };
 }
@@ -2742,6 +3120,10 @@ export async function postTaskTransfer(
     quantity: string;
     /** The lot the task moves, for a product by lot (WMS-21). */
     lotId?: string | null;
+    /** The units it took, for a product by serial (WMS-21B). */
+    serials?: string[];
+    /** The task delivering: its units are held by it (WMS-21B). */
+    taskId?: string;
     idempotencyKey: string;
     reference: string;
   },
@@ -2764,11 +3146,13 @@ export async function postTaskTransfer(
         lotCode: null,
         lotExpiresOn: null,
         lotId: input.lotId ?? null,
+        serials: input.serials ?? null,
       } as TransferData,
       { kind: "base", quantity: input.quantity },
       // WMS-22B: the load is already at its destination; a capacity does
       // not stop the delivery, the answer says it. Restrictions do.
       { mode: "report" },
+      { taskId: input.taskId },
     );
   } catch (error) {
     if (error instanceof TransferRejected) return error.result;

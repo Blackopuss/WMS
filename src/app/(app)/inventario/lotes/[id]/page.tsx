@@ -12,9 +12,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
-import { getLot, listMovements } from "@/modules/inventory";
+import { getLot, listMovements, traceLot } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
+import { OriginsAndOrders } from "../../rastrear/origins-and-orders";
 import { ExpiryForm } from "./expiry-form";
 
 export const metadata: Metadata = { title: "Lote" };
@@ -70,6 +71,10 @@ export default async function LotePage({
             ? Number(pagina)
             : 1,
       })
+    : null;
+  // WMS-21B: the receipts that brought it and the orders it went to.
+  const trace = access.can("inventory.movement.read")
+    ? await traceLot(actor, lot.id)
     : null;
   const pageHref = (page: number) =>
     page > 1
@@ -169,6 +174,14 @@ export default async function LotePage({
             required={lot.product.lotExpiry === "REQUIRED"}
           />
         )}
+
+      {trace && (
+        <OriginsAndOrders
+          origins={trace.origins}
+          orders={trace.orders}
+          timeZone={timeZone}
+        />
+      )}
 
       {history && (
         <section

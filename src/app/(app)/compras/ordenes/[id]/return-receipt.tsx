@@ -5,7 +5,7 @@ import { unstable_rethrow } from "next/navigation";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField, SerialsField } from "@/components";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,6 +37,8 @@ export type ReturnableLine = {
   unitText: string;
   /** Where it was received: where it is taken from by default. */
   locationId: string;
+  /** WMS-21B: a product by serial goes back naming each unit. */
+  bySerial: boolean;
 };
 
 const areaClass =
@@ -104,7 +106,7 @@ export function ReturnReceipt({
     },
     {
       fieldErrors: {},
-      values: { reason: "", quantities: {}, places: {} },
+      values: { reason: "", quantities: {}, places: {}, serials: {} },
       answers: 0,
     },
   );
@@ -164,6 +166,18 @@ export function ReturnReceipt({
                       {line.unitText}
                     </span>
                   </div>
+                  {line.bySerial && (
+                    <div className="sm:col-span-2">
+                      <SerialsField
+                        id={`${fieldId}-serials`}
+                        name={`ser:${line.id}`}
+                        label="Series de las unidades que regresan"
+                        defaultValue={state.values.serials[line.id] ?? ""}
+                        key={`${line.id}-serials-${answers}`}
+                        rows={2}
+                      />
+                    </div>
+                  )}
                   {locations.length > 1 && (
                     <div className="flex items-center gap-2 sm:col-span-2">
                       <label

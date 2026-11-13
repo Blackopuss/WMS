@@ -13,6 +13,9 @@ import {
   createOutboundOrder,
   createTask,
   countLowStock,
+  findTraceMatches,
+  listProductSerials,
+  traceSerial,
   getCount,
   countExpiringLots,
   getInventoryValue,
@@ -207,6 +210,42 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(() => db.$disconnect());
+
+describe("PC-12: units by serial and their traceability (WMS-21B)", () => {
+  it("a unit of A is neither moved, listed nor traced from B", async () => {
+    const product = await createProduct(owner, {
+      sku: "ALC-SER",
+      name: "Equipo con serie",
+      tracking: "SERIAL",
+    });
+    if (!product.ok) throw new Error("product setup failed");
+    const entered = await registerEntry(owner, {
+      productId: product.productId,
+      locationId: shelfA,
+      quantity: "1",
+      serials: "ALC-SN-1",
+    });
+    expect(entered).toMatchObject({ ok: true });
+    await expect(
+      registerExit(limited, {
+        productId: product.productId,
+        locationId: shelfA,
+        quantity: "1",
+        serials: "ALC-SN-1",
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    const unit = await db.serialUnit.findFirstOrThrow({
+      where: { productId: product.productId },
+    });
+    expect((await findTraceMatches(limited, "ALC-SN-1")).matches).toEqual([]);
+    expect(await traceSerial(limited, unit.id)).toBeNull();
+    expect(
+      (await listProductSerials(limited, product.productId)).items,
+    ).toEqual([]);
+    expect((await findTraceMatches(free, "ALC-SN-1")).matches).toHaveLength(1);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
 
 describe("PC-12: limited to warehouse B", () => {
   it("works in B and cannot switch to A", async () => {

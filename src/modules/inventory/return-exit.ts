@@ -8,6 +8,12 @@ import { formatStock, type InventoryActor } from "./movements";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
 import { freeToTake, reservedMessage } from "./reservations";
+import {
+  serialKey,
+  serialsForTake,
+  writeSerialMoves,
+  type SerialPick,
+} from "./serials";
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Decimal = ReturnType<typeof dec>;
@@ -38,6 +44,13 @@ export type ReturnExitLine = {
   unitCost: { toString(): string } | null;
   /** The lot it was received in (WMS-21): it goes back from that lot. */
   lotId?: string | null;
+  /**
+   * WMS-21B: the units that go back, for a product by serial (text with
+   * one serial per line, or a list), and the units that arrived with that
+   * receipt line: only those can go back with it.
+   */
+  serials?: unknown;
+  receivedUnitIds?: ReadonlySet<string>;
 };
 
 export type ReturnExitResult =
@@ -92,6 +105,13 @@ export async function postReturnExit(
     where: { id: { in: [...new Set(lines.map((line) => line.productId))] } },
     select: { id: true, name: true, tracking: true },
   });
+  const places = await tx.location.findMany({
+    where: { id: { in: [...new Set(lines.map((line) => line.locationId))] } },
+    select: { id: true, name: true },
+  });
+  const nameOf = new Map(places.map((place) => [place.id, place.name]));
+  const unitsOf: SerialPick[][] = [];
+  const named = new Set<string>();
   for (const [index, line] of lines.entries()) {
     const product = tracked.find((row) => row.id === line.productId);
     if (product && (product.tracking === "LOT") !== Boolean(line.lotId)) {
@@ -101,6 +121,54 @@ export async function postReturnExit(
         error: `${product.name} cambió su control por lote después de recibirlo: sácalo con una salida, eligiendo de dónde.`,
       };
     }
+    // WMS-21B: a product by serial says which units go back: units that
+    // arrived with that receipt line and are right there.
+    const received = line.receivedUnitIds ?? new Set<string>();
+    if (product?.tracking === "SERIAL" && received.size === 0) {
+      return {
+        ok: false,
+        line: index,
+        error: `${product.name} cambió su control por serie después de recibirlo: sácalo con una salida, con sus series.`,
+      };
+    }
+    const answer = product
+      ? await serialsForTake(
+          tx,
+          product,
+          line.serials,
+          line.baseQuantity,
+          {
+            locationId: line.locationId,
+            locationName: nameOf.get(line.locationId) ?? "esa ubicación",
+            status: "AVAILABLE",
+          },
+          { verb: "regresan" },
+        )
+      : ({ ok: true, units: null } as const);
+    if (!answer.ok) return { ok: false, line: index, error: answer.error };
+    const units = answer.units ?? [];
+    const foreign = units.find((unit) => !received.has(unit.id!));
+    if (foreign) {
+      return {
+        ok: false,
+        line: index,
+        error: `La serie ${foreign.serial} no llegó en esta recepción: no se devuelve con ella.`,
+      };
+    }
+    const twice = units.find((unit) =>
+      named.has(`${line.productId} ${serialKey(unit.serial)}`),
+    );
+    if (twice) {
+      return {
+        ok: false,
+        line: index,
+        error: `La serie ${twice.serial} ya está en otra línea de esta devolución.`,
+      };
+    }
+    for (const unit of units) {
+      named.add(`${line.productId} ${serialKey(unit.serial)}`);
+    }
+    unitsOf.push(units);
   }
   // What leaves each product in each location: `<product> <location>`.
   const taken = new Map<string, Decimal>();
@@ -134,11 +202,6 @@ export async function postReturnExit(
       row,
     ]),
   );
-  const places = await tx.location.findMany({
-    where: { id: { in: [...new Set(lines.map((line) => line.locationId))] } },
-    select: { id: true, name: true },
-  });
-  const nameOf = new Map(places.map((place) => [place.id, place.name]));
   // Never below zero: what is no longer there cannot go back.
   for (const [slot, quantity] of taken) {
     const before = dec(current.get(slot)?.quantity.toString() ?? 0);
@@ -203,9 +266,22 @@ export async function postReturnExit(
       createdByUserId: userId,
     },
   });
+  const lineIds = lines.map(() => newId());
+  await writeSerialMoves(
+    tx,
+    actor,
+    lines.map((line, index) => ({
+      lineId: lineIds[index]!,
+      productId: line.productId,
+      locationId: line.locationId,
+      status: "AVAILABLE" as const,
+      direction: "OUT" as const,
+      units: unitsOf[index]!,
+    })),
+  );
   await tx.stockMovementLine.createMany({
     data: lines.map((line, index) => ({
-      id: newId(),
+      id: lineIds[index]!,
       organizationId,
       movementId,
       lineNumber: index + 1,

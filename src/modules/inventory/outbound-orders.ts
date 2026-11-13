@@ -886,6 +886,14 @@ export type OutboundView = OutboundSummary & {
     /** What was confirmed as picked, when it was. */
     pickedText: string | null;
     shortReason: string | null;
+    /** The line of the order it picks. */
+    lineId: string | null;
+    /** The serials of the units picked, for a product by serial (WMS-21B). */
+    serials: string[];
+    /** Their units, to open their traceability (WMS-21B). */
+    serialUnits: { id: string; serial: string }[];
+    /** Its lot, to open the lot's card. */
+    lot: { id: string; code: string } | null;
   }[];
 };
 
@@ -984,7 +992,12 @@ export async function getOutboundOrder(
             outboundLineId: true,
             product: { select: { name: true } },
             fromLocation: { select: { name: true } },
-            lot: { select: { code: true, expiresOn: true } },
+            lot: { select: { id: true, code: true, expiresOn: true } },
+            serials: {
+              orderBy: { id: "asc" },
+              take: 1_000,
+              select: { serialUnit: { select: { id: true, serial: true } } },
+            },
           },
         });
   const pickedOf = new Map<string, Decimal>();
@@ -1055,6 +1068,10 @@ export async function getOutboundOrder(
           ? null
           : formatStock(task.pickedQuantity.toString(), task.unitCode),
       shortReason: task.shortReason,
+      lineId: task.outboundLineId,
+      serials: task.serials.map((row) => row.serialUnit.serial),
+      serialUnits: task.serials.map((row) => row.serialUnit),
+      lot: task.lot ? { id: task.lot.id, code: task.lot.code } : null,
     })),
   };
 }

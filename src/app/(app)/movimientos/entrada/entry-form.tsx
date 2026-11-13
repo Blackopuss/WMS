@@ -11,7 +11,7 @@ import Link from "next/link";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 
-import { FormField } from "@/components";
+import { FormField, SerialsField } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -103,6 +103,7 @@ export function EntryForm({
   lotEntry,
   lotChoices,
   newLot,
+  serials,
 }: {
   mode?: keyof typeof MODES;
   productId: string;
@@ -141,6 +142,12 @@ export function EntryForm({
    * (found on the shelf): its expiry rule. Only who may adjust sees it.
    */
   newLot?: { expiry: "NONE" | "OPTIONAL" | "REQUIRED" };
+  /**
+   * WMS-21B, a product by serial: asks the serial of each unit. `label`
+   * and `hint` say what they are in this form (an adjustment names every
+   * unit that is there).
+   */
+  serials?: { label: string; hint?: string };
 }) {
   const router = useRouter();
   /** What is happening when a confirmation got no answer. */
@@ -187,6 +194,7 @@ export function EntryForm({
       lotCode: text("lotCode"),
       lotExpiresOn: text("lotExpiresOn"),
       lotId: text("lotId"),
+      serials: text("serials"),
     };
     const outcome = await findOut();
     // The form itself says it below, next to what was typed.
@@ -253,6 +261,8 @@ export function EntryForm({
       document.getElementById("lotCode")?.focus();
     } else if (state.fieldErrors.lotExpiresOn) {
       document.getElementById("lotExpiresOn")?.focus();
+    } else if (state.fieldErrors.serials) {
+      document.getElementById("serials")?.focus();
     } else if (state.fieldErrors.lotId) {
       // Its own select in an adjustment; part of «de dónde sale» otherwise.
       (
@@ -456,6 +466,15 @@ export function EntryForm({
           <p className="text-sm text-muted-foreground">{preview.error}</p>
         )}
       </div>
+      {serials && (
+        <SerialsField
+          label={serials.label}
+          hint={serials.hint}
+          error={state.fieldErrors.serials}
+          defaultValue={state.values.serials ?? ""}
+          key={`serials-${answers}`}
+        />
+      )}
       {askCost && (
         <FormField
           id="unitCost"

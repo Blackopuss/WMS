@@ -39,8 +39,8 @@ Reglas que no se rompen:
 | Cierre | `order-close.ts` | `closePurchaseOrder`: cierra una orden `PARTIAL` con faltante |
 | PDF | `order-pdf.ts` | `buildOrderPdf` |
 | Envío por correo | `order-delivery.ts` | `requestOrderDelivery` (encola), `getOrderDeliveries`; manejador `purchasingJobHandlers` |
-| Recepciones | `receipts.ts` | `receivePurchaseOrder` (parcial, destino por línea, lote por línea), `getOrderReceipts`, `findReceiptConfirmation` |
-| Devoluciones | `returns.ts` | `returnToSupplier`, `findReturnConfirmation` |
+| Recepciones | `receipts.ts` | `receivePurchaseOrder` (parcial, destino por línea, lote por línea, series por línea para un producto por serie), `getOrderReceipts`, `findReceiptConfirmation` |
+| Devoluciones | `returns.ts` | `returnToSupplier` (un producto por serie devuelve unidades que llegaron con esa línea de recepción), `findReturnConfirmation` |
 | Sugerencias | `suggestions.ts` | `getPurchaseSuggestions`, `generateSuggestedOrders` (borradores por proveedor) |
 | Reportes | `reports.ts` | `getPendingReport`, `getPurchasesBySupplier`, `buildPurchaseReport` (archivo) |
 | Al quitar el módulo | `deactivation.ts` | `purchasingOpenWork`: lo que quedaría a medias, para la consola |

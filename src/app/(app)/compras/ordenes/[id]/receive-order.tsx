@@ -11,7 +11,7 @@ import { unstable_rethrow } from "next/navigation";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField, SerialsField } from "@/components";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,6 +50,8 @@ export type PendingReceiptLine = {
   /** WMS-21: the product is by lot; and whether its lots carry an expiry. */
   byLot: boolean;
   lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
+  /** WMS-21B: the product is by serial: the serial of each unit arrives. */
+  bySerial: boolean;
 };
 
 /**
@@ -119,6 +121,7 @@ export function ReceiveOrder({
         places: {},
         lots: {},
         expiries: {},
+        serials: {},
       },
       answers: 0,
     },
@@ -248,6 +251,19 @@ export function ReceiveOrder({
                       </div>
                     </div>
                   )}
+                  {line.bySerial && (
+                    <div className="sm:col-span-2">
+                      <SerialsField
+                        id={`${fieldId}-serials`}
+                        name={`ser:${line.id}`}
+                        label="Series de las unidades que llegaron"
+                        error={wrong === "serials" ? error : undefined}
+                        defaultValue={state.values.serials[line.id] ?? ""}
+                        key={`${line.id}-serials-${answers}`}
+                        rows={3}
+                      />
+                    </div>
+                  )}
                   {line.byLot && (
                     <LotFields
                       line={line}
@@ -255,7 +271,7 @@ export function ReceiveOrder({
                       fieldId={fieldId}
                       answers={answers}
                       values={state.values}
-                      wrong={wrong}
+                      wrong={wrong === "serials" ? undefined : wrong}
                       describedBy={error ? `${fieldId}-error` : undefined}
                     />
                   )}

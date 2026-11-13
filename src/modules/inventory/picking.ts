@@ -282,6 +282,8 @@ export async function deliverPick(
     quantity: Decimal;
     picked: Decimal;
     unitCode: string;
+    /** The units picked, for a product by serial (WMS-21B). */
+    serials?: string[];
   },
 ): Promise<
   | {
@@ -309,6 +311,8 @@ export async function deliverPick(
     toLocationId: task.toLocationId,
     quantity: task.picked.toString(),
     lotId: task.lotId,
+    serials: task.serials,
+    taskId: task.id,
     idempotencyKey: `task:${task.id}`,
     reference: formatTaskNumber(task.number),
   });

@@ -11,7 +11,7 @@ Mandar correo y armar sus plantillas en español. Tres manejadores según
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
 | Enviar | `send.ts` | `sendEmail` (rechaza cabeceras con saltos de línea y adjuntos no permitidos con `InvalidEmailError`), `smtpSettings`, `listDevOutbox`, `memoryOutboxFor` |
-| Plantillas | `templates.ts` | cuentas (confirmación, recuperación, MFA, invitación), avisos operativos y `purchaseOrderEmail`. Siguen exportadas, sin uso, tres de Ventas: `salesQuoteEmail`, `salesStatementEmail`, `overdueReminderEmail` |
+| Plantillas | `templates.ts` | cuentas (confirmación, recuperación, MFA, invitación), avisos operativos y `purchaseOrderEmail` |
 
 Un correo que tarda o puede fallar no se manda desde una Server Action: se
 encola y lo manda el worker ([jobs](jobs.md)). Nunca se revela si un correo

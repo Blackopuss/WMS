@@ -120,7 +120,7 @@ export async function registerQuickExitAction(
   const text = (name: string) => String(formData.get(name) ?? "");
   let sent: unknown = [];
   try {
-    sent = JSON.parse(text("lines").slice(0, 60_000));
+    sent = JSON.parse(text("lines").slice(0, 400_000));
   } catch {
     sent = [];
   }
@@ -138,6 +138,11 @@ export async function registerQuickExitAction(
       lotId,
       quantity: field("quantity"),
       ...captureFields(field("capture")),
+      // WMS-21B: the serials of the units that leave, one per line.
+      serials:
+        typeof fields.serials === "string"
+          ? fields.serials.slice(0, 40_000)
+          : undefined,
     };
   });
   let result;

@@ -10,6 +10,12 @@ import { checkPlacement } from "./placement";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import { lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForEntry } from "./lot-resolve";
+import {
+  serialKey,
+  serialsForEntry,
+  writeSerialMoves,
+  type SerialPick,
+} from "./serials";
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Decimal = ReturnType<typeof dec>;
@@ -49,6 +55,11 @@ export type ReceiptEntryInput = {
      */
     lotCode?: string | null;
     lotExpiresOn?: string | null;
+    /**
+     * WMS-21B: the serial of each unit that arrives (text with one per
+     * line, or a list), for a product by serial.
+     */
+    serials?: unknown;
   }[];
   /** «OC-0007 · Remisión 4411»: what people see in the history. */
   reference: string | null;
@@ -76,6 +87,8 @@ export type ReceiptEntryLine = {
   /** The lot it came in, for a product by lot (WMS-21). */
   lotId: string | null;
   lotCode: string | null;
+  /** The units that came in, for a product by serial (WMS-21B). */
+  units: SerialPick[];
   /** «3 cajas × 100 = 300 piezas», or «25 piezas». */
   text: string;
 };
@@ -95,8 +108,8 @@ export type ReceiptEntryResult =
       /** Position of the line with the problem, or null for the location of the receipt. */
       line: number | null;
       error: string;
-      /** The problem is with the lot or its expiry date of that line (WMS-21). */
-      field?: "lotCode" | "lotExpiresOn";
+      /** The problem is with the lot or its expiry date of that line (WMS-21), or its serials (WMS-21B). */
+      field?: "lotCode" | "lotExpiresOn" | "serials";
       /**
        * It only goes over a capacity the company warns about (WMS-22B):
        * the same receipt with `acceptCapacity` goes through.
@@ -181,6 +194,7 @@ export async function postReceiptEntry(
   const lines: ReceiptEntryLine[] = [];
   // What enters each product in each location: `<product> <location>`.
   const added = new Map<string, Decimal>();
+  const arriving = new Set<string>();
   for (const [index, line] of input.lines.entries()) {
     const place = line.locationId ? placeOf(line.locationId) : location;
     const placeProblem = problemOf(place);
@@ -224,6 +238,32 @@ export async function postReceiptEntry(
       };
     }
     const lot = lotAnswer.lot;
+    // WMS-21B: a product by serial names each unit that arrives; a serial
+    // already in stock (or twice in this receipt) is refused by name.
+    const serialAnswer = await serialsForEntry(tx, product, line.serials, base);
+    if (!serialAnswer.ok) {
+      return {
+        ok: false,
+        line: index,
+        error: serialAnswer.error,
+        field: "serials",
+      };
+    }
+    const units = serialAnswer.units ?? [];
+    const twice = units.find((unit) =>
+      arriving.has(`${product.id} ${serialKey(unit.serial)}`),
+    );
+    if (twice) {
+      return {
+        ok: false,
+        line: index,
+        error: `La serie ${twice.serial} ya está en otra línea de esta recepción.`,
+        field: "serials",
+      };
+    }
+    for (const unit of units) {
+      arriving.add(`${product.id} ${serialKey(unit.serial)}`);
+    }
     const slot = `${product.id} ${place.id} ${lot?.id ?? ""}`;
     added.set(slot, (added.get(slot) ?? dec(0)).plus(base));
     lines.push({
@@ -240,6 +280,7 @@ export async function postReceiptEntry(
       unitCost: costPerUnit(line.unitCost?.toString(), conversion.factor),
       lotId: lot?.id ?? null,
       lotCode: lot?.code ?? null,
+      units,
       text: conversion.presentation
         ? conversion.preview
         : formatStock(base.toString(), resolved.product.unitCode),
@@ -333,9 +374,22 @@ export async function postReceiptEntry(
       createdByUserId: userId,
     },
   });
+  const lineIds = lines.map(() => newId());
+  await writeSerialMoves(
+    tx,
+    actor,
+    lines.map((line, index) => ({
+      lineId: lineIds[index]!,
+      productId: line.productId,
+      locationId: line.locationId,
+      status: "AVAILABLE" as const,
+      direction: "IN" as const,
+      units: line.units,
+    })),
+  );
   await tx.stockMovementLine.createMany({
-    data: lines.map((line) => ({
-      id: newId(),
+    data: lines.map((line, index) => ({
+      id: lineIds[index]!,
       organizationId,
       movementId,
       lineNumber: line.lineNumber,

@@ -151,6 +151,7 @@ export default async function OrdenPage({
                       unitText: line.unitText,
                       contentText: line.contentText,
                       byLot: line.byLot,
+                      bySerial: line.bySerial,
                       lotExpiry: line.lotExpiry,
                       orderedContentText: line.orderedContentText,
                     }))}
@@ -483,6 +484,7 @@ ${order.closeReason ?? ""}`,
                         }`,
                         unitText: line.unitText,
                         locationId: line.locationId,
+                        bySerial: line.bySerial,
                       }))}
                       locations={locations.map((location) => ({
                         id: location.id,

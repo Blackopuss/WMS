@@ -169,12 +169,14 @@ export const AREAS = [
     title: "Inventario › Existencias y movimientos",
     doc: "inventory",
     summary:
-      "Movimientos inmutables, sus líneas, el saldo por producto + ubicación + estado + lote, lotes, costo promedio y mínimos.",
+      "Movimientos inmutables, sus líneas, el saldo por producto + ubicación + estado + lote, lotes, unidades por número de serie y sus movimientos, costo promedio y mínimos.",
     models: [
       "StockMovement",
       "StockMovementLine",
       "StockBalance",
       "Lot",
+      "SerialUnit",
+      "SerialMove",
       "ProductCost",
       "StockMinimum",
     ],
@@ -192,9 +194,10 @@ export const AREAS = [
     title: "Inventario › Tareas, reservas y pedidos de salida",
     doc: "inventory",
     summary:
-      "Tareas de traslado y surtido, lo apartado para un documento y los pedidos de salida.",
+      "Tareas de traslado y surtido (con las series que tomaron), lo apartado para un documento y los pedidos de salida.",
     models: [
       "WarehouseTask",
+      "WarehouseTaskSerial",
       "StockReservation",
       "OutboundOrder",
       "OutboundOrderLine",

@@ -111,6 +111,13 @@ export type OpenCountResult =
       openCountId?: string;
     });
 
+/**
+ * WMS-21B (ADR 0041): a count captures quantities; the units of a product
+ * by serial are corrected naming each serial, with an adjustment.
+ */
+export const SERIAL_NOT_COUNTED = (name: string) =>
+  `${name} se controla por número de serie: no se cuenta aquí. Corrige sus existencias con «Corregir existencias», escaneando las series que hay.`;
+
 /** Starts the count of a location. A location has one open count at a time. */
 export async function openCount(
   actor: InventoryActor,
@@ -304,6 +311,14 @@ export async function captureCount(
         return reject(
           "not_allowed",
           `${product.name} está archivado: reactívalo para contarlo.`,
+          "productId",
+        );
+      }
+      // WMS-21B (ADR 0041): a count captures quantities, not serials.
+      if (product.tracking === "SERIAL") {
+        return reject(
+          "not_allowed",
+          SERIAL_NOT_COUNTED(product.name),
           "productId",
         );
       }
@@ -1171,6 +1186,15 @@ export async function applyCount(
             return reject(
               "not_allowed",
               `${stale.product.name} cambió su control por lote después de contarlo. Quita sus capturas y cuéntalo de nuevo.`,
+            );
+          }
+          const serial = count.lines.find(
+            (line) => line.product.tracking === "SERIAL",
+          );
+          if (serial) {
+            return reject(
+              "not_allowed",
+              `${SERIAL_NOT_COUNTED(serial.product.name)} Quita sus capturas para aplicar el conteo.`,
             );
           }
           const slot = (row: { productId: string; lotKey: string }) =>
