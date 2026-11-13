@@ -60,8 +60,25 @@ x.y» citadas son de [`ESPECIFICACION_WMS_v5.md`](ESPECIFICACION_WMS_v5.md).
 Lo que sigue sin hacer después de los pasos cerrados, con el ADR de donde sale.
 Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
-**Qué sigue, en el orden de la tabla de fases:** la Fase 2 está cerrada; de la Fase 3, WMS-58, y producción y calidad (WMS-59, WMS-27..31).
+**Dónde quedó (2026-11-13):** el fundador pidió detenerse al cerrar WMS-39 y WMS-58; no se empieza ningún paso nuevo hasta que lo indique. Fases 1 y 2 cerradas; de la Fase 3 están hechos WMS-56, WMS-41, WMS-57 y WMS-58; transversales hechos: WMS-35, WMS-36 y WMS-39.
 
+**Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
+
+**Decisiones que esperan al fundador:** si el Almacenista de piso puede pedir compras y correcciones; si el piso usará iPhone (escaneo con cámara, ADR 0049); confirmar que el Montacarguista reporte incidencias (ADR 0057).
+
+- Avisos por correo como segundo canal y resumen diario de lotes por caducar y existencias bajas (ADR 0057).
+- Tipos de incidencia configurables por empresa y fotos de evidencia (WMS-37; ADR 0057).
+- Campos personalizados en documentos (órdenes de compra, pedidos de salida), filtros en ubicaciones y proveedores, y en las exportaciones de existencias y movimientos (ADR 0056).
+- Surtir directo de una tarima; quien está limitado a zonas no ve tareas de surtido si «Preparación» queda fuera de su zona; agregar o quitar pedidos de una ola (ADR 0054, ADR 0043).
+- Conteo de productos por serie; los conteos programados que nadie hizo no se cancelan solos (ADR 0050).
+- Evidencia con fotos en aprobaciones; permiso para que el piso pida ajustes; umbral por valor (ADR 0053).
+- El mensaje al archivar un producto puede nombrar órdenes de un almacén fuera del alcance (ADR 0055).
+- Repartir por cross-docking lo que llega en tarima o a pedidos ya surtidos; mandar lo dañado directo a cuarentena al recibir (ADR 0052).
+- Reponer desde una tarima; reposición por demanda (ADR 0051).
+- Trasladar una tarima entera entre almacenes; PDF del traslado (ADR 0048).
+- Escaneo con cámara en iPhone (decisión del fundador); operar sin conexión (ADR 0049).
+- Impresión directa a impresoras de etiquetas (ADR 0047).
+- Devolver al proveedor lo que un cliente regresó y se rechazó (ADR 0046).
 - Reconciliación, productos sin existencias y guía de primer uso siguen sin
   desglose para quien tiene alcance limitado (ADR 0038).
 - Una reubicación entre dos zonas: el historial y la exportación muestran el
@@ -122,7 +139,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | --- | --- | --- |
 | 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, ~~WMS-20~~, ~~WMS-71~~, ~~WMS-72~~, ~~WMS-73~~, ~~WMS-22B~~, ~~WMS-21A~~, ~~WMS-21B~~, ~~WMS-51~~ | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, ~~WMS-19~~, ~~WMS-54~~, ~~WMS-55~~, ~~WMS-26~~, ~~WMS-36~~, ~~WMS-23~~, ~~WMS-24~~, ~~WMS-25~~ | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
-| 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, WMS-58, ~~WMS-41~~, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
+| 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, ~~WMS-58~~, ~~WMS-41~~, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
 | Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, WMS-37, WMS-38, ~~WMS-39~~, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
 | 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, WMS-46, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
@@ -151,6 +168,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-73 | Resumen del día | Hecho (2026-11-12) |
 | WMS-21A | Lotes y caducidad | Hecho (2026-11-13, ADR 0040); series y trazabilidad por serie o pedido quedan en WMS-21B |
 | WMS-21B | Números de serie y trazabilidad | Hecho (2026-11-13, ADR 0041); pendiente: conteo por serie, series en importaciones |
+| WMS-58 | Campos personalizados | Hecho (2026-11-13, ADR 0056): productos, ubicaciones y proveedores; pendiente: documentos |
 | WMS-39 | Incidencias y notificaciones dentro de la app | Hecho (2026-11-13, ADR 0057); pendiente: correo como segundo canal |
 | WMS-57 | Solicitudes de compra y comparación de proveedores | Hecho (2026-11-13, ADR 0055), con almacén en las órdenes de compra |
 | WMS-25 | Picking por olas, por lotes y por zona | Hecho (2026-11-13, ADR 0054): Fase 2 cerrada; pendiente: surtir directo de una tarima |

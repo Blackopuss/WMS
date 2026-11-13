@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-58** · Campos personalizados (ADR 0056): definiciones y valores sin
+  columnas por cliente para productos, ubicaciones y proveedores; formularios,
+  fichas, filtro de Inventario, exportación e importación de productos.
 - **WMS-39** · Avisos e incidencias (ADR 0057): motor de avisos de plataforma
   (`notify` dentro de la transacción, campana y `/avisos`, preferencias),
   conectado a aprobaciones, solicitudes de compra, tareas, devoluciones y

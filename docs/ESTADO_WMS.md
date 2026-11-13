@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
-Actualizado: 2026-11-13. Rama `pruebas` de `Blackopuss/WMS`, últimos pasos cerrados
-WMS-21A y WMS-51 (el detalle por paso está en `CHANGELOG.md`). Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+Actualizado: 2026-11-13. Rama `pruebas` de `Blackopuss/WMS`, Fases 1 y 2 cerradas y parte de la
+Fase 3 (el detalle por paso está en `CHANGELOG.md`; el fundador pidió detenerse aquí el 2026-11-13). Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -16,7 +16,10 @@ abajo son de ese documento).
 | Estados de inventario, lotes en el saldo y reservas | Hecho (etapa A, WMS-09..12) |
 | Pedidos de salida | Hecho (WMS-13; importación desde Excel/CSV, WMS-13B) |
 | Surtido | Hecho (WMS-14) |
-| Empaque, despacho y devoluciones de clientes | Falta (WMS-15..17) |
+| Acomodo, tarimas, empaque, despacho y devoluciones de clientes | Hecho (WMS-52, 53, 15, 16, 17; ADR 0042 a 0046) |
+| Traslados entre almacenes, cross-docking y daños al recibir, conteos cíclicos, etiquetas, reposición de surtido, surtido por olas | Hecho (WMS-19, 54, 55, 26, 23/24, 25; ADR 0047, 0048, 0050, 0051, 0052, 0054) |
+| Aprobaciones y ajustes con autorización, solicitudes de compra, campos personalizados | Hecho (WMS-56/41, 57, 58; ADR 0053, 0055, 0056) |
+| Avisos dentro de la app e incidencias | Hecho (WMS-39, ADR 0057) |
 | Producción y calidad | Falta (WMS-27..31, WMS-59) |
 | Analítica | Falta (WMS-32..34) |
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
@@ -25,7 +28,8 @@ abajo son de ese documento).
 | Capacidad y restricciones de ubicación | Hecho (WMS-22B, ADR 0039, 2026-11-12) |
 | Lotes y caducidad | Hecho (WMS-21A, ADR 0040, 2026-11-13) |
 | Números de serie y trazabilidad por lote, serie o pedido | Hecho (WMS-21B, ADR 0041, 2026-11-13) |
-| PWA, escaneo con cámara, PIN | Falta (transversal: WMS-35, 36, 38) |
+| App instalable y escaneo con cámara | Hecho (WMS-35/36, ADR 0049); el escaneo no funciona en iPhone |
+| Fotos de evidencia, PIN en terminales compartidas, API y webhooks | Falta (WMS-37, 38, 60) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
 Ventas (punto de venta, caja, cotizaciones, ventas a plazos) se quitó del
