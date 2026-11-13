@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-57** · Solicitudes de compra y comparación de proveedores (ADR 0055):
+  solicitud `SC-…` sin costos, aprobación con el motor de WMS-56, comparación
+  derivada de las recepciones y conversión en una orden por proveedor; las
+  órdenes de compra ganan almacén.
 - **WMS-25** · Surtido por olas, por lotes y por zona (ADR 0054): ola `OL-…`,
   orden de recorrido por código de ubicación, confirmar juntas las tareas del
   mismo estante, reparto por zona; el surtido prefiere ubicaciones de surtido.
