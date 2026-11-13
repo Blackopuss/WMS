@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-55** · Conteos cíclicos (ADR 0050): programas de conteo, clase ABC
+  derivada, conteos del día generados por una ronda sin duplicar, revisión por
+  diferencia y exactitud de inventario por semana y mes.
 - **WMS-23 / WMS-24** · Reposición de surtido (ADR 0051): reglas de mínimo,
   máximo y múltiplo por producto y ubicación de surtido, tareas `REPLENISH`,
   «Reponer ahora» y ronda periódica sin duplicar.
