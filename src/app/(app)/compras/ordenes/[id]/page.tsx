@@ -266,6 +266,28 @@ ${order.closeReason ?? ""}`,
                   order.supplierName
                 ),
               ],
+              // WMS-57: its warehouse, and the request it came from.
+              ...(order.facilityName
+                ? ([["Almacén", order.facilityName]] as const)
+                : []),
+              ...(order.request
+                ? ([
+                    [
+                      "Solicitud",
+                      access.can("purchasing.request.read") ? (
+                        <Link
+                          key="request"
+                          href={`/compras/solicitudes/${order.request.id}`}
+                          className={textLink}
+                        >
+                          {order.request.numberText}
+                        </Link>
+                      ) : (
+                        order.request.numberText
+                      ),
+                    ],
+                  ] as const)
+                : []),
               // Empty data is not shown: no rows of dashes.
               ...(expected ? ([["Se espera", expected]] as const) : []),
               ...(order.notes ? ([["Notas", order.notes]] as const) : []),

@@ -1164,6 +1164,30 @@ beforeAll(async () => {
         requestedByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A purchase request with its line (WMS-57).
+    const purchaseRequestId = newId();
+    await db.purchaseRequest.create({
+      data: {
+        id: purchaseRequestId,
+        organizationId,
+        number: 1,
+        facilityId: location.facilityId,
+        requestedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.purchaseRequestLine.create({
+      data: {
+        id: newId(),
+        organizationId,
+        requestId: purchaseRequestId,
+        lineNumber: 1,
+        productId,
+        capturedQuantity: "2",
+        factor: "1",
+        baseQuantity: "2",
+        unitCode: "piece",
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

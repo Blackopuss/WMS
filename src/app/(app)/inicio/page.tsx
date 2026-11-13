@@ -12,6 +12,7 @@ import {
   Undo2,
   ClipboardCheck,
   ShieldCheck,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -35,7 +36,10 @@ import {
   listLowStock,
   listRecentMovements,
 } from "@/modules/inventory";
-import { listPurchaseOrders } from "@/modules/purchasing";
+import {
+  countRequestsToAttend,
+  listPurchaseOrders,
+} from "@/modules/purchasing";
 import { approvalTypes, moduleRegistry } from "@/modules/registry";
 import { countPendingApprovals } from "@/platform/approvals";
 import {
@@ -151,6 +155,12 @@ export default async function InicioPage() {
   // WMS-56: requests waiting for this person, only for who may decide one
   // and only if any (the service answers 0 to everyone else).
   const toApprove = await countPendingApprovals(actor, approvalTypes);
+  // WMS-57: requests that reached Compras, for who attends them, only if any.
+  const toAttend =
+    access.can("purchasing.request.read") &&
+    access.allows("purchasing.order.create")
+      ? await countRequestsToAttend(actor)
+      : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -245,6 +255,16 @@ export default async function InicioPage() {
             label: "Conteos de hoy",
             count: toCount,
             icon: ClipboardCheck,
+          },
+        ]
+      : []),
+    ...(toAttend > 0
+      ? [
+          {
+            href: "/compras/solicitudes",
+            label: "Solicitudes de compra por atender",
+            count: toAttend,
+            icon: ShoppingCart,
           },
         ]
       : []),

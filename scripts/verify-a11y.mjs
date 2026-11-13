@@ -81,6 +81,8 @@ const SCREENS = [
   "/compras",
   "/compras/proveedores",
   "/compras/ordenes/nueva",
+  "/compras/solicitudes",
+  "/compras/solicitudes/nueva",
   "/configuracion",
   "/ubicaciones",
   "/ubicaciones/niveles",

@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   FileBarChart,
   PackageSearch,
   Plus,
@@ -102,6 +103,16 @@ export default async function ComprasPage({
       : []),
     ...(access.can("purchasing.report.read")
       ? [{ href: "/compras/reportes", label: "Reportes", icon: FileBarChart }]
+      : []),
+    // WMS-57: what the team asks Compras for.
+    ...(access.can("purchasing.request.read")
+      ? [
+          {
+            href: "/compras/solicitudes",
+            label: "Solicitudes de compra",
+            icon: ClipboardList,
+          },
+        ]
       : []),
   ];
   const statuses = Object.keys(

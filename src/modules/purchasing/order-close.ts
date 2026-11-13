@@ -12,7 +12,11 @@ import {
   type TenantDb,
 } from "@/server";
 
-import { PURCHASE_ORDER_MAX_LINES, formatOrderNumber } from "./orders";
+import {
+  PURCHASE_ORDER_MAX_LINES,
+  formatOrderNumber,
+  orderInScope,
+} from "./orders";
 import { transitionProblem } from "./order-states";
 import type { PurchasingActor } from "./product-suppliers";
 import { inTermsOf, receivedByLine } from "./receipts";
@@ -146,11 +150,15 @@ export async function closePurchaseOrder(
               id: true,
               number: true,
               status: true,
+              facilityId: true,
               contact: { select: { name: true } },
             },
           })
         : null;
-      if (!order) return refuse("not_found", "Esta orden ya no existe.");
+      // WMS-57: an order of a warehouse outside the scope does not exist.
+      if (!order || !(await orderInScope(tx, userId, order.facilityId))) {
+        return refuse("not_found", "Esta orden ya no existe.");
+      }
       const shortage = await shortageOf(tx, order.id);
       const shortageText = listText(shortage.map((line) => line.text));
       if (order.status === "CLOSED") {

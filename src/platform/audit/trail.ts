@@ -123,6 +123,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "approval.expired": "Una solicitud de autorización venció",
   "inventory.wave_created": "Creó una ola de surtido",
   "inventory.wave_cancelled": "Canceló una ola de surtido",
+  "purchase_request.created": "Empezó una solicitud de compra",
+  "purchase_request.submitted": "Envió una solicitud de compra",
+  "purchase_request.approved": "Una solicitud de compra pasó a Compras",
+  "purchase_request.rejected": "Rechazó una solicitud de compra",
+  "purchase_request.cancelled": "Canceló una solicitud de compra",
+  "purchase_request.converted": "Convirtió una solicitud de compra en orden",
 };
 
 export function describeAuditAction(action: string): string {

@@ -112,3 +112,56 @@ export type {
   OrderDeliveryPanel,
   RequestDeliveryResult,
 } from "./order-delivery";
+export {
+  PURCHASE_REQUEST_MAX_LINES,
+  PURCHASE_REQUEST_PAGE_SIZE,
+  addRequestLine,
+  cancelPurchaseRequest,
+  convertPurchaseRequest,
+  countRequestsToAttend,
+  createPurchaseRequest,
+  getPurchaseRequest,
+  listPurchaseRequests,
+  rejectPurchaseRequest,
+  removeRequestLine,
+  submitPurchaseRequest,
+  updatePurchaseRequest,
+  updateRequestLine,
+} from "./requests";
+export type {
+  ConvertRequestResult,
+  CreateRequestResult,
+  PurchaseRequestDetail,
+  PurchaseRequestLineView,
+  PurchaseRequestPage,
+  PurchaseRequestSummary,
+  PurchaseRequestView,
+  RequestFailure,
+  RequestField,
+  RequestHeaderInput,
+  RequestLineInput,
+  RequestTransitionResult,
+  SubmitRequestResult,
+} from "./requests";
+export {
+  PURCHASE_REQUEST_STATUSES,
+  PURCHASE_REQUEST_STATUS_LABELS,
+  PURCHASE_REQUEST_TRANSITIONS,
+  canRequestTransition,
+  formatRequestNumber,
+  isPurchaseRequestStatus,
+  requestTransitionProblem,
+} from "./request-states";
+export type { PurchaseRequestStatus } from "./request-states";
+export {
+  COMPARE_MAX_ORDERS,
+  COMPARE_ORDERS_PER_SUPPLIER,
+  compareSuppliers,
+} from "./supplier-comparison";
+export type {
+  ComparisonLine,
+  SupplierComparison,
+  SupplierOption,
+} from "./supplier-comparison";
+export { PURCHASING_APPROVAL_TYPES } from "./approvals";
+export { COMPARE_MIN_FULFILLMENT, PURCHASING_SETTINGS } from "./settings";

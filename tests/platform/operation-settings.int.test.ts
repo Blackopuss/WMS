@@ -29,6 +29,7 @@ import {
   setOutboundLine,
   type InventoryActor,
 } from "@/modules/inventory";
+import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
 import { moduleRegistry, operationSettings } from "@/modules/registry";
 import { listAuditTrail } from "@/platform/audit";
 import type { Role } from "@/platform/authorization";
@@ -405,5 +406,62 @@ describe("picking follows the company's choice", () => {
     });
     const supervisor = await member(owner.organizationId, "supervisor");
     await expect(setStagingLocation(supervisor, general.id)).rejects.toThrow();
+  });
+});
+
+describe("settings of Compras (WMS-57)", () => {
+  it("only a company with Compras has them, with their default", async () => {
+    const withoutIt = await company();
+    expect(
+      (await getOperationSettings(withoutIt, operationSettings)).map(
+        (setting) => setting.key,
+      ),
+    ).not.toContain(COMPARE_MIN_FULFILLMENT.key);
+    const owner = await newUser();
+    const created = await createOrganization(owner, {
+      name: `Empresa ajustes compras ${counter}`,
+      timeZone: "",
+    });
+    if (!created.ok) throw new Error("company setup failed");
+    const provisioned = await provisionCompany(
+      moduleRegistry,
+      staff,
+      created.organizationId,
+      {
+        productLimit: 20,
+        users: 10,
+        modules: ["inventory", "purchasing"],
+        validUntil: null,
+        reason: "Prueba de ajustes de Compras",
+      },
+    );
+    if (!provisioned.ok) throw new Error("provision failed");
+    const withIt = { organizationId: created.organizationId, userId: owner };
+    expect(
+      (await getOperationSettings(withIt, operationSettings)).find(
+        (setting) => setting.key === COMPARE_MIN_FULFILLMENT.key,
+      ),
+    ).toMatchObject({ value: "90", defaultValue: "90" });
+    expect(
+      await updateOperationSetting(
+        withIt,
+        operationSettings,
+        COMPARE_MIN_FULFILLMENT.key,
+        "95",
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      await readSetting(
+        forOrganization(withIt.organizationId),
+        COMPARE_MIN_FULFILLMENT,
+      ),
+    ).toBe("95");
+    // Another company keeps its default.
+    expect(
+      await readSetting(
+        forOrganization(withoutIt.organizationId),
+        COMPARE_MIN_FULFILLMENT,
+      ),
+    ).toBe("90");
   });
 });

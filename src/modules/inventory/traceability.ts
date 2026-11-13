@@ -239,9 +239,19 @@ export async function findTraceMatches(
   if (purchaseNumber && (await mayReadPurchasing(actor))) {
     const order = await client.purchaseOrder.findFirst({
       where: { number: purchaseNumber },
-      select: { id: true, number: true, contact: { select: { name: true } } },
+      select: {
+        id: true,
+        number: true,
+        facilityId: true,
+        contact: { select: { name: true } },
+      },
     });
-    if (order) {
+    // WMS-57: an order of a warehouse outside the scope does not exist.
+    if (
+      order &&
+      (order.facilityId === null ||
+        (await isFacilityInScope(client, actor.userId, order.facilityId)))
+    ) {
       matches.push({
         kind: "purchase_order",
         id: order.id,
@@ -831,6 +841,7 @@ export async function tracePurchaseOrder(
     select: {
       id: true,
       number: true,
+      facilityId: true,
       contact: { select: { name: true } },
       receipts: {
         orderBy: { id: "asc" },
@@ -851,7 +862,14 @@ export async function tracePurchaseOrder(
       },
     },
   });
-  if (!order) return null;
+  // WMS-57: an order of a warehouse outside the scope does not exist.
+  if (
+    !order ||
+    (order.facilityId !== null &&
+      !(await isFacilityInScope(client, actor.userId, order.facilityId)))
+  ) {
+    return null;
+  }
   const outside = new Set(
     await locationsOutOfScope(
       client,

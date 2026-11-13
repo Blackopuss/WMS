@@ -276,7 +276,7 @@ export const AREAS = [
     title: "Compras",
     doc: "purchasing",
     summary:
-      "Producto-proveedor, órdenes de compra y sus envíos, recepciones y devoluciones al proveedor.",
+      "Producto-proveedor, solicitudes y órdenes de compra y sus envíos, recepciones y devoluciones al proveedor.",
     models: [
       "ProductSupplier",
       "PurchaseOrder",
@@ -286,6 +286,8 @@ export const AREAS = [
       "PurchaseReceiptLine",
       "PurchaseReturn",
       "PurchaseReturnLine",
+      "PurchaseRequest",
+      "PurchaseRequestLine",
     ],
   },
 ];

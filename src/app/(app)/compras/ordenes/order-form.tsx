@@ -23,6 +23,7 @@ export function OrderForm({
   action,
   initial,
   suppliers,
+  facilities = null,
   submitLabel,
   cancelHref,
 }: {
@@ -30,6 +31,11 @@ export function OrderForm({
   initial: OrderFormState["values"];
   /** Suppliers to choose from; null when the order already has its own. */
   suppliers: { id: string; name: string }[] | null;
+  /**
+   * Warehouses the order may be for (WMS-57), shown only when the person
+   * works in more than one; null otherwise.
+   */
+  facilities?: { id: string; name: string }[] | null;
   submitLabel: string;
   cancelHref: string;
 }) {
@@ -42,9 +48,9 @@ export function OrderForm({
   const alertRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const first = (["supplierId", "expectedOn", "notes"] as const).find(
-      (field) => state.fieldErrors[field],
-    );
+    const first = (
+      ["supplierId", "facilityId", "expectedOn", "notes"] as const
+    ).find((field) => state.fieldErrors[field]);
     if (first)
       formRef.current?.querySelector<HTMLElement>(`#${first}`)?.focus();
     else if (state.formError) alertRef.current?.focus();
@@ -94,6 +100,28 @@ export function OrderForm({
               {suppliers.map((supplier) => (
                 <option key={supplier.id} value={supplier.id}>
                   {supplier.name}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+        </FormField>
+      )}
+      {facilities && facilities.length > 1 && (
+        <FormField
+          id="facilityId"
+          label="Almacén donde se recibe"
+          error={state.fieldErrors.facilityId}
+        >
+          {(control) => (
+            <NativeSelect
+              {...control}
+              name="facilityId"
+              key={`facility-${state.answers}`}
+              defaultValue={state.values.facilityId}
+            >
+              {facilities.map((facility) => (
+                <option key={facility.id} value={facility.id}>
+                  {facility.name}
                 </option>
               ))}
             </NativeSelect>

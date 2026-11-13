@@ -354,9 +354,17 @@ async function serialLabels(
     );
     const receipt = await client.purchaseReceipt.findFirst({
       where: { id: receiptId },
-      select: { movementId: true },
+      select: { movementId: true, order: { select: { facilityId: true } } },
     });
-    if (!receipt) return { ok: false, reason: "not_found" };
+    // WMS-57: a receipt of an order of a warehouse outside the scope does
+    // not exist.
+    if (
+      !receipt ||
+      (receipt.order.facilityId !== null &&
+        !(await isFacilityInScope(client, userId, receipt.order.facilityId)))
+    ) {
+      return { ok: false, reason: "not_found" };
+    }
     const lines = await client.stockMovementLine.findMany({
       where: { movementId: receipt.movementId },
       select: { id: true },

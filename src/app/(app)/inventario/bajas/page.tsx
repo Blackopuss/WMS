@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  ShoppingCart,
   TriangleAlert,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -76,6 +77,10 @@ export default async function ExistenciasBajasPage({
   const pageHref = (page: number) =>
     page > 1 ? `/inventario/bajas?pagina=${page}` : "/inventario/bajas";
   const canEnter = access.allows("inventory.entry.create");
+  // WMS-57: ask Compras for it, with the product already chosen.
+  const canRequest =
+    access.allows("purchasing.request.create") &&
+    access.moduleState("purchasing") === "active";
 
   return (
     <PageContainer>
@@ -159,6 +164,20 @@ export default async function ExistenciasBajasPage({
                     {item.missingLabel} para el mínimo
                   </p>
                 </div>
+                {canRequest && (
+                  <Button asChild variant="outline">
+                    <Link
+                      href={`/compras/solicitudes/nueva?producto=${item.productId}`}
+                      aria-label={`Solicitar compra de ${item.name}`}
+                    >
+                      <ShoppingCart
+                        aria-hidden="true"
+                        data-icon="inline-start"
+                      />
+                      Solicitar compra
+                    </Link>
+                  </Button>
+                )}
                 {canEnter && (
                   <Button asChild variant="outline">
                     <Link

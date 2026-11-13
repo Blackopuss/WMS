@@ -9,7 +9,7 @@ import { buildCsv, buildXlsx, type Cell } from "@/platform/files";
 import { forOrganization } from "@/server";
 
 import { PURCHASE_ORDER_STATUS_LABELS } from "./order-states";
-import { formatOrderNumber } from "./orders";
+import { formatOrderNumber, visibleOrdersWhere } from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
 import { inTermsOf, receivedByLine } from "./receipts";
 
@@ -121,8 +121,10 @@ export async function getPendingReport(
   const client = forOrganization(actor.organizationId);
   const timeZone = await timeZoneOf(actor.organizationId);
   const today = dayOf(new Date(), timeZone);
+  // WMS-57: only the orders that exist for the person.
+  const visible = await visibleOrdersWhere(client, actor.userId);
   const lines = await client.purchaseOrderLine.findMany({
-    where: { order: { status: { in: ["SENT", "PARTIAL"] } } },
+    where: { order: { status: { in: ["SENT", "PARTIAL"] }, ...visible } },
     orderBy: [{ orderId: "asc" }, { lineNumber: "asc" }],
     take: REPORT_MAX_ROWS + 1,
     select: {
@@ -274,8 +276,10 @@ export async function getPurchasesBySupplier(
   }
   const client = forOrganization(actor.organizationId);
   const when = { gte: start, lt: end };
+  // WMS-57: only the orders that exist for the person.
+  const visible = await visibleOrdersWhere(client, actor.userId);
   const receiptRows = await client.purchaseReceipt.findMany({
-    where: { createdAt: when },
+    where: { createdAt: when, order: visible },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: REPORT_MAX_ROWS + 1,
     select: {
@@ -293,7 +297,7 @@ export async function getPurchasesBySupplier(
     },
   });
   const returnRows = await client.purchaseReturn.findMany({
-    where: { createdAt: when },
+    where: { createdAt: when, receipt: { order: visible } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: REPORT_MAX_ROWS + 1,
     select: {

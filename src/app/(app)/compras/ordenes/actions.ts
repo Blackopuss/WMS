@@ -34,13 +34,19 @@ export type OrderFormState = {
   fieldErrors: Partial<Record<OrderField, string>>;
   formError?: string;
   /** What the person had written, to show it again after a refusal. */
-  values: { supplierId: string; expectedOn: string; notes: string };
+  values: {
+    supplierId: string;
+    facilityId?: string;
+    expectedOn: string;
+    notes: string;
+  };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
 };
 
 const header = (formData: FormData) => ({
   supplierId: String(formData.get("supplierId") ?? "").slice(0, 36),
+  facilityId: String(formData.get("facilityId") ?? "").slice(0, 36),
   expectedOn: String(formData.get("expectedOn") ?? "").slice(0, 10),
   notes: String(formData.get("notes") ?? "").slice(0, 2000),
 });

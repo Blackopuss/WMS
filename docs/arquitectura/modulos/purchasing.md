@@ -11,7 +11,8 @@ Comprar a proveedores y recibir lo comprado: relación producto-proveedor con
 último costo, órdenes de compra (borrador, envío, recepción parcial o total,
 cierre con faltante, cancelación), PDF y envío por correo de la orden,
 recepciones (cada una escribe su entrada de inventario), devoluciones al
-proveedor, sugerencias de compra por mínimos y reportes.
+proveedor, sugerencias de compra por mínimos y reportes; solicitudes de compra
+de quien necesita mercancía, con comparación de proveedores (WMS-57, ADR 0055).
 
 Reglas que no se rompen:
 
@@ -42,7 +43,26 @@ Reglas que no se rompen:
   → pedidos de salida → tarima → capacidad) y les manda lo sano con tareas
   de surtido; `receivePurchaseOrder` lo devuelve en `crossDock`.
 - Los costos solo existen en la respuesta para quien tiene
-  `purchasing.cost.read`.
+  `purchasing.cost.read`. Una solicitud de compra nunca lleva costos; la
+  comparación de proveedores responde `{ visible: false }` a los demás.
+- El almacén de una orden (WMS-57, ADR 0055): `purchase_order.facilityId`
+  (no cambia; `NULL` = de toda la empresa, como todas las anteriores). Una
+  orden existe para la persona si no tiene almacén o es de uno de su alcance
+  (`orderInScope`, en todo lo que lee o cambia una orden: detalle, líneas,
+  confirmar, cancelar, cerrar, PDF, correo, recibir, recepciones,
+  devoluciones, rastreo y etiquetas); las listas (Compras y Recepción) son del
+  almacén activo más las de toda la empresa (`listedOrdersWhere`) y los
+  reportes, de todas las que existen para la persona (`visibleOrdersWhere`).
+  Se recibe solo en ubicaciones de su almacén.
+- Solicitudes de compra (WMS-57): estados con
+  `PURCHASE_REQUEST_TRANSITIONS` (`request-states.ts`) y el disparador
+  `purchase_request_transition`; sus líneas solo cambian en borrador; no se
+  borran. Un borrador es privado de quien lo escribe. Enviar pide la
+  autorización (tipo `purchasing.request`, `approvals.ts`) dentro de su
+  transacción si la regla está encendida; si no, llega directo «por atender».
+  Convertir bloquea productos → solicitud, crea un borrador por proveedor con
+  `insertDraftOrder` (el mismo de las sugerencias) y responde `repeated` si ya
+  estaba convertida.
 - Cada servicio empieza con `assertModulePermission`;
   `tests/purchasing/module-guard.int.test.ts` llama cada función exportada en
   una empresa sin el módulo.
@@ -58,7 +78,9 @@ Reglas que no se rompen:
 | Envío por correo | `order-delivery.ts` | `requestOrderDelivery` (encola), `getOrderDeliveries`; manejador `purchasingJobHandlers` |
 | Recepciones | `receipts.ts` | `receivePurchaseOrder` (parcial, destino por línea, lote por línea, series por línea para un producto por serie, todo en una tarima con `container`, WMS-53; lo dañado por línea y lo que fue directo a pedidos, WMS-54), `getOrderReceipts` (cada línea de recepción dice si es dañada), `findReceiptConfirmation` |
 | Devoluciones | `returns.ts` | `returnToSupplier` (un producto por serie devuelve unidades que llegaron con esa línea de recepción; lo dañado sale de «Dañado», WMS-54), `findReturnConfirmation` |
-| Sugerencias | `suggestions.ts` | `getPurchaseSuggestions`, `generateSuggestedOrders` (borradores por proveedor) |
+| Sugerencias | `suggestions.ts` | `getPurchaseSuggestions`, `generateSuggestedOrders` (borradores por proveedor, con `insertDraftOrder`) |
+| Solicitudes | `requests.ts`, `request-states.ts`, `approvals.ts` | `createPurchaseRequest`, `updatePurchaseRequest`, `addRequestLine`, `updateRequestLine`, `removeRequestLine`, `submitPurchaseRequest` (`pending_approval` con la regla encendida), `cancelPurchaseRequest`, `rejectPurchaseRequest`, `convertPurchaseRequest`, `listPurchaseRequests` (`attend`, `mine`, `all`), `getPurchaseRequest`, `countRequestsToAttend`; tipo de aprobación `PURCHASING_APPROVAL_TYPES` |
+| Comparar proveedores | `supplier-comparison.ts` | `compareSuppliers`: último costo por unidad del producto, días de entrega y cumplimiento (y dañado) de las últimas 10 órdenes de cada proveedor, con tope de 500 órdenes (`truncated`) y el sugerido |
 | Reportes | `reports.ts` | `getPendingReport`, `getPurchasesBySupplier`, `buildPurchaseReport` (archivo) |
 | Al quitar el módulo | `deactivation.ts` | `purchasingOpenWork`: lo que quedaría a medias, para la consola |
 
@@ -71,18 +93,28 @@ Proveedores (`createSupplier`, `listSuppliers`…) viven en
 `purchasing.product_supplier.read|create|update`, `purchasing.cost.read|record`,
 `purchasing.order.read|create|update|submit|export|send|cancel|close`,
 `purchasing.receipt.read|create`, `purchasing.return.read|create`,
-`purchasing.suggestion.read|generate`, `purchasing.report.read|export`.
+`purchasing.suggestion.read|generate`, `purchasing.report.read|export`,
+`purchasing.request.read|create` (WMS-57: Almacén y supervisión piden sin
+comprar; atender y convertir exige `purchasing.order.create`).
 
 ## Tablas
 
 `product_supplier`, `purchase_order`, `purchase_order_line`,
 `purchase_order_delivery`, `purchase_receipt`, `purchase_receipt_line`,
-`purchase_return`, `purchase_return_line`. Usa `contact` (núcleo) y escribe en
+`purchase_return`, `purchase_return_line`, `purchase_request`,
+`purchase_request_line`. Usa `contact` (núcleo) y escribe en
 las de Inventario solo por `postReceiptEntry`/`postReturnExit`.
 
 ## Ajustes de operación
 
-Ninguno todavía.
+| Clave | Opciones | Qué decide |
+| --- | --- | --- |
+| `purchasing.compare.min_fulfillment` | `any`, `80`, `90` (omisión), `95` | Proveedor sugerido al comparar: el de menor costo por unidad entre los que entregaron al menos ese porcentaje (o no tienen historial) |
+
+## Tipos de aprobación
+
+`purchasing.request` («Solicitudes de compra»): autoriza `purchasing.order.create`;
+sin umbral.
 
 ## Trabajos en segundo plano
 
@@ -92,17 +124,21 @@ Ninguno todavía.
 
 ## Pantallas
 
-`/compras` (órdenes, proveedores, sugerencias, reportes) y `/recepcion` (órdenes
-`SENT`/`PARTIAL` por recibir). Descargas en `/api/compras/…`.
+`/compras` (órdenes, proveedores, sugerencias, reportes, solicitudes),
+`/compras/solicitudes` («Por atender», «Mis solicitudes», «Todas»),
+`/compras/solicitudes/nueva` («Solicitar compra», también desde «Existencias
+bajas» y la ficha del producto), `/compras/solicitudes/[id]` (y `/producto`) y
+`/recepcion` (órdenes `SENT`/`PARTIAL` por recibir). Descargas en
+`/api/compras/…`.
 
 ## ADR
 
 0016 (contactos), 0017 (producto-proveedor y costos), 0018 (órdenes), 0019
 (PDF propio), 0020 (envío por correo), 0021 (recepción), 0052 (cross-docking y
-daños al recibir).
+daños al recibir), 0055 (solicitudes de compra y almacén de las órdenes).
 
 ## Pruebas
 
 `tests/purchasing/*.int.test.ts` (incluye concurrencia de recepciones y el guard
-del módulo) y `order-states.test.ts`. Pendiente conocido (ADR 0038): los
-documentos de Compras no tienen almacén.
+del módulo; `requests.int.test.ts` y `order-facility.int.test.ts`, WMS-57),
+`order-states.test.ts` y `request-states.test.ts`.

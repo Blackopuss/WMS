@@ -1,15 +1,14 @@
 import "server-only";
 
-import { dec, formatDecimal, isAppError, newId } from "@/lib";
+import { dec, formatDecimal, isAppError } from "@/lib";
 import {
   AVAILABLE_ANY_LOT,
   PRODUCT_HOLDS,
   formatStock,
 } from "@/modules/inventory";
-import { recordAuditEvent } from "@/platform/audit";
 import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
-import { pluralizeName, resolveConversion } from "@/platform/catalog";
+import { pluralizeName } from "@/platform/catalog";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -17,7 +16,12 @@ import {
   type TenantDb,
 } from "@/server";
 
-import { PURCHASE_ORDER_MAX_LINES, formatOrderNumber } from "./orders";
+import {
+  OrderNumberTaken,
+  PURCHASE_ORDER_MAX_LINES,
+  formatOrderNumber,
+  insertDraftOrder,
+} from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
 
 /**
@@ -384,8 +388,6 @@ export type GenerateSuggestedResult =
 const LIMITED_MESSAGE =
   "Qué pedir se calcula con las existencias de toda la empresa, y tú trabajas solo en algunos almacenes o zonas. Pídeselo a quien administra.";
 
-class NumberTaken extends Error {}
-
 /**
  * Creates one draft per supplier with what is suggested for the given
  * products (CMP-14), recomputed here under their locks: the browser only
@@ -475,38 +477,36 @@ export async function generateSuggestedOrders(
           ) {
             const chunk = items.slice(start, start + PURCHASE_ORDER_MAX_LINES);
             number += 1;
-            const orderId = newId();
-            try {
-              await tx.purchaseOrder.create({
-                data: {
-                  id: orderId,
-                  organizationId,
-                  number,
-                  contactId: supplierId,
-                  notes: "Sugerida desde mínimos.",
-                  createdByUserId: userId,
-                },
-              });
-            } catch (error) {
-              if ((error as { code?: string }).code === "P2002") {
-                throw new NumberTaken();
-              }
-              throw error;
-            }
-            await writeLines(tx, organizationId, orderId, chunk, withCosts);
             const supplierName = chunk[0]!.supplierName ?? "";
-            await recordAuditEvent(tx, {
-              organizationId,
-              actorUserId: userId,
-              action: "purchase_order.created",
-              target: { type: "purchase_order", id: orderId },
-              metadata: {
-                orden: formatOrderNumber(number),
-                proveedor: supplierName,
-                origen: "sugerencia desde mínimos",
-                productos: chunk.length,
-              },
+            const written = await insertDraftOrder(tx, actor, {
+              number,
+              supplierId,
+              supplierName,
+              notes: "Sugerida desde mínimos.",
+              // WMS-57: worked out with the stock of the whole company,
+              // so the draft is of the whole company too.
+              facilityId: null,
+              origin: "sugerencia desde mínimos",
+              lines: chunk.map((item) => {
+                const quantity = item.quantity.toString();
+                return {
+                  productId: item.productId,
+                  capture: item.presentationId
+                    ? {
+                        kind: "presentation" as const,
+                        quantity,
+                        presentationId: item.presentationId,
+                      }
+                    : { kind: "base" as const, quantity },
+                  unitCost: withCosts ? item.lastCost : null,
+                };
+              }),
             });
+            // The plan used the same catalog under the same locks.
+            if (!written.ok) {
+              throw new Error(`Suggestion not convertible: ${written.error}`);
+            }
+            const orderId = written.orderId;
             orders.push({
               orderId,
               numberText: formatOrderNumber(number),
@@ -527,64 +527,11 @@ export async function generateSuggestedOrders(
         };
       }, LOCKING_TRANSACTION);
     } catch (error) {
-      if (error instanceof NumberTaken) continue;
+      if (error instanceof OrderNumberTaken) continue;
       throw error;
     }
   }
   throw new Error("Could not number the suggested orders");
-}
-
-/** The lines of a suggested draft, converted with the content in force. */
-async function writeLines(
-  tx: Tx,
-  organizationId: string,
-  orderId: string,
-  items: Planned[],
-  withCosts: boolean,
-) {
-  const links = await tx.productSupplier.findMany({
-    where: {
-      productId: { in: items.map((item) => item.productId) },
-      contactId: items[0]!.supplierId!,
-    },
-    select: { productId: true, supplierSku: true },
-  });
-  const skuOf = new Map(links.map((row) => [row.productId, row.supplierSku]));
-  const data = [];
-  for (const [index, item] of items.entries()) {
-    const quantity = item.quantity.toString();
-    const resolved = await resolveConversion(
-      tx,
-      item.productId,
-      item.presentationId
-        ? {
-            kind: "presentation",
-            quantity,
-            presentationId: item.presentationId,
-          }
-        : { kind: "base", quantity },
-    );
-    // The plan used the same catalog under the same locks.
-    if (!resolved.ok)
-      throw new Error(`Suggestion not convertible: ${resolved.error}`);
-    const { conversion, product } = resolved;
-    data.push({
-      id: newId(),
-      organizationId,
-      orderId,
-      lineNumber: index + 1,
-      productId: item.productId,
-      supplierSku: skuOf.get(item.productId) ?? null,
-      capturedQuantity: conversion.capturedQuantity.toString(),
-      presentationId: conversion.presentation?.id ?? null,
-      presentationVersionId: conversion.presentation?.versionId ?? null,
-      factor: conversion.factor.toString(),
-      baseQuantity: conversion.baseQuantity.toString(),
-      unitCode: product.unitCode,
-      unitCost: withCosts ? item.lastCost : null,
-    });
-  }
-  await tx.purchaseOrderLine.createMany({ data });
 }
 
 /** Whether the person may record costs: never an error, just yes or no. */

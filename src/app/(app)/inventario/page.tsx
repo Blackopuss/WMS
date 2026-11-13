@@ -2,6 +2,7 @@ import {
   Boxes,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   CircleCheck,
   Package,
   Plus,
@@ -228,6 +229,12 @@ export default async function InventarioPage({
         </Link>
       </Button>
     ) : undefined;
+  // WMS-57: who asks Compras for goods but does not see Compras in the
+  // menu reaches their requests from here.
+  const showRequests =
+    access.can("purchasing.request.read") &&
+    !access.can("purchasing.order.read") &&
+    access.moduleState("purchasing") !== "none";
   const quietLink =
     "inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50";
 
@@ -248,7 +255,8 @@ export default async function InventarioPage({
       {!showArchived &&
         (access.can("inventory.movement.read") ||
           showContainers ||
-          showReplenishment) && (
+          showReplenishment ||
+          showRequests) && (
           <p className="-mt-2 flex flex-wrap gap-x-6">
             {access.can("inventory.movement.read") && (
               <Link
@@ -275,6 +283,15 @@ export default async function InventarioPage({
               >
                 <Repeat aria-hidden="true" className="size-4" />
                 Reposición de surtido
+              </Link>
+            )}
+            {showRequests && (
+              <Link
+                href="/compras/solicitudes"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <ClipboardList aria-hidden="true" className="size-4" />
+                Solicitudes de compra
               </Link>
             )}
           </p>

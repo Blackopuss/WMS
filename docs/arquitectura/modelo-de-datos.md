@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-93 tablas en 23 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+95 tablas en 23 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -28,7 +28,7 @@
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
-| Compras | 8 | [purchasing](modulos/purchasing.md) |
+| Compras | 10 | [purchasing](modulos/purchasing.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -2164,7 +2164,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Compras
 
-Producto-proveedor, órdenes de compra y sus envíos, recepciones y devoluciones al proveedor.
+Producto-proveedor, solicitudes y órdenes de compra y sus envíos, recepciones y devoluciones al proveedor.
 
 Documento: [modulos/purchasing.md](modulos/purchasing.md).
 
@@ -2220,10 +2220,12 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+| `facilityId` | `String? · Char(36)` |  | Warehouse it is for (WMS-57): the active one of who created it. NULL for the orders written before (of the whole company). Never changes. |
+| `purchaseRequestId` | `String? · Char(36)` |  | The purchase request it was made from (WMS-57). Never changes. |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
-- Índices: (`organizationId`, `status`, `number`); (`organizationId`, `contactId`, `number`).
-- Relaciones: `contact` → `Contact` por (`organizationId`, `contactId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `status`, `number`); (`organizationId`, `contactId`, `number`); (`organizationId`, `facilityId`, `number`); (`organizationId`, `purchaseRequestId`).
+- Relaciones: `contact` → `Contact` por (`organizationId`, `contactId`) (al borrar: Restrict); `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `purchaseRequest` → `PurchaseRequest` por (`organizationId`, `purchaseRequestId`) (al borrar: Restrict).
 
 ### PurchaseOrderLine · `purchase_order_line`
 
@@ -2374,7 +2376,66 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `receiptLineId`); (`organizationId`, `productId`, `createdAt`).
 - Relaciones: `return` → `PurchaseReturn` por (`organizationId`, `returnId`) (al borrar: Restrict); `receiptLine` → `PurchaseReceiptLine` por (`organizationId`, `receiptLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
 
+### PurchaseRequest · `purchase_request`
+
+Someone needs goods and asks Compras for them (WMS-57, ADR 0055). It carries no costs. It is numbered within the company («SC-0001»), is of the warehouse of who asks, and is never deleted. Its states are those of `PURCHASE_REQUEST_TRANSITIONS` (trigger); it is turned into orders once.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `status` | `PurchaseRequestStatus` | `DRAFT` |  |
+| `neededOn` | `DateTime? · Date` |  | Day it is needed by, in the calendar of the company; optional. |
+| `notes` | `String? · VarChar(500)` |  |  |
+| `requestedByUserId` | `String · Char(36)` |  |  |
+| `submittedAt` | `DateTime? · DateTime(3)` |  |  |
+| `approvedAt` | `DateTime? · DateTime(3)` |  | When it reached Compras; who authorized it (null with the rule off). |
+| `approvedByUserId` | `String? · Char(36)` |  |  |
+| `rejectedAt` | `DateTime? · DateTime(3)` |  |  |
+| `rejectedByUserId` | `String? · Char(36)` |  |  |
+| `rejectReason` | `String? · VarChar(500)` |  |  |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `convertedAt` | `DateTime? · DateTime(3)` |  |  |
+| `convertedByUserId` | `String? · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `requestedByUserId`, `number`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
+
+### PurchaseRequestLine · `purchase_request_line`
+
+One product of a purchase request, as an order line keeps it: what was written, the presentation and version of its content then, and the result in the product's unit (CHECK). No cost. Only while the request is a draft can its lines change (trigger); one line per product.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `requestId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `capturedQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `presentationId` | `String? · Char(36)` |  |  |
+| `presentationVersionId` | `String? · Char(36)` |  |  |
+| `factor` | `Decimal · Decimal(18, 6)` |  |  |
+| `baseQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `requestId`, `lineNumber`); (`organizationId`, `requestId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `request` → `PurchaseRequest` por (`organizationId`, `requestId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `presentation` → `ProductPresentation` por (`organizationId`, `productId`, `presentationId`) (al borrar: Restrict); `presentationVersion` → `PresentationVersion` por (`organizationId`, `presentationId`, `presentationVersionId`) (al borrar: Restrict).
+
 #### Enumeraciones de Compras
 
 - `PurchaseOrderStatus`: `DRAFT`, `SENT`, `PARTIAL`, `RECEIVED`, `CANCELLED`, `CLOSED`.
+- `PurchaseRequestStatus`: `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, `CONVERTED`, `CANCELLED`.
 - `PurchaseOrderDeliveryStatus`: `QUEUED`, `SENT`, `FAILED`.

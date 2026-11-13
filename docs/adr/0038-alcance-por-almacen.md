@@ -97,8 +97,10 @@ salida (ver, editar, liberar, cancelar, listar, importar).
   dice por qué. Siguen sin desglose, por ser de poco riesgo: la
   reconciliación (solo operación), los productos sin existencias y la guía de
   primer uso.
-- Compras: órdenes, recepciones y devoluciones no tienen almacén (pendiente de
-  ADR 0035); se ven todas. Recibir y devolver sí respetan el alcance.
+- Compras: órdenes, recepciones y devoluciones tienen almacén desde WMS-57
+  (ADR 0055): una orden de un almacén fuera del alcance «no existe». Las
+  órdenes escritas antes (sin almacén) y las que crean las sugerencias siguen
+  siendo de toda la empresa y las ve quien puede ver órdenes.
 - En una reubicación entre dos zonas, el historial y la exportación muestran
   el movimiento a quien alcanza una de las dos (con la ruta de la otra).
 - Lo apartado sin ubicación (reservas a nivel producto) no se descuenta de lo

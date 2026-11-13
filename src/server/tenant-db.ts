@@ -102,6 +102,8 @@ export const TENANT_MODELS = [
   "ApprovalRequest",
   "PickWave",
   "PickWaveOrder",
+  "PurchaseRequest",
+  "PurchaseRequestLine",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -313,6 +315,7 @@ const LOCKABLE = {
   countProgram: "count_program",
   approvalRequest: "approval_request",
   pickWave: "pick_wave",
+  purchaseRequest: "purchase_request",
 } as const;
 
 /**

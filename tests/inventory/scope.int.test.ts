@@ -686,10 +686,33 @@ describe("PC-12: limited to warehouse B", () => {
   it("receives and returns purchases only in B", async () => {
     const supplier = await createSupplier(owner, { name: "Proveedor" });
     if (!supplier.ok) throw new Error("supplier setup failed");
-    const order = await createPurchaseOrder(owner, {
+    // WMS-57: an order of A does not exist for who is limited to B…
+    const ofA = await createPurchaseOrder(owner, {
       supplierId: supplier.supplierId,
     });
-    if (!order.ok) throw new Error("order setup failed");
+    if (!ofA.ok) throw new Error("order setup failed");
+    expect(
+      await receivePurchaseOrder(limited, ofA.orderId, {
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    // …but one of the whole company (written before orders had a
+    // warehouse) does: it is received and returned within the scope.
+    const last = await db.purchaseOrder.findFirstOrThrow({
+      where: { organizationId: owner.organizationId },
+      orderBy: { number: "desc" },
+      select: { number: true },
+    });
+    const order = { orderId: newId() };
+    await db.purchaseOrder.create({
+      data: {
+        id: order.orderId,
+        organizationId: owner.organizationId,
+        number: last.number + 1,
+        contactId: supplier.supplierId,
+        createdByUserId: owner.userId,
+      },
+    });
     const added = await addOrderLine(owner, order.orderId, {
       productId,
       capture: "base",

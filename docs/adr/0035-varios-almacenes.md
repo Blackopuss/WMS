@@ -36,8 +36,8 @@ instalación (`facility.organizationId` único) y cada flujo lo suponía.
 
 - Mostrar el almacén junto a la ruta de una ubicación en historial, ficha de
   producto y reportes cuando hay más de uno.
-- Órdenes de compra con almacén de destino (hoy se recibe en la ubicación que
-  se elija del almacén activo).
+- Órdenes de compra con almacén de destino: hechas en WMS-57 (ADR 0055); las
+  órdenes anteriores quedan de toda la empresa.
 - Alcance de permisos por almacén (WMS-20).
 - Traslados entre almacenes con mercancía en tránsito: hechos en WMS-19 (ADR
   0048).
