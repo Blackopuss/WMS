@@ -9,6 +9,11 @@
  * between locations of the same lot, and for products whose lots carry no
  * date or that have no lots: the fullest location first (fewer trips), the
  * emptiest (frees places) or the oldest lot (FIFO).
+ *
+ * WMS-25 (ADR 0054, pending of ADR 0051): between rows equal in expiry
+ * (and, with FIFO, in lot age), a location used for picking (`PICKING`)
+ * goes before the others, so replenishment pays off; expiry still rules.
+ * Without picking locations the order is the one before.
  */
 
 import type { Decimal } from "@/lib";
@@ -20,6 +25,8 @@ export type StockSourceRow = {
   /** «2027-03-05», or null without a date. */
   expiresOn: string | null;
   quantity: Decimal;
+  /** The use of the location (`LocationType`); absent reads as any other. */
+  usage?: string | null;
 };
 
 /**
@@ -39,10 +46,12 @@ export function rankStockSources<T extends StockSourceRow>(
   // No date goes last: it is not about to expire.
   const byExpiry = (a: T, b: T) =>
     (a.expiresOn ?? "9999-12-31").localeCompare(b.expiresOn ?? "9999-12-31");
+  const forPicking = (row: T) => (row.usage === "PICKING" ? 0 : 1);
   return [...rows].sort(
     (a, b) =>
       byExpiry(a, b) ||
       (strategy === "fifo" ? byAge(a, b) : 0) ||
+      forPicking(a) - forPicking(b) ||
       byQuantity(a, b) ||
       a.locationId.localeCompare(b.locationId) ||
       byAge(a, b),

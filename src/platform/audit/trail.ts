@@ -121,6 +121,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "approval.rejected": "Rechazó una solicitud",
   "approval.cancelled": "Retiró una solicitud de autorización",
   "approval.expired": "Una solicitud de autorización venció",
+  "inventory.wave_created": "Creó una ola de surtido",
+  "inventory.wave_cancelled": "Canceló una ola de surtido",
 };
 
 export function describeAuditAction(action: string): string {

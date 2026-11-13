@@ -91,6 +91,13 @@ import {
   removeReplenishmentRule,
   replenishNow,
   saveReplenishmentRule,
+  PICKING_MODE,
+  cancelOutboundOrder,
+  cancelWave,
+  createWave,
+  getWave,
+  listOpenWaves,
+  takeWaveTasks,
 } from "@/modules/inventory";
 import {
   addOrderLine,
@@ -1510,5 +1517,50 @@ describe("PC-12: approvals (WMS-56/41)", () => {
         allowSelfApproval: false,
       });
     }
+  });
+});
+
+describe("PC-12: picking waves (WMS-25)", () => {
+  it("a wave of A does not exist from B, and A's orders do not join a wave there", async () => {
+    await updateOperationSetting(
+      owner,
+      operationSettings,
+      PICKING_MODE.key,
+      "waves",
+    );
+    const made = await createOutboundOrder(owner, { recipient: "Ola A" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await setOutboundLine(owner, made.orderId, { productId, quantity: "1" });
+    const wave = await createWave(owner, { orderIds: [made.orderId] });
+    if (!wave.ok) throw new Error(JSON.stringify(wave));
+    expect(await getWave(free, wave.waveId)).not.toBeNull();
+    expect(await getWave(limited, wave.waveId)).toBeNull();
+    expect(await listOpenWaves(limited)).toEqual([]);
+    expect(await takeWaveTasks(limited, wave.waveId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(
+      await cancelWave(limited, wave.waveId, "No es de mi almacén"),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    // From B (where the limited person works) an order of A is not found.
+    expect(
+      await createWave(limited, { orderIds: [made.orderId] }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await cancelOutboundOrder(owner, made.orderId, "Fin de la prueba"),
+    ).toMatchObject({ ok: true });
+    // Its last open task went with the order: the wave ended.
+    expect(
+      (await db.pickWave.findUniqueOrThrow({ where: { id: wave.waveId } }))
+        .status,
+    ).toBe("DONE");
+    await updateOperationSetting(
+      owner,
+      operationSettings,
+      PICKING_MODE.key,
+      "orders",
+    );
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

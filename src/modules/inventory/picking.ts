@@ -22,6 +22,7 @@ import { PICKING_STRATEGY, PICK_EXPIRED } from "./settings";
 import { AVAILABLE_ANY_LOT } from "./stock-status";
 import { rankStockSources } from "./stock-sources";
 import { formatTaskNumber } from "./task-states";
+import { settleWaveOf } from "./wave-settle";
 
 /**
  * Picking (WMS-14, spec 5.2). Releasing an outbound order reserves its
@@ -61,7 +62,7 @@ export type PickSource = {
  * decides the rest — between locations of the same lot, and for products
  * whose lots carry no date or that have no lots: the fullest location
  * first (fewer trips), the emptiest (frees places) or the oldest lot
- * (FIFO).
+ * (FIFO). Between equals, picking locations first (WMS-25, ADR 0054).
  *
  * Only AVAILABLE stock that nothing reserves in its location, never the
  * staging location itself, never more than is free of the product, and —
@@ -90,6 +91,8 @@ export async function pickSources(
       locationId: true,
       quantity: true,
       lot: { select: { id: true, expiresOn: true } },
+      // WMS-25: picking locations first, between equals (ADR 0054).
+      location: { select: { type: true } },
     },
   });
   const strategy = await readSetting(tx, PICKING_STRATEGY);
@@ -103,6 +106,7 @@ export async function pickSources(
       lotId: row.lot?.id ?? null,
       expiresOn: lotDayOf(row.lot?.expiresOn),
       quantity: dec(row.quantity.toString()),
+      usage: row.location.type,
     }))
     // A lot is good through its expiry day (the company's calendar).
     .filter((row) => !today || !isExpired(row.expiresOn, today));
@@ -333,26 +337,38 @@ export async function deliverPick(
 /**
  * After a PICK task closes: the order is picked when none of its picking
  * tasks is left open. Its first accepted task already made it PICKING.
+ * The caller locked the order and the task (the wave comes last).
  */
-export async function settlePickedOrder(tx: Tx, orderId: string) {
+export async function settlePickedOrder(
+  tx: Tx,
+  orderId: string,
+  /**
+   * WMS-25: false when the caller delivers several tasks and settles the
+   * waves itself after all of them (the wave is the last lock).
+   */
+  options: { wave?: boolean } = {},
+) {
   const order = await tx.outboundOrder.findFirst({
     where: { id: orderId },
     select: { status: true },
   });
-  if (order?.status !== "PICKING") return;
-  const open = await tx.warehouseTask.count({
-    where: {
-      kind: "PICK",
-      outboundLine: { orderId },
-      status: { notIn: ["DELIVERED", "CANCELLED"] },
-    },
-  });
-  if (open === 0) {
-    await tx.outboundOrder.update({
-      where: { id: orderId },
-      data: { status: "PICKED" },
+  if (order?.status === "PICKING") {
+    const open = await tx.warehouseTask.count({
+      where: {
+        kind: "PICK",
+        outboundLine: { orderId },
+        status: { notIn: ["DELIVERED", "CANCELLED"] },
+      },
     });
+    if (open === 0) {
+      await tx.outboundOrder.update({
+        where: { id: orderId },
+        data: { status: "PICKED" },
+      });
+    }
   }
+  // WMS-25: and its wave, when it was the last open task of it.
+  if (options.wave !== false) await settleWaveOf(tx, orderId);
 }
 
 /** The first task someone takes starts the picking of its order. */

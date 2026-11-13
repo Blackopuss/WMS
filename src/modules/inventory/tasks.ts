@@ -65,6 +65,9 @@ import {
   type LockedContainer,
 } from "./containers";
 import { containerName, theContainer } from "./container-rules";
+import { compareRoute, inRouteOrder, routeKey } from "./pick-route";
+import { formatWaveNumber } from "./wave-states";
+import { settleWaveOf } from "./wave-settle";
 
 /**
  * Warehouse tasks (WMS-06, especificación WMS v5 5.3): a supervisor asks
@@ -151,7 +154,7 @@ async function inTask(
  * and where it goes are both inside their warehouses or zones. For a
  * `where` on `warehouseTask`; `{}` without a limit.
  */
-async function taskScope(client: LocationScopeReader, userId: string) {
+export async function taskScope(client: LocationScopeReader, userId: string) {
   const scoped = await locationScopeWhere(client, userId);
   return isLimited(scoped) ? { fromLocation: scoped, toLocation: scoped } : {};
 }
@@ -664,35 +667,44 @@ export function acceptTask(
   actor: InventoryActor,
   taskId: string,
 ): Promise<TaskResult> {
-  return step(actor, taskId, "inventory.task.execute", async (tx, task) => {
-    const mine = task.assignedToUserId === actor.userId;
-    if (task.status === "ACCEPTED" && mine) {
-      return {
-        ok: true,
-        taskId: task.id,
-        repeated: true,
-        summary: `Ya tenías la tarea ${formatTaskNumber(task.number)}.`,
-      };
-    }
-    if (task.status === "ASSIGNED" && !mine) {
-      return stop("not_allowed", "Esta tarea está asignada a otra persona.");
-    }
-    ensure(task, "ACCEPTED");
-    await tx.warehouseTask.update({
-      where: { id: task.id },
-      data: {
-        status: "ACCEPTED",
-        assignedToUserId: actor.userId,
-        acceptedAt: new Date(),
-      },
-    });
-    if (task.outboundLine) await startPicking(tx, task.outboundLine.orderId);
+  return step(actor, taskId, "inventory.task.execute", (tx, task) =>
+    acceptLocked(tx, actor, task),
+  );
+}
+
+/** `acceptTask` on a task already locked (with its order before it). */
+async function acceptLocked(
+  tx: Tx,
+  actor: InventoryActor,
+  task: LockedTask,
+): Promise<TaskResult> {
+  const mine = task.assignedToUserId === actor.userId;
+  if (task.status === "ACCEPTED" && mine) {
     return {
       ok: true,
       taskId: task.id,
-      summary: `Tomaste la tarea ${describe(task)}. Ve a ${task.fromLocation.name}.`,
+      repeated: true,
+      summary: `Ya tenías la tarea ${formatTaskNumber(task.number)}.`,
     };
+  }
+  if (task.status === "ASSIGNED" && !mine) {
+    return stop("not_allowed", "Esta tarea está asignada a otra persona.");
+  }
+  ensure(task, "ACCEPTED");
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "ACCEPTED",
+      assignedToUserId: actor.userId,
+      acceptedAt: new Date(),
+    },
   });
+  if (task.outboundLine) await startPicking(tx, task.outboundLine.orderId);
+  return {
+    ok: true,
+    taskId: task.id,
+    summary: `Tomaste la tarea ${describe(task)}. Ve a ${task.fromLocation.name}.`,
+  };
 }
 
 /**
@@ -784,148 +796,155 @@ export function confirmPick(
     actor,
     taskId,
     "inventory.task.execute",
-    async (tx, locked) => {
-      if (locked.kind !== "PICK") {
-        return stop("not_allowed", "Esta tarea no es de surtido.");
-      }
-      const task = ofProduct(locked);
-      if (task.assignedToUserId !== actor.userId) {
-        return stop("not_allowed", "Esta tarea la tiene otra persona.");
-      }
-      const parsed = parseQuantity(
-        {
-          unitCode: task.product.unitCode,
-          quantityStep: task.product.quantityStep.toString(),
-        },
-        String(input.quantity ?? ""),
-      );
-      if (task.status === "PICKED_UP") {
-        const same =
-          parsed.ok &&
-          task.pickedQuantity !== null &&
-          parsed.quantity.equals(task.pickedQuantity.toString());
-        if (same) {
-          return {
-            ok: true,
-            taskId: task.id,
-            repeated: true,
-            summary: "Ya habías confirmado lo que surtiste.",
-          };
-        }
-      }
-      ensure(task, "PICKED_UP");
-      const code = foldName(String(input.productCode ?? "").slice(0, 80));
-      if (code === "") {
-        return stop(
-          "invalid",
-          `Escanea el producto o escribe su clave (${task.product.sku}).`,
-          "productCode",
-        );
-      }
-      if (
-        code !== foldName(task.product.sku) &&
-        code !== foldName(task.product.barcode ?? "")
-      ) {
-        return stop(
-          "invalid",
-          `Ese no es el producto de la tarea: busca ${task.product.name} (${task.product.sku}).`,
-          "productCode",
-        );
-      }
-      // Its code (WMS-22A) is what is scanned; without one, its name or path.
-      const typed = String(input.locationCode ?? "").slice(0, 200);
-      const place = foldPath(typed);
-      const from = task.fromLocation;
-      const path = locationPath(from);
-      const byCode =
-        from.code !== null && typed.trim().toUpperCase() === from.code;
-      if (!byCode && place === "") {
-        return stop(
-          "invalid",
-          from.code
-            ? `Escanea la etiqueta del lugar o escribe su código (${from.code}).`
-            : `Escribe dónde estás (${from.name}).`,
-          "locationCode",
-        );
-      }
-      if (
-        !byCode &&
-        place !== foldPath(from.name) &&
-        place !== foldPath(path)
-      ) {
-        return stop(
-          "invalid",
-          from.code
-            ? `No es la ubicación de la tarea: ve a ${path} (código ${from.code}).`
-            : `No es la ubicación de la tarea: ve a ${path}.`,
-          "locationCode",
-        );
-      }
-      // WMS-21: the lot in hand is the one set aside for the order.
-      if (task.lot) {
-        const typedLot = normalizeLotCode(input.lotCode);
-        if (!typedLot.ok) {
-          return stop(
-            "invalid",
-            `Escanea o escribe el lote que tomaste (${task.lot.code}).`,
-            "lotCode",
-          );
-        }
-        if (typedLot.code !== task.lot.code) {
-          return stop(
-            "invalid",
-            `Ese no es el lote de la tarea: busca el lote ${task.lot.code}. Si no está, reporta el problema.`,
-            "lotCode",
-          );
-        }
-      }
-      if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
-      const asked = dec(task.quantity.toString());
-      if (parsed.quantity.greaterThan(asked)) {
-        return stop(
-          "invalid",
-          `La tarea pide ${formatStock(asked.toString(), task.unitCode)}: no surtas de más.`,
-          "quantity",
-        );
-      }
-      const short = parsed.quantity.lessThan(asked);
-      let reason: string | null = null;
-      if (short) {
-        const why = reasonSchema.safeParse(input.shortReason ?? "");
-        if (!why.success) {
-          return stop(
-            "invalid",
-            "Surtiste menos de lo que pide la tarea: escribe por qué.",
-            "shortReason",
-          );
-        }
-        reason = why.data;
-      }
-      // WMS-21B: the units in hand, by their serials (set aside from here).
-      const units = await holdSerials(
-        tx,
-        actor,
-        task,
-        input.serials,
-        parsed.quantity,
-      );
-      await tx.warehouseTask.update({
-        where: { id: task.id },
-        data: {
-          status: "PICKED_UP",
-          pickedUpAt: new Date(),
-          pickedQuantity: parsed.quantity.toString(),
-          shortReason: reason,
-        },
-      });
+    (tx, locked) => confirmPickLocked(tx, actor, locked, input),
+    { lockProduct: true },
+  );
+}
+
+/**
+ * `confirmPick` on a task already locked (product → order → task): the
+ * checks and the write of one confirmation, shared with confirming several
+ * tasks of a wave at once (WMS-25).
+ */
+async function confirmPickLocked(
+  tx: Tx,
+  actor: InventoryActor,
+  locked: LockedTask,
+  input: ConfirmPickInput,
+): Promise<TaskResult> {
+  if (locked.kind !== "PICK") {
+    return stop("not_allowed", "Esta tarea no es de surtido.");
+  }
+  const task = ofProduct(locked);
+  if (task.assignedToUserId !== actor.userId) {
+    return stop("not_allowed", "Esta tarea la tiene otra persona.");
+  }
+  const parsed = parseQuantity(
+    {
+      unitCode: task.product.unitCode,
+      quantityStep: task.product.quantityStep.toString(),
+    },
+    String(input.quantity ?? ""),
+  );
+  if (task.status === "PICKED_UP") {
+    const same =
+      parsed.ok &&
+      task.pickedQuantity !== null &&
+      parsed.quantity.equals(task.pickedQuantity.toString());
+    if (same) {
       return {
         ok: true,
         taskId: task.id,
-        summary: `Surtiste ${formatStock(parsed.quantity.toString(), task.unitCode)} de ${task.product.name}${ofSerials(units)}. Llévalo a ${task.toLocation.name}.`,
+        repeated: true,
+        summary: "Ya habías confirmado lo que surtiste.",
       };
-    },
-    { lockProduct: true },
+    }
+  }
+  ensure(task, "PICKED_UP");
+  const code = foldName(String(input.productCode ?? "").slice(0, 80));
+  if (code === "") {
+    return stop(
+      "invalid",
+      `Escanea el producto o escribe su clave (${task.product.sku}).`,
+      "productCode",
+    );
+  }
+  if (
+    code !== foldName(task.product.sku) &&
+    code !== foldName(task.product.barcode ?? "")
+  ) {
+    return stop(
+      "invalid",
+      `Ese no es el producto de la tarea: busca ${task.product.name} (${task.product.sku}).`,
+      "productCode",
+    );
+  }
+  // Its code (WMS-22A) is what is scanned; without one, its name or path.
+  const typed = String(input.locationCode ?? "").slice(0, 200);
+  const place = foldPath(typed);
+  const from = task.fromLocation;
+  const path = locationPath(from);
+  const byCode = from.code !== null && typed.trim().toUpperCase() === from.code;
+  if (!byCode && place === "") {
+    return stop(
+      "invalid",
+      from.code
+        ? `Escanea la etiqueta del lugar o escribe su código (${from.code}).`
+        : `Escribe dónde estás (${from.name}).`,
+      "locationCode",
+    );
+  }
+  if (!byCode && place !== foldPath(from.name) && place !== foldPath(path)) {
+    return stop(
+      "invalid",
+      from.code
+        ? `No es la ubicación de la tarea: ve a ${path} (código ${from.code}).`
+        : `No es la ubicación de la tarea: ve a ${path}.`,
+      "locationCode",
+    );
+  }
+  // WMS-21: the lot in hand is the one set aside for the order.
+  if (task.lot) {
+    const typedLot = normalizeLotCode(input.lotCode);
+    if (!typedLot.ok) {
+      return stop(
+        "invalid",
+        `Escanea o escribe el lote que tomaste (${task.lot.code}).`,
+        "lotCode",
+      );
+    }
+    if (typedLot.code !== task.lot.code) {
+      return stop(
+        "invalid",
+        `Ese no es el lote de la tarea: busca el lote ${task.lot.code}. Si no está, reporta el problema.`,
+        "lotCode",
+      );
+    }
+  }
+  if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
+  const asked = dec(task.quantity.toString());
+  if (parsed.quantity.greaterThan(asked)) {
+    return stop(
+      "invalid",
+      `La tarea pide ${formatStock(asked.toString(), task.unitCode)}: no surtas de más.`,
+      "quantity",
+    );
+  }
+  const short = parsed.quantity.lessThan(asked);
+  let reason: string | null = null;
+  if (short) {
+    const why = reasonSchema.safeParse(input.shortReason ?? "");
+    if (!why.success) {
+      return stop(
+        "invalid",
+        "Surtiste menos de lo que pide la tarea: escribe por qué.",
+        "shortReason",
+      );
+    }
+    reason = why.data;
+  }
+  // WMS-21B: the units in hand, by their serials (set aside from here).
+  const units = await holdSerials(
+    tx,
+    actor,
+    task,
+    input.serials,
+    parsed.quantity,
   );
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "PICKED_UP",
+      pickedUpAt: new Date(),
+      pickedQuantity: parsed.quantity.toString(),
+      shortReason: reason,
+    },
+  });
+  return {
+    ok: true,
+    taskId: task.id,
+    summary: `Surtiste ${formatStock(parsed.quantity.toString(), task.unitCode)} de ${task.product.name}${ofSerials(units)}. Llévalo a ${task.toLocation.name}.`,
+  };
 }
 
 export type DeliverInput = {
@@ -1113,7 +1132,9 @@ async function deliverPickTask(
   tx: Tx,
   actor: InventoryActor,
   task: ProductTask,
-): Promise<TaskResult> {
+  /** WMS-25: false when the caller settles the waves after several. */
+  settleWave = true,
+): Promise<Extract<TaskResult, { ok: true }> & { notes: string[] }> {
   const picked = dec(task.pickedQuantity?.toString() ?? 0);
   const delivered = await deliverPick(tx, actor, {
     id: task.id,
@@ -1142,13 +1163,16 @@ async function deliverPickTask(
       movementId: delivered.movementId,
     },
   });
-  await settlePickedOrder(tx, task.outboundLine!.orderId);
+  await settlePickedOrder(tx, task.outboundLine!.orderId, {
+    wave: settleWave,
+  });
   return {
     ok: true,
     taskId: task.id,
     summary:
       `Dejaste ${formatStock(picked.toString(), task.unitCode)} de ${task.product.name} en ${task.toLocation.name}.` +
       delivered.notes.map((note) => ` ${note}`).join(""),
+    notes: delivered.notes,
   };
 }
 
@@ -1446,6 +1470,426 @@ export function blockTask(
   });
 }
 
+// ── Several tasks at once (WMS-25, ADR 0054) ─────────────────────────────
+
+/** How many tasks one step on several of them takes, at most. */
+export const TASK_GROUP_MAX = 100;
+
+export type TaskGroupResult =
+  | {
+      ok: true;
+      summary: string;
+      /** How many tasks the step changed (0 when all were already so). */
+      count: number;
+      repeated?: true;
+    }
+  | Failure;
+
+async function inGroup(
+  organizationId: string,
+  work: (tx: Tx) => Promise<TaskGroupResult>,
+): Promise<TaskGroupResult> {
+  try {
+    return await forOrganization(organizationId).$transaction(
+      work,
+      LOCKING_TRANSACTION,
+    );
+  } catch (error) {
+    if (error instanceof TaskRejected) return error.result;
+    if (error instanceof CapacityNotice) {
+      return {
+        ok: false,
+        reason: "not_allowed",
+        formError: error.result.formError,
+      };
+    }
+    throw error;
+  }
+}
+
+const groupIds = (taskIds: readonly unknown[]) =>
+  [
+    ...new Set(
+      taskIds
+        .map((id) => String(id ?? "").slice(0, 36))
+        .filter((id) => id !== ""),
+    ),
+  ].slice(0, TASK_GROUP_MAX);
+
+const CHANGED =
+  "Estas tareas cambiaron mientras tanto. Vuelve a abrir la ola y revisa lo que sigue.";
+
+/** What several tasks move, read before their transaction (never changes). */
+async function fixedOf(organizationId: string, ids: string[]) {
+  return forOrganization(organizationId).warehouseTask.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      kind: true,
+      productId: true,
+      fromLocationId: true,
+      toLocationId: true,
+      outboundLine: { select: { orderId: true } },
+    },
+  });
+}
+
+const orderIdsOf = (fixed: Awaited<ReturnType<typeof fixedOf>>) => [
+  ...new Set(
+    fixed
+      .map((task) => task.outboundLine?.orderId)
+      .filter((id): id is string => Boolean(id)),
+  ),
+];
+
+/** Says which task a refusal is about, when several go together. */
+async function each(
+  task: { number: number },
+  work: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await work();
+  } catch (error) {
+    if (!(error instanceof TaskRejected)) throw error;
+    const message =
+      error.result.formError ??
+      Object.values(error.result.fieldErrors ?? {})[0];
+    throw new TaskRejected({
+      ...error.result,
+      formError: `${formatTaskNumber(task.number)}: ${message ?? "no se pudo cambiar."}`,
+      fieldErrors: error.result.fieldErrors,
+    });
+  }
+}
+
+/**
+ * Picking of several tasks with one scan (WMS-25): PICK tasks of the same
+ * product, origin and lot — «Toma 30: 10 para PS-0001, 12 para PS-0002…».
+ * In one transaction each one is taken (when it was available or given to
+ * this person) and confirmed with its whole quantity, with the rules of
+ * `confirmPick`; if one fails, nothing changes. Less than asked, or a
+ * product by serial, is confirmed task by task. Locks: product → orders →
+ * tasks.
+ */
+export async function confirmPickGroup(
+  actor: InventoryActor,
+  taskIds: readonly unknown[],
+  input: Omit<ConfirmPickInput, "quantity" | "shortReason" | "serials">,
+): Promise<TaskGroupResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.task.execute",
+  );
+  const ids = groupIds(taskIds);
+  if (ids.length === 0) {
+    return { ok: false, reason: "invalid", formError: "Elige qué surtes." };
+  }
+  const fixed = await fixedOf(organizationId, ids);
+  const products = [...new Set(fixed.map((task) => task.productId))];
+  if (fixed.length !== ids.length || products.length !== 1 || !products[0]) {
+    return { ok: false, reason: "not_found", formError: CHANGED };
+  }
+  return inGroup(organizationId, async (tx) => {
+    await lockRows(tx, "product", [products[0]!]);
+    await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    await lockRows(tx, "warehouseTask", ids);
+    let first: LockedTask | null = null;
+    let total = dec(0);
+    let changed = 0;
+    const orders = new Set<string>();
+    for (const id of [...ids].sort()) {
+      let task = await lockTask(tx, id, userId);
+      if (task.kind !== "PICK" || !task.outboundLine) {
+        return stop("not_allowed", "Esta tarea no es de surtido.");
+      }
+      if (task.product?.tracking === "SERIAL") {
+        return stop(
+          "not_allowed",
+          "Un producto por serie se surte pedido por pedido: escanea las series en cada tarea.",
+        );
+      }
+      if (
+        first &&
+        (task.productId !== first.productId ||
+          task.fromLocationId !== first.fromLocationId ||
+          task.lotId !== first.lotId)
+      ) {
+        return stop("not_allowed", CHANGED);
+      }
+      first ??= task;
+      const mine = task.assignedToUserId === userId;
+      const takeable =
+        task.status === "PENDING" ||
+        (mine && ["ASSIGNED", "ACCEPTED", "PICKED_UP"].includes(task.status));
+      if (!takeable) {
+        return stop(
+          "not_allowed",
+          task.assignedToUserId && !mine
+            ? `${formatTaskNumber(task.number)} la tiene otra persona. Vuelve a abrir la ola.`
+            : `${formatTaskNumber(task.number)} ya cambió. Vuelve a abrir la ola.`,
+        );
+      }
+      const quantity = dec(task.quantity!.toString());
+      const current = task;
+      await each(current, async () => {
+        if (current.status === "PENDING" || current.status === "ASSIGNED") {
+          await acceptLocked(tx, actor, current);
+          task = await lockTask(tx, id, userId);
+        }
+        const done = await confirmPickLocked(tx, actor, task, {
+          ...input,
+          quantity: quantity.toString(),
+        });
+        if (done.ok && !done.repeated) changed++;
+      });
+      total = total.plus(quantity);
+      orders.add(task.outboundLine!.orderId);
+    }
+    const head = ofProduct(first!);
+    if (changed === 0) {
+      return {
+        ok: true,
+        count: 0,
+        repeated: true,
+        summary: "Ya habías confirmado lo que surtiste.",
+      };
+    }
+    return {
+      ok: true,
+      count: changed,
+      summary: `Surtiste ${formatStock(total.toString(), head.unitCode)} de ${head.product.name} para ${orders.size === 1 ? "1 pedido" : `${orders.size} pedidos`}. Llévalo a ${head.toLocation.name}.`,
+    };
+  });
+}
+
+/**
+ * Leaves in staging every PICK task given that this person picked
+ * (WMS-25): each one writes its own move (`task:<id>`) and keeps what was
+ * picked reserved there for its line, as `deliverTask` does, in one
+ * transaction. Locks: products → locations → orders → tasks.
+ */
+export async function deliverPickGroup(
+  actor: InventoryActor,
+  taskIds: readonly unknown[],
+): Promise<TaskGroupResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.task.execute",
+  );
+  const ids = groupIds(taskIds);
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      reason: "invalid",
+      formError: "No hay nada que dejar.",
+    };
+  }
+  const fixed = await fixedOf(organizationId, ids);
+  if (
+    fixed.length !== ids.length ||
+    fixed.some((task) => task.kind !== "PICK" || !task.productId)
+  ) {
+    return { ok: false, reason: "not_found", formError: CHANGED };
+  }
+  return inGroup(organizationId, async (tx) => {
+    await lockRows(
+      tx,
+      "product",
+      fixed.map((task) => task.productId!),
+    );
+    await lockRows(
+      tx,
+      "location",
+      fixed.flatMap((task) => [task.fromLocationId, task.toLocationId]),
+    );
+    await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    await lockRows(tx, "warehouseTask", ids);
+    let changed = 0;
+    const notes: string[] = [];
+    const places = new Set<string>();
+    for (const id of [...ids].sort()) {
+      const task = await lockTask(tx, id, userId);
+      if (task.assignedToUserId !== userId) {
+        return stop(
+          "not_allowed",
+          `${formatTaskNumber(task.number)} la tiene otra persona.`,
+        );
+      }
+      if (task.status === "DELIVERED") continue;
+      if (task.status !== "PICKED_UP") {
+        return stop(
+          "not_allowed",
+          `${formatTaskNumber(task.number)} todavía no está surtida.`,
+        );
+      }
+      await each(task, async () => {
+        ensure(task, "DELIVERED");
+        const done = await deliverPickTask(tx, actor, ofProduct(task), false);
+        notes.push(...done.notes);
+      });
+      places.add(task.toLocation.name);
+      changed++;
+    }
+    // The waves last, after every move and its capacity (lock order).
+    for (const orderId of orderIdsOf(fixed).sort()) {
+      await settleWaveOf(tx, orderId);
+    }
+    if (changed === 0) {
+      return {
+        ok: true,
+        count: 0,
+        repeated: true,
+        summary: "Ya lo habías dejado. No se movió nada de nuevo.",
+      };
+    }
+    return {
+      ok: true,
+      count: changed,
+      summary:
+        `Dejaste ${changed === 1 ? "1 tarea" : `${changed} tareas`} en ${[...places].join(" y ")}.` +
+        [...new Set(notes)].map((note) => ` ${note}`).join(""),
+    };
+  });
+}
+
+/**
+ * Takes for this person every task given that is still available or
+ * given to them (WMS-25, «Tomar las de esta zona»). A task someone else
+ * took meanwhile is left alone. Locks: orders → tasks.
+ */
+export async function takeTasks(
+  actor: InventoryActor,
+  taskIds: readonly unknown[],
+): Promise<TaskGroupResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.task.execute",
+  );
+  const ids = groupIds(taskIds);
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      reason: "invalid",
+      formError: "No hay tareas que tomar.",
+    };
+  }
+  const fixed = await fixedOf(organizationId, ids);
+  return inGroup(organizationId, async (tx) => {
+    await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    const locked = await lockRows(tx, "warehouseTask", ids);
+    let changed = 0;
+    for (const id of locked) {
+      const task = await lockTask(tx, id, userId);
+      const free =
+        task.status === "PENDING" ||
+        (task.status === "ASSIGNED" && task.assignedToUserId === userId);
+      if (!free) continue;
+      await acceptLocked(tx, actor, task);
+      changed++;
+    }
+    return changed === 0
+      ? {
+          ok: true,
+          count: 0,
+          repeated: true,
+          summary: "No quedaba ninguna disponible: alguien ya las tomó.",
+        }
+      : {
+          ok: true,
+          count: changed,
+          summary:
+            changed === 1 ? "Tomaste 1 tarea." : `Tomaste ${changed} tareas.`,
+        };
+  });
+}
+
+/**
+ * Gives to one person every task given that is still available (WMS-25,
+ * «Asignar las de esta zona»), with the rules of `assignTask`: they can do
+ * tasks and reach where each one leaves from and goes. Locks: orders →
+ * tasks.
+ */
+export async function assignTasks(
+  actor: InventoryActor,
+  taskIds: readonly unknown[],
+  assignToUserId: string,
+): Promise<TaskGroupResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(organizationId, userId, "inventory.task.create");
+  const target = String(assignToUserId ?? "")
+    .trim()
+    .slice(0, 36);
+  if (!target) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { assignToUserId: "Elige a quién se las das." },
+    };
+  }
+  if (!(await mayExecute(organizationId, target))) {
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: {
+        assignToUserId: "Esa persona no puede hacer tareas de traslado.",
+      },
+    };
+  }
+  const ids = groupIds(taskIds);
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      reason: "invalid",
+      formError: "No hay tareas disponibles que asignar.",
+    };
+  }
+  const fixed = await fixedOf(organizationId, ids);
+  return inGroup(organizationId, async (tx) => {
+    await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    const locked = await lockRows(tx, "warehouseTask", ids);
+    const tasks = [];
+    for (const id of locked) {
+      const task = await lockTask(tx, id, userId);
+      if (task.status === "PENDING") tasks.push(task);
+    }
+    const outside = await locationsOutOfScope(
+      tx,
+      target,
+      tasks.flatMap((task) => [task.fromLocationId, task.toLocationId]),
+    );
+    if (outside.length > 0) {
+      return stop("invalid", ASSIGNEE_OUT_OF_SCOPE, "assignToUserId");
+    }
+    for (const task of tasks) {
+      await tx.warehouseTask.update({
+        where: { id: task.id },
+        data: { status: "ASSIGNED", assignedToUserId: target },
+      });
+    }
+    return tasks.length === 0
+      ? {
+          ok: true,
+          count: 0,
+          repeated: true,
+          summary: "No quedaba ninguna disponible: ya las tomaron.",
+        }
+      : {
+          ok: true,
+          count: tasks.length,
+          summary:
+            tasks.length === 1
+              ? "Asignaste 1 tarea."
+              : `Asignaste ${tasks.length} tareas.`,
+        };
+  });
+}
+
 // ── What a supervisor does ───────────────────────────────────────────────
 
 /** Gives a task to a person, changes who has it, or leaves it available. */
@@ -1695,6 +2139,8 @@ export type TaskView = TaskSummary & {
   recommendedPath: string | null;
   recommendedCode: string | null;
   placedPath: string | null;
+  /** PICK (WMS-25): the open wave of its order, if any. */
+  wave: { id: string; numberText: string } | null;
 };
 
 /** «mine»: what this person has; «available»: what anyone may take. */
@@ -1916,16 +2362,26 @@ export async function listTasks(
     options.page === undefined || !Number.isSafeInteger(options.page)
       ? 1
       : Math.min(Math.max(options.page, 1), pageCount);
-  const rows = await client.warehouseTask.findMany({
-    where,
-    orderBy:
-      view === "closed"
-        ? [{ number: "desc" }]
-        : [{ priority: "desc" }, { number: "asc" }],
-    skip: (page - 1) * TASK_PAGE_SIZE,
-    take: TASK_PAGE_SIZE,
-    select: SUMMARY_SELECT,
-  });
+  // WMS-25 (ADR 0054): what a person has is walked once — urgent first,
+  // then in walking order by the code of where each task leaves from. A
+  // person's open tasks are few: they are read whole (up to a cap) and
+  // ordered here; the other lists stay paginated in the database.
+  const rows =
+    view === "mine"
+      ? (await myTasksInRoute(client, where)).slice(
+          (page - 1) * TASK_PAGE_SIZE,
+          page * TASK_PAGE_SIZE,
+        )
+      : await client.warehouseTask.findMany({
+          where,
+          orderBy:
+            view === "closed"
+              ? [{ number: "desc" }]
+              : [{ priority: "desc" }, { number: "asc" }],
+          skip: (page - 1) * TASK_PAGE_SIZE,
+          take: TASK_PAGE_SIZE,
+          select: SUMMARY_SELECT,
+        });
   const names = await namesOf(
     actor.organizationId,
     rows.map((row) => row.assignedToUserId),
@@ -1937,6 +2393,93 @@ export async function listTasks(
     page,
     pageCount,
     day: window?.day ?? null,
+  };
+}
+
+/** A person's open tasks read whole to put them in walking order, at most. */
+const MY_TASKS_MAX = 500;
+
+const ROUTE_SELECT = {
+  ...SUMMARY_SELECT,
+  fromLocation: { select: { ...LOCATION_NAMES.select, code: true } },
+} as const;
+
+/** Tasks matching `where`, urgent first and then in walking order. */
+async function myTasksInRoute(
+  client: ReturnType<typeof forOrganization>,
+  where: object,
+) {
+  const rows = await client.warehouseTask.findMany({
+    where,
+    orderBy: [{ priority: "desc" }, { number: "asc" }],
+    take: MY_TASKS_MAX,
+    select: ROUTE_SELECT,
+  });
+  const urgent = rows.filter((row) => row.priority === "URGENT");
+  const normal = rows.filter((row) => row.priority !== "URGENT");
+  const walk = (list: typeof rows) =>
+    inRouteOrder(list, (row) => ({
+      code: row.fromLocation.code,
+      path: pathOf(row.fromLocation),
+    }));
+  return [...walk(urgent), ...walk(normal)];
+}
+
+/**
+ * WMS-25: «Siguiente tarea» — the open task of this person that comes
+ * after this one in walking order (or the first one, when this one was
+ * the last place); null when they have no other.
+ */
+export async function nextTaskFor(
+  actor: InventoryActor,
+  taskId: string,
+): Promise<{ id: string; numberText: string; fromPath: string } | null> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.task.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  const facility = await activeFacilityOf(client, actor.userId);
+  const scope = await taskScope(client, actor.userId);
+  const mine = await myTasksInRoute(client, {
+    assignedToUserId: actor.userId,
+    status: { in: ["ASSIGNED", "ACCEPTED", "PICKED_UP"] },
+    fromLocation: { facilityId: facility.id },
+    ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
+  });
+  const others = mine.filter((row) => row.id !== String(taskId ?? ""));
+  if (others.length === 0) return null;
+  const current = await client.warehouseTask.findFirst({
+    where: { id: String(taskId ?? ""), ...scope },
+    select: { fromLocation: ROUTE_SELECT.fromLocation },
+  });
+  const here = current
+    ? routeKey({
+        code: current.fromLocation.code,
+        path: pathOf(current.fromLocation),
+      })
+    : null;
+  const after = here
+    ? others.find(
+        (row) =>
+          row.priority !== "URGENT" &&
+          compareRoute(
+            routeKey({
+              code: row.fromLocation.code,
+              path: pathOf(row.fromLocation),
+            }),
+            here,
+          ) >= 0,
+      )
+    : undefined;
+  // Something urgent always goes first.
+  const next =
+    others.find((row) => row.priority === "URGENT") ?? after ?? others[0]!;
+  return {
+    id: next.id,
+    numberText: formatTaskNumber(next.number),
+    fromPath: pathOf(next.fromLocation),
   };
 }
 
@@ -2013,8 +2556,21 @@ export async function getTask(
     row.assignedToUserId,
     row.createdByUserId,
   ]);
+  // WMS-25: the open wave its order is in, to go back to it.
+  const inWave = row.outboundLine
+    ? await client.pickWaveOrder.findFirst({
+        where: { openOrderId: row.outboundLine.order.id },
+        select: { wave: { select: { id: true, number: true } } },
+      })
+    : null;
   return {
     ...summaryOf(row, names),
+    wave: inWave
+      ? {
+          id: inWave.wave.id,
+          numberText: formatWaveNumber(inWave.wave.number),
+        }
+      : null,
     quantity: row.quantity?.toString() ?? "",
     unitCode: row.unitCode ?? "",
     pickedText:

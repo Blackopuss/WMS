@@ -19,6 +19,7 @@ import {
   getPackingView,
   packingEnabled,
   returnsOfOrder,
+  waveOfOrder,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
@@ -73,6 +74,8 @@ export default async function PedidoPage({
     userId: access.user.id,
   };
   const order = await getOutboundOrder(actor, id);
+  // WMS-25: the open wave it is picked in, if any.
+  const wave = order ? await waveOfOrder(actor, order.id) : null;
   if (!order) {
     return (
       <PageContainer>
@@ -197,6 +200,18 @@ export default async function PedidoPage({
             </Link>
           </Button>
         </div>
+      )}
+      {wave && (
+        <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+          Se surte en la{" "}
+          <Link
+            href={`/tareas/olas/${wave.id}`}
+            className="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            ola {wave.numberText}
+          </Link>
+          , junto con otros pedidos.
+        </p>
       )}
       {order.shipment && access.can("inventory.shipment.read") && (
         <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">

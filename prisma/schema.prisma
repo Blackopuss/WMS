@@ -192,6 +192,8 @@ model Organization {
   countPrograms           CountProgram[]
   approvalRules           ApprovalRule[]
   approvalRequests        ApprovalRequest[]
+  pickWaves               PickWave[]
+  pickWaveOrders          PickWaveOrder[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -231,6 +233,8 @@ model Facility {
   countPrograms   CountProgram[]
   /// Approval requests about something of this warehouse (WMS-56).
   approvalRequests ApprovalRequest[]
+  /// Its picking waves (WMS-25).
+  pickWaves       PickWave[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -2575,6 +2579,8 @@ model OutboundOrder {
   customerReturns   CustomerReturn[]
   /// What left with its shipment (WMS-16).
   shipmentLines     ShipmentLine[]
+  /// The picking waves it was put in (WMS-25); at most one open.
+  waves             PickWaveOrder[]
   /// The file it came from (WMS-13B); null when written by hand.
   importId          String?                @db.Char(36)
   import            OutboundImport?        @relation(fields: [organizationId, importId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
@@ -3337,4 +3343,59 @@ model ApprovalRequest {
   @@index([organizationId, requestedByUserId, createdAt, id])
   @@index([organizationId, sourceType, sourceId])
   @@map("approval_request")
+}
+
+/// States of a picking wave (WMS-25, ADR 0054).
+enum PickWaveStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+/// A picking wave (WMS-25, ADR 0054): outbound orders of a warehouse picked
+/// together. It only groups, orders and shares out their PICK tasks: every
+/// task stays of one line of one order. Ends by itself when none of its
+/// picking tasks is open; cancelling it only ungroups. Never deleted.
+model PickWave {
+  id                String          @id @db.Char(36)
+  organizationId    String          @db.Char(36)
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Consecutive per company («OL-0001»).
+  number            Int
+  status            PickWaveStatus  @default(OPEN)
+  facilityId        String          @db.Char(36)
+  facility          Facility        @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdByUserId   String          @db.Char(36)
+  createdAt         DateTime        @default(now()) @db.DateTime(3)
+  doneAt            DateTime?       @db.DateTime(3)
+  cancelledAt       DateTime?       @db.DateTime(3)
+  cancelledByUserId String?         @db.Char(36)
+  cancelReason      String?         @db.VarChar(300)
+  orders            PickWaveOrder[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, number])
+  @@index([organizationId, facilityId, status, number])
+  @@map("pick_wave")
+}
+
+/// An outbound order in a picking wave (WMS-25). `openOrderId` is the order
+/// while the wave is open: unique in the company, so an order is in one
+/// open wave at most. It only lets go of its order (triggers).
+model PickWaveOrder {
+  id             String        @id @db.Char(36)
+  organizationId String        @db.Char(36)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  waveId         String        @db.Char(36)
+  wave           PickWave      @relation(fields: [organizationId, waveId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  orderId        String        @db.Char(36)
+  order          OutboundOrder @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  openOrderId    String?       @db.Char(36)
+  createdAt      DateTime      @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, waveId, orderId])
+  @@unique([organizationId, openOrderId])
+  @@index([organizationId, orderId])
+  @@map("pick_wave_order")
 }
