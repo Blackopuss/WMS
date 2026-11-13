@@ -1122,6 +1122,7 @@ export const MOVEMENT_TYPE_LABELS = {
   STATUS_CHANGE: "Cambio de estado",
   SHIPMENT: "Despacho",
   CUSTOMER_RETURN: "Devolución de cliente",
+  FACILITY_TRANSFER: "Traslado entre almacenes",
 } as const;
 
 export type MovementType = keyof typeof MOVEMENT_TYPE_LABELS;
@@ -1341,6 +1342,8 @@ export async function listStockLocations(
     where: {
       archivedAt: null,
       facilityId: facility.id,
+      // WMS-19: never the transit location (only transfers write there).
+      isTransit: null,
       // WMS-20: with zones, only the locations inside them.
       ...(await locationScopeWhere(client, actor.userId)),
     },
@@ -2652,6 +2655,14 @@ export async function reverseMovement(
         return stop(
           "not_allowed",
           "Esta entrada es una devolución de cliente: no se reversa desde Inventario. Lo que entró sigue en inspección hasta que se decida desde la devolución.",
+        );
+      }
+      // Nor a transfer between warehouses (WMS-19): its document would
+      // still say it is on its way, arrived or was settled.
+      if (original.type === "FACILITY_TRANSFER") {
+        return stop(
+          "not_allowed",
+          "Este movimiento es de un traslado entre almacenes: no se reversa desde Inventario. Lo que no llegue se resuelve desde el traslado.",
         );
       }
       if (original.returnDecision) {

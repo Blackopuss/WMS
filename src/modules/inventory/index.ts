@@ -409,6 +409,44 @@ export type {
   ReturnOutcome,
 } from "./customer-return-states";
 export {
+  FACILITY_TRANSFER_MAX_LINES,
+  FACILITY_TRANSFER_PAGE_SIZE,
+  addFacilityTransferLine,
+  cancelFacilityTransfer,
+  countTransfersToReceive,
+  createFacilityTransfer,
+  findFacilityTransferByKey,
+  findFacilityTransferByNumber,
+  getFacilityTransfer,
+  hasSeveralFacilities,
+  listFacilityTransfers,
+  listTransferDestinations,
+  listTransferReceivePlaces,
+  receiveFacilityTransfer,
+  removeFacilityTransferLine,
+  resolveFacilityTransfer,
+  sendFacilityTransfer,
+} from "./facility-transfers";
+export type {
+  FacilityTransferDetail,
+  FacilityTransferField,
+  FacilityTransferLineView,
+  FacilityTransferPage,
+  FacilityTransferReceiptView,
+  FacilityTransferResult,
+  FacilityTransferSummary,
+  FacilityTransferView,
+  ReceiveFacilityTransferLineInput,
+  TransferDestination,
+  TransferPlace,
+} from "./facility-transfers";
+export {
+  FACILITY_TRANSFER_STATUS_LABELS,
+  formatFacilityTransferNumber,
+  parseFacilityTransferNumber,
+} from "./facility-transfer-states";
+export type { FacilityTransferStatus } from "./facility-transfer-states";
+export {
   OUTBOUND_ORDER_STATUSES,
   OUTBOUND_ORDER_STATUS_LABELS,
   OUTBOUND_ORDER_TRANSITIONS,

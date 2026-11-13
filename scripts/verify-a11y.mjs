@@ -63,6 +63,9 @@ const SCREENS = [
   // WMS-17: customer returns and registering one.
   "/pedidos/devoluciones",
   "/pedidos/devoluciones/nueva",
+  // WMS-19: transfers between warehouses and starting one.
+  "/movimientos/traslados",
+  "/movimientos/traslados/nuevo",
   "/configuracion/operacion",
   "/configuracion/almacenes",
   "/compras",
@@ -286,6 +289,8 @@ try {
       ["/pedidos/embarques", /^\/pedidos\/embarques\/[0-9a-f-]{36}$/],
       // WMS-17: a customer return, with what is still in inspection.
       ["/pedidos/devoluciones", /^\/pedidos\/devoluciones\/[0-9a-f-]{36}$/],
+      // WMS-19: a transfer, with its next step.
+      ["/movimientos/traslados", /^\/movimientos\/traslados\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

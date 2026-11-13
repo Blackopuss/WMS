@@ -2,6 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  addFacilityTransferLine,
+  createFacilityTransfer,
+  getFacilityTransfer,
+  listFacilityTransfers,
+  receiveFacilityTransfer,
+  sendFacilityTransfer,
   decideCustomerReturn,
   getCustomerReturn,
   listCustomerReturns,
@@ -1181,6 +1187,91 @@ describe("PC-12: customer returns (WMS-17)", () => {
       lines: [{ productId: product.productId, quantity: "1" }],
     });
     expect(own).toMatchObject({ ok: true });
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: transfers between warehouses (WMS-19)", () => {
+  it("from B a transfer of A is only received: no places of A, no sending, nothing into A", async () => {
+    const product = await createProduct(owner, {
+      sku: "ALC-TRA",
+      name: "Trasladado",
+    });
+    if (!product.ok) throw new Error("product setup failed");
+    const item = product.productId;
+    const entered = await registerEntry(owner, {
+      productId: item,
+      locationId: shelfA,
+      quantity: "4",
+    });
+    if (!entered.ok) throw new Error(JSON.stringify(entered));
+    const made = await createFacilityTransfer(owner, {
+      toFacilityId: facilityB,
+      idempotencyKey: key(),
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    // A draft of A is not changed nor sent from B.
+    expect(
+      await addFacilityTransferLine(limited, {
+        transferId: made.transferId,
+        productId: item,
+        source: shelfA,
+        quantity: "1",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await getFacilityTransfer(limited, made.transferId)).toMatchObject({
+      atOrigin: false,
+      atDestination: true,
+    });
+    expect(
+      await addFacilityTransferLine(owner, {
+        transferId: made.transferId,
+        productId: item,
+        source: shelfA,
+        quantity: "4",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await sendFacilityTransfer(limited, {
+        transferId: made.transferId,
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await sendFacilityTransfer(owner, {
+        transferId: made.transferId,
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    // From B: waiting to be received, without the places of A.
+    expect(
+      (await listFacilityTransfers(limited, { view: "incoming" })).items.map(
+        (each) => each.id,
+      ),
+    ).toEqual([made.transferId]);
+    expect(
+      (await listFacilityTransfers(limited, { view: "sent" })).items,
+    ).toEqual([]);
+    const seen = await getFacilityTransfer(limited, made.transferId);
+    expect(seen!.lines[0]!.fromPath).toBeNull();
+    const lineId = seen!.lines[0]!.id;
+    // Nothing of it is received into A.
+    await expect(
+      receiveFacilityTransfer(limited, {
+        transferId: made.transferId,
+        locationId: shelfA,
+        idempotencyKey: key(),
+        lines: [{ lineId, quantity: "4" }],
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    expect(
+      await receiveFacilityTransfer(limited, {
+        transferId: made.transferId,
+        locationId: shelfB,
+        idempotencyKey: key(),
+        lines: [{ lineId, quantity: "4" }],
+      }),
+    ).toMatchObject({ ok: true });
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

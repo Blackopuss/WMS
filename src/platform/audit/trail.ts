@@ -42,6 +42,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "inventory.customer_return_received": "Registró una devolución de cliente",
   "inventory.customer_return_decided":
     "Decidió qué pasa con lo devuelto por un cliente",
+  "inventory.facility_transfer_sent": "Envió un traslado entre almacenes",
+  "inventory.facility_transfer_received": "Recibió un traslado entre almacenes",
+  "inventory.facility_transfer_resolved":
+    "Resolvió lo que no llegó de un traslado entre almacenes",
+  "inventory.facility_transfer_cancelled":
+    "Canceló un traslado entre almacenes",
   "inventory.outbound_imported": "Importó pedidos de salida desde un archivo",
   "settings.changed": "Cambió un ajuste de operación",
   "facility.created": "Creó un almacén",

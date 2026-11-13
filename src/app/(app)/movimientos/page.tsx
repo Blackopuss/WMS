@@ -9,6 +9,7 @@ import {
   Filter,
   Scale,
   Search,
+  Truck,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
@@ -33,6 +34,7 @@ import {
   listMovements,
   listRecentMovements,
   serialsText,
+  hasSeveralFacilities,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
@@ -101,6 +103,10 @@ export default async function MovimientosPage({
       ? listRecentMovements(actor, { movementId: registrado.slice(0, 36) })
       : [],
   ]);
+  // WMS-19: transfers exist only with more than one warehouse.
+  const transfers =
+    access.can("inventory.facility_transfer.read") &&
+    (await hasSeveralFacilities(actor));
   const justRegistered = registered[0];
   const movements = history.items;
   const { applied } = history;
@@ -170,6 +176,11 @@ export default async function MovimientosPage({
       href: "/movimientos/saldo-inicial",
       icon: ClipboardList,
       label: "Saldo inicial",
+    },
+    transfers && {
+      href: "/movimientos/traslados",
+      icon: Truck,
+      label: "Traslados entre almacenes",
     },
   ].filter((item) => item !== false);
   const canReverse = access.allows("inventory.movement.reverse");
@@ -494,6 +505,7 @@ export default async function MovimientosPage({
                   movement.type !== "RETURN" &&
                   movement.type !== "SHIPMENT" &&
                   movement.type !== "CUSTOMER_RETURN" &&
+                  movement.type !== "FACILITY_TRANSFER" &&
                   !movement.isReturnDecision &&
                   !movement.reversedByMovementId && (
                     <div className="shrink-0">

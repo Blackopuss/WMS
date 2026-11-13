@@ -511,7 +511,7 @@ export async function listScopeOptions(
       name: true,
       isDefault: true,
       locations: {
-        where: { parentId: null, archivedAt: null },
+        where: { parentId: null, archivedAt: null, isTransit: null },
         take: 500,
         select: { id: true, name: true, isDefault: true },
       },

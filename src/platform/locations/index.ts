@@ -60,6 +60,7 @@ export {
 export type { CapacityLimits, CapacityMeasure } from "./limits";
 export { getDefaultLocation } from "./locations";
 export { STAGING_NAME, ensureStagingLocation } from "./staging";
+export { NOT_TRANSIT, TRANSIT_NAME, ensureTransitLocation } from "./transit";
 export {
   FACILITY_OUT_OF_SCOPE_MESSAGE,
   OUT_OF_SCOPE_MESSAGE,

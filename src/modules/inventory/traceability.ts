@@ -24,6 +24,11 @@ import {
   formatCustomerReturnNumber,
   parseCustomerReturnNumber,
 } from "./customer-return-states";
+import {
+  FACILITY_TRANSFER_STATUS_LABELS,
+  formatFacilityTransferNumber,
+  parseFacilityTransferNumber,
+} from "./facility-transfer-states";
 import { STOCK_STATUS_LABELS } from "./stock-status";
 import { formatTaskNumber } from "./task-states";
 
@@ -81,6 +86,14 @@ export type TraceMatch =
       numberText: string;
       returnedBy: string;
       statusLabel: string;
+    }
+  /** WMS-19: a transfer between warehouses by its number. */
+  | {
+      kind: "facility_transfer";
+      id: string;
+      numberText: string;
+      route: string;
+      statusLabel: string;
     };
 
 const MATCHES_SHOWN = 20;
@@ -106,7 +119,8 @@ async function mayRead(
     | "inventory.outbound.read"
     | "inventory.stock.read"
     | "inventory.shipment.read"
-    | "inventory.customer_return.read",
+    | "inventory.customer_return.read"
+    | "inventory.facility_transfer.read",
 ): Promise<boolean> {
   try {
     await assertModulePermission(
@@ -281,6 +295,42 @@ export async function findTraceMatches(
         numberText: formatCustomerReturnNumber(back.number),
         returnedBy: back.returnedBy,
         statusLabel: CUSTOMER_RETURN_STATUS_LABELS[back.status],
+      });
+    }
+  }
+  // WMS-19: a transfer by its number, for who reaches one of its sides.
+  const transferNumber = parseFacilityTransferNumber(text);
+  if (
+    transferNumber &&
+    (await mayRead(actor, "inventory.facility_transfer.read"))
+  ) {
+    const transfer = await client.facilityTransfer.findFirst({
+      where: { number: transferNumber },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        fromFacilityId: true,
+        toFacilityId: true,
+        fromFacility: { select: { name: true } },
+        toFacility: { select: { name: true } },
+      },
+    });
+    if (
+      transfer &&
+      ((await isFacilityInScope(
+        client,
+        actor.userId,
+        transfer.fromFacilityId,
+      )) ||
+        (await isFacilityInScope(client, actor.userId, transfer.toFacilityId)))
+    ) {
+      matches.push({
+        kind: "facility_transfer",
+        id: transfer.id,
+        numberText: formatFacilityTransferNumber(transfer.number),
+        route: `${transfer.fromFacility.name} a ${transfer.toFacility.name}`,
+        statusLabel: FACILITY_TRANSFER_STATUS_LABELS[transfer.status],
       });
     }
   }

@@ -519,6 +519,7 @@ export async function listReturnPlaces(
       facilityId: facility.id,
       archivedAt: null,
       isStaging: null,
+      isTransit: null,
       ...(isLimited(scoped) ? { AND: [scoped] } : {}),
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
