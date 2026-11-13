@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-23 / WMS-24** · Reposición de surtido (ADR 0051): reglas de mínimo,
+  máximo y múltiplo por producto y ubicación de surtido, tareas `REPLENISH`,
+  «Reponer ahora» y ronda periódica sin duplicar.
 - **WMS-19** · Traslados entre almacenes (ADR 0048): traslado `TR-…`, enviar
   deja la mercancía en tránsito en el destino sin cambiar el total ni el valor,
   recibir con diferencias y resolver lo que no llegó.
