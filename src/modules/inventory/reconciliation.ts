@@ -3,7 +3,7 @@ import "server-only";
 import { dec } from "@/lib";
 import { forOrganization } from "@/server";
 
-import { OUTBOUND_LINE_SOURCE } from "./picking";
+import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
 
 /**
  * The balance of a product in a location, state and lot (ADR 0033) is a

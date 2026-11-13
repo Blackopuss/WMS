@@ -47,6 +47,7 @@ import {
 import { normalizeLotCode } from "./lot-rules";
 import { containedAt, containedMessage } from "./contained";
 import { createPutawayTasks, isTaskNumberClash } from "./putaway";
+import { heldForReturns } from "./return-holds";
 import {
   TASK_HOLD,
   freeToMoveFrom,
@@ -1120,6 +1121,7 @@ export const MOVEMENT_TYPE_LABELS = {
   RETURN: "Devolución a proveedor",
   STATUS_CHANGE: "Cambio de estado",
   SHIPMENT: "Despacho",
+  CUSTOMER_RETURN: "Devolución de cliente",
 } as const;
 
 export type MovementType = keyof typeof MOVEMENT_TYPE_LABELS;
@@ -1137,6 +1139,11 @@ export type MovementSummary = {
   reversedByMovementId: string | null;
   /** Movement this one undoes, when it is a reversal. */
   reversesMovementId: string | null;
+  /**
+   * The change of state is the decision of a customer return (WMS-17): it
+   * belongs to its document and is not reversed from here.
+   */
+  isReturnDecision: boolean;
   lines: {
     productId: string;
     productName: string;
@@ -1224,6 +1231,7 @@ async function fetchMovements(
       reason: true,
       reversesMovementId: true,
       reversedBy: { select: { id: true } },
+      returnDecision: { select: { id: true } },
       lines: {
         orderBy: { lineNumber: "asc" },
         select: {
@@ -1290,6 +1298,7 @@ async function fetchMovements(
     reason: movement.reason,
     reversedByMovementId: movement.reversedBy?.id ?? null,
     reversesMovementId: movement.reversesMovementId,
+    isReturnDecision: movement.returnDecision !== null,
     lines: movement.lines.map((line) => ({
       productId: line.productId,
       productName: line.product.name,
@@ -2531,6 +2540,8 @@ export async function reverseMovement(
       id: true,
       type: true,
       containerId: true,
+      // WMS-17: a decision of a customer return belongs to its document.
+      returnDecision: { select: { id: true } },
       lines: {
         orderBy: { lineNumber: "asc" },
         select: {
@@ -2633,6 +2644,20 @@ export async function reverseMovement(
         return stop(
           "not_allowed",
           "Esta salida es el despacho de un embarque: no se reversa desde Inventario. Lo que regrese entra como devolución del cliente.",
+        );
+      }
+      // Nor what a customer brought back (WMS-17), nor the decision taken
+      // on it: the return would still say it came back or was decided.
+      if (original.type === "CUSTOMER_RETURN") {
+        return stop(
+          "not_allowed",
+          "Esta entrada es una devolución de cliente: no se reversa desde Inventario. Lo que entró sigue en inspección hasta que se decida desde la devolución.",
+        );
+      }
+      if (original.returnDecision) {
+        return stop(
+          "not_allowed",
+          "Este cambio de estado es la decisión de una devolución de cliente: no se reversa. Si se decidió mal, registra otro cambio de estado.",
         );
       }
       // Nor a return (CMP-12): its document would still say it went back.
@@ -2855,6 +2880,26 @@ export async function reverseMovement(
             "invalid",
             `No se puede reversar: habría que sacar ${formatStock(base.toString(), line.unitCode)} de ${product.name} de ${location.name} y solo hay ${formatStock(before.toString(), line.unitCode)}. Parte de esas existencias ya salió o se movió.`,
           );
+        }
+        if (direction === "OUT" && line.status === "INSPECTION") {
+          // WMS-17 (PC-5): what a customer return still has to decide is
+          // decided only from it.
+          const hold = await heldForReturns(tx, {
+            productId: product.id,
+            locationId: location.id,
+            lotId: line.lotId,
+          });
+          const free = before.minus(hold.quantity);
+          const units = serialsOf.get(line.id) ?? [];
+          if (
+            free.lessThan(base) ||
+            units.some((unit) => hold.unitIds.has(unit.id))
+          ) {
+            return stop(
+              "not_allowed",
+              `No se puede reversar: lo que está en inspección en ${location.name} es de la devolución ${hold.firstNumberText ?? ""}. Decídelo desde la devolución.`,
+            );
+          }
         }
         if (direction === "OUT" && line.status === "AVAILABLE") {
           // WMS-12: a reversal does not take what is set aside for an

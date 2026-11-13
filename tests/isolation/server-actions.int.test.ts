@@ -170,6 +170,32 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el embarque se busca solo en esa empresa y dentro del alcance de la persona",
     coveredBy: "tests/inventory/shipments.int.test.ts",
   },
+  receiveReturnAction: {
+    input:
+      "pedido o producto (fijados por la página), por renglón cantidad y series, lote y caducidad sin pedido, quién devuelve, motivo, notas, ubicación, clave de confirmación y la aceptación del aviso de capacidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); pedido, productos y ubicación se bloquean solo en esa empresa, el pedido dentro del alcance de la persona y la ubicación en su almacén activo",
+    coveredBy: "tests/inventory/customer-returns.int.test.ts",
+  },
+  checkCustomerReturnAction: {
+    input: "clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo devoluciones de esa persona en esa empresa y dentro de su alcance",
+    coveredBy: "tests/inventory/customer-returns.int.test.ts",
+  },
+  decideReturnAction: {
+    input:
+      "devolución y renglón (fijados por la página), resultado, cantidad, motivo, destino, series, clave de confirmación y la aceptación del aviso de capacidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la devolución se bloquea solo en esa empresa y dentro del alcance de la persona; los permisos de cambio de estado se comprueban en el servicio",
+    coveredBy: "tests/inventory/customer-returns.int.test.ts",
+  },
+  checkDecisionAction: {
+    input: "clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo movimientos de esa persona en esa empresa",
+    coveredBy: "tests/inventory/customer-returns.int.test.ts",
+  },
   changeStatusAction: {
     input:
       "id del producto (fijado por la página), ubicación y estado de origen, estado nuevo, ubicación donde queda (WMS-22B), cantidad, motivo, clave de confirmación y la aceptación del aviso de capacidad",

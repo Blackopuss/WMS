@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-80 tablas en 20 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+83 tablas en 21 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -24,6 +24,7 @@
 | Inventario › Conteos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Tareas, reservas y pedidos de salida | 6 | [inventory](modulos/inventory.md) |
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
+| Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 8 | [purchasing](modulos/purchasing.md) |
 
@@ -1191,7 +1192,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Inventario › Existencias y movimientos
 
-- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`.
+- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`.
 - `StockDirection`: `IN`, `OUT`.
 - `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`.
 
@@ -1638,6 +1639,93 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 #### Enumeraciones de Inventario › Embarques
 
 - `ShipmentStatus`: `DRAFT`, `SHIPPED`, `CANCELLED`.
+
+## Inventario › Devoluciones de clientes
+
+Lo que un cliente regresa (con un pedido despachado o sin él): su entrada en inspección, sus renglones y lo que se decidió de cada uno (disponible, dañado o rechazado), con quién y por qué.
+
+Documento: [modulos/inventory.md](modulos/inventory.md).
+
+### CustomerReturn · `customer_return`
+
+What a customer brought back (WMS-17, ADR 0046): a document of the warehouse, without prices. Receiving it writes one entry (`CUSTOMER_RETURN`) into inspection; each decision is a change of state tied to it (`customer_return_decision`). Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | Consecutive per company («DV-0001»). |
+| `status` | `CustomerReturnStatus` | `RECEIVED` |  |
+| `facilityId` | `String · Char(36)` |  | The warehouse that received it. |
+| `locationId` | `String · Char(36)` |  | Where it entered, in inspection. |
+| `orderId` | `String? · Char(36)` |  | The shipped order it comes back from; null = without an order. |
+| `returnedBy` | `String · VarChar(160)` |  | Who brings it back (free text; with an order, its recipient). |
+| `reason` | `String · VarChar(300)` |  |  |
+| `note` | `String? · VarChar(500)` |  |  |
+| `movementId` | `String · Char(36)` |  | Its entry into inspection. |
+| `idempotencyKey` | `String · VarChar(64)` |  | Sent with the confirmation so that repeating it receives once. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `resolvedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`); (`organizationId`, `idempotencyKey`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `orderId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+### CustomerReturnLine · `customer_return_line`
+
+One product (and lot) that came back, in the product's unit, with the line of its entry and, with an order, the order line it left with. Immutable.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `returnId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `lotId` | `String? · Char(36)` |  |  |
+| `orderLineId` | `String? · Char(36)` |  | The order line it left with; null without an order. |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `serials` | `String? · Text` |  | «A1, A2», for a product by serial. |
+| `movementLineId` | `String · Char(36)` |  | The line of the entry (IN, in inspection). |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `returnId`, `lineNumber`); (`organizationId`, `movementLineId`).
+- Índices: (`organizationId`, `orderLineId`); (`organizationId`, `productId`); (`organizationId`, `lotId`).
+- Relaciones: `return` → `CustomerReturn` por (`organizationId`, `returnId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `orderLine` → `OutboundOrderLine` por (`organizationId`, `orderLineId`) (al borrar: Restrict); `movementLine` → `StockMovementLine` por (`organizationId`, `movementLineId`) (al borrar: Restrict).
+
+### CustomerReturnDecision · `customer_return_decision`
+
+What someone decided about part of a line (WMS-17): available, damaged or rejected, with who, why, where it went and the change of state that did it. Immutable.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `returnId` | `String · Char(36)` |  |  |
+| `lineId` | `String · Char(36)` |  |  |
+| `outcome` | `StockStatus` |  | AVAILABLE, DAMAGED or REJECTED (CHECK). |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `reason` | `String · VarChar(500)` |  |  |
+| `locationId` | `String · Char(36)` |  | Where it ended up. |
+| `movementId` | `String · Char(36)` |  | The change of state (STATUS_CHANGE) that did it. |
+| `decidedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementId`).
+- Índices: (`organizationId`, `returnId`, `id`); (`organizationId`, `lineId`).
+- Relaciones: `return` → `CustomerReturn` por (`organizationId`, `returnId`) (al borrar: Restrict); `line` → `CustomerReturnLine` por (`organizationId`, `lineId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+#### Enumeraciones de Inventario › Devoluciones de clientes
+
+- `CustomerReturnStatus`: `RECEIVED`, `RESOLVED`.
 
 ## Inventario › Importaciones
 

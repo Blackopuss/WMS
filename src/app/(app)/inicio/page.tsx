@@ -9,6 +9,7 @@ import {
   PackageOpen,
   TriangleAlert,
   Truck,
+  Undo2,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -22,6 +23,7 @@ import {
   countMyTasks,
   countOrdersToPack,
   countOrdersToShip,
+  countReturnsToReview,
   countExpiringLots,
   countUnplacedStock,
   getDaySummary,
@@ -123,6 +125,14 @@ export default async function InicioPage() {
     access.allows("inventory.shipment.dispatch")
       ? await countOrdersToShip(actor)
       : 0;
+  // WMS-17: customer returns still in inspection, for who decides them.
+  const toReview =
+    inventory &&
+    access.can("inventory.customer_return.read") &&
+    (access.allows("inventory.status.release") ||
+      access.allows("inventory.status.change"))
+      ? await countReturnsToReview(actor)
+      : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -176,6 +186,16 @@ export default async function InicioPage() {
             label: "Pedidos por despachar",
             count: toShip,
             icon: Truck,
+          },
+        ]
+      : []),
+    ...(toReview > 0
+      ? [
+          {
+            href: "/pedidos/devoluciones?estado=RECEIVED",
+            label: "Devoluciones por revisar",
+            count: toReview,
+            icon: Undo2,
           },
         ]
       : []),

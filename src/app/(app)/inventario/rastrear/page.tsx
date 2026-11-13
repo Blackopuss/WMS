@@ -46,7 +46,9 @@ const hrefOf = (match: TraceMatch) =>
           ? `/inventario/tarimas/${idPath(match.id)}`
           : match.kind === "shipment"
             ? `/pedidos/embarques/${idPath(match.id)}`
-            : `/inventario/rastrear?oc=${idPath(match.id)}`;
+            : match.kind === "customer_return"
+              ? `/pedidos/devoluciones/${idPath(match.id)}`
+              : `/inventario/rastrear?oc=${idPath(match.id)}`;
 
 const titleOf = (match: TraceMatch) =>
   match.kind === "lot"
@@ -59,7 +61,9 @@ const titleOf = (match: TraceMatch) =>
           ? match.name
           : match.kind === "shipment"
             ? `Embarque ${match.numberText}`
-            : `Orden de compra ${match.numberText}`;
+            : match.kind === "customer_return"
+              ? `Devolución ${match.numberText}`
+              : `Orden de compra ${match.numberText}`;
 
 const detailOf = (match: TraceMatch) =>
   match.kind === "lot" || match.kind === "serial"
@@ -70,15 +74,17 @@ const detailOf = (match: TraceMatch) =>
         ? "Tarima o caja"
         : match.kind === "shipment"
           ? match.statusLabel
-          : match.supplierName;
+          : match.kind === "customer_return"
+            ? `${match.returnedBy} · ${match.statusLabel}`
+            : match.supplierName;
 
 const linkClass =
   "inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * Traceability (WMS-21B, ADR 0041): one box takes a lot, a serial, an
- * order «PS-0001», a shipment «EM-0001» (WMS-16) or a purchase order
- * «OC-0007». A lot opens its card and
+ * order «PS-0001», a shipment «EM-0001» (WMS-16), a customer return
+ * «DV-0001» (WMS-17) or a purchase order «OC-0007». A lot opens its card and
  * an order its page (they tell the whole route); a serial and a purchase
  * order are told here. Read only.
  */
@@ -286,6 +292,7 @@ async function SerialCard({
         origins={unit.origins}
         orders={unit.orders}
         shipments={unit.shipments}
+        returns={unit.returns}
         timeZone={timeZone}
       />
       <section

@@ -368,6 +368,47 @@ export {
 export type { ShipmentStatus } from "./shipment-states";
 export { TO_SHIP } from "./shipment-ready";
 export {
+  CUSTOMER_RETURN_MAX_LINES,
+  CUSTOMER_RETURN_PAGE_SIZE,
+  countReturnsToReview,
+  decideCustomerReturn,
+  findCustomerReturnByKey,
+  findReturnableOrders,
+  getCustomerReturn,
+  getReturnableOrder,
+  listCustomerReturns,
+  listReturnPlaces,
+  receiveCustomerReturn,
+  returnsOfOrder,
+  returnsWithoutOrderAllowed,
+} from "./customer-returns";
+export type {
+  CustomerReturnDecisionInput,
+  CustomerReturnField,
+  CustomerReturnInput,
+  CustomerReturnLineInput,
+  CustomerReturnLineView,
+  CustomerReturnPage,
+  CustomerReturnResult,
+  CustomerReturnSummary,
+  CustomerReturnView,
+  ReturnPlace,
+  ReturnableOrder,
+  ReturnableOrderSummary,
+  ReturnableRow,
+} from "./customer-returns";
+export {
+  CUSTOMER_RETURN_STATUS_LABELS,
+  RETURN_OUTCOMES,
+  formatCustomerReturnNumber,
+  isCustomerReturnStatus,
+  isReturnOutcome,
+} from "./customer-return-states";
+export type {
+  CustomerReturnStatus,
+  ReturnOutcome,
+} from "./customer-return-states";
+export {
   OUTBOUND_ORDER_STATUSES,
   OUTBOUND_ORDER_STATUS_LABELS,
   OUTBOUND_ORDER_TRANSITIONS,
@@ -413,6 +454,7 @@ export {
   CONTAINERS_MODE,
   PACKING_MODE,
   SHIPMENT_DETAILS,
+  CUSTOMER_RETURN_WITHOUT_ORDER,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -474,6 +516,7 @@ export type {
   TraceOrder,
   TraceOrigin,
   TraceShipment,
+  TraceReturn,
 } from "./traceability";
 export {
   CONTAINER_EVENT_PAGE_SIZE,

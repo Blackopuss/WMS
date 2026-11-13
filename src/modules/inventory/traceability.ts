@@ -19,6 +19,11 @@ import { formatOutboundNumber } from "./outbound-states";
 import { formatStock, type InventoryActor } from "./movements";
 import { normalizeSerial } from "./serial-rules";
 import { formatShipmentNumber } from "./shipment-states";
+import {
+  CUSTOMER_RETURN_STATUS_LABELS,
+  formatCustomerReturnNumber,
+  parseCustomerReturnNumber,
+} from "./customer-return-states";
 import { STOCK_STATUS_LABELS } from "./stock-status";
 import { formatTaskNumber } from "./task-states";
 
@@ -68,6 +73,14 @@ export type TraceMatch =
       id: string;
       numberText: string;
       statusLabel: string;
+    }
+  /** WMS-17: a customer return by its number. */
+  | {
+      kind: "customer_return";
+      id: string;
+      numberText: string;
+      returnedBy: string;
+      statusLabel: string;
     };
 
 const MATCHES_SHOWN = 20;
@@ -92,7 +105,8 @@ async function mayRead(
   permission:
     | "inventory.outbound.read"
     | "inventory.stock.read"
-    | "inventory.shipment.read",
+    | "inventory.shipment.read"
+    | "inventory.customer_return.read",
 ): Promise<boolean> {
   try {
     await assertModulePermission(
@@ -238,6 +252,35 @@ export async function findTraceMatches(
         id: shipment.id,
         numberText: formatShipmentNumber(shipment.number),
         statusLabel: SHIPMENT_STATUS_TEXT[shipment.status],
+      });
+    }
+  }
+  // WMS-17: a customer return by its number, of a warehouse in scope.
+  const returnNumber = parseCustomerReturnNumber(text);
+  if (
+    returnNumber &&
+    (await mayRead(actor, "inventory.customer_return.read"))
+  ) {
+    const back = await client.customerReturn.findFirst({
+      where: { number: returnNumber },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        returnedBy: true,
+        facilityId: true,
+      },
+    });
+    if (
+      back &&
+      (await isFacilityInScope(client, actor.userId, back.facilityId))
+    ) {
+      matches.push({
+        kind: "customer_return",
+        id: back.id,
+        numberText: formatCustomerReturnNumber(back.number),
+        returnedBy: back.returnedBy,
+        statusLabel: CUSTOMER_RETURN_STATUS_LABELS[back.status],
       });
     }
   }
@@ -463,11 +506,83 @@ async function shipmentsOf(
   return result;
 }
 
+/** A customer return that brought the lot or the unit back (WMS-17). */
+export type TraceReturn = {
+  returnId: string;
+  numberText: string;
+  receivedAt: Date;
+  returnedBy: string;
+  orderNumberText: string | null;
+  /** «2 piezas». */
+  quantityText: string;
+  statusLabel: string;
+};
+
+async function returnsOf(
+  actor: InventoryActor,
+  where: { lotId: string } | { movementLineIds: string[] },
+): Promise<TraceReturn[]> {
+  if (!(await mayRead(actor, "inventory.customer_return.read"))) return [];
+  if ("movementLineIds" in where && where.movementLineIds.length === 0) {
+    return [];
+  }
+  const client = forOrganization(actor.organizationId);
+  const lines = await client.customerReturnLine.findMany({
+    where:
+      "lotId" in where
+        ? { lotId: where.lotId }
+        : { movementLineId: { in: where.movementLineIds } },
+    orderBy: { id: "asc" },
+    take: 100,
+    select: {
+      quantity: true,
+      unitCode: true,
+      return: {
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          createdAt: true,
+          returnedBy: true,
+          facilityId: true,
+          order: { select: { number: true } },
+        },
+      },
+    },
+  });
+  const facilities = new Map<string, boolean>();
+  const result: TraceReturn[] = [];
+  for (const line of lines) {
+    const { facilityId } = line.return;
+    if (!facilities.has(facilityId)) {
+      facilities.set(
+        facilityId,
+        await isFacilityInScope(client, actor.userId, facilityId),
+      );
+    }
+    if (!facilities.get(facilityId)) continue;
+    result.push({
+      returnId: line.return.id,
+      numberText: formatCustomerReturnNumber(line.return.number),
+      receivedAt: line.return.createdAt,
+      returnedBy: line.return.returnedBy,
+      orderNumberText: line.return.order
+        ? formatOutboundNumber(line.return.order.number)
+        : null,
+      quantityText: formatStock(line.quantity.toString(), line.unitCode),
+      statusLabel: CUSTOMER_RETURN_STATUS_LABELS[line.return.status],
+    });
+  }
+  return result;
+}
+
 export type LotTrace = {
   origins: TraceOrigin[];
   orders: TraceOrder[];
   /** Where it left the warehouse to (WMS-16). */
   shipments: TraceShipment[];
+  /** What of it customers brought back (WMS-17). */
+  returns: TraceReturn[];
 };
 
 /**
@@ -504,12 +619,13 @@ export async function traceLot(
     select: { id: true },
   });
   if (!anyLine) return null;
-  const [origins, orders, shipments] = await Promise.all([
+  const [origins, orders, shipments, returns] = await Promise.all([
     originsOf(actor, [...new Set(lines.map((line) => line.movementId))]),
     ordersOf(actor, { lotId: String(lotId).slice(0, 36) }),
     shipmentsOf(actor, { lotId: String(lotId).slice(0, 36) }),
+    returnsOf(actor, { lotId: String(lotId).slice(0, 36) }),
   ]);
-  return { origins, orders, shipments };
+  return { origins, orders, shipments, returns };
 }
 
 export type SerialTrace = {
@@ -529,6 +645,8 @@ export type SerialTrace = {
   orders: TraceOrder[];
   /** The shipments it left with (WMS-16). */
   shipments: TraceShipment[];
+  /** The customer returns it came back with (WMS-17). */
+  returns: TraceReturn[];
 };
 
 /**
@@ -597,11 +715,22 @@ export async function traceSerial(
     take: 500,
     select: { movementLineId: true },
   });
-  const [origins, orders, shipments] = await Promise.all([
+  const [origins, orders, shipments, returns] = await Promise.all([
     originsOf(actor, [...new Set(lines.map((line) => line.movementId))]),
     ordersOf(actor, { serialUnitId: unit.id }),
     shipmentsOf(actor, {
       movementLineIds: exits.map((move) => move.movementLineId),
+    }),
+    // WMS-17: the lines that brought it back (all its entries, any place).
+    returnsOf(actor, {
+      movementLineIds: (
+        await client.serialMove.findMany({
+          where: { serialUnitId: unit.id, direction: "IN" },
+          orderBy: { id: "asc" },
+          take: 500,
+          select: { movementLineId: true },
+        })
+      ).map((move) => move.movementLineId),
     }),
   ]);
   return {
@@ -612,6 +741,7 @@ export async function traceSerial(
     origins,
     orders,
     shipments,
+    returns,
   };
 }
 

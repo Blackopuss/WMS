@@ -221,6 +221,14 @@ export const AREAS = [
     models: ["Shipment", "ShipmentOrder", "ShipmentLine"],
   },
   {
+    id: "inventory-customer-returns",
+    title: "Inventario › Devoluciones de clientes",
+    doc: "inventory",
+    summary:
+      "Lo que un cliente regresa (con un pedido despachado o sin él): su entrada en inspección, sus renglones y lo que se decidió de cada uno (disponible, dañado o rechazado), con quién y por qué.",
+    models: ["CustomerReturn", "CustomerReturnLine", "CustomerReturnDecision"],
+  },
+  {
     id: "inventory-imports",
     title: "Inventario › Importaciones",
     doc: "inventory",
