@@ -11,6 +11,7 @@ import {
   Truck,
   Undo2,
   ClipboardCheck,
+  MessageSquareWarning,
   ShieldCheck,
   ShoppingCart,
   type LucideIcon,
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
   countMyTasks,
+  countOpenIncidents,
   countOrdersToPack,
   countOrdersToShip,
   countReturnsToReview,
@@ -161,6 +163,13 @@ export default async function InicioPage() {
     access.allows("purchasing.order.create")
       ? await countRequestsToAttend(actor)
       : 0;
+  // WMS-39: incidents waiting, for who attends them, only if any.
+  const incidents =
+    moduleState === "active" && access.allows("inventory.incident.manage")
+      ? await countOpenIncidents(actor)
+      : 0;
+  const canReport =
+    moduleState === "active" && access.allows("inventory.incident.create");
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -194,6 +203,17 @@ export default async function InicioPage() {
             label: "Tareas disponibles",
             count: tasks.available,
             icon: ClipboardList,
+          },
+        ]
+      : []),
+    ...(incidents > 0
+      ? [
+          {
+            href: "/incidencias",
+            label: "Incidencias abiertas",
+            count: incidents,
+            icon: MessageSquareWarning,
+            alert: true,
           },
         ]
       : []),
@@ -332,6 +352,15 @@ export default async function InicioPage() {
         description={access.organization.name}
         actions={actions}
       />
+      {/* WMS-39: occasional, so a link under the title (KISS). */}
+      {canReport && (
+        <p className="-mt-2">
+          <Link href="/incidencias/nueva" className={linkClass}>
+            <MessageSquareWarning aria-hidden="true" className="size-4" />
+            Reportar un problema
+          </Link>
+        </p>
+      )}
 
       {planNotice && (
         <Link

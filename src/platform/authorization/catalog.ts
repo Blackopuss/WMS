@@ -151,6 +151,9 @@ export const PERMISSIONS = [
   "purchasing.report.export",
   "purchasing.request.read",
   "purchasing.request.create",
+  "inventory.incident.read",
+  "inventory.incident.create",
+  "inventory.incident.manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -265,6 +268,9 @@ export const OWNER_PERMISSIONS: readonly Permission[] = [
   "purchasing.report.export",
   "purchasing.request.read",
   "purchasing.request.create",
+  "inventory.incident.read",
+  "inventory.incident.create",
+  "inventory.incident.manage",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
@@ -369,6 +375,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.report.export",
     "purchasing.request.read",
     "purchasing.request.create",
+    "inventory.incident.read",
+    "inventory.incident.create",
+    "inventory.incident.manage",
   ],
   warehouse: [
     "platform.organization.read",
@@ -434,6 +443,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.export.create",
     "purchasing.request.read",
     "purchasing.request.create",
+    "inventory.incident.read",
+    "inventory.incident.create",
+    "inventory.incident.manage",
   ],
   buyer: [
     "platform.organization.read",
@@ -506,6 +518,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.report.read",
     "purchasing.report.export",
     "purchasing.request.read",
+    "inventory.incident.read",
   ],
   supervisor: [
     "platform.organization.read",
@@ -578,6 +591,9 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.receipt.create",
     "purchasing.request.read",
     "purchasing.request.create",
+    "inventory.incident.read",
+    "inventory.incident.create",
+    "inventory.incident.manage",
   ],
   operator: [
     "platform.organization.read",
@@ -611,6 +627,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.order.read",
     "purchasing.receipt.read",
     "purchasing.receipt.create",
+    "inventory.incident.read",
+    "inventory.incident.create",
   ],
   forklift: [
     "platform.organization.read",
@@ -622,6 +640,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.stock.read",
     "inventory.task.read",
     "inventory.task.execute",
+    "inventory.incident.read",
+    "inventory.incident.create",
   ],
   // WMS-50: who runs the business reads and exports everything operational
   // of the contracted modules; never operates, configures or sees billing.
@@ -664,6 +684,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.report.read",
     "purchasing.report.export",
     "purchasing.request.read",
+    "inventory.incident.read",
   ],
 };
 

@@ -1,5 +1,6 @@
 import { runCycleCountRound, runReplenishmentRound } from "@/modules/inventory";
 import type { ScheduledRound } from "@/platform/jobs";
+import { purgeReadNotifications } from "@/platform/notifications";
 
 /**
  * Work each module does on a schedule, company by company (PAG-07). The
@@ -17,5 +18,12 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "inventory.cycle_counts",
     module: "inventory",
     run: (organizationId) => runCycleCountRound(organizationId),
+  },
+  // WMS-39 (ADR 0057): read notices older than 90 days. A platform table,
+  // run for every company of the WMS (all of them have Inventario).
+  {
+    name: "platform.notifications_cleanup",
+    module: "inventory",
+    run: (organizationId) => purgeReadNotifications(organizationId),
   },
 ];

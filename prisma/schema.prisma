@@ -192,6 +192,10 @@ model Organization {
   countPrograms           CountProgram[]
   approvalRules           ApprovalRule[]
   approvalRequests        ApprovalRequest[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  incidents               Incident[]
+  incidentNotes           IncidentNote[]
   pickWaves               PickWave[]
   pickWaveOrders          PickWaveOrder[]
   purchaseRequests        PurchaseRequest[]
@@ -235,6 +239,8 @@ model Facility {
   countPrograms   CountProgram[]
   /// Approval requests about something of this warehouse (WMS-56).
   approvalRequests ApprovalRequest[]
+  /// Incidents reported in it (WMS-39).
+  incidents        Incident[]
   /// Its picking waves (WMS-25).
   pickWaves       PickWave[]
   /// Purchase requests and orders of this warehouse (WMS-57).
@@ -307,6 +313,8 @@ model Location {
   countPrograms       CountProgram[]
   /// Approval requests about something in this location (WMS-56).
   approvalRequests    ApprovalRequest[]
+  /// Incidents about this location (WMS-39).
+  incidents           Incident[]
   exitImportRows      ExitImportRow[]
   receiptLines        PurchaseReceiptLine[]
   returnLines         PurchaseReturnLine[]
@@ -1053,6 +1061,7 @@ model Product {
   receiptLines         PurchaseReceiptLine[]
   returnLines          PurchaseReturnLine[]
   warehouseTasks       WarehouseTask[]
+  incidents            Incident[]
   lots                 Lot[]
   serialUnits          SerialUnit[]
   reservations         StockReservation[]
@@ -2396,6 +2405,7 @@ model WarehouseTask {
   /// Units by serial the person took (WMS-21B): scanned when picking or
   /// picking up, moved by the delivery.
   serials          WarehouseTaskSerial[]
+  incidents        Incident[]
   containerEvents  ContainerEvent[]
 
   @@unique([organizationId, id])
@@ -2678,6 +2688,7 @@ model OutboundOrder {
   /// The embarques it was put in (WMS-16); at most one open.
   shipments         ShipmentOrder[]
   customerReturns   CustomerReturn[]
+  incidents         Incident[]
   /// What left with its shipment (WMS-16).
   shipmentLines     ShipmentLine[]
   /// The picking waves it was put in (WMS-25); at most one open.
@@ -3499,4 +3510,136 @@ model PickWaveOrder {
   @@unique([organizationId, openOrderId])
   @@index([organizationId, orderId])
   @@map("pick_wave_order")
+}
+
+/// A notice for one person inside the app (WMS-39, ADR 0057). Written only
+/// by `notify` of platform/notifications, inside the transaction of the
+/// fact that causes it. Text and destination are fixed when created; only
+/// `readAt` changes, once (trigger). Read notices older than 90 days are
+/// removed by a round; unread ones stay.
+model Notification {
+  id              String       @id @db.Char(36)
+  organizationId  String       @db.Char(36)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Who it is for: only that person sees it.
+  recipientUserId String       @db.Char(36)
+  /// «inventory.task_assigned»: the type declared by its module.
+  typeKey         String       @db.VarChar(80)
+  /// What happened, one line, never with costs.
+  text            String       @db.VarChar(300)
+  /// Internal path of the app it leads to («/tareas/…»).
+  href            String       @db.VarChar(300)
+  /// Same fact → same key: a person gets it once.
+  dedupeKey       String       @db.VarChar(160)
+  /// Who caused it (never notified about it); null = the system.
+  actorUserId     String?      @db.Char(36)
+  createdAt       DateTime     @default(now()) @db.DateTime(3)
+  readAt          DateTime?    @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, recipientUserId, dedupeKey])
+  @@index([organizationId, recipientUserId, readAt])
+  @@index([organizationId, recipientUserId, createdAt, id])
+  @@index([organizationId, readAt])
+  @@map("notification")
+}
+
+/// A person turned a type of notice off (or on, if it is off by default)
+/// (WMS-39). Without a row the type's default applies.
+model NotificationPreference {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String       @db.Char(36)
+  typeKey        String       @db.VarChar(80)
+  enabled        Boolean
+  updatedAt      DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId, typeKey])
+  @@map("notification_preference")
+}
+
+/// What kind of problem an incident is (WMS-39): a fixed, generic list.
+enum IncidentKind {
+  DAMAGED_GOODS
+  MISPLACED
+  UNSAFE_LOCATION
+  BROKEN_EQUIPMENT
+  OTHER
+}
+
+/// States of an incident (WMS-39, ADR 0057).
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+/// A problem of the warehouse that someone reported (WMS-39, ADR 0057):
+/// damaged goods found, something out of place, an unsafe location, broken
+/// equipment. It never changes stock. What was reported does not change;
+/// states with INCIDENT_TRANSITIONS and the trigger `incident_transition`.
+/// Never deleted.
+model Incident {
+  id                 String         @id @db.Char(36)
+  organizationId     String         @db.Char(36)
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Consecutive per company («INC-0001»).
+  number             Int
+  facilityId         String         @db.Char(36)
+  facility           Facility       @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  kind               IncidentKind
+  status             IncidentStatus @default(OPEN)
+  description        String         @db.VarChar(1000)
+  /// What it is about, all optional; the location is of its warehouse.
+  locationId         String?        @db.Char(36)
+  location           Location?      @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId          String?        @db.Char(36)
+  product            Product?       @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  taskId             String?        @db.Char(36)
+  task               WarehouseTask? @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  outboundOrderId    String?        @db.Char(36)
+  outboundOrder      OutboundOrder? @relation(fields: [organizationId, outboundOrderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The confirmation of the form: a retry finds the same incident.
+  idempotencyKey     String         @db.VarChar(64)
+  reportedByUserId   String         @db.Char(36)
+  createdAt          DateTime       @default(now()) @db.DateTime(3)
+  /// Who took it («en atención») and when.
+  attendedByUserId   String?        @db.Char(36)
+  attendedAt         DateTime?      @db.DateTime(3)
+  /// Resolved (what was done) or dismissed (why).
+  closedByUserId     String?        @db.Char(36)
+  closedAt           DateTime?      @db.DateTime(3)
+  resolution         String?        @db.VarChar(500)
+  updatedAt          DateTime       @updatedAt @db.DateTime(3)
+  notes              IncidentNote[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, number])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, facilityId, status, number])
+  @@index([organizationId, reportedByUserId, number])
+  @@index([organizationId, locationId])
+  @@index([organizationId, productId])
+  @@index([organizationId, taskId])
+  @@index([organizationId, outboundOrderId])
+  @@map("incident")
+}
+
+/// A follow-up note of an incident (WMS-39): never changed or deleted.
+model IncidentNote {
+  id              String       @id @db.Char(36)
+  organizationId  String       @db.Char(36)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  incidentId      String       @db.Char(36)
+  incident        Incident     @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  text            String       @db.VarChar(1000)
+  createdByUserId String       @db.Char(36)
+  createdAt       DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, incidentId, createdAt, id])
+  @@map("incident_note")
 }

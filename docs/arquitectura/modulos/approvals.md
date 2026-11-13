@@ -48,6 +48,15 @@ De [inventory](inventory.md#aprobaciones): `inventory.adjustment` (corregir
 existencias sobre el umbral) e `inventory.count_apply` (aplicar un conteo con
 diferencias grandes).
 
+## Avisos
+
+Pedir avisa (`approvals.pending`) a quien puede decidir: roles de la regla
+vigente o titular, con los `decidePermissions` del tipo y dentro del alcance
+de la solicitud, nunca a quien pidió. Autorizar, rechazar o vencer avisa a
+quien pidió (`approvals.decided`). Todo en la misma transacción
+(WMS-39, ADR 0057). Por eso `openApprovalRequest` recibe del tipo también
+`decidePermissions` (vive en el archivo de claves de cada módulo).
+
 ## Pantallas
 
 `/aprobaciones` (Por autorizar y Mis solicitudes), `/aprobaciones/[id]`
@@ -57,9 +66,9 @@ aplica cada tipo) y el aviso «Aprobaciones pendientes» de Inicio.
 
 ## Pendientes
 
-Aviso por correo a quien puede autorizar; evidencia (WMS-37); que las
-solicitudes viejas venzan solas.
+Aviso por correo a quien puede autorizar (dentro de la app ya avisa, WMS-39);
+evidencia (WMS-37); que las solicitudes viejas venzan solas.
 
 ## ADR
 
-0053 (flujos de aprobación y ajustes con autorización).
+0053 (flujos de aprobación y ajustes con autorización), 0057 (avisos).

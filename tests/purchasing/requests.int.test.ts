@@ -907,6 +907,112 @@ describe("comparing suppliers (known data)", () => {
   });
 });
 
+describe("notices (WMS-39)", () => {
+  const noticesOf = (actor: PurchasingActor, typeKey: string, id: string) =>
+    db.notification.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        recipientUserId: actor.userId,
+        typeKey,
+        href: `/compras/solicitudes/${id}`,
+      },
+      orderBy: { id: "asc" },
+    });
+
+  it("Compras hears what reaches it; who asked hears the answer, never costs", async () => {
+    const drill = await product(owner);
+    const first = await sentRequest(warehouse, [
+      { productId: drill, quantity: "3" },
+    ]);
+    expect(first.sent).toMatchObject({ ok: true, status: "APPROVED" });
+    // Who buys (and the titular) hears it; who asked and who only reads do not.
+    for (const actor of [buyer, owner]) {
+      expect(
+        await noticesOf(actor, "purchasing.request_to_attend", first.requestId),
+      ).toHaveLength(1);
+    }
+    for (const actor of [warehouse, viewer, manager, operator]) {
+      expect(
+        await noticesOf(actor, "purchasing.request_to_attend", first.requestId),
+      ).toHaveLength(0);
+    }
+    const [toAttend] = await noticesOf(
+      buyer,
+      "purchasing.request_to_attend",
+      first.requestId,
+    );
+    expect(toAttend!.text).toMatch(/^Por atender: SC-\d{4}: 1 producto/);
+    expect(toAttend!.text).not.toMatch(/\$|costo/i);
+
+    expect(
+      await rejectPurchaseRequest(buyer, first.requestId, {
+        reason: "Hay suficiente en otra bodega.",
+      }),
+    ).toMatchObject({ ok: true });
+    const [answer] = await noticesOf(
+      warehouse,
+      "purchasing.request_answered",
+      first.requestId,
+    );
+    expect(answer!.text).toContain("Motivo: Hay suficiente en otra bodega.");
+
+    const north = await supplier(owner, `Norte avisos ${stamp}`);
+    const second = await sentRequest(warehouse, [
+      { productId: drill, quantity: "2" },
+    ]);
+    const request = (await getPurchaseRequest(buyer, second.requestId))!;
+    expect(
+      await convertPurchaseRequest(buyer, second.requestId, {
+        suppliers: { [request.lines[0]!.id]: north },
+      }),
+    ).toMatchObject({ ok: true });
+    const [converted] = await noticesOf(
+      warehouse,
+      "purchasing.request_answered",
+      second.requestId,
+    );
+    expect(converted!.text).toContain("se convirtió en orden de compra");
+    // Who asked may not see orders nor suppliers: the notice names neither.
+    expect(converted!.text).not.toContain("Norte");
+    expect(converted!.text).not.toMatch(/OC-\d/);
+  });
+
+  it("with the rule on, Compras hears it only once it is authorized", async () => {
+    await rule(owner, true);
+    try {
+      const drill = await product(owner);
+      const sent = await sentRequest(warehouse, [
+        { productId: drill, quantity: "1" },
+      ]);
+      if (sent.sent.ok || sent.sent.reason !== "pending_approval") {
+        throw new Error(JSON.stringify(sent.sent));
+      }
+      expect(
+        await noticesOf(buyer, "purchasing.request_to_attend", sent.requestId),
+      ).toHaveLength(0);
+      expect(
+        await decideApproval(
+          buyer,
+          approvalTypes,
+          sent.sent.approvalRequestId,
+          {
+            decision: "approve",
+          },
+        ),
+      ).toMatchObject({ ok: true });
+      // The buyer authorized it: the titular hears it, not the buyer.
+      expect(
+        await noticesOf(owner, "purchasing.request_to_attend", sent.requestId),
+      ).toHaveLength(1);
+      expect(
+        await noticesOf(buyer, "purchasing.request_to_attend", sent.requestId),
+      ).toHaveLength(0);
+    } finally {
+      await rule(owner, false);
+    }
+  });
+});
+
 describe("between companies", () => {
   it("a request of another company does not exist", async () => {
     const drill = await product(owner);

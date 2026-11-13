@@ -308,6 +308,9 @@ function screens(company: Company): Record<string, () => string> {
       `/movimientos?producto=${pick(company.productIds)}`,
     // WMS-21: lots about to expire and the card of one lot.
     "Por caducar": () => "/inventario/por-caducar",
+    // WMS-39: the list of notices and the incidents of the warehouse.
+    Avisos: () => "/avisos",
+    Incidencias: () => "/incidencias",
     ...(company.lotIds.length > 0
       ? { "Ficha del lote": () => `/inventario/lotes/${pick(company.lotIds)}` }
       : {}),

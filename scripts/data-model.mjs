@@ -122,6 +122,14 @@ export const AREAS = [
     models: ["ApprovalRule", "ApprovalRequest"],
   },
   {
+    id: "notifications",
+    title: "Plataforma › Avisos",
+    doc: "notifications",
+    summary:
+      "Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído») y los tipos que cada persona apagó; los tipos los declara cada módulo.",
+    models: ["Notification", "NotificationPreference"],
+  },
+  {
     id: "files",
     title: "Plataforma › Archivos",
     doc: "files",
@@ -256,6 +264,14 @@ export const AREAS = [
       "FacilityTransferReceipt",
       "FacilityTransferReceiptLine",
     ],
+  },
+  {
+    id: "inventory-incidents",
+    title: "Inventario › Incidencias",
+    doc: "inventory",
+    summary:
+      "Problemas del almacén que alguien reportó (mercancía dañada, algo fuera de lugar, una ubicación insegura, un equipo descompuesto), quién los atendió y cómo se cerraron, con sus notas; no tocan existencias.",
+    models: ["Incident", "IncidentNote"],
   },
   {
     id: "inventory-imports",

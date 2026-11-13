@@ -8,6 +8,7 @@ import { crmModule } from "./announced";
 
 export { approvalTypes } from "./approvals";
 export { moduleOpenWork } from "./open-work";
+export { notificationTypes } from "./notifications";
 export { operationSettings } from "./settings";
 
 /**

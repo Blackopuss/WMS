@@ -42,3 +42,8 @@ export type {
   OpenApprovalInput,
   OpenApprovalResult,
 } from "./requests";
+export {
+  APPROVAL_DECIDED_NOTICE,
+  APPROVAL_NOTIFICATION_TYPES,
+  APPROVAL_PENDING_NOTICE,
+} from "./notices";

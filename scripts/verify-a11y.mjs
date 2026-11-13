@@ -83,6 +83,11 @@ const SCREENS = [
   "/compras/ordenes/nueva",
   "/compras/solicitudes",
   "/compras/solicitudes/nueva",
+  // WMS-39: notices of the bell, what the person receives, and incidents.
+  "/avisos",
+  "/configuracion/avisos",
+  "/incidencias",
+  "/incidencias/nueva",
   "/configuracion",
   "/ubicaciones",
   "/ubicaciones/niveles",

@@ -625,3 +625,77 @@ describe("between companies", () => {
     });
   });
 });
+
+describe("notices (WMS-39)", () => {
+  const noticesOf = (actor: InventoryActor, typeKey: string, id: string) =>
+    db.notification.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        recipientUserId: actor.userId,
+        typeKey,
+        href: `/aprobaciones/${id}`,
+      },
+    });
+
+  it("who may decide hears it is waiting; who asked hears the answer", async () => {
+    const id = await ask(clerk);
+    // The rule names supervisors (and the titular may always decide).
+    expect(await noticesOf(boss, "approvals.pending", id)).toHaveLength(1);
+    expect(await noticesOf(otherBoss, "approvals.pending", id)).toHaveLength(1);
+    expect(await noticesOf(owner, "approvals.pending", id)).toHaveLength(1);
+    expect(await noticesOf(clerk, "approvals.pending", id)).toHaveLength(0);
+    const [pending] = await noticesOf(boss, "approvals.pending", id);
+    expect(pending!.text).toBe("Álvaro pide autorizar: Pedir Cosa de prueba");
+
+    expect(
+      await decideApproval(boss, TYPES, id, { decision: "approve" }),
+    ).toMatchObject({ ok: true });
+    const [answer] = await noticesOf(clerk, "approvals.decided", id);
+    expect(answer!.text).toBe("Se autorizó: Pedir Cosa de prueba");
+    expect(await noticesOf(boss, "approvals.decided", id)).toHaveLength(0);
+  });
+
+  it("a rejection says why; an expired request says it expired", async () => {
+    const rejected = await ask(clerk);
+    await decideApproval(boss, TYPES, rejected, {
+      decision: "reject",
+      reason: "No hace falta todavía.",
+    });
+    const [no] = await noticesOf(clerk, "approvals.decided", rejected);
+    expect(no!.text).toBe(
+      "Se rechazó: Pedir Cosa de prueba. Motivo: No hace falta todavía.",
+    );
+    const expiring = await ask(clerk, EXPIRING);
+    expect(
+      await decideApproval(boss, TYPES, expiring, { decision: "approve" }),
+    ).toMatchObject({ ok: false, reason: "expired" });
+    const [gone] = await noticesOf(clerk, "approvals.decided", expiring);
+    expect(gone!.text).toContain("Venció lo que pediste autorizar");
+  });
+
+  it("nothing is notified if asking rolls back", async () => {
+    const before = await db.notification.count({
+      where: {
+        organizationId: owner.organizationId,
+        typeKey: "approvals.pending",
+      },
+    });
+    await expect(
+      forOrganization(owner.organizationId).$transaction(async (tx) => {
+        await openApprovalRequest(tx, THING, clerk, {
+          summary: "No queda",
+          payload: {},
+        });
+        throw new Error("rolled back");
+      }),
+    ).rejects.toThrow("rolled back");
+    expect(
+      await db.notification.count({
+        where: {
+          organizationId: owner.organizationId,
+          typeKey: "approvals.pending",
+        },
+      }),
+    ).toBe(before);
+  });
+});

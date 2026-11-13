@@ -1114,3 +1114,98 @@ describe("drafts, warehouses and who sees what (WMS-19)", () => {
     }
   });
 });
+
+describe("notices (WMS-39)", () => {
+  it("the destination hears it is coming; who sent it hears of damage and losses", async () => {
+    const w = await world();
+    const sender = await member(w.owner.organizationId, "supervisor");
+    const receiverB = await member(w.owner.organizationId, "operator");
+    const receiverA = await member(w.owner.organizationId, "operator");
+    for (const [who, facilityId] of [
+      [receiverB, w.facilityB],
+      [receiverA, w.facilityA],
+    ] as const) {
+      const scoped = await setMemberScope(
+        w.owner.organizationId,
+        w.owner.userId,
+        { userId: who.userId, facilities: [{ facilityId }] },
+      );
+      if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    }
+    const item = await product(w.owner);
+    await enter(w.owner, item, w.shelfA, "10");
+    const transferId = await sent(sender, w.facilityB, [
+      { productId: item, source: w.shelfA, quantity: "10" },
+    ]);
+    const noticesOf = (actor: InventoryActor, typeKey: string) =>
+      db.notification.findMany({
+        where: {
+          organizationId: w.owner.organizationId,
+          recipientUserId: actor.userId,
+          typeKey,
+          href: `/movimientos/traslados/${transferId}`,
+        },
+        orderBy: { id: "asc" },
+      });
+    expect(
+      await noticesOf(receiverB, "inventory.transfer_incoming"),
+    ).toHaveLength(1);
+    expect(
+      await noticesOf(w.owner, "inventory.transfer_incoming"),
+    ).toHaveLength(1);
+    // Not the origin's people, nor who sent it.
+    expect(
+      await noticesOf(receiverA, "inventory.transfer_incoming"),
+    ).toHaveLength(0);
+    expect(await noticesOf(sender, "inventory.transfer_incoming")).toHaveLength(
+      0,
+    );
+    const [incoming] = await noticesOf(
+      receiverB,
+      "inventory.transfer_incoming",
+    );
+    expect(incoming!.text).toMatch(
+      /envió el traslado TR-\d{4} desde .*: viene en camino\./,
+    );
+
+    const lineId = (await linesOf(transferId))[0]!.id;
+    await switchFacility(w.owner, w.facilityB);
+    expect(
+      await receiveFacilityTransfer(w.owner, {
+        transferId,
+        locationId: w.generalB,
+        idempotencyKey: key(),
+        lines: [{ lineId, quantity: "4" }],
+      }),
+    ).toMatchObject({ ok: true });
+    // Everything arrived well so far: nothing to tell.
+    expect(
+      await noticesOf(sender, "inventory.transfer_differences"),
+    ).toHaveLength(0);
+    expect(
+      await receiveFacilityTransfer(w.owner, {
+        transferId,
+        locationId: w.generalB,
+        idempotencyKey: key(),
+        lines: [{ lineId, quantity: "3", damaged: "1" }],
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await resolveFacilityTransfer(w.owner, {
+        transferId,
+        lineId,
+        outcome: "LOST",
+        // 4 + 3 well + 1 damaged arrived: 2 are left in transit.
+        quantity: "2",
+        reason: "Se cayeron del camión",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    const told = await noticesOf(sender, "inventory.transfer_differences");
+    expect(told.map((notice) => notice.text)).toEqual([
+      expect.stringContaining("con mercancía dañada"),
+      expect.stringContaining("dieron por perdido parte del traslado"),
+    ]);
+    await switchFacility(w.owner, w.facilityA);
+  });
+});

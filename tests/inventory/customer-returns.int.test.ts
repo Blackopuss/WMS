@@ -852,3 +852,37 @@ describe("customer returns (WMS-17)", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("notices (WMS-39)", () => {
+  it("who may decide a return hears it is waiting", async () => {
+    const owner = await company();
+    const dock = await place(owner, "Recepción", "RECEIVING");
+    const item = await product(owner);
+    const operator = await member(owner.organizationId, "operator");
+    const supervisor = await member(owner.organizationId, "supervisor");
+    const viewer = await member(owner.organizationId, "viewer");
+    const received = await receive(operator, {
+      locationId: dock,
+      lines: [{ productId: item, quantity: "2" }],
+    });
+    if (!received.ok) throw new Error(JSON.stringify(received));
+    const noticesOf = (actor: InventoryActor) =>
+      db.notification.findMany({
+        where: {
+          organizationId: owner.organizationId,
+          recipientUserId: actor.userId,
+          typeKey: "inventory.customer_return",
+          href: `/pedidos/devoluciones/${received.returnId}`,
+        },
+      });
+    expect(await noticesOf(supervisor)).toHaveLength(1);
+    expect(await noticesOf(owner)).toHaveLength(1);
+    // Who received it and who may not decide it do not.
+    expect(await noticesOf(operator)).toHaveLength(0);
+    expect(await noticesOf(viewer)).toHaveLength(0);
+    const [notice] = await noticesOf(supervisor);
+    expect(notice!.text).toMatch(
+      /devolución DV-\d{4} \(1 producto\) en Recepción: está por revisar/,
+    );
+  });
+});

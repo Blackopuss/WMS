@@ -116,6 +116,17 @@ las de Inventario solo por `postReceiptEntry`/`postReturnExit`.
 `purchasing.request` («Solicitudes de compra»): autoriza `purchasing.order.create`;
 sin umbral.
 
+## Avisos
+
+Tipos en `notices.ts` (`PURCHASING_NOTIFICATION_TYPES`), registrados en
+`src/modules/registry/notifications.ts` (WMS-39, ADR 0057), sin costos ni
+proveedores:
+
+| Tipo | Quién lo manda | A quién |
+| --- | --- | --- |
+| `purchasing.request_to_attend` | `submitPurchaseRequest` (regla apagada) y el efecto de autorizarla | `purchasing.order.create` que alcance el almacén de la solicitud |
+| `purchasing.request_answered` | `rejectPurchaseRequest`, `convertPurchaseRequest` | quien la pidió (la autorización rechazada la avisa `approvals.decided`) |
+
 ## Trabajos en segundo plano
 
 | Tipo | Manejador | Qué hace |
@@ -135,7 +146,8 @@ bajas» y la ficha del producto), `/compras/solicitudes/[id]` (y `/producto`) y
 
 0016 (contactos), 0017 (producto-proveedor y costos), 0018 (órdenes), 0019
 (PDF propio), 0020 (envío por correo), 0021 (recepción), 0052 (cross-docking y
-daños al recibir), 0055 (solicitudes de compra y almacén de las órdenes).
+daños al recibir), 0055 (solicitudes de compra y almacén de las órdenes),
+0057 (avisos).
 
 ## Pruebas
 

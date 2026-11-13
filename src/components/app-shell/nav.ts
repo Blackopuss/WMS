@@ -3,6 +3,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   House,
+  MessageSquareWarning,
   PackageCheck,
   PackageOpen,
   Package,
@@ -93,6 +94,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
     module: "inventory",
     permission: "inventory.count.read",
     mobile: true,
+  },
+  {
+    // WMS-39: the floor reports problems any day and supervision attends
+    // them every day; on the phone it goes to «Más».
+    href: "/incidencias",
+    label: "Incidencias",
+    icon: MessageSquareWarning,
+    module: "inventory",
+    permission: "inventory.incident.read",
+    mobile: false,
   },
   {
     href: "/compras",

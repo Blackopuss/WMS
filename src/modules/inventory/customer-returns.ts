@@ -15,6 +15,7 @@ import {
   locationScopeWhere,
   LOCATION_PARENTS,
 } from "@/platform/locations";
+import { memberName, notify } from "@/platform/notifications";
 import { readSetting } from "@/platform/settings";
 import {
   LOCKING_TRANSACTION,
@@ -33,6 +34,7 @@ import {
 } from "./customer-return-states";
 import { LOT_RULE_SELECT, lotForEntry, lotForTake } from "./lot-resolve";
 import { lotDayOf, lotLabel } from "./lot-rules";
+import { CUSTOMER_RETURN_NOTICE } from "./notices";
 import {
   IDEMPOTENCY_KEY,
   KEY_REUSED,
@@ -1178,6 +1180,22 @@ export async function receiveCustomerReturn(
             ubicacion: location.name,
             renglones: planned.length,
           },
+        });
+        // WMS-39: who may decide it, where it waits, hears it now.
+        await notify(tx, CUSTOMER_RETURN_NOTICE, {
+          organizationId,
+          actorUserId: userId,
+          to: {
+            permissions: [
+              "inventory.status.release",
+              "inventory.status.change",
+            ],
+            match: "any",
+            locationId: location.id,
+          },
+          text: `${await memberName(tx, userId)} registró la devolución ${numberText} (${planned.length === 1 ? "1 producto" : `${planned.length} productos`}) en ${location.name}: está por revisar.`,
+          href: `/pedidos/devoluciones/${returnId}`,
+          key: `customer_return:${returnId}:received`,
         });
         const first = planned[0]!;
         return {

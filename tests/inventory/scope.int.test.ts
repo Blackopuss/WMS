@@ -2,6 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  getIncident,
+  listIncidents,
+  reportIncident,
+  startIncident,
   addFacilityTransferLine,
   createFacilityTransfer,
   getFacilityTransfer,
@@ -1585,5 +1589,50 @@ describe("PC-12: picking waves (WMS-25)", () => {
       "orders",
     );
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: incidents and their notices (WMS-39)", () => {
+  it("an incident of A does not exist from B, nor does its notice reach there", async () => {
+    const reported = await reportIncident(free, {
+      kind: "DAMAGED_GOODS",
+      description: "Caja mojada en el estante.",
+      location: "Estante A1",
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    expect(await getIncident(limited, reported.incidentId)).toBeNull();
+    expect(await startIncident(limited, reported.incidentId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(
+      (await listIncidents(limited, { view: "open" })).rows.map(
+        (row) => row.id,
+      ),
+    ).not.toContain(reported.incidentId);
+    // Who attends in A heard it; who only reaches B did not.
+    const heard = (userId: string) =>
+      db.notification.count({
+        where: {
+          recipientUserId: userId,
+          typeKey: "inventory.incident_reported",
+          href: `/incidencias/${reported.incidentId}`,
+        },
+      });
+    expect(await heard(owner.userId)).toBe(1);
+    expect(await heard(limited.userId)).toBe(0);
+    // From B, a place of A is not found.
+    expect(
+      await reportIncident(limited, {
+        kind: "MISPLACED",
+        description: "Algo de A.",
+        location: "Estante A1",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { location: expect.any(String) },
+    });
   });
 });

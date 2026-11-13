@@ -21,6 +21,8 @@ const PROTECTED = [
   "/compras",
   "/configuracion",
   "/aprobaciones",
+  "/avisos",
+  "/incidencias",
   "/activa-dos-pasos",
   "/acepta-terminos",
   "/crear-empresa",

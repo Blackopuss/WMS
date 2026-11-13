@@ -455,3 +455,70 @@ describe("between companies", () => {
     ).toMatchObject({ ok: false, reason: "not_found" });
   });
 });
+
+describe("notices (WMS-39)", () => {
+  const noticesOf = (actor: InventoryActor, typeKey: string, taskId: string) =>
+    db.notification.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        recipientUserId: actor.userId,
+        typeKey,
+        href: `/tareas/${taskId}`,
+      },
+    });
+
+  it("who gets a task hears it; supervision hears a reported problem", async () => {
+    const owner = await company();
+    const place = await scenario(owner);
+    const supervisor = await member(owner.organizationId, "supervisor", "Sara");
+    const worker = await member(owner.organizationId, "operator", "Omar");
+    const other = await member(owner.organizationId, "operator", "Olga");
+
+    const given = await newTask(supervisor, place, {
+      assignToUserId: worker.userId,
+    });
+    const [created] = await noticesOf(worker, "inventory.task_assigned", given);
+    expect(created!.text).toMatch(/^Sara te asignó la tarea T-\d{4}/);
+    expect(
+      await noticesOf(supervisor, "inventory.task_assigned", given),
+    ).toHaveLength(0);
+
+    const later = await newTask(supervisor, place);
+    expect(
+      await noticesOf(other, "inventory.task_assigned", later),
+    ).toHaveLength(0);
+    expect(await assignTask(supervisor, later, other.userId)).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await noticesOf(other, "inventory.task_assigned", later),
+    ).toHaveLength(1);
+    // Assigning it again the same way changes nothing and says nothing.
+    await assignTask(supervisor, later, other.userId);
+    expect(
+      await noticesOf(other, "inventory.task_assigned", later),
+    ).toHaveLength(1);
+
+    expect(await acceptTask(worker, given)).toMatchObject({ ok: true });
+    expect(
+      await blockTask(worker, given, "La ubicación de destino está llena."),
+    ).toMatchObject({ ok: true });
+    const [problem] = await noticesOf(
+      supervisor,
+      "inventory.task_blocked",
+      given,
+    );
+    expect(problem!.text).toContain("Omar reportó un problema en la tarea");
+    expect(problem!.text).toContain("La ubicación de destino está llena.");
+    expect(
+      await noticesOf(owner, "inventory.task_blocked", given),
+    ).toHaveLength(1);
+    // Neither who reported it nor who cannot attend it.
+    expect(
+      await noticesOf(worker, "inventory.task_blocked", given),
+    ).toHaveLength(0);
+    expect(
+      await noticesOf(other, "inventory.task_blocked", given),
+    ).toHaveLength(0);
+  });
+});

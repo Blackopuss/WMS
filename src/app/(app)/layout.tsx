@@ -6,6 +6,7 @@ import { formatDateTime } from "@/lib";
 import { isPermission } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getActiveFacility, listFacilities } from "@/platform/locations";
+import { countUnreadNotifications } from "@/platform/notifications";
 import { listMyOrganizations } from "@/platform/tenancy";
 
 import {
@@ -14,6 +15,12 @@ import {
   switchFacilityAction,
   switchOrganizationAction,
 } from "./actions";
+import {
+  countNotificationsAction,
+  loadNotificationsAction,
+  markAllNotificationsReadAction,
+  openNotificationAction,
+} from "./avisos/actions";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   // Shows who is signed in and in which company; each page also validates
@@ -21,9 +28,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // navigation).
   const access = await getModuleAccess();
   const { user, organization } = access;
-  const organizations = await listMyOrganizations(user.id);
   // The warehouse the person works in (WMS-18), switchable with several.
   const actor = { organizationId: organization.id, userId: user.id };
+  // WMS-39: one count over its index (company, person, unread).
+  const [organizations, unread] = await Promise.all([
+    listMyOrganizations(user.id),
+    countUnreadNotifications(actor),
+  ]);
   const seesWarehouses =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
@@ -46,6 +57,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       facility={facility ? { id: facility.id, name: facility.name } : null}
       facilities={facilities.map((each) => ({ id: each.id, name: each.name }))}
       switchFacilityAction={switchFacilityAction}
+      notifications={{
+        unread,
+        loadAction: loadNotificationsAction,
+        countAction: countNotificationsAction,
+        openAction: openNotificationAction,
+        markAllAction: markAllNotificationsReadAction,
+      }}
     >
       {/* Support looking in with the titular's leave (PIL-12): always said. */}
       {organization.supportUntil && (

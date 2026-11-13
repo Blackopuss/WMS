@@ -1188,6 +1188,52 @@ beforeAll(async () => {
         unitCode: "piece",
       },
     });
+    // A notice, a preference, and an incident with its note (WMS-39).
+    const who = organizationId === orgA ? ids.ana : ids.beto;
+    await db.notification.create({
+      data: {
+        id: newId(),
+        organizationId,
+        recipientUserId: who,
+        typeKey: "inventory.task_assigned",
+        text: "Te asignaron una tarea.",
+        href: "/tareas",
+        dedupeKey: `iso:${organizationId}`,
+      },
+    });
+    await db.notificationPreference.create({
+      data: {
+        id: newId(),
+        organizationId,
+        userId: who,
+        typeKey: "inventory.task_blocked",
+        enabled: false,
+      },
+    });
+    const incidentId = newId();
+    await db.incident.create({
+      data: {
+        id: incidentId,
+        organizationId,
+        number: 1,
+        facilityId: location.facilityId,
+        locationId: location.id,
+        productId,
+        kind: "DAMAGED_GOODS",
+        description: "Caja aplastada",
+        idempotencyKey: `iso-${incidentId}`,
+        reportedByUserId: who,
+      },
+    });
+    await db.incidentNote.create({
+      data: {
+        id: newId(),
+        organizationId,
+        incidentId,
+        text: "Revisado",
+        createdByUserId: who,
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {
