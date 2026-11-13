@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { CameraScanButton } from "@/components/camera-scan";
 import { PrintLabelLink } from "@/components/label-print-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,25 +138,32 @@ export function PackStation({
         <div className="grid gap-3 sm:grid-cols-[1fr_7rem_auto] sm:items-end">
           <div className="space-y-2">
             <Label htmlFor="pack-code">Producto, serie o lote</Label>
-            <Input
-              ref={codeRef}
-              id="pack-code"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  // What the box holds now, not what the last render saw.
-                  enqueue(event.currentTarget.value);
-                }
-              }}
-              maxLength={100}
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              enterKeyHint="send"
-              autoFocus
-            />
+            <div className="flex gap-2">
+              <Input
+                ref={codeRef}
+                id="pack-code"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    // What the box holds now, not what the last render saw.
+                    enqueue(event.currentTarget.value);
+                  }
+                }}
+                maxLength={100}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                enterKeyHint="send"
+                autoFocus
+              />
+              <CameraScanButton
+                target="pack-code"
+                title="Escanear lo que empacas"
+                continuous
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="pack-quantity">Cuántas</Label>

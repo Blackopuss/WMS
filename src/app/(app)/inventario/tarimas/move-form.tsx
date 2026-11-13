@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 
 import { FormField } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -74,24 +75,30 @@ export function MoveContainerForm({
           error={errors.containerCode}
         >
           {(control) => (
-            <Input
-              {...control}
-              name="containerCode"
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              enterKeyHint="next"
-              autoFocus={autoFocus}
-              defaultValue={state.values.containerCode}
-              key={key("containerCode")}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                event.currentTarget.form
-                  ?.querySelector<HTMLInputElement>('[name="locationCode"]')
-                  ?.focus();
-              }}
-            />
+            <div className="flex gap-2">
+              <Input
+                {...control}
+                name="containerCode"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                enterKeyHint="next"
+                autoFocus={autoFocus}
+                defaultValue={state.values.containerCode}
+                key={key("containerCode")}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  event.currentTarget.form
+                    ?.querySelector<HTMLInputElement>('[name="locationCode"]')
+                    ?.focus();
+                }}
+              />
+              <CameraScanButton
+                target="containerCode"
+                title="Escanear la tarima o caja"
+              />
+            </div>
           )}
         </FormField>
       )}
@@ -102,16 +109,22 @@ export function MoveContainerForm({
         error={errors.locationCode}
       >
         {(control) => (
-          <Input
-            {...control}
-            name="locationCode"
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            enterKeyHint="send"
-            defaultValue={state.values.locationCode}
-            key={key("locationCode")}
-          />
+          <div className="flex gap-2">
+            <Input
+              {...control}
+              name="locationCode"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              enterKeyHint="send"
+              defaultValue={state.values.locationCode}
+              key={key("locationCode")}
+            />
+            <CameraScanButton
+              target="locationCode"
+              title="Escanear a dónde la llevas"
+            />
+          </div>
         )}
       </FormField>
       {state.capacityWarning && (

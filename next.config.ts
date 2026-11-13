@@ -18,7 +18,8 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   {
-    // Camera stays available for barcode scanning (INV-34).
+    // Camera only for this site: barcode scanning with a reader app
+    // (INV-34) and with the phone's camera (WMS-36, ADR 0049).
     key: "Permissions-Policy",
     value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
   },

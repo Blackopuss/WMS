@@ -21,6 +21,7 @@ import {
   PageHeader,
   ReadOnlyNotice,
 } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -379,6 +380,7 @@ export default async function InventarioPage({
             spellCheck={false}
             enterKeyHint="search"
           />
+          <CameraScanButton target="q" title="Buscar producto con la cámara" />
           <Button type="submit" variant="outline">
             <Search aria-hidden="true" data-icon="inline-start" />
             Buscar

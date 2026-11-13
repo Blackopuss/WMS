@@ -6,6 +6,7 @@ import { useActionState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { FormField } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -62,15 +63,21 @@ export function PutawayForm({
         error={state.fieldErrors?.locationCode}
       >
         {(control) => (
-          <Input
-            {...control}
-            name="locationCode"
-            defaultValue={state.values.locationCode}
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            maxLength={200}
-          />
+          <div className="flex gap-2">
+            <Input
+              {...control}
+              name="locationCode"
+              defaultValue={state.values.locationCode}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={200}
+            />
+            <CameraScanButton
+              target="locationCode"
+              title="Escanear dónde lo dejaste"
+            />
+          </div>
         )}
       </FormField>
       {state.capacityWarning ? (

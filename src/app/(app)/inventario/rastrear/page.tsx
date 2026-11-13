@@ -11,6 +11,7 @@ import {
   PageContainer,
   PageHeader,
 } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,6 +171,7 @@ export default async function RastrearPage({
           enterKeyHint="search"
           autoFocus
         />
+        <CameraScanButton target="q" title="Rastrear con la cámara" />
         <Button type="submit" variant="outline">
           <Search aria-hidden="true" data-icon="inline-start" />
           Buscar

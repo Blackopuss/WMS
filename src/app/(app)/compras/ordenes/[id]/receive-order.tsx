@@ -12,6 +12,7 @@ import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
 import { FormField, SerialsField } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -569,6 +570,12 @@ function LotFields({
           defaultValue={values.lots[fieldKey] ?? ""}
           aria-invalid={wrong === "lotCode" ? true : undefined}
           aria-describedby={describedBy}
+        />
+        <CameraScanButton
+          target={`${fieldId}-lot`}
+          title="Escanear el lote"
+          then="fill"
+          className="mt-2"
         />
       </div>
       {line.lotExpiry !== "NONE" && (

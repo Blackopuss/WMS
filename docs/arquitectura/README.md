@@ -45,7 +45,8 @@ src/
                 público, interno la consola de plataforma, api rutas GET de descarga.
   components/   Componentes visuales compartidos (shadcn/ui en components/ui, AppShell,
                 estados de pantalla, nav.ts con el menú).
-  lib/          Utilidades sin reglas de negocio (errores, ids, decimales, fechas, log, CSP).
+  lib/          Utilidades sin reglas de negocio (errores, ids, decimales, fechas, log, CSP,
+                app instalable).
   server/       Infraestructura: cliente Prisma (db), cliente por empresa
                 (forOrganization), candados (lockRows), LOCKING_TRANSACTION.
   platform/*    Núcleo compartido por todos los módulos (ver modulos/).
@@ -100,6 +101,19 @@ Ejemplo: liberar un pedido de salida.
 Las descargas (CSV, XLSX, PDF) no pasan por Server Actions: son rutas `GET`
 bajo `src/app/api/…` que llaman `requireOrganizationContext()` y responden
 `attachment` + `nosniff` + `no-store`.
+
+**App instalable y cámara (WMS-35/36, ADR 0049).** El manifiesto
+(`src/app/manifest.ts`), los íconos (`public/icons`, `src/app/apple-icon.png`,
+`scripts/pwa-icons.mjs`), el service worker (`/sw.js`) y la página sin
+conexión (`/sin-conexion`) son públicos y salen de `src/lib/pwa.ts`. El
+worker solo guarda su página sin conexión y solo responde cuando una
+navegación `GET` falla por red: nunca guarda pantallas, `/api` ni nada de una
+sesión, y no toca Server Actions ni peticiones de datos de Next. Lo registra
+`PwaSetup` (en `Providers`) desde el paquete de la app, sin script en línea.
+`OfflineNotice` (en `AppShell`) avisa cuando el navegador pierde la red. La
+cámara es `CameraScanButton` (`src/components/camera-scan.tsx`): con
+`BarcodeDetector` teclea lo leído en el campo de siempre, con su Enter, así
+que la pantalla y el servidor no distinguen la cámara de un lector.
 
 ## Multiempresa
 

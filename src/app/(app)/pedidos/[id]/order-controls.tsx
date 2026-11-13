@@ -6,6 +6,7 @@ import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { FormField } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -54,16 +55,23 @@ export function AddLineForm({ orderId }: { orderId: string }) {
         error={errors.code}
       >
         {(control) => (
-          <Input
-            {...control}
-            name="code"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            enterKeyHint="next"
-            defaultValue={state.values.code}
-            key={key("code")}
-          />
+          <div className="flex gap-2">
+            <Input
+              {...control}
+              name="code"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              enterKeyHint="next"
+              defaultValue={state.values.code}
+              key={key("code")}
+            />
+            <CameraScanButton
+              target="code"
+              title="Escanear el producto"
+              then="fill"
+            />
+          </div>
         )}
       </FormField>
       <FormField id="quantity" label="Cantidad" error={errors.quantity}>

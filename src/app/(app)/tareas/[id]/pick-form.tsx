@@ -6,6 +6,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { FormField, SerialsField } from "@/components";
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -116,15 +117,21 @@ export function PickForm({
         error={errors.productCode}
       >
         {(control) => (
-          <Input
-            {...control}
-            name="productCode"
-            defaultValue={state.values.productCode}
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            maxLength={80}
-          />
+          <div className="flex gap-2">
+            <Input
+              {...control}
+              name="productCode"
+              defaultValue={state.values.productCode}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={80}
+            />
+            <CameraScanButton
+              target="productCode"
+              title="Escanear el producto"
+            />
+          </div>
         )}
       </FormField>
       <FormField
@@ -134,14 +141,20 @@ export function PickForm({
         error={errors.locationCode}
       >
         {(control) => (
-          <Input
-            {...control}
-            name="locationCode"
-            defaultValue={state.values.locationCode}
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={200}
-          />
+          <div className="flex gap-2">
+            <Input
+              {...control}
+              name="locationCode"
+              defaultValue={state.values.locationCode}
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={200}
+            />
+            <CameraScanButton
+              target="locationCode"
+              title="Escanear la ubicación"
+            />
+          </div>
         )}
       </FormField>
       {lotCode && (
@@ -152,15 +165,18 @@ export function PickForm({
           error={errors.lotCode}
         >
           {(control) => (
-            <Input
-              {...control}
-              name="lotCode"
-              defaultValue={state.values.lotCode}
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              maxLength={64}
-            />
+            <div className="flex gap-2">
+              <Input
+                {...control}
+                name="lotCode"
+                defaultValue={state.values.lotCode}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={64}
+              />
+              <CameraScanButton target="lotCode" title="Escanear el lote" />
+            </div>
           )}
         </FormField>
       )}
