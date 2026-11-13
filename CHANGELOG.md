@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-53** · Tarimas y contenedores (ADR 0043): contenedor como agrupación
+  aparte del saldo, armar, mover con un escaneo, sacar, desarmar, recibir en
+  tarima y una tarea de acomodo por tarima.
 - **WMS-52** · Acomodo con recomendación (ADR 0042): ajuste por empresa, tareas
   `PUTAWAY` desde la recepción y la entrada, lugar recomendado por una sola
   función y confirmación escaneando dónde quedó.
