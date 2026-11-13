@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
-Actualizado: 2026-11-10. Rama `pruebas` de `Blackopuss/WMS`, último paso cerrado
-WMS-18. Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+Actualizado: 2026-11-13. Rama `pruebas` de `Blackopuss/WMS`, últimos pasos cerrados
+WMS-21A y WMS-51 (el detalle por paso está en `CHANGELOG.md`). Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -17,8 +17,8 @@ abajo son de ese documento).
 | Pedidos de salida | Hecho (WMS-13; importación desde Excel/CSV, WMS-13B) |
 | Surtido | Hecho (WMS-14) |
 | Empaque, despacho y devoluciones de clientes | Falta (WMS-15..17) |
-| Producción y calidad | Falta (WMS-11) |
-| Analítica | Falta (WMS-12) |
+| Producción y calidad | Falta (WMS-27..31, WMS-59) |
+| Analítica | Falta (WMS-32..34) |
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
 | Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |
 | Alcance por almacén y zona (WMS-20), aviso de entrada repetida (WMS-71), existencias sin acomodar (WMS-72), resumen del día (WMS-73) | Hecho (2026-11-12) |
