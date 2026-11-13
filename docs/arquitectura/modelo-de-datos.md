@@ -1481,6 +1481,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `presentationId` | `String? · Char(36)` |  | Presentation it was counted in; null when in the product's unit. |
 | `quantity` | `String · VarChar(24)` |  | As written in the file, with decimal point: "3", "2.75". |
 | `locationId` | `String · Char(36)` |  |  |
+| `lotId` | `String? · Char(36)` |  | The lot it left from, for a product by lot (WMS-21, ADR 0040): fixed at confirmation from the code in the file; null for any other product. |
 | `status` | `ExitImportRowStatus` | `PENDING` |  |
 | `error` | `String? · VarChar(300)` |  |  |
 | `movementId` | `String? · Char(36)` |  | The exit it became, once registered. |
@@ -1489,7 +1490,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `importId`, `row`); (`organizationId`, `appliedKey`).
 - Índices: (`organizationId`, `importId`, `status`, `row`); (`organizationId`, `status`, `day`).
-- Relaciones: `import` → `ExitImport` por (`organizationId`, `importId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict).
+- Relaciones: `import` → `ExitImport` por (`organizationId`, `importId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict).
 
 ### OutboundImport · `outbound_import`
 

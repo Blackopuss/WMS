@@ -8,6 +8,11 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-21A (pendientes)** · Lo que caduca antes sale antes siempre (decisión
+  del fundador; ADR 0040): el surtido y los selectores ordenan por caducidad;
+  lote y caducidad en la importación de existencias y de salidas y en las
+  exportaciones; varios lotes por línea en una recepción; alta de un lote
+  desde un ajuste.
 - **WMS-51** · Documentación técnica base: `docs/arquitectura/` (capas,
   petición, multiempresa, permisos, worker y base), modelo de datos generado del
   esquema con su prueba, un documento por módulo y área de plataforma, cómo

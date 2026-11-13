@@ -97,7 +97,7 @@ la transacción que decide:
 
 | Clave | Opciones (por omisión en negritas) |
 | --- | --- |
-| `inventory.picking.strategy` | **`fullest`**, `emptiest`, `fefo`, `fifo` |
+| `inventory.picking.strategy` | **`fullest`**, `emptiest`, `fifo` (lo que caduca antes sale primero siempre) |
 | `inventory.picking.expired` | **`skip`**, `allow` |
 | `inventory.entry.repeat_window` | `off`, `10`, **`30`**, `120` (minutos) |
 | `inventory.capacity.mode` | **`warn`**, `block` |
