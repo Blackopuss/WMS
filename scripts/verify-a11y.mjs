@@ -85,6 +85,10 @@ const SCREENS = [
   "/ubicaciones/etiquetas",
   "/configuracion/equipo",
   "/configuracion/plan",
+  // WMS-56: requests to authorize and the rules of the company.
+  "/aprobaciones",
+  "/aprobaciones?vista=mias",
+  "/configuracion/aprobaciones",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.

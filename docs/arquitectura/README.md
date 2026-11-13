@@ -10,6 +10,7 @@ decisiones, en `docs/adr/`.
 | Este archivo | Capas, qué importa a qué, petición, multiempresa, permisos, alcance, worker y base de datos |
 | [modelo-de-datos.md](modelo-de-datos.md) | Cada tabla por área (generado del esquema: `node scripts/data-model.mjs`) |
 | [modulos/](modulos/) | Un documento por módulo y por área de plataforma |
+| [modulos/approvals.md](modulos/approvals.md) | Motor de aprobaciones: reglas por empresa, solicitudes, decidir (WMS-56) |
 | [agregar-un-modulo.md](agregar-un-modulo.md) | Paso a paso para agregar un módulo nuevo |
 | [`CHANGELOG.md`](../../CHANGELOG.md) | Registro de cambios por paso cerrado |
 
@@ -69,8 +70,9 @@ código de negocio solo llega a la base por `forOrganization`.
 Como la plataforma no puede importar módulos, todo lo que la plataforma
 necesita saber de ellos se lo pasa `src/modules/registry` como datos: los
 contratos (`moduleRegistry`), los manejadores de trabajos (`jobHandlers`), las
-rondas (`scheduledRounds`), los ajustes (`operationSettings`) y el trabajo a
-medias de cada módulo (`moduleOpenWork`).
+rondas (`scheduledRounds`), los ajustes (`operationSettings`), los tipos de
+aprobación con su efecto (`approvalTypes`, WMS-56) y el trabajo a medias de
+cada módulo (`moduleOpenWork`).
 
 ## Cómo viaja una petición
 

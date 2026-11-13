@@ -11,6 +11,7 @@ import {
   Truck,
   Undo2,
   ClipboardCheck,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -35,7 +36,8 @@ import {
   listRecentMovements,
 } from "@/modules/inventory";
 import { listPurchaseOrders } from "@/modules/purchasing";
-import { moduleRegistry } from "@/modules/registry";
+import { approvalTypes, moduleRegistry } from "@/modules/registry";
+import { countPendingApprovals } from "@/platform/approvals";
 import {
   getModuleAccess,
   getPlanOverview,
@@ -146,6 +148,9 @@ export default async function InicioPage() {
     inventory && access.allows("inventory.count.update")
       ? await countTodayCounts(actor)
       : 0;
+  // WMS-56: requests waiting for this person, only for who may decide one
+  // and only if any (the service answers 0 to everyone else).
+  const toApprove = await countPendingApprovals(actor, approvalTypes);
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -155,6 +160,17 @@ export default async function InicioPage() {
     icon: LucideIcon;
     alert?: boolean;
   }[] = [
+    ...(toApprove > 0
+      ? [
+          {
+            href: "/aprobaciones",
+            label: "Aprobaciones pendientes",
+            count: toApprove,
+            icon: ShieldCheck,
+            alert: true,
+          },
+        ]
+      : []),
     ...(tasks && executes
       ? [
           {

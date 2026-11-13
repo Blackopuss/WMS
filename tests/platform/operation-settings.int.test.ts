@@ -17,6 +17,7 @@ import {
   ABC_CUTS,
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
+  ADJUSTMENT_APPROVAL_THRESHOLD,
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   REPLENISHMENT_MODE,
@@ -222,6 +223,12 @@ describe("operation settings", () => {
       { key: ABC_CUTS.key, value: "80_15_5", defaultValue: "80_15_5" },
       { key: ABC_PERIOD.key, value: "90", defaultValue: "90" },
       { key: COUNT_REVIEW_THRESHOLD.key, value: "off", defaultValue: "off" },
+      // WMS-41: every correction waits, once the company asks for it.
+      {
+        key: ADJUSTMENT_APPROVAL_THRESHOLD.key,
+        value: "any",
+        defaultValue: "any",
+      },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -242,6 +249,7 @@ describe("operation settings", () => {
       { key: ABC_CUTS.key, value: "80_15_5" },
       { key: ABC_PERIOD.key, value: "90" },
       { key: COUNT_REVIEW_THRESHOLD.key, value: "off" },
+      { key: ADJUSTMENT_APPROVAL_THRESHOLD.key, value: "any" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

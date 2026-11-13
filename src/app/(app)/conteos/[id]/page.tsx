@@ -63,14 +63,18 @@ export default async function ConteoPage({
   if (!count) notFound();
 
   const open = count.status === "OPEN";
+  // WMS-41: while it waits for an authorization nothing changes by hand.
+  const waiting = count.pendingApprovalId !== null;
   const canCapture =
     open &&
+    !waiting &&
     moduleState === "active" &&
     access.allows("inventory.count.update") &&
     access.can("inventory.product.read");
   // Applying writes adjustments: it takes both permissions (INV-33).
   const canApply =
     open &&
+    !waiting &&
     moduleState === "active" &&
     count.lines.length > 0 &&
     count.conflicts === 0 &&
@@ -158,7 +162,27 @@ export default async function ConteoPage({
         </div>
       )}
 
-      {open && count.review && count.review.lines > 0 && (
+      {waiting && (
+        <p
+          role="status"
+          className="flex flex-wrap items-center gap-x-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+        >
+          <CircleAlert
+            aria-hidden="true"
+            className="size-4 shrink-0 text-warning"
+          />
+          Este conteo espera autorización: no admite cambios hasta que se
+          decida.
+          <Link
+            href={`/aprobaciones/${count.pendingApprovalId}`}
+            className="inline-flex min-h-11 items-center rounded-lg font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Ver la solicitud
+          </Link>
+        </p>
+      )}
+
+      {open && !waiting && count.review && count.review.lines > 0 && (
         <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
           <CircleAlert
             aria-hidden="true"
@@ -167,8 +191,10 @@ export default async function ConteoPage({
           {count.review.lines === 1
             ? "1 producto tiene"
             : `${count.review.lines} productos tienen`}{" "}
-          {count.review.thresholdText}: revísalo antes de aplicar. Están
-          marcados abajo.
+          {count.review.thresholdText}
+          {count.review.byApproval
+            ? ": aplicar pedirá autorización. Están marcados abajo."
+            : ": revísalo antes de aplicar. Están marcados abajo."}
         </p>
       )}
 

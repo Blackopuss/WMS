@@ -135,7 +135,7 @@ export function ApplyCount({
    * WMS-55: products whose difference the company asks to review before
    * applying; null when none.
    */
-  review: { lines: number; thresholdText: string } | null;
+  review: { lines: number; thresholdText: string; byApproval: boolean } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -148,6 +148,7 @@ export function ApplyCount({
     startTransition(async () => {
       const result = await applyCountAction(countId, reason, reviewed);
       if (result.ok) {
+        // WMS-41: «Quedó pendiente de autorización…» when it waits.
         toast.success(result.summary);
         setOpen(false);
       } else {
@@ -201,7 +202,16 @@ export function ApplyCount({
                 : "Obligatorio. Por ejemplo: conteo de cierre de mes."}
             </p>
           </div>
-          {review && (
+          {review?.byApproval && (
+            <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+              {review.lines === 1
+                ? "1 producto tiene"
+                : `${review.lines} productos tienen`}{" "}
+              {review.thresholdText}: el conteo quedará esperando a que alguien
+              lo autorice, y se aplicará entonces.
+            </p>
+          )}
+          {review && !review.byApproval && (
             <label className="flex min-h-11 items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
               <input
                 type="checkbox"

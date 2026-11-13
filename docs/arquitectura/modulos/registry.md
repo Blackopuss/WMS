@@ -13,6 +13,7 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | `rounds.ts` | `scheduledRounds` (hoy, `inventory.replenishment`, WMS-24) | el worker |
 | `settings.ts` | `operationSettings` (validados al cargar) | Configuración › Operación |
 | `open-work.ts` | `moduleOpenWork` | `provisionCompany` al quitar un módulo |
+| `approvals.ts` | `approvalTypes` (tipos de aprobación de cada módulo con su efecto, validados al cargar; WMS-56) | Aprobaciones, Inicio, Configuración › Reglas de aprobación |
 
 `jobs.ts` y `rounds.ts` no salen por `index.ts`: los importa directamente
 `scripts/worker.mts`.
@@ -24,4 +25,4 @@ negocio con un solo dueño y cada sección del menú con un módulo registrado.
 
 ## ADR
 
-0007 (contrato y registro de módulos).
+0007 (contrato y registro de módulos), 0053 (tipos de aprobación).

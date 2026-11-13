@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components";
-import { operationSettings } from "@/modules/registry";
+import { approvalTypes, operationSettings } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { listLocations } from "@/platform/locations";
 import { getOperationSettings } from "@/platform/settings";
@@ -40,7 +40,16 @@ export default async function OperacionPage() {
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const settings = await getOperationSettings(actor, operationSettings);
+  // WMS-56: what says when an approval applies lives with its rule
+  // (Configuración › Reglas de aprobación), not here: one place each.
+  const withRules = new Set(
+    approvalTypes.flatMap((type) =>
+      (type.settings ?? []).map((setting) => setting.key),
+    ),
+  );
+  const settings = (
+    await getOperationSettings(actor, operationSettings)
+  ).filter((setting) => !withRules.has(setting.key));
   const inventory =
     access.hasModule("inventory") && access.allows("inventory.location.update");
   const tree = inventory ? await listLocations(actor) : null;

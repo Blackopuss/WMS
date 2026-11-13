@@ -101,7 +101,18 @@ import {
   returnToSupplier,
   submitPurchaseOrder,
 } from "@/modules/purchasing";
-import { moduleRegistry, operationSettings } from "@/modules/registry";
+import {
+  approvalTypes,
+  moduleRegistry,
+  operationSettings,
+} from "@/modules/registry";
+import {
+  countPendingApprovals,
+  decideApproval,
+  getApprovalRequest,
+  listPendingApprovals,
+  updateApprovalRule,
+} from "@/platform/approvals";
 import { setMemberScope, type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
@@ -1425,4 +1436,79 @@ describe("PC-12: cycle count programs (WMS-55)", () => {
       expect(today.items.map((each) => each.id)).not.toContain(count.id);
     }
   }, 60_000);
+});
+
+describe("PC-12: approvals (WMS-56/41)", () => {
+  it("a request about a location of A does not exist from B; one of B is decided there", async () => {
+    const on = await updateApprovalRule(
+      owner,
+      approvalTypes,
+      "inventory.adjustment",
+      {
+        enabled: true,
+        roles: ["administrator"],
+        allowSelfApproval: false,
+      },
+    );
+    expect(on).toMatchObject({ ok: true });
+    await switchFacility(owner, facilityA);
+    const placeA = await shelf("Estante A aprobaciones");
+    await enter(placeA, "5");
+    await switchFacility(owner, facilityB);
+    const placeB = await shelf("Estante B aprobaciones");
+    await enter(placeB, "3");
+    await switchFacility(owner, facilityA);
+    try {
+      const inA = await registerAdjustment(owner, {
+        productId,
+        locationId: placeA,
+        quantity: "4",
+        reason: "Conteo físico del estante A1",
+      });
+      const inB = await registerAdjustment(owner, {
+        productId,
+        locationId: placeB,
+        quantity: "2",
+        reason: "Conteo físico del estante B1",
+      });
+      if (inA.ok || inA.reason !== "pending_approval") {
+        throw new Error(JSON.stringify(inA));
+      }
+      if (inB.ok || inB.reason !== "pending_approval") {
+        throw new Error(JSON.stringify(inB));
+      }
+      const pending = await listPendingApprovals(limited, approvalTypes);
+      expect(pending.rows.map((row) => row.id)).toEqual([inB.requestId]);
+      expect(await countPendingApprovals(limited, approvalTypes)).toBe(1);
+      expect(
+        await getApprovalRequest(limited, approvalTypes, inA.requestId),
+      ).toBeNull();
+      expect(
+        await decideApproval(limited, approvalTypes, inA.requestId, {
+          decision: "approve",
+        }),
+      ).toMatchObject({ ok: false, reason: "not_found" });
+      expect(await stockAt(placeA)).toBe(5);
+
+      expect(
+        await decideApproval(limited, approvalTypes, inB.requestId, {
+          decision: "approve",
+        }),
+      ).toMatchObject({ ok: true, status: "APPROVED" });
+      expect(await stockAt(placeB)).toBe(2);
+      expect(
+        await decideApproval(free, approvalTypes, inA.requestId, {
+          decision: "approve",
+        }),
+      ).toMatchObject({ ok: true, status: "APPROVED" });
+      expect(await stockAt(placeA)).toBe(4);
+      expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    } finally {
+      await updateApprovalRule(owner, approvalTypes, "inventory.adjustment", {
+        enabled: false,
+        roles: ["administrator"],
+        allowSelfApproval: false,
+      });
+    }
+  });
 });

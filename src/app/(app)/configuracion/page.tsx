@@ -4,6 +4,7 @@ import {
   History,
   LifeBuoy,
   MapPin,
+  ShieldCheck,
   SlidersHorizontal,
   Users,
   Warehouse,
@@ -102,6 +103,26 @@ export default async function ConfiguracionPage() {
           )}
         </section>
       )}
+      {/* WMS-56: requests to authorize; the rules only for who configures. */}
+      <section aria-labelledby="autorizaciones" className="space-y-3">
+        <h2 id="autorizaciones" className="text-lg font-semibold">
+          Autorizaciones
+        </h2>
+        <SettingsLink
+          href="/aprobaciones"
+          icon={ShieldCheck}
+          title="Solicitudes"
+          description="Lo que pediste y lo que te toca autorizar."
+        />
+        {access.can("platform.organization.update") && (
+          <SettingsLink
+            href="/configuracion/aprobaciones"
+            icon={SlidersHorizontal}
+            title="Reglas de aprobación"
+            description="Qué necesita autorización y quién la da."
+          />
+        )}
+      </section>
       {support && (
         <section aria-labelledby="soporte" className="space-y-3">
           <h2 id="soporte" className="text-lg font-semibold">
@@ -190,7 +211,9 @@ function SettingsLink({
     | "/configuracion/operacion"
     | "/configuracion/equipo"
     | "/configuracion/plan"
-    | "/configuracion/bitacora";
+    | "/configuracion/bitacora"
+    | "/aprobaciones"
+    | "/configuracion/aprobaciones";
   icon: LucideIcon;
   title: string;
   description: string;

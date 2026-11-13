@@ -6,6 +6,7 @@ import { createModuleRegistry } from "@/platform/billing";
 
 import { crmModule } from "./announced";
 
+export { approvalTypes } from "./approvals";
 export { moduleOpenWork } from "./open-work";
 export { operationSettings } from "./settings";
 

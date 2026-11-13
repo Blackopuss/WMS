@@ -114,6 +114,14 @@ export const AREAS = [
     models: ["OrganizationSetting"],
   },
   {
+    id: "approvals",
+    title: "Plataforma › Aprobaciones",
+    doc: "approvals",
+    summary:
+      "Qué pide autorización en cada empresa (regla por tipo) y cada solicitud con su decisión; los tipos los declara cada módulo.",
+    models: ["ApprovalRule", "ApprovalRequest"],
+  },
+  {
     id: "files",
     title: "Plataforma › Archivos",
     doc: "files",

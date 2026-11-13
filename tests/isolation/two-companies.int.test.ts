@@ -1101,6 +1101,32 @@ beforeAll(async () => {
         startedByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // An approval rule and a request (WMS-56).
+    await db.approvalRule.create({
+      data: {
+        id: newId(),
+        organizationId,
+        typeKey: "inventory.adjustment",
+        enabled: true,
+        approverRoles: "supervisor",
+        updatedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.approvalRequest.create({
+      data: {
+        id: newId(),
+        organizationId,
+        typeKey: "inventory.count_apply",
+        sourceType: "stock_count",
+        sourceId: countId,
+        openKey: `count:${countId}`,
+        facilityId: location.facilityId,
+        locationId: location.id,
+        summary: "Aplicar el conteo",
+        payload: { v: 1 },
+        requestedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

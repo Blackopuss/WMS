@@ -97,7 +97,7 @@ código»):
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Movimientos | `movements.ts` | `registerEntry`, `registerExit`, `registerTransfer`, `registerAdjustment`, `registerInitialBalance`, `reverseMovement`; historial (`listMovements`, `listRecentMovements`, `listMovementAuthors`); lecturas de saldo (`getStockByLocation`, `getStockTotals`, `listStockLocations`, `listProductsWithoutStock`); `findConfirmation` (verificación por clave) y `formatStock` |
+| Movimientos | `movements.ts` | `registerEntry`, `registerExit`, `registerTransfer`, `registerAdjustment` (sobre el umbral, con la regla encendida, responde `pending_approval` y no escribe nada, WMS-41), `registerInitialBalance`, `reverseMovement`; historial (`listMovements`, `listRecentMovements`, `listMovementAuthors`); lecturas de saldo (`getStockByLocation`, `getStockTotals`, `listStockLocations`, `listProductsWithoutStock`); `findConfirmation` (verificación por clave) y `formatStock` |
 | Salida rápida | `quick-exit.ts` | `registerQuickExit`: varias líneas en un movimiento |
 | Existencias de un producto | `product-stock.ts`, `stock-status.ts` | `getProductStock` («hay», «disponible», apartado); estados del saldo y filtros `availableOfLot`, `AVAILABLE_ANY_LOT` |
 | Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo), `permissionForStatusChange` |
@@ -111,7 +111,8 @@ código»):
 | Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`) y `postReturnExit` (`RETURN`), dentro de la transacción de la recepción o devolución |
 | Mínimos | `minimums.ts` | `setMinimum`, `getMinimum`, `listLowStock`, `countLowStock` |
 | Reposición de surtido | `replenishment.ts`, `replenishment-rules.ts`, `stock-sources.ts` | Reglas por producto y ubicación de surtido (`saveReplenishmentRule`, `removeReplenishmentRule`, `listReplenishmentRules`, `getReplenishmentRule`, `listPickingPlaces`, `replenishmentVisible`); `replenishNow` («Reponer ahora») y `runReplenishmentRound` (la ronda del worker) crean tareas `REPLENISH`; `replenishmentPlan` (interna) es la única que decide cuánto y de dónde; piezas puras `replenishQuantity`, `largestThatFits`, `splitAmongSources`, `replenishmentStateOf` y el orden de orígenes `rankStockSources`, compartido con el surtido (WMS-23/24) |
-| Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount` (con `reviewed` cuando la empresa pide revisar diferencias grandes, WMS-55), `cancelCount`, `getCount` (programa, líneas por revisar y lo que está en tarimas), `listCountPage` (paginada; vista «De hoy»), `listCounts` (su primera página) |
+| Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount` (con `reviewed` cuando la empresa pide revisar diferencias grandes, WMS-55; con la regla `inventory.count_apply` encendida responde `pending_approval`, WMS-41), `cancelCount`, `getCount` (programa, líneas por revisar, lo que está en tarimas y `pendingApprovalId`), `listCountPage` (paginada; vista «De hoy»), `listCounts` (su primera página); `applyApprovedCount` (efecto de la autorización) |
+| Aprobaciones (WMS-41) | `approvals.ts`, `approval-keys.ts`, `approval-rules.ts` | `INVENTORY_APPROVAL_TYPES` (`inventory.adjustment` con `applyApprovedAdjustment` de `movements.ts`, `inventory.count_apply` con `applyApprovedCount`), `ADJUSTMENT_APPROVAL`, `COUNT_APPROVAL`; regla pura del umbral `exceedsThreshold` |
 | Conteos cíclicos (WMS-55) | `cycle-counts.ts`, `abc-rules.ts`, `count-accuracy.ts` | `createCountProgram`, `updateCountProgram`, `setCountProgramPaused`, `listCountPrograms`, `getCountProgram` (con lo que generaría hoy), `generateTodayCounts` («Generar los de hoy»), `runCycleCountRound` (la ronda del worker), `countTodayCounts` (Inicio); `getCountAccuracy` (exactitud por semana o mes contra el periodo anterior, por programa; tope `ACCURACY_MAX_ROWS`); reglas puras `classifyAbc`, `locationClass`, `parseAbcCuts` |
 | Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY` y `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
@@ -213,6 +214,20 @@ la transacción que decide:
 | `inventory.abc.cuts` | **`80_15_5`**, `70_20_10`, `50_30_20` (reparto A/B/C) |
 | `inventory.abc.period` | `30`, **`90`**, `180`, `365` (días de salidas que mira la clasificación) |
 | `inventory.count.review_threshold` | **`off`**, `any`, `10`, `25`, `50` (% de diferencia de un producto que pide revisar el conteo antes de aplicarlo) |
+| `inventory.adjustment.approval_threshold` | **`any`**, `10`, `25`, `50` (% de lo que hay en la ubicación que, con la regla de `inventory.adjustment` encendida, hace esperar una corrección; WMS-41) |
+
+Los dos últimos se muestran en Configuración › Reglas de aprobación, junto a la
+regla de su tipo, y no en Operación.
+
+## Aprobaciones
+
+Tipos declarados en `approvals.ts` (`INVENTORY_APPROVAL_TYPES`), registrados en
+`src/modules/registry/approvals.ts` (ADR 0053):
+
+| Tipo | Cuándo pide | Quien autoriza necesita | Al autorizar |
+| --- | --- | --- | --- |
+| `inventory.adjustment` («Corregir existencias») | `registerAdjustment` con la regla encendida y la diferencia sobre `inventory.adjustment.approval_threshold` | `inventory.adjustment.create` | `applyApprovedAdjustment`: el mismo ajuste, a nombre de quien lo pidió, solo si nada se movió de ese producto en esa ubicación desde que se pidió (si no, vence) |
+| `inventory.count_apply` («Aplicar conteos con diferencias grandes») | `applyCount` con la regla encendida y líneas sobre `inventory.count.review_threshold` (el conteo queda congelado mientras espera) | `inventory.count.apply` e `inventory.adjustment.create` | `applyApprovedCount`: el mismo `applyCount`, a nombre de quien lo pidió, si lo capturado no cambió |
 
 ## Trabajos en segundo plano
 
@@ -237,7 +252,8 @@ saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
 contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
-entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido).
+entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0053
+(ajustes y conteos con autorización).
 
 ## Pruebas
 

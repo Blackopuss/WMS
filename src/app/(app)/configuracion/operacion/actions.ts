@@ -36,6 +36,8 @@ export async function updateSettingAction(
     );
     if (!result.ok) return { error: result.error, answers };
     revalidatePath("/configuracion/operacion");
+    // WMS-56: the settings of an approval are shown with its rule.
+    revalidatePath("/configuracion/aprobaciones");
     return { ok: true, message: result.summary, answers };
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {

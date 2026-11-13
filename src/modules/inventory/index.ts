@@ -523,6 +523,7 @@ export {
   ABC_CUTS,
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
+  ADJUSTMENT_APPROVAL_THRESHOLD,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -672,3 +673,7 @@ export type {
   AccuracyPeriod,
   CountAccuracy,
 } from "./count-accuracy";
+// WMS-41 (ADR 0053): what Inventario may ask to authorize.
+export { INVENTORY_APPROVAL_TYPES } from "./approvals";
+export { ADJUSTMENT_APPROVAL, COUNT_APPROVAL } from "./approval-keys";
+export type { AdjustmentResult, PendingApproval } from "./movements";

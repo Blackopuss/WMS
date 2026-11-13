@@ -190,6 +190,8 @@ model Organization {
   facilityTransferReceiptLines FacilityTransferReceiptLine[]
   replenishmentRules      ReplenishmentRule[]
   countPrograms           CountProgram[]
+  approvalRules           ApprovalRule[]
+  approvalRequests        ApprovalRequest[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -227,6 +229,8 @@ model Facility {
   transfersIn     FacilityTransfer[] @relation("TransferTo")
   /// Its cycle count programs (WMS-55).
   countPrograms   CountProgram[]
+  /// Approval requests about something of this warehouse (WMS-56).
+  approvalRequests ApprovalRequest[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -292,6 +296,8 @@ model Location {
   counts              StockCount[]
   /// Cycle count programs that cover it and all it holds (WMS-55).
   countPrograms       CountProgram[]
+  /// Approval requests about something in this location (WMS-56).
+  approvalRequests    ApprovalRequest[]
   exitImportRows      ExitImportRow[]
   receiptLines        PurchaseReceiptLine[]
   returnLines         PurchaseReturnLine[]
@@ -3243,4 +3249,82 @@ model FacilityTransferReceiptLine {
   @@index([organizationId, lineId])
   @@index([organizationId, receiptId])
   @@map("facility_transfer_receipt_line")
+}
+
+enum ApprovalStatus {
+  /// Waiting for someone who may decide.
+  PENDING
+  /// Authorized: the module applied it in the same transaction.
+  APPROVED
+  /// Refused, with a reason.
+  REJECTED
+  /// Withdrawn by who asked for it.
+  CANCELLED
+  /// No longer applies (the world changed); `outcome` says why.
+  EXPIRED
+}
+
+/// What a company asks to authorize for one approval type (WMS-56, ADR
+/// 0053). Without a row the type asks for nothing. It is configuration:
+/// it changes, and every change goes to the audit log.
+model ApprovalRule {
+  id                String       @id @db.Char(36)
+  organizationId    String       @db.Char(36)
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// «inventory.adjustment»: the key of a registered approval type.
+  typeKey           String       @db.VarChar(80)
+  enabled           Boolean      @default(false)
+  /// Roles of the matrix that may decide, separated by commas.
+  approverRoles     String       @default("") @db.VarChar(200)
+  /// Who asked may also decide (false by default: four eyes).
+  allowSelfApproval Boolean      @default(false)
+  updatedByUserId   String       @db.Char(36)
+  createdAt         DateTime     @default(now()) @db.DateTime(3)
+  updatedAt         DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, typeKey])
+  @@map("approval_rule")
+}
+
+/// One request to authorize something (WMS-56, ADR 0053). Fixed when it is
+/// asked for; only its state and decision change, once (trigger), and it
+/// is never deleted.
+model ApprovalRequest {
+  id                String         @id @db.Char(36)
+  organizationId    String         @db.Char(36)
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  typeKey           String         @db.VarChar(80)
+  /// What it is about: «stock_count» + its id; null when it is new.
+  sourceType        String?        @db.VarChar(40)
+  sourceId          String?        @db.Char(36)
+  /// While pending: one open request per thing (unique); null after.
+  openKey           String?        @db.VarChar(120)
+  /// The confirmation of the form that asked for it: a retry finds it.
+  idempotencyKey    String?        @db.VarChar(64)
+  /// Warehouse and location it is about (scope, WMS-20).
+  facilityId        String?        @db.Char(36)
+  facility          Facility?      @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  locationId        String?        @db.Char(36)
+  location          Location?      @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// What the approver reads, fixed when asked (never with costs).
+  summary           String         @db.VarChar(1000)
+  /// What the module needs to apply it; it checks it again then.
+  payload           Json
+  status            ApprovalStatus @default(PENDING)
+  requestedByUserId String         @db.Char(36)
+  createdAt         DateTime       @default(now()) @db.DateTime(3)
+  decidedByUserId   String?        @db.Char(36)
+  decidedAt         DateTime?      @db.DateTime(3)
+  decisionReason    String?        @db.VarChar(500)
+  /// What happened: the module's sentence, or why it expired.
+  outcome           String?        @db.VarChar(1000)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, openKey])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status, createdAt, id])
+  @@index([organizationId, requestedByUserId, createdAt, id])
+  @@index([organizationId, sourceType, sourceId])
+  @@map("approval_request")
 }

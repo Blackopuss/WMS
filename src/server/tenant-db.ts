@@ -98,6 +98,8 @@ export const TENANT_MODELS = [
   "Subscription",
   "SubscriptionItem",
   "SupportAccess",
+  "ApprovalRule",
+  "ApprovalRequest",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -307,6 +309,7 @@ const LOCKABLE = {
   customerReturn: "customer_return",
   facilityTransfer: "facility_transfer",
   countProgram: "count_program",
+  approvalRequest: "approval_request",
 } as const;
 
 /**

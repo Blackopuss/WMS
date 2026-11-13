@@ -115,6 +115,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "team.member_reactivated": "Reactivó a una persona",
   "inventory.count_program_created": "Creó un programa de conteo cíclico",
   "inventory.count_program_changed": "Cambió un programa de conteo cíclico",
+  "approval.rule_changed": "Cambió una regla de aprobación",
+  "approval.requested": "Pidió una autorización",
+  "approval.approved": "Autorizó una solicitud",
+  "approval.rejected": "Rechazó una solicitud",
+  "approval.cancelled": "Retiró una solicitud de autorización",
+  "approval.expired": "Una solicitud de autorización venció",
 };
 
 export function describeAuditAction(action: string): string {
@@ -200,6 +206,12 @@ const FACT_LABELS: readonly (readonly [string, string])[] = [
   ["transferencia", "Transferencia"],
   ["que", "Qué"],
   ["etiquetas", "Etiquetas"],
+  ["tipo", "Tipo"],
+  ["resumen", "Qué se pidió"],
+  ["resultado", "Resultado"],
+  ["autorizadoPor", "Autorizó"],
+  ["reglaAntes", "Antes"],
+  ["reglaAhora", "Ahora"],
 ];
 
 const shown = (value: unknown): string | null =>
