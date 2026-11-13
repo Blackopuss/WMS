@@ -229,6 +229,25 @@ export default async function RevisionPage({
         </p>
       </div>
 
+      {/* WMS-58: which custom fields the file brings, by column title. */}
+      {result.customColumns.length > 0 && (
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          {result.customColumns.some((column) => column.header) &&
+            `Campos personalizados que trae tu archivo: ${result.customColumns
+              .filter((column) => column.header)
+              .map((column) =>
+                column.header === column.label
+                  ? column.label
+                  : `${column.label} (columna «${column.header}»)`,
+              )
+              .join(", ")}. `}
+          {result.customColumns.some((column) => !column.header) &&
+            `No vienen en tu archivo: ${result.customColumns
+              .filter((column) => !column.header)
+              .map((column) => column.label)
+              .join(", ")}.`}
+        </p>
+      )}
       {editable && plan && plan.exampleRows.length > 0 && (
         <div
           role="status"

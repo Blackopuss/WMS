@@ -4,6 +4,7 @@ import {
   Gauge,
   History,
   LifeBuoy,
+  ListPlus,
   MapPin,
   ShieldCheck,
   SlidersHorizontal,
@@ -76,6 +77,14 @@ export default async function ConfiguracionPage() {
               icon={SlidersHorizontal}
               title="Operación"
               description="Cómo trabaja tu almacén: surtido y preparación."
+            />
+          )}
+          {access.can("platform.organization.update") && (
+            <SettingsLink
+              href="/configuracion/campos"
+              icon={ListPlus}
+              title="Campos personalizados"
+              description="Datos propios de tus productos, ubicaciones y proveedores."
             />
           )}
           {access.can("platform.team.read") && (
@@ -222,6 +231,7 @@ function SettingsLink({
     | "/ubicaciones"
     | "/configuracion/almacenes"
     | "/configuracion/operacion"
+    | "/configuracion/campos"
     | "/configuracion/equipo"
     | "/configuracion/avisos"
     | "/configuracion/plan"

@@ -4,7 +4,11 @@ import { CircleAlert, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 
-import { FormField } from "@/components";
+import {
+  CustomFieldInputs,
+  FormField,
+  type CustomFieldInputView,
+} from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -41,6 +45,8 @@ export function SupplierForm({
   initial,
   submitLabel,
   cancelHref,
+  customFields = [],
+  initialCustom = {},
 }: {
   action: (
     prev: SupplierFormState,
@@ -49,10 +55,14 @@ export function SupplierForm({
   initial: SupplierFormState["values"];
   submitLabel: string;
   cancelHref: string;
+  /** WMS-58: custom fields of the company, and their values today. */
+  customFields?: CustomFieldInputView[];
+  initialCustom?: Record<string, string>;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     fieldErrors: {},
     values: initial,
+    custom: initialCustom,
   });
   const formRef = useRef<HTMLFormElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
@@ -64,13 +74,17 @@ export function SupplierForm({
     const first = FIELD_ORDER.find((field) => state.fieldErrors[field]);
     if (first)
       formRef.current?.querySelector<HTMLElement>(`#${first}`)?.focus();
+    else if (state.customErrors && Object.keys(state.customErrors).length)
+      formRef.current
+        ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+        ?.focus();
     else if (state.formError || (state.duplicates?.length ?? 0) > 0)
       alertRef.current?.focus();
   }, [state]);
 
   // React resets the form after its action: each field remounts with what
   // the person had written.
-  const attempt = JSON.stringify(state.values);
+  const attempt = JSON.stringify([state.values, state.custom]);
   type Name = (typeof FIELD_ORDER)[number];
   const field = (name: Name) => ({ name, defaultValue: state.values[name] });
   const remount = (name: Name) => `${name}-${attempt}`;
@@ -295,6 +309,13 @@ export function SupplierForm({
           />
         )}
       </FormField>
+
+      <CustomFieldInputs
+        fields={customFields}
+        values={state.custom}
+        errors={state.customErrors}
+        remount={attempt}
+      />
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button asChild variant="outline">

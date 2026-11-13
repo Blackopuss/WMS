@@ -12,6 +12,7 @@ import {
 } from "@/components";
 import { getModuleAccess } from "@/platform/billing";
 import { getSupplier } from "@/platform/contacts";
+import { getCustomValues } from "@/platform/custom-fields";
 
 import { updateSupplierAction } from "../../actions";
 import { SupplierForm } from "../../supplier-form";
@@ -59,6 +60,13 @@ export default async function EditarProveedorPage({
     id,
   );
   if (!supplier) notFound();
+  const custom = (
+    await getCustomValues(
+      { organizationId: access.organization.id, userId: access.user.id },
+      "SUPPLIER",
+      [supplier.id],
+    )
+  ).byRecord.get(supplier.id);
 
   return (
     <PageContainer>
@@ -78,6 +86,8 @@ export default async function EditarProveedorPage({
         }}
         submitLabel="Guardar cambios"
         cancelHref={`/compras/proveedores/${supplier.id}`}
+        customFields={custom?.views ?? []}
+        initialCustom={custom?.form ?? {}}
       />
     </PageContainer>
   );

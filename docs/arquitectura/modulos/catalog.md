@@ -12,7 +12,7 @@ módulo trabaja con productos; el cupo `active_products` lo comparten todos.
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Productos | `products.ts` | `createProduct` (consume cupo), `updateProduct`, `archiveProduct`, `reactivateProduct`, `getProduct`, `listProducts`, filtros y grupos, `normalizeSearch`; etiquetas de control por lote |
+| Productos | `products.ts` | `createProduct` (consume cupo), `updateProduct`, `archiveProduct`, `reactivateProduct`, `getProduct`, `listProducts`, filtros y grupos, `normalizeSearch`; etiquetas de control por lote. Crear y editar reciben `customFields` (WMS-58) y los validan y guardan con [custom-fields](custom-fields.md) en su transacción (`customErrors`); `listProducts` filtra por campo (`custom`) |
 | Unidades | `units.ts` | `UNITS`, `convertUnits`, `formatQuantity`, dimensiones |
 | Cantidades | `quantity.ts`, `measures.ts` | `parseQuantity` (regla del producto; nunca `Number()`), `parseMeasure`, peso y volumen por unidad |
 | Presentaciones | `presentations.ts` | `createPresentation`, `changePresentationFactor` (versión nueva), `listPresentations`, `listPresentationVersions` |
@@ -37,4 +37,4 @@ Ninguno.
 ## ADR
 
 0012 (movimientos: conversión y presentaciones que guardan las líneas), 0031
-(el costo vive fuera de `product`), 0040 (control por lote).
+(el costo vive fuera de `product`), 0040 (control por lote), 0056 (campos personalizados).

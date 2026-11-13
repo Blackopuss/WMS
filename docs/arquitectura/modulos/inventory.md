@@ -160,9 +160,9 @@ código»):
 | Avisos (WMS-39) | `notices.ts` | `INVENTORY_NOTIFICATION_TYPES`: los tipos que este módulo manda con `notify` (ver «Avisos») |
 | Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido y embarque, con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
-| Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar |
+| Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar; los campos personalizados de productos (WMS-58) se reconocen por título (`customImportColumns`), se revisan con las reglas del formulario y se aplican con `prepareCustomValues`/`writeCustomValues`; la plantilla trae sus columnas |
 | Importar salidas | `exit-import.ts`, `exit-import-apply.ts` | `startExitImport` → `reviewExitImport` → `confirmExitImport` → `applyExitImport` (worker); `getExitCoverage` |
-| Exportaciones | `exports.ts` | `buildExport` y `EXPORT_KINDS` |
+| Exportaciones | `exports.ts` | `buildExport` y `EXPORT_KINDS`; el catálogo agrega una columna por campo personalizado en uso (WMS-58) |
 | Inicio y resúmenes | `first-steps.ts`, `day-summary.ts`, `unplaced.ts` | `getFirstSteps`, `getDaySummary`, `listUnplacedStock` (dice qué fila ya tiene tarea de acomodo), `countUnplacedStock` |
 | Reconciliación | `reconciliation.ts` | `reconcileStock`, `reconcileValue`, `reconcileCompany` |
 | Ajustes y trabajos | `settings.ts`, `import-apply.ts`, `exit-import-apply.ts` | `INVENTORY_SETTINGS` y cada ajuste; `inventoryJobHandlers`, `exitImportJobHandlers` |

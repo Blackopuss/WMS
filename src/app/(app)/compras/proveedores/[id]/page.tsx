@@ -16,6 +16,7 @@ import { formatDate } from "@/lib";
 import { listProductsOfSupplier } from "@/modules/purchasing";
 import { getModuleAccess } from "@/platform/billing";
 import { getSupplier } from "@/platform/contacts";
+import { getCustomValues } from "@/platform/custom-fields";
 
 export const metadata: Metadata = { title: "Proveedor" };
 
@@ -94,6 +95,11 @@ export default async function ProveedorPage({
     moduleState === "active" &&
     !supplier.archived &&
     access.allows("purchasing.order.create");
+  // WMS-58: the custom fields of the company that it has.
+  const customShown =
+    (await getCustomValues(actor, "SUPPLIER", [supplier.id])).byRecord.get(
+      supplier.id,
+    )?.shown ?? [];
   const rows: [string, string | null][] = [
     ["Razón social", supplier.legalName],
     ["RFC", supplier.rfc],
@@ -102,6 +108,7 @@ export default async function ProveedorPage({
     ["Correo", supplier.email],
     ["Dirección", supplier.address],
     ["Notas", supplier.notes],
+    ...customShown.map((value): [string, string] => [value.label, value.text]),
   ];
 
   return (

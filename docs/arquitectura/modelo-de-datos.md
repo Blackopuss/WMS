@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-99 tablas en 25 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+102 tablas en 26 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -16,6 +16,7 @@
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
 | Plataforma › Avisos | 2 | [notifications](modulos/notifications.md) |
+| Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
 | Plataforma › Almacenes y ubicaciones | 5 | [locations](modulos/locations.md) |
@@ -782,6 +783,86 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `userId`, `typeKey`).
+
+## Plataforma › Campos personalizados
+
+Campos que cada empresa agrega a sus productos, ubicaciones y proveedores, sus opciones y el valor de cada registro (sin columnas por cliente).
+
+Documento: [modulos/custom-fields.md](modulos/custom-fields.md).
+
+### CustomField · `custom_field`
+
+A field a company adds to its products, locations or suppliers (WMS-58, ADR 0056): no column per customer, a row per field. It is never deleted: it is archived, and its values stay.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `entity` | `CustomFieldEntity` |  |  |
+| `key` | `String · VarChar(40)` |  | Stable internal name, made from the first label («color_de_tapa»); it is what forms, filters and files carry. Never changes (trigger). |
+| `label` | `String · VarChar(60)` |  | What people read; may be renamed. Unique among the fields of the entity, without capitals or accents (the collation compares so). |
+| `type` | `CustomFieldType` |  |  |
+| `required` | `Boolean` | `false` | Asked when a record is created or edited; old records are not touched. |
+| `position` | `Int` |  | Order in forms, cards and files. |
+| `archivedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `id`, `entity`); (`organizationId`, `entity`, `key`); (`organizationId`, `entity`, `label`).
+
+### CustomFieldOption · `custom_field_option`
+
+An option of a «list» field. Renamed or archived, never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `fieldId` | `String · Char(36)` |  |  |
+| `label` | `String · VarChar(60)` |  |  |
+| `position` | `Int` |  |  |
+| `archivedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `fieldId`, `id`); (`organizationId`, `fieldId`, `label`).
+- Relaciones: `field` → `CustomField` por (`organizationId`, `fieldId`) (al borrar: Restrict).
+
+### CustomFieldValue · `custom_field_value`
+
+The value of one custom field for one record (WMS-58): one typed column filled (CHECK), the record named by the reference column of its entity with a composite key of the company (CHECK: exactly that one). An empty value is no row.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `fieldId` | `String · Char(36)` |  |  |
+| `entity` | `CustomFieldEntity` |  | Repeats the field's entity so the key below ties both together. |
+| `productId` | `String? · Char(36)` |  |  |
+| `locationId` | `String? · Char(36)` |  |  |
+| `contactId` | `String? · Char(36)` |  |  |
+| `textValue` | `String? · VarChar(200)` |  |  |
+| `numberValue` | `Decimal? · Decimal(18, 6)` |  |  |
+| `dateValue` | `DateTime? · Date` |  |  |
+| `optionId` | `String? · Char(36)` |  | An option of the same field (the key includes the field). |
+| `boolValue` | `Boolean?` |  |  |
+| `updatedByUserId` | `String · Char(36)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `fieldId`, `productId`); (`organizationId`, `fieldId`, `locationId`); (`organizationId`, `fieldId`, `contactId`).
+- Índices: (`organizationId`, `fieldId`, `optionId`); (`organizationId`, `fieldId`, `boolValue`); (`organizationId`, `fieldId`, `textValue`); (`organizationId`, `productId`); (`organizationId`, `locationId`); (`organizationId`, `contactId`).
+- Relaciones: `field` → `CustomField` por (`organizationId`, `fieldId`, `entity`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `contact` → `Contact` por (`organizationId`, `contactId`) (al borrar: Restrict); `option` → `CustomFieldOption` por (`organizationId`, `fieldId`, `optionId`) (al borrar: Restrict).
+
+#### Enumeraciones de Plataforma › Campos personalizados
+
+- `CustomFieldEntity`: `PRODUCT`, `LOCATION`, `SUPPLIER`.
+- `CustomFieldType`: `TEXT`, `NUMBER`, `DATE`, `CHOICE`, `BOOLEAN`.
 
 ## Plataforma › Archivos
 

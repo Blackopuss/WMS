@@ -9,6 +9,12 @@ import {
   parseQuantity,
   pluralizeName,
 } from "@/platform/catalog";
+import {
+  foldLabel,
+  parseCustomValue,
+  readCustomFields,
+  type CustomFieldDef,
+} from "@/platform/custom-fields";
 import { readSpreadsheet, readStoredFile } from "@/platform/files";
 import { forOrganization } from "@/server";
 
@@ -77,7 +83,41 @@ export type ValidImportRow = {
     lotExpiresOn?: string | null;
   } | null;
   minimum: string | null;
+  /**
+   * WMS-58: the custom fields this row gives, by key, as text the platform
+   * reads again when the product is applied (numbers already with a point).
+   * Only when the company has custom fields.
+   */
+  custom?: Record<string, string>;
 };
+
+/** A custom field of the company and the column of the file that has it. */
+export type CustomImportColumn = {
+  field: CustomFieldDef;
+  /** Column of the file; null = the file does not have it. */
+  index: number | null;
+};
+
+/**
+ * The columns of a file that hold custom fields: by their title, compared
+ * without capitals or accents, among the columns not chosen for ours.
+ */
+export function customImportColumns(
+  fields: readonly CustomFieldDef[],
+  headers: readonly string[],
+  mapping: ImportMapping,
+): CustomImportColumn[] {
+  const used = new Set(Object.values(mapping));
+  return fields
+    .filter((field) => !field.archived)
+    .map((field) => {
+      const index = headers.findIndex(
+        (header, i) =>
+          !used.has(i) && foldLabel(header) === foldLabel(field.label),
+      );
+      return { field, index: index < 0 ? null : index };
+    });
+}
 
 export type RowsValidation = {
   valid: ValidImportRow[];
@@ -146,8 +186,11 @@ export function validateImportRows(
     mapping: ImportMapping;
     decimalSeparator: DecimalSeparator;
     locations: Location[];
+    /** WMS-58: custom fields of the company and where they are. */
+    customColumns?: readonly CustomImportColumn[];
   },
 ): RowsValidation {
+  const customColumns = options.customColumns ?? [];
   const { headers, mapping, decimalSeparator } = options;
   const general = options.locations.find((location) => location.isDefault);
   const findLocation = locationFinder(options.locations);
@@ -169,6 +212,8 @@ export function validateImportRows(
       presentation: { name: string; content: string } | null;
       /** WMS-21: the expiry each lot of it was given, and in which row. */
       lots: Map<string, { row: number; expiresOn: string | null }>;
+      /** WMS-58: its custom fields, given in its first row. */
+      custom: Record<string, string>;
     }
   >();
   const skuByBarcode = new Map<string, { sku: string; row: number }>();
@@ -427,6 +472,45 @@ export function validateImportRows(
       }
     }
 
+    // WMS-58: custom fields, with the same rules as the form.
+    const custom: Record<string, string> = {};
+    for (const { field, index } of customColumns) {
+      const text = index === null ? "" : (cells[index] ?? "").trim();
+      const customIssue = (message: string) => {
+        failed = true;
+        issues.push({
+          row,
+          column: null,
+          header:
+            index !== null ? (headers[index] ?? field.label) : field.label,
+          value: text,
+          message,
+        });
+      };
+      if (text === "") {
+        if (field.required) {
+          customIssue(
+            index === null
+              ? `Tu archivo no tiene la columna «${field.label}», que es obligatoria.`
+              : `Falta «${field.label}»: es obligatorio.`,
+          );
+        }
+        continue;
+      }
+      let value = text;
+      if (field.type === "NUMBER") {
+        const read = normalizeDecimal(text, decimalSeparator);
+        if (!read.ok) {
+          customIssue(read.error);
+          continue;
+        }
+        value = read.value;
+      }
+      const parsed = parseCustomValue(field, value);
+      if (!parsed.ok) customIssue(parsed.error);
+      else custom[field.key] = value;
+    }
+
     const minimumQuantity = quantity("minimum", number("minimum"));
     const minimum =
       minimumQuantity && !minimumQuantity.isZero()
@@ -449,6 +533,7 @@ export function validateImportRows(
           lots: new Map(
             lotCode ? [[lotCode, { row, expiresOn: lotExpiresOn }]] : [],
           ),
+          custom,
         });
       } else if (
         foldName(first.name) !== foldName(name) ||
@@ -485,6 +570,23 @@ export function validateImportRows(
           );
         } else if (lotExpiresOn && !seen.expiresOn) {
           seen.expiresOn = lotExpiresOn;
+        }
+      }
+      // WMS-58: its custom fields go in its first row; the others repeat
+      // them or leave them empty.
+      if (first) {
+        for (const { field } of customColumns) {
+          const given = custom[field.key];
+          if (given !== undefined && given !== first.custom[field.key]) {
+            issues.push({
+              row,
+              column: null,
+              header: field.label,
+              value: given,
+              message: `Esta clave ya está en la fila ${first.row}: «${field.label}» va en esa fila; en las demás repítelo igual o déjalo vacío.`,
+            });
+            failed = true;
+          }
         }
       }
       // A product brings one presentation: its rows repeat it or leave it
@@ -530,6 +632,7 @@ export function validateImportRows(
       presentation,
       stock,
       minimum,
+      ...(customColumns.length > 0 ? { custom } : {}),
     });
   }
   return { valid, issues, invalidRows };
@@ -565,6 +668,15 @@ export type ImportValidation =
         /** «200 piezas», or null. */
         minimum: string | null;
       }[];
+      /**
+       * WMS-58: the custom fields of the company and the title of the
+       * column of the file that has each (null = not in the file).
+       */
+      customColumns: {
+        label: string;
+        header: string | null;
+        required: boolean;
+      }[];
     }
   | { ok: false; reason: "not_found" | "not_ready" | "file"; error: string };
 
@@ -579,6 +691,8 @@ export type CheckedImport = {
   headers: string[];
   mapping: ImportMapping;
   result: RowsValidation;
+  /** WMS-58: custom fields of the company and the column that has each. */
+  customColumns: CustomImportColumn[];
 };
 
 /**
@@ -644,11 +758,17 @@ export async function checkImport(
         number > row.headerRow && cells.some((cell) => cell !== ""),
     );
   const locations = await listStockLocations(actor);
+  const customColumns = customImportColumns(
+    await readCustomFields(forOrganization(organizationId), "PRODUCT"),
+    headers,
+    mapping,
+  );
   const result = validateImportRows(data, {
     headers,
     mapping,
     decimalSeparator: separator,
     locations,
+    customColumns,
   });
   return {
     ok: true,
@@ -658,6 +778,7 @@ export async function checkImport(
     headers,
     mapping,
     result,
+    customColumns,
   };
 }
 
@@ -682,6 +803,11 @@ export async function validateImport(
     validRows: result.valid.length,
     invalidRows: result.invalidRows,
     products: new Set(result.valid.map((line) => foldName(line.sku))).size,
+    customColumns: checked.customColumns.map(({ field, index }) => ({
+      label: field.label,
+      header: index === null ? null : (checked.headers[index] ?? null),
+      required: field.required,
+    })),
     issueCount: result.issues.length,
     issues: result.issues.slice(0, MAX_ISSUES),
     preview: result.valid.slice(0, PREVIEW_ROWS).map((line) => {

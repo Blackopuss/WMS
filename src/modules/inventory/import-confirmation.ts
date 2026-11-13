@@ -185,6 +185,8 @@ export async function confirmImport(
             unitCode: entry.first.unitCode,
             presentation: plannedPresentation(entry),
             minimum: entry.first.minimum,
+            // WMS-58: only when the company has custom fields.
+            ...(entry.first.custom ? { customFields: entry.first.custom } : {}),
             stock: entry.rows.flatMap((line) =>
               line.stock
                 ? [

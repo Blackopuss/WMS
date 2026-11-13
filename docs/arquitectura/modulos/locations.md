@@ -18,6 +18,7 @@ a ubicaciones.
 | Árbol | `hierarchy.ts` | `createLocation`, `editLocation`, `renameLocation`, `moveLocation`, `archiveLocation`, `restoreLocation`, `listLocations`, `saveLocationLevels`, `setStagingLocation`, `setLocationLimits` |
 | Reglas puras | `levels.ts`, `limits.ts` | `canContain`, `fitProblem`, rutas (`locationPath`, `LOCATION_PARENTS`), `normalizeLocationCode`, usos `LOCATION_TYPES`; capacidad (`parseCapacity`, `describeCapacity`…) |
 | Lugares fijos | `locations.ts`, `staging.ts`, `transit.ts` | `getDefaultLocation` (General del almacén activo), `ensureStagingLocation`, `ensureTransitLocation` (la de tránsito de un almacén, la crea el primer traslado hacia él) y `NOT_TRANSIT` |
+| Campos personalizados | `custom-values.ts` | `getLocationCustomValues` (WMS-58: campos y valores de las ubicaciones dentro del alcance de la persona; la única forma de leerlos). `createLocation`/`editLocation` reciben `customFields` y los validan con [custom-fields](custom-fields.md) en su transacción |
 | Alcance | `scope.ts` | `assertLocationsInScope`, `locationScopeWhere`, `isLimited`, `isFacilityInScope`, `assertFacilityInScope`, `assertWholeFacilityInScope`, `locationsOutOfScope` |
 
 Todo cambio al árbol pasa por `hierarchy.ts` (bloquea el almacén). Nunca se
@@ -47,6 +48,6 @@ de [inventory](inventory.md), que es quien mete existencias.
 
 ## ADR
 
-0010 (ubicación inicial), 0011 (jerarquía), 0035 (varios almacenes), 0036
+0056 (campos personalizados), 0010 (ubicación inicial), 0011 (jerarquía), 0035 (varios almacenes), 0036
 (niveles), 0038 (alcance), 0039 (capacidad y restricciones), 0048
 (traslados entre almacenes).

@@ -17,6 +17,7 @@ import {
   listPresentations,
   listProductGroups,
 } from "@/platform/catalog";
+import { getCustomValues } from "@/platform/custom-fields";
 
 import {
   changePresentationFactorAction,
@@ -72,13 +73,15 @@ export default async function EditarProductoPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const [product, groups, presentations] = await Promise.all([
+  const [product, groups, presentations, custom] = await Promise.all([
     getProduct(actor, id),
     listProductGroups(actor),
     access.can("inventory.presentation.read")
       ? listPresentations(actor, id)
       : Promise.resolve([]),
+    getCustomValues(actor, "PRODUCT", [id]),
   ]);
+  const customValues = custom.byRecord.get(id);
   if (!product) notFound();
   // An archived product is changed only after bringing it back.
   if (product.status === "ARCHIVED") {
@@ -118,6 +121,8 @@ export default async function EditarProductoPage({
         brands={groups.brands}
         unitGroups={unitGroups()}
         stepOptions={stepOptions()}
+        customFields={customValues?.views ?? []}
+        initialCustom={customValues?.form ?? {}}
       />
       {access.can("inventory.presentation.read") && (
         <PresentationsPanel

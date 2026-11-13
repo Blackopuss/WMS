@@ -12,6 +12,7 @@ decisiones, en `docs/adr/`.
 | [modulos/](modulos/) | Un documento por módulo y por área de plataforma |
 | [modulos/approvals.md](modulos/approvals.md) | Motor de aprobaciones: reglas por empresa, solicitudes, decidir (WMS-56) |
 | [modulos/notifications.md](modulos/notifications.md) | Avisos dentro de la app: `notify` en la transacción del hecho, campana, preferencias (WMS-39) |
+| [modulos/custom-fields.md](modulos/custom-fields.md) | Campos personalizados de productos, ubicaciones y proveedores: definir, validar y guardar valores (WMS-58) |
 | [agregar-un-modulo.md](agregar-un-modulo.md) | Paso a paso para agregar un módulo nuevo |
 | [`CHANGELOG.md`](../../CHANGELOG.md) | Registro de cambios por paso cerrado |
 

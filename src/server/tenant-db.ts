@@ -108,6 +108,9 @@ export const TENANT_MODELS = [
   "NotificationPreference",
   "Incident",
   "IncidentNote",
+  "CustomField",
+  "CustomFieldOption",
+  "CustomFieldValue",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -321,6 +324,7 @@ const LOCKABLE = {
   pickWave: "pick_wave",
   purchaseRequest: "purchase_request",
   incident: "incident",
+  customField: "custom_field",
 } as const;
 
 /**

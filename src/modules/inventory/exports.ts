@@ -6,6 +6,11 @@ import { recordAuditEvent } from "@/platform/audit";
 import type { Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
+import {
+  fileValue,
+  readCustomFields,
+  readCustomValues,
+} from "@/platform/custom-fields";
 import { buildCsv, buildXlsx, type Cell } from "@/platform/files";
 import {
   LOCATION_PARENTS,
@@ -167,6 +172,17 @@ async function catalogRows(client: Client): Promise<Cell[][]> {
     ).map((minimum) => [minimum.productId, minimum.quantity.toString()]),
   );
   products.sort((a, b) => a.sku.localeCompare(b.sku, "es"));
+  // WMS-58: a column per custom field in use, in its order and by its
+  // label, written so an import reads it back; only if the company has.
+  const custom = await readCustomFields(client, "PRODUCT");
+  const values =
+    custom.length > 0
+      ? await readCustomValues(
+          client,
+          "PRODUCT",
+          products.map((product) => product.id),
+        )
+      : new Map();
   return [
     [
       "Clave (SKU)",
@@ -178,6 +194,7 @@ async function catalogRows(client: Client): Promise<Cell[][]> {
       "Unidad",
       "Estado",
       "Mínimo",
+      ...custom.map((field) => field.label),
     ],
     ...products.map((product): Cell[] => [
       product.sku,
@@ -189,6 +206,10 @@ async function catalogRows(client: Client): Promise<Cell[][]> {
       getUnit(product.unitCode).name,
       product.status === "ACTIVE" ? "Activo" : "Archivado",
       minimums.get(product.id) ?? "",
+      ...custom.map((field) => {
+        const value = values.get(product.id)?.get(field.id);
+        return value ? fileValue(field, value) : "";
+      }),
     ]),
   ];
 }

@@ -133,6 +133,10 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "inventory.incident_attended": "Tomó una incidencia para atenderla",
   "inventory.incident_resolved": "Resolvió una incidencia",
   "inventory.incident_dismissed": "Descartó una incidencia",
+  "custom_field.created": "Agregó un campo personalizado",
+  "custom_field.changed": "Cambió un campo personalizado",
+  "custom_field.archived": "Archivó un campo personalizado",
+  "custom_field.restored": "Reactivó un campo personalizado",
 };
 
 export function describeAuditAction(action: string): string {

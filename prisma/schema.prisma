@@ -200,6 +200,9 @@ model Organization {
   pickWaveOrders          PickWaveOrder[]
   purchaseRequests        PurchaseRequest[]
   purchaseRequestLines    PurchaseRequestLine[]
+  customFields            CustomField[]
+  customFieldOptions      CustomFieldOption[]
+  customFieldValues       CustomFieldValue[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -342,6 +345,8 @@ model Location {
   restrictions        LocationRestriction[]
   /// Rules that keep it filled, for a picking location (WMS-23).
   replenishmentRules  ReplenishmentRule[]
+  /// Values of the custom fields of the company (WMS-58).
+  customValues        CustomFieldValue[]
   /// True for General, NULL for other locations (never false; SQL CHECK).
   /// MySQL allows multiple NULLs in the unique key, but only one true.
   isDefault           Boolean?
@@ -1077,6 +1082,8 @@ model Product {
   customerReturnLines  CustomerReturnLine[]
   transferLines        FacilityTransferLine[]
   purchaseRequestLines PurchaseRequestLine[]
+  /// Values of the custom fields of the company (WMS-58).
+  customValues         CustomFieldValue[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, sku])
@@ -1885,6 +1892,8 @@ model Contact {
   updatedAt        DateTime          @updatedAt @db.DateTime(3)
   suppliedProducts ProductSupplier[]
   purchaseOrders   PurchaseOrder[]
+  /// Values of the custom fields of its supplier facet (WMS-58).
+  customValues     CustomFieldValue[]
 
   @@unique([organizationId, id])
   /// Orders and searches the list of suppliers (name and RFC) in one index.
@@ -2723,6 +2732,119 @@ model OrganizationSetting {
   @@unique([organizationId, id])
   @@unique([organizationId, key])
   @@map("organization_setting")
+}
+
+/// What a custom field belongs to (WMS-58, ADR 0056). A new entity is a
+/// value here, a reference column in `custom_field_value` with its
+/// composite key, and its line in the CHECK `custom_field_value_owner`.
+enum CustomFieldEntity {
+  PRODUCT
+  LOCATION
+  SUPPLIER
+}
+
+/// What a custom field holds; it never changes once created (trigger).
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  CHOICE
+  BOOLEAN
+}
+
+/// A field a company adds to its products, locations or suppliers
+/// (WMS-58, ADR 0056): no column per customer, a row per field. It is
+/// never deleted: it is archived, and its values stay.
+model CustomField {
+  id              String              @id @db.Char(36)
+  organizationId  String              @db.Char(36)
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  entity          CustomFieldEntity
+  /// Stable internal name, made from the first label («color_de_tapa»);
+  /// it is what forms, filters and files carry. Never changes (trigger).
+  key             String              @db.VarChar(40)
+  /// What people read; may be renamed. Unique among the fields of the
+  /// entity, without capitals or accents (the collation compares so).
+  label           String              @db.VarChar(60)
+  type            CustomFieldType
+  /// Asked when a record is created or edited; old records are not touched.
+  required        Boolean             @default(false)
+  /// Order in forms, cards and files.
+  position        Int
+  archivedAt      DateTime?           @db.DateTime(3)
+  createdByUserId String              @db.Char(36)
+  createdAt       DateTime            @default(now()) @db.DateTime(3)
+  updatedAt       DateTime            @updatedAt @db.DateTime(3)
+  options         CustomFieldOption[]
+  values          CustomFieldValue[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, id, entity])
+  @@unique([organizationId, entity, key])
+  @@unique([organizationId, entity, label])
+  @@map("custom_field")
+}
+
+/// An option of a «list» field. Renamed or archived, never deleted.
+model CustomFieldOption {
+  id             String             @id @db.Char(36)
+  organizationId String             @db.Char(36)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fieldId        String             @db.Char(36)
+  field          CustomField        @relation(fields: [organizationId, fieldId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  label          String             @db.VarChar(60)
+  position       Int
+  archivedAt     DateTime?          @db.DateTime(3)
+  createdAt      DateTime           @default(now()) @db.DateTime(3)
+  values         CustomFieldValue[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, fieldId, id])
+  @@unique([organizationId, fieldId, label])
+  @@map("custom_field_option")
+}
+
+/// The value of one custom field for one record (WMS-58): one typed
+/// column filled (CHECK), the record named by the reference column of its
+/// entity with a composite key of the company (CHECK: exactly that one).
+/// An empty value is no row.
+model CustomFieldValue {
+  id             String             @id @db.Char(36)
+  organizationId String             @db.Char(36)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fieldId        String             @db.Char(36)
+  /// Repeats the field's entity so the key below ties both together.
+  entity         CustomFieldEntity
+  field          CustomField        @relation(fields: [organizationId, fieldId, entity], references: [organizationId, id, entity], onDelete: Restrict, onUpdate: Restrict)
+  productId      String?            @db.Char(36)
+  product        Product?           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  locationId     String?            @db.Char(36)
+  location       Location?          @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  contactId      String?            @db.Char(36)
+  contact        Contact?           @relation(fields: [organizationId, contactId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  textValue      String?            @db.VarChar(200)
+  numberValue    Decimal?           @db.Decimal(18, 6)
+  dateValue      DateTime?          @db.Date
+  /// An option of the same field (the key includes the field).
+  optionId       String?            @db.Char(36)
+  option         CustomFieldOption? @relation(fields: [organizationId, fieldId, optionId], references: [organizationId, fieldId, id], onDelete: Restrict, onUpdate: Restrict)
+  boolValue      Boolean?
+  updatedByUserId String            @db.Char(36)
+  updatedAt      DateTime           @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, fieldId, productId])
+  @@unique([organizationId, fieldId, locationId])
+  @@unique([organizationId, fieldId, contactId])
+  /// Filters of a list by a field (a list option, yes/no, exact text).
+  @@index([organizationId, fieldId, optionId])
+  @@index([organizationId, fieldId, boolValue])
+  @@index([organizationId, fieldId, textValue])
+  /// The values of a page of records, in one query.
+  @@index([organizationId, productId])
+  @@index([organizationId, locationId])
+  @@index([organizationId, contactId])
+  @@map("custom_field_value")
 }
 
 enum OutboundImportStatus {

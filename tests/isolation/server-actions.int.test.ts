@@ -1128,6 +1128,49 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create",
     coveredBy: "tests/inventory/incidents.int.test.ts",
   },
+  createFieldAction: {
+    input:
+      "entidad (producto, ubicación o proveedor), nombre, tipo, obligatorio y opciones de una lista",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
+  updateFieldAction: {
+    input: "id del campo (fijado por la página), nombre y obligatorio",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
+  fieldStatusAction: {
+    input: "id del campo y si se archiva (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
+  moveFieldAction: {
+    input: "id del campo y la dirección (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
+  addOptionAction: {
+    input: "id del campo (fijado por la página) y nombre de la opción",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
+  renameOptionAction: {
+    input: "id de la opción (fijado por la página) y su nombre nuevo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
+  optionStatusAction: {
+    input: "id de la opción y si se archiva (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
+    coveredBy: "tests/platform/custom-fields.int.test.ts",
+  },
 };
 
 function actionFiles(dir: string): string[] {

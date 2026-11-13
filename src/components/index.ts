@@ -41,3 +41,5 @@ export type { Theme } from "./theme";
 export { LabelPrintForm, PrintLabelLink } from "./label-print-form";
 export { CameraScanButton } from "./camera-scan";
 export { InstallAppPanel, OfflineNotice, PwaSetup } from "./pwa";
+export { CustomFieldFacts, CustomFieldInputs } from "./custom-fields";
+export type { CustomFieldInputView } from "./custom-fields";
