@@ -8,6 +8,7 @@ import {
   lotDayOf,
   lotLabel,
   normalizeLotCode,
+  isTaskNumberClash,
   postReceiptEntry,
 } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
@@ -221,6 +222,23 @@ export async function receivedByLine(
  * after a lost answer) receives once.
  */
 export async function receivePurchaseOrder(
+  actor: PurchasingActor,
+  orderId: string,
+  input: ReceiveInput,
+): Promise<ReceiveResult> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await receiveOnce(actor, orderId, input);
+    } catch (error) {
+      // WMS-52: another operation took the same number for its put-away
+      // task at once; nothing was written: the whole receipt is tried again.
+      if (isTaskNumberClash(error) && attempt < 4) continue;
+      throw error;
+    }
+  }
+}
+
+async function receiveOnce(
   actor: PurchasingActor,
   orderId: string,
   input: ReceiveInput,

@@ -13,6 +13,7 @@ import {
 import { forOrganization } from "@/server";
 
 import { lotDayOf, lotLabel } from "./lot-rules";
+import { TASK_HOLD } from "./reservations";
 import { formatStock, type InventoryActor } from "./movements";
 import {
   STOCK_STATUSES,
@@ -149,13 +150,14 @@ export async function getProductStock(
       state: "ACTIVE",
       ...(limited ? { location: scoped } : {}),
     },
-    select: { locationId: true, remaining: true },
+    select: { locationId: true, remaining: true, sourceType: true },
   });
   const reservedAt = new Map<string, ReturnType<typeof dec>>();
   let reserved = dec(0);
   for (const reservation of reservations) {
     const amount = dec(reservation.remaining.toString());
-    reserved = reserved.plus(amount);
+    // WMS-52: what a put-away task holds only counts in its location.
+    if (reservation.sourceType !== TASK_HOLD) reserved = reserved.plus(amount);
     if (reservation.locationId) {
       reservedAt.set(
         reservation.locationId,

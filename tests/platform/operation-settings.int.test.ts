@@ -7,6 +7,8 @@ import {
   EXPIRY_NOTICE,
   PICK_EXPIRED,
   PICKING_STRATEGY,
+  PUTAWAY_MODE,
+  PUTAWAY_PREFERENCE,
   createOutboundOrder,
   registerEntry,
   releaseOutboundOrder,
@@ -172,6 +174,13 @@ describe("operation settings", () => {
       { key: EXPIRY_NOTICE.key, value: "30", defaultValue: "30" },
       { key: ENTRY_REPEAT_WINDOW.key, value: "30", defaultValue: "30" },
       { key: CAPACITY_MODE.key, value: "warn", defaultValue: "warn" },
+      // WMS-52: put-away stays by hand unless the company turns tasks on.
+      { key: PUTAWAY_MODE.key, value: "manual", defaultValue: "manual" },
+      {
+        key: PUTAWAY_PREFERENCE.key,
+        value: "together",
+        defaultValue: "together",
+      },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -179,6 +188,8 @@ describe("operation settings", () => {
       { key: EXPIRY_NOTICE.key, value: "30" },
       { key: ENTRY_REPEAT_WINDOW.key, value: "30" },
       { key: CAPACITY_MODE.key, value: "warn" },
+      { key: PUTAWAY_MODE.key, value: "manual" },
+      { key: PUTAWAY_PREFERENCE.key, value: "together" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

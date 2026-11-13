@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  PUTAWAY_MODE,
   acceptTask,
   applyCount,
   assignTask,
@@ -13,6 +14,7 @@ import {
   createOutboundOrder,
   createTask,
   countLowStock,
+  deliverTask,
   findTraceMatches,
   listProductSerials,
   traceSerial,
@@ -36,6 +38,7 @@ import {
   listStockLocations,
   listTasks,
   openCount,
+  pickUpTask,
   reconcileStock,
   registerAdjustment,
   registerEntry,
@@ -58,7 +61,7 @@ import {
   returnToSupplier,
   submitPurchaseOrder,
 } from "@/modules/purchasing";
-import { moduleRegistry } from "@/modules/registry";
+import { moduleRegistry, operationSettings } from "@/modules/registry";
 import { setMemberScope, type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
@@ -73,6 +76,7 @@ import {
   listLocations,
   switchFacility,
 } from "@/platform/locations";
+import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -943,6 +947,57 @@ describe("limited to a zone of a warehouse", () => {
         quantity: "7",
       }),
     ).toMatchObject({ ok: false, reason: "repeated_recently" });
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("a put-away is recommended and left only inside the zone (WMS-52)", async () => {
+    const dock = await createLocation(owner, {
+      level: 3,
+      name: "Recepción Z1",
+      parentId: zoneId,
+      type: "RECEIVING",
+    });
+    if (!dock.ok) throw new Error(JSON.stringify(dock));
+    const turned = await updateOperationSetting(
+      owner,
+      operationSettings,
+      PUTAWAY_MODE.key,
+      "tasks",
+    );
+    if (!turned.ok) throw new Error(turned.error);
+    try {
+      // The same product sits outside the zone too (shelf B1).
+      await registerEntry(zoned, {
+        acceptRepeat: true,
+        productId,
+        locationId: dock.locationId,
+        quantity: "2",
+      });
+      const task = await db.warehouseTask.findFirstOrThrow({
+        where: { kind: "PUTAWAY", fromLocationId: dock.locationId },
+      });
+      expect(task.toLocationId).toBe(inZone);
+      expect(await acceptTask(zoned, task.id)).toMatchObject({ ok: true });
+      expect(await pickUpTask(zoned, task.id)).toMatchObject({ ok: true });
+      expect(
+        await deliverTask(zoned, task.id, { locationCode: "Estante B1" }),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          locationCode: expect.stringContaining("No encontramos"),
+        },
+      });
+      expect(
+        await deliverTask(zoned, task.id, { locationCode: "Estante Z1" }),
+      ).toMatchObject({ ok: true });
+    } finally {
+      await updateOperationSetting(
+        owner,
+        operationSettings,
+        PUTAWAY_MODE.key,
+        "manual",
+      );
+    }
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

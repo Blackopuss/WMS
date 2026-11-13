@@ -12,8 +12,12 @@ import {
 } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
+import { readSetting } from "@/platform/settings";
+
 import { formatStock, type InventoryActor } from "./movements";
+import { PUTAWAY_MODE } from "./settings";
 import { AVAILABLE_ANY_LOT } from "./stock-status";
+import { OPEN_TASK_STATUSES, formatTaskNumber } from "./task-states";
 
 /**
  * Stock waiting to be put away (WMS-72): what the warehouse the person
@@ -56,6 +60,16 @@ export type UnplacedItem = {
    * balance has no entry behind it.
    */
   since: Date | null;
+  /**
+   * WMS-52: what open put-away tasks already take from here («40 piezas»),
+   * and the first of them; null when none does.
+   */
+  task: {
+    id: string;
+    numberText: string;
+    coveredLabel: string;
+    covers: boolean;
+  } | null;
 };
 
 export type UnplacedPage = {
@@ -69,39 +83,77 @@ export type UnplacedPage = {
   facilityName: string;
   /** False when the warehouse has nowhere to put things away yet. */
   hasPlaces: boolean;
+  /** WMS-52: the company puts away with tasks (`PUTAWAY_MODE`). */
+  withTasks: boolean;
 };
 
 type Client = ReturnType<typeof forOrganization>;
+type Reader = Pick<Client, "location">;
+
+/**
+ * Where goods are kept for good: what a put-away is for (WMS-52) and what
+ * makes a warehouse have something to put away. Storage and picking
+ * locations, active, never «General» nor the staging one.
+ */
+export const STORE_PLACE = {
+  archivedAt: null,
+  isDefault: null,
+  isStaging: null,
+  type: { in: ["STORAGE", "PICKING"] as ("STORAGE" | "PICKING")[] },
+};
+
+/**
+ * Where goods wait to be put away: «General» and the receiving locations,
+ * never the staging one. The one definition of a place «de paso» (WMS-72,
+ * WMS-52): «Sin acomodar» lists them and put-away tasks leave from them.
+ */
+export const WAITING_PLACE = {
+  isStaging: null,
+  OR: [{ isDefault: true }, { type: "RECEIVING" as const }],
+};
+
+/** Is this location of a warehouse a place where goods wait? */
+export const isWaitingPlace = (location: {
+  isDefault: boolean | null;
+  isStaging: boolean | null;
+  type: string;
+}) =>
+  location.isStaging !== true &&
+  (location.isDefault === true || location.type === "RECEIVING");
+
+/**
+ * Whether a warehouse has somewhere to put things away: without one,
+ * «General» is the whole warehouse and nothing waits.
+ */
+export async function facilityHasPlaces(
+  client: Reader,
+  facilityId: string,
+): Promise<boolean> {
+  const somewhere = await client.location.findFirst({
+    where: { facilityId, ...STORE_PLACE },
+    select: { id: true },
+  });
+  return somewhere !== null;
+}
 
 /**
  * Where goods wait in the warehouse of the person: «General» and the
  * receiving locations. Empty when the warehouse has no other place to
  * store.
  */
-async function waitingPlaces(client: Client, userId: string) {
+export async function waitingPlaces(client: Client, userId: string) {
   const facility = await activeFacilityOf(client, userId);
-  const somewhere = await client.location.findFirst({
-    where: {
-      facilityId: facility.id,
-      archivedAt: null,
-      isDefault: null,
-      isStaging: null,
-      type: { in: ["STORAGE", "PICKING"] },
-    },
-    select: { id: true },
-  });
-  if (!somewhere) return { facility, hasPlaces: false, places: [] };
+  if (!(await facilityHasPlaces(client, facility.id))) {
+    return { facility, hasPlaces: false, places: [] };
+  }
   // WMS-20: someone limited to zones only sees what waits in their own.
   const scoped = await locationScopeWhere(client, userId);
   const places = await client.location.findMany({
     where: {
       facilityId: facility.id,
       archivedAt: null,
-      isStaging: null,
-      AND: [
-        { OR: [{ isDefault: true }, { type: "RECEIVING" }] },
-        ...(isLimited(scoped) ? [scoped] : []),
-      ],
+      isStaging: WAITING_PLACE.isStaging,
+      AND: [{ OR: WAITING_PLACE.OR }, ...(isLimited(scoped) ? [scoped] : [])],
     },
     take: MAX_LOCATIONS_READ,
     select: { id: true, name: true, isDefault: true, parent: LOCATION_PARENTS },
@@ -166,6 +218,7 @@ export async function listUnplacedStock(
     client,
     actor.userId,
   );
+  const withTasks = (await readSetting(client, PUTAWAY_MODE)) === "tasks";
   const empty = {
     items: [],
     total: 0,
@@ -173,6 +226,7 @@ export async function listUnplacedStock(
     pageCount: 1,
     facilityName: facility.name,
     hasPlaces,
+    withTasks,
   };
   if (places.length === 0) return empty;
   const locationIds = places.map((place) => place.id);
@@ -207,6 +261,37 @@ export async function listUnplacedStock(
     locationId: group.locationId,
     quantity: group._sum.quantity ?? 0,
   }));
+  // WMS-52: what open put-away tasks already take from each place.
+  const tasks = await client.warehouseTask.findMany({
+    where: {
+      kind: "PUTAWAY",
+      status: { in: [...OPEN_TASK_STATUSES] },
+      productId: { in: products.map((product) => product.id) },
+      fromLocationId: { in: locationIds },
+    },
+    orderBy: { number: "asc" },
+    take: 2_000,
+    select: {
+      id: true,
+      number: true,
+      productId: true,
+      fromLocationId: true,
+      quantity: true,
+    },
+  });
+  const taskOf = new Map<
+    string,
+    { id: string; number: number; quantity: ReturnType<typeof dec> }
+  >();
+  for (const task of tasks) {
+    const key = `${task.productId} ${task.fromLocationId}`;
+    const known = taskOf.get(key);
+    taskOf.set(key, {
+      id: known?.id ?? task.id,
+      number: known?.number ?? task.number,
+      quantity: (known?.quantity ?? dec(0)).plus(task.quantity.toString()),
+    });
+  }
   const placeOf = new Map(
     places.map((place) => [
       place.id,
@@ -231,6 +316,7 @@ export async function listUnplacedStock(
           a.locationId.localeCompare(b.locationId),
       );
     for (const row of rows) {
+      const task = taskOf.get(`${product.id} ${row.locationId}`);
       items.push({
         productId: product.id,
         name: product.name,
@@ -244,6 +330,17 @@ export async function listUnplacedStock(
           row.locationId,
           row.quantity,
         ),
+        task: task
+          ? {
+              id: task.id,
+              numberText: formatTaskNumber(task.number),
+              coveredLabel: formatStock(
+                task.quantity.toString(),
+                product.unitCode,
+              ),
+              covers: task.quantity.greaterThanOrEqualTo(row.quantity),
+            }
+          : null,
       });
     }
   }
@@ -254,6 +351,7 @@ export async function listUnplacedStock(
     pageCount,
     facilityName: facility.name,
     hasPlaces,
+    withTasks,
   };
 }
 

@@ -1,7 +1,11 @@
 import "server-only";
 
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
-import { AVAILABLE_ANY_LOT, formatStock } from "@/modules/inventory";
+import {
+  AVAILABLE_ANY_LOT,
+  PRODUCT_HOLDS,
+  formatStock,
+} from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
@@ -144,7 +148,8 @@ async function plan(client: Reader, productIds?: string[]): Promise<Plan> {
     // WMS-12: what is reserved for an order is not available.
     const held = await client.stockReservation.groupBy({
       by: ["productId"],
-      where: { productId: { in: slice }, state: "ACTIVE" },
+      // WMS-52: what a put-away task holds is still the product's.
+      where: { productId: { in: slice }, state: "ACTIVE", ...PRODUCT_HOLDS },
       _sum: { remaining: true },
     });
     const reserved = new Map(

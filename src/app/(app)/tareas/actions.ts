@@ -112,12 +112,17 @@ export async function createTaskAction(
 export type TaskStepState =
   { ok: true; summary: string } | { ok: false; error: string };
 
+/** What a step answers: a task result, or a capacity warning (WMS-22B). */
+type StepAnswer =
+  | TaskResult
+  | { ok: false; formError?: string; fieldErrors?: Record<string, string> };
+
 async function run(
   taskId: string,
   work: (
     actor: { organizationId: string; userId: string },
     id: string,
-  ) => Promise<TaskResult>,
+  ) => Promise<StepAnswer>,
 ): Promise<TaskStepState> {
   const { user, organization } = await requireOrganizationContext();
   const id = String(taskId ?? "").slice(0, 36);
@@ -155,12 +160,82 @@ export async function taskStepAction(
     step === "accept"
       ? acceptTask
       : step === "pickUp"
-        ? pickUpTask
+        ? (actor: { organizationId: string; userId: string }, id: string) =>
+            pickUpTask(actor, id)
         : step === "deliver"
-          ? deliverTask
+          ? (actor: { organizationId: string; userId: string }, id: string) =>
+              deliverTask(actor, id)
           : null;
   if (!work) return { ok: false, error: "No se pudo cambiar la tarea." };
   return run(taskId, work);
+}
+
+export type PutawayState = {
+  ok?: true;
+  summary?: string;
+  error?: string;
+  fieldErrors?: Partial<Record<TaskField, string>>;
+  /**
+   * The place would be left above its capacity and the company only warns
+   * (WMS-22B): nothing moved. `stamp` marks the task and place the warning
+   * is about; the button that accepts it sends it back.
+   */
+  capacityWarning?: { message: string; stamp: string };
+  values: { locationCode: string };
+  answers: number;
+};
+
+/**
+ * Put-away (WMS-52): where the person left the goods, scanned or typed.
+ * The service finds that place only inside the company and the scope of
+ * the session, and checks it admits them.
+ */
+export async function putawayAction(
+  taskId: string,
+  previous: PutawayState,
+  formData: FormData,
+): Promise<PutawayState> {
+  const { user, organization } = await requireOrganizationContext();
+  const id = String(taskId ?? "").slice(0, 36);
+  const values = { locationCode: text(formData, "locationCode", 200) };
+  const answers = previous.answers + 1;
+  const stamp = fingerprint([id, values.locationCode.trim().toUpperCase()]);
+  let result;
+  try {
+    result = await deliverTask(
+      { organizationId: organization.id, userId: user.id },
+      id,
+      {
+        locationCode: values.locationCode,
+        // Only the button of the warning about this place carries it.
+        acceptCapacity: formData.get("acceptCapacity") === stamp,
+      },
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { error: error.message, values, answers };
+    }
+    throw error;
+  }
+  if (!result.ok && result.reason === "over_capacity") {
+    return {
+      capacityWarning: { message: result.formError, stamp },
+      values,
+      answers,
+    };
+  }
+  if (!result.ok) {
+    return {
+      error: result.formError,
+      fieldErrors: result.fieldErrors,
+      values,
+      answers,
+    };
+  }
+  revalidatePath("/tareas");
+  revalidatePath(`/tareas/${id}`);
+  revalidatePath("/inventario/sin-acomodar");
+  return { ok: true, summary: result.summary, values, answers };
 }
 
 export type PickUpState = {

@@ -152,10 +152,63 @@ export const EXPIRY_NOTICE = {
   defaultValue: "30",
 } as const satisfies SettingDefinition;
 
+/**
+ * How what arrives is put away (WMS-52, ADR 0042). With «tasks», every
+ * receipt and every entry into a place where goods wait («General», a
+ * receiving location) creates its put-away tasks in the same transaction
+ * (`createPutawayTasks`); with «manual» nothing changes.
+ */
+export const PUTAWAY_MODE = {
+  key: "inventory.putaway.mode",
+  module: "inventory",
+  area: "Acomodo",
+  label: "Cómo se acomoda lo que llega",
+  options: [
+    {
+      value: "manual",
+      label: "Cada quien lo cambia de lugar",
+      help: "Lo que llega se queda donde se recibió y aparece en «Sin acomodar».",
+    },
+    {
+      value: "tasks",
+      label: "Con tareas de acomodo",
+      help: "Cada recepción y cada entrada a «General» o a recepción crea sus tareas, con el lugar recomendado.",
+    },
+  ],
+  defaultValue: "manual",
+} as const satisfies SettingDefinition;
+
+/**
+ * Which place a put-away task recommends (`putawayTarget`): next to the
+ * same product (and lot), then its category, or simply the emptiest one.
+ * Restrictions and capacity always count.
+ */
+export const PUTAWAY_PREFERENCE = {
+  key: "inventory.putaway.preference",
+  module: "inventory",
+  area: "Acomodo",
+  label: "Qué lugar se recomienda",
+  options: [
+    {
+      value: "together",
+      label: "Junto a lo mismo",
+      help: "Donde ya hay de ese producto, luego de su categoría, luego la más vacía.",
+    },
+    {
+      value: "emptiest",
+      label: "La ubicación más vacía",
+      help: "Reparte la mercancía entre los lugares con más espacio.",
+    },
+  ],
+  defaultValue: "together",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
   EXPIRY_NOTICE,
   ENTRY_REPEAT_WINDOW,
   CAPACITY_MODE,
+  PUTAWAY_MODE,
+  PUTAWAY_PREFERENCE,
 ];

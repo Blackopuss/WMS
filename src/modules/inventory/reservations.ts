@@ -27,6 +27,21 @@ import { AVAILABLE_ANY_LOT, availableOfLot } from "./stock-status";
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
 type Reader = Tx | ReturnType<typeof forOrganization>;
 
+/**
+ * WMS-52 (ADR 0042): a task sets aside what it is about to move inside the
+ * same product (a put-away). It only counts in its location: the product's
+ * total does not change by moving it, so it does not subtract from what is
+ * available of the product as a whole.
+ */
+export const TASK_HOLD = "warehouse_task";
+
+/**
+ * Reservations that hold stock of the product as a whole (documents that
+ * will take it out): for every read of what is reserved of a product,
+ * anywhere. A location's reservations are all of them.
+ */
+export const PRODUCT_HOLDS = { sourceType: { not: TASK_HOLD } } as const;
+
 export type ReservationSource = {
   /** «outbound_order_line», «production_order_line»… */
   type: string;
@@ -64,7 +79,7 @@ async function reservedOf(
     where: {
       productId,
       state: "ACTIVE",
-      ...(locationId ? { locationId } : {}),
+      ...(locationId ? { locationId } : PRODUCT_HOLDS),
       ...(lotId ? { lotId } : {}),
     },
     _sum: { remaining: true },
@@ -142,8 +157,8 @@ export function reservedMessage(
   verb = "tomar",
 ): string {
   return free.isZero()
-    ? `Lo que hay está apartado para pedidos: no puedes ${verb} nada.`
-    : `Parte de lo que hay está apartado para pedidos: solo puedes ${verb} ${formatStock(free.toString(), unitCode)}.`;
+    ? `Lo que hay está apartado para pedidos o tareas: no puedes ${verb} nada.`
+    : `Parte de lo que hay está apartado para pedidos o tareas: solo puedes ${verb} ${formatStock(free.toString(), unitCode)}.`;
 }
 
 export type ReserveResult =
@@ -245,7 +260,7 @@ export async function getReservedTotals(
     actor.organizationId,
   ).stockReservation.groupBy({
     by: ["productId"],
-    where: { productId: { in: ids }, state: "ACTIVE" },
+    where: { productId: { in: ids }, state: "ACTIVE", ...PRODUCT_HOLDS },
     _sum: { remaining: true },
   });
   return Object.fromEntries(

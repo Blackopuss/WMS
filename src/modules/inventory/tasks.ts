@@ -11,6 +11,7 @@ import {
   LOCATION_PARENTS,
   type LocationWithParents,
   type LocationScopeReader,
+  type LocationScopeWhere,
   activeFacilityOf,
   assertLocationsInScope,
   isLimited,
@@ -46,7 +47,14 @@ import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
 import { availableOfLot } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { lotDayOf, lotLabel, normalizeLotCode } from "./lot-rules";
-import { freeToMoveFrom, reservedMessage } from "./reservations";
+import {
+  TASK_HOLD,
+  consumeReservation,
+  freeToMoveFrom,
+  releaseReservations,
+  reservedMessage,
+} from "./reservations";
+import { isWaitingPlace } from "./unplaced";
 import { ofSerials, serialsForTake } from "./serials";
 
 /**
@@ -183,6 +191,7 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
             },
           },
           toLocation: { select: { name: true } },
+          placedLocationId: true,
         },
       })
     : null;
@@ -271,8 +280,22 @@ async function holdSerials(
 
 type LockedTask = Awaited<ReturnType<typeof lockTask>>;
 
+/**
+ * WMS-52: where a task sends the goods, in words. A put-away without a
+ * recommendation has the origin itself as its destination (ADR 0042).
+ */
+const destinationOf = (task: {
+  kind: string;
+  fromLocationId: string;
+  toLocationId: string;
+  toLocation: { name: string };
+}) =>
+  task.kind === "PUTAWAY" && task.toLocationId === task.fromLocationId
+    ? "el lugar que elijas"
+    : task.toLocation.name;
+
 const describe = (task: LockedTask) =>
-  `${formatTaskNumber(task.number)}: ${formatStock(task.quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} de ${task.fromLocation.name} a ${task.toLocation.name}`;
+  `${formatTaskNumber(task.number)}: ${formatStock(task.quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} de ${task.fromLocation.name} a ${destinationOf(task)}`;
 
 function ensure(task: LockedTask, to: WarehouseTaskStatus): void {
   const problem = taskTransitionProblem(task.status, to);
@@ -670,7 +693,7 @@ export function pickUpTask(
       return {
         ok: true,
         taskId: task.id,
-        summary: `Recogiste la carga${ofSerials(units)}. Llévala a ${task.toLocation.name}.`,
+        summary: `Recogiste la carga${ofSerials(units)}. Llévala a ${destinationOf(task)}.`,
       };
     },
     { lockProduct: true },
@@ -853,30 +876,112 @@ export function confirmPick(
   );
 }
 
+const PLACE_NOT_FOUND =
+  "No encontramos esa ubicación en este almacén. Escanea su etiqueta o escribe su código.";
+
+/**
+ * WMS-52: the location a person scanned or typed where they left a
+ * put-away — its code, its path or, when unique, its name — among the
+ * active locations of the task's warehouse inside their scope. What is
+ * outside it is answered as not found.
+ */
+async function scannedPlace(
+  client: ReturnType<typeof forOrganization>,
+  facilityId: string,
+  scoped: LocationScopeWhere,
+  typed: string,
+): Promise<{ id: string } | { error: string }> {
+  const raw = typed.slice(0, 200).trim();
+  if (raw === "") {
+    return {
+      error:
+        "Escanea la etiqueta del lugar donde lo dejaste o escribe su código.",
+    };
+  }
+  const where = {
+    facilityId,
+    archivedAt: null,
+    ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+  };
+  const byCode = await client.location.findFirst({
+    where: { ...where, code: raw.toUpperCase().slice(0, 30) },
+    select: { id: true },
+  });
+  if (byCode) return byCode;
+  const segments = raw
+    .split(/[›>/\\]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const name = segments.at(-1)?.slice(0, 120);
+  if (!name) return { error: PLACE_NOT_FOUND };
+  const named = await client.location.findMany({
+    where: { ...where, name },
+    take: 50,
+    select: { id: true, name: true, parent: LOCATION_PARENTS },
+  });
+  const wanted = foldPath(raw);
+  const exact = named.filter(
+    (place) => foldPath(locationPath(place)) === wanted,
+  );
+  if (exact.length === 1) return { id: exact[0]!.id };
+  if (segments.length === 1 && named.length === 1) {
+    return { id: named[0]!.id };
+  }
+  if (named.length > 1) {
+    return {
+      error:
+        "Hay varias ubicaciones con ese nombre: escanea su etiqueta o escribe la ruta completa (por ejemplo «Zona A › Pasillo 2 › Estante 3»).",
+    };
+  }
+  return { error: PLACE_NOT_FOUND };
+}
+
+export type DeliverInput = {
+  /**
+   * PUTAWAY (WMS-52): where the person left it — the code, path or name
+   * of the location, scanned or typed. Required for a put-away.
+   */
+  locationCode?: string;
+  /**
+   * PUTAWAY: it goes over a capacity the company only warns about, and
+   * the person leaves it there anyway (WMS-22B).
+   */
+  acceptCapacity?: boolean;
+};
+
 /**
  * Left at the destination: writes the TRANSFER movement (key
  * `task:<id>`) and closes the task, in one transaction. If the stock is no
  * longer at the origin nothing changes and the person is told why (they
  * can report the problem).
+ *
+ * A put-away (WMS-52) is left where the person scanned: the recommended
+ * place or another of its warehouse, which must admit the goods; the task
+ * records where it really went (`placedLocationId`).
  */
 export async function deliverTask(
   actor: InventoryActor,
   taskId: string,
-): Promise<TaskResult> {
+  input: DeliverInput = {},
+): Promise<TaskResult | OverCapacity> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
     organizationId,
     userId,
     "inventory.task.execute",
   );
+  const client = forOrganization(organizationId);
   // What it moves never changes (trigger): read it to take the locks of a
   // movement first (product → locations), then the task's.
-  const fixed = await forOrganization(organizationId).warehouseTask.findFirst({
+  const fixed = await client.warehouseTask.findFirst({
     where: { id: String(taskId ?? "") },
     select: {
+      kind: true,
+      status: true,
       productId: true,
       fromLocationId: true,
       toLocationId: true,
+      fromLocation: { select: { facilityId: true } },
       outboundLine: { select: { orderId: true } },
     },
   });
@@ -887,42 +992,64 @@ export async function deliverTask(
       formError: "Esta tarea no existe.",
     };
   }
-  return inTask(organizationId, async (tx) => {
-    await lockRows(tx, "product", [fixed.productId]);
-    await lockRows(tx, "location", [fixed.fromLocationId, fixed.toLocationId]);
-    await lockPickOrder(tx, fixed.outboundLine?.orderId ?? null);
-    const task = await lockTask(tx, taskId, userId);
-    if (task.assignedToUserId !== userId) {
-      return stop("not_allowed", "Esta tarea la tiene otra persona.");
-    }
-    if (task.status === "DELIVERED") {
+  // WMS-52: where a put-away was left, found before the locks.
+  let placedId: string | null = null;
+  if (fixed.kind === "PUTAWAY" && fixed.status !== "DELIVERED") {
+    const found = await scannedPlace(
+      client,
+      fixed.fromLocation.facilityId,
+      await locationScopeWhere(client, userId),
+      String(input.locationCode ?? ""),
+    );
+    if ("error" in found) {
       return {
-        ok: true,
-        taskId: task.id,
-        repeated: true,
-        summary: `La tarea ${formatTaskNumber(task.number)} ya estaba entregada. No se movió nada de nuevo.`,
+        ok: false,
+        reason: "invalid",
+        fieldErrors: { locationCode: found.error },
       };
     }
-    ensure(task, "DELIVERED");
-    if (task.kind === "PICK" && task.outboundLineId && task.outboundLine) {
-      const picked = dec(task.pickedQuantity?.toString() ?? 0);
-      const delivered = await deliverPick(tx, actor, {
-        id: task.id,
-        number: task.number,
-        outboundLineId: task.outboundLineId,
+    placedId = found.id;
+  }
+  const destination = placedId ?? fixed.toLocationId;
+  try {
+    return await inTask(organizationId, async (tx) => {
+      await lockRows(tx, "product", [fixed.productId]);
+      await lockRows(tx, "location", [fixed.fromLocationId, destination]);
+      await lockPickOrder(tx, fixed.outboundLine?.orderId ?? null);
+      const task = await lockTask(tx, taskId, userId);
+      if (task.assignedToUserId !== userId) {
+        return stop("not_allowed", "Esta tarea la tiene otra persona.");
+      }
+      if (task.status === "DELIVERED") {
+        return {
+          ok: true,
+          taskId: task.id,
+          repeated: true,
+          summary: `La tarea ${formatTaskNumber(task.number)} ya estaba entregada. No se movió nada de nuevo.`,
+        };
+      }
+      ensure(task, "DELIVERED");
+      if (task.kind === "PICK" && task.outboundLineId && task.outboundLine) {
+        return deliverPickTask(tx, actor, task);
+      }
+      if (task.kind === "PUTAWAY") {
+        return deliverPutaway(tx, actor, task, destination, input);
+      }
+      const moved = await postTaskTransfer(tx, actor, {
         productId: task.productId,
         fromLocationId: task.fromLocationId,
         toLocationId: task.toLocationId,
+        quantity: task.quantity.toString(),
         lotId: task.lotId,
-        quantity: dec(task.quantity.toString()),
-        picked,
-        unitCode: task.unitCode,
         serials: await taskSerials(tx, task.id),
+        taskId: task.id,
+        idempotencyKey: `task:${task.id}`,
+        reference: formatTaskNumber(task.number),
       });
-      if (!delivered.ok) {
+      if (!moved.ok) {
         return stop(
           "not_allowed",
-          `${delivered.error} Si no puedes entregarlo, reporta el problema.`,
+          `${moved.formError ?? Object.values(moved.fieldErrors)[0] ?? "No se pudo mover la carga."} Si no puedes entregarla, reporta el problema.`,
         );
       }
       await tx.warehouseTask.update({
@@ -930,52 +1057,186 @@ export async function deliverTask(
         data: {
           status: "DELIVERED",
           deliveredAt: new Date(),
-          movementId: delivered.movementId,
+          movementId: moved.movementId,
         },
       });
-      await settlePickedOrder(tx, task.outboundLine.orderId);
       return {
         ok: true,
         taskId: task.id,
+        // WMS-22B: a destination left above its capacity is said, not stopped.
         summary:
-          `Dejaste ${formatStock(picked.toString(), task.unitCode)} de ${task.product.name} en ${task.toLocation.name}.` +
-          delivered.notes.map((note) => ` ${note}`).join(""),
+          `Entregaste la tarea ${describe(task)}.` +
+          (moved.notes ?? []).map((note) => ` ${note}`).join(""),
       };
-    }
-    const moved = await postTaskTransfer(tx, actor, {
+    });
+  } catch (error) {
+    if (error instanceof CapacityNotice) return error.result;
+    throw error;
+  }
+}
+
+async function deliverPickTask(
+  tx: Tx,
+  actor: InventoryActor,
+  task: LockedTask,
+): Promise<TaskResult> {
+  const picked = dec(task.pickedQuantity?.toString() ?? 0);
+  const delivered = await deliverPick(tx, actor, {
+    id: task.id,
+    number: task.number,
+    outboundLineId: task.outboundLineId!,
+    productId: task.productId,
+    fromLocationId: task.fromLocationId,
+    toLocationId: task.toLocationId,
+    lotId: task.lotId,
+    quantity: dec(task.quantity.toString()),
+    picked,
+    unitCode: task.unitCode,
+    serials: await taskSerials(tx, task.id),
+  });
+  if (!delivered.ok) {
+    return stop(
+      "not_allowed",
+      `${delivered.error} Si no puedes entregarlo, reporta el problema.`,
+    );
+  }
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "DELIVERED",
+      deliveredAt: new Date(),
+      movementId: delivered.movementId,
+    },
+  });
+  await settlePickedOrder(tx, task.outboundLine!.orderId);
+  return {
+    ok: true,
+    taskId: task.id,
+    summary:
+      `Dejaste ${formatStock(picked.toString(), task.unitCode)} de ${task.product.name} en ${task.toLocation.name}.` +
+      delivered.notes.map((note) => ` ${note}`).join(""),
+  };
+}
+
+/**
+ * WMS-52: a put-away left at `placedId` (the caller locked product →
+ * origin and that place → task). The place is checked again under the
+ * locks: of the task's warehouse, active, inside the scope of who leaves
+ * it, not a place «de paso» nor the staging one. The goods leave their
+ * hold and move with the transfer of every task; the capacity of the
+ * recommended place only reports (it was asked when recommending), the
+ * one of another place is asked like any relocation.
+ */
+async function deliverPutaway(
+  tx: Tx,
+  actor: InventoryActor,
+  task: LockedTask,
+  placedId: string,
+  input: DeliverInput,
+): Promise<TaskResult> {
+  const outside = await locationsOutOfScope(tx, actor.userId, [placedId]);
+  const place =
+    outside.length > 0
+      ? null
+      : await tx.location.findFirst({
+          where: { id: placedId },
+          select: {
+            id: true,
+            name: true,
+            facilityId: true,
+            archivedAt: true,
+            isDefault: true,
+            isStaging: true,
+            type: true,
+          },
+        });
+  const origin = await tx.location.findFirst({
+    where: { id: task.fromLocationId },
+    select: { facilityId: true },
+  });
+  if (
+    !place ||
+    !origin ||
+    place.archivedAt ||
+    place.facilityId !== origin.facilityId
+  ) {
+    return stop("invalid", PLACE_NOT_FOUND, "locationCode");
+  }
+  if (place.id === task.fromLocationId) {
+    return stop(
+      "invalid",
+      `Sigue en ${place.name}: llévalo a un lugar donde se guarde y escanea esa etiqueta.`,
+      "locationCode",
+    );
+  }
+  if (isWaitingPlace(place) || place.isStaging) {
+    return stop(
+      "invalid",
+      `«${place.name}» es un lugar de paso: acomódalo en una ubicación donde se guarde.`,
+      "locationCode",
+    );
+  }
+  const hold = await tx.stockReservation.findFirst({
+    where: { sourceType: TASK_HOLD, sourceId: task.id, state: "ACTIVE" },
+    select: { id: true, remaining: true },
+  });
+  const quantity = dec(task.quantity.toString());
+  if (!hold || dec(hold.remaining.toString()).lessThan(quantity)) {
+    return stop(
+      "not_allowed",
+      `Lo apartado para esta tarea ya no está completo en ${task.fromLocation.name}. Si no puedes acomodarlo, reporta el problema.`,
+    );
+  }
+  // First let go of the hold, so the move may take it.
+  await consumeReservation(tx, hold.id, quantity);
+  const recommended = place.id === task.toLocationId;
+  const moved = await postTaskTransfer(
+    tx,
+    actor,
+    {
       productId: task.productId,
       fromLocationId: task.fromLocationId,
-      toLocationId: task.toLocationId,
-      quantity: task.quantity.toString(),
+      toLocationId: place.id,
+      quantity: quantity.toString(),
       lotId: task.lotId,
       serials: await taskSerials(tx, task.id),
       taskId: task.id,
       idempotencyKey: `task:${task.id}`,
       reference: formatTaskNumber(task.number),
-    });
-    if (!moved.ok) {
-      return stop(
-        "not_allowed",
-        `${moved.formError ?? Object.values(moved.fieldErrors)[0] ?? "No se pudo mover la carga."} Si no puedes entregarla, reporta el problema.`,
-      );
-    }
-    await tx.warehouseTask.update({
-      where: { id: task.id },
-      data: {
-        status: "DELIVERED",
-        deliveredAt: new Date(),
-        movementId: moved.movementId,
-      },
-    });
-    return {
-      ok: true,
-      taskId: task.id,
-      // WMS-22B: a destination left above its capacity is said, not stopped.
-      summary:
-        `Entregaste la tarea ${describe(task)}.` +
-        (moved.notes ?? []).map((note) => ` ${note}`).join(""),
-    };
+    },
+    recommended
+      ? { mode: "report" }
+      : { mode: "ask", accepted: input.acceptCapacity === true },
+  );
+  if (!moved.ok) {
+    const problem =
+      moved.formError ??
+      Object.values(moved.fieldErrors)[0] ??
+      "No se pudo mover la carga.";
+    // A restriction of the place: the person may choose another one.
+    return moved.fieldErrors.toLocationId
+      ? stop("not_allowed", problem, "locationCode")
+      : stop(
+          "not_allowed",
+          `${problem} Si no puedes acomodarlo, reporta el problema.`,
+        );
+  }
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "DELIVERED",
+      deliveredAt: new Date(),
+      movementId: moved.movementId,
+      placedLocationId: place.id,
+    },
   });
+  return {
+    ok: true,
+    taskId: task.id,
+    summary:
+      `Acomodaste ${formatStock(quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} en ${place.name}.` +
+      (moved.notes ?? []).map((note) => ` ${note}`).join(""),
+  };
 }
 
 /** Something stops it: damage, wrong location, nothing there. */
@@ -1181,6 +1442,10 @@ export function cancelTask(
       );
       await settlePickedOrder(tx, task.outboundLine.orderId);
     }
+    // WMS-52: what a put-away held in its place is free again.
+    if (task.kind === "PUTAWAY") {
+      await releaseReservations(tx, { type: TASK_HOLD, id: task.id });
+    }
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -1205,8 +1470,11 @@ export type TaskSummary = {
   status: WarehouseTaskStatus;
   statusLabel: string;
   urgent: boolean;
-  /** «TRANSFER» (a move asked by someone) or «PICK» (an order, WMS-14). */
-  kind: "TRANSFER" | "PICK";
+  /**
+   * «TRANSFER» (a move asked by someone), «PICK» (an order, WMS-14) or
+   * «PUTAWAY» (what waits in «General» or receiving, WMS-52).
+   */
+  kind: "TRANSFER" | "PICK" | "PUTAWAY";
   /** PICK: the order it picks for. */
   order: { id: string; numberText: string; recipient: string } | null;
   productName: string;
@@ -1217,6 +1485,10 @@ export type TaskSummary = {
   lotCode: string | null;
   quantityText: string;
   fromPath: string;
+  /**
+   * Where it goes. PUTAWAY: where it was left once delivered; before, the
+   * recommended place, or «Sin lugar recomendado».
+   */
   toPath: string;
   assignedToUserId: string | null;
   assignedToName: string | null;
@@ -1244,6 +1516,14 @@ export type TaskView = TaskSummary & {
   bySerial: boolean;
   /** The serials of the units it took, once scanned. */
   serials: string[];
+  /**
+   * PUTAWAY (WMS-52): the place the system recommended and its code (what
+   * its label says), or null when there was none; and where it was really
+   * left, once delivered.
+   */
+  recommendedPath: string | null;
+  recommendedCode: string | null;
+  placedPath: string | null;
 };
 
 /** «mine»: what this person has; «available»: what anyone may take. */
@@ -1277,8 +1557,11 @@ const SUMMARY_SELECT = {
   createdAt: true,
   product: { select: { name: true, sku: true } },
   lot: { select: { code: true, expiresOn: true } },
+  fromLocationId: true,
+  toLocationId: true,
   fromLocation: LOCATION_NAMES,
   toLocation: LOCATION_NAMES,
+  placedLocation: LOCATION_NAMES,
 } as const;
 
 type SummaryRow = {
@@ -1286,7 +1569,7 @@ type SummaryRow = {
   number: number;
   status: WarehouseTaskStatus;
   priority: TaskPriority;
-  kind: "TRANSFER" | "PICK";
+  kind: "TRANSFER" | "PICK" | "PUTAWAY";
   outboundLine: {
     order: { id: string; number: number; recipient: string };
   } | null;
@@ -1296,8 +1579,25 @@ type SummaryRow = {
   createdAt: Date;
   product: { name: string; sku: string };
   lot: { code: string; expiresOn: Date | null } | null;
+  fromLocationId: string;
+  toLocationId: string;
   fromLocation: LocationNames;
   toLocation: LocationNames;
+  placedLocation: LocationNames | null;
+};
+
+/** WMS-52: a put-away whose destination is its origin had no recommendation. */
+const recommendationOf = (row: SummaryRow): LocationNames | null =>
+  row.kind === "PUTAWAY" && row.toLocationId === row.fromLocationId
+    ? null
+    : row.toLocation;
+
+export const NO_RECOMMENDATION = "Sin lugar recomendado";
+
+const toPathOf = (row: SummaryRow) => {
+  if (row.placedLocation) return pathOf(row.placedLocation);
+  const recommended = recommendationOf(row);
+  return recommended ? pathOf(recommended) : NO_RECOMMENDATION;
 };
 
 /** Names of people of the company, read through their memberships. */
@@ -1339,7 +1639,7 @@ const summaryOf = (
   lotCode: row.lot?.code ?? null,
   quantityText: formatStock(row.quantity.toString(), row.unitCode),
   fromPath: pathOf(row.fromLocation),
-  toPath: pathOf(row.toLocation),
+  toPath: toPathOf(row),
   assignedToUserId: row.assignedToUserId,
   assignedToName: row.assignedToUserId
     ? (names.get(row.assignedToUserId) ?? null)
@@ -1515,6 +1815,7 @@ export async function getTask(
       pickedQuantity: true,
       shortReason: true,
       product: { select: { name: true, sku: true, tracking: true } },
+      toLocation: { select: { ...LOCATION_NAMES.select, code: true } },
       serials: {
         orderBy: { id: "asc" },
         take: 1_000,
@@ -1548,6 +1849,9 @@ export async function getTask(
     movementId: row.movementId,
     bySerial: row.product.tracking === "SERIAL",
     serials: row.serials.map((item) => item.serialUnit.serial),
+    recommendedPath: recommendationOf(row) ? pathOf(row.toLocation) : null,
+    recommendedCode: recommendationOf(row) ? row.toLocation.code : null,
+    placedPath: row.placedLocation ? pathOf(row.placedLocation) : null,
   };
 }
 

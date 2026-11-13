@@ -45,7 +45,13 @@ import {
   type ResolvedLot,
 } from "./lot-resolve";
 import { normalizeLotCode } from "./lot-rules";
-import { freeToMoveFrom, freeToTake, reservedMessage } from "./reservations";
+import { createPutawayTasks, isTaskNumberClash } from "./putaway";
+import {
+  TASK_HOLD,
+  freeToMoveFrom,
+  freeToTake,
+  reservedMessage,
+} from "./reservations";
 import {
   NO_SERIAL_PRODUCT,
   hasSerials,
@@ -296,15 +302,20 @@ export async function registerEntry(
     "inventory.entry.create",
   );
   const { acceptRepeat, acceptCapacity, ...entry } = input;
-  try {
-    return await post(actor, entry, "ENTRY", {
-      warnRepeat: acceptRepeat !== true,
-      acceptCapacity: acceptCapacity === true,
-    });
-  } catch (error) {
-    if (error instanceof RepeatNotice) return error.result;
-    if (error instanceof CapacityNotice) return error.result;
-    throw error;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await post(actor, entry, "ENTRY", {
+        warnRepeat: acceptRepeat !== true,
+        acceptCapacity: acceptCapacity === true,
+      });
+    } catch (error) {
+      if (error instanceof RepeatNotice) return error.result;
+      if (error instanceof CapacityNotice) return error.result;
+      // WMS-52: another operation took the same number for its put-away
+      // task at once; nothing was written: the whole entry is tried again.
+      if (isTaskNumberClash(error) && attempt < 4) continue;
+      throw error;
+    }
   }
 }
 
@@ -832,6 +843,21 @@ async function post(
         });
       }
 
+      // WMS-52: what comes into a place «de paso» gets its put-away task,
+      // when the company works that way; same transaction, last.
+      const putaway =
+        type === "ENTRY"
+          ? await createPutawayTasks(tx, actor, [
+              {
+                productId: product.id,
+                locationId: location.id,
+                lotId: lot?.id ?? null,
+                quantity: base,
+                status: "AVAILABLE",
+              },
+            ])
+          : null;
+
       const moved = formatStock(base.toString(), unitCode);
       const left = formatStock(balance.toString(), unitCode);
       const one = base.equals(1);
@@ -845,7 +871,8 @@ async function post(
             : type === "EXIT"
               ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name}${ofLot(lot)} de ${location.name}${how}${ofSerials(units)}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left}${lot ? " de ese lote" : ""} ahí.`
               : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name}${ofLot(lot)} a ${location.name}${how}${ofSerials(units)}. Ahora hay ${left}${lot ? " de ese lote" : ""} ahí.`) +
-          capacityNotes.map((note) => ` ${note}`).join(""),
+          capacityNotes.map((note) => ` ${note}`).join("") +
+          (putaway?.note ? ` ${putaway.note}` : ""),
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -1033,14 +1060,17 @@ export async function getStockByLocation(
     // WMS-12: what is reserved is not there to take.
     client.stockReservation.findMany({
       where: { productId: id, state: "ACTIVE" },
-      select: { locationId: true, remaining: true },
+      select: { locationId: true, remaining: true, sourceType: true },
     }),
   ]);
   const reservedAt = new Map<string, Decimal>();
   let reservedAll = dec(0);
   for (const reservation of reservations) {
     const amount = dec(reservation.remaining.toString());
-    reservedAll = reservedAll.plus(amount);
+    // WMS-52: what a put-away task holds only counts in its location.
+    if (reservation.sourceType !== TASK_HOLD) {
+      reservedAll = reservedAll.plus(amount);
+    }
     if (reservation.locationId) {
       reservedAt.set(
         reservation.locationId,
@@ -3127,6 +3157,13 @@ export async function postTaskTransfer(
     idempotencyKey: string;
     reference: string;
   },
+  /**
+   * WMS-22B: the load is already at its destination; a capacity does not
+   * stop the delivery, the answer says it (`report`). A put-away left in
+   * another place than the recommended one asks (WMS-52): the person may
+   * still choose another (`CapacityNotice` when the company only warns).
+   */
+  capacity: CapacityPolicy = { mode: "report" },
 ): Promise<TransferResult> {
   try {
     return await transferWithin(
@@ -3149,9 +3186,7 @@ export async function postTaskTransfer(
         serials: input.serials ?? null,
       } as TransferData,
       { kind: "base", quantity: input.quantity },
-      // WMS-22B: the load is already at its destination; a capacity does
-      // not stop the delivery, the answer says it. Restrictions do.
-      { mode: "report" },
+      capacity,
       { taskId: input.taskId },
     );
   } catch (error) {

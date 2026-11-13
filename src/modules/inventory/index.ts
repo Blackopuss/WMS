@@ -266,9 +266,23 @@ export {
   freeToMoveFrom,
   freeToTake,
   getReservedTotals,
+  PRODUCT_HOLDS,
   releaseReservations,
   reserveStock,
+  TASK_HOLD,
 } from "./reservations";
+export {
+  PUTAWAY_CANDIDATES_CHECKED,
+  createPendingPutawayTasks,
+  createPutawayTasks,
+  isTaskNumberClash,
+  putawayTarget,
+} from "./putaway";
+export type {
+  CreatedPutaway,
+  PendingPutawayResult,
+  PutawayArrival,
+} from "./putaway";
 export type { ReservationSource, ReserveResult } from "./reservations";
 export {
   OUTBOUND_MAX_LINES,
@@ -332,6 +346,8 @@ export {
   ENTRY_REPEAT_WINDOW,
   INVENTORY_SETTINGS,
   PICKING_STRATEGY,
+  PUTAWAY_MODE,
+  PUTAWAY_PREFERENCE,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {

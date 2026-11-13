@@ -242,7 +242,7 @@ describe("what is reserved is not taken by hand", () => {
       ok: false,
       fieldErrors: {
         quantity:
-          "Parte de lo que hay está apartado para pedidos: solo puedes sacar 2 piezas.",
+          "Parte de lo que hay está apartado para pedidos o tareas: solo puedes sacar 2 piezas.",
       },
     });
     expect(
