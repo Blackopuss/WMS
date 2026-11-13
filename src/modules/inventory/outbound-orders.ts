@@ -11,6 +11,7 @@ import {
   ensureStagingLocation,
   isFacilityInScope,
 } from "@/platform/locations";
+import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { dayWindow, type DayWindow } from "./calendar-day";
@@ -31,6 +32,7 @@ import {
   type PickSource,
 } from "./picking";
 import { releaseReservations, type ReservationSource } from "./reservations";
+import { CROSS_DOCK_MODE } from "./settings";
 import { TO_SHIP, readyStatuses, shippedOnWhere } from "./shipment-ready";
 import {
   SHIPMENT_STATUS_LABELS,
@@ -599,7 +601,10 @@ function releaseLocked(
         shortages,
       });
     }
-    if (plan.every((step) => step.take.isZero())) {
+    // WMS-54 (ADR 0052): with cross-docking, an order may wait for what
+    // arrives with nothing set aside yet; without it, nothing to release.
+    const waitsForAll = plan.every((step) => step.take.isZero());
+    if (waitsForAll && (await readSetting(tx, CROSS_DOCK_MODE)) !== "on") {
       return stop(
         "not_allowed",
         "No hay nada disponible de este pedido: no se apartó nada.",
@@ -629,6 +634,13 @@ function releaseLocked(
         stagingId: staging.id,
         nextNumber,
       });
+    }
+    if (waitsForAll) {
+      return {
+        ok: true,
+        orderId: order.id,
+        summary: `Se liberó el pedido ${formatOutboundNumber(order.number)} sin nada apartado: lo que llegue para él irá directo a preparación.`,
+      };
     }
     return {
       ok: true,
@@ -914,6 +926,11 @@ export type OutboundView = OutboundSummary & {
     pickedText: string | null;
     /** What left with its shipment (WMS-16), «8 piezas». */
     shippedText: string | null;
+    /**
+     * WMS-54: what arrived for it and went straight to it (cross-docking),
+     * «8 piezas llegaron con OC-0007»; null when nothing did.
+     */
+    crossDockText: string | null;
   }[];
   /** The shipment it is in or left with (WMS-16); null when none. */
   shipment: {
@@ -947,6 +964,8 @@ export type OutboundView = OutboundSummary & {
     serialUnits: { id: string; serial: string }[];
     /** Its lot, to open the lot's card. */
     lot: { id: string; code: string } | null;
+    /** WMS-54: «Llegó con OC-0007» when an entry sent it straight here. */
+    crossDockText: string | null;
   }[];
 };
 
@@ -1046,6 +1065,7 @@ export async function getOutboundOrder(
             product: { select: { name: true } },
             fromLocation: { select: { name: true } },
             lot: { select: { id: true, code: true, expiresOn: true } },
+            crossDockMovement: { select: { reference: true } },
             serials: {
               orderBy: { id: "asc" },
               take: 1_000,
@@ -1077,6 +1097,21 @@ export async function getOutboundOrder(
       dec((line._sum.quantity ?? 0).toString()),
     ]),
   );
+  // WMS-54: what entries sent straight to each line, and with which ones.
+  const arrivedOf = new Map<string, { quantity: Decimal; refs: Set<string> }>();
+  for (const task of tasks) {
+    if (!task.crossDockMovement || !task.outboundLineId) continue;
+    if (task.status === "CANCELLED") continue;
+    const entry = arrivedOf.get(task.outboundLineId) ?? {
+      quantity: dec(0),
+      refs: new Set<string>(),
+    };
+    entry.quantity = entry.quantity.plus(
+      (task.pickedQuantity ?? task.quantity ?? 0).toString(),
+    );
+    entry.refs.add(arrivedWith(task.crossDockMovement.reference));
+    arrivedOf.set(task.outboundLineId, entry);
+  }
   const pickedOf = new Map<string, Decimal>();
   for (const task of tasks) {
     if (task.status !== "DELIVERED" || !task.outboundLineId) continue;
@@ -1107,7 +1142,16 @@ export async function getOutboundOrder(
     lineItems: row.lines.map((line) => {
       const asked = dec(line.quantity.toString());
       const held = reservedOf.get(line.id);
-      const short = released ? asked.minus(held?.quantity ?? 0) : dec(0);
+      // What it still lacks (WMS-54: what a waiting order waits for): asked
+      // minus what its reservations hold today — in its origin while being
+      // picked, in staging once picked — or minus what left with it.
+      const short = !released
+        ? dec(0)
+        : asked.minus(
+            row.status === "SHIPPED"
+              ? (shippedOf.get(line.id) ?? 0)
+              : (held?.remaining ?? 0),
+          );
       return {
         id: line.id,
         productId: line.productId,
@@ -1131,6 +1175,9 @@ export async function getOutboundOrder(
                 line.unitCode,
               )
             : null,
+        crossDockText: arrivedOf.has(line.id)
+          ? `${formatStock(arrivedOf.get(line.id)!.quantity.toString(), line.unitCode)} ${arrivedOf.get(line.id)!.quantity.equals(1) ? "llegó" : "llegaron"} ${[...arrivedOf.get(line.id)!.refs].join(" y ")}`
+          : null,
       };
     }),
     shipment: inShipment
@@ -1166,6 +1213,13 @@ export async function getOutboundOrder(
       serials: task.serials.map((row) => row.serialUnit.serial),
       serialUnits: task.serials.map((row) => row.serialUnit),
       lot: task.lot ? { id: task.lot.id, code: task.lot.code } : null,
+      crossDockText: task.crossDockMovement
+        ? `Llegó ${arrivedWith(task.crossDockMovement.reference)}`
+        : null,
     })),
   };
 }
+
+/** «con OC-0007», or «con una entrada» when it has no reference. */
+const arrivedWith = (reference: string | null) =>
+  reference ? `con ${reference}` : "con una entrada";

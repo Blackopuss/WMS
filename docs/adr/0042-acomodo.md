@@ -174,14 +174,10 @@ Este paso las junta; no agrega otra forma de mover existencias.
 
 ## Lo que quedó fuera (pendiente)
 
-- **Daños y diferencias al recibir** (prioridad (c) del paso): registrar por
-  línea cuánto llegó dañado para que entre en estado «Dañado» y no genere
-  tarea. Necesita que la devolución al proveedor pueda salir de existencias
-  dañadas (hoy solo sale de disponibles) y repartir series y lotes entre lo
-  sano y lo dañado; hacerlo a medias dejaría mercancía dañada sin forma de
-  devolverse. Hoy lo dañado se recibe y se marca después con «Cambiar
-  estado» (WMS-11, permiso `inventory.damage.report`), lo que ya lo saca de
-  lo que se acomoda y de lo que se surte. La **diferencia** contra lo pedido
+- ~~**Daños al recibir**~~: hecho en WMS-54 (ADR 0052). Cada línea dice
+  cuánto llegó dañado; esa parte es su propia línea de recepción en
+  «Dañado», no genera tarea y se devuelve al proveedor desde «Dañado», con
+  su lote y sus series. La **diferencia** contra lo pedido
   ya se deriva (pedido − recibido) y ya se ve: la pantalla de recibir dice
   por línea «faltan 2 cajas de 3» y la orden «Recibido: 1 caja de 3 · faltan
   2 cajas» (CMP-08/11); no se guarda ni se cambió.

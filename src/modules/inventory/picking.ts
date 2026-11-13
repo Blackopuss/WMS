@@ -152,6 +152,11 @@ export async function createPickTasks(
     stagingId: string;
     /** Number of the first task. */
     nextNumber: number;
+    /**
+     * WMS-54 (ADR 0052): the entry whose goods these tasks take straight
+     * to the order (cross-docking); null for a release.
+     */
+    crossDockMovementId?: string | null;
   },
 ): Promise<number> {
   let number = input.nextNumber;
@@ -180,6 +185,7 @@ export async function createPickTasks(
         lotId: source.lotId,
         quantity: source.quantity.toString(),
         unitCode: input.line.unitCode,
+        crossDockMovementId: input.crossDockMovementId ?? null,
         createdByUserId: actor.userId,
       },
     });

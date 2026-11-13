@@ -91,6 +91,22 @@ código»):
   tránsito (solo «se perdió» baja el valor); los disparadores obligan a que
   `IN_TRANSIT` viva solo en la ubicación de tránsito y que solo un traslado
   escriba ahí. No se reversa desde Inventario.
+- Cross-docking (WMS-54, ADR 0052): con `inventory.crossdock.mode = on`, lo
+  sano y suelto que entra a un lugar «de paso» (recepción de una orden de
+  compra o entrada manual) para un pedido `RELEASED`/`PICKING` del mismo
+  almacén que lo espera (pedido − lo que su línea tiene apartado hoy,
+  derivado) se aparta para su línea ahí mismo y lleva su tarea `PICK` normal
+  hacia preparación (`warehouse_task.crossDockMovementId` = la entrada); el
+  resto sigue a acomodo. Candados: productos → ubicaciones → (orden de
+  compra) → pedidos de salida → contenedor → tareas → capacidad
+  (`lockCrossDockOrders` antes; `sendToWaitingOrders` después de los
+  saldos y antes de las tareas de acomodo). El reparto lo decide solo
+  `planCrossDock` (puro). Con el ajuste encendido un pedido se libera aunque
+  no haya nada que apartar.
+- Lo dañado al recibir (WMS-54, ADR 0052): `postReceiptEntry` acepta `status`
+  por línea (`DAMAGED` para la parte dañada: su propia línea, no va en la
+  tarima, no lleva tarea de acomodo ni se reparte) y `postReturnExit` sale del
+  estado de la línea de recepción.
 - Cada formulario que confirma un movimiento manda `idempotencyKey`.
 
 ## Servicios públicos (`index.ts`)
@@ -108,7 +124,8 @@ código»):
 | Tarimas y contenedores | `containers.ts`, `container-rules.ts`, `contained.ts` | `packStock` (armar o agregar), `unpackStock` (sacar), `closeContainer` (desarmar), `moveContainer` (un escaneo) y su núcleo `moveContainerWithin`, `prepareReceiptContainer`/`packReceived` (para la recepción), lecturas `listContainers`, `getContainer`, `listContainerEvents`, `findContainerByCode`, `listOpenContainersAt`, `containersEnabled`, `containersVisible`, `createContainer`; `containedAt` (lo que hay en contenedores de una llave; `storageOnly` sin bultos de empaque); reglas puras del código (`C-0001`), del tipo y del peso (`parseWeightKg`) |
 | Capacidad | `placement.ts`, `location-occupancy.ts` | `checkPlacement`, `loadPlacementRules`; `getLocationOccupancy` (ocupación derivada) |
 | Costo y valor | `average-cost.ts`, `inventory-value.ts` | `parseCost`, `getInventoryValue`, `getProductCost`, `mayReadInventoryCosts` |
-| Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`) y `postReturnExit` (`RETURN`), dentro de la transacción de la recepción o devolución |
+| Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`; `status` por línea para lo dañado y el reparto de cross-docking, que responde en `crossDock`) y `postReturnExit` (`RETURN`, del estado de cada línea), dentro de la transacción de la recepción o devolución |
+| Cross-docking | `cross-docking.ts`, `cross-dock-rules.ts` | `planCrossDock` y `rankWaitingLines` (puras: a qué pedidos va lo que llega); `lockCrossDockOrders` y `sendToWaitingOrders` son internas (las llaman la recepción y la entrada manual); `CROSS_DOCK_MODE`; tipo `CrossDockSent` |
 | Mínimos | `minimums.ts` | `setMinimum`, `getMinimum`, `listLowStock`, `countLowStock` |
 | Reposición de surtido | `replenishment.ts`, `replenishment-rules.ts`, `stock-sources.ts` | Reglas por producto y ubicación de surtido (`saveReplenishmentRule`, `removeReplenishmentRule`, `listReplenishmentRules`, `getReplenishmentRule`, `listPickingPlaces`, `replenishmentVisible`); `replenishNow` («Reponer ahora») y `runReplenishmentRound` (la ronda del worker) crean tareas `REPLENISH`; `replenishmentPlan` (interna) es la única que decide cuánto y de dónde; piezas puras `replenishQuantity`, `largestThatFits`, `splitAmongSources`, `replenishmentStateOf` y el orden de orígenes `rankStockSources`, compartido con el surtido (WMS-23/24) |
 | Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount` (con `reviewed` cuando la empresa pide revisar diferencias grandes, WMS-55), `cancelCount`, `getCount` (programa, líneas por revisar y lo que está en tarimas), `listCountPage` (paginada; vista «De hoy»), `listCounts` (su primera página) |
@@ -213,6 +230,7 @@ la transacción que decide:
 | `inventory.abc.cuts` | **`80_15_5`**, `70_20_10`, `50_30_20` (reparto A/B/C) |
 | `inventory.abc.period` | `30`, **`90`**, `180`, `365` (días de salidas que mira la clasificación) |
 | `inventory.count.review_threshold` | **`off`**, `any`, `10`, `25`, `50` (% de diferencia de un producto que pide revisar el conteo antes de aplicarlo) |
+| `inventory.crossdock.mode` | **`off`**, `on` (lo que llega para un pedido que espera va directo a preparación; WMS-54) |
 
 ## Trabajos en segundo plano
 
@@ -237,7 +255,8 @@ saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
 contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
-entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido).
+entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
+(cross-docking y daños al recibir).
 
 ## Pruebas
 

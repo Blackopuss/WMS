@@ -20,6 +20,7 @@ import {
   updatePurchaseOrder,
   type OrderField,
   type ReceiveField,
+  type ReceiveLineField,
 } from "@/modules/purchasing";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
@@ -387,8 +388,11 @@ export type ReceiveFormState = {
   formError?: string;
   /** Problem of each line, by the id of the order line. */
   lineErrors?: Record<string, string>;
-  /** WMS-21: the problem of that line is its lot or its expiry date. */
-  lineFields?: Record<string, "lotCode" | "lotExpiresOn" | "serials">;
+  /**
+   * WMS-21: the problem of that line is its lot or its expiry date; WMS-54:
+   * or what came damaged.
+   */
+  lineFields?: Record<string, ReceiveLineField>;
   /**
    * A location would be left above its capacity and the company only warns
    * (WMS-22B): nothing was received. `stamp` marks what the warning is
@@ -407,6 +411,9 @@ export type ReceiveFormState = {
     expiries: Record<string, string>;
     /** WMS-21B: serials typed for a line of a product by serial. */
     serials: Record<string, string>;
+    /** WMS-54: of what arrived, how much came damaged, and its serials. */
+    damaged: Record<string, string>;
+    damagedSerials: Record<string, string>;
     /** WMS-53: everything arrived on a pallet, its label and its kind. */
     onPallet?: boolean;
     containerCode?: string;
@@ -416,6 +423,8 @@ export type ReceiveFormState = {
   answers: number;
   /** The receipt went through: what to tell the person. */
   done?: string;
+  /** WMS-54: what went straight to outbound orders, to open them. */
+  crossDock?: { orderId: string; orderNumber: string }[];
 };
 
 /** The order line of a field: `<id>` or, for another lot of it, `<id>~1`. */
@@ -441,12 +450,24 @@ export async function receivePurchaseOrderAction(
   const expiries: Record<string, string> = {};
   // WMS-21B: `ser:<id>`, only for products by serial.
   const serials: Record<string, string> = {};
+  // WMS-54: `dmg:<id>` (how much came damaged) and `dser:<id>` (which
+  // serials), per part like the quantity.
+  const damaged: Record<string, string> = {};
+  const damagedSerials: Record<string, string> = {};
   // A product by lot may arrive in several lots: its extra parts are
   // `q:<id>~1`, `lot:<id>~1`, `exp:<id>~1`… (WMS-21); the place is the
   // line's.
   const MAX = 2_000;
   for (const [name, value] of formData.entries()) {
     if (typeof value !== "string") continue;
+    if (name.startsWith("dmg:") && Object.keys(damaged).length < MAX) {
+      damaged[name.slice(4, 44)] = value.slice(0, 40);
+      continue;
+    }
+    if (name.startsWith("dser:") && Object.keys(damagedSerials).length < MAX) {
+      damagedSerials[name.slice(5, 45)] = value.slice(0, 40_000);
+      continue;
+    }
     if (name.startsWith("lot:") && Object.keys(lots).length < MAX) {
       lots[name.slice(4, 44)] = value.slice(0, 100);
       continue;
@@ -477,6 +498,8 @@ export async function receivePurchaseOrderAction(
     lots,
     expiries,
     serials,
+    damaged,
+    damagedSerials,
     onPallet: formData.get("onPallet") === "1",
     containerCode: String(formData.get("containerCode") ?? "").slice(0, 200),
     containerKind: String(formData.get("containerKind") ?? "").slice(0, 200),
@@ -492,6 +515,8 @@ export async function receivePurchaseOrderAction(
       places[orderLineOf(key)] ?? "",
       lots[key] ?? "",
       serials[key] ?? "",
+      damaged[key] ?? "",
+      damagedSerials[key] ?? "",
     ]),
   ]);
   let result;
@@ -509,6 +534,8 @@ export async function receivePurchaseOrderAction(
           lotCode: lots[key],
           lotExpiresOn: expiries[key],
           serials: serials[key],
+          damaged: damaged[key],
+          damagedSerials: damagedSerials[key],
         })),
         idempotencyKey: String(formData.get("idempotencyKey") ?? "").slice(
           0,
@@ -551,7 +578,24 @@ export async function receivePurchaseOrderAction(
   }
   revalidatePath("/compras");
   revalidatePath(`/compras/ordenes/${idPath(orderId)}`);
-  return { fieldErrors: {}, values, answers, done: result.summary };
+  if (result.crossDock) {
+    revalidatePath("/pedidos");
+    revalidatePath("/tareas");
+  }
+  return {
+    fieldErrors: {},
+    values,
+    answers,
+    done: result.summary,
+    ...(result.crossDock
+      ? {
+          crossDock: result.crossDock.map((sent) => ({
+            orderId: sent.orderId,
+            orderNumber: sent.orderNumber,
+          })),
+        }
+      : {}),
+  };
 }
 
 /**

@@ -9,7 +9,9 @@ import {
   lotLabel,
   normalizeLotCode,
   isTaskNumberClash,
+  parseSerialList,
   postReceiptEntry,
+  type CrossDockSent,
 } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
@@ -109,6 +111,13 @@ const receiveSchema = z.object({
          * text), for a product by serial.
          */
         serials: z.string().max(60_000).optional(),
+        /**
+         * WMS-54 (ADR 0052): of what arrived, how much came damaged, in the
+         * same terms; and, for a product by serial, which of its serials.
+         * It counts as received but enters in «Dañado».
+         */
+        damaged: z.string().trim().max(40).optional(),
+        damagedSerials: z.string().max(60_000).optional(),
       }),
     )
     .max(PURCHASE_ORDER_MAX_LINES * RECEIPT_LOTS_PER_LINE)
@@ -142,6 +151,8 @@ export type ReceiveResult =
       summary: string;
       /** It had already been registered (a retry): nothing was written now. */
       repeated?: true;
+      /** What went straight to outbound orders that waited (WMS-54). */
+      crossDock?: CrossDockSent[];
     }
   | {
       ok: false;
@@ -164,8 +175,12 @@ export type ReceiveResult =
        * WMS-21: when the problem of a line is its lot or its expiry date,
        * which of the two, by the id of the order line.
        */
-      lineFields?: Record<string, "lotCode" | "lotExpiresOn" | "serials">;
+      lineFields?: Record<string, ReceiveLineField>;
     };
+
+/** The field of a line with the problem (WMS-21, WMS-21B, WMS-54). */
+export type ReceiveLineField =
+  "lotCode" | "lotExpiresOn" | "serials" | "damaged" | "damagedSerials";
 
 type Failure = Extract<ReceiveResult, { ok: false }>;
 
@@ -192,6 +207,7 @@ const refuse = (
 const refuseLines = (
   lineErrors: Record<string, string>,
   formError?: string,
+  lineFields?: Record<string, ReceiveLineField>,
 ): never => {
   throw new Rejected({
     ok: false,
@@ -203,6 +219,7 @@ const refuseLines = (
         ? "Revisa la cantidad marcada."
         : "Revisa las cantidades marcadas."),
     lineErrors,
+    ...(lineFields && Object.keys(lineFields).length > 0 ? { lineFields } : {}),
   });
 };
 
@@ -326,6 +343,7 @@ async function receiveOnce(
               orderLineId: true,
               capturedQuantity: true,
               locationId: true,
+              status: true,
               lot: { select: { code: true } },
             },
           },
@@ -366,7 +384,9 @@ async function receiveOnce(
               presentationId: true,
               unitCode: true,
               unitCost: true,
-              product: { select: { quantityStep: true, tracking: true } },
+              product: {
+                select: { quantityStep: true, tracking: true, name: true },
+              },
               presentation: { select: { name: true } },
             },
           },
@@ -412,6 +432,7 @@ async function receiveOnce(
               lotCode: null as string | null,
               lotExpiresOn: null as string | null,
               serials: null as string | null,
+              status: "AVAILABLE" as "AVAILABLE" | "DAMAGED",
             }))
             .filter((entry) => entry.quantity.greaterThan(0));
 
@@ -427,6 +448,8 @@ async function receiveOnce(
             lotCode: lot.lotCode,
             lotExpiresOn: lot.lotExpiresOn,
             serials: lot.serials,
+            // WMS-54: the damaged part enters in «Dañado».
+            status: lot.status,
             capture: (line.presentationId
               ? {
                   kind: "presentation",
@@ -465,15 +488,22 @@ async function receiveOnce(
           });
         }
         if (entry.line !== null && pending[entry.line]) {
-          const lineId = pending[entry.line]!.line.id;
+          const part = pending[entry.line]!;
+          const lineId = part.line.id;
           if (entry.field) {
-            // WMS-21: the lot or its date, not the quantity.
+            // WMS-21: the lot or its date, not the quantity; WMS-54: the
+            // serials of the damaged part are their own field.
             throw new Rejected({
               ok: false,
               reason: "invalid",
               fieldErrors: {},
               lineErrors: { [lineId]: entry.error },
-              lineFields: { [lineId]: entry.field },
+              lineFields: {
+                [lineId]:
+                  entry.field === "serials" && part.status === "DAMAGED"
+                    ? "damagedSerials"
+                    : entry.field,
+              },
             });
           }
           return refuseLines({ [lineId]: entry.error }, entry.error);
@@ -510,21 +540,33 @@ async function receiveOnce(
           unitCode: line.unitCode,
           unitCost: pending[index]!.line.unitCost?.toString() ?? null,
           lotId: line.lotId,
+          // WMS-54: the same state as its movement line (trigger).
+          status: line.status,
         })),
       });
       // CMP-13: the cost of what arrived becomes the last cost of the
       // product at this supplier (no valuation: just the last price).
       if (recordCosts) {
+        // The damaged part of a line came at the same cost: once per line.
+        const seenCost = new Set<string>();
         await recordReceivedCosts(tx, {
           organizationId,
           userId,
           supplierId: current.contactId,
-          lines: entry.lines.map((line, index) => ({
-            productId: line.productId,
-            presentationId: line.presentationId,
-            presentationVersionId: line.presentationVersionId,
-            unitCost: pending[index]!.line.unitCost,
-          })),
+          lines: entry.lines
+            .map((line, index) => ({
+              productId: line.productId,
+              presentationId: line.presentationId,
+              presentationVersionId: line.presentationVersionId,
+              unitCost: pending[index]!.line.unitCost,
+              orderLineId: pending[index]!.line.id,
+            }))
+            .filter((line) => {
+              const key = `${line.orderLineId} ${line.presentationVersionId ?? ""}`;
+              if (seenCost.has(key)) return false;
+              seenCost.add(key);
+              return true;
+            }),
         });
       }
 
@@ -560,6 +602,17 @@ async function receiveOnce(
       });
       // Several lots of one product are still one product (WMS-21).
       const count = new Set(pending.map((item) => item.line.id)).size;
+      // WMS-54: what came damaged, said once.
+      const damagedParts = pending.filter((item) => item.status === "DAMAGED");
+      const damagedNote =
+        damagedParts.length === 0
+          ? ""
+          : ` Quedó en «Dañado»: ${damagedParts
+              .map(
+                (item) =>
+                  `${inTermsOf(item.quantity, item.line.presentation, item.line.unitCode)} de ${item.line.product.name}`,
+              )
+              .join(", ")}.`;
       return {
         ok: true as const,
         receiptId,
@@ -568,7 +621,8 @@ async function receiveOnce(
           missing === 0
             ? "La orden quedó recibida."
             : `La orden quedó recibida en parte: ${missing === 1 ? "falta 1 producto" : `faltan ${missing} productos`}.`
-        }${entry.notes.map((note) => ` ${note}`).join("")}`,
+        }${damagedNote}${entry.notes.map((note) => ` ${note}`).join("")}`,
+        ...(entry.crossDock.length > 0 ? { crossDock: entry.crossDock } : {}),
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -592,47 +646,92 @@ async function receiveOnce(
   }
 }
 
+/** A typed quantity read as a number for comparing; null if it is not one. */
+function typedNumber(text: string | undefined): Decimal | null {
+  const value = (text ?? "").trim();
+  if (value === "") return dec(0);
+  try {
+    return dec(value.replace(/,(?=\d{3}(\D|$))/g, ""));
+  } catch {
+    return null;
+  }
+}
+
+const isNothing = (text: string | undefined) => {
+  const value = (text ?? "").trim();
+  return value === "" || /^0+([.,]0*)?$/.test(value);
+};
+
+/** Serials compared as the database does (case and accents aside). */
+const serialFold = (serial: string) =>
+  serial
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toUpperCase();
+
 /**
  * Whether a repeated confirmation asks for what its key already received
- * (CMP-10): the same lines, quantities, lots (WMS-21) and, when chosen,
- * locations. A key sent again with other quantities or another lot is not
- * a retry but a reused form. Without lines («everything pending») there
- * is nothing to compare.
+ * (CMP-10): the same lines, quantities, lots (WMS-21), damaged parts
+ * (WMS-54) and, when chosen, locations. A key sent again with other
+ * quantities, another lot or another damaged part is not a retry but a
+ * reused form. Without lines («everything pending») there is nothing to
+ * compare.
  */
 function sameReceipt(
   stored: {
     orderLineId: string;
     capturedQuantity: { toString(): string };
     locationId: string;
+    status: string;
     lot: { code: string } | null;
   }[],
   data: z.output<typeof receiveSchema>,
 ): boolean {
   if (!data.lines) return true;
-  const asked = data.lines.filter(
-    (item) =>
-      item.quantity.trim() !== "" &&
-      !/^0+([.,]0*)?$/.test(item.quantity.trim()),
-  );
+  // Each part asked becomes its healthy part and its damaged part, as the
+  // receipt stored them.
+  const asked: {
+    orderLineId: string;
+    quantity: Decimal;
+    status: "AVAILABLE" | "DAMAGED";
+    where: string | null;
+    lotCode: string | null;
+  }[] = [];
+  for (const item of data.lines) {
+    if (isNothing(item.quantity)) continue;
+    const total = typedNumber(item.quantity);
+    if (!total) return false;
+    let damaged = typedNumber(item.damaged);
+    if (!damaged) return false;
+    if (damaged.isZero() && item.damagedSerials?.trim()) {
+      const list = parseSerialList(item.damagedSerials);
+      damaged = list.ok ? dec(list.serials.length) : dec(0);
+    }
+    const code = item.lotCode ? normalizeLotCode(item.lotCode) : null;
+    const part = {
+      orderLineId: item.orderLineId,
+      where: item.locationId || data.locationId,
+      lotCode: code?.ok ? code.code : null,
+    };
+    const healthy = total.minus(damaged);
+    if (healthy.greaterThan(0)) {
+      asked.push({ ...part, quantity: healthy, status: "AVAILABLE" });
+    }
+    if (damaged.greaterThan(0)) {
+      asked.push({ ...part, quantity: damaged, status: "DAMAGED" });
+    }
+  }
   if (asked.length !== stored.length) return false;
-  // Each line asked matches one stored line, once.
+  // Each part asked matches one stored line, once.
   const left = [...stored];
   return asked.every((item) => {
-    let quantity: Decimal;
-    try {
-      quantity = dec(item.quantity.replace(/,(?=\d{3}(\D|$))/g, ""));
-    } catch {
-      return false;
-    }
-    const where = item.locationId || data.locationId;
-    const code = item.lotCode ? normalizeLotCode(item.lotCode) : null;
-    const lotCode = code?.ok ? code.code : null;
     const index = left.findIndex(
       (line) =>
         line.orderLineId === item.orderLineId &&
-        quantity.equals(line.capturedQuantity.toString()) &&
-        (!where || where === line.locationId) &&
-        (line.lot?.code ?? null) === lotCode,
+        item.quantity.equals(line.capturedQuantity.toString()) &&
+        line.status === item.status &&
+        (!item.where || item.where === line.locationId) &&
+        (line.lot?.code ?? null) === item.lotCode,
     );
     if (index < 0) return false;
     left.splice(index, 1);
@@ -646,15 +745,32 @@ type OrderLineRow = {
   presentationId: string | null;
   unitCode: string;
   unitCost: { toString(): string } | null;
-  product: { quantityStep: { toString(): string }; tracking: string };
+  product: {
+    quantityStep: { toString(): string };
+    tracking: string;
+    name: string;
+  };
   presentation: { name: string } | null;
+};
+
+type ChosenPart = {
+  line: OrderLineRow;
+  quantity: Decimal;
+  locationId?: string | null;
+  lotCode: string | null;
+  lotExpiresOn: string | null;
+  serials: string | null;
+  /** WMS-54: the damaged part of what arrived is its own part. */
+  status: "AVAILABLE" | "DAMAGED";
 };
 
 /**
  * The lines the person said arrived, with their quantities checked: each
  * one a line of this order, once, a valid quantity for how it was ordered
  * (whole boxes; the product's step) and never more than what is pending
- * (NEG-24). Empty or zero = it did not arrive this time.
+ * (NEG-24). Empty or zero = it did not arrive this time. What came damaged
+ * (WMS-54) is part of what arrived — never more — and becomes its own part,
+ * with its serials for a product by serial.
  */
 function chosenLines(
   lines: OrderLineRow[],
@@ -666,30 +782,30 @@ function chosenLines(
     lotCode?: string;
     lotExpiresOn?: string;
     serials?: string;
+    damaged?: string;
+    damagedSerials?: string;
   }[],
-): {
-  line: OrderLineRow;
-  quantity: Decimal;
-  locationId?: string | null;
-  lotCode: string | null;
-  lotExpiresOn: string | null;
-  serials: string | null;
-}[] {
+): ChosenPart[] {
   const byId = new Map(lines.map((line) => [line.id, line]));
   const errors: Record<string, string> = {};
-  const chosen: {
-    line: OrderLineRow;
-    quantity: Decimal;
-    locationId?: string | null;
-    lotCode: string | null;
-    lotExpiresOn: string | null;
-    serials: string | null;
-  }[] = [];
+  const fields: Record<string, ReceiveLineField> = {};
+  const chosen: ChosenPart[] = [];
   /** How many times each line came; a product by lot, once per lot. */
   const seen = new Map<string, number>();
   /** What the parts of a line already chosen add up to, and their lots. */
   const taken = new Map<string, Decimal>();
   const lotsOf = new Map<string, Set<string>>();
+  const ruleOf = (line: OrderLineRow) =>
+    line.presentationId
+      ? { unitCode: "piece", quantityStep: "1" }
+      : {
+          unitCode: line.unitCode,
+          quantityStep: line.product.quantityStep.toString(),
+        };
+  const wholeMessage = (line: OrderLineRow, error: string) =>
+    line.presentationId && /completas/.test(error)
+      ? `Escribe ${line.presentation ? pluralizeName(line.presentation.name, dec(2)) : "presentaciones"} completas.`
+      : error;
   for (const item of requested) {
     const line = byId.get(item.orderLineId);
     const times = line ? (seen.get(line.id) ?? 0) : 0;
@@ -706,22 +822,18 @@ function chosenLines(
     }
     seen.set(line.id, times + 1);
     const text = item.quantity.trim();
-    if (text === "" || /^0+([.,]0*)?$/.test(text)) continue;
+    if (isNothing(text)) {
+      if (!isNothing(item.damaged) && !errors[line.id]) {
+        errors[line.id] =
+          "Escribe cuánto llegó: lo dañado es parte de lo que llegó.";
+        fields[line.id] = "damaged";
+      }
+      continue;
+    }
     if (errors[line.id]) continue;
-    const parsed = parseQuantity(
-      line.presentationId
-        ? { unitCode: "piece", quantityStep: "1" }
-        : {
-            unitCode: line.unitCode,
-            quantityStep: line.product.quantityStep.toString(),
-          },
-      text,
-    );
+    const parsed = parseQuantity(ruleOf(line), text);
     if (!parsed.ok) {
-      errors[line.id] =
-        line.presentationId && /completas/.test(parsed.error)
-          ? `Escribe ${line.presentation ? pluralizeName(line.presentation.name, dec(2)) : "presentaciones"} completas.`
-          : parsed.error;
+      errors[line.id] = wholeMessage(line, parsed.error);
       continue;
     }
     const pending = left.get(line.id)!;
@@ -748,16 +860,105 @@ function chosenLines(
       if (code.ok) lots.add(code.code);
       lotsOf.set(line.id, lots);
     }
-    chosen.push({
+
+    // WMS-54: how much of it came damaged, and which serials.
+    const bySerial = line.product.tracking === "SERIAL";
+    let damagedSerials: string[] | null = null;
+    if (bySerial && item.damagedSerials?.trim()) {
+      const list = parseSerialList(item.damagedSerials);
+      if (!list.ok) {
+        errors[line.id] = list.error;
+        fields[line.id] = "damagedSerials";
+        continue;
+      }
+      damagedSerials = list.serials;
+    } else if (!bySerial && item.damagedSerials?.trim()) {
+      errors[line.id] =
+        `${line.product.name} no se controla por serie: no lleva series.`;
+      fields[line.id] = "damagedSerials";
+      continue;
+    }
+    let damaged = dec(0);
+    if (!isNothing(item.damaged)) {
+      const typed = parseQuantity(ruleOf(line), item.damaged!);
+      if (!typed.ok) {
+        errors[line.id] = wholeMessage(line, typed.error);
+        fields[line.id] = "damaged";
+        continue;
+      }
+      damaged = typed.quantity;
+    } else if (damagedSerials && damagedSerials.length > 0) {
+      if (line.presentationId) {
+        errors[line.id] =
+          `Escribe cuántas ${line.presentation ? pluralizeName(line.presentation.name, dec(2)).toLowerCase() : "presentaciones"} llegaron dañadas.`;
+        fields[line.id] = "damaged";
+        continue;
+      }
+      damaged = dec(damagedSerials.length);
+    }
+    if (damaged.greaterThan(parsed.quantity)) {
+      errors[line.id] =
+        `Llegaron ${inTermsOf(parsed.quantity, line.presentation, line.unitCode)}: lo dañado no puede ser más.`;
+      fields[line.id] = "damaged";
+      continue;
+    }
+    let healthySerials = item.serials || null;
+    let brokenSerials: string | null = null;
+    if (bySerial && damaged.greaterThan(0)) {
+      if (!damagedSerials || damagedSerials.length === 0) {
+        errors[line.id] = "Escribe las series de las unidades dañadas.";
+        fields[line.id] = "damagedSerials";
+        continue;
+      }
+      const all = parseSerialList(item.serials ?? "");
+      if (!all.ok) {
+        errors[line.id] = all.error;
+        fields[line.id] = "serials";
+        continue;
+      }
+      const arrived = new Set(all.serials.map(serialFold));
+      const stranger = damagedSerials.find(
+        (serial) => !arrived.has(serialFold(serial)),
+      );
+      if (stranger) {
+        errors[line.id] =
+          `La serie ${stranger} no está entre las que llegaron: escríbela también arriba.`;
+        fields[line.id] = "damagedSerials";
+        continue;
+      }
+      const broken = new Set(damagedSerials.map(serialFold));
+      healthySerials = all.serials
+        .filter((serial) => !broken.has(serialFold(serial)))
+        .join("\n");
+      brokenSerials = damagedSerials.join("\n");
+    }
+    const part = {
       line,
-      quantity: parsed.quantity,
       locationId: item.locationId || null,
       lotCode: item.lotCode || null,
       lotExpiresOn: item.lotExpiresOn || null,
-      serials: item.serials || null,
-    });
+    };
+    const healthy = parsed.quantity.minus(damaged);
+    if (healthy.greaterThan(0)) {
+      chosen.push({
+        ...part,
+        quantity: healthy,
+        serials: healthySerials || null,
+        status: "AVAILABLE",
+      });
+    }
+    if (damaged.greaterThan(0)) {
+      chosen.push({
+        ...part,
+        quantity: damaged,
+        serials: brokenSerials,
+        status: "DAMAGED",
+      });
+    }
   }
-  if (Object.keys(errors).length > 0) return refuseLines(errors);
+  if (Object.keys(errors).length > 0) {
+    return refuseLines(errors, undefined, fields);
+  }
   if (chosen.length === 0) {
     return refuse(
       "invalid",
@@ -847,6 +1048,11 @@ export type ReceiptSummary = {
     lotText: string | null;
     /** WMS-21B: a product by serial goes back naming each unit. */
     bySerial: boolean;
+    /**
+     * WMS-54: the part that arrived damaged (it entered in «Dañado» and goes
+     * back to the supplier from there).
+     */
+    damaged: boolean;
   }[];
   /** Absent for who may not see returns (`purchasing.return.read`). */
   returns?: {
@@ -1048,6 +1254,7 @@ export async function getOrderReceipts(
               presentation: { select: { name: true } },
               location: { select: placeSelect },
               lot: { select: { code: true, expiresOn: true } },
+              status: true,
               returnLines: { select: { capturedQuantity: true } },
             },
           },
@@ -1182,6 +1389,7 @@ export async function getOrderReceipts(
             })
           : null,
         bySerial: line.product.tracking === "SERIAL",
+        damaged: line.status === "DAMAGED",
       };
     }),
     ...(seeReturns

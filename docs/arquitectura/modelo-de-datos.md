@@ -1444,11 +1444,12 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
 | `cancelReason` | `String? · VarChar(300)` |  |  |
 | `movementId` | `String? · Char(36)` |  | The transfer its delivery wrote. |
+| `crossDockMovementId` | `String? · Char(36)` |  | PICK only (WMS-54, ADR 0052): the entry (RECEIPT or ENTRY) whose goods it takes straight to its order (cross-docking); never changes. |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
-- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`).
-- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`); (`organizationId`, `crossDockMovementId`).
+- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `crossDockMovement` → `StockMovement` por (`organizationId`, `crossDockMovementId`) (al borrar: Restrict).
 
 ### WarehouseTaskSerial · `warehouse_task_serial`
 
@@ -2214,6 +2215,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `unitCode` | `String · VarChar(12)` |  |  |
 | `unitCost` | `Decimal? · Decimal(14, 4)` |  | What one captured unit (one box) cost, copied from the order line when it arrived (CMP-13); null when the order had no cost. Private to who may see costs. |
 | `lotId` | `String? · Char(36)` |  | The lot it arrived in, for a product by lot (WMS-21): what goes back to the supplier leaves from this lot. |
+| `status` | `StockStatus` | `AVAILABLE` | AVAILABLE, or DAMAGED for the part that arrived damaged (WMS-54, ADR 0052): its own line, in the same state as its movement line. |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `receiptId`, `lineNumber`).

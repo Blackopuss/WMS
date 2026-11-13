@@ -352,6 +352,23 @@ beforeAll(async () => {
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // WMS-54: a receipt line has its movement line (same number, product
+    // and state; trigger).
+    await db.stockMovementLine.create({
+      data: {
+        id: newId(),
+        organizationId,
+        movementId: receiptMovementId,
+        lineNumber: 1,
+        productId,
+        locationId: location.id,
+        direction: "IN",
+        capturedQuantity: "5",
+        factor: "1",
+        baseQuantity: "5",
+        unitCode: "piece",
+      },
+    });
     const receiptId = newId();
     await db.purchaseReceipt.create({
       data: {

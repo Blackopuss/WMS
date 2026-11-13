@@ -173,6 +173,9 @@ se elige.
 - **Devolver al proveedor lo rechazado** de un cliente: hoy queda
   «Rechazado» en su lugar y se saca con un ajuste (o queda para WMS-19 y
   una salida por desecho cuando exista).
+- ~~**Cantidad dañada al recibir de un proveedor**~~ (la parte del paso que
+  no entró aquí): hecha en WMS-54 (ADR 0052), con su propia línea de
+  recepción en «Dañado» y la devolución al proveedor desde «Dañado».
 - **Devolución en tarima o caja** (contenedor): entra suelta.
 - **Varios pedidos en una devolución:** una por pedido.
 - **Fotos o archivos** de la inspección.

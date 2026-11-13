@@ -672,3 +672,6 @@ export type {
   AccuracyPeriod,
   CountAccuracy,
 } from "./count-accuracy";
+export { CROSS_DOCK_MODE } from "./settings";
+export { planCrossDock, rankWaitingLines } from "./cross-dock-rules";
+export type { CrossDockSent } from "./cross-docking";

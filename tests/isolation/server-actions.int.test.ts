@@ -329,11 +329,11 @@ const REVIEWED: Record<string, Review> = {
   },
   receivePurchaseOrderAction: {
     input:
-      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B); si llegó en tarima, su etiqueta y tipo (WMS-53)",
+      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B); si llegó en tarima, su etiqueta y tipo (WMS-53); por línea, cuánto llegó dañado y sus series (WMS-54)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la orden y la ubicación se buscan solo en esa empresa",
+      "sesión y empresa activa (requireOrganizationContext); la orden y la ubicación se buscan solo en esa empresa; los pedidos que reciben lo que llega (cross-docking) son solo de esa empresa y del almacén de la recepción",
     coveredBy:
-      "tests/purchasing/receipts.int.test.ts, tests/inventory/capacity.int.test.ts",
+      "tests/purchasing/receipts.int.test.ts, tests/inventory/capacity.int.test.ts, tests/purchasing/receipts-damaged.int.test.ts, tests/inventory/cross-docking.int.test.ts",
   },
   checkReceiptAction: {
     input: "clave de confirmación",
@@ -364,7 +364,8 @@ const REVIEWED: Record<string, Review> = {
       "id de orden, id de recepción, cantidades por línea, ubicaciones, motivo y clave de confirmación",
     identity:
       "sesión y empresa activa (requireOrganizationContext); recepción y ubicaciones se buscan solo en esa empresa",
-    coveredBy: "tests/purchasing/returns.int.test.ts",
+    coveredBy:
+      "tests/purchasing/returns.int.test.ts, tests/purchasing/receipts-damaged.int.test.ts",
   },
   checkReturnAction: {
     input: "clave de confirmación",

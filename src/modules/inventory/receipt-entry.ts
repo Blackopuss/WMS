@@ -15,6 +15,12 @@ import {
   type ReceiptContainerInput,
 } from "./containers";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
+import {
+  lockCrossDockOrders,
+  sendToWaitingOrders,
+  type CrossDockLock,
+  type CrossDockSent,
+} from "./cross-docking";
 import { lotColumns } from "./stock-status";
 import { LOT_RULE_SELECT, lotForEntry } from "./lot-resolve";
 import {
@@ -67,6 +73,12 @@ export type ReceiptEntryInput = {
      * line, or a list), for a product by serial.
      */
     serials?: unknown;
+    /**
+     * WMS-54 (ADR 0052): the part that arrived damaged is its own line, in
+     * DAMAGED: it is not available, is not put away (no task, not in the
+     * container) and never goes to an order. Absent = AVAILABLE.
+     */
+    status?: "AVAILABLE" | "DAMAGED";
   }[];
   /** «OC-0007 · Remisión 4411»: what people see in the history. */
   reference: string | null;
@@ -102,6 +114,8 @@ export type ReceiptEntryLine = {
   lotCode: string | null;
   /** The units that came in, for a product by serial (WMS-21B). */
   units: SerialPick[];
+  /** AVAILABLE, or DAMAGED for the part that arrived damaged (WMS-54). */
+  status: "AVAILABLE" | "DAMAGED";
   /** «3 cajas × 100 = 300 piezas», or «25 piezas». */
   text: string;
 };
@@ -122,6 +136,8 @@ export type ReceiptEntryResult =
       putawayTasks: number;
       /** The container it arrived in (WMS-53), if any. */
       containerId: string | null;
+      /** What went straight to waiting orders (WMS-54), by order. */
+      crossDock: CrossDockSent[];
     }
   | {
       ok: false;
@@ -172,6 +188,8 @@ export async function postReceiptEntry(
       name: true,
       archivedAt: true,
       isDefault: true,
+      isStaging: true,
+      type: true,
       facilityId: true,
     },
   });
@@ -199,6 +217,26 @@ export async function postReceiptEntry(
     };
   }
 
+  // WMS-54 (ADR 0052): the outbound orders that may wait for what arrives
+  // loose and healthy are locked now — after the locations and the
+  // purchase order of the caller, before the container and the capacity.
+  // What arrives on a pallet goes to put-away whole.
+  let crossDock: CrossDockLock = null;
+  if (!input.container) {
+    const healthy = input.lines.filter((line) => line.status !== "DAMAGED");
+    crossDock = await lockCrossDockOrders(tx, actor, {
+      productIds: healthy.map((line) => line.productId),
+      facilityIds: [
+        ...new Set(
+          healthy.flatMap((line) => {
+            const place = line.locationId ? placeOf(line.locationId) : location;
+            return place ? [place.facilityId] : [];
+          }),
+        ),
+      ],
+    });
+  }
+
   // WMS-53: a container is in one place, so everything goes there. It is
   // decided (and an existing one locked) before the capacity, whose lock
   // is always the last.
@@ -213,6 +251,14 @@ export async function postReceiptEntry(
         line: elsewhere,
         error:
           "Lo que llega en una tarima va a un solo lugar: recibe esta línea por separado o en el mismo lugar.",
+      };
+    }
+    if (input.lines.every((line) => line.status === "DAMAGED")) {
+      return {
+        ok: false,
+        line: null,
+        error:
+          "Lo que llega dañado no va en la tarima: recibe sin tarima o con algo sano.",
       };
     }
     const prepared = await prepareReceiptContainer(
@@ -312,7 +358,8 @@ export async function postReceiptEntry(
     for (const unit of units) {
       arriving.add(`${product.id} ${serialKey(unit.serial)}`);
     }
-    const slot = `${product.id} ${place.id} ${lot?.id ?? ""}`;
+    const status = line.status === "DAMAGED" ? "DAMAGED" : "AVAILABLE";
+    const slot = `${product.id} ${place.id} ${lot?.id ?? ""} ${status}`;
     added.set(slot, (added.get(slot) ?? dec(0)).plus(base));
     lines.push({
       lineNumber: index + 1,
@@ -329,6 +376,7 @@ export async function postReceiptEntry(
       lotId: lot?.id ?? null,
       lotCode: lot?.code ?? null,
       units,
+      status,
       text: conversion.presentation
         ? conversion.preview
         : formatStock(base.toString(), resolved.product.unitCode),
@@ -339,7 +387,7 @@ export async function postReceiptEntry(
     where: {
       productId: { in: [...new Set(lines.map((line) => line.productId))] },
       locationId: { in: [...new Set(lines.map((line) => line.locationId))] },
-      status: "AVAILABLE",
+      status: { in: [...new Set(lines.map((line) => line.status))] },
       lotKey: { in: [...new Set(lines.map((line) => line.lotId ?? ""))] },
     },
     select: {
@@ -347,6 +395,7 @@ export async function postReceiptEntry(
       productId: true,
       locationId: true,
       lotKey: true,
+      status: true,
       quantity: true,
     },
   });
@@ -354,10 +403,12 @@ export async function postReceiptEntry(
     productId: string;
     locationId: string;
     lotId: string | null;
-  }) => `${line.productId} ${line.locationId} ${line.lotId ?? ""}`;
+    status: string;
+  }) =>
+    `${line.productId} ${line.locationId} ${line.lotId ?? ""} ${line.status}`;
   const current = new Map(
     balances.map((row) => [
-      `${row.productId} ${row.locationId} ${row.lotKey}`,
+      `${row.productId} ${row.locationId} ${row.lotKey} ${row.status}`,
       row,
     ]),
   );
@@ -382,7 +433,7 @@ export async function postReceiptEntry(
       productId: line.productId,
       quantity: line.baseQuantity,
       toLocationId: line.locationId,
-      status: "AVAILABLE" as const,
+      status: line.status,
     })),
     { mode: "ask", accepted: input.acceptCapacity === true },
   );
@@ -430,7 +481,7 @@ export async function postReceiptEntry(
       lineId: lineIds[index]!,
       productId: line.productId,
       locationId: line.locationId,
-      status: "AVAILABLE" as const,
+      status: line.status,
       direction: "IN" as const,
       units: line.units,
     })),
@@ -451,16 +502,18 @@ export async function postReceiptEntry(
       baseQuantity: line.baseQuantity.toString(),
       unitCode: line.unitCode,
       ...lotColumns(line.lotId),
+      status: line.status,
       unitCost: lineCost(line.unitCost),
     })),
   });
   await costs.save();
   for (const [slot, quantity] of added) {
     const row = current.get(slot);
-    const [productId, locationId, lotKey = ""] = slot.split(" ") as [
+    const [productId, locationId, lotKey = "", status] = slot.split(" ") as [
       string,
       string,
-      string?,
+      string,
+      "AVAILABLE" | "DAMAGED",
     ];
     if (row) {
       await tx.stockBalance.updateMany({
@@ -475,6 +528,7 @@ export async function postReceiptEntry(
           productId,
           locationId,
           ...lotColumns(lotKey || null),
+          status,
           quantity: quantity.toString(),
         },
       });
@@ -488,12 +542,15 @@ export async function postReceiptEntry(
       actor,
       box,
       location.id,
-      lines.map((line) => ({
-        productId: line.productId,
-        lotId: line.lotId,
-        quantity: line.baseQuantity,
-        units: line.units,
-      })),
+      // WMS-54: what arrived damaged stays loose, out of the pallet.
+      lines
+        .filter((line) => line.status === "AVAILABLE")
+        .map((line) => ({
+          productId: line.productId,
+          lotId: line.lotId,
+          quantity: line.baseQuantity,
+          units: line.units,
+        })),
     );
     const task = await createContainerPutawayTask(
       tx,
@@ -509,19 +566,35 @@ export async function postReceiptEntry(
       notes: [...placed.notes, packed.note, ...(task ? [task.note] : [])],
       putawayTasks: task ? 1 : 0,
       containerId: packed.containerId,
+      crossDock: [],
     };
   }
-  // WMS-52: what arrived at a place «de paso» gets its put-away tasks,
-  // when the company works that way: nothing stays there without one.
-  const putaway = await createPutawayTasks(
+  // WMS-54: what waiting orders take goes straight to them, before the
+  // put-away tasks, which cover only what is left.
+  const sentToOrders = await sendToWaitingOrders(
     tx,
     actor,
+    crossDock,
     lines.map((line) => ({
       productId: line.productId,
       locationId: line.locationId,
       lotId: line.lotId,
       quantity: line.baseQuantity,
-      status: "AVAILABLE" as const,
+      status: line.status,
+    })),
+    movementId,
+  );
+  // WMS-52: what arrived at a place «de paso» gets its put-away tasks,
+  // when the company works that way: nothing stays there without one.
+  const putaway = await createPutawayTasks(
+    tx,
+    actor,
+    lines.map((line, index) => ({
+      productId: line.productId,
+      locationId: line.locationId,
+      lotId: line.lotId,
+      quantity: line.baseQuantity.minus(sentToOrders.sent[index]!),
+      status: line.status,
     })),
   );
   return {
@@ -530,8 +603,13 @@ export async function postReceiptEntry(
     locationId: location.id,
     locationName: location.name,
     lines,
-    notes: [...placed.notes, ...(putaway.note ? [putaway.note] : [])],
+    notes: [
+      ...placed.notes,
+      ...sentToOrders.notes,
+      ...(putaway.note ? [putaway.note] : []),
+    ],
     putawayTasks: putaway.tasks.length,
     containerId: null,
+    crossDock: sentToOrders.orders,
   };
 }

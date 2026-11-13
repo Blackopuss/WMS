@@ -51,6 +51,12 @@ export type ReturnExitLine = {
    */
   serials?: unknown;
   receivedUnitIds?: ReadonlySet<string>;
+  /**
+   * WMS-54 (ADR 0052): the state it leaves from — the one its receipt line
+   * came in: AVAILABLE, or DAMAGED for what arrived damaged. Absent =
+   * AVAILABLE.
+   */
+  status?: "AVAILABLE" | "DAMAGED";
 };
 
 export type ReturnExitResult =
@@ -97,6 +103,8 @@ export async function postReturnExit(
 
   const lines = input.lines.map((line) => ({
     ...line,
+    status:
+      line.status === "DAMAGED" ? ("DAMAGED" as const) : ("AVAILABLE" as const),
     baseQuantity: line.capturedQuantity.times(line.factor),
   }));
   // WMS-21: each line leaves from the lot it was received in. A product
@@ -140,7 +148,7 @@ export async function postReturnExit(
           {
             locationId: line.locationId,
             locationName: nameOf.get(line.locationId) ?? "esa ubicación",
-            status: "AVAILABLE",
+            status: line.status,
           },
           { verb: "regresan" },
         )
@@ -176,7 +184,9 @@ export async function postReturnExit(
     productId: string;
     locationId: string;
     lotId?: string | null;
-  }) => `${line.productId} ${line.locationId} ${line.lotId ?? ""}`;
+    status: string;
+  }) =>
+    `${line.productId} ${line.locationId} ${line.lotId ?? ""} ${line.status}`;
   for (const line of lines) {
     const slot = slotOf(line);
     taken.set(slot, (taken.get(slot) ?? dec(0)).plus(line.baseQuantity));
@@ -185,7 +195,7 @@ export async function postReturnExit(
     where: {
       productId: { in: [...new Set(lines.map((line) => line.productId))] },
       locationId: { in: [...new Set(lines.map((line) => line.locationId))] },
-      status: "AVAILABLE",
+      status: { in: [...new Set(lines.map((line) => line.status))] },
       lotKey: { in: [...new Set(lines.map((line) => line.lotId ?? ""))] },
     },
     select: {
@@ -193,12 +203,13 @@ export async function postReturnExit(
       productId: true,
       locationId: true,
       lotKey: true,
+      status: true,
       quantity: true,
     },
   });
   const current = new Map(
     balances.map((row) => [
-      `${row.productId} ${row.locationId} ${row.lotKey}`,
+      `${row.productId} ${row.locationId} ${row.lotKey} ${row.status}`,
       row,
     ]),
   );
@@ -208,17 +219,26 @@ export async function postReturnExit(
     if (before.lessThan(quantity)) {
       const index = lines.findIndex((line) => slotOf(line) === slot);
       const line = lines[index]!;
+      const where = nameOf.get(line.locationId) ?? "esa ubicación";
       return {
         ok: false,
         line: index,
-        error: `En ${nameOf.get(line.locationId) ?? "esa ubicación"} solo hay ${formatStock(before.toString(), line.unitCode)}. Lo que ya salió o se movió de ahí no se puede devolver desde ahí.`,
+        // WMS-54: what arrived damaged leaves from «Dañado»; if somebody
+        // changed its state or moved it, it is said plainly.
+        error:
+          line.status === "DAMAGED"
+            ? `En ${where} solo hay ${formatStock(before.toString(), line.unitCode)} de este producto en «Dañado». Si ya cambió de estado o de lugar, elige de dónde sale o sácalo con una salida.`
+            : `En ${where} solo hay ${formatStock(before.toString(), line.unitCode)}. Lo que ya salió o se movió de ahí no se puede devolver desde ahí.`,
       };
     }
   }
   // WMS-12: what is reserved for an order is not sent back.
   const byProduct = new Map<string, Decimal>();
   for (const [slot, quantity] of taken) {
-    const [productId = "", locationId = "", lotKey = ""] = slot.split(" ");
+    const [productId = "", locationId = "", lotKey = "", status] =
+      slot.split(" ");
+    // Only AVAILABLE stock is reserved or packed: damaged goods are not.
+    if (status !== "AVAILABLE") continue;
     byProduct.set(
       productId,
       (byProduct.get(productId) ?? dec(0)).plus(quantity),
@@ -276,7 +296,7 @@ export async function postReturnExit(
       lineId: lineIds[index]!,
       productId: line.productId,
       locationId: line.locationId,
-      status: "AVAILABLE" as const,
+      status: line.status,
       direction: "OUT" as const,
       units: unitsOf[index]!,
     })),
@@ -297,6 +317,7 @@ export async function postReturnExit(
       baseQuantity: line.baseQuantity.toString(),
       unitCode: line.unitCode,
       ...lotColumns(line.lotId),
+      status: line.status,
       unitCost: lineCost(unitCosts[index]!),
     })),
   });
