@@ -500,6 +500,31 @@ export const COUNT_REVIEW_THRESHOLD = {
   defaultValue: "off",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-54 (ADR 0052): what arrives at a place «de paso» for an outbound
+ * order that waits for it goes straight to its staging location (a picking
+ * task) instead of being put away. Off by default: nothing changes.
+ */
+export const CROSS_DOCK_MODE = {
+  key: "inventory.crossdock.mode",
+  module: "inventory",
+  area: "Acomodo",
+  label: "Lo que llega para un pedido que espera",
+  options: [
+    {
+      value: "off",
+      label: "Se acomoda como lo demás",
+      help: "El pedido espera hasta que alguien lo surta de donde quedó.",
+    },
+    {
+      value: "on",
+      label: "Se manda directo a preparación",
+      help: "Al recibir, lo que le falta a un pedido liberado se aparta para él con su tarea de surtido; el resto se acomoda.",
+    },
+  ],
+  defaultValue: "off",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -519,4 +544,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   ABC_CUTS,
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
+  CROSS_DOCK_MODE,
 ];

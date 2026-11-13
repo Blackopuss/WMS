@@ -47,6 +47,7 @@ import {
 import { normalizeLotCode } from "./lot-rules";
 import { containedAt, containedMessage } from "./contained";
 import { createPutawayTasks, isTaskNumberClash } from "./putaway";
+import { lockCrossDockOrders, sendToWaitingOrders } from "./cross-docking";
 import { heldForReturns } from "./return-holds";
 import {
   TASK_HOLD,
@@ -605,6 +606,16 @@ async function post(
           `«${location.name}» está archivada. Elige otra ubicación.`,
         );
       }
+      // WMS-54 (ADR 0052): the outbound orders that may wait for what comes
+      // in, locked after the product and the location and before the
+      // capacity (only when the company cross-docks).
+      const crossDock =
+        type === "ENTRY"
+          ? await lockCrossDockOrders(tx, actor, {
+              productIds: [product.id],
+              facilityIds: [location.facilityId],
+            })
+          : null;
 
       // The quantity is validated with the rule of the product: nothing is
       // rounded and the factor never comes from the browser (INV-09).
@@ -850,17 +861,25 @@ async function post(
         });
       }
 
-      // WMS-52: what comes into a place «de paso» gets its put-away task,
+      // WMS-54: what a waiting order takes goes straight to it; WMS-52:
+      // the rest that comes into a place «de paso» gets its put-away task,
       // when the company works that way; same transaction, last.
+      const arrival = {
+        productId: product.id,
+        locationId: location.id,
+        lotId: lot?.id ?? null,
+        quantity: base,
+        status: "AVAILABLE" as const,
+      };
+      const sent = crossDock
+        ? await sendToWaitingOrders(tx, actor, crossDock, [arrival], movementId)
+        : null;
       const putaway =
         type === "ENTRY"
           ? await createPutawayTasks(tx, actor, [
               {
-                productId: product.id,
-                locationId: location.id,
-                lotId: lot?.id ?? null,
-                quantity: base,
-                status: "AVAILABLE",
+                ...arrival,
+                quantity: base.minus(sent?.sent[0] ?? 0),
               },
             ])
           : null;
@@ -879,6 +898,7 @@ async function post(
               ? `${one ? "Salió" : "Salieron"} ${moved} de ${product.name}${ofLot(lot)} de ${location.name}${how}${ofSerials(units)}. ${balance.equals(1) ? "Queda" : "Quedan"} ${left}${lot ? " de ese lote" : ""} ahí.`
               : `${one ? "Entró" : "Entraron"} ${moved} de ${product.name}${ofLot(lot)} a ${location.name}${how}${ofSerials(units)}. Ahora hay ${left}${lot ? " de ese lote" : ""} ahí.`) +
           capacityNotes.map((note) => ` ${note}`).join("") +
+          (sent?.notes ?? []).map((note) => ` ${note}`).join("") +
           (putaway?.note ? ` ${putaway.note}` : ""),
       };
     }, LOCKING_TRANSACTION);

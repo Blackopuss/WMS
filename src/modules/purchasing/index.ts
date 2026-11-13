@@ -96,6 +96,7 @@ export type {
   ReceiptSummary,
   ReceiveField,
   ReceiveInput,
+  ReceiveLineField,
   ReceiveResult,
 } from "./receipts";
 export {

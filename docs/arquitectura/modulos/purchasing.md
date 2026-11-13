@@ -28,6 +28,19 @@ Reglas que no se rompen:
   acomodo de lo que entra a un lugar «de paso»; `receivePurchaseOrder` repite
   la recepción entera si otra operación tomó a la vez el mismo número de
   tarea (`isTaskNumberClash`).
+- Lo dañado al recibir (WMS-54, ADR 0052): cada línea (y cada lote) dice
+  cuánto llegó dañado (`damaged`, en los términos de la línea, y
+  `damagedSerials` para un producto por serie). Esa parte es su propia línea
+  de recepción (`purchase_receipt_line.status = DAMAGED`, igual que su línea
+  de movimiento; disparador): cuenta como recibida, entra en «Dañado» al
+  mismo costo, no va en la tarima ni lleva tarea de acomodo. La devolución
+  sale del estado de su línea de recepción; `sameReceipt` compara también lo
+  dañado.
+- Cross-docking (WMS-54, ADR 0052): con `inventory.crossdock.mode = on`,
+  `postReceiptEntry` bloquea los pedidos de salida que esperan lo que llega
+  (después de la orden de compra: productos → ubicaciones → orden de compra
+  → pedidos de salida → tarima → capacidad) y les manda lo sano con tareas
+  de surtido; `receivePurchaseOrder` lo devuelve en `crossDock`.
 - Los costos solo existen en la respuesta para quien tiene
   `purchasing.cost.read`.
 - Cada servicio empieza con `assertModulePermission`;
@@ -43,8 +56,8 @@ Reglas que no se rompen:
 | Cierre | `order-close.ts` | `closePurchaseOrder`: cierra una orden `PARTIAL` con faltante |
 | PDF | `order-pdf.ts` | `buildOrderPdf` |
 | Envío por correo | `order-delivery.ts` | `requestOrderDelivery` (encola), `getOrderDeliveries`; manejador `purchasingJobHandlers` |
-| Recepciones | `receipts.ts` | `receivePurchaseOrder` (parcial, destino por línea, lote por línea, series por línea para un producto por serie, todo en una tarima con `container`, WMS-53), `getOrderReceipts`, `findReceiptConfirmation` |
-| Devoluciones | `returns.ts` | `returnToSupplier` (un producto por serie devuelve unidades que llegaron con esa línea de recepción), `findReturnConfirmation` |
+| Recepciones | `receipts.ts` | `receivePurchaseOrder` (parcial, destino por línea, lote por línea, series por línea para un producto por serie, todo en una tarima con `container`, WMS-53; lo dañado por línea y lo que fue directo a pedidos, WMS-54), `getOrderReceipts` (cada línea de recepción dice si es dañada), `findReceiptConfirmation` |
+| Devoluciones | `returns.ts` | `returnToSupplier` (un producto por serie devuelve unidades que llegaron con esa línea de recepción; lo dañado sale de «Dañado», WMS-54), `findReturnConfirmation` |
 | Sugerencias | `suggestions.ts` | `getPurchaseSuggestions`, `generateSuggestedOrders` (borradores por proveedor) |
 | Reportes | `reports.ts` | `getPendingReport`, `getPurchasesBySupplier`, `buildPurchaseReport` (archivo) |
 | Al quitar el módulo | `deactivation.ts` | `purchasingOpenWork`: lo que quedaría a medias, para la consola |
@@ -85,7 +98,8 @@ Ninguno todavía.
 ## ADR
 
 0016 (contactos), 0017 (producto-proveedor y costos), 0018 (órdenes), 0019
-(PDF propio), 0020 (envío por correo), 0021 (recepción).
+(PDF propio), 0020 (envío por correo), 0021 (recepción), 0052 (cross-docking y
+daños al recibir).
 
 ## Pruebas
 

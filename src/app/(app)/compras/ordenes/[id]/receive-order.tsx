@@ -7,7 +7,7 @@ import {
   Plus,
   TriangleAlert,
 } from "lucide-react";
-import { unstable_rethrow } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
@@ -85,6 +85,7 @@ export function ReceiveOrder({
   containerKinds?: readonly string[] | null;
 }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
   const [state, formAction, busy] = useActionState(
     async (prev: ReceiveFormState, formData: FormData) => {
       let next: ReceiveFormState;
@@ -112,7 +113,29 @@ export function ReceiveOrder({
             };
       }
       if (next.done) {
-        toast.success(next.done);
+        // WMS-54: what went straight to an order opens it (its tasks are
+        // listed there).
+        const sent = next.crossDock ?? [];
+        toast.success(
+          next.done,
+          sent.length > 0
+            ? {
+                duration: 10_000,
+                action: {
+                  label:
+                    sent.length === 1
+                      ? `Ver el pedido ${sent[0]!.orderNumber}`
+                      : "Ver las tareas",
+                  onClick: () =>
+                    router.push(
+                      sent.length === 1
+                        ? `/pedidos/${sent[0]!.orderId}`
+                        : "/tareas?vista=available",
+                    ),
+                },
+              }
+            : undefined,
+        );
         setOpen(false);
       }
       return { ...next, answers: prev.answers + 1 };
@@ -129,6 +152,8 @@ export function ReceiveOrder({
         lots: {},
         expiries: {},
         serials: {},
+        damaged: {},
+        damagedSerials: {},
       },
       answers: 0,
     },
@@ -278,10 +303,27 @@ export function ReceiveOrder({
                       fieldId={fieldId}
                       answers={answers}
                       values={state.values}
-                      wrong={wrong === "serials" ? undefined : wrong}
+                      wrong={
+                        wrong === "lotCode" || wrong === "lotExpiresOn"
+                          ? wrong
+                          : undefined
+                      }
                       describedBy={error ? `${fieldId}-error` : undefined}
                     />
                   )}
+                  <DamagedFields
+                    line={line}
+                    fieldKey={line.id}
+                    fieldId={fieldId}
+                    answers={answers}
+                    values={state.values}
+                    wrong={
+                      wrong === "damaged" || wrong === "damagedSerials"
+                        ? wrong
+                        : undefined
+                    }
+                    error={error}
+                  />
                   {line.byLot &&
                     Array.from({ length: partsOf(line.id) - 1 }, (_, i) => {
                       const key = `${line.id}~${i + 1}`;
@@ -322,6 +364,15 @@ export function ReceiveOrder({
                             values={state.values}
                             wrong={undefined}
                             describedBy={error ? `${fieldId}-error` : undefined}
+                          />
+                          <DamagedFields
+                            line={line}
+                            fieldKey={key}
+                            fieldId={partId}
+                            answers={answers}
+                            values={state.values}
+                            wrong={undefined}
+                            error={error}
                           />
                           {i === partsOf(line.id) - 2 && (
                             <Button
@@ -525,6 +576,80 @@ function PalletFields({
         </div>
       )}
     </fieldset>
+  );
+}
+
+/**
+ * WMS-54: «¿Llegó algo dañado?», folded: it is rarely used. How much of
+ * what arrived came damaged (same terms as the line) and, for a product by
+ * serial, which serials. That part enters in «Dañado» and is not put away.
+ */
+function DamagedFields({
+  line,
+  fieldKey,
+  fieldId,
+  answers,
+  values,
+  wrong,
+  error,
+}: {
+  line: PendingReceiptLine;
+  /** `<id>` or, for another lot of the line, `<id>~1`. */
+  fieldKey: string;
+  fieldId: string;
+  answers: number;
+  values: ReceiveFormState["values"];
+  wrong: "damaged" | "damagedSerials" | undefined;
+  error: string | undefined;
+}) {
+  const typed =
+    (values.damaged[fieldKey] ?? "").trim() !== "" ||
+    (values.damagedSerials[fieldKey] ?? "").trim() !== "";
+  return (
+    <details
+      key={`${fieldKey}-damaged-${answers}`}
+      open={typed || wrong !== undefined}
+      className="sm:col-span-2"
+    >
+      <summary className="flex min-h-11 cursor-pointer items-center text-sm text-muted-foreground">
+        ¿Llegó algo dañado?
+      </summary>
+      <div className="grid gap-2 pt-1">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={`${fieldId}-damaged`}
+            className="shrink-0 text-sm text-muted-foreground"
+          >
+            De eso, dañado
+          </label>
+          <Input
+            id={`${fieldId}-damaged`}
+            name={`dmg:${fieldKey}`}
+            inputMode="decimal"
+            autoComplete="off"
+            defaultValue={values.damaged[fieldKey] ?? ""}
+            aria-invalid={wrong === "damaged" ? true : undefined}
+            aria-describedby={
+              wrong === "damaged" && error ? `${fieldId}-error` : undefined
+            }
+            className="max-w-32 tabular-nums"
+          />
+          <span className="shrink-0 text-sm text-muted-foreground">
+            {line.unitText}
+          </span>
+        </div>
+        {line.bySerial && (
+          <SerialsField
+            id={`${fieldId}-damaged-serials`}
+            name={`dser:${fieldKey}`}
+            label="Series de las dañadas"
+            error={wrong === "damagedSerials" ? error : undefined}
+            defaultValue={values.damagedSerials[fieldKey] ?? ""}
+            rows={2}
+          />
+        )}
+      </div>
+    </details>
   );
 }
 

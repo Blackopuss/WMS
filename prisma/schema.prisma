@@ -1238,7 +1238,9 @@ model StockMovement {
   appliedCount       StockCount?
   purchaseReceipt    PurchaseReceipt?
   purchaseReturn     PurchaseReturn?
-  warehouseTask      WarehouseTask?
+  warehouseTask      WarehouseTask?          @relation("TaskMovement")
+  /// Picking tasks this entry sent straight to an order (WMS-54, ADR 0052).
+  crossDockTasks     WarehouseTask[]         @relation("TaskCrossDock")
   /// The shipment whose exit this is (WMS-16, type SHIPMENT).
   shipment           Shipment?
   /// The customer return whose entry this is (WMS-17, CUSTOMER_RETURN).
@@ -2104,6 +2106,9 @@ model PurchaseReceiptLine {
   /// to the supplier leaves from this lot.
   lotId                 String?              @db.Char(36)
   lot                   Lot?                 @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// AVAILABLE, or DAMAGED for the part that arrived damaged (WMS-54, ADR
+  /// 0052): its own line, in the same state as its movement line.
+  status                StockStatus          @default(AVAILABLE)
   createdAt             DateTime             @default(now()) @db.DateTime(3)
   returnLines           PurchaseReturnLine[]
 
@@ -2271,7 +2276,11 @@ model WarehouseTask {
   cancelReason     String?               @db.VarChar(300)
   /// The transfer its delivery wrote.
   movementId       String?               @db.Char(36)
-  movement         StockMovement?        @relation(fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  movement         StockMovement?        @relation("TaskMovement", fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// PICK only (WMS-54, ADR 0052): the entry (RECEIPT or ENTRY) whose goods
+  /// it takes straight to its order (cross-docking); never changes.
+  crossDockMovementId String?            @db.Char(36)
+  crossDockMovement StockMovement?       @relation("TaskCrossDock", fields: [organizationId, crossDockMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   updatedAt        DateTime              @updatedAt @db.DateTime(3)
   /// Units by serial the person took (WMS-21B): scanned when picking or
   /// picking up, moved by the delivery.
@@ -2287,6 +2296,7 @@ model WarehouseTask {
   @@index([organizationId, productId])
   @@index([organizationId, outboundLineId])
   @@index([organizationId, placedLocationId])
+  @@index([organizationId, crossDockMovementId])
   @@map("warehouse_task")
 }
 

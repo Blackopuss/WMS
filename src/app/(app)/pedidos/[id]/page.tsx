@@ -276,6 +276,12 @@ export default async function PedidoPage({
                         Surtido: {line.pickedText}
                       </span>
                     )}
+                    {/* WMS-54: covered with what arrived (cross-docking). */}
+                    {line.crossDockText && (
+                      <span className="block text-sm text-muted-foreground">
+                        {line.crossDockText}
+                      </span>
+                    )}
                     {packOf.get(line.id) && (
                       <span className="block text-sm text-muted-foreground">
                         Empacado: {packOf.get(line.id)!.packedText}
@@ -344,6 +350,7 @@ export default async function PedidoPage({
                       {task.lotText ? ` · ${task.lotText}` : ""}
                       {task.pickedText ? ` · surtido ${task.pickedText}` : ""}
                       {task.shortReason ? ` · ${task.shortReason}` : ""}
+                      {task.crossDockText ? ` · ${task.crossDockText}` : ""}
                     </span>
                     {task.serials.length > 0 && (
                       <span className="block font-mono text-muted-foreground">

@@ -20,6 +20,7 @@ import {
   PUTAWAY_MODE,
   PUTAWAY_PREFERENCE,
   REPLENISHMENT_MODE,
+  CROSS_DOCK_MODE,
   createOutboundOrder,
   registerEntry,
   releaseOutboundOrder,
@@ -222,6 +223,8 @@ describe("operation settings", () => {
       { key: ABC_CUTS.key, value: "80_15_5", defaultValue: "80_15_5" },
       { key: ABC_PERIOD.key, value: "90", defaultValue: "90" },
       { key: COUNT_REVIEW_THRESHOLD.key, value: "off", defaultValue: "off" },
+      // WMS-54: what arrives is put away unless the company cross-docks.
+      { key: CROSS_DOCK_MODE.key, value: "off", defaultValue: "off" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -242,6 +245,7 @@ describe("operation settings", () => {
       { key: ABC_CUTS.key, value: "80_15_5" },
       { key: ABC_PERIOD.key, value: "90" },
       { key: COUNT_REVIEW_THRESHOLD.key, value: "off" },
+      { key: CROSS_DOCK_MODE.key, value: "off" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

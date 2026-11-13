@@ -22,7 +22,9 @@ import { inTermsOf } from "./receipts";
  * Returns to the supplier (CMP-12). What arrived with a receipt and goes
  * back — damaged, wrong, more than wanted — leaves stock with its own
  * document, in one transaction: the return with its lines and the exit
- * (`RETURN`, written by Inventario). Nothing of the receipt changes.
+ * (`RETURN`, written by Inventario). Nothing of the receipt changes. Each
+ * line leaves from the state its receipt line came in (WMS-54): what
+ * arrived damaged goes back from «Dañado», the rest from what is available.
  *
  * Limit: what is returned of a receipt line, adding every return of it,
  * never exceeds what that line received (NEG-24). It is decided with the
@@ -322,6 +324,8 @@ export async function returnToSupplier(
               unitCost: true,
               // WMS-21: it goes back from the lot it arrived in.
               lotId: true,
+              // WMS-54: and from the state it came in (damaged or not).
+              status: true,
               product: { select: { name: true, quantityStep: true } },
               presentation: { select: { name: true } },
             },
@@ -430,6 +434,7 @@ export async function returnToSupplier(
           lotId: item.line.lotId,
           serials: item.serials,
           receivedUnitIds: receivedUnits.get(item.line.lineNumber) ?? new Set(),
+          status: item.line.status === "DAMAGED" ? "DAMAGED" : "AVAILABLE",
         })),
         reference: `${numberText} · Devolución`,
         reason: data.reason,
@@ -474,9 +479,10 @@ export async function returnToSupplier(
           item.line.presentation,
           item.line.unitCode,
         );
+        const damaged = item.line.status === "DAMAGED" ? " dañado" : "";
         return item.line.presentation
-          ? `${terms} de ${item.line.product.name} (${exit.texts[index]})`
-          : `${terms} de ${item.line.product.name}`;
+          ? `${terms} de ${item.line.product.name}${damaged} (${exit.texts[index]})`
+          : `${terms} de ${item.line.product.name}${damaged}`;
       });
       const listed =
         parts.length === 1

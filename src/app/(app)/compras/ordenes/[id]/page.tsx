@@ -445,6 +445,8 @@ ${order.closeReason ?? ""}`,
                         <span className="text-muted-foreground">
                           ({line.sku}) · {line.locationPath}
                           {line.lotText && ` · ${line.lotText}`}
+                          {/* WMS-54: it entered in «Dañado». */}
+                          {line.damaged && " · Dañado"}
                           {line.returnedText &&
                             ` · devuelto: ${line.returnedText}`}
                         </span>
@@ -497,7 +499,7 @@ ${order.closeReason ?? ""}`,
                         productName: line.productName,
                         sku: line.sku,
                         // WMS-21: two lots of one product read apart.
-                        detail: `${line.lotText ? `${line.lotText} · ` : ""}${
+                        detail: `${line.damaged ? "Dañado · " : ""}${line.lotText ? `${line.lotText} · ` : ""}${
                           line.returnedText
                             ? `puedes devolver ${line.returnableText} (ya devolviste ${line.returnedText})`
                             : `llegaron ${line.returnableText}`
