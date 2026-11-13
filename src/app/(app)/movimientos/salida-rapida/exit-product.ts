@@ -4,6 +4,7 @@ import {
   formatStock,
   getStockByLocation,
   listLotStock,
+  lotSourceChoices,
   listStockLocations,
   type InventoryActor,
 } from "@/modules/inventory";
@@ -49,13 +50,9 @@ export async function loadExitProduct(
       name: product.name,
       sku: product.sku,
       captures: captureOptions(product, presentations),
-      locations: locations.flatMap((location) =>
-        lots
-          .filter((row) => row.locationId === location.id)
-          .map((row) => ({
-            id: `${location.id}|${row.lotId}`,
-            label: `${location.path} · ${row.label}${row.expired ? " (caducado)" : ""} — hay ${formatStock(row.free, product.unitCode)}`,
-          })),
+      // What expires first goes first: the option it starts with.
+      locations: lotSourceChoices(lots, locations, product.unitCode).map(
+        ({ id, label }) => ({ id, label }),
       ),
     };
   }

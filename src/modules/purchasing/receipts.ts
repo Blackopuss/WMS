@@ -7,6 +7,7 @@ import {
   formatStock,
   lotDayOf,
   lotLabel,
+  normalizeLotCode,
   postReceiptEntry,
 } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
@@ -59,6 +60,9 @@ const KEY = /^[A-Za-z0-9_-]{8,64}$/;
 const KEY_REUSED =
   "Esta confirmación ya se usó para otra recepción. Recarga la página para registrar una nueva.";
 
+/** Lots one line of an order may arrive in, in a single receipt (WMS-21). */
+export const RECEIPT_LOTS_PER_LINE = 10;
+
 const receiveSchema = z.object({
   /** Empty = the default location, «General». */
   locationId: z
@@ -83,6 +87,8 @@ const receiveSchema = z.object({
   /**
    * What arrived of each line, in the terms it was ordered in (CMP-08).
    * Absent = everything pending; a line left out or empty did not arrive.
+   * A line of a product by lot may come several times, once per lot that
+   * arrived (WMS-21): together they never go over what is pending.
    */
   lines: z
     .array(
@@ -99,7 +105,7 @@ const receiveSchema = z.object({
         lotExpiresOn: z.string().trim().max(20).optional(),
       }),
     )
-    .max(PURCHASE_ORDER_MAX_LINES)
+    .max(PURCHASE_ORDER_MAX_LINES * RECEIPT_LOTS_PER_LINE)
     .optional(),
   /**
    * The person saw that what arrives goes over the capacity of a location
@@ -287,6 +293,7 @@ export async function receivePurchaseOrder(
               orderLineId: true,
               capturedQuantity: true,
               locationId: true,
+              lot: { select: { code: true } },
             },
           },
         },
@@ -326,7 +333,7 @@ export async function receivePurchaseOrder(
               presentationId: true,
               unitCode: true,
               unitCost: true,
-              product: { select: { quantityStep: true } },
+              product: { select: { quantityStep: true, tracking: true } },
               presentation: { select: { name: true } },
             },
           },
@@ -504,13 +511,14 @@ export async function receivePurchaseOrder(
         metadata: {
           orden: numberText,
           proveedor: current.contact.name,
-          productos: entry.lines.length,
+          productos: new Set(pending.map((item) => item.line.id)).size,
           ubicacion: places.join(", "),
           ...(data.reference ? { remision: data.reference } : {}),
           estado: PURCHASE_ORDER_STATUS_LABELS[status],
         },
       });
-      const count = entry.lines.length;
+      // Several lots of one product are still one product (WMS-21).
+      const count = new Set(pending.map((item) => item.line.id)).size;
       return {
         ok: true as const,
         receiptId,
@@ -545,15 +553,17 @@ export async function receivePurchaseOrder(
 
 /**
  * Whether a repeated confirmation asks for what its key already received
- * (CMP-10): the same lines, quantities and, when chosen, locations. A key
- * sent again with other quantities is not a retry but a reused form.
- * Without lines («everything pending») there is nothing to compare.
+ * (CMP-10): the same lines, quantities, lots (WMS-21) and, when chosen,
+ * locations. A key sent again with other quantities or another lot is not
+ * a retry but a reused form. Without lines («everything pending») there
+ * is nothing to compare.
  */
 function sameReceipt(
   stored: {
     orderLineId: string;
     capturedQuantity: { toString(): string };
     locationId: string;
+    lot: { code: string } | null;
   }[],
   data: z.output<typeof receiveSchema>,
 ): boolean {
@@ -564,20 +574,28 @@ function sameReceipt(
       !/^0+([.,]0*)?$/.test(item.quantity.trim()),
   );
   if (asked.length !== stored.length) return false;
-  const byLine = new Map(stored.map((line) => [line.orderLineId, line]));
+  // Each line asked matches one stored line, once.
+  const left = [...stored];
   return asked.every((item) => {
-    const line = byLine.get(item.orderLineId);
-    if (!line) return false;
-    let same = false;
+    let quantity: Decimal;
     try {
-      same = dec(item.quantity.replace(/,(?=\d{3}(\D|$))/g, "")).equals(
-        line.capturedQuantity.toString(),
-      );
+      quantity = dec(item.quantity.replace(/,(?=\d{3}(\D|$))/g, ""));
     } catch {
       return false;
     }
     const where = item.locationId || data.locationId;
-    return same && (!where || where === line.locationId);
+    const code = item.lotCode ? normalizeLotCode(item.lotCode) : null;
+    const lotCode = code?.ok ? code.code : null;
+    const index = left.findIndex(
+      (line) =>
+        line.orderLineId === item.orderLineId &&
+        quantity.equals(line.capturedQuantity.toString()) &&
+        (!where || where === line.locationId) &&
+        (line.lot?.code ?? null) === lotCode,
+    );
+    if (index < 0) return false;
+    left.splice(index, 1);
+    return true;
   });
 }
 
@@ -587,7 +605,7 @@ type OrderLineRow = {
   presentationId: string | null;
   unitCode: string;
   unitCost: { toString(): string } | null;
-  product: { quantityStep: { toString(): string } };
+  product: { quantityStep: { toString(): string }; tracking: string };
   presentation: { name: string } | null;
 };
 
@@ -623,19 +641,29 @@ function chosenLines(
     lotCode: string | null;
     lotExpiresOn: string | null;
   }[] = [];
-  const seen = new Set<string>();
+  /** How many times each line came; a product by lot, once per lot. */
+  const seen = new Map<string, number>();
+  /** What the parts of a line already chosen add up to, and their lots. */
+  const taken = new Map<string, Decimal>();
+  const lotsOf = new Map<string, Set<string>>();
   for (const item of requested) {
     const line = byId.get(item.orderLineId);
-    if (!line || seen.has(line.id)) {
+    const times = line ? (seen.get(line.id) ?? 0) : 0;
+    if (
+      !line ||
+      (times > 0 && line.product.tracking !== "LOT") ||
+      times >= RECEIPT_LOTS_PER_LINE
+    ) {
       return refuse(
         "invalid",
         null,
         "Lo que mandaste no corresponde a esta orden. Recarga la página.",
       );
     }
-    seen.add(line.id);
+    seen.set(line.id, times + 1);
     const text = item.quantity.trim();
     if (text === "" || /^0+([.,]0*)?$/.test(text)) continue;
+    if (errors[line.id]) continue;
     const parsed = parseQuantity(
       line.presentationId
         ? { unitCode: "piece", quantityStep: "1" }
@@ -657,10 +685,24 @@ function chosenLines(
       errors[line.id] = "Este producto ya llegó completo.";
       continue;
     }
-    if (parsed.quantity.greaterThan(pending)) {
+    // WMS-21: the lots of a line add up; together never more than pending.
+    const together = (taken.get(line.id) ?? dec(0)).plus(parsed.quantity);
+    if (together.greaterThan(pending)) {
       errors[line.id] =
-        `Solo faltan ${inTermsOf(pending, line.presentation, line.unitCode)}. Lo que llegó de más no se recibe en esta orden.`;
+        `Solo faltan ${inTermsOf(pending, line.presentation, line.unitCode)}${times > 0 ? " entre todos sus lotes" : ""}. Lo que llegó de más no se recibe en esta orden.`;
       continue;
+    }
+    taken.set(line.id, together);
+    if (line.product.tracking === "LOT" && item.lotCode) {
+      const code = normalizeLotCode(item.lotCode);
+      const lots = lotsOf.get(line.id) ?? new Set<string>();
+      if (code.ok && lots.has(code.code)) {
+        errors[line.id] =
+          `El lote ${code.code} está dos veces en este producto: suma sus cantidades en una sola fila.`;
+        continue;
+      }
+      if (code.ok) lots.add(code.code);
+      lotsOf.set(line.id, lots);
     }
     chosen.push({
       line,

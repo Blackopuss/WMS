@@ -14,6 +14,7 @@ import {
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { dayWindow, type DayWindow } from "./calendar-day";
+import { lotDayOf, lotLabel } from "./lot-rules";
 import { formatStock, type InventoryActor } from "./movements";
 import {
   OUTBOUND_ORDER_STATUS_LABELS,
@@ -878,6 +879,8 @@ export type OutboundView = OutboundSummary & {
     statusLabel: string;
     productName: string;
     fromName: string;
+    /** «Lote L-01 · caduca 05/03/2027», for a product by lot (WMS-21). */
+    lotText: string | null;
     /** «12 piezas». */
     quantityText: string;
     /** What was confirmed as picked, when it was. */
@@ -981,6 +984,7 @@ export async function getOutboundOrder(
             outboundLineId: true,
             product: { select: { name: true } },
             fromLocation: { select: { name: true } },
+            lot: { select: { code: true, expiresOn: true } },
           },
         });
   const pickedOf = new Map<string, Decimal>();
@@ -1039,6 +1043,12 @@ export async function getOutboundOrder(
       statusLabel: WAREHOUSE_TASK_STATUS_LABELS[task.status],
       productName: task.product.name,
       fromName: task.fromLocation.name,
+      lotText: task.lot
+        ? lotLabel({
+            code: task.lot.code,
+            expiresOn: lotDayOf(task.lot.expiresOn),
+          })
+        : null,
       quantityText: formatStock(task.quantity.toString(), task.unitCode),
       pickedText:
         task.pickedQuantity === null

@@ -37,6 +37,7 @@ import {
   changePresentationFactor,
   createPresentation,
   createProduct,
+  updateProduct,
 } from "@/platform/catalog";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { buildCsv } from "@/platform/files";
@@ -1051,4 +1052,144 @@ describe("through the queue, and stopping", () => {
     );
     expect(await balances(actor)).toEqual(["TOR-1 @ General = 98"]);
   }, 60_000);
+});
+
+// WMS-21A (ADR 0040): a product by lot says from which lot it left — one
+// already registered; the folio is still the only thing that keeps a sale
+// from leaving twice.
+describe("exits of a product by lot", () => {
+  async function byLot(actor: InventoryActor) {
+    const made = await createProduct(actor, {
+      sku: "GEL-1",
+      name: "Producto GEL-1",
+      tracking: "LOT",
+      lotExpiry: "OPTIONAL",
+    });
+    if (!made.ok) throw new Error("product setup failed");
+    for (const [lotCode, quantity] of [
+      ["L-1", "20"],
+      ["L-2", "30"],
+    ] as const) {
+      const entry = await registerEntry(actor, {
+        productId: made.productId,
+        quantity,
+        lotCode,
+        acceptRepeat: true,
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+    }
+    return made.productId;
+  }
+
+  const lotBalance = async (productId: string, code: string) =>
+    (
+      await db.stockBalance.findFirst({
+        where: { productId, lot: { code } },
+        select: { quantity: true },
+      })
+    )?.quantity.toString();
+
+  it("leaves from the lot the row names, and only once per folio", async () => {
+    const actor = await company();
+    const gel = await byLot(actor);
+    await stocked(actor, "TOR-1", "10");
+    const importId = await confirmed(actor, [
+      sale("T-1", "GEL-1", "5", { lot: "l-2" }),
+      sale("T-2", "GEL-1", "3", { lot: "L-1" }),
+      sale("T-2", "TOR-1", "1"),
+    ]);
+    expect(
+      await db.exitImportRow.findMany({
+        where: { importId },
+        orderBy: { row: "asc" },
+        select: { lot: { select: { code: true } } },
+      }),
+    ).toEqual([
+      { lot: { code: "L-2" } },
+      { lot: { code: "L-1" } },
+      { lot: null },
+    ]);
+    expect(await applyExitImport(actor.organizationId, importId)).toMatchObject(
+      { ok: true, applied: 3, failed: 0 },
+    );
+    expect(await lotBalance(gel, "L-1")).toBe("17");
+    expect(await lotBalance(gel, "L-2")).toBe("25");
+    const lines = await db.stockMovementLine.findMany({
+      where: { productId: gel, direction: "OUT" },
+      select: { lot: { select: { code: true } } },
+    });
+    expect(lines.map((line) => line.lot?.code).sort()).toEqual(["L-1", "L-2"]);
+
+    // The same sale again, even naming another lot, leaves nothing.
+    const again = await confirmed(actor, [
+      sale("T-1", "GEL-1", "5", { lot: "L-1" }),
+    ]);
+    expect(await applyExitImport(actor.organizationId, again)).toMatchObject({
+      ok: true,
+      applied: 0,
+      duplicates: 1,
+    });
+    expect(await lotBalance(gel, "L-1")).toBe("17");
+    expect(await reconcileStock(actor.organizationId)).toEqual([]);
+  });
+
+  it("a product by lot needs a lot it has; any other product takes none", async () => {
+    const actor = await company();
+    await byLot(actor);
+    await stocked(actor, "TOR-1", "10");
+    const importId = await uploaded(actor, [
+      sale("T-1", "GEL-1", "1"),
+      sale("T-2", "GEL-1", "1", { lot: "L-9" }),
+      sale("T-3", "TOR-1", "1", { lot: "L-1" }),
+    ]);
+    const review = await reviewExitImport(actor, importId);
+    if (!review.ok || !review.check) throw new Error("review failed");
+    expect(
+      review.check.issues.map((issue) => [
+        issue.row,
+        issue.column,
+        issue.message,
+      ]),
+    ).toEqual([
+      [2, "lot", "GEL-1 se controla por lote: escribe de qué lote salió."],
+      [3, "lot", expect.stringContaining("no tiene un lote «L-9»")],
+      [4, "lot", "TOR-1 no se controla por lote: deja vacío el lote."],
+    ]);
+    expect(await confirmExitImport(actor, importId)).toMatchObject({
+      ok: false,
+    });
+    expect(await balances(actor)).toEqual([
+      "GEL-1 @ General = 20",
+      "GEL-1 @ General = 30",
+      "TOR-1 @ General = 10",
+    ]);
+  });
+
+  it("a product whose control changed after confirming fails with its reason", async () => {
+    const actor = await company();
+    const plain = await stocked(actor, "CAM-1", null);
+    const importId = await confirmed(actor, [sale("T-1", "CAM-1", "1")]);
+    expect(
+      await updateProduct(actor, plain, {
+        sku: "CAM-1",
+        name: "Producto CAM-1",
+        tracking: "LOT",
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { tracking: expect.stringContaining("salidas") },
+    });
+    expect(await applyExitImport(actor.organizationId, importId)).toMatchObject(
+      { ok: true, failed: 1 },
+    );
+    // Once the file is done, the control may change.
+    expect(
+      await updateProduct(actor, plain, {
+        sku: "CAM-1",
+        name: "Producto CAM-1",
+        tracking: "LOT",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await reconcileStock(actor.organizationId)).toEqual([]);
+  });
 });

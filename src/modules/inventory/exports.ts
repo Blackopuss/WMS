@@ -22,6 +22,7 @@ import {
   type InventoryActor,
 } from "./movements";
 import { mayReadInventoryCosts } from "./inventory-value";
+import { lotDayOf } from "./lot-rules";
 import { STOCK_STATUS_LABELS } from "./stock-status";
 
 /**
@@ -221,6 +222,8 @@ async function stockRows(
             locationId: true,
             productId: true,
             product: { select: { sku: true, name: true, unitCode: true } },
+            // WMS-21: a product by lot has one row per lot.
+            lot: { select: { code: true, expiresOn: true } },
           },
         }),
       () => tooLarge("Escríbenos para preparar tus existencias completas."),
@@ -248,6 +251,9 @@ async function stockRows(
       name: balance.product.name,
       location: paths.get(balance.locationId) ?? "",
       status: STOCK_STATUS_LABELS[balance.status],
+      lot: balance.lot?.code ?? "",
+      // A day of the calendar, as the import reads it: 2027-03-05.
+      expiresOn: lotDayOf(balance.lot?.expiresOn) ?? "",
       // The exact decimal, as text: never a floating-point number.
       quantity: balance.quantity.toString(),
       unit: getUnit(balance.product.unitCode).name,
@@ -266,14 +272,20 @@ async function stockRows(
     (a, b) =>
       a.sku.localeCompare(b.sku, "es") ||
       a.location.localeCompare(b.location, "es") ||
-      a.status.localeCompare(b.status, "es"),
+      a.status.localeCompare(b.status, "es") ||
+      (a.expiresOn || "9999").localeCompare(b.expiresOn || "9999") ||
+      a.lot.localeCompare(b.lot, "es"),
   );
+  // WMS-21: lot and expiry only when some row has a lot; a company that
+  // does not use lots gets the file it always had.
+  const withLots = rows.some((row) => row.lot !== "");
   return [
     [
       "Clave (SKU)",
       "Producto",
       "Ubicación",
       "Estado",
+      ...(withLots ? ["Lote", "Caducidad"] : []),
       "Cantidad",
       "Unidad",
       ...(withCosts ? ["Costo promedio", "Valor"] : []),
@@ -283,6 +295,7 @@ async function stockRows(
       row.name,
       row.location,
       row.status,
+      ...(withLots ? [row.lot, row.expiresOn] : []),
       row.quantity,
       row.unit,
       ...(withCosts ? [row.averageCost, row.value] : []),
@@ -377,6 +390,7 @@ async function movementRows(
               capturedUnitCode: true,
               presentation: { select: { name: true } },
               product: { select: { sku: true, name: true } },
+              lot: { select: { code: true } },
             },
           },
         },
@@ -401,6 +415,10 @@ async function movementRows(
     for (const member of members) authors.set(member.userId, member.user.name);
   }
   const paths = await locationPaths(client);
+  // WMS-21: the lot column only when some line has a lot.
+  const withLots = movements.some((movement) =>
+    movement.lines.some((line) => line.lot),
+  );
   return [
     [
       "Fecha y hora",
@@ -408,6 +426,7 @@ async function movementRows(
       "Clave (SKU)",
       "Producto",
       "Ubicación",
+      ...(withLots ? ["Lote"] : []),
       "Sentido",
       "Cantidad",
       "Unidad",
@@ -424,6 +443,7 @@ async function movementRows(
         line.product.sku,
         line.product.name,
         paths.get(line.locationId) ?? "",
+        ...(withLots ? [line.lot?.code ?? ""] : []),
         line.direction === "IN" ? "Entrada" : "Salida",
         line.baseQuantity.toString(),
         getUnit(line.unitCode).name,

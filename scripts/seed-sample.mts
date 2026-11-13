@@ -190,6 +190,41 @@ for (const [sku, name, category, where, stock, minimum] of PRODUCTS) {
   );
 }
 
+// A product by lot (WMS-21): two lots with different expiry dates, one of
+// them about to expire, so «Por caducar» and the order of «de dónde sale»
+// have something to show.
+{
+  const inDays = (days: number) =>
+    new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  const made = await must(
+    "producto LIM-001",
+    createProduct(actor, {
+      sku: "LIM-001",
+      name: "Gel antibacterial 500 ml",
+      category: "Limpieza",
+      unit: "piece",
+      tracking: "LOT",
+      lotExpiry: "REQUIRED",
+    }),
+  );
+  products["LIM-001"] = made.productId;
+  for (const [code, days, where, quantity] of [
+    ["L-2501", 20, "A2-1", "36"],
+    ["L-2502", 240, "B1-1", "60"],
+  ] as const) {
+    await must(
+      `lote ${code}`,
+      inventory.registerInitialBalance(actor, {
+        productId: made.productId,
+        quantity,
+        locationId: locations[where],
+        lotCode: code,
+        lotExpiresOn: inDays(days),
+      }),
+    );
+  }
+}
+
 // Some history: an entry and two exits.
 await must(
   "entrada",
@@ -232,6 +267,8 @@ for (const [sku, quantity, unitCost] of [
   ["CIN-002", "60", "18.50"],
   ["ETI-002", "30", "42.00"],
   ["FLE-001", "20", "310.00"],
+  // A product by lot: receiving it asks for its lot and expiry.
+  ["LIM-001", "48", "35.00"],
 ] as const) {
   await must(
     `línea ${sku}`,
@@ -262,6 +299,8 @@ for (const [sku, quantity] of [
   ["CAJ-001", "50"],
   ["CIN-001", "12"],
   ["GUA-001", "10"],
+  // By lot: picked from the lot that expires first.
+  ["LIM-001", "12"],
 ] as const) {
   await must(
     `línea de pedido ${sku}`,

@@ -352,6 +352,7 @@ export {
   listExpiringLots,
   listLotStock,
   listProductLots,
+  lotSourceChoices,
 } from "./lots";
 export type {
   ExpiringLot,

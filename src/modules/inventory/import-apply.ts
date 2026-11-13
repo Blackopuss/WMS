@@ -55,6 +55,9 @@ export type ImportItemData = {
     locationId: string;
     /** Cost of one unit of the product (VAL-03B); absent in older imports. */
     unitCost?: string | null;
+    /** WMS-21: lot and expiry of this stock; absent in older imports. */
+    lotCode?: string | null;
+    lotExpiresOn?: string | null;
   }[];
 };
 

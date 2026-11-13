@@ -1876,7 +1876,10 @@ export async function registerAdjustment(
             replay.createdByUserId !== userId ||
             line.productId !== data.productId ||
             (data.locationId !== null && line.locationId !== data.locationId) ||
-            (line.lotId ?? null) !== (data.lotId ?? null)
+            !sameLot(line, {
+              lotId: data.lotId || null,
+              lotCode: data.lotCode || null,
+            })
           ) {
             return reject("not_allowed", null, KEY_REUSED);
           }
@@ -1960,16 +1963,24 @@ export async function registerAdjustment(
         );
       }
 
-      // WMS-21: a product by lot is corrected lot by lot.
-      if (data.lotCode || data.lotExpiresOn) {
+      // WMS-21: a product by lot is corrected lot by lot. A lot the system
+      // does not know — found on the shelf or in a count — is given by
+      // its code: it is born here, with the movement that brings its stock
+      // (a refusal rolls it back), so no lot exists without one.
+      const newLot = Boolean(data.lotCode || data.lotExpiresOn);
+      if (newLot && data.lotId) {
         return reject(
           "invalid",
           "lotId",
-          "Un ajuste corrige un lote que ya existe: elígelo de la lista. Un lote nuevo se registra con una entrada.",
+          "Elige un lote de la lista o escribe uno nuevo, no los dos.",
         );
       }
-      const lotAnswer = await lotForTake(tx, product, data.lotId);
-      if (!lotAnswer.ok) return reject("invalid", "lotId", lotAnswer.error);
+      const lotAnswer = newLot
+        ? await lotForEntry(tx, actor, product, data)
+        : await lotForTake(tx, product, data.lotId);
+      if (!lotAnswer.ok) {
+        return reject("invalid", lotAnswer.field, lotAnswer.error);
+      }
       const lot = lotAnswer.lot;
 
       const unitCode = product.unitCode;

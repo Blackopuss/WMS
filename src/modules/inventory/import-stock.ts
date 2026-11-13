@@ -7,7 +7,8 @@ import type { TenantDb } from "@/server";
 
 import { checkPlacement, type PlacementRules } from "./placement";
 import { lineCost, openCostBook } from "./valuation";
-import { availableOfLot } from "./stock-status";
+import { availableOfLot, lotColumns } from "./stock-status";
+import { LOT_RULE_SELECT, checkLotEntry, lotForEntry } from "./lot-resolve";
 
 /**
  * Initial stock that comes in the file of an import (IMP-09). Each row
@@ -38,7 +39,28 @@ export type ImportedStockLine = {
   locationId: string;
   /** Cost of one unit of the product, before taxes (VAL-03B). */
   unitCost?: string | null;
+  /**
+   * WMS-21 (ADR 0040): the lot of this stock («L-01») and its expiry
+   * («2027-03-05»), for a product by lot. Created the first time it is seen.
+   */
+  lotCode?: string | null;
+  lotExpiresOn?: string | null;
 };
+
+/**
+ * The expiry of each lot of a product's rows: a lot has one date, and a
+ * row may leave it empty when another row gives it (WMS-21).
+ */
+function lotExpiries(lines: readonly ImportedStockLine[]) {
+  const dates = new Map<string, string>();
+  for (const line of lines) {
+    if (line.lotCode && line.lotExpiresOn && !dates.has(line.lotCode)) {
+      dates.set(line.lotCode, line.lotExpiresOn);
+    }
+  }
+  return (line: ImportedStockLine) =>
+    line.lotCode ? (dates.get(line.lotCode) ?? null) : null;
+}
 
 /** Largest quantity a movement line keeps, captured or in the unit. */
 const MAX_BALANCE = "999999999.999";
@@ -73,8 +95,11 @@ export async function checkImportedStock(
 ): Promise<string | null> {
   if (lines.length === 0) return null;
   const ids = [...new Set(lines.map((line) => line.locationId))];
-  if (ids.length !== lines.length) {
-    return "El archivo da dos existencias para la misma ubicación.";
+  const slots = new Set(
+    lines.map((line) => `${line.locationId}|${line.lotCode ?? ""}`),
+  );
+  if (slots.size !== lines.length) {
+    return "El archivo da dos existencias para la misma ubicación y lote.";
   }
   if (lines.some((line) => line.inPresentation) && !hasPresentation) {
     return "La existencia viene en una presentación que la fila no tiene.";
@@ -133,15 +158,44 @@ export async function checkImportedStock(
       return `${placed.message} (Fila ${lines[placed.index]!.row}).`;
     }
   }
-  if (!product) return null;
+  if (!product) {
+    // WMS-21: a product born from the file is without lots.
+    const withLot = lines.find((line) => line.lotCode);
+    return withLot
+      ? `Un producto nuevo entra sin lote, pero la fila ${withLot.row} trae lote. Márcalo «por lote» en su ficha e importa después sus existencias.`
+      : null;
+  }
 
-  // WMS-21 (ADR 0040): the file does not say which lot each quantity is.
-  const tracked = await tx.product.findFirst({
+  // WMS-21 (ADR 0040): each stock of a product by lot names its lot; any
+  // other product never takes one. Asked without writing: the lots are
+  // created when the stock is posted.
+  const ruled = await tx.product.findFirst({
     where: { id: product.id },
-    select: { tracking: true },
+    select: { id: true, sku: true, ...LOT_RULE_SELECT },
   });
-  if (tracked?.tracking === "LOT") {
-    return "El producto se controla por lote y el archivo no dice de qué lote es cada existencia. Registra su saldo inicial a mano, lote por lote.";
+  if (!ruled) return "El producto ya no existe.";
+  /** The lot each line goes to: its id, «new» for a lot to create. */
+  const lotKeyOf = new Map<ImportedStockLine, string>();
+  const expiryOf = lotExpiries(lines);
+  for (const line of lines) {
+    if (
+      line.lotCode &&
+      line.lotExpiresOn &&
+      line.lotExpiresOn !== expiryOf(line)
+    ) {
+      return `El lote ${line.lotCode} trae dos caducidades distintas en el archivo (fila ${line.row}).`;
+    }
+    const checked = await checkLotEntry(
+      tx,
+      { ...ruled, name: ruled.sku },
+      { lotCode: line.lotCode, lotExpiresOn: expiryOf(line) },
+    );
+    if (!checked.ok) {
+      return ruled.tracking === "LOT" && !line.lotCode
+        ? `El producto se controla por lote y la fila ${line.row} no dice de qué lote es su existencia.`
+        : `Fila ${line.row}: ${checked.error}`;
+    }
+    lotKeyOf.set(line, checked.lot ? (checked.lot.existing?.id ?? "new") : "");
   }
 
   // The product is locked: what is read here cannot change under us.
@@ -152,14 +206,23 @@ export async function checkImportedStock(
   if (moved) {
     return "El producto ya tiene movimientos: su existencia ya no es «inicial». Corrige la cantidad con un ajuste o un conteo.";
   }
-  // Only initial balances are left: one per location, at most.
-  const counted = await tx.stockMovementLine.findFirst({
+  // Only initial balances are left: one per location and lot, at most.
+  const counted = await tx.stockMovementLine.findMany({
     where: { productId: product.id, locationId: { in: ids } },
-    select: { locationId: true },
+    take: 500,
+    select: { locationId: true, lotKey: true },
   });
-  if (counted) {
-    const taken = lines.find((line) => line.locationId === counted.locationId)!;
-    return `El producto ya tiene saldo inicial en «${byId.get(taken.locationId)!.name}» (fila ${taken.row}).`;
+  const taken = lines.find((line) =>
+    counted.some(
+      (earlier) =>
+        earlier.locationId === line.locationId &&
+        earlier.lotKey === lotKeyOf.get(line),
+    ),
+  );
+  if (taken) {
+    return taken.lotCode
+      ? `El producto ya tiene saldo inicial del lote ${taken.lotCode} en «${byId.get(taken.locationId)!.name}» (fila ${taken.row}).`
+      : `El producto ya tiene saldo inicial en «${byId.get(taken.locationId)!.name}» (fila ${taken.row}).`;
   }
   // The file was read with the rule a new product of that unit gets; a
   // product that exists may measure in other steps.
@@ -196,11 +259,27 @@ export async function postImportedStock(
 ): Promise<{ movements: number }> {
   const { organizationId, userId } = actor;
   const { product, presentation } = input;
+  const ruled = await tx.product.findFirst({
+    where: { id: product.id },
+    select: { id: true, name: true, ...LOT_RULE_SELECT },
+  });
+  if (!ruled) throw new Error(`Imported product ${product.id} is gone`);
   // VAL-03B: read before any balance changes, under the product's lock.
   const costs = await openCostBook(tx, organizationId, [product.id]);
+  const expiryOf = lotExpiries(input.lines);
   let number = 0;
   for (const line of input.lines) {
     number++;
+    // WMS-21: `checkImportedStock` already said it can; a new lot is born
+    // here, with the movement that brings its stock.
+    const lotAnswer = await lotForEntry(tx, actor, ruled, {
+      lotCode: line.lotCode,
+      lotExpiresOn: expiryOf(line),
+    });
+    if (!lotAnswer.ok) {
+      throw new Error(`Lot of imported row ${line.row}: ${lotAnswer.error}`);
+    }
+    const lotId = lotAnswer.lot?.id ?? null;
     const unitCost = costs.entry(product.id, line.base, line.unitCost ?? null);
     const inPresentation = line.inPresentation && presentation !== null;
     const movementId = newId();
@@ -233,6 +312,7 @@ export async function postImportedStock(
         factor: inPresentation ? presentation.content : "1",
         baseQuantity: line.base,
         unitCode: product.unitCode,
+        ...lotColumns(lotId),
         unitCost: lineCost(unitCost),
       },
     });
@@ -240,8 +320,7 @@ export async function postImportedStock(
       where: {
         productId: product.id,
         locationId: line.locationId,
-        // Never a product by lot: `checkImportedStock` stops it.
-        ...availableOfLot(null),
+        ...availableOfLot(lotId),
       },
       data: { quantity: { increment: line.base } },
     });
@@ -252,6 +331,7 @@ export async function postImportedStock(
           organizationId,
           productId: product.id,
           locationId: line.locationId,
+          ...lotColumns(lotId),
           quantity: line.base,
         },
       });

@@ -19,6 +19,7 @@ import {
   getStockByLocation,
   getStockTotals,
   listLotStock,
+  lotSourceChoices,
   listStockLocations,
   listTaskPeople,
 } from "@/modules/inventory";
@@ -215,14 +216,10 @@ export default async function NuevaTareaPage({
   // WMS-21: a product by lot moves a lot: the origin names both.
   const lotStock =
     product.tracking === "LOT" ? await listLotStock(actor, product.id) : null;
+  // What expires first goes first: the option it starts with.
   const sources = lotStock
-    ? locations.flatMap((location) =>
-        lotStock
-          .filter((row) => row.locationId === location.id)
-          .map((row) => ({
-            id: `${location.id}|${row.lotId}`,
-            label: `${location.path} · ${row.label}${row.expired ? " (caducado)" : ""} — hay ${formatStock(row.free, product.unitCode)}`,
-          })),
+    ? lotSourceChoices(lotStock, locations, product.unitCode).map(
+        ({ id, label }) => ({ id, label }),
       )
     : locations
         .filter((location) => stock[location.id])

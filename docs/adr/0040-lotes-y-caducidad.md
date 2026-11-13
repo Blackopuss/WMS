@@ -1,6 +1,7 @@
 # ADR 0040 — Lotes y caducidad
 
-Fecha: 2026-11-12 · Estado: aceptada · Paso: WMS-21A · Completa ADR 0033
+Fecha: 2026-11-12 (pendientes cerrados el 2026-11-13) · Estado: aceptada ·
+Paso: WMS-21A · Completa ADR 0033
 
 ## Contexto
 
@@ -35,24 +36,34 @@ serie y la consulta de trazabilidad por serie o por pedido son WMS-21B.
      registra sin ella.
    - Una caducidad mal capturada se corrige en la ficha del lote («Corregir
      caducidad», con motivo y bitácora), no registrando el lote otra vez.
-   - En una recepción, cada línea de la orden llega en un lote. Dos lotes de
-     la misma línea se reciben en dos recepciones (la orden queda parcial
-     entre una y otra).
+   - En una recepción, cada línea de la orden llega en uno o varios lotes:
+     «Llegó en otro lote» agrega otra fila (cantidad, lote y caducidad) a
+     ese producto. Entre todas nunca pasan de lo pendiente de la línea, y el
+     mismo lote no se repite (se suman sus cantidades). Cada fila es una
+     línea de recepción con su lote: la devolución sale de ese lote.
 3. **Todo lo que saca, mueve o corrige** existencias de un producto por lote
    dice de qué lote: salida y salida rápida, reubicación, tarea de traslado,
    cambio de estado, ajuste y conteo. En pantalla, «de dónde sale» lista cada
    ubicación con cada lote que tiene («Estante 2 · Lote L-01 · caduca
    05/03/2027 — hay 40 piezas»): se elige en un solo paso. La devolución al
    proveedor sale del lote de la recepción y una reversa devuelve cada línea a
-   su lote, sin preguntar.
-4. **Surtido.** Al liberar un pedido, el sistema elige ubicación **y lote**
-   según el ajuste de la empresa «De dónde se surte primero»: la ubicación más
-   llena, la menos llena, **lo que caduca primero (FEFO)** o **el lote más
-   antiguo (FIFO)**. La reserva y la tarea de surtido llevan su lote; el
-   almacenista confirma producto, ubicación, **lote** y cantidad. Un lote ya
-   caducado no se propone, salvo que la empresa diga otra cosa («Lotes
-   caducados al surtir»). Si por eso no alcanza, el pedido lo dice como
-   cualquier faltante.
+   su lote, sin preguntar. **Lo que caduca antes va primero** en ese
+   selector, así la opción con la que empieza es la recomendada; el texto
+   empieza por lo que distingue una opción de otra («Lote L-01 · caduca
+   05/03/2027 · Estante 2 — hay 40 piezas») porque en el teléfono un
+   selector cerrado solo muestra el principio.
+4. **Surtido.** Al liberar un pedido, el sistema elige ubicación **y lote**.
+   **Lo que caduca antes sale antes, siempre** (fundador, 2026-11-13): los
+   lotes se ordenan por su caducidad, los que no tienen fecha al final,
+   sea cual sea el ajuste de la empresa. El ajuste «De dónde se surte
+   primero» (la ubicación más llena, la menos llena o **el lote más
+   antiguo, FIFO**) decide solo entre ubicaciones del mismo lote y para
+   productos sin caducidad o sin lotes. La reserva y la tarea de surtido
+   llevan su lote; el almacenista confirma producto, ubicación, **lote** y
+   cantidad. Un lote ya caducado no se propone, salvo que la empresa diga
+   otra cosa («Lotes caducados al surtir»). Si por eso no alcanza, el pedido
+   lo dice como cualquier faltante. La página del pedido dice el lote de
+   cada línea de surtido.
 5. **Caducidad próxima.** Inventario › «Por caducar» lista los lotes con
    existencias que ya caducaron o caducan dentro de los días que eligió la
    empresa («Avisar de lotes por caducar», 30 por omisión). Inicio e
@@ -63,12 +74,30 @@ serie y la consulta de trazabilidad por serie o por pedido son WMS-21B.
    caducar»: su caducidad, dónde está hoy por ubicación y estado, y sus
    movimientos (de dónde vino y a dónde fue), con los mismos filtros y el
    mismo alcance que el historial.
-7. **Importaciones.** Ningún archivo dice todavía de qué lote es cada
-   cantidad, así que no mueven productos por lote: en el archivo de
-   existencias (saldos iniciales) ese producto falla entero con su motivo y
-   el resto del archivo sigue; en un archivo de salidas, sus filas se
-   rechazan con su motivo. Se registran a mano, lote por lote. Un producto
-   que nace de una importación es «sin lote».
+7. **Importaciones.** El archivo de existencias (saldos iniciales) tiene las
+   columnas «Lote» y «Caducidad» (día del calendario: 2027-03-05 o
+   05/03/2027, nunca mes/día): un producto por lote se repite en una fila
+   por ubicación y lote; el lote se crea la primera vez, con su caducidad,
+   y uno que ya existe conserva la suya (el archivo puede dejarla vacía o
+   repetirla; distinta se rechaza). El archivo de salidas tiene la columna
+   «Lote»: un producto por lote dice de qué lote salió, uno que ya exista.
+   Un producto por lote sin lote, o cualquier otro con lote, es un problema
+   de su fila antes de confirmar; si el control cambió después de
+   confirmar, el producto (o la fila de salida) falla con su motivo. Un
+   producto que nace de una importación es «sin lote»: una fila suya con
+   lote se rechaza, diciendo que primero se marque «por lote».
+8. **Un lote que aparece y el sistema no conoce** (en un conteo o en el
+   estante) se da de alta con «Corregir existencias» (ajuste): además de los
+   lotes de la lista, «Un lote que no está en la lista» pide su código y su
+   caducidad. El lote nace en la misma transacción que el ajuste que trae
+   sus existencias; si el ajuste se rechaza, el lote no queda. En la
+   captura de un conteo, quien puede ajustar ve el enlace «Registrar un
+   lote nuevo»; quien no, el aviso de pedírselo a quien corrige existencias.
+9. **Cambiar el control** de un producto, además de pedir que no tenga
+   existencias ni apartados, se impide mientras haya algo empezado con el
+   control anterior que ya no podría terminar: un conteo abierto que lo
+   incluya, una tarea sin terminar o salidas de un archivo por registrar.
+   Cada caso dice qué hacer.
 
 ## Decisión
 
@@ -104,15 +133,17 @@ serie y la consulta de trazabilidad por serie o por pedido son WMS-21B.
   ubicación (todos los lotes) y lo libre de ese lote ahí (`freeToTake`,
   `freeToMoveFrom`, con el lote como parámetro). Una reserva sin lote en una
   ubicación (no las crea el surtido) resta de todos sus lotes.
-- **Surtido.** `pickSources` sigue siendo el único lugar que decide: devuelve
-  ubicación, lote y cantidad. `PICKING_STRATEGY` gana `fefo` y `fifo`. FEFO
-  ordena por caducidad (sin fecha al final) y FIFO por antigüedad del lote
-  (cuándo se registró por primera vez); con «la más llena» y «la menos llena»
-  un producto por lote también surte de un lote concreto. Un producto sin
-  lote no tiene fechas: con FEFO o FIFO sale de la ubicación más llena, y el
-  ajuste lo dice. Ajuste nuevo `inventory.picking.expired` (`skip` por
-  omisión, `allow`): hay empresas para las que la fecha es «consumo
-  preferente» y sí despachan después.
+- **Surtido.** `pickSources` sigue siendo el único lugar que decide:
+  devuelve ubicación, lote y cantidad. Ordena **primero por caducidad**
+  (sin fecha al final) y después según `PICKING_STRATEGY` (`fullest`,
+  `emptiest`, `fifo`: antigüedad del lote, cuándo se registró por primera
+  vez). La opción `fefo` existió un día (2026-11-12) y se quitó al
+  volverse la regla para todos: una empresa que la tenía guardada lee el
+  valor por omisión (`fullest`), con el mismo resultado para lo que
+  caduca. Un producto sin lote no tiene fechas: sale según el ajuste.
+  Ajuste `inventory.picking.expired` (`skip` por omisión, `allow`): hay
+  empresas para las que la fecha es «consumo preferente» y sí despachan
+  después. **Sin vida útil mínima** al surtir (fundador, 2026-11-13).
 - **Tareas.** `warehouse_task.lotId` (inmutable, disparador). Una tarea de
   traslado de un producto por lote se crea con su lote; la de surtido lo
   recibe de `pickSources`. `confirmPick` pide el lote y lo compara con el de
@@ -121,7 +152,35 @@ serie y la consulta de trazabilidad por serie o por pedido son WMS-21B.
   (índice único ensanchado), con su referencia propia (`systemQuantity` del
   saldo de ese lote). Aplicar ajusta cada lote por separado.
 - **Recepción y devolución.** `purchase_receipt_line.lotId` guarda el lote en
-  que llegó cada línea; `postReturnExit` saca de ese lote.
+  que llegó cada línea; `postReturnExit` saca de ese lote. Una línea de la
+  orden puede llegar en varias líneas de recepción (una por lote, hasta
+  `RECEIPT_LOTS_PER_LINE`) en la misma recepción: lo pendiente se cuenta
+  sumándolas, el mismo lote no se repite, y un producto sin lote sigue
+  llegando en una sola. El reintento (`sameReceipt`, CMP-10) compara
+  también el lote tecleado de cada línea: la misma clave con otro lote es
+  un formulario reutilizado.
+- **Importaciones.** Existencias: columnas `lot` y `lotExpiry` en
+  `IMPORT_COLUMNS`; la revisión valida forma y fecha (`parseCalendarDay`,
+  el mismo lector de días de las salidas) y que un lote no traiga dos
+  fechas; la clasificación pregunta al catálogo con `checkLotEntry` (la
+  misma regla de `lotForEntry`, sin escribir); se fija al confirmar y
+  `checkImportedStock` vuelve a preguntar antes de tocar el producto. Solo
+  `postImportedStock` crea el lote (`lotForEntry`), con el movimiento
+  `INITIAL`. Salidas: columna `lot`; la revisión busca el lote por código
+  entre los del producto y lo fija en `exit_import_row.lotId` (columna
+  nueva, con disparador que exige que el lote sea de su producto); el
+  worker lo vuelve a resolver con `lotForTake`. **El folio sigue siendo lo
+  único que deduplica** (`exitKey` = producto + folio): una venta de un
+  producto sale una sola vez, nombre el lote que nombre, así que un ticket
+  que sacó dos lotes del mismo producto no cabe en el archivo (se registra
+  a mano).
+- **Lo que sale del sistema.** La exportación de existencias agrega
+  «Lote» y «Caducidad» y la de movimientos «Lote», solo cuando el archivo
+  tiene algún lote (una empresa sin lotes recibe el archivo de siempre).
+  El PDF de la orden de compra y los reportes de Compras **no** llevan lote:
+  una orden no tiene lote hasta que se recibe, y los reportes cuentan
+  órdenes y pendientes por línea, no existencias; el lote recibido está en
+  la recepción y en sus movimientos.
 - **Caducidad próxima.** `listExpiringLots`/`countExpiringLots`
   (`src/modules/inventory/lots.ts`): derivado en cada consulta de `lot` +
   saldos con existencias, sin banderas; dentro del alcance de la persona
@@ -148,10 +207,11 @@ serie y la consulta de trazabilidad por serie o por pedido son WMS-21B.
 - **El control de caducidad tiene tres valores** (no lleva, opcional,
   obligatoria) en lugar de «lleva / no lleva» + «obligatoria»: es un solo
   campo y no admite combinaciones sin sentido.
-- **Un conteo o un ajuste no dan de alta lotes.** Se cuenta y se ajusta un
-  lote que el sistema conoce; lo que aparece de un lote desconocido se
-  registra con una entrada (que pide su caducidad). Evita lotes fantasma por
-  un error de captura al contar.
+- **Un conteo no da de alta lotes; un ajuste sí** (2026-11-13). La captura
+  de un conteo no escribe movimientos: si creara el lote, un conteo
+  cancelado dejaría un lote sin existencias por un error de dedo. El ajuste
+  lo crea en la misma transacción que el movimiento que trae sus
+  existencias, pide permiso de ajustar y motivo, y queda en la bitácora.
 
 ## Dónde se aplica
 
@@ -163,47 +223,51 @@ serie y la consulta de trazabilidad por serie o por pedido son WMS-21B.
 | Reubicación (`registerTransfer`) | Se elige con el origen; el destino recibe el mismo lote |
 | Tarea de traslado (`createTask` → `deliverTask`) | Se elige al crearla; la entrega mueve ese lote |
 | Cambio de estado (`changeStockStatus`) | Se elige con el origen; conserva el lote |
-| Ajuste (`registerAdjustment`) | Se elige entre los lotes del producto |
+| Ajuste (`registerAdjustment`) | Se elige entre los lotes del producto, o uno nuevo por su código (nace con el ajuste) |
 | Conteo (`captureCount`, `applyCount`) | Se elige al capturar; una línea y un ajuste por lote |
 | Devolución al proveedor (`returnToSupplier` → `postReturnExit`) | El de la línea de recepción |
 | Reversa (`reverseMovement`) | El de cada línea original |
 | Liberar pedido y surtir (`pickSources`, `createPickTasks`, `confirmPick`, `deliverPick`) | Lo elige la estrategia; se confirma al surtir; la reserva lo lleva |
-| Existencias importadas (`checkImportedStock`) | No admite productos por lote: el producto falla entero con su motivo |
-| Salidas importadas (`applyExitImport`) | No admite productos por lote: la fila falla con su motivo |
+| Existencias importadas (`checkImportedStock` → `postImportedStock`) | Columnas «Lote» y «Caducidad»; se crea o se reutiliza |
+| Salidas importadas (`applyExitImport`) | Columna «Lote», uno que ya existe; fijado al confirmar |
 
 El selector de lotes de cada pantalla se arma en el servidor
 (`listLotStock`, `listProductLots`) y viaja solo el id del lote; el servicio
 vuelve a comprobar que es de ese producto.
+
+## Decisiones del fundador (2026-11-13)
+
+1. **Lo que caduca antes sale antes, siempre.** Con cinco lotes de un
+   producto y un pedido de 500, salen primero los más próximos a caducar,
+   sin que la empresa tenga que elegir nada. El surtido lo hace así sea cual
+   sea el ajuste, y al sacar a mano (salida, salida rápida, reubicación,
+   tarea de traslado) el selector «ubicación · lote» lista primero lo que
+   caduca antes.
+2. **Sin vida útil mínima** al surtir, ni fecha de fabricación ni otros
+   datos del lote. Se quedan los valores por omisión: aviso a 30 días y los
+   caducados no se surten.
 
 ## Lo que quedó fuera (pendiente)
 
 - **Números de serie** y la **consulta de trazabilidad** por serie o por
   pedido: WMS-21B. `product.tracking` ya es un enumerado para recibir
   `SERIAL`.
-- **Varios lotes de una misma línea en una sola recepción.** Hoy son dos
-  recepciones.
-- **Vida útil mínima al surtir** («no despachar lo que caduca en menos de N
-  días») y **bloqueo automático** de lo caducado (pasarlo a «Bloqueado»): hoy
-  solo deja de proponerse al surtir; sacarlo a mano sigue permitido, porque
-  así se da de baja.
-- **Dar de alta un lote desde un conteo** (lo que se encuentra de un lote que
-  el sistema no conoce se registra con una entrada).
-- **Importaciones con lote:** columnas «Lote» y «Caducidad» en el archivo de
-  existencias y «Lote» en el de salidas. Hoy esos productos se rechazan con
-  su motivo; nunca entran ni salen sin lote.
-- **Un producto que cambió de control** (solo posible sin existencias) deja
-  sin efecto lo que estaba a medias con el control anterior: sus movimientos
-  viejos ya no se reversan, un conteo abierto pide recontarlo y una
-  devolución de una recepción anterior se hace con una salida. Cada caso
-  responde con su motivo; no hay una pantalla que los liste antes de cambiar.
-- **Reintento de una recepción con otro lote:** una clave repetida compara
-  líneas, cantidades y ubicaciones (CMP-10), no el lote tecleado.
-- **Pantallas de verificación** (`verify:a11y`, `load:test`): «Por caducar» y
-  la ficha del lote no se agregaron a sus listas.
-- **Exportación de existencias por lote** y lote en el PDF de la orden y en
-  los reportes de Compras.
+- **Bloqueo automático** de lo caducado (pasarlo a «Bloqueado»): hoy solo
+  deja de proponerse al surtir; sacarlo a mano sigue permitido, porque así
+  se da de baja.
+- **Un ticket con dos lotes del mismo producto** en un archivo de salidas:
+  el folio deduplica por producto, así que se registra a mano.
 - **Fecha de fabricación** y otros datos del lote (proveedor, certificado):
   cuando un paso los pida.
+- **Varios lotes de una línea guardados en lugares distintos** dentro de la
+  misma recepción: la ubicación es de la línea («Guardar en»), no de cada
+  lote; si van a lugares distintos, se reubica después o se reciben en dos
+  recepciones.
+- Lo que ya terminó con el control anterior de un producto (sus
+  movimientos viejos, la devolución de una recepción anterior) no se
+  reversa ni se devuelve después del cambio: cada caso responde con su
+  motivo y se corrige con una salida o un ajuste. Lo que estaba a medias
+  (conteo, tarea, archivo de salidas) ya impide el cambio.
 - Lo no disponible sigue sin poder contarse (ADR 0033), también por lote.
 
 ## Consecuencias
@@ -217,4 +281,10 @@ vuelve a comprobar que es de ese producto.
   primaria (el disparador consulta el producto).
 - La reconciliación ya comparaba por lote (ADR 0033): no cambia.
 - Tablas tocadas: `product`, `lot`, `warehouse_task`, `stock_count_line`,
-  `purchase_receipt_line`. Ninguna tabla nueva.
+  `purchase_receipt_line` y, el 2026-11-13, `exit_import_row` (`lotId`,
+  migración `20261113120000_wms_lot_imports`, solo de expansión). Ninguna
+  tabla nueva.
+- Pantallas de verificación: «Por caducar» y la ficha de un lote están en
+  `SCREENS` de `scripts/verify-a11y.mjs` y en `screens()` de
+  `scripts/load-test.mts`; `npm run db:seed:ejemplo` agrega un producto por
+  lote con dos lotes de caducidad distinta.

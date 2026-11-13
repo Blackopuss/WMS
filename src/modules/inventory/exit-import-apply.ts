@@ -16,7 +16,8 @@ import {
 import { EXIT_IMPORT_JOB_TYPE, exitKey, formatExitDay } from "./exit-import";
 import { formatStock } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
-import { availableOfLot } from "./stock-status";
+import { availableOfLot, lotColumns } from "./stock-status";
+import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 
 /**
  * Registering the exits of a confirmed file, in the worker (IMP-10). The
@@ -122,6 +123,8 @@ type PendingRow = {
   presentationId: string | null;
   quantity: string;
   locationId: string;
+  /** WMS-21: the lot fixed at confirmation, for a product by lot. */
+  lotId: string | null;
 };
 
 type RowOutcome =
@@ -148,16 +151,32 @@ async function registerRow(
 
   const product = await tx.product.findFirst({
     where: { id: line.productId },
-    select: { id: true, sku: true, name: true, status: true, tracking: true },
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+      status: true,
+      ...LOT_RULE_SELECT,
+    },
   });
   if (!product) return { kind: "failed", error: "El producto ya no existe." };
-  // WMS-21 (ADR 0040): the file does not say which lot left.
-  if (product.tracking === "LOT") {
+  // WMS-21 (ADR 0040): the lot fixed at confirmation. A product whose
+  // control changed since (only possible without stock) fails here.
+  const lotAnswer = await lotForTake(
+    tx,
+    { ...product, name: product.sku },
+    line.lotId,
+  );
+  if (!lotAnswer.ok) {
     return {
       kind: "failed",
-      error: `${product.sku} se controla por lote y el archivo no dice de qué lote salió. Registra esta salida a mano, eligiendo el lote.`,
+      error:
+        product.tracking === "LOT"
+          ? `${product.sku} ahora se controla por lote y la fila no dice de qué lote salió. Sube el archivo de nuevo con la columna «Lote».`
+          : lotAnswer.error,
     };
   }
+  const lot = lotAnswer.lot;
   if (product.status !== "ACTIVE") {
     return {
       kind: "failed",
@@ -206,7 +225,7 @@ async function registerRow(
     where: {
       productId: product.id,
       locationId: location.id,
-      ...availableOfLot(null),
+      ...availableOfLot(lot?.id),
       quantity: { gte: base.toString() },
     },
     data: { quantity: { decrement: base.toString() } },
@@ -216,7 +235,7 @@ async function registerRow(
       where: {
         productId: product.id,
         locationId: location.id,
-        ...availableOfLot(null),
+        ...availableOfLot(lot?.id),
       },
       select: { quantity: true },
     });
@@ -224,8 +243,8 @@ async function registerRow(
     return {
       kind: "failed",
       error: there.isZero()
-        ? `No hay existencias de ${product.sku} en ${location.name}. Corrige el inventario (entrada, ajuste o conteo) y sube el archivo de nuevo.`
-        : `Solo hay ${formatStock(there.toString(), unitCode)} de ${product.sku} en ${location.name}: no pueden salir ${formatStock(base.toString(), unitCode)}. Corrige el inventario y sube el archivo de nuevo.`,
+        ? `No hay existencias de ${product.sku}${ofLot(lot)} en ${location.name}. Corrige el inventario (entrada, ajuste o conteo) y sube el archivo de nuevo.`
+        : `Solo hay ${formatStock(there.toString(), unitCode)} de ${product.sku}${ofLot(lot)} en ${location.name}: no pueden salir ${formatStock(base.toString(), unitCode)}. Corrige el inventario y sube el archivo de nuevo.`,
     };
   }
 
@@ -260,6 +279,7 @@ async function registerRow(
       factor: conversion.factor.toString(),
       baseQuantity: base.toString(),
       unitCode,
+      ...lotColumns(lot?.id),
       unitCost: lineCost(unitCost),
     },
   });
@@ -351,6 +371,7 @@ export async function applyExitImport(
             presentationId: true,
             quantity: true,
             locationId: true,
+            lotId: true,
           },
         });
 

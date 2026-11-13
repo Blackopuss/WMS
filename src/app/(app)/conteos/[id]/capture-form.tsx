@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleAlert, Equal, Loader2, Search, X } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,17 @@ import {
  * write down how many there are, in boxes, pieces or another unit. Each
  * capture is saved at once, so nothing is lost if the screen closes.
  */
-export function CaptureForm({ countId }: { countId: string }) {
+export function CaptureForm({
+  countId,
+  canAddLot,
+}: {
+  countId: string;
+  /**
+   * WMS-21: whoever may adjust gets a way to give a lot that is not in the
+   * list (it is born with the adjustment that brings its stock).
+   */
+  canAddLot: boolean;
+}) {
   const searchRef = useRef<HTMLInputElement>(null);
   const quantityRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -292,7 +303,14 @@ export function CaptureForm({ countId }: { countId: string }) {
             (product.lots.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Este producto se controla por lote y todavía no tiene ninguno.
-                Lo que encuentres se registra con una entrada, con su lote.
+                {canAddLot ? (
+                  <>
+                    {" "}
+                    <NewLotLink productId={product.id} />
+                  </>
+                ) : (
+                  " Pide a quien corrige existencias que registre el lote que encontraste."
+                )}
               </p>
             ) : (
               <div>
@@ -314,6 +332,11 @@ export function CaptureForm({ countId }: { countId: string }) {
                     </option>
                   ))}
                 </NativeSelect>
+                {canAddLot && (
+                  <p className="mt-1 text-sm">
+                    <NewLotLink productId={product.id} />
+                  </p>
+                )}
               </div>
             ))}
           <div className="flex flex-wrap gap-2">
@@ -404,5 +427,17 @@ export function CaptureForm({ countId }: { countId: string }) {
         {notice?.text}
       </p>
     </section>
+  );
+}
+
+/** Where a lot found on the shelf that the system does not know is given. */
+function NewLotLink({ productId }: { productId: string }) {
+  return (
+    <Link
+      href={`/movimientos/ajuste?producto=${encodeURIComponent(productId)}`}
+      className="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      Registrar un lote nuevo
+    </Link>
   );
 }

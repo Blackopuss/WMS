@@ -19,6 +19,7 @@ import {
   getStockByLocation,
   getStockTotals,
   listLotStock,
+  lotSourceChoices,
   listProductLots,
   listStockLocations,
 } from "@/modules/inventory";
@@ -287,16 +288,9 @@ export async function MovementScreen({
   if (kind === "exit" || kind === "transfer") {
     // Stock only leaves from where there is some. A product by lot leaves
     // from a lot in a location: one choice for both («ubicación|lote»).
+    // What expires first goes first: the option it starts with.
     const sources = byLot
-      ? locations.flatMap((location) =>
-          lotStock
-            .filter((row) => row.locationId === location.id)
-            .map((row) => ({
-              id: `${location.id}|${row.lotId}`,
-              place: location.id,
-              label: `${location.path} · ${row.label}${row.expired ? " (caducado)" : ""} — hay ${formatStock(row.free, product.unitCode)}`,
-            })),
-        )
+      ? lotSourceChoices(lotStock, locations, product.unitCode)
       : locations
           .filter((location) => stock[location.id])
           .map((location) => ({
@@ -385,29 +379,6 @@ export async function MovementScreen({
     );
   }
 
-  if (kind === "adjustment" && byLot && productLots.length === 0) {
-    return (
-      <PageContainer>
-        {another}
-        {header}
-        <EmptyState
-          icon={Package}
-          title="Este producto todavía no tiene lotes"
-          description="Se ajusta un lote que ya existe. Lo que llegó de un lote nuevo se registra con una entrada."
-          action={
-            access.allows("inventory.entry.create") ? (
-              <Button asChild variant="outline">
-                <Link href={`/movimientos/entrada?producto=${product.id}`}>
-                  Registrar una entrada
-                </Link>
-              </Button>
-            ) : undefined
-          }
-        />
-      </PageContainer>
-    );
-  }
-
   return (
     <PageContainer>
       {another}
@@ -446,6 +417,12 @@ export async function MovementScreen({
                 id: lot.id,
                 label: `${lot.label} — hay ${lot.totalLabel} en total`,
               }))
+            : undefined
+        }
+        // WMS-21: a lot found on the shelf that the system does not know.
+        newLot={
+          byLot && kind === "adjustment"
+            ? { expiry: product.lotExpiry }
             : undefined
         }
       />
