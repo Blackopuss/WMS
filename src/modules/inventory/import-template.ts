@@ -2,7 +2,13 @@ import "server-only";
 
 import { assertModulePermission } from "@/platform/billing";
 import { DIMENSION_LABELS, UNITS } from "@/platform/catalog";
+import {
+  CUSTOM_FIELD_TYPE_LABELS,
+  readCustomFields,
+  type CustomFieldDef,
+} from "@/platform/custom-fields";
 import { buildCsv, buildXlsx, type Cell } from "@/platform/files";
+import { forOrganization } from "@/server";
 
 import type { InventoryActor } from "./movements";
 
@@ -184,8 +190,30 @@ const EXAMPLES: ExampleRow[] = [
 export const TEMPLATE_EXAMPLE_KEYS: readonly { sku: string; name: string }[] =
   EXAMPLES.map((row) => ({ sku: row.sku ?? "", name: row.name ?? "" }));
 
-const exampleRows = (): Cell[][] =>
-  EXAMPLES.map((row) => IMPORT_COLUMNS.map((column) => row[column.key] ?? ""));
+const exampleRows = (extra: number): Cell[][] =>
+  EXAMPLES.map((row) => [
+    ...IMPORT_COLUMNS.map((column) => row[column.key] ?? ""),
+    ...Array<Cell>(extra).fill(""),
+  ]);
+
+/** What to write in a custom field column (WMS-58), for the instructions. */
+function customHelp(field: CustomFieldDef): string {
+  switch (field.type) {
+    case "TEXT":
+      return "Texto libre, hasta 200 caracteres.";
+    case "NUMBER":
+      return "Un número, con el separador decimal que elijas al importar.";
+    case "DATE":
+      return "Una fecha, como 2027-03-05 o 05/03/2027 (día/mes/año).";
+    case "BOOLEAN":
+      return "Sí o No.";
+    case "CHOICE":
+      return `Una de: ${field.options
+        .filter((option) => !option.archived)
+        .map((option) => option.label)
+        .join(", ")}.`;
+  }
+}
 
 export type ImportTemplateFormat = "xlsx" | "csv";
 
@@ -209,12 +237,20 @@ export async function buildImportTemplate(
     actor.userId,
     "inventory.import.create",
   );
-  const headers = IMPORT_COLUMNS.map((column) => column.header);
+  // WMS-58: a column per custom field in use, after ours, by its label.
+  const custom = await readCustomFields(
+    forOrganization(actor.organizationId),
+    "PRODUCT",
+  );
+  const headers = [
+    ...IMPORT_COLUMNS.map((column) => column.header),
+    ...custom.map((field) => field.label),
+  ];
   if (format === "csv") {
     return {
       name: "plantilla-productos.csv",
       contentType: "text/csv; charset=utf-8",
-      bytes: buildCsv([headers, ...exampleRows()]),
+      bytes: buildCsv([headers, ...exampleRows(custom.length)]),
     };
   }
   const instructions: Cell[][] = [
@@ -236,6 +272,12 @@ export async function buildImportTemplate(
       column.help,
       column.example,
     ]),
+    ...custom.map((field) => [
+      field.label,
+      field.required ? "Sí" : "No",
+      `Campo de tu empresa (${CUSTOM_FIELD_TYPE_LABELS[field.type]}). ${customHelp(field)}`,
+      "",
+    ]),
     [],
     ["Unidades válidas", "Se usa para", "¿Admite decimales?"],
     ...UNITS.map((unit) => [
@@ -252,10 +294,8 @@ export async function buildImportTemplate(
       {
         name: "Productos",
         headerRows: 1,
-        rows: [headers, ...exampleRows()],
-        widths: IMPORT_COLUMNS.map((column) =>
-          Math.max(14, column.header.length + 4),
-        ),
+        rows: [headers, ...exampleRows(custom.length)],
+        widths: headers.map((header) => Math.max(14, header.length + 4)),
       },
       {
         name: "Instrucciones",

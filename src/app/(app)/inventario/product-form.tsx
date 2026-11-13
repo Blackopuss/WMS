@@ -4,7 +4,11 @@ import { CircleAlert, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 
-import { FormField } from "@/components";
+import {
+  CustomFieldInputs,
+  FormField,
+  type CustomFieldInputView,
+} from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -51,6 +55,8 @@ export function ProductForm({
   brands,
   unitGroups,
   stepOptions,
+  customFields = [],
+  initialCustom = {},
 }: {
   action: (
     prev: ProductFormState,
@@ -62,10 +68,14 @@ export function ProductForm({
   brands: string[];
   unitGroups: UnitGroup[];
   stepOptions: { value: string; label: string }[];
+  /** WMS-58: custom fields of the company, and their values today. */
+  customFields?: CustomFieldInputView[];
+  initialCustom?: Record<string, string>;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     fieldErrors: {},
     values: initial,
+    custom: initialCustom,
   });
   const formRef = useRef<HTMLFormElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
@@ -76,10 +86,14 @@ export function ProductForm({
     const first = FIELD_ORDER.find((field) => state.fieldErrors[field]);
     if (first)
       formRef.current?.querySelector<HTMLElement>(`#${first}`)?.focus();
+    else if (state.customErrors && Object.keys(state.customErrors).length)
+      formRef.current
+        ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+        ?.focus();
     else if (state.formError) alertRef.current?.focus();
   }, [state]);
 
-  const attempt = JSON.stringify(state.values);
+  const attempt = JSON.stringify([state.values, state.custom]);
   // The precision offered depends on the unit: things that are counted go
   // in whole units.
   const [unit, setUnit] = useState(state.values.unit || "piece");
@@ -299,6 +313,13 @@ export function ProductForm({
           />
         )}
       </FormField>
+
+      <CustomFieldInputs
+        fields={customFields}
+        values={state.custom}
+        errors={state.customErrors}
+        remount={attempt}
+      />
 
       {(askWeight || askVolume) && (
         // Rarely filled: folded unless it has something or a problem.

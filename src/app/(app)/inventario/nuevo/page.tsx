@@ -11,12 +11,21 @@ import {
 } from "@/components";
 import { getModuleAccess } from "@/platform/billing";
 import { listProductGroups } from "@/platform/catalog";
+import { fieldViews, listCustomFields } from "@/platform/custom-fields";
 
 import { createProductAction } from "../actions";
 import { EMPTY_PRODUCT, ProductForm } from "../product-form";
 import { stepOptions, unitGroups } from "../unit-options";
 
 export const metadata: Metadata = { title: "Nuevo producto" };
+
+/** What must be filled, said once (WMS-58: with the required custom fields). */
+function requiredText(fields: { label: string; required: boolean }[]) {
+  const required = fields.filter((field) => field.required);
+  return required.length === 0
+    ? "Solo la clave y el nombre son obligatorios."
+    : `Son obligatorios la clave, el nombre y ${required.map((field) => field.label).join(", ")}.`;
+}
 
 /** New product (INV-02). */
 export default async function NuevoProductoPage() {
@@ -52,16 +61,20 @@ export default async function NuevoProductoPage() {
     );
   }
 
-  const groups = await listProductGroups({
+  const actor = {
     organizationId: access.organization.id,
     userId: access.user.id,
-  });
+  };
+  const [groups, customFields] = await Promise.all([
+    listProductGroups(actor),
+    listCustomFields(actor, "PRODUCT"),
+  ]);
   return (
     <PageContainer>
       {back}
       <PageHeader
         title="Nuevo producto"
-        description="Solo la clave y el nombre son obligatorios."
+        description={requiredText(customFields)}
       />
       <ProductForm
         action={createProductAction}
@@ -71,6 +84,7 @@ export default async function NuevoProductoPage() {
         brands={groups.brands}
         unitGroups={unitGroups()}
         stepOptions={stepOptions()}
+        customFields={fieldViews(customFields)}
       />
     </PageContainer>
   );

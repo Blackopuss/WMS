@@ -18,6 +18,7 @@ import {
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { listProductFilterOptions } from "@/platform/catalog";
+import { fieldViews } from "@/platform/custom-fields";
 import {
   CAPACITY_MEASURES,
   LOCATION_TYPES,
@@ -26,6 +27,7 @@ import {
   describeCapacity,
   formatCapacityAmount,
   formatCapacityUse,
+  getLocationCustomValues,
   levelsInside,
   listLocations,
   type LevelRef,
@@ -155,6 +157,17 @@ export default async function UbicacionesPage({
       : null,
   ]);
   const categories = groups?.categories ?? [];
+  // WMS-58: the custom fields of locations and their values, in two queries.
+  const custom =
+    tree &&
+    (access.allows("inventory.location.create") ||
+      access.allows("inventory.location.update"))
+      ? await getLocationCustomValues(
+          actor,
+          tree.locations.map((location) => location.id),
+        )
+      : null;
+  const newFields = custom ? fieldViews(custom.fields) : [];
   if (!tree) {
     return (
       <PageContainer>
@@ -225,6 +238,7 @@ export default async function UbicacionesPage({
               places={places}
               types={types}
               categories={categories}
+              customFields={newFields}
             />
           ) : undefined
         }
@@ -337,6 +351,7 @@ export default async function UbicacionesPage({
                           categories={categories}
                           insideId={location.id}
                           insideName={location.name}
+                          customFields={newFields}
                         />
                       )}
                       {(canUpdate || canArchive) && (
@@ -361,7 +376,11 @@ export default async function UbicacionesPage({
                                 (category) => category.id,
                               ),
                             },
+                            custom: custom?.byRecord.get(location.id)?.form,
                           }}
+                          customFields={
+                            custom?.byRecord.get(location.id)?.views ?? []
+                          }
                           types={types}
                           categories={categories}
                           destinations={destinationsFor(location.level)}

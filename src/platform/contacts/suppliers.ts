@@ -6,6 +6,12 @@ import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { normalizeSearch } from "@/platform/catalog";
+import {
+  prepareCustomValues,
+  writeCustomValues,
+  type CustomFieldInput,
+  type CustomValuesPlan,
+} from "@/platform/custom-fields";
 import { forOrganization } from "@/server";
 
 /**
@@ -96,8 +102,14 @@ export const supplierSchema = z.object({
     .transform((value) => (value ? value : null)),
 });
 
-export type SupplierInput = z.input<typeof supplierSchema>;
-export type SupplierField = keyof SupplierInput;
+export type SupplierField = keyof z.input<typeof supplierSchema>;
+export type SupplierInput = z.input<typeof supplierSchema> & {
+  /**
+   * Custom fields of the company (WMS-58), by key, as typed. On create,
+   * absent = every field empty; on edit, absent = keep them.
+   */
+  customFields?: CustomFieldInput;
+};
 
 /** A contact of the company that looks like the one being saved. */
 export type SupplierDuplicate = {
@@ -118,6 +130,8 @@ export type SaveSupplierResult =
       reason: "invalid" | "not_found";
       fieldErrors: Partial<Record<SupplierField, string>>;
       formError?: string;
+      /** Problems of the custom fields (WMS-58), by key. */
+      customErrors?: Record<string, string>;
     }
   | {
       ok: false;
@@ -143,6 +157,42 @@ function parse(
 }
 
 type Client = ReturnType<typeof forOrganization>;
+
+/** Carries refused custom fields out of the transaction so it rolls back. */
+class CustomRejected extends Error {
+  constructor(readonly errors: Record<string, string>) {
+    super("custom fields rejected");
+  }
+}
+
+/**
+ * The custom fields of a supplier (WMS-58), checked against the fields in
+ * use now; inside the transaction that writes them, a problem rolls back.
+ */
+async function customPlan(
+  client: Pick<Client, "customField" | "customFieldValue">,
+  contactId: string | null,
+  input: CustomFieldInput,
+): Promise<CustomValuesPlan> {
+  const custom = await prepareCustomValues(
+    client,
+    "SUPPLIER",
+    contactId,
+    input,
+    { mode: "all" },
+  );
+  if (!custom.ok) throw new CustomRejected(custom.errors);
+  return custom.plan;
+}
+
+const customRefusal = (
+  errors: Record<string, string>,
+): Extract<SaveSupplierResult, { reason: "invalid" | "not_found" }> => ({
+  ok: false,
+  reason: "invalid",
+  fieldErrors: {},
+  customErrors: errors,
+});
 
 /**
  * Contacts of the company with the same RFC or the same name (whatever
@@ -197,6 +247,14 @@ export async function createSupplier(
   if (!parsed.ok) return parsed;
   const { data } = parsed;
   const client = forOrganization(organizationId);
+  const customInput = input.customFields ?? {};
+  // WMS-58: a problem in the custom fields is said before any warning.
+  try {
+    await customPlan(client, null, customInput);
+  } catch (error) {
+    if (error instanceof CustomRejected) return customRefusal(error.errors);
+    throw error;
+  }
   if (options.acceptDuplicates !== true) {
     const duplicates = await findDuplicates(client, data, null);
     if (duplicates.length > 0) {
@@ -204,24 +262,35 @@ export async function createSupplier(
     }
   }
   const supplierId = newId();
-  await client.$transaction(async (tx) => {
-    await tx.contact.create({
-      data: {
-        id: supplierId,
+  try {
+    await client.$transaction(async (tx) => {
+      const custom = await customPlan(tx, null, customInput);
+      await tx.contact.create({
+        data: {
+          id: supplierId,
+          organizationId,
+          ...data,
+          isSupplier: true,
+          createdByUserId: userId,
+        },
+      });
+      const changes = await writeCustomValues(tx, actor, supplierId, custom);
+      await recordAuditEvent(tx, {
         organizationId,
-        ...data,
-        isSupplier: true,
-        createdByUserId: userId,
-      },
+        actorUserId: userId,
+        action: "supplier.created",
+        target: { type: "contact", id: supplierId },
+        metadata: {
+          nombre: data.name,
+          rfc: data.rfc ?? "",
+          ...(Object.keys(changes).length ? { changes } : {}),
+        },
+      });
     });
-    await recordAuditEvent(tx, {
-      organizationId,
-      actorUserId: userId,
-      action: "supplier.created",
-      target: { type: "contact", id: supplierId },
-      metadata: { nombre: data.name, rfc: data.rfc ?? "" },
-    });
-  });
+  } catch (error) {
+    if (error instanceof CustomRejected) return customRefusal(error.errors);
+    throw error;
+  }
   return { ok: true, supplierId };
 }
 
@@ -271,7 +340,20 @@ export async function updateSupplier(
   const changed = (Object.keys(FIELD_LABELS) as SupplierField[]).filter(
     (field) => (current[field] ?? null) !== data[field],
   );
-  if (changed.length === 0) return { ok: true, supplierId: current.id };
+  // WMS-58: the custom fields; absent = keep them.
+  let customChanged = false;
+  if (input.customFields) {
+    try {
+      const plan = await customPlan(client, current.id, input.customFields);
+      customChanged = plan.changes.length > 0;
+    } catch (error) {
+      if (error instanceof CustomRejected) return customRefusal(error.errors);
+      throw error;
+    }
+  }
+  if (changed.length === 0 && !customChanged) {
+    return { ok: true, supplierId: current.id };
+  }
 
   // Only a change of name or RFC can make it look like another contact.
   if (
@@ -283,24 +365,44 @@ export async function updateSupplier(
       return { ok: false, reason: "duplicate", duplicates, fieldErrors: {} };
     }
   }
-  const saved = await client.$transaction(async (tx) => {
-    const updated = await tx.contact.updateMany({
-      where: { id: current.id, isSupplier: true },
-      data,
+  let saved: boolean;
+  try {
+    saved = await client.$transaction(async (tx) => {
+      const updated = await tx.contact.updateMany({
+        where: { id: current.id, isSupplier: true },
+        data,
+      });
+      if (updated.count !== 1) return false;
+      const customChanges = input.customFields
+        ? await writeCustomValues(
+            tx,
+            actor,
+            current.id,
+            await customPlan(tx, current.id, input.customFields),
+          )
+        : {};
+      await recordAuditEvent(tx, {
+        organizationId,
+        actorUserId: userId,
+        action: "supplier.updated",
+        target: { type: "contact", id: current.id },
+        metadata: {
+          nombre: data.name,
+          cambios: [
+            ...changed.map((field) => FIELD_LABELS[field]),
+            ...Object.keys(customChanges),
+          ].join(", "),
+          ...(Object.keys(customChanges).length
+            ? { changes: customChanges }
+            : {}),
+        },
+      });
+      return true;
     });
-    if (updated.count !== 1) return false;
-    await recordAuditEvent(tx, {
-      organizationId,
-      actorUserId: userId,
-      action: "supplier.updated",
-      target: { type: "contact", id: current.id },
-      metadata: {
-        nombre: data.name,
-        cambios: changed.map((field) => FIELD_LABELS[field]).join(", "),
-      },
-    });
-    return true;
-  });
+  } catch (error) {
+    if (error instanceof CustomRejected) return customRefusal(error.errors);
+    throw error;
+  }
   return saved ? { ok: true, supplierId: current.id } : notFound;
 }
 

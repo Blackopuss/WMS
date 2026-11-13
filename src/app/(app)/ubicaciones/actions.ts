@@ -14,6 +14,7 @@ import {
   type LocationField,
   type LocationResult,
 } from "@/platform/locations";
+import { customFieldsFromForm } from "@/platform/custom-fields";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 const LOCATIONS_PATH = "/ubicaciones";
@@ -34,6 +35,8 @@ export type LocationFormState = {
   done?: boolean;
   fieldErrors: Partial<Record<LocationField, string>>;
   formError?: string;
+  /** WMS-58: problems of the custom fields, by key. */
+  customErrors?: Record<string, string>;
   values: {
     name: string;
     /** Depth of the level, as the select sends it. */
@@ -42,6 +45,8 @@ export type LocationFormState = {
     code: string;
     type: string;
     limits: LimitValues;
+    /** WMS-58: custom fields as typed, by key. */
+    custom: Record<string, string>;
   };
 };
 
@@ -60,6 +65,7 @@ const NO_VALUES: LocationFormState["values"] = {
   code: "",
   type: "",
   limits: NO_LIMITS,
+  custom: {},
 };
 
 export type LocationActionResult = { ok: true } | { ok: false; error: string };
@@ -104,6 +110,7 @@ const formState = (
     : {
         fieldErrors: result.fieldErrors,
         formError: result.formError,
+        customErrors: result.customErrors,
         values,
       };
 
@@ -146,13 +153,18 @@ export async function createLocationAction(
     code: text(formData, "code"),
     type: text(formData, "type"),
     limits: limitsOf(formData),
+    custom: customFieldsFromForm(formData) as Record<string, string>,
   };
-  const result = await change((actor) => createLocation(actor, values));
+  const result = await change((actor) =>
+    createLocation(actor, { ...values, customFields: values.custom }),
+  );
   // After adding, ready for the next one in the same place; after a
   // refusal, what was typed stays.
   return formState(
     result,
-    result.ok ? { ...values, name: "", code: "", limits: NO_LIMITS } : values,
+    result.ok
+      ? { ...values, name: "", code: "", limits: NO_LIMITS, custom: {} }
+      : values,
   );
 }
 
@@ -168,6 +180,7 @@ export async function editLocationAction(
     name: text(formData, "name"),
     code: text(formData, "code"),
     type: text(formData, "type"),
+    custom: customFieldsFromForm(formData) as Record<string, string>,
   };
   return formState(
     await change((actor) =>
@@ -175,6 +188,7 @@ export async function editLocationAction(
         name: values.name,
         code: values.code,
         type: values.type,
+        customFields: values.custom,
       }),
     ),
     values,

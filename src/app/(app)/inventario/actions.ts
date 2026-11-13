@@ -16,12 +16,16 @@ import {
   type ProductInput,
   type ProductStatusResult,
 } from "@/platform/catalog";
+import { customFieldsFromForm } from "@/platform/custom-fields";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 export type ProductFormState = {
   fieldErrors: Partial<Record<ProductField, string>>;
   formError?: string;
   values: Record<ProductField, string>;
+  /** WMS-58: custom fields as typed, by key, and their problems. */
+  custom: Record<string, string>;
+  customErrors?: Record<string, string>;
 };
 
 /**
@@ -64,17 +68,18 @@ export async function createProductAction(
     tracking: value("tracking"),
     lotExpiry: value("lotExpiry"),
   };
+  const custom = customFieldsFromForm(formData) as Record<string, string>;
 
   let result;
   try {
     result = await createProduct(
       { organizationId: organization.id, userId: user.id },
-      withControl(values),
+      { ...withControl(values), customFields: custom },
     );
   } catch (error) {
     // No permission, module missing or in read-only: say it in the form.
     if (isAppError(error) && error.kind === "forbidden") {
-      return { fieldErrors: {}, formError: error.message, values };
+      return { fieldErrors: {}, formError: error.message, values, custom };
     }
     throw error;
   }
@@ -83,6 +88,8 @@ export async function createProductAction(
       fieldErrors: result.fieldErrors,
       formError: result.formError,
       values,
+      custom,
+      customErrors: result.customErrors,
     };
   }
   revalidatePath("/inventario");
@@ -112,17 +119,18 @@ export async function updateProductAction(
     tracking: value("tracking"),
     lotExpiry: value("lotExpiry"),
   };
+  const custom = customFieldsFromForm(formData) as Record<string, string>;
 
   let result;
   try {
     result = await updateProduct(
       { organizationId: organization.id, userId: user.id },
       String(productId),
-      withControl(values),
+      { ...withControl(values), customFields: custom },
     );
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {
-      return { fieldErrors: {}, formError: error.message, values };
+      return { fieldErrors: {}, formError: error.message, values, custom };
     }
     throw error;
   }
@@ -131,6 +139,8 @@ export async function updateProductAction(
       fieldErrors: result.fieldErrors,
       formError: result.formError,
       values,
+      custom,
+      customErrors: result.customErrors,
     };
   }
   revalidatePath("/inventario");

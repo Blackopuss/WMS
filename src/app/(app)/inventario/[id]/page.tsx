@@ -15,6 +15,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  CustomFieldFacts,
   NoAccessState,
   NoModuleState,
   PageContainer,
@@ -43,6 +44,8 @@ import {
   getUnit,
   listPresentations,
 } from "@/platform/catalog";
+
+import { getCustomValues } from "@/platform/custom-fields";
 
 import { MinimumForm } from "./minimum-form";
 
@@ -98,30 +101,38 @@ export default async function ProductoPage({
   const showSuppliers =
     access.moduleState("purchasing") !== "none" &&
     access.can("purchasing.product_supplier.read");
-  const [stock, presentations, movements, minimum, suppliers, cost, lots] =
-    await Promise.all([
-      access.can("inventory.stock.read")
-        ? getProductStock(actor, product.id)
-        : null,
-      access.can("inventory.presentation.read")
-        ? listPresentations(actor, product.id)
-        : [],
-      access.can("inventory.movement.read")
-        ? listRecentMovements(actor, { productId: product.id, limit: 8 })
-        : [],
-      access.can("inventory.minimum.read")
-        ? getMinimum(actor, product.id)
-        : null,
-      showSuppliers ? listSuppliersOfProduct(actor, product.id) : null,
-      // VAL-05: what it is worth, only for who may see costs.
-      access.can("inventory.cost.read")
-        ? getProductCost(actor, product.id)
-        : null,
-      // WMS-21: only a product by lot has them.
-      product.tracking === "LOT" && access.can("inventory.stock.read")
-        ? listProductLots(actor, product.id)
-        : null,
-    ]);
+  const [
+    stock,
+    presentations,
+    movements,
+    minimum,
+    suppliers,
+    cost,
+    lots,
+    custom,
+  ] = await Promise.all([
+    access.can("inventory.stock.read")
+      ? getProductStock(actor, product.id)
+      : null,
+    access.can("inventory.presentation.read")
+      ? listPresentations(actor, product.id)
+      : [],
+    access.can("inventory.movement.read")
+      ? listRecentMovements(actor, { productId: product.id, limit: 8 })
+      : [],
+    access.can("inventory.minimum.read") ? getMinimum(actor, product.id) : null,
+    showSuppliers ? listSuppliersOfProduct(actor, product.id) : null,
+    // VAL-05: what it is worth, only for who may see costs.
+    access.can("inventory.cost.read")
+      ? getProductCost(actor, product.id)
+      : null,
+    // WMS-21: only a product by lot has them.
+    product.tracking === "LOT" && access.can("inventory.stock.read")
+      ? listProductLots(actor, product.id)
+      : null,
+    getCustomValues(actor, "PRODUCT", [product.id]),
+  ]);
+  const customShown = custom.byRecord.get(product.id)?.shown ?? [];
   // WMS-21B: a product by serial lists its units inside, by page.
   const { series } = await searchParams;
   const serialPage =
@@ -627,6 +638,8 @@ export default async function ProductoPage({
               <dd className="font-medium [overflow-wrap:anywhere]">{value}</dd>
             </div>
           ))}
+          {/* WMS-58: the custom fields of the company that it has. */}
+          <CustomFieldFacts values={customShown} />
           {presentations.length > 0 && (
             <div className="sm:col-span-2">
               <dt className="text-sm text-muted-foreground">Presentaciones</dt>

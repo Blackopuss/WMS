@@ -9,6 +9,11 @@ import {
   defaultStep,
   type ImportedProductKind,
 } from "@/platform/catalog";
+import {
+  prepareCustomValues,
+  readCustomFields,
+  writeCustomValues,
+} from "@/platform/custom-fields";
 import { releaseReservation } from "@/platform/entitlements";
 import type { JobHandlers } from "@/platform/jobs";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
@@ -59,6 +64,11 @@ export type ImportItemData = {
     lotCode?: string | null;
     lotExpiresOn?: string | null;
   }[];
+  /**
+   * WMS-58: its custom fields, by key, as the file gave them (only the
+   * non-empty ones); absent in older imports or without custom fields.
+   */
+  customFields?: Record<string, string>;
 };
 
 /** Permission each thing a row may do needs. */
@@ -262,6 +272,9 @@ export async function applyImport(
         const placementRules =
           places.size > 0 ? await loadPlacementRules(tx, [...places]) : null;
 
+        // WMS-58: the custom fields in use now, read once for the batch.
+        const customFields = await readCustomFields(tx, "PRODUCT");
+
         let reserved = row.reservedPlaces;
         let failed = 0;
         const fail = async (itemId: string, error: string) => {
@@ -335,6 +348,28 @@ export async function applyImport(
               continue;
             }
           }
+          // WMS-58: its custom fields are checked against the fields in use
+          // now, before the product is touched. A product that exists keeps
+          // what the file leaves empty; a new one gets every field checked.
+          let customPlan = null;
+          if (customFields.length > 0) {
+            const owner = await tx.product.findFirst({
+              where: { sku: item.sku },
+              select: { id: true },
+            });
+            const prepared = await prepareCustomValues(
+              tx,
+              "PRODUCT",
+              owner?.id ?? null,
+              data.customFields ?? {},
+              { mode: owner ? "present" : "all", fields: customFields },
+            );
+            if (!prepared.ok) {
+              await fail(item.id, Object.values(prepared.errors)[0]!);
+              continue;
+            }
+            customPlan = prepared.plan;
+          }
           const applied = await applyImportedProduct(
             tx,
             actor,
@@ -364,6 +399,9 @@ export async function applyImport(
             continue;
           }
           if (applied.usedReservation) reserved--;
+          if (customPlan && customPlan.changes.length > 0) {
+            await writeCustomValues(tx, actor, applied.productId, customPlan);
+          }
           if (data.minimum) {
             const changed = await tx.stockMinimum.updateMany({
               where: { productId: applied.productId },

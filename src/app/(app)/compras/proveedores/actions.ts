@@ -11,6 +11,7 @@ import {
   type SupplierDuplicate,
   type SupplierField,
 } from "@/platform/contacts";
+import { customFieldsFromForm } from "@/platform/custom-fields";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 export type SupplierFormState = {
@@ -23,6 +24,9 @@ export type SupplierFormState = {
   duplicates?: SupplierDuplicate[];
   /** What the person had written, to show it again after a refusal. */
   values: Record<SupplierField, string>;
+  /** WMS-58: custom fields as typed, by key, and their problems. */
+  custom: Record<string, string>;
+  customErrors?: Record<string, string>;
 };
 
 const FIELDS = [
@@ -45,20 +49,24 @@ function read(formData: FormData) {
   ) as Record<SupplierField, string>;
   // The person saw the likely duplicates and chose to save anyway.
   const acceptDuplicates = formData.get("acceptDuplicates") === "1";
-  return { values, acceptDuplicates };
+  const custom = customFieldsFromForm(formData) as Record<string, string>;
+  return { values, custom, acceptDuplicates };
 }
 
 function refused(
   result: Extract<SaveSupplierResult, { ok: false }>,
   values: Record<SupplierField, string>,
+  custom: Record<string, string>,
 ): SupplierFormState {
   if (result.reason === "duplicate") {
-    return { fieldErrors: {}, duplicates: result.duplicates, values };
+    return { fieldErrors: {}, duplicates: result.duplicates, values, custom };
   }
   return {
     fieldErrors: result.fieldErrors,
     formError: result.formError,
+    customErrors: result.customErrors,
     values,
+    custom,
   };
 }
 
@@ -68,22 +76,22 @@ export async function createSupplierAction(
   formData: FormData,
 ): Promise<SupplierFormState> {
   const { user, organization } = await requireOrganizationContext();
-  const { values, acceptDuplicates } = read(formData);
+  const { values, custom, acceptDuplicates } = read(formData);
   let result;
   try {
     result = await createSupplier(
       { organizationId: organization.id, userId: user.id },
-      values,
+      { ...values, customFields: custom },
       { acceptDuplicates },
     );
   } catch (error) {
     // No permission, module missing or in read-only: say it in the form.
     if (isAppError(error) && error.kind === "forbidden") {
-      return { fieldErrors: {}, formError: error.message, values };
+      return { fieldErrors: {}, formError: error.message, values, custom };
     }
     throw error;
   }
-  if (!result.ok) return refused(result, values);
+  if (!result.ok) return refused(result, values, custom);
   revalidatePath("/compras/proveedores");
   redirect(`/compras/proveedores/${result.supplierId}?guardado=nuevo`);
 }
@@ -98,22 +106,22 @@ export async function updateSupplierAction(
   formData: FormData,
 ): Promise<SupplierFormState> {
   const { user, organization } = await requireOrganizationContext();
-  const { values, acceptDuplicates } = read(formData);
+  const { values, custom, acceptDuplicates } = read(formData);
   let result;
   try {
     result = await updateSupplier(
       { organizationId: organization.id, userId: user.id },
       String(supplierId),
-      values,
+      { ...values, customFields: custom },
       { acceptDuplicates },
     );
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {
-      return { fieldErrors: {}, formError: error.message, values };
+      return { fieldErrors: {}, formError: error.message, values, custom };
     }
     throw error;
   }
-  if (!result.ok) return refused(result, values);
+  if (!result.ok) return refused(result, values, custom);
   revalidatePath("/compras/proveedores");
   revalidatePath(`/compras/proveedores/${result.supplierId}`);
   redirect(`/compras/proveedores/${result.supplierId}?guardado=cambios`);

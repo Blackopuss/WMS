@@ -5,6 +5,13 @@ import { z } from "zod";
 import { dec, formatDecimal, isMultipleOf, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
+import {
+  customFilterWhere,
+  prepareCustomValues,
+  readCustomFields,
+  writeCustomValues,
+  type CustomFieldInput,
+} from "@/platform/custom-fields";
 import { consumeQuota, releaseQuota } from "@/platform/entitlements";
 import {
   LOCKING_TRANSACTION,
@@ -160,8 +167,14 @@ function quantityRule(data: { unit: string; step: string }) {
     : ({ ok: true, unitCode: data.unit, quantityStep: step } as const);
 }
 
-export type ProductInput = z.input<typeof productSchema>;
-export type ProductField = keyof ProductInput;
+export type ProductField = keyof z.input<typeof productSchema>;
+export type ProductInput = z.input<typeof productSchema> & {
+  /**
+   * Custom fields of the company (WMS-58), by key, as typed. On create,
+   * absent = every field empty; on edit, absent = keep them.
+   */
+  customFields?: CustomFieldInput;
+};
 
 export type CreateProductResult =
   | { ok: true; productId: string }
@@ -171,6 +184,8 @@ export type CreateProductResult =
         "invalid" | "duplicate" | "limit_reached" | "not_found" | "unchanged";
       fieldErrors: Partial<Record<ProductField, string>>;
       formError?: string;
+      /** Problems of the custom fields (WMS-58), by key. */
+      customErrors?: Record<string, string>;
     };
 
 /** Who is acting; always taken from the session, never from the form. */
@@ -263,6 +278,23 @@ export async function createProduct(
         if (sameBarcode) throw new Rejected(duplicate("barcode"));
       }
 
+      // WMS-58: the custom fields, checked before anything is written.
+      const custom = await prepareCustomValues(
+        tx,
+        "PRODUCT",
+        null,
+        input.customFields ?? {},
+        { mode: "all" },
+      );
+      if (!custom.ok) {
+        throw new Rejected({
+          ok: false,
+          reason: "invalid",
+          fieldErrors: {},
+          customErrors: custom.errors,
+        });
+      }
+
       const quota = await consumeQuota(tx, organizationId, "active_products");
       if (!quota.ok) {
         throw new Rejected({
@@ -314,12 +346,24 @@ export async function createProduct(
             data.tracking === "LOT" ? (data.lotExpiry ?? "NONE") : "NONE",
         },
       });
+      const customChanges = await writeCustomValues(
+        tx,
+        actor,
+        productId,
+        custom.plan,
+      );
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
         action: "product.created",
         target: { type: "product", id: productId },
-        metadata: { sku: data.sku, name: data.name },
+        metadata: {
+          sku: data.sku,
+          name: data.name,
+          ...(Object.keys(customChanges).length
+            ? { changes: customChanges }
+            : {}),
+        },
       });
     });
   } catch (error) {
@@ -443,6 +487,12 @@ export async function listProducts(
     categoryId?: string | null;
     /** Only this brand; `null` = products without brand. */
     brandId?: string | null;
+    /**
+     * WMS-58: by custom fields, `{ key, value }` (a list option id, `si`
+     * or `no`, `sin` = without a value). A key or value that is not the
+     * company's is ignored.
+     */
+    custom?: readonly { key: string; value: string }[];
   } = {},
 ): Promise<ProductPage> {
   await assertModulePermission(
@@ -454,6 +504,10 @@ export async function listProducts(
     options.status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
   const pageSize = clampInteger(options.pageSize, 1, 100, PRODUCT_PAGE_SIZE);
   const search = normalizeSearch(options.search);
+  const client = forOrganization(actor.organizationId);
+  const customWhere = options.custom?.length
+    ? await customFilters(client, options.custom)
+    : [];
   const where = {
     status,
     // Filters combine with each other and with the search. An id of
@@ -464,22 +518,24 @@ export async function listProducts(
     ...(options.brandId === undefined
       ? {}
       : { brandId: groupId(options.brandId) }),
-    AND: search
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, SEARCH_MAX_TERMS)
-      .map((term) => {
-        const contains = literal(term);
-        return {
-          OR: [
-            { name: { contains } },
-            { sku: { contains } },
-            { barcode: { contains } },
-          ],
-        };
-      }),
+    AND: [
+      ...search
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, SEARCH_MAX_TERMS)
+        .map((term) => {
+          const contains = literal(term);
+          return {
+            OR: [
+              { name: { contains } },
+              { sku: { contains } },
+              { barcode: { contains } },
+            ],
+          };
+        }),
+      ...customWhere,
+    ],
   };
-  const client = forOrganization(actor.organizationId);
   const [total, exact] = await Promise.all([
     client.product.count({ where }),
     search
@@ -507,6 +563,25 @@ export async function listProducts(
     search,
     exact: exact ? toSummary(exact) : null,
   };
+}
+
+/**
+ * Conditions of the list for its custom field filters (WMS-58): each one
+ * an EXISTS (or NOT EXISTS) on the values of the product, over the index
+ * that starts with the company and the field.
+ */
+async function customFilters(
+  client: ReturnType<typeof forOrganization>,
+  filters: readonly { key: string; value: string }[],
+) {
+  const fields = await readCustomFields(client, "PRODUCT");
+  return filters.slice(0, 20).flatMap((filter) => {
+    const field = fields.find((each) => each.key === filter.key);
+    const condition = field
+      ? customFilterWhere(field, String(filter.value).slice(0, 200))
+      : null;
+    return condition ? [{ customValues: condition }] : [];
+  });
 }
 
 /** Id of a category or brand as it came from a filter; never longer than an id. */
@@ -797,7 +872,23 @@ export async function updateProduct(
           },
         });
       }
-      if (changed.length === 0) {
+      // WMS-58: the custom fields, checked against the fields in use now;
+      // absent = keep them.
+      const custom = input.customFields
+        ? await prepareCustomValues(tx, "PRODUCT", id, input.customFields, {
+            mode: "all",
+          })
+        : null;
+      if (custom && !custom.ok) {
+        throw new Rejected({
+          ok: false,
+          reason: "invalid",
+          fieldErrors: {},
+          customErrors: custom.errors,
+        });
+      }
+      const customChanged = custom?.ok ? custom.plan.changes.length > 0 : false;
+      if (changed.length === 0 && !customChanged) {
         throw new Rejected({
           ok: false,
           reason: "unchanged",
@@ -952,6 +1043,10 @@ export async function updateProduct(
           lotExpiry,
         },
       });
+      const customChanges =
+        custom?.ok && customChanged
+          ? await writeCustomValues(tx, actor, id, custom.plan)
+          : {};
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
@@ -959,8 +1054,8 @@ export async function updateProduct(
         target: { type: "product", id },
         metadata: {
           sku: data.sku,
-          changes: Object.fromEntries(
-            changed.map((field) => [
+          changes: Object.fromEntries([
+            ...changed.map((field) => [
               FIELD_LABELS[field],
               field === "unit"
                 ? {
@@ -979,7 +1074,8 @@ export async function updateProduct(
                       }
                     : { antes: before[field], ahora: after[field] },
             ]),
-          ),
+            ...Object.entries(customChanges),
+          ]),
         },
       });
     });

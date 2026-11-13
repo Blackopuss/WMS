@@ -4,6 +4,11 @@ import { z } from "zod";
 
 import { dec, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import {
+  prepareCustomValues,
+  writeCustomValues,
+  type CustomFieldInput,
+} from "@/platform/custom-fields";
 import { assertModulePermission } from "@/platform/billing";
 import {
   LOCKING_TRANSACTION,
@@ -95,6 +100,8 @@ export type LocationResult =
         | "unchanged";
       fieldErrors: Partial<Record<LocationField, string>>;
       formError?: string;
+      /** Problems of the custom fields (WMS-58), by key. */
+      customErrors?: Record<string, string>;
     };
 
 type Failure = Extract<LocationResult, { ok: false }>;
@@ -133,6 +140,8 @@ type Tx = Pick<
   | "locationRestriction"
   | "product"
   | "productCategory"
+  | "customField"
+  | "customFieldValue"
 >;
 
 type Level = { id: string; depth: number; name: string };
@@ -206,6 +215,29 @@ async function changeTree(
 }
 
 const GONE = "Esta ubicación ya no existe.";
+
+/**
+ * The custom fields of a location (WMS-58), checked in the transaction of
+ * the change; the change is refused with their problems.
+ */
+async function customOf(
+  tx: Tx,
+  locationId: string | null,
+  input: CustomFieldInput,
+) {
+  const custom = await prepareCustomValues(tx, "LOCATION", locationId, input, {
+    mode: "all",
+  });
+  if (!custom.ok) {
+    throw new Rejected({
+      ok: false,
+      reason: "invalid",
+      fieldErrors: {},
+      customErrors: custom.errors,
+    });
+  }
+  return custom.plan;
+}
 
 async function findLocation(tx: Tx, id: string): Promise<Row> {
   const row = await tx.location.findFirst({
@@ -615,6 +647,8 @@ export type CreateLocationInput = {
   type?: unknown;
   /** Capacity and restrictions (WMS-22B); absent = none. */
   limits?: LocationLimitsInput;
+  /** Custom fields of the company (WMS-58), by key; absent = all empty. */
+  customFields?: CustomFieldInput;
 };
 
 /** Creates a location, inside another one or directly in the warehouse. */
@@ -660,6 +694,7 @@ export async function createLocation(
       await checkFreeName(tx, name, parent?.id ?? null, facilityId);
       const code = await parseCode(tx, input.code, facilityId, userId);
       const limits = input.limits ? await parseLimits(tx, input.limits) : null;
+      const custom = await customOf(tx, null, input.customFields ?? {});
       if ((await tx.location.count()) >= MAX_LOCATIONS) {
         reject(
           "limit_reached",
@@ -688,6 +723,7 @@ export async function createLocation(
           limits,
         );
       }
+      const customChanges = await writeCustomValues(tx, actor, id, custom);
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
@@ -703,6 +739,9 @@ export async function createLocation(
                 capacidad: capacityText(limits),
                 admite: restrictionText(limits),
               }
+            : {}),
+          ...(Object.keys(customChanges).length
+            ? { changes: customChanges }
             : {}),
           path: await pathOf(tx, {
             id,
@@ -731,6 +770,8 @@ export type EditLocationInput = {
   code?: unknown;
   /** Absent = keep it. */
   type?: unknown;
+  /** Custom fields of the company (WMS-58), by key; absent = keep them. */
+  customFields?: CustomFieldInput;
 };
 
 /**
@@ -785,10 +826,14 @@ export async function editLocation(
             userId,
             location.id,
           );
+    const custom = input.customFields
+      ? await customOf(tx, location.id, input.customFields)
+      : null;
     if (
       name === location.name &&
       code === location.code &&
-      type === location.type
+      type === location.type &&
+      !custom?.changes.length
     ) {
       reject(
         "unchanged",
@@ -822,7 +867,14 @@ export async function editLocation(
         metadata: { before: location.name, after: name },
       });
     }
-    if (code !== location.code || type !== location.type) {
+    const customChanges = custom
+      ? await writeCustomValues(tx, actor, location.id, custom)
+      : {};
+    if (
+      code !== location.code ||
+      type !== location.type ||
+      Object.keys(customChanges).length > 0
+    ) {
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
@@ -838,6 +890,9 @@ export async function editLocation(
                 usoAntes: LOCATION_TYPE_LABELS[location.type],
                 usoAhora: LOCATION_TYPE_LABELS[type],
               }
+            : {}),
+          ...(Object.keys(customChanges).length
+            ? { changes: customChanges }
             : {}),
         },
       });

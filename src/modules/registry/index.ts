@@ -7,6 +7,7 @@ import { createModuleRegistry } from "@/platform/billing";
 import { crmModule } from "./announced";
 
 export { approvalTypes } from "./approvals";
+export { customFieldReservedLabels } from "./custom-fields";
 export { moduleOpenWork } from "./open-work";
 export { operationSettings } from "./settings";
 

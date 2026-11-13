@@ -77,6 +77,8 @@ const SCREENS = [
   "/inventario/reposicion",
   "/inventario/reposicion/nueva",
   "/configuracion/operacion",
+  // WMS-58: custom fields of products, locations and suppliers.
+  "/configuracion/campos",
   "/configuracion/almacenes",
   "/compras",
   "/compras/proveedores",

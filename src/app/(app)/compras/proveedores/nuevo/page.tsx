@@ -10,6 +10,7 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { getModuleAccess } from "@/platform/billing";
+import { fieldViews, listCustomFields } from "@/platform/custom-fields";
 
 import { createSupplierAction } from "../actions";
 import { EMPTY_SUPPLIER, SupplierForm } from "../supplier-form";
@@ -49,18 +50,29 @@ export default async function NuevoProveedorPage() {
       </PageContainer>
     );
   }
+  const customFields = await listCustomFields(
+    { organizationId: access.organization.id, userId: access.user.id },
+    "SUPPLIER",
+  );
+  // WMS-58: a required custom field is said here too.
+  const required = customFields.filter((field) => field.required);
   return (
     <PageContainer>
       {back}
       <PageHeader
         title="Nuevo proveedor"
-        description="Solo el nombre es obligatorio. Lo demás lo puedes completar después."
+        description={
+          required.length === 0
+            ? "Solo el nombre es obligatorio. Lo demás lo puedes completar después."
+            : `Son obligatorios el nombre y ${required.map((field) => field.label).join(", ")}. Lo demás lo puedes completar después.`
+        }
       />
       <SupplierForm
         action={createSupplierAction}
         initial={EMPTY_SUPPLIER}
         submitLabel="Guardar proveedor"
         cancelHref="/compras/proveedores"
+        customFields={fieldViews(customFields)}
       />
     </PageContainer>
   );

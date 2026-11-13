@@ -11,7 +11,11 @@ import {
 import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import {
+  CustomFieldInputs,
+  FormField,
+  type CustomFieldInputView,
+} from "@/components";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -67,6 +71,7 @@ const EMPTY_VALUES = {
   code: "",
   type: "STORAGE",
   limits: EMPTY_LIMITS,
+  custom: {} as Record<string, string>,
 };
 
 const hasLimits = (limits: LimitValues) =>
@@ -242,10 +247,13 @@ export function AddLocationDialog({
   categories,
   insideId = "",
   insideName,
+  customFields = [],
 }: {
   places: PlaceOption[];
   types: TypeOption[];
   categories: CategoryOption[];
+  /** WMS-58: custom fields of the company for locations. */
+  customFields?: CustomFieldInputView[];
   /** Place preselected when the dialog opens from a row. */
   insideId?: string;
   /** Name of that row: the trigger becomes its small «add inside» button. */
@@ -379,6 +387,14 @@ export function AddLocationDialog({
             errors={state.fieldErrors}
             answers={answers}
           />
+          <CustomFieldInputs
+            fields={customFields}
+            values={state.values.custom}
+            errors={state.customErrors}
+            remount={`${answers}-${String(state.done)}`}
+            idPrefix={`${prefix}-`}
+            columns={1}
+          />
           {/* Rarely set: folded unless something was typed or refused. */}
           <details
             className="rounded-lg border p-3"
@@ -488,6 +504,7 @@ export function EditLocationDialog({
   destinations,
   canUpdate,
   canArchive,
+  customFields = [],
 }: {
   location: {
     id: string;
@@ -501,6 +518,8 @@ export function EditLocationDialog({
     children: number;
     /** Its capacity and restrictions today (WMS-22B). */
     limits: LimitValues;
+    /** WMS-58: its custom fields today, by key. */
+    custom?: Record<string, string>;
   };
   types: TypeOption[];
   categories: CategoryOption[];
@@ -508,6 +527,8 @@ export function EditLocationDialog({
   destinations: { id: string; label: string }[];
   canUpdate: boolean;
   canArchive: boolean;
+  /** WMS-58: custom fields of the company for locations. */
+  customFields?: CustomFieldInputView[];
 }) {
   const [open, setOpen] = useState(false);
   const empty: LocationFormState = {
@@ -518,6 +539,7 @@ export function EditLocationDialog({
       code: location.code,
       type: location.type,
       parentId: location.parentId,
+      custom: location.custom ?? {},
     },
   };
   const [editState, editAction, editing] = useActionState(
@@ -629,6 +651,14 @@ export function EditLocationDialog({
               errors={editState.fieldErrors}
               answers={editState.answers}
               stagingFixed={location.isStaging}
+            />
+            <CustomFieldInputs
+              fields={customFields}
+              values={editState.values.custom}
+              errors={editState.customErrors}
+              remount={String(editState.answers)}
+              idPrefix={`edit-${location.id}-`}
+              columns={1}
             />
             <Submit pending={editing} busy="Guardando…">
               Guardar cambios

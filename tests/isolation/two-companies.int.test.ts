@@ -1188,6 +1188,41 @@ beforeAll(async () => {
         unitCode: "piece",
       },
     });
+    // A custom field of products, a list option and a value (WMS-58).
+    const customFieldId = newId();
+    await db.customField.create({
+      data: {
+        id: customFieldId,
+        organizationId,
+        entity: "PRODUCT",
+        key: "color",
+        label: "Color",
+        type: "CHOICE",
+        position: 0,
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    const customOptionId = newId();
+    await db.customFieldOption.create({
+      data: {
+        id: customOptionId,
+        organizationId,
+        fieldId: customFieldId,
+        label: "Rojo",
+        position: 0,
+      },
+    });
+    await db.customFieldValue.create({
+      data: {
+        id: newId(),
+        organizationId,
+        fieldId: customFieldId,
+        entity: "PRODUCT",
+        productId,
+        optionId: customOptionId,
+        updatedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

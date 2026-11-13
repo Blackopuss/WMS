@@ -122,6 +122,14 @@ export const AREAS = [
     models: ["ApprovalRule", "ApprovalRequest"],
   },
   {
+    id: "custom-fields",
+    title: "Plataforma › Campos personalizados",
+    doc: "custom-fields",
+    summary:
+      "Campos que cada empresa agrega a sus productos, ubicaciones y proveedores, sus opciones y el valor de cada registro (sin columnas por cliente).",
+    models: ["CustomField", "CustomFieldOption", "CustomFieldValue"],
+  },
+  {
     id: "files",
     title: "Plataforma › Archivos",
     doc: "files",

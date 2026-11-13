@@ -104,6 +104,9 @@ export const TENANT_MODELS = [
   "PickWaveOrder",
   "PurchaseRequest",
   "PurchaseRequestLine",
+  "CustomField",
+  "CustomFieldOption",
+  "CustomFieldValue",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -316,6 +319,7 @@ const LOCKABLE = {
   approvalRequest: "approval_request",
   pickWave: "pick_wave",
   purchaseRequest: "purchase_request",
+  customField: "custom_field",
 } as const;
 
 /**

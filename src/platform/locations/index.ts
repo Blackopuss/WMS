@@ -59,6 +59,7 @@ export {
 } from "./limits";
 export type { CapacityLimits, CapacityMeasure } from "./limits";
 export { getDefaultLocation } from "./locations";
+export { getLocationCustomValues } from "./custom-values";
 export { STAGING_NAME, ensureStagingLocation } from "./staging";
 export { NOT_TRANSIT, TRANSIT_NAME, ensureTransitLocation } from "./transit";
 export {

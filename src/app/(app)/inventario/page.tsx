@@ -42,6 +42,7 @@ import {
   listProducts,
   type ProductSummary,
 } from "@/platform/catalog";
+import { listCustomFields } from "@/platform/custom-fields";
 
 import { FilterSelect } from "./filter-select";
 import { ReactivateProduct } from "./product-status";
@@ -72,6 +73,7 @@ export default async function InventarioPage({
     );
   }
 
+  const params = await searchParams;
   const {
     creado,
     guardado,
@@ -81,7 +83,7 @@ export default async function InventarioPage({
     q,
     categoria,
     marca,
-  } = await searchParams;
+  } = params;
   const showArchived = archivados === "1";
   const created = typeof creado === "string" ? creado.slice(0, 64) : "";
   const saved = typeof guardado === "string" ? guardado.slice(0, 64) : "";
@@ -99,6 +101,31 @@ export default async function InventarioPage({
       : "";
   const category = chosen(categoria, filters.categories);
   const brand = chosen(marca, filters.brands);
+  // WMS-58: custom fields that filter (a list or yes/no), as `c_<clave>`
+  // in the address; a value that is not one of their options is ignored.
+  const customFilters = (await listCustomFields(actor, "PRODUCT"))
+    .filter((field) => field.type === "CHOICE" || field.type === "BOOLEAN")
+    .map((field) => ({
+      key: field.key,
+      label: field.label,
+      options:
+        field.type === "BOOLEAN"
+          ? [
+              { id: "si", name: "Sí" },
+              { id: "no", name: "No" },
+            ]
+          : field.options.map((option) => ({
+              id: option.id,
+              name: option.archived
+                ? `${option.label} (archivada)`
+                : option.label,
+            })),
+    }))
+    .map((filter) => ({
+      ...filter,
+      value: chosen(params[`c_${filter.key}`], filter.options),
+    }));
+  const customApplied = customFilters.filter((filter) => filter.value);
   const filterValue = (value: string) =>
     value === "" ? undefined : value === NONE ? null : value;
   const list = await listProducts(actor, {
@@ -107,8 +134,14 @@ export default async function InventarioPage({
     search: typeof q === "string" ? q : "",
     categoryId: filterValue(category),
     brandId: filterValue(brand),
+    custom: customApplied.map((filter) => ({
+      key: filter.key,
+      value: filter.value,
+    })),
   });
-  const narrowed = Boolean(list.search || category || brand);
+  const narrowed = Boolean(
+    list.search || category || brand || customApplied.length,
+  );
   const categoryName =
     category === NONE
       ? "sin categoría"
@@ -167,6 +200,9 @@ export default async function InventarioPage({
     if (search) params.set("q", search);
     if (category) params.set("categoria", category);
     if (brand) params.set("marca", brand);
+    for (const filter of customApplied) {
+      params.set(`c_${filter.key}`, filter.value);
+    }
     if (page > 1) params.set("pagina", String(page));
     const query = params.toString();
     return query ? `/inventario?${query}` : "/inventario";
@@ -446,6 +482,28 @@ export default async function InventarioPage({
               )}
             </div>
           )}
+          {customFilters.length > 0 && (
+            // WMS-58: rarely used, folded unless one is applied.
+            <details className="w-full" open={customApplied.length > 0}>
+              <summary className="-m-1 inline-flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+                Más filtros
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {customFilters.map((filter) => (
+                  <FilterSelect
+                    key={filter.key}
+                    id={`c_${filter.key}`}
+                    name={`c_${filter.key}`}
+                    label={`Filtrar por ${filter.label}`}
+                    value={filter.value}
+                    allLabel={filter.label}
+                    noneLabel={`Sin ${filter.label.toLowerCase()}`}
+                    options={filter.options}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
         </Form>
       )}
       {narrowed && (
@@ -473,12 +531,26 @@ export default async function InventarioPage({
               · Marca: <span className="font-medium">{brandName}</span>
             </>
           )}
+          {customApplied.map((filter) => (
+            <span key={filter.key}>
+              {" "}
+              · {filter.label}:{" "}
+              <span className="font-medium">
+                {filter.value === NONE
+                  ? "sin valor"
+                  : filter.options.find((option) => option.id === filter.value)
+                      ?.name}
+              </span>
+            </span>
+          ))}
           .{" "}
           <Link
             href={showArchived ? "/inventario?archivados=1" : "/inventario"}
             className="inline-flex min-h-11 items-center rounded-lg font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            {category || brand ? "Quitar filtros" : "Quitar búsqueda"}
+            {category || brand || customApplied.length
+              ? "Quitar filtros"
+              : "Quitar búsqueda"}
           </Link>
         </p>
       )}
@@ -503,7 +575,7 @@ export default async function InventarioPage({
             icon={Search}
             title="No encontramos productos"
             description={
-              category || brand
+              category || brand || customApplied.length
                 ? "Ningún producto coincide con esos filtros. Quita alguno o busca con menos palabras."
                 : showArchived
                   ? "Ningún producto archivado coincide. Revisa cómo está escrito o busca con menos palabras."

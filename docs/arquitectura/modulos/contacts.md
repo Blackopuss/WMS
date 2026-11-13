@@ -11,7 +11,7 @@ faceta y sus permisos. Hoy solo se usa la faceta de proveedor (Compras).
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
 | Facetas | `facets.ts` | `CONTACT_FACETS`, `isContactFacet` |
-| Proveedores | `suppliers.ts` | `createSupplier`, `updateSupplier`, `getSupplier`, `listSuppliers` (todos filtran `isSupplier`), `normalizeRfc`, `supplierSchema`; un posible duplicado se advierte (`reason: "duplicate"`) y se guarda solo con `acceptDuplicates` |
+| Proveedores | `suppliers.ts` | `createSupplier`, `updateSupplier`, `getSupplier`, `listSuppliers` (todos filtran `isSupplier`), `normalizeRfc`, `supplierSchema`; un posible duplicado se advierte (`reason: "duplicate"`) y se guarda solo con `acceptDuplicates`; reciben `customFields` (WMS-58) y los validan con [custom-fields](custom-fields.md) en su transacción (`customErrors`) |
 
 ## Permisos
 
@@ -27,4 +27,4 @@ Ninguno.
 
 ## ADR
 
-0016 (contactos compartidos en el núcleo).
+0016 (contactos compartidos en el núcleo), 0056 (campos personalizados).
