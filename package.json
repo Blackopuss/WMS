@@ -35,6 +35,7 @@
     "staff": "tsx --conditions=react-server scripts/staff.mts",
     "dev:test": "node scripts/dev-test.mjs",
     "test:company": "tsx --conditions=react-server scripts/test-company.mts",
+    "verify:pwa": "node scripts/verify-pwa.mjs",
     "docs:modelo": "node scripts/data-model.mjs",
     "stock:reconcile": "tsx --conditions=react-server scripts/stock-reconcile.mts",
     "worker": "tsx scripts/worker.mts",

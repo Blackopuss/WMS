@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-35 / WMS-36** · App instalable y escaneo con cámara (ADR 0049):
+  manifiesto, íconos, pantalla «Sin conexión» con un service worker que no
+  guarda datos, y botón «Escanear» con `BarcodeDetector` en los campos que
+  reciben lecturas.
 - **WMS-26** · Etiquetas e impresión (ADR 0047): PDF de etiquetas con Code 128
   propio y QR para ubicaciones, productos, lotes, series, tarimas, bultos,
   pedidos y embarques; tres tamaños y ajustes por empresa.

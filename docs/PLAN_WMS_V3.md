@@ -60,7 +60,7 @@ x.y» citadas son de [`ESPECIFICACION_WMS_v5.md`](ESPECIFICACION_WMS_v5.md).
 Lo que sigue sin hacer después de los pasos cerrados, con el ADR de donde sale.
 Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
-**Qué sigue, en el orden de la tabla de fases:** WMS-19, WMS-54, WMS-55, WMS-36, WMS-23, WMS-24 y WMS-25.
+**Qué sigue, en el orden de la tabla de fases:** WMS-19, WMS-54, WMS-55, ~~WMS-36~~, WMS-23, WMS-24 y WMS-25.
 
 - Las órdenes de compra, las recepciones y las devoluciones no tienen almacén: se
   ven todas (ADR 0038, ADR 0035).
@@ -126,7 +126,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, WMS-19, WMS-54, WMS-55, ~~WMS-26~~, WMS-36, WMS-23, WMS-24, WMS-25 | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
 | 3. Gestión empresarial | WMS-56, WMS-57, WMS-58, WMS-41, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
-| Transversal (piso, seguridad, infraestructura) | WMS-35, WMS-37, WMS-38, WMS-39, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
+| Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, WMS-37, WMS-38, WMS-39, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
 | 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, WMS-46, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
 
 Los pasos transversales se intercalan cuando su dependencia está lista (por
@@ -153,6 +153,7 @@ inventario, previsto en ADR 0033) y CFDI de las suscripciones propias.
 | WMS-73 | Resumen del día | Hecho (2026-11-12) |
 | WMS-21A | Lotes y caducidad | Hecho (2026-11-13, ADR 0040); series y trazabilidad por serie o pedido quedan en WMS-21B |
 | WMS-21B | Números de serie y trazabilidad | Hecho (2026-11-13, ADR 0041); pendiente: conteo por serie, series en importaciones |
+| WMS-35 / WMS-36 | PWA instalable y escaneo con cámara | Hecho (2026-11-13, ADR 0049); el escaneo no funciona en iPhone sin una librería (decisión del fundador) |
 | WMS-26 | Etiquetas e impresión | Hecho (2026-11-13, ADR 0047); pendiente: impresión directa (ZPL) |
 | WMS-17 | Devoluciones de clientes | Hecho (2026-11-13, ADR 0046); pendiente: daños al recibir de proveedor |
 | WMS-16 | Despacho y embarques | Hecho (2026-11-13, ADR 0045); pendiente: despacho parcial, andenes |
