@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-13
 
+- **WMS-17** · Devoluciones de clientes (ADR 0046): devolución `DV-…` con o
+  sin pedido, entra en inspección y se decide disponible, dañado o rechazado;
+  nada devuelto queda disponible sin decisión (PC-5). Arreglado
+  `npm run stock:reconcile`.
 - **WMS-16** · Despacho y embarques (ADR 0045): embarque de uno o varios
   pedidos, salida `SHIPMENT` una sola vez con clave `ship:<id>`, pedidos
   `SHIPPED`, PDF de embarque y rastreo hasta la entrega.
