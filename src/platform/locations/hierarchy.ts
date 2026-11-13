@@ -209,7 +209,8 @@ const GONE = "Esta ubicación ya no existe.";
 
 async function findLocation(tx: Tx, id: string): Promise<Row> {
   const row = await tx.location.findFirst({
-    where: { id: String(id) },
+    // WMS-19: the transit location is not part of the tree people manage.
+    where: { id: String(id), isTransit: null },
     select: ROW,
   });
   return row ?? reject("not_found", GONE);
@@ -219,7 +220,7 @@ async function findLocation(tx: Tx, id: string): Promise<Row> {
 async function findParent(tx: Tx, parentId: string | null) {
   if (parentId === null) return null;
   const parent = await tx.location.findFirst({
-    where: { id: parentId },
+    where: { id: parentId, isTransit: null },
     select: ROW,
   });
   if (!parent) {
@@ -1246,6 +1247,8 @@ export async function listLocations(
       where: {
         facilityId,
         ...(options.includeArchived ? {} : { archivedAt: null }),
+        // WMS-19: the transit location is never shown nor offered.
+        isTransit: null,
         ...scoped,
       },
       take: MAX_LOCATIONS,

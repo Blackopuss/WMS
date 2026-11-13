@@ -91,7 +91,7 @@ export async function getLocationOccupancy(
 
   const [locations, capacities, balances] = await Promise.all([
     client.location.findMany({
-      where: { facilityId, ...inScope },
+      where: { facilityId, isTransit: null, ...inScope },
       select: { id: true, parentId: true },
     }),
     client.locationCapacity.findMany({

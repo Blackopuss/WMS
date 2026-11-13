@@ -32,8 +32,9 @@ export const OUTBOUND_ORDER_TRANSITIONS: Record<
 > = {
   DRAFT: ["RELEASED", "CANCELLED"],
   RELEASED: ["PICKING", "CANCELLED"],
-  // Once picking starts, cancelling means putting goods back: that is the
-  // job of WMS-14, which will widen this table if it allows it.
+  // Once picking starts the order is not cancelled: what was picked would
+  // have to be put back by hand (WMS-14 kept it so). An order in picking
+  // ends picked; what was short is recorded while picking or packing.
   PICKING: ["PICKED"],
   PICKED: ["PACKING", "SHIPPED"],
   PACKING: ["PACKED"],

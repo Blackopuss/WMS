@@ -254,6 +254,9 @@ describe("getProductStock", () => {
       availableLabel: "0 piezas",
       reserved: "0",
       reservedLabel: "0 piezas",
+      // WMS-19: nothing on its way between warehouses.
+      inTransit: "0",
+      inTransitLabel: "0 piezas",
       locations: [],
       equivalences: [],
       lots: [],

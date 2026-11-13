@@ -24,6 +24,7 @@ import {
   countOrdersToPack,
   countOrdersToShip,
   countReturnsToReview,
+  countTransfersToReceive,
   countExpiringLots,
   countUnplacedStock,
   getDaySummary,
@@ -133,6 +134,11 @@ export default async function InicioPage() {
       access.allows("inventory.status.change"))
       ? await countReturnsToReview(actor)
       : 0;
+  // WMS-19: transfers on their way here, for who receives them.
+  const toReceive =
+    inventory && access.allows("inventory.facility_transfer.receive")
+      ? await countTransfersToReceive(actor)
+      : 0;
   const executes = access.can("inventory.task.execute");
   const supervises = access.can("inventory.task.create");
   const today: {
@@ -185,6 +191,16 @@ export default async function InicioPage() {
             href: "/pedidos?estado=por-despachar",
             label: "Pedidos por despachar",
             count: toShip,
+            icon: Truck,
+          },
+        ]
+      : []),
+    ...(toReceive > 0
+      ? [
+          {
+            href: "/movimientos/traslados?vista=incoming",
+            label: "Traslados por recibir",
+            count: toReceive,
             icon: Truck,
           },
         ]

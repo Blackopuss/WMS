@@ -229,6 +229,19 @@ export const AREAS = [
     models: ["CustomerReturn", "CustomerReturnLine", "CustomerReturnDecision"],
   },
   {
+    id: "inventory-facility-transfers",
+    title: "Inventario › Traslados entre almacenes",
+    doc: "inventory",
+    summary:
+      "Lo que un almacén envía a otro de la misma empresa: el traslado, sus renglones (producto, ubicación de origen, lote y series) y cada recepción, pérdida o regreso de lo que iba en tránsito.",
+    models: [
+      "FacilityTransfer",
+      "FacilityTransferLine",
+      "FacilityTransferReceipt",
+      "FacilityTransferReceiptLine",
+    ],
+  },
+  {
     id: "inventory-imports",
     title: "Inventario › Importaciones",
     doc: "inventory",

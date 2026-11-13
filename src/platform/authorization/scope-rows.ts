@@ -111,6 +111,7 @@ export async function resolveScopeRows(
       id: { in: zoneIds },
       parentId: null,
       archivedAt: null,
+      isTransit: null,
     },
     select: { id: true, name: true, facilityId: true },
   });
@@ -175,6 +176,7 @@ export async function stillValidScopeRows(
       },
       parentId: null,
       archivedAt: null,
+      isTransit: null,
     },
     select: { id: true, facilityId: true },
   });

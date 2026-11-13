@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-83 tablas en 21 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+87 tablas en 22 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -25,6 +25,7 @@
 | Inventario › Tareas, reservas y pedidos de salida | 6 | [inventory](modulos/inventory.md) |
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
+| Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 8 | [purchasing](modulos/purchasing.md) |
 
@@ -801,11 +802,12 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `parentId` | `String? · Char(36)` |  | Location that contains this one, in the same facility; NULL = root. |
 | `isDefault` | `Boolean?` |  | True for General, NULL for other locations (never false; SQL CHECK). MySQL allows multiple NULLs in the unique key, but only one true. |
 | `isStaging` | `Boolean?` |  | True for the place where picked goods wait to be packed and shipped (WMS-14), NULL for the others; one per facility, created when the first order is released. |
+| `isTransit` | `Boolean?` |  | True for the place of a warehouse where what another warehouse sent waits, in transit (WMS-19, ADR 0048), NULL for the others; one per facility, created by the system with the first transfer to it. Never shown nor offered: only transfers write in it, always IN_TRANSIT. |
 | `archivedAt` | `DateTime? · DateTime(3)` |  | Archived locations stay for the history; nothing is deleted. |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
-- Únicas: (`organizationId`, `id`); (`organizationId`, `facilityId`, `id`); (`organizationId`, `facilityId`, `parentId`, `name`); (`organizationId`, `facilityId`, `isDefault`); (`organizationId`, `facilityId`, `isStaging`); (`organizationId`, `facilityId`, `code`).
+- Únicas: (`organizationId`, `id`); (`organizationId`, `facilityId`, `id`); (`organizationId`, `facilityId`, `parentId`, `name`); (`organizationId`, `facilityId`, `isDefault`); (`organizationId`, `facilityId`, `isStaging`); (`organizationId`, `facilityId`, `isTransit`); (`organizationId`, `facilityId`, `code`).
 - Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `level` → `LocationLevel` por (`organizationId`, `facilityId`, `levelId`) (al borrar: Restrict); `parent` → `Location` por (`organizationId`, `facilityId`, `parentId`) (al borrar: Restrict).
 
 ### LocationCapacity · `location_capacity`
@@ -1192,7 +1194,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Inventario › Existencias y movimientos
 
-- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`.
+- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`, `FACILITY_TRANSFER`.
 - `StockDirection`: `IN`, `OUT`.
 - `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`.
 
@@ -1726,6 +1728,119 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 #### Enumeraciones de Inventario › Devoluciones de clientes
 
 - `CustomerReturnStatus`: `RECEIVED`, `RESOLVED`.
+
+## Inventario › Traslados entre almacenes
+
+Lo que un almacén envía a otro de la misma empresa: el traslado, sus renglones (producto, ubicación de origen, lote y series) y cada recepción, pérdida o regreso de lo que iba en tránsito.
+
+Documento: [modulos/inventory.md](modulos/inventory.md).
+
+### FacilityTransfer · `facility_transfer`
+
+Goods sent from one warehouse of the company to another (WMS-19, ADR 0048). Sending writes one FACILITY_TRANSFER movement into the transit location of the destination (IN_TRANSIT); each receipt, loss or return takes out of it. Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | Consecutive per company («TR-0001»). |
+| `status` | `FacilityTransferStatus` | `DRAFT` |  |
+| `fromFacilityId` | `String · Char(36)` |  |  |
+| `toFacilityId` | `String · Char(36)` |  |  |
+| `transitLocationId` | `String · Char(36)` |  | Where it waits in transit: the transit location of the destination. |
+| `note` | `String? · VarChar(500)` |  |  |
+| `carrier` | `String? · VarChar(160)` |  | Who takes it (free text), written when it is sent. |
+| `idempotencyKey` | `String · VarChar(64)` |  | Sent with the creation so that repeating it creates one draft. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `sendMovementId` | `String? · Char(36)` |  | The movement of the send (FACILITY_TRANSFER). |
+| `sentByUserId` | `String? · Char(36)` |  |  |
+| `sentAt` | `DateTime? · DateTime(3)` |  |  |
+| `closedAt` | `DateTime? · DateTime(3)` |  | When nothing was left in transit. |
+| `cancelledByUserId` | `String? · Char(36)` |  |  |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelReason` | `String? · VarChar(300)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `idempotencyKey`); (`organizationId`, `sendMovementId`).
+- Índices: (`organizationId`, `fromFacilityId`, `status`, `number`); (`organizationId`, `toFacilityId`, `status`, `number`).
+- Relaciones: `fromFacility` → `Facility` por (`organizationId`, `fromFacilityId`) (al borrar: Restrict); `toFacility` → `Facility` por (`organizationId`, `toFacilityId`) (al borrar: Restrict); `transitLocation` → `Location` por (`organizationId`, `transitLocationId`) (al borrar: Restrict); `sendMovement` → `StockMovement` por (`organizationId`, `sendMovementId`) (al borrar: Restrict).
+
+### FacilityTransferLine · `facility_transfer_line`
+
+One product (location of origin and lot) a transfer carries, in the product's unit. Added and removed only while the transfer is a draft; its line into transit is written once, when it is sent.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `transferId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `fromLocationId` | `String · Char(36)` |  | Where it leaves from, in the warehouse of origin. |
+| `lotId` | `String? · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `serials` | `String? · Text` |  | «A1, A2», for a product by serial. |
+| `transitLineId` | `String? · Char(36)` |  | Its line into transit (IN, IN_TRANSIT), once it was sent. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `transferId`, `lineNumber`); (`organizationId`, `transitLineId`).
+- Índices: (`organizationId`, `productId`); (`organizationId`, `lotId`).
+- Relaciones: `transfer` → `FacilityTransfer` por (`organizationId`, `transferId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `transitLine` → `StockMovementLine` por (`organizationId`, `transitLineId`) (al borrar: Restrict).
+
+### FacilityTransferReceipt · `facility_transfer_receipt`
+
+One receipt, loss or return of what a transfer had in transit, with its movement, who and why. Immutable.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `transferId` | `String · Char(36)` |  |  |
+| `kind` | `FacilityTransferReceiptKind` |  |  |
+| `locationId` | `String · Char(36)` |  | Where it ended: the place it was received in or came back to; the transit location for a loss. |
+| `movementId` | `String · Char(36)` |  |  |
+| `idempotencyKey` | `String · VarChar(64)` |  |  |
+| `reason` | `String? · VarChar(500)` |  | Mandatory for a loss or a return; a note for a receipt. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementId`); (`organizationId`, `idempotencyKey`).
+- Índices: (`organizationId`, `transferId`, `id`).
+- Relaciones: `transfer` → `FacilityTransfer` por (`organizationId`, `transferId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+### FacilityTransferReceiptLine · `facility_transfer_receipt_line`
+
+What one receipt settled of one line: how much, in what state it ended (available or damaged; IN_TRANSIT for what was lost) and the line of the movement that did it. Immutable; never more than what was sent.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `receiptId` | `String · Char(36)` |  |  |
+| `lineId` | `String · Char(36)` |  |  |
+| `status` | `StockStatus` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `movementLineId` | `String · Char(36)` |  | The line of the movement: IN where it ended, OUT for a loss. |
+| `serials` | `String? · Text` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementLineId`).
+- Índices: (`organizationId`, `lineId`); (`organizationId`, `receiptId`).
+- Relaciones: `receipt` → `FacilityTransferReceipt` por (`organizationId`, `receiptId`) (al borrar: Restrict); `line` → `FacilityTransferLine` por (`organizationId`, `lineId`) (al borrar: Restrict); `movementLine` → `StockMovementLine` por (`organizationId`, `movementLineId`) (al borrar: Restrict).
+
+#### Enumeraciones de Inventario › Traslados entre almacenes
+
+- `FacilityTransferStatus`: `DRAFT`, `SENT`, `RECEIVED`, `CANCELLED`.
+- `FacilityTransferReceiptKind`: `RECEIVED`, `LOST`, `RETURNED`.
 
 ## Inventario › Importaciones
 

@@ -43,6 +43,12 @@ export type ProductStock = {
   /** Set aside for orders (WMS-12), "0" when nothing is. */
   reserved: string;
   reservedLabel: string;
+  /**
+   * WMS-19: what is on its way between warehouses (IN_TRANSIT, part of the
+   * total, never available): "0" when nothing is.
+   */
+  inTransit: string;
+  inTransitLabel: string;
   /** Where it is, «General» first, then by name. Only places with stock. */
   locations: {
     id: string;
@@ -268,6 +274,13 @@ export async function getProductStock(
         : sum,
     dec(0),
   );
+  const inTransit = balances.reduce(
+    (sum, balance) =>
+      balance.status === "IN_TRANSIT"
+        ? sum.plus(balance.quantity.toString())
+        : sum,
+    dec(0),
+  );
   const net = availableStock.minus(reserved);
   const available = net.isNegative() ? dec(0) : net;
   const rule = {
@@ -296,6 +309,8 @@ export async function getProductStock(
     availableLabel: formatStock(available.toString(), unitCode),
     reserved: reserved.toString(),
     reservedLabel: formatStock(reserved.toString(), unitCode),
+    inTransit: inTransit.toString(),
+    inTransitLabel: formatStock(inTransit.toString(), unitCode),
     locations,
     equivalences,
     lots: balances

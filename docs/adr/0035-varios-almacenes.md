@@ -25,8 +25,8 @@ instalación (`facility.organizationId` único) y cada flujo lo suponía.
   salida y tareas trabajan en el almacén activo; se cambia desde el menú
   lateral (solo aparece con más de un almacén).
 - **Nada cruza almacenes por accidente:** una reubicación o tarea con origen y
-  destino en almacenes distintos se rechaza; entre almacenes habrá traslado con
-  tránsito (WMS-19). Un pedido de salida guarda su almacén (`facilityId`, solo
+  destino en almacenes distintos se rechaza; entre almacenes se hace un
+  traslado con tránsito (WMS-19, ADR 0048). Un pedido de salida guarda su almacén (`facilityId`, solo
   cambia en borrador) y se surte solo de ahí, hacia su preparación.
 - **Cupo** en el plan: límite `facilities` (1 cuando el plan no lo dice), que
   pone la consola interna. Crear o archivar bloquea todos los almacenes de la
@@ -39,3 +39,5 @@ instalación (`facility.organizationId` único) y cada flujo lo suponía.
 - Órdenes de compra con almacén de destino (hoy se recibe en la ubicación que
   se elija del almacén activo).
 - Alcance de permisos por almacén (WMS-20).
+- Traslados entre almacenes con mercancía en tránsito: hechos en WMS-19 (ADR
+  0048).

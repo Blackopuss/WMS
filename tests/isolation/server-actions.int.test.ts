@@ -183,6 +183,64 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); solo devoluciones de esa persona en esa empresa y dentro de su alcance",
     coveredBy: "tests/inventory/customer-returns.int.test.ts",
   },
+  createTransferAction: {
+    input: "almacén de destino, notas y clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el origen es el almacén donde trabaja la persona y el destino se busca solo en esa empresa",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  checkCreatedTransferAction: {
+    input: "clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo traslados creados por esa persona en esa empresa y dentro de su alcance",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  addTransferLineAction: {
+    input:
+      "traslado y producto (fijados por la página), origen (ubicación y lote), cantidad y series",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el borrador, el producto y la ubicación se bloquean solo en esa empresa y dentro del alcance de la persona sobre el origen",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  removeTransferLineAction: {
+    input: "traslado y renglón (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el borrador se bloquea solo en esa empresa y dentro del alcance de la persona sobre el origen",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  sendTransferAction: {
+    input:
+      "traslado (fijado por la página), quién lo lleva y clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el traslado, sus productos y ubicaciones se bloquean solo en esa empresa y dentro del alcance de la persona sobre el origen",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  cancelTransferAction: {
+    input: "traslado (fijado por la página) y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el traslado se bloquea solo en esa empresa y dentro del alcance de la persona sobre el origen",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  receiveTransferAction: {
+    input:
+      "traslado (fijado por la página), ubicación de llegada, por renglón lo que llegó bien y dañado con sus series, notas, clave de confirmación y la aceptación del aviso de capacidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el traslado se bloquea solo en esa empresa y dentro del alcance de la persona sobre el destino; la ubicación pasa por su alcance",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  resolveTransferAction: {
+    input:
+      "traslado y renglón (fijados por la página), resultado (se perdió o regresó), cantidad, motivo, series y clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el traslado se bloquea solo en esa empresa; una pérdida exige alcance sobre el destino y un regreso sobre el origen",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
+  checkTransferMovementAction: {
+    input: "clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo movimientos de esa persona en esa empresa",
+    coveredBy: "tests/inventory/facility-transfers.int.test.ts",
+  },
   decideReturnAction: {
     input:
       "devolución y renglón (fijados por la página), resultado, cantidad, motivo, destino, series, clave de confirmación y la aceptación del aviso de capacidad",

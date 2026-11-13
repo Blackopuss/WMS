@@ -706,6 +706,175 @@ beforeAll(async () => {
         decidedByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // A transfer between warehouses (WMS-19), sent and received: a second
+    // warehouse with its transit location and a receiving place, the draft
+    // and its line, the send into transit and the receipt out of it.
+    const by = organizationId === orgA ? ids.ana : ids.beto;
+    const otherFacilityId = newId();
+    await db.facility.create({
+      data: {
+        id: otherFacilityId,
+        organizationId,
+        name: "Bodega de traslados",
+        code: "TRAS",
+      },
+    });
+    const otherLevelId = newId();
+    await db.locationLevel.create({
+      data: {
+        id: otherLevelId,
+        organizationId,
+        facilityId: otherFacilityId,
+        depth: 1,
+        name: "Zona",
+      },
+    });
+    const transitId = newId();
+    const arrivalId = newId();
+    for (const [id, name, isTransit] of [
+      [transitId, "En tránsito entre almacenes", true],
+      [arrivalId, "Recepción", null],
+    ] as const) {
+      await db.location.create({
+        data: {
+          id,
+          organizationId,
+          facilityId: otherFacilityId,
+          name,
+          levelId: otherLevelId,
+          isTransit,
+        },
+      });
+    }
+    const transferId = newId();
+    await db.facilityTransfer.create({
+      data: {
+        id: transferId,
+        organizationId,
+        number: 1,
+        fromFacilityId: location.facilityId,
+        toFacilityId: otherFacilityId,
+        transitLocationId: transitId,
+        idempotencyKey: newId(),
+        createdByUserId: by,
+      },
+    });
+    const transferLineId = newId();
+    await db.facilityTransferLine.create({
+      data: {
+        id: transferLineId,
+        organizationId,
+        transferId,
+        lineNumber: 1,
+        productId,
+        fromLocationId: location.id,
+        quantity: "1",
+        unitCode: "piece",
+      },
+    });
+    const transferLeg = async (
+      movementId: string,
+      lineNumber: number,
+      direction: "IN" | "OUT",
+      locationId: string,
+      status: "AVAILABLE" | "IN_TRANSIT",
+    ) => {
+      const id = newId();
+      await db.stockMovementLine.create({
+        data: {
+          id,
+          organizationId,
+          movementId,
+          lineNumber,
+          productId,
+          locationId,
+          direction,
+          status,
+          capturedQuantity: "1",
+          factor: "1",
+          baseQuantity: "1",
+          unitCode: "piece",
+        },
+      });
+      return id;
+    };
+    const sendMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: sendMovementId,
+        organizationId,
+        type: "FACILITY_TRANSFER",
+        reference: "TR-0001",
+        createdByUserId: by,
+      },
+    });
+    await transferLeg(sendMovementId, 1, "OUT", location.id, "AVAILABLE");
+    const intoTransitId = await transferLeg(
+      sendMovementId,
+      2,
+      "IN",
+      transitId,
+      "IN_TRANSIT",
+    );
+    await db.facilityTransferLine.update({
+      where: { id: transferLineId },
+      data: { transitLineId: intoTransitId },
+    });
+    await db.facilityTransfer.update({
+      where: { id: transferId },
+      data: {
+        status: "SENT",
+        sendMovementId,
+        sentByUserId: by,
+        sentAt: new Date(),
+      },
+    });
+    const arrivalMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: arrivalMovementId,
+        organizationId,
+        type: "FACILITY_TRANSFER",
+        reference: "TR-0001",
+        createdByUserId: by,
+      },
+    });
+    await transferLeg(arrivalMovementId, 1, "OUT", transitId, "IN_TRANSIT");
+    const arrivedId = await transferLeg(
+      arrivalMovementId,
+      2,
+      "IN",
+      arrivalId,
+      "AVAILABLE",
+    );
+    const transferReceiptId = newId();
+    await db.facilityTransferReceipt.create({
+      data: {
+        id: transferReceiptId,
+        organizationId,
+        transferId,
+        kind: "RECEIVED",
+        locationId: arrivalId,
+        movementId: arrivalMovementId,
+        idempotencyKey: newId(),
+        createdByUserId: by,
+      },
+    });
+    await db.facilityTransferReceiptLine.create({
+      data: {
+        id: newId(),
+        organizationId,
+        receiptId: transferReceiptId,
+        lineId: transferLineId,
+        status: "AVAILABLE",
+        quantity: "1",
+        movementLineId: arrivedId,
+      },
+    });
+    await db.facilityTransfer.update({
+      where: { id: transferId },
+      data: { status: "RECEIVED", closedAt: new Date() },
+    });
     // A transfer task (WMS-06) from the default location to a rack.
     const rackId = newId();
     await db.location.create({

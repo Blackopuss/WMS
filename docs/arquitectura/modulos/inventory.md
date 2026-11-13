@@ -80,6 +80,17 @@ código»):
   vuelve disponible, dañado o rechazado. Lo que una devolución abierta tiene
   en inspección queda retenido (`heldForReturns`): «Cambiar estado» y la
   reversa no lo toman. Ni `CUSTOMER_RETURN` ni sus decisiones se reversan.
+- Traslados entre almacenes (WMS-19, ADR 0048): un borrador lista qué va
+  (producto, ubicación de origen, lote, series) y no aparta nada. Enviar es
+  **un** movimiento `FACILITY_TRANSFER` que saca disponible del origen y lo
+  deja en `IN_TRANSIT` en la ubicación «En tránsito» del destino
+  (`location.isTransit`, del sistema, nunca ofrecida ni listada); recibir,
+  «se perdió» y «regresó al origen» son otros `FACILITY_TRANSFER` que sacan
+  de tránsito, con lo pendiente calculado bajo el candado del traslado
+  (nunca más de lo enviado). El total de la empresa y el valor no cambian en
+  tránsito (solo «se perdió» baja el valor); los disparadores obligan a que
+  `IN_TRANSIT` viva solo en la ubicación de tránsito y que solo un traslado
+  escriba ahí. No se reversa desde Inventario.
 - Cada formulario que confirma un movimiento manda `idempotencyKey`.
 
 ## Servicios públicos (`index.ts`)
@@ -103,6 +114,7 @@ código»):
 | Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK` y `PUTAWAY`; una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS` |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
+| Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; transiciones `FACILITY_TRANSFER_TRANSITIONS` |
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
 | Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido y embarque, con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
@@ -139,6 +151,9 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Devoluciones de clientes: `customer_return.read|create` (WMS-17: ver y
   registrar; decidir usa `status.release` para disponible y `status.change`
   para dañado o rechazado).
+- Traslados entre almacenes: `facility_transfer.read|create|send|receive|resolve`
+  (WMS-19: ver, armar y cancelar el borrador, enviar, recibir y resolver lo
+  que no llegó).
 - Archivos: `import.create|read|confirm|cancel`, `export.create`.
 - Etiquetas (WMS-26): sin permiso propio; imprimir pide la lectura de lo que
   se etiqueta (`location.read`, `product.read`, `stock.read`,
@@ -158,7 +173,9 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `stock_count_capture`, `warehouse_task`, `stock_reservation`,
 `outbound_order`, `outbound_order_line`, `outbound_pack_shortage`,
 `shipment`, `shipment_order`, `shipment_line`, `customer_return`,
-`customer_return_line`, `customer_return_decision`,
+`customer_return_line`, `customer_return_decision`, `facility_transfer`,
+`facility_transfer_line`, `facility_transfer_receipt`,
+`facility_transfer_receipt_line`,
 `product_import`,
 `product_import_item`, `exit_import`, `exit_import_row`, `outbound_import`.
 Detalle en [modelo-de-datos.md](../modelo-de-datos.md).
@@ -200,7 +217,8 @@ saldo), 0034 (ajustes), 0035 (varios almacenes), 0038 (alcance), 0039
 (capacidad), 0040 (lotes y caducidad), 0041 (números de serie y
 trazabilidad), 0042 (acomodo con recomendación), 0043 (tarimas y
 contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
-0046 (devoluciones de clientes), 0047 (etiquetas e impresión).
+0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
+entre almacenes).
 
 ## Pruebas
 
@@ -209,7 +227,8 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`).
 Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; devoluciones de clientes (PC-5) en
-`customer-returns.int.test.ts`. Casos de alcance en
+`customer-returns.int.test.ts`; traslados entre almacenes en
+`facility-transfers.int.test.ts`. Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara

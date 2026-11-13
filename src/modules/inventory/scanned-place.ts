@@ -37,6 +37,7 @@ export async function scannedPlace(
   const where = {
     facilityId,
     archivedAt: null,
+    isTransit: null,
     ...(isLimited(scoped) ? { AND: [scoped] } : {}),
   };
   const byCode = await client.location.findFirst({

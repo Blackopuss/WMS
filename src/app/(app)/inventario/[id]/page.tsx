@@ -314,6 +314,12 @@ export default async function ProductoPage({
                     · Apartado para pedidos: {stock.reservedLabel}
                   </span>
                 )}
+                {stock.inTransit !== "0" && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · En tránsito entre almacenes: {stock.inTransitLabel}
+                  </span>
+                )}
               </p>
             )}
             {minimum !== null && !access.allows("inventory.minimum.update") && (

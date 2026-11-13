@@ -80,6 +80,10 @@ export const TENANT_MODELS = [
   "CustomerReturn",
   "CustomerReturnLine",
   "CustomerReturnDecision",
+  "FacilityTransfer",
+  "FacilityTransferLine",
+  "FacilityTransferReceipt",
+  "FacilityTransferReceiptLine",
   "OrganizationSetting",
   "WarehouseTask",
   "StockCount",
@@ -299,6 +303,7 @@ const LOCKABLE = {
   outboundImport: "outbound_import",
   shipment: "shipment",
   customerReturn: "customer_return",
+  facilityTransfer: "facility_transfer",
 } as const;
 
 /**
