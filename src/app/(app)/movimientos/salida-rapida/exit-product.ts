@@ -3,6 +3,7 @@ import "server-only";
 import {
   formatStock,
   getStockByLocation,
+  listLotStock,
   listStockLocations,
   type InventoryActor,
 } from "@/modules/inventory";
@@ -20,7 +21,11 @@ export type ExitProduct = {
   name: string;
   sku: string;
   captures: CaptureOption[];
-  /** Locations that hold some of it, «General» first. Empty = no stock. */
+  /**
+   * Locations that hold some of it, «General» first. Empty = no stock. For
+   * a product by lot (WMS-21), one choice per location and lot, with the
+   * id «<location>|<lot>».
+   */
   locations: { id: string; label: string }[];
 };
 
@@ -37,6 +42,23 @@ export async function loadExitProduct(
     getStockByLocation(actor, product.id),
     canReadPresentations ? listPresentations(actor, product.id) : [],
   ]);
+  if (product.tracking === "LOT") {
+    const lots = await listLotStock(actor, product.id);
+    return {
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      captures: captureOptions(product, presentations),
+      locations: locations.flatMap((location) =>
+        lots
+          .filter((row) => row.locationId === location.id)
+          .map((row) => ({
+            id: `${location.id}|${row.lotId}`,
+            label: `${location.path} · ${row.label}${row.expired ? " (caducado)" : ""} — hay ${formatStock(row.free, product.unitCode)}`,
+          })),
+      ),
+    };
+  }
   return {
     id: product.id,
     name: product.name,

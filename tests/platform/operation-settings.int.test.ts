@@ -4,6 +4,8 @@ import { newId } from "@/lib";
 import {
   CAPACITY_MODE,
   ENTRY_REPEAT_WINDOW,
+  EXPIRY_NOTICE,
+  PICK_EXPIRED,
   PICKING_STRATEGY,
   createOutboundOrder,
   registerEntry,
@@ -165,11 +167,16 @@ describe("operation settings", () => {
     ).toMatchObject({ ok: true, repeated: true });
     expect(await getOperationSettings(one, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "emptiest", defaultValue: "fullest" },
+      // WMS-21: expired lots at picking and the notice of lots to expire.
+      { key: PICK_EXPIRED.key, value: "skip", defaultValue: "skip" },
+      { key: EXPIRY_NOTICE.key, value: "30", defaultValue: "30" },
       { key: ENTRY_REPEAT_WINDOW.key, value: "30", defaultValue: "30" },
       { key: CAPACITY_MODE.key, value: "warn", defaultValue: "warn" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
+      { key: PICK_EXPIRED.key, value: "skip" },
+      { key: EXPIRY_NOTICE.key, value: "30" },
       { key: ENTRY_REPEAT_WINDOW.key, value: "30" },
       { key: CAPACITY_MODE.key, value: "warn" },
     ]);
@@ -187,7 +194,8 @@ describe("operation settings", () => {
         owner,
         operationSettings,
         PICKING_STRATEGY.key,
-        "fifo",
+        // «fifo» became an option with lots (WMS-21).
+        "lifo",
       ),
     ).toEqual({ ok: false, error: "Elige una de las opciones." });
     const supervisor = await member(owner.organizationId, "supervisor");

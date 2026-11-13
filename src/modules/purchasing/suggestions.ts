@@ -1,7 +1,7 @@
 import "server-only";
 
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
-import { AVAILABLE_STOCK, formatStock } from "@/modules/inventory";
+import { AVAILABLE_ANY_LOT, formatStock } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
@@ -138,7 +138,7 @@ async function plan(client: Reader, productIds?: string[]): Promise<Plan> {
     const slice = ids.slice(start, start + 1_000);
     const sums = await client.stockBalance.groupBy({
       by: ["productId"],
-      where: { productId: { in: slice }, ...AVAILABLE_STOCK },
+      where: { productId: { in: slice }, ...AVAILABLE_ANY_LOT },
       _sum: { quantity: true },
     });
     // WMS-12: what is reserved for an order is not available.

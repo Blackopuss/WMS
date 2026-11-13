@@ -6,7 +6,7 @@ import { lockRows, type TenantDb } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { lotColumns } from "./stock-status";
 import { freeToTake, reservedMessage } from "./reservations";
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
@@ -36,6 +36,8 @@ export type ReturnExitLine = {
   unitCode: string;
   /** Cost of one captured unit (one box) it was received at; null if unknown. */
   unitCost: { toString(): string } | null;
+  /** The lot it was received in (WMS-21): it goes back from that lot. */
+  lotId?: string | null;
 };
 
 export type ReturnExitResult =
@@ -84,22 +86,53 @@ export async function postReturnExit(
     ...line,
     baseQuantity: line.capturedQuantity.times(line.factor),
   }));
+  // WMS-21: each line leaves from the lot it was received in. A product
+  // that changed how it is controlled since no longer has that stock.
+  const tracked = await tx.product.findMany({
+    where: { id: { in: [...new Set(lines.map((line) => line.productId))] } },
+    select: { id: true, name: true, tracking: true },
+  });
+  for (const [index, line] of lines.entries()) {
+    const product = tracked.find((row) => row.id === line.productId);
+    if (product && (product.tracking === "LOT") !== Boolean(line.lotId)) {
+      return {
+        ok: false,
+        line: index,
+        error: `${product.name} cambió su control por lote después de recibirlo: sácalo con una salida, eligiendo de dónde.`,
+      };
+    }
+  }
   // What leaves each product in each location: `<product> <location>`.
   const taken = new Map<string, Decimal>();
+  const slotOf = (line: {
+    productId: string;
+    locationId: string;
+    lotId?: string | null;
+  }) => `${line.productId} ${line.locationId} ${line.lotId ?? ""}`;
   for (const line of lines) {
-    const slot = `${line.productId} ${line.locationId}`;
+    const slot = slotOf(line);
     taken.set(slot, (taken.get(slot) ?? dec(0)).plus(line.baseQuantity));
   }
   const balances = await tx.stockBalance.findMany({
     where: {
       productId: { in: [...new Set(lines.map((line) => line.productId))] },
       locationId: { in: [...new Set(lines.map((line) => line.locationId))] },
-      ...AVAILABLE_STOCK,
+      status: "AVAILABLE",
+      lotKey: { in: [...new Set(lines.map((line) => line.lotId ?? ""))] },
     },
-    select: { id: true, productId: true, locationId: true, quantity: true },
+    select: {
+      id: true,
+      productId: true,
+      locationId: true,
+      lotKey: true,
+      quantity: true,
+    },
   });
   const current = new Map(
-    balances.map((row) => [`${row.productId} ${row.locationId}`, row]),
+    balances.map((row) => [
+      `${row.productId} ${row.locationId} ${row.lotKey}`,
+      row,
+    ]),
   );
   const places = await tx.location.findMany({
     where: { id: { in: [...new Set(lines.map((line) => line.locationId))] } },
@@ -110,9 +143,7 @@ export async function postReturnExit(
   for (const [slot, quantity] of taken) {
     const before = dec(current.get(slot)?.quantity.toString() ?? 0);
     if (before.lessThan(quantity)) {
-      const index = lines.findIndex(
-        (line) => `${line.productId} ${line.locationId}` === slot,
-      );
+      const index = lines.findIndex((line) => slotOf(line) === slot);
       const line = lines[index]!;
       return {
         ok: false,
@@ -124,18 +155,16 @@ export async function postReturnExit(
   // WMS-12: what is reserved for an order is not sent back.
   const byProduct = new Map<string, Decimal>();
   for (const [slot, quantity] of taken) {
-    const [productId = "", locationId = ""] = slot.split(" ");
+    const [productId = "", locationId = "", lotKey = ""] = slot.split(" ");
     byProduct.set(
       productId,
       (byProduct.get(productId) ?? dec(0)).plus(quantity),
     );
-    const free = await freeToTake(tx, productId, locationId);
+    const free = await freeToTake(tx, productId, locationId, lotKey || null);
     const total = byProduct.get(productId)!;
     const freeAnywhere = await freeToTake(tx, productId, null);
     if (free.lessThan(quantity) || freeAnywhere.lessThan(total)) {
-      const index = lines.findIndex(
-        (line) => `${line.productId} ${line.locationId}` === slot,
-      );
+      const index = lines.findIndex((line) => slotOf(line) === slot);
       const line = lines[index]!;
       return {
         ok: false,
@@ -189,6 +218,7 @@ export async function postReturnExit(
       factor: line.factor.toString(),
       baseQuantity: line.baseQuantity.toString(),
       unitCode: line.unitCode,
+      ...lotColumns(line.lotId),
       unitCost: lineCost(unitCosts[index]!),
     })),
   });

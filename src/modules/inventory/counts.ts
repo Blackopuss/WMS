@@ -28,7 +28,8 @@ import {
   type MovementType,
 } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { availableOfLot, lotColumns } from "./stock-status";
+import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 
 /**
  * Physical counts: capture (INV-31). A count belongs to one location.
@@ -208,6 +209,13 @@ const captureSchema = z.object({
     .max(12)
     .optional()
     .transform((value) => value || null),
+  /** The lot counted, for a product by lot (WMS-21): one line per lot. */
+  lotId: z
+    .string()
+    .trim()
+    .max(36)
+    .optional()
+    .transform((value) => value || null),
 });
 
 export type CaptureInput = z.input<typeof captureSchema>;
@@ -223,7 +231,7 @@ export type CaptureResult =
       /** Boxes and loose units were both captured: worth a second look. */
       mixed: boolean;
     }
-  | Failure<"productId" | "quantity">;
+  | Failure<"productId" | "quantity" | "lotId">;
 
 /**
  * Writes down what was found of a product. Several captures of the same
@@ -280,7 +288,13 @@ export async function captureCount(
       const product = productId
         ? await tx.product.findFirst({
             where: { id: productId },
-            select: { id: true, name: true, status: true, unitCode: true },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              unitCode: true,
+              ...LOT_RULE_SELECT,
+            },
           })
         : null;
       if (!product) {
@@ -293,6 +307,10 @@ export async function captureCount(
           "productId",
         );
       }
+      // WMS-21: a product by lot is counted lot by lot.
+      const lotAnswer = await lotForTake(tx, product, data.lotId);
+      if (!lotAnswer.ok) return reject("invalid", lotAnswer.error, "lotId");
+      const lot = lotAnswer.lot;
 
       // Zero needs no conversion; anything else follows the product's rule
       // and the content the presentation has now (INV-09).
@@ -333,7 +351,11 @@ export async function captureCount(
       }
 
       let line = await tx.stockCountLine.findFirst({
-        where: { countId: count.id, productId: product.id },
+        where: {
+          countId: count.id,
+          productId: product.id,
+          lotKey: lot?.id ?? "",
+        },
         select: {
           id: true,
           captures: {
@@ -361,7 +383,7 @@ export async function captureCount(
           where: {
             productId: product.id,
             locationId: count.locationId,
-            ...AVAILABLE_STOCK,
+            ...availableOfLot(lot?.id),
           },
           select: { quantity: true },
         });
@@ -372,6 +394,7 @@ export async function captureCount(
             organizationId,
             countId: count.id,
             productId: product.id,
+            ...lotColumns(lot?.id),
             countedAt: new Date(),
             systemQuantity: balance?.quantity.toString() ?? "0",
             unitCode: product.unitCode,
@@ -382,7 +405,7 @@ export async function captureCount(
       if (line.captures.length >= MAX_CAPTURES) {
         return reject(
           "not_allowed",
-          `${product.name} ya tiene ${MAX_CAPTURES} capturas en este conteo. Quita algunas y escribe el total.`,
+          `${product.name}${ofLot(lot)} ya tiene ${MAX_CAPTURES} capturas en este conteo. Quita algunas y escribe el total.`,
           "quantity",
         );
       }
@@ -423,8 +446,8 @@ export async function captureCount(
         mixed: isMixed(all),
         summary:
           all.length === 1
-            ? `${product.name}: ${captured.preview}.`
-            : `${product.name}: ${captured.preview}. Van ${countedLabel} contadas en ${all.length} capturas.`,
+            ? `${product.name}${ofLot(lot)}: ${captured.preview}.`
+            : `${product.name}${ofLot(lot)}: ${captured.preview}. Van ${countedLabel} contadas en ${all.length} capturas.`,
       };
     }, LOCKING_TRANSACTION);
   } catch (error) {
@@ -623,6 +646,9 @@ export type CountLine = {
   productId: string;
   name: string;
   sku: string;
+  /** The lot counted, for a product by lot (WMS-21): id and code. */
+  lotId: string | null;
+  lot: string | null;
   unitCode: string;
   /** Moment the product was first counted: the reference (INV-32). */
   countedAt: Date;
@@ -728,6 +754,8 @@ export async function getCount(
         select: {
           id: true,
           productId: true,
+          lotKey: true,
+          lot: { select: { id: true, code: true } },
           countedAt: true,
           systemQuantity: true,
           unitCode: true,
@@ -762,7 +790,11 @@ export async function getCount(
   // movements themselves are listed to explain the number.
   const open = count.status === "OPEN";
   const client = forOrganization(actor.organizationId);
-  const productIds = count.lines.map((line) => line.productId);
+  const productIds = [...new Set(count.lines.map((line) => line.productId))];
+  // WMS-21: a line is a product and its lot.
+  const slot = (row: { productId: string; lotKey: string }) =>
+    `${row.productId}|${row.lotKey}`;
+  const counted = new Set(count.lines.map(slot));
   const balances = new Map<string, string>();
   const later = new Map<
     string,
@@ -778,7 +810,7 @@ export async function getCount(
       Math.min(...count.lines.map((line) => line.countedAt.getTime())),
     );
     const countedAt = new Map(
-      count.lines.map((line) => [line.productId, line.countedAt]),
+      count.lines.map((line) => [slot(line), line.countedAt]),
     );
     for (let start = 0; start < productIds.length; start += 500) {
       const ids = productIds.slice(start, start + 500);
@@ -787,9 +819,9 @@ export async function getCount(
           where: {
             locationId: count.locationId,
             productId: { in: ids },
-            ...AVAILABLE_STOCK,
+            status: "AVAILABLE",
           },
-          select: { productId: true, quantity: true },
+          select: { productId: true, lotKey: true, quantity: true },
         }),
         client.stockMovementLine.findMany({
           where: {
@@ -801,6 +833,8 @@ export async function getCount(
           take: 2_000,
           select: {
             productId: true,
+            lotKey: true,
+            status: true,
             direction: true,
             baseQuantity: true,
             createdAt: true,
@@ -809,20 +843,22 @@ export async function getCount(
         }),
       ]);
       for (const balance of held) {
-        balances.set(balance.productId, balance.quantity.toString());
+        balances.set(slot(balance), balance.quantity.toString());
       }
       for (const line of moved) {
-        // Each product has its own reference moment.
-        if (line.createdAt <= countedAt.get(line.productId)!) continue;
+        // Only what was counted: available stock of a counted lot.
+        if (line.status !== "AVAILABLE" || !counted.has(slot(line))) continue;
+        // Each product (and lot) has its own reference moment.
+        if (line.createdAt <= countedAt.get(slot(line))!) continue;
         const quantity = dec(line.baseQuantity.toString());
-        const list = later.get(line.productId) ?? [];
+        const list = later.get(slot(line)) ?? [];
         list.push({
           movementId: line.movement.id,
           type: line.movement.type,
           createdAt: line.createdAt,
           signed: line.direction === "IN" ? quantity : quantity.negated(),
         });
-        later.set(line.productId, list);
+        later.set(slot(line), list);
       }
     }
   }
@@ -840,6 +876,8 @@ export async function getCount(
       productId: line.productId,
       name: line.product.name,
       sku: line.product.sku,
+      lotId: line.lot?.id ?? null,
+      lot: line.lot?.code ?? null,
       unitCode,
       countedAt: line.countedAt,
       captures: line.captures.map((capture) => {
@@ -870,8 +908,8 @@ export async function getCount(
             unitCode,
             system,
             difference,
-            dec(balances.get(line.productId) ?? 0),
-            later.get(line.productId) ?? [],
+            dec(balances.get(slot(line)) ?? 0),
+            later.get(slot(line)) ?? [],
           )
         : null,
     };
@@ -1056,9 +1094,12 @@ export async function applyCount(
                     orderBy: [{ countedAt: "asc" }, { id: "asc" }],
                     select: {
                       productId: true,
+                      lotId: true,
+                      lotKey: true,
+                      lot: { select: { code: true } },
                       systemQuantity: true,
                       unitCode: true,
-                      product: { select: { name: true } },
+                      product: { select: { name: true, tracking: true } },
                       captures: {
                         take: MAX_CAPTURES,
                         select: { baseQuantity: true },
@@ -1120,21 +1161,41 @@ export async function applyCount(
             );
           }
 
+          // WMS-21: a line counted before its product changed how it is
+          // controlled no longer says which stock it is about.
+          const stale = count.lines.find(
+            (line) =>
+              (line.product.tracking === "LOT") !== (line.lotId !== null),
+          );
+          if (stale) {
+            return reject(
+              "not_allowed",
+              `${stale.product.name} cambió su control por lote después de contarlo. Quita sus capturas y cuéntalo de nuevo.`,
+            );
+          }
+          const slot = (row: { productId: string; lotKey: string }) =>
+            `${row.productId}|${row.lotKey}`;
           const balances = new Map(
             (
               await tx.stockBalance.findMany({
                 where: {
                   locationId: count.locationId,
                   productId: { in: [...locked] },
-                  ...AVAILABLE_STOCK,
+                  status: "AVAILABLE",
                 },
-                select: { id: true, productId: true, quantity: true },
+                select: {
+                  id: true,
+                  productId: true,
+                  lotKey: true,
+                  quantity: true,
+                },
               })
-            ).map((balance) => [balance.productId, balance]),
+            ).map((balance) => [slot(balance), balance]),
           );
           const conflicts: string[] = [];
           const adjustments: {
             productId: string;
+            lotId: string | null;
             unitCode: string;
             direction: "IN" | "OUT";
             amount: string;
@@ -1147,16 +1208,17 @@ export async function applyCount(
             );
             const difference = counted.minus(line.systemQuantity.toString());
             if (difference.isZero()) continue;
-            const balance = balances.get(line.productId);
+            const balance = balances.get(slot(line));
             const target = dec(balance?.quantity.toString() ?? 0).plus(
               difference,
             );
             if (target.isNegative() || target.greaterThan(MAX_BALANCE)) {
-              conflicts.push(line.product.name);
+              conflicts.push(`${line.product.name}${ofLot(line.lot)}`);
               continue;
             }
             adjustments.push({
               productId: line.productId,
+              lotId: line.lotId,
               unitCode: line.unitCode,
               direction: difference.isPositive() ? "IN" : "OUT",
               amount: difference.abs().toString(),
@@ -1218,6 +1280,7 @@ export async function applyCount(
                 factor: "1",
                 baseQuantity: adjustment.amount,
                 unitCode: adjustment.unitCode,
+                ...lotColumns(adjustment.lotId),
                 unitCost: lineCost(unitCosts[index]!),
               })),
             });
@@ -1248,6 +1311,7 @@ export async function applyCount(
                     organizationId,
                     productId: adjustment.productId,
                     locationId: count.locationId,
+                    ...lotColumns(adjustment.lotId),
                     quantity: adjustment.amount,
                   },
                 });

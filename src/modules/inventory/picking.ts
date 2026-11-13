@@ -15,8 +15,10 @@ import {
   freeToTake,
   reserveStock,
 } from "./reservations";
-import { PICKING_STRATEGY } from "./settings";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { dayWindow } from "./calendar-day";
+import { isExpired, lotDayOf } from "./lot-rules";
+import { PICKING_STRATEGY, PICK_EXPIRED } from "./settings";
+import { AVAILABLE_ANY_LOT } from "./stock-status";
 import { formatTaskNumber } from "./task-states";
 
 /**
@@ -40,16 +42,26 @@ const minOf = (a: Decimal, b: Decimal) => (a.lessThan(b) ? a : b);
 /** Reservations of an outbound order are per line. */
 export const OUTBOUND_LINE_SOURCE = "outbound_order_line";
 
-export type PickSource = { locationId: string; quantity: Decimal };
+export type PickSource = {
+  locationId: string;
+  /** The lot to pick, for a product by lot (WMS-21); null otherwise. */
+  lotId: string | null;
+  quantity: Decimal;
+};
 
 /**
- * Where to pick a quantity of a product from: the strategy of assignment,
- * in one place. The company chooses it (WMS-49, `PICKING_STRATEGY`): the
- * fullest location first (fewer trips) or the emptiest (frees places);
- * FIFO and FEFO (with lots, WMS-21) will go here too. Only AVAILABLE stock that nothing
- * reserves in its location, never the staging location itself, and never
- * more than is free of the product. Returns less than asked when there is
- * not enough. Call it under the product's lock.
+ * Where to pick a quantity of a product from — location and, for a product
+ * by lot, which lot: the strategy of assignment, in one place. The company
+ * chooses it (WMS-49, `PICKING_STRATEGY`): the fullest location first
+ * (fewer trips), the emptiest (frees places), what expires first (FEFO) or
+ * the oldest lot (FIFO; WMS-21, ADR 0040). A product without lots has no
+ * dates: with FEFO or FIFO it is picked from the fullest location.
+ *
+ * Only AVAILABLE stock that nothing reserves in its location, never the
+ * staging location itself, never more than is free of the product, and —
+ * unless the company says otherwise (`PICK_EXPIRED`) — never a lot that
+ * already expired. Returns less than asked when there is not enough. Call
+ * it under the product's lock.
  */
 export async function pickSources(
   tx: Tx,
@@ -66,31 +78,72 @@ export async function pickSources(
       quantity: { gt: 0 },
       locationId: { not: scope.stagingId },
       location: { archivedAt: null, facilityId: scope.facilityId },
-      ...AVAILABLE_STOCK,
+      ...AVAILABLE_ANY_LOT,
     },
-    select: { locationId: true, quantity: true },
+    select: {
+      locationId: true,
+      quantity: true,
+      lot: { select: { id: true, expiresOn: true } },
+    },
   });
-  const emptiestFirst =
-    (await readSetting(tx, PICKING_STRATEGY)) === "emptiest";
-  const ranked = balances
+  const strategy = await readSetting(tx, PICKING_STRATEGY);
+  const skipExpired =
+    balances.some((row) => row.lot?.expiresOn) &&
+    (await readSetting(tx, PICK_EXPIRED)) !== "allow";
+  const today = skipExpired ? (await dayWindow(tx, new Date()))?.day : null;
+  const rows = balances
     .map((row) => ({
       locationId: row.locationId,
+      lotId: row.lot?.id ?? null,
+      expiresOn: lotDayOf(row.lot?.expiresOn),
       quantity: dec(row.quantity.toString()),
     }))
-    .sort(
-      (a, b) =>
-        (emptiestFirst
-          ? a.quantity.comparedTo(b.quantity)
-          : b.quantity.comparedTo(a.quantity)) ||
-        a.locationId.localeCompare(b.locationId),
-    );
+    // A lot is good through its expiry day (the company's calendar).
+    .filter((row) => !today || !isExpired(row.expiresOn, today));
+  const byQuantity = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    strategy === "emptiest"
+      ? a.quantity.comparedTo(b.quantity)
+      : b.quantity.comparedTo(a.quantity);
+  // Lot ids are UUIDv7: their order is the order the lots were registered.
+  const byAge = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    (a.lotId ?? "").localeCompare(b.lotId ?? "");
+  const ranked = rows.sort(
+    (a, b) =>
+      (strategy === "fefo"
+        ? // No date goes last: it is not about to expire.
+          (a.expiresOn ?? "9999-12-31").localeCompare(
+            b.expiresOn ?? "9999-12-31",
+          ) || byAge(a, b)
+        : strategy === "fifo"
+          ? byAge(a, b)
+          : 0) ||
+      byQuantity(a, b) ||
+      a.locationId.localeCompare(b.locationId) ||
+      byAge(a, b),
+  );
   const sources: PickSource[] = [];
+  // What this plan already takes of each location, across its lots.
+  const takenAt = new Map<string, Decimal>();
   for (const place of ranked) {
     if (!wanted.greaterThan(0)) break;
-    const free = await freeToMoveFrom(tx, productId, place.locationId);
+    const already = takenAt.get(place.locationId) ?? dec(0);
+    const freeInPlace = (
+      await freeToMoveFrom(tx, productId, place.locationId)
+    ).minus(already);
+    const free = place.lotId
+      ? minOf(
+          freeInPlace,
+          await freeToMoveFrom(tx, productId, place.locationId, place.lotId),
+        )
+      : freeInPlace;
     const take = minOf(free, wanted);
     if (!take.greaterThan(0)) continue;
-    sources.push({ locationId: place.locationId, quantity: take });
+    sources.push({
+      locationId: place.locationId,
+      lotId: place.lotId,
+      quantity: take,
+    });
+    takenAt.set(place.locationId, already.plus(take));
     wanted = wanted.minus(take);
   }
   return sources;
@@ -118,6 +171,7 @@ export async function createPickTasks(
     const reserved = await reserveStock(tx, actor, {
       productId: input.line.productId,
       locationId: source.locationId,
+      lotId: source.lotId,
       quantity: source.quantity,
       source: { type: OUTBOUND_LINE_SOURCE, id: input.line.id },
     });
@@ -135,6 +189,7 @@ export async function createPickTasks(
         productId: input.line.productId,
         fromLocationId: source.locationId,
         toLocationId: input.stagingId,
+        lotId: source.lotId,
         quantity: source.quantity.toString(),
         unitCode: input.line.unitCode,
         createdByUserId: actor.userId,
@@ -160,12 +215,19 @@ export async function nextTaskNumber(tx: Tx): Promise<number> {
  */
 async function reservationOf(
   tx: Tx,
-  task: { outboundLineId: string; fromLocationId: string },
+  task: {
+    outboundLineId: string;
+    fromLocationId: string;
+    lotId: string | null;
+  },
 ) {
   const where = {
     sourceType: OUTBOUND_LINE_SOURCE,
     sourceId: task.outboundLineId,
     state: "ACTIVE" as const,
+    // WMS-21: two tasks of a line may leave from the same location, each
+    // with its lot and its own reservation.
+    lotId: task.lotId,
   };
   return (
     (await tx.stockReservation.findFirst({
@@ -182,7 +244,12 @@ async function reservationOf(
 /** Lets go of what a PICK task held and was not picked. */
 export async function releasePickReservation(
   tx: Tx,
-  task: { outboundLineId: string; fromLocationId: string; quantity: Decimal },
+  task: {
+    outboundLineId: string;
+    fromLocationId: string;
+    lotId: string | null;
+    quantity: Decimal;
+  },
   picked: Decimal,
 ): Promise<void> {
   const reservation = await reservationOf(tx, task);
@@ -210,6 +277,7 @@ export async function deliverPick(
     productId: string;
     fromLocationId: string;
     toLocationId: string;
+    lotId: string | null;
     quantity: Decimal;
     picked: Decimal;
     unitCode: string;
@@ -239,6 +307,7 @@ export async function deliverPick(
     fromLocationId: task.fromLocationId,
     toLocationId: task.toLocationId,
     quantity: task.picked.toString(),
+    lotId: task.lotId,
     idempotencyKey: `task:${task.id}`,
     reference: formatTaskNumber(task.number),
   });
@@ -254,6 +323,7 @@ export async function deliverPick(
   const kept = await reserveStock(tx, actor, {
     productId: task.productId,
     locationId: task.toLocationId,
+    lotId: task.lotId,
     quantity: task.picked,
     source: { type: OUTBOUND_LINE_SOURCE, id: task.outboundLineId },
   });

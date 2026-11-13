@@ -14,13 +14,18 @@ import {
   createTask,
   countLowStock,
   getCount,
+  countExpiringLots,
   getInventoryValue,
+  getLot,
   getOutboundOrder,
   getProductStock,
   getStockByLocation,
   getStockTotals,
   getTask,
   listCounts,
+  listExpiringLots,
+  listLotStock,
+  listProductLots,
   listLowStock,
   listMovements,
   listOutboundOrders,
@@ -616,6 +621,72 @@ describe("PC-12: limited to warehouse B", () => {
       }),
     ).toMatchObject({ ok: true });
     expect(await stockAt(shelfA)).toBe(7);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("lots of A are neither seen, listed as expiring nor taken (WMS-21)", async () => {
+    const made = await createProduct(owner, {
+      sku: "ALC-LOTE",
+      name: "Pegamento",
+      tracking: "LOT",
+      lotExpiry: "OPTIONAL",
+    });
+    if (!made.ok) throw new Error("product setup failed");
+    for (const [locationId, lotCode] of [
+      [shelfA, "L-A"],
+      [shelfB, "L-B"],
+    ] as const) {
+      const entry = await registerEntry(owner, {
+        productId: made.productId,
+        locationId,
+        quantity: "6",
+        lotCode,
+        lotExpiresOn: "2026-01-15",
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+    }
+    const lots = await db.lot.findMany({
+      where: { productId: made.productId },
+    });
+    const lotA = lots.find((lot) => lot.code === "L-A")!.id;
+    const lotB = lots.find((lot) => lot.code === "L-B")!.id;
+
+    expect(
+      (await listLotStock(limited, made.productId)).map((row) => row.code),
+    ).toEqual(["L-B"]);
+    expect(
+      (await listProductLots(limited, made.productId))
+        .filter((lot) => lot.total !== "0")
+        .map((lot) => lot.code),
+    ).toEqual(["L-B"]);
+    expect(
+      (await listExpiringLots(limited)).items.map((item) => item.code),
+    ).toEqual(["L-B"]);
+    expect(await countExpiringLots(limited)).toBe(1);
+    // The lot exists (its code is of the product), but not its stock in A.
+    expect((await getLot(limited, lotA))?.places).toEqual([]);
+    expect((await listMovements(limited, { lotId: lotA })).total).toBe(0);
+    await expect(
+      registerExit(limited, {
+        productId: made.productId,
+        locationId: shelfA,
+        quantity: "1",
+        lotId: lotA,
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    await expect(
+      registerTransfer(limited, {
+        productId: made.productId,
+        locationId: shelfB,
+        toLocationId: shelfA,
+        quantity: "1",
+        lotId: lotB,
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    // Who has no limit sees both, each in its warehouse.
+    expect(
+      (await listLotStock(free, made.productId)).map((row) => row.code).sort(),
+    ).toEqual(["L-A", "L-B"]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 

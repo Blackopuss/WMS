@@ -18,6 +18,7 @@ import {
   formatStock,
   getStockByLocation,
   getStockTotals,
+  listLotStock,
   listStockLocations,
   listTaskPeople,
 } from "@/modules/inventory";
@@ -211,7 +212,24 @@ export default async function NuevaTareaPage({
   ]);
   const holding = (id: string) =>
     formatStock(stock[id] ?? "0", product.unitCode);
-  const sources = locations.filter((location) => stock[location.id]);
+  // WMS-21: a product by lot moves a lot: the origin names both.
+  const lotStock =
+    product.tracking === "LOT" ? await listLotStock(actor, product.id) : null;
+  const sources = lotStock
+    ? locations.flatMap((location) =>
+        lotStock
+          .filter((row) => row.locationId === location.id)
+          .map((row) => ({
+            id: `${location.id}|${row.lotId}`,
+            label: `${location.path} · ${row.label}${row.expired ? " (caducado)" : ""} — hay ${formatStock(row.free, product.unitCode)}`,
+          })),
+      )
+    : locations
+        .filter((location) => stock[location.id])
+        .map((location) => ({
+          id: location.id,
+          label: `${location.path} — hay ${holding(location.id)}`,
+        }));
   const header = (
     <PageHeader
       title="Nueva tarea"
@@ -246,10 +264,8 @@ export default async function NuevaTareaPage({
       <TaskForm
         productId={product.id}
         unitLabel={getUnit(product.unitCode).plural}
-        sources={sources.map((location) => ({
-          id: location.id,
-          label: `${location.path} — hay ${holding(location.id)}`,
-        }))}
+        sources={sources}
+        sourceLabel={lotStock ? "¿De dónde sale y de qué lote?" : undefined}
         destinations={locations.map((location) => ({
           id: location.id,
           label: stock[location.id]

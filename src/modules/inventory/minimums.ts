@@ -7,7 +7,7 @@ import { parseQuantity } from "@/platform/catalog";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { AVAILABLE_ANY_LOT } from "./stock-status";
 
 /**
  * Minimums and low stock (INV-30). A minimum is the lowest quantity the
@@ -196,7 +196,7 @@ async function lowStock(
       by: ["productId"],
       where: {
         productId: { in: ids.slice(start, start + 1_000) },
-        ...AVAILABLE_STOCK,
+        ...AVAILABLE_ANY_LOT,
       },
       _sum: { quantity: true },
     });

@@ -23,6 +23,8 @@ export const EMPTY_PRODUCT: ProductFormState["values"] = {
   step: "",
   weight: "",
   volume: "",
+  tracking: "NONE",
+  lotExpiry: "NONE",
 };
 
 const FIELD_ORDER = [
@@ -36,6 +38,8 @@ const FIELD_ORDER = [
   "description",
   "weight",
   "volume",
+  "tracking",
+  "lotExpiry",
 ] as const;
 
 /** Card of a product: used to create it and to edit it (INV-02, INV-03). */
@@ -357,6 +361,59 @@ export function ProductForm({
           </div>
         </details>
       )}
+
+      {/* WMS-21: most products have no lots; folded unless this one does. */}
+      <details
+        className="rounded-lg border p-3"
+        open={Boolean(
+          state.values.tracking === "LOT" ||
+          state.fieldErrors.tracking ||
+          state.fieldErrors.lotExpiry,
+        )}
+      >
+        <summary className="-m-1 flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          Lotes y caducidad (opcional)
+        </summary>
+        <div className="mt-4 grid gap-5 sm:grid-cols-2">
+          <FormField
+            id="tracking"
+            label="Control por lote"
+            hint="Por lote: cada entrada y cada salida dice de qué lote es."
+            error={state.fieldErrors.tracking}
+          >
+            {(control) => (
+              <NativeSelect
+                {...control}
+                name="tracking"
+                key={`tracking-${attempt}`}
+                defaultValue={state.values.tracking || "NONE"}
+              >
+                <option value="NONE">Sin lote</option>
+                <option value="LOT">Por lote</option>
+              </NativeSelect>
+            )}
+          </FormField>
+          <FormField
+            id="lotExpiry"
+            label="Caducidad de sus lotes"
+            hint="Solo cuenta si el producto es por lote."
+            error={state.fieldErrors.lotExpiry}
+          >
+            {(control) => (
+              <NativeSelect
+                {...control}
+                name="lotExpiry"
+                key={`lotExpiry-${attempt}`}
+                defaultValue={state.values.lotExpiry || "NONE"}
+              >
+                <option value="NONE">No lleva</option>
+                <option value="OPTIONAL">Opcional</option>
+                <option value="REQUIRED">Obligatoria</option>
+              </NativeSelect>
+            )}
+          </FormField>
+        </div>
+      </details>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button asChild variant="outline">

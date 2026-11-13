@@ -46,6 +46,9 @@ export type PendingReceiptLine = {
   contentText: string | null;
   /** «1 caja = 100 piezas» when that changed since the order. */
   orderedContentText: string | null;
+  /** WMS-21: the product is by lot; and whether its lots carry an expiry. */
+  byLot: boolean;
+  lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
 };
 
 /**
@@ -113,6 +116,8 @@ export function ReceiveOrder({
           pending.map((line) => [line.id, line.pendingQuantity]),
         ),
         places: {},
+        lots: {},
+        expiries: {},
       },
       answers: 0,
     },
@@ -165,6 +170,8 @@ export function ReceiveOrder({
             {pending.map((line) => {
               const fieldId = `receive-q-${line.id}`;
               const error = state.lineErrors?.[line.id];
+              // WMS-21: the lot or its date, when that is the problem.
+              const wrong = state.lineFields?.[line.id];
               return (
                 <li
                   key={line.id}
@@ -203,7 +210,7 @@ export function ReceiveOrder({
                       defaultValue={
                         state.values.quantities[line.id] ?? line.pendingQuantity
                       }
-                      aria-invalid={error ? true : undefined}
+                      aria-invalid={error && !wrong ? true : undefined}
                       aria-describedby={error ? `${fieldId}-error` : undefined}
                       className="tabular-nums"
                     />
@@ -234,6 +241,57 @@ export function ReceiveOrder({
                           ))}
                         </NativeSelect>
                       </div>
+                    </div>
+                  )}
+                  {line.byLot && (
+                    <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
+                      <div>
+                        <label
+                          htmlFor={`${fieldId}-lot`}
+                          className="mb-1 block text-sm text-muted-foreground"
+                        >
+                          Lote
+                        </label>
+                        <Input
+                          key={`${line.id}-lot-${answers}`}
+                          id={`${fieldId}-lot`}
+                          name={`lot:${line.id}`}
+                          autoComplete="off"
+                          autoCapitalize="characters"
+                          spellCheck={false}
+                          maxLength={64}
+                          defaultValue={state.values.lots[line.id] ?? ""}
+                          aria-invalid={wrong === "lotCode" ? true : undefined}
+                          aria-describedby={
+                            error ? `${fieldId}-error` : undefined
+                          }
+                        />
+                      </div>
+                      {line.lotExpiry !== "NONE" && (
+                        <div>
+                          <label
+                            htmlFor={`${fieldId}-expiry`}
+                            className="mb-1 block text-sm text-muted-foreground"
+                          >
+                            {line.lotExpiry === "REQUIRED"
+                              ? "Caducidad"
+                              : "Caducidad (opcional)"}
+                          </label>
+                          <Input
+                            key={`${line.id}-expiry-${answers}`}
+                            id={`${fieldId}-expiry`}
+                            name={`exp:${line.id}`}
+                            type="date"
+                            defaultValue={state.values.expiries[line.id] ?? ""}
+                            aria-invalid={
+                              wrong === "lotExpiresOn" ? true : undefined
+                            }
+                            aria-describedby={
+                              error ? `${fieldId}-error` : undefined
+                            }
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   {error && (

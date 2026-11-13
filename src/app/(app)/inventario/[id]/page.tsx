@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   ArrowUpFromLine,
   ChevronLeft,
+  ChevronRight,
   Pencil,
   Scale,
   ShieldAlert,
@@ -22,10 +23,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { dec, formatDateTime, formatDecimal } from "@/lib";
 import {
+  formatLotDay,
   formatStock,
   getMinimum,
   getProductCost,
   getProductStock,
+  listProductLots,
   listRecentMovements,
 } from "@/modules/inventory";
 import { listSuppliersOfProduct } from "@/modules/purchasing";
@@ -85,7 +88,7 @@ export default async function ProductoPage({
   const showSuppliers =
     access.moduleState("purchasing") !== "none" &&
     access.can("purchasing.product_supplier.read");
-  const [stock, presentations, movements, minimum, suppliers, cost] =
+  const [stock, presentations, movements, minimum, suppliers, cost, lots] =
     await Promise.all([
       access.can("inventory.stock.read")
         ? getProductStock(actor, product.id)
@@ -103,6 +106,10 @@ export default async function ProductoPage({
       // VAL-05: what it is worth, only for who may see costs.
       access.can("inventory.cost.read")
         ? getProductCost(actor, product.id)
+        : null,
+      // WMS-21: only a product by lot has them.
+      product.tracking === "LOT" && access.can("inventory.stock.read")
+        ? listProductLots(actor, product.id)
         : null,
     ]);
   // Low = what is available is at or below the minimum (INV-30, ADR 0033).
@@ -346,6 +353,60 @@ export default async function ProductoPage({
         </section>
       )}
 
+      {lots && (
+        <section
+          aria-labelledby="lotes-producto"
+          className="rounded-xl border bg-card"
+        >
+          <h2 id="lotes-producto" className="border-b p-4 font-medium sm:px-5">
+            Lotes
+          </h2>
+          {lots.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground sm:px-5">
+              Todavía no tiene lotes: el primero se crea al registrar su
+              entrada.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {lots.map((lot) => (
+                <li
+                  key={lot.id}
+                  className="relative flex min-h-16 flex-wrap items-center gap-x-4 gap-y-1 p-4 hover:bg-muted/50 sm:px-5"
+                >
+                  <div className="min-w-0 flex-1 basis-48">
+                    <p className="font-medium">
+                      <Link
+                        href={`/inventario/lotes/${lot.id}`}
+                        className="rounded underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        Lote {lot.code}
+                      </Link>
+                    </p>
+                    <p className="text-sm text-muted-foreground tabular-nums">
+                      {lot.expiresOn
+                        ? `Caducidad ${formatLotDay(lot.expiresOn)} · ${lot.expiryText}`
+                        : "Sin caducidad"}
+                    </p>
+                  </div>
+                  <p className="text-right tabular-nums">
+                    {lot.expired && lot.total !== "0" && (
+                      <>
+                        <Badge variant="destructive">Caducado</Badge>{" "}
+                      </>
+                    )}
+                    <span className="font-medium">{lot.totalLabel}</span>
+                  </p>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {access.can("inventory.movement.read") && (
         <section
           aria-labelledby="movimientos-producto"
@@ -396,6 +457,7 @@ export default async function ProductoPage({
                         )}
                         <span className="text-muted-foreground">
                           · {line.location}
+                          {line.lot && ` · Lote ${line.lot}`}
                         </span>
                       </p>
                     ))}

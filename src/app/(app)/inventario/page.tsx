@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   countLowStock,
+  countExpiringLots,
   countUnplacedStock,
   formatStock,
   getInventoryValue,
@@ -133,6 +134,11 @@ export default async function InventarioPage({
   const unplacedCount =
     !showArchived && access.can("inventory.stock.read")
       ? await countUnplacedStock(actor)
+      : 0;
+  // WMS-21: lots with stock that expired or are about to.
+  const expiringCount =
+    !showArchived && access.can("inventory.stock.read")
+      ? await countExpiringLots(actor)
       : 0;
   const first = (list.page - 1) * list.pageSize + 1;
   const last = first + products.length - 1;
@@ -297,6 +303,19 @@ export default async function InventarioPage({
             {unplacedCount === 1
               ? "1 producto sin acomodar."
               : `${unplacedCount.toLocaleString("es-MX")} productos sin acomodar.`}
+          </span>
+          <span className="font-medium text-primary">Ver cuáles</span>
+        </Link>
+      )}
+      {expiringCount > 0 && (
+        <Link
+          href="/inventario/por-caducar"
+          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="flex-1">
+            {expiringCount === 1
+              ? "1 lote por caducar."
+              : `${expiringCount.toLocaleString("es-MX")} lotes por caducar.`}
           </span>
           <span className="font-medium text-primary">Ver cuáles</span>
         </Link>

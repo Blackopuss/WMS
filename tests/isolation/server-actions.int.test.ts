@@ -18,6 +18,13 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  changeLotExpiryAction: {
+    input:
+      "id del lote (fijado por la página), caducidad nueva (o vacía) y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el lote se busca solo en esa empresa",
+    coveredBy: "tests/inventory/lots.int.test.ts",
+  },
   createOutboundAction: {
     input:
       "destinatario, referencia, dirección, día de salida, prioridad e indicaciones",

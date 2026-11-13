@@ -114,9 +114,14 @@ export default async function SaldoInicialPage({
         ? listPresentations(actor, product.id)
         : [],
     ]);
-    const pending = locations.filter(
-      (location) => !state.capturedLocationIds.includes(location.id),
-    );
+    // WMS-21: a product by lot takes one initial balance per lot in each
+    // location, so no location is «done».
+    const byLot = product.tracking === "LOT";
+    const pending = byLot
+      ? locations
+      : locations.filter(
+          (location) => !state.capturedLocationIds.includes(location.id),
+        );
     const captured = locations.filter((location) => stock[location.id]);
     const header = (
       <PageHeader
@@ -186,6 +191,7 @@ export default async function SaldoInicialPage({
             label: location.path,
           }))}
           defaultLocationId={pending[0]?.id ?? ""}
+          lotEntry={byLot ? { expiry: product.lotExpiry } : undefined}
         />
       </PageContainer>
     );

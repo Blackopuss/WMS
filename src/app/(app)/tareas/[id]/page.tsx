@@ -216,6 +216,11 @@ export default async function TareaPage({
             {task.productName}{" "}
             <span className="text-sm text-muted-foreground">{task.sku}</span>
           </p>
+          {task.lotText && (
+            <p className="font-medium [overflow-wrap:anywhere]">
+              {task.lotText}
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">De</p>
@@ -265,6 +270,7 @@ export default async function TareaPage({
           quantity={task.quantity}
           unit={getUnit(task.unitCode).plural}
           sku={task.sku}
+          lotCode={task.lotCode}
           place={task.fromPath.split(" › ").at(-1) ?? task.fromPath}
         />
       )}

@@ -23,6 +23,8 @@ import {
   type StockStatus,
 } from "./stock-status";
 import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
+import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
+import { lotColumns } from "./stock-status";
 import { freeToTake, reservedMessage } from "./reservations";
 import { lineCost, openCostBook } from "./valuation";
 
@@ -75,6 +77,13 @@ const schema = z.object({
   to: statusSchema,
   /** Where it ends up; empty = it stays where it is (WMS-22B). */
   toLocationId: z
+    .string()
+    .trim()
+    .max(36)
+    .optional()
+    .transform((value) => value || null),
+  /** The lot that changes state, for a product by lot (WMS-21). */
+  lotId: z
     .string()
     .trim()
     .max(36)
@@ -245,6 +254,7 @@ export async function changeStockStatus(
               status: true,
               baseQuantity: true,
               unitCode: true,
+              lotId: true,
             },
           },
         },
@@ -266,6 +276,7 @@ export async function changeStockStatus(
           out.productId !== data.productId ||
           out.locationId !== data.locationId ||
           into.locationId !== toLocationId ||
+          (out.lotId ?? null) !== data.lotId ||
           out.status !== data.from ||
           into.status !== data.to ||
           !same
@@ -288,6 +299,7 @@ export async function changeStockStatus(
               name: true,
               unitCode: true,
               quantityStep: true,
+              ...LOT_RULE_SELECT,
             },
           })
         : null;
@@ -345,10 +357,15 @@ export async function changeStockStatus(
       if (!quantity.ok) return refuse("invalid", "quantity", quantity.error);
       const base = quantity.quantity;
 
+      // WMS-21: the same lot before and after; only its state changes.
+      const lotAnswer = await lotForTake(tx, product, data.lotId);
+      if (!lotAnswer.ok) return refuse("invalid", "lotId", lotAnswer.error);
+      const lot = lotAnswer.lot;
+
       const balances = await tx.stockBalance.findMany({
         where: {
           productId: product.id,
-          lotKey: "",
+          lotKey: lot?.id ?? "",
           OR: [
             { locationId: location.id, status: data.from },
             { locationId: destination.id, status: data.to },
@@ -368,13 +385,13 @@ export async function changeStockStatus(
           "invalid",
           "quantity",
           there.isZero()
-            ? `No hay ${product.name} ${STOCK_STATUS_LABELS[data.from].toLowerCase()} en ${location.name}.`
-            : `Solo hay ${formatStock(there.toString(), product.unitCode)} ${STOCK_STATUS_LABELS[data.from].toLowerCase()} en ${location.name}.`,
+            ? `No hay ${product.name}${ofLot(lot)} ${STOCK_STATUS_LABELS[data.from].toLowerCase()} en ${location.name}.`
+            : `Solo hay ${formatStock(there.toString(), product.unitCode)}${ofLot(lot)} ${STOCK_STATUS_LABELS[data.from].toLowerCase()} en ${location.name}.`,
         );
       }
       if (data.from === "AVAILABLE") {
         // WMS-12: what is reserved for an order keeps its state.
-        const free = await freeToTake(tx, product.id, location.id);
+        const free = await freeToTake(tx, product.id, location.id, lot?.id);
         if (free.lessThan(base)) {
           return refuse(
             "invalid",
@@ -444,6 +461,7 @@ export async function changeStockStatus(
         factor: "1",
         baseQuantity: base.toString(),
         unitCode: product.unitCode,
+        ...lotColumns(lot?.id),
         unitCost: price,
       };
       await tx.stockMovementLine.create({
@@ -487,6 +505,7 @@ export async function changeStockStatus(
             productId: product.id,
             locationId: destination.id,
             status: data.to,
+            ...lotColumns(lot?.id),
             quantity: base.toString(),
           },
         });
@@ -501,6 +520,7 @@ export async function changeStockStatus(
         metadata: {
           producto: product.name,
           ubicacion: location.name,
+          ...(lot ? { lote: lot.code } : {}),
           ...(moves ? { destino: destination.name } : {}),
           de: STOCK_STATUS_LABELS[data.from],
           a: STOCK_STATUS_LABELS[data.to],
@@ -513,8 +533,8 @@ export async function changeStockStatus(
         movementId,
         summary:
           (moves
-            ? `${formatStock(base.toString(), product.unitCode)} de ${product.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} en ${location.name} a ${STOCK_STATUS_LABELS[data.to]} en ${destination.name}.`
-            : `${formatStock(base.toString(), product.unitCode)} de ${product.name} en ${location.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}.`) +
+            ? `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} pasaron de ${STOCK_STATUS_LABELS[data.from]} en ${location.name} a ${STOCK_STATUS_LABELS[data.to]} en ${destination.name}.`
+            : `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} en ${location.name} pasaron de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}.`) +
           placed.notes.map((note) => ` ${note}`).join(""),
       };
     }, LOCKING_TRANSACTION);

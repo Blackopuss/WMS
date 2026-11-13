@@ -6,8 +6,8 @@ import type { SettingDefinition } from "@/platform/settings";
  */
 
 /**
- * Where picking takes stock from first (`pickSources`). FIFO and FEFO need
- * the date each lot came in and arrive with lots (WMS-21).
+ * Where picking takes stock from first (`pickSources`). FEFO and FIFO
+ * choose by lot (WMS-21, ADR 0040).
  */
 export const PICKING_STRATEGY = {
   key: "inventory.picking.strategy",
@@ -24,6 +24,16 @@ export const PICKING_STRATEGY = {
       value: "emptiest",
       label: "La ubicación con menos existencias",
       help: "Libera lugares: se vacían primero las ubicaciones casi agotadas.",
+    },
+    {
+      value: "fefo",
+      label: "Lo que caduca primero (FEFO)",
+      help: "Para productos por lote con caducidad. Los demás salen de la ubicación más llena.",
+    },
+    {
+      value: "fifo",
+      label: "El lote más antiguo (FIFO)",
+      help: "Para productos por lote: sale primero el que se registró antes. Los demás salen de la ubicación más llena.",
     },
   ],
   defaultValue: "fullest",
@@ -89,8 +99,66 @@ export const CAPACITY_MODE = {
   defaultValue: "warn",
 } as const satisfies SettingDefinition;
 
+/**
+ * Whether a lot that already expired may be proposed for picking
+ * (WMS-21, ADR 0040; `pickSources`). Taking it out by hand is always
+ * allowed: that is how it is written off.
+ */
+export const PICK_EXPIRED = {
+  key: "inventory.picking.expired",
+  module: "inventory",
+  area: "Surtido",
+  label: "Lotes caducados al surtir",
+  options: [
+    {
+      value: "skip",
+      label: "No se surten",
+      help: "Un lote deja de proponerse al día siguiente de su caducidad.",
+    },
+    {
+      value: "allow",
+      label: "Se surten como cualquier otro",
+      help: "Para cuando la fecha es de consumo preferente y sí se despacha después.",
+    },
+  ],
+  defaultValue: "skip",
+} as const satisfies SettingDefinition;
+
+/**
+ * How many days before its expiry a lot with stock shows up in «Por
+ * caducar» (WMS-21; `listExpiringLots`). Expired lots always do.
+ */
+export const EXPIRY_NOTICE = {
+  key: "inventory.lot.expiry_notice",
+  module: "inventory",
+  area: "Lotes",
+  label: "Avisar de lotes por caducar",
+  options: [
+    {
+      value: "7",
+      label: "7 días antes",
+      help: "Para productos de rotación muy rápida.",
+    },
+    { value: "15", label: "15 días antes", help: "Dos semanas para moverlos." },
+    { value: "30", label: "30 días antes", help: "Un mes para darles salida." },
+    {
+      value: "60",
+      label: "60 días antes",
+      help: "Para ciclos de venta largos.",
+    },
+    {
+      value: "90",
+      label: "90 días antes",
+      help: "Para quien planea por trimestre.",
+    },
+  ],
+  defaultValue: "30",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
+  PICK_EXPIRED,
+  EXPIRY_NOTICE,
   ENTRY_REPEAT_WINDOW,
   CAPACITY_MODE,
 ];

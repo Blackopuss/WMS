@@ -288,6 +288,8 @@ export async function returnToSupplier(
               unitCode: true,
               // VAL-02: goes back at the cost it came in with. Never shown.
               unitCost: true,
+              // WMS-21: it goes back from the lot it arrived in.
+              lotId: true,
               product: { select: { name: true, quantityStep: true } },
               presentation: { select: { name: true } },
             },
@@ -384,6 +386,7 @@ export async function returnToSupplier(
           factor: dec(item.line.factor.toString()),
           unitCode: item.line.unitCode,
           unitCost: item.line.unitCost,
+          lotId: item.line.lotId,
         })),
         reference: `${numberText} · Devolución`,
         reason: data.reason,

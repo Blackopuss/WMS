@@ -237,6 +237,7 @@ export default async function TareasPage({
                     </span>
                     <span className="block text-base font-medium [overflow-wrap:anywhere]">
                       {task.quantityText} · {task.productName}
+                      {task.lotCode ? ` · Lote ${task.lotCode}` : ""}
                     </span>
                     <span className="flex flex-wrap items-center gap-1.5 text-sm [overflow-wrap:anywhere] text-muted-foreground">
                       <span>{task.fromPath}</span>

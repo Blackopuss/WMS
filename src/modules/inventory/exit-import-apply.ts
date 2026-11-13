@@ -16,7 +16,7 @@ import {
 import { EXIT_IMPORT_JOB_TYPE, exitKey, formatExitDay } from "./exit-import";
 import { formatStock } from "./movements";
 import { lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { availableOfLot } from "./stock-status";
 
 /**
  * Registering the exits of a confirmed file, in the worker (IMP-10). The
@@ -148,9 +148,16 @@ async function registerRow(
 
   const product = await tx.product.findFirst({
     where: { id: line.productId },
-    select: { id: true, sku: true, name: true, status: true },
+    select: { id: true, sku: true, name: true, status: true, tracking: true },
   });
   if (!product) return { kind: "failed", error: "El producto ya no existe." };
+  // WMS-21 (ADR 0040): the file does not say which lot left.
+  if (product.tracking === "LOT") {
+    return {
+      kind: "failed",
+      error: `${product.sku} se controla por lote y el archivo no dice de qué lote salió. Registra esta salida a mano, eligiendo el lote.`,
+    };
+  }
   if (product.status !== "ACTIVE") {
     return {
       kind: "failed",
@@ -199,7 +206,7 @@ async function registerRow(
     where: {
       productId: product.id,
       locationId: location.id,
-      ...AVAILABLE_STOCK,
+      ...availableOfLot(null),
       quantity: { gte: base.toString() },
     },
     data: { quantity: { decrement: base.toString() } },
@@ -209,7 +216,7 @@ async function registerRow(
       where: {
         productId: product.id,
         locationId: location.id,
-        ...AVAILABLE_STOCK,
+        ...availableOfLot(null),
       },
       select: { quantity: true },
     });

@@ -5,7 +5,7 @@ import { assertModulePermission } from "@/platform/billing";
 import { forOrganization, type TenantDb } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
-import { AVAILABLE_STOCK } from "./stock-status";
+import { AVAILABLE_ANY_LOT, availableOfLot } from "./stock-status";
 
 /**
  * Reservations (WMS-12, ADR 0033): stock set aside for a document without
@@ -33,16 +33,21 @@ export type ReservationSource = {
   id: string;
 };
 
+/**
+ * WMS-21: `lotId` narrows a sum to one lot; `undefined` adds every lot (and
+ * is all a product without lots has).
+ */
 async function availableOf(
   client: Reader,
   productId: string,
   locationId: string | null,
+  lotId?: string,
 ): Promise<Decimal> {
   const sum = await client.stockBalance.aggregate({
     where: {
       productId,
       ...(locationId ? { locationId } : {}),
-      ...AVAILABLE_STOCK,
+      ...(lotId ? availableOfLot(lotId) : AVAILABLE_ANY_LOT),
     },
     _sum: { quantity: true },
   });
@@ -53,60 +58,81 @@ async function reservedOf(
   client: Reader,
   productId: string,
   locationId: string | null,
+  lotId?: string,
 ): Promise<Decimal> {
   const sum = await client.stockReservation.aggregate({
     where: {
       productId,
       state: "ACTIVE",
       ...(locationId ? { locationId } : {}),
+      ...(lotId ? { lotId } : {}),
     },
     _sum: { remaining: true },
   });
   return dec((sum._sum.remaining ?? 0).toString());
 }
 
+async function freeOf(
+  client: Reader,
+  productId: string,
+  locationId: string | null,
+  lotId?: string,
+): Promise<Decimal> {
+  const [available, reserved] = await Promise.all([
+    availableOf(client, productId, locationId, lotId),
+    reservedOf(client, productId, locationId, lotId),
+  ]);
+  return available.minus(reserved);
+}
+
+const least = (values: Decimal[]) => {
+  const free = values.reduce((a, b) => (b.lessThan(a) ? b : a));
+  return free.isNegative() ? dec(0) : free;
+};
+
 /**
  * What can still be taken (or reserved) of a product — in a location, or
  * anywhere with `null` — without touching what is reserved. Never
  * negative. Call it under the product's lock to decide.
+ *
+ * WMS-21: with `lotId`, of that lot: the least of what is free of the
+ * product, of the location (every lot: a reservation that names no lot
+ * holds any of them) and of the lot there.
  */
 export async function freeToTake(
   client: Reader,
   productId: string,
   locationId: string | null,
+  lotId?: string | null,
 ): Promise<Decimal> {
-  const [available, reserved] = await Promise.all([
-    availableOf(client, productId, null),
-    reservedOf(client, productId, null),
-  ]);
-  let free = available.minus(reserved);
-  if (locationId) {
-    const [here, heldHere] = await Promise.all([
-      availableOf(client, productId, locationId),
-      reservedOf(client, productId, locationId),
-    ]);
-    const local = here.minus(heldHere);
-    if (local.lessThan(free)) free = local;
-  }
-  return free.isNegative() ? dec(0) : free;
+  const lot = lotId || undefined;
+  return least(
+    await Promise.all([
+      freeOf(client, productId, null),
+      ...(locationId ? [freeOf(client, productId, locationId)] : []),
+      ...(lot ? [freeOf(client, productId, locationId, lot)] : []),
+    ]),
+  );
 }
 
 /**
  * What a move inside the same product can take out of a location: only the
  * reservations of that location matter (the product total does not
- * change).
+ * change). With `lotId`, of that lot there.
  */
 export async function freeToMoveFrom(
   client: Reader,
   productId: string,
   locationId: string,
+  lotId?: string | null,
 ): Promise<Decimal> {
-  const [here, heldHere] = await Promise.all([
-    availableOf(client, productId, locationId),
-    reservedOf(client, productId, locationId),
-  ]);
-  const free = here.minus(heldHere);
-  return free.isNegative() ? dec(0) : free;
+  const lot = lotId || undefined;
+  return least(
+    await Promise.all([
+      freeOf(client, productId, locationId),
+      ...(lot ? [freeOf(client, productId, locationId, lot)] : []),
+    ]),
+  );
 }
 
 /** «Hay 5 piezas reservadas: solo puedes tomar 15 piezas.» */
@@ -133,6 +159,8 @@ export async function reserveStock(
   input: {
     productId: string;
     locationId?: string | null;
+    /** The lot set aside, for a product by lot (WMS-21). */
+    lotId?: string | null;
     /** In the product's unit, already checked by the caller. */
     quantity: Decimal | string;
     source: ReservationSource;
@@ -141,7 +169,8 @@ export async function reserveStock(
   const quantity = dec(input.quantity.toString());
   if (!quantity.greaterThan(0)) throw new Error("Reservation must be > 0");
   const locationId = input.locationId ?? null;
-  const free = await freeToTake(tx, input.productId, locationId);
+  const lotId = input.lotId ?? null;
+  const free = await freeToTake(tx, input.productId, locationId, lotId);
   if (free.lessThan(quantity)) return { ok: false, free: free.toString() };
   const id = newId();
   await tx.stockReservation.create({
@@ -150,6 +179,7 @@ export async function reserveStock(
       organizationId: actor.organizationId,
       productId: input.productId,
       locationId,
+      lotId,
       quantity: quantity.toString(),
       remaining: quantity.toString(),
       sourceType: input.source.type,

@@ -38,8 +38,22 @@ export function isStockStatus(value: unknown): value is StockStatus {
 }
 
 /**
- * The balance rows every current operation works on: available and without
- * a lot. Spread into a `where` of `stockBalance` next to product and
- * location; a new row gets the same values from the column defaults.
+ * WMS-21 (ADR 0040): every read of the balance says which rows it wants.
+ *
+ * - `availableOfLot(lotId)`: the one row of a lot (or of «no lot», with
+ *   null) in a location. What writes a balance reads it with this, next to
+ *   product and location.
+ * - `AVAILABLE_ANY_LOT`: the available rows of every lot. Totals use it
+ *   (minimums, suggestions, what is free of a product, what waits to be
+ *   put away).
  */
-export const AVAILABLE_STOCK = { status: "AVAILABLE", lotKey: "" } as const;
+export const availableOfLot = (lotId: string | null | undefined) =>
+  ({ status: "AVAILABLE", lotKey: lotId ?? "" }) as const;
+
+export const AVAILABLE_ANY_LOT = { status: "AVAILABLE" } as const;
+
+/** Lot columns of a line or a new balance: `lotKey` = COALESCE(lotId, ''). */
+export const lotColumns = (lotId: string | null | undefined) => ({
+  lotId: lotId ?? null,
+  lotKey: lotId ?? "",
+});

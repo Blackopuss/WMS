@@ -3,7 +3,12 @@ import "server-only";
 import { z } from "zod";
 
 import { dec, formatDecimal, isAppError, newId } from "@/lib";
-import { formatStock, postReceiptEntry } from "@/modules/inventory";
+import {
+  formatStock,
+  lotDayOf,
+  lotLabel,
+  postReceiptEntry,
+} from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -86,6 +91,12 @@ const receiveSchema = z.object({
         quantity: z.string().trim().max(40),
         /** Somewhere else than the rest of the receipt (CMP-09). */
         locationId: z.string().trim().max(36).optional(),
+        /**
+         * WMS-21: the lot the line arrived in and its expiry date
+         * («2027-03-05»), for a product by lot.
+         */
+        lotCode: z.string().trim().max(200).optional(),
+        lotExpiresOn: z.string().trim().max(20).optional(),
       }),
     )
     .max(PURCHASE_ORDER_MAX_LINES)
@@ -127,6 +138,11 @@ export type ReceiveResult =
       formError?: string;
       /** Problem of each line, by the id of the order line. */
       lineErrors?: Record<string, string>;
+      /**
+       * WMS-21: when the problem of a line is its lot or its expiry date,
+       * which of the two, by the id of the order line.
+       */
+      lineFields?: Record<string, "lotCode" | "lotExpiresOn">;
     };
 
 type Failure = Extract<ReceiveResult, { ok: false }>;
@@ -353,6 +369,8 @@ export async function receivePurchaseOrder(
               line,
               quantity: left.get(line.id)!,
               locationId: null as string | null,
+              lotCode: null as string | null,
+              lotExpiresOn: null as string | null,
             }))
             .filter((entry) => entry.quantity.greaterThan(0));
 
@@ -362,9 +380,11 @@ export async function receivePurchaseOrder(
         { organizationId, userId },
         {
           locationId: data.locationId,
-          lines: pending.map(({ line, quantity, locationId }) => ({
+          lines: pending.map(({ line, quantity, locationId, ...lot }) => ({
             productId: line.productId,
             locationId,
+            lotCode: lot.lotCode,
+            lotExpiresOn: lot.lotExpiresOn,
             capture: (line.presentationId
               ? {
                   kind: "presentation",
@@ -397,10 +417,18 @@ export async function receivePurchaseOrder(
           });
         }
         if (entry.line !== null && pending[entry.line]) {
-          return refuseLines(
-            { [pending[entry.line]!.line.id]: entry.error },
-            entry.error,
-          );
+          const lineId = pending[entry.line]!.line.id;
+          if (entry.field) {
+            // WMS-21: the lot or its date, not the quantity.
+            throw new Rejected({
+              ok: false,
+              reason: "invalid",
+              fieldErrors: {},
+              lineErrors: { [lineId]: entry.error },
+              lineFields: { [lineId]: entry.field },
+            });
+          }
+          return refuseLines({ [lineId]: entry.error }, entry.error);
         }
         return refuse("invalid", "locationId", entry.error);
       }
@@ -433,6 +461,7 @@ export async function receivePurchaseOrder(
           baseQuantity: line.baseQuantity.toString(),
           unitCode: line.unitCode,
           unitCost: pending[index]!.line.unitCost?.toString() ?? null,
+          lotId: line.lotId,
         })),
       });
       // CMP-13: the cost of what arrived becomes the last cost of the
@@ -571,14 +600,28 @@ type OrderLineRow = {
 function chosenLines(
   lines: OrderLineRow[],
   left: Map<string, Decimal>,
-  requested: { orderLineId: string; quantity: string; locationId?: string }[],
-): { line: OrderLineRow; quantity: Decimal; locationId?: string | null }[] {
+  requested: {
+    orderLineId: string;
+    quantity: string;
+    locationId?: string;
+    lotCode?: string;
+    lotExpiresOn?: string;
+  }[],
+): {
+  line: OrderLineRow;
+  quantity: Decimal;
+  locationId?: string | null;
+  lotCode: string | null;
+  lotExpiresOn: string | null;
+}[] {
   const byId = new Map(lines.map((line) => [line.id, line]));
   const errors: Record<string, string> = {};
   const chosen: {
     line: OrderLineRow;
     quantity: Decimal;
     locationId?: string | null;
+    lotCode: string | null;
+    lotExpiresOn: string | null;
   }[] = [];
   const seen = new Set<string>();
   for (const item of requested) {
@@ -623,6 +666,8 @@ function chosenLines(
       line,
       quantity: parsed.quantity,
       locationId: item.locationId || null,
+      lotCode: item.lotCode || null,
+      lotExpiresOn: item.lotExpiresOn || null,
     });
   }
   if (Object.keys(errors).length > 0) return refuseLines(errors);
@@ -679,6 +724,12 @@ export type PendingLine = {
   contentText: string | null;
   /** «1 caja = 100 piezas» when the content changed since it was ordered. */
   orderedContentText: string | null;
+  /**
+   * WMS-21: the product is by lot, so receiving it asks for its lot; and
+   * whether its lots carry an expiry date («none», «optional», «required»).
+   */
+  byLot: boolean;
+  lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
 };
 
 export type ReceiptSummary = {
@@ -703,6 +754,8 @@ export type ReceiptSummary = {
     returnedText: string | null;
     /** «cajas», «piezas». */
     unitText: string;
+    /** «Lote L-01 · caduca 05/03/2027», for a product by lot (WMS-21). */
+    lotText: string | null;
   }[];
   /** Absent for who may not see returns (`purchasing.return.read`). */
   returns?: {
@@ -868,7 +921,9 @@ export async function getOrderReceipts(
           capturedQuantity: true,
           unitCode: true,
           factor: true,
-          product: { select: { name: true, sku: true } },
+          product: {
+            select: { name: true, sku: true, tracking: true, lotExpiry: true },
+          },
           presentation: {
             select: {
               name: true,
@@ -901,6 +956,7 @@ export async function getOrderReceipts(
               product: { select: { name: true, sku: true } },
               presentation: { select: { name: true } },
               location: { select: placeSelect },
+              lot: { select: { code: true, expiresOn: true } },
               returnLines: { select: { capturedQuantity: true } },
             },
           },
@@ -969,6 +1025,8 @@ export async function getOrderReceipts(
         ? inTermsOf(left, line.presentation, line.unitCode)
         : null,
       pendingQuantity: left.greaterThan(0) ? left.toFixed() : "0",
+      byLot: line.product.tracking === "LOT",
+      lotExpiry: line.product.lotExpiry,
       unitText: line.presentation
         ? pluralizeName(line.presentation.name, dec(2)).toLowerCase()
         : getUnit(line.unitCode).plural,
@@ -1025,6 +1083,12 @@ export async function getOrderReceipts(
         unitText: line.presentation
           ? pluralizeName(line.presentation.name, dec(2)).toLowerCase()
           : getUnit(line.unitCode).plural,
+        lotText: line.lot
+          ? lotLabel({
+              code: line.lot.code,
+              expiresOn: lotDayOf(line.lot.expiresOn),
+            })
+          : null,
       };
     }),
     ...(seeReturns

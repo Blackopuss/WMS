@@ -29,6 +29,7 @@ export function CaptureForm({ countId }: { countId: string }) {
   const [product, setProduct] = useState<CountProduct | null>(null);
   const [quantity, setQuantity] = useState("");
   const [capture, setCapture] = useState("base");
+  const [lotId, setLotId] = useState("");
   /** «3 cajas × 100 = 300 piezas», asked to the server while typing. */
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,8 @@ export function CaptureForm({ countId }: { countId: string }) {
     setQuery("");
     setQuantity("");
     setCapture("base");
+    // One lot: no need to ask which.
+    setLotId(found.lots?.length === 1 ? found.lots[0]!.id : "");
     setPreview(null);
     setError(null);
     // The box appears with this render: focus it once it exists.
@@ -136,10 +139,13 @@ export function CaptureForm({ countId }: { countId: string }) {
         product.id,
         capture,
         quantity,
+        lotId,
       );
       if (!result.ok) {
         setError(result.error);
-        if (result.field !== "productId") quantityRef.current?.focus();
+        if (result.field === "lotId") {
+          document.getElementById("lote-contado")?.focus();
+        } else if (result.field !== "productId") quantityRef.current?.focus();
         return;
       }
       setNotice({
@@ -282,6 +288,34 @@ export function CaptureForm({ countId }: { countId: string }) {
               <X aria-hidden="true" />
             </Button>
           </div>
+          {product.lots &&
+            (product.lots.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Este producto se controla por lote y todavía no tiene ninguno.
+                Lo que encuentres se registra con una entrada, con su lote.
+              </p>
+            ) : (
+              <div>
+                <label
+                  htmlFor="lote-contado"
+                  className="mb-1 block text-sm font-medium"
+                >
+                  ¿Qué lote contaste?
+                </label>
+                <NativeSelect
+                  id="lote-contado"
+                  value={lotId}
+                  onChange={(event) => setLotId(event.target.value)}
+                >
+                  <option value="">Elige un lote</option>
+                  {product.lots.map((lot) => (
+                    <option key={lot.id} value={lot.id}>
+                      {lot.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ))}
           <div className="flex flex-wrap gap-2">
             <div className="w-32">
               <label htmlFor="cantidad-contada" className="sr-only">
