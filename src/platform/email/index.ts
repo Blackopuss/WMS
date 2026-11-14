@@ -17,9 +17,11 @@ export type {
 export {
   backupCodeUsedEmail,
   backupCodesRegeneratedEmail,
+  dailyDigestEmail,
   existingAccountEmail,
   invitationEmail,
   mfaDisabledEmail,
+  noticeEmail,
   operationsAlertEmail,
   mfaEnabledEmail,
   passwordChangedEmail,

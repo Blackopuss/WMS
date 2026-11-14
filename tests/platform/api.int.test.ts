@@ -352,6 +352,32 @@ describe("llaves", () => {
   });
 });
 
+describe("sesiones del equipo (WMS-40)", () => {
+  it("desactivar al creador detiene su llave, reactivarlo la devuelve y cerrar sesiones no la toca", async () => {
+    const { disableMember, reactivateMember, revokeAllMemberSessions } =
+      await import("@/platform/authorization");
+    const admin = await member(a.organizationId, "administrator");
+    const own = await keyFor(admin, ["products.read"]);
+    expect((await call("/products", { token: own.token })).status).toBe(200);
+    const closed = await revokeAllMemberSessions(a.organizationId, a.userId, {
+      userId: admin.userId,
+      reason: "Prueba de cierre de sesiones",
+    });
+    expect(closed.ok).toBe(true);
+    expect((await call("/products", { token: own.token })).status).toBe(200);
+    const disabled = await disableMember(a.organizationId, a.userId, {
+      userId: admin.userId,
+    });
+    expect(disabled.ok).toBe(true);
+    expect((await call("/products", { token: own.token })).status).toBe(401);
+    const back = await reactivateMember(a.organizationId, a.userId, {
+      userId: admin.userId,
+    });
+    expect(back.ok).toBe(true);
+    expect((await call("/products", { token: own.token })).status).toBe(200);
+  }, 60_000);
+});
+
 describe("autenticación", () => {
   it("exige Authorization: Bearer y nunca acepta la cookie", async () => {
     const none = await call("/stock");

@@ -46,12 +46,12 @@ const MESSAGES: Record<TeamActionReason, string> = {
     "Solo puedes dar acceso a los almacenes o zonas que tú tienes asignados.",
 };
 
-const fail = (reason: TeamActionReason) =>
+export const fail = (reason: TeamActionReason) =>
   ({ ok: false, reason, error: MESSAGES[reason] }) as const;
 
-type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 
-type LoadedMember = TeamPerson & {
+export type LoadedMember = TeamPerson & {
   membershipId: string;
   status: "ACTIVE" | "DISABLED";
 };
@@ -79,8 +79,9 @@ async function memberIn(
 /**
  * Runs `change` on `targetUserId` if the rules allow `actorUserId` to do it.
  * The actor must be an active member; the target must belong to the company.
+ * Used only inside this area (team sessions, WMS-40); not in index.ts.
  */
-async function withTeamChange(
+export async function withTeamChange(
   organizationId: string,
   actorUserId: string,
   targetUserId: string,
@@ -161,8 +162,9 @@ export async function assignRoles(
 
 /**
  * Disables a member (USR-07): they lose access at once and every session
- * of theirs is closed. The membership and the account stay, so whatever
- * they did keeps their name in the history.
+ * of theirs in this company is closed (WMS-40: not their sessions in other
+ * companies, which can no longer enter this one). The membership and the
+ * account stay, so whatever they did keeps their name in the history.
  */
 export async function disableMember(
   organizationId: string,
@@ -176,9 +178,12 @@ export async function disableMember(
     { kind: "disable" },
     async (tx, target) => {
       if (target.status === "DISABLED") return fail("unchanged");
+      // Their sessions older than now never enter this company again, even
+      // after a reactivation (WMS-40): signing in again is needed.
+      const now = new Date();
       await tx.membership.update({
         where: { id: target.membershipId },
-        data: { status: "DISABLED" },
+        data: { status: "DISABLED", sessionsRevokedAt: now },
       });
       // An offer to hand them the company dies with their access.
       await tx.ownershipTransfer.updateMany({
@@ -189,8 +194,11 @@ export async function disableMember(
         },
         data: { status: "CANCELLED", resolvedAt: new Date() },
       });
+      // Only the sessions working in this company (WMS-40, ADR 0059): the
+      // person may keep working for another one, and the cut above keeps
+      // those sessions out of this company.
       const closed = await tx.session.deleteMany({
-        where: { userId: target.userId },
+        where: { userId: target.userId, activeOrganizationId: organizationId },
       });
       await recordAuditEvent(tx, {
         organizationId,

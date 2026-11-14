@@ -48,6 +48,10 @@ model Session {
   /// membership on every request; never trusted on its own.
   activeOrganizationId String?       @db.Char(36)
   activeOrganization   Organization? @relation(fields: [activeOrganizationId], references: [id], onDelete: SetNull)
+  /// Last request seen on this session (WMS-40, ADR 0059), written at most
+  /// every few minutes after the response. Null on sessions older than the
+  /// column: show updatedAt.
+  lastActiveAt         DateTime?     @db.DateTime(3)
 
   @@index([userId])
   @@index([activeOrganizationId])
@@ -194,6 +198,8 @@ model Organization {
   approvalRequests             ApprovalRequest[]
   notifications                Notification[]
   notificationPreferences      NotificationPreference[]
+  notificationEmails           NotificationEmail[]
+  dailyDigests                 DailyDigest[]
   incidents                    Incident[]
   /// API keys and webhook destinations (WMS-60).
   apiKeys                      ApiKey[]
@@ -439,21 +445,25 @@ enum MembershipStatus {
 }
 
 model Membership {
-  id               String              @id @db.Char(36)
-  organizationId   String              @db.Char(36)
-  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  userId           String              @db.Char(36)
-  user             User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status           MembershipStatus    @default(ACTIVE)
-  createdAt        DateTime            @default(now()) @db.DateTime(3)
-  updatedAt        DateTime            @updatedAt @db.DateTime(3)
-  roles            MembershipRole[]
-  ownershipOffers  OwnershipTransfer[]
+  id                String              @id @db.Char(36)
+  organizationId    String              @db.Char(36)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId            String              @db.Char(36)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status            MembershipStatus    @default(ACTIVE)
+  createdAt         DateTime            @default(now()) @db.DateTime(3)
+  updatedAt         DateTime            @updatedAt @db.DateTime(3)
+  roles             MembershipRole[]
+  ownershipOffers   OwnershipTransfer[]
   /// The warehouse this person works in (WMS-18); null = the main one.
-  activeFacilityId String?             @db.Char(36)
-  activeFacility   Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  activeFacilityId  String?             @db.Char(36)
+  activeFacility    Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Where this person may work (WMS-20); no rows = every warehouse.
-  scopes           MembershipScope[]
+  scopes            MembershipScope[]
+  /// «Cerrar todas sus sesiones» or disabling (WMS-40, ADR 0059): a session
+  /// created before this moment never works in this company again (it may
+  /// keep working in others); signing in again is needed.
+  sessionsRevokedAt DateTime?           @db.DateTime(3)
 
   @@unique([organizationId, userId])
   /// Target of company-scoped foreign keys (PLT-13).
@@ -3687,11 +3697,85 @@ model NotificationPreference {
   userId         String       @db.Char(36)
   typeKey        String       @db.VarChar(80)
   enabled        Boolean
+  /// Also by mail (WMS-39B, ADR 0060). Off by default: only who asks.
+  email          Boolean      @default(false)
   updatedAt      DateTime     @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@unique([organizationId, userId, typeKey])
+  @@index([organizationId, typeKey, email])
   @@map("notification_preference")
+}
+
+/// How a notice by mail ended (WMS-39B, ADR 0060).
+enum NotificationEmailStatus {
+  QUEUED
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// A notice that also goes out by mail (WMS-39B, ADR 0060). Written by
+/// `notify` in the transaction of the fact; sent by the worker, grouped
+/// per person. Text and destination are a copy of the notice: the notice
+/// may be cleaned up before this row is.
+model NotificationEmail {
+  id              String                  @id @db.Char(36)
+  organizationId  String                  @db.Char(36)
+  organization    Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// The notice it repeats (no relation: notices are cleaned up).
+  notificationId  String                  @db.Char(36)
+  recipientUserId String                  @db.Char(36)
+  typeKey         String                  @db.VarChar(80)
+  text            String                  @db.VarChar(300)
+  href            String                  @db.VarChar(300)
+  /// What receiving it required (permissions, match, facility or
+  /// location): checked again before it is sent.
+  requirement     Json
+  status          NotificationEmailStatus @default(QUEUED)
+  /// Job that took it to send; null while it waits.
+  claimedBy       String?                 @db.Char(36)
+  /// Why it did not go out (SKIPPED, FAILED).
+  reason          String?                 @db.VarChar(300)
+  createdAt       DateTime                @default(now()) @db.DateTime(3)
+  sentAt          DateTime?               @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, notificationId])
+  @@index([organizationId, recipientUserId, status, claimedBy])
+  @@index([organizationId, recipientUserId, sentAt])
+  @@index([organizationId, status, createdAt])
+  @@map("notification_email")
+}
+
+/// How the daily summary of a person ended (WMS-39B, ADR 0060).
+enum DailyDigestStatus {
+  QUEUED
+  SENT
+  EMPTY
+  SKIPPED
+  FAILED
+}
+
+/// The daily summary by mail of one person for one day of the company's
+/// calendar (WMS-39B, ADR 0060): lots about to expire and low stock. One
+/// per person and day; the round that sets it aside never makes two.
+model DailyDigest {
+  id             String            @id @db.Char(36)
+  organizationId String            @db.Char(36)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String            @db.Char(36)
+  /// Day of the company's calendar.
+  day            DateTime          @db.Date
+  status         DailyDigestStatus @default(QUEUED)
+  reason         String?           @db.VarChar(300)
+  createdAt      DateTime          @default(now()) @db.DateTime(3)
+  sentAt         DateTime?         @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId, day])
+  @@index([organizationId, createdAt])
+  @@map("daily_digest")
 }
 
 /// What kind of problem an incident is (WMS-39): a fixed, generic list.

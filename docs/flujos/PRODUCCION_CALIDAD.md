@@ -1,1007 +1,1125 @@
-# Propuesta de flujo: producción y calidad (WMS-27..31 y WMS-59)
+# Propuesta de flujo: producción, calidad y procesos de la empresa (WMS-27..31, WMS-59, WMS-74)
 
-Fecha: 2026-11-14. Estado: **propuesta para decidir con el fundador**. Nada de
-esto está programado ni decidido; los ADR se escriben cuando el fundador
-decida (regla 15 de `docs/INSTRUCCIONES_WMS.md`).
+Versión 2, 2026-11-14. La versión 1 (mismo día) se unió a `pruebas` en el
+commit `48f6ca8`; el fundador contestó sus once decisiones y esta versión
+las incorpora. **Todavía no se programa nada.** Los ADR se escriben cuando se
+cierren las preguntas que siguen abiertas (sección 10) y antes de cada paso.
 
 Cómo leer este documento:
 
 - **Hecho** = lo dice el código, la especificación o las instrucciones (con su
   referencia).
-- **Propuesta** = lo que este documento sugiere. Puede cambiar.
+- **Decidido** = lo contestó el fundador el 2026-11-14 (sección 1).
+- **Propuesta** = lo que sugiere este documento. Puede cambiar.
+- **Por confirmar** = interpretación de una respuesta del fundador que él
+  debe confirmar.
 - Los nombres en `código` son tablas, servicios o ajustes reales del
-  repositorio; los que están marcados «(nuevo)» todavía no existen.
+  repositorio; los marcados «(nuevo)» todavía no existen.
 
 ---
 
-## 1. Resumen de una página (para el fundador)
+## 1. Decisiones del fundador (2026-11-14)
 
-**Qué se propone construir.** Dos módulos que se contratan por separado:
+Respuestas textuales a las decisiones D1–D11 de la versión 1 y cómo quedan
+en este documento.
 
-- **Producción** (`production`): recetas de lo que se fabrica, arma, mezcla o
-  reempaca; órdenes de producción que apartan los insumos; un «reporte de
-  producción» desde el teléfono o la tableta que dice en un solo paso qué se
-  usó, cuánto salió bien, cuánto se echó a perder y por qué, quién lo hizo y en
-  qué turno; y el cierre de la orden con sus cuentas cuadradas.
-- **Calidad** (`quality`): inspecciones de lo que espera revisión (lo que llega
-  del proveedor, lo que sale de producción, lo que devuelve un cliente, o
-  cualquier existencia), con criterios por producto, defectos y la decisión:
-  aprobado, rechazado o en cuarentena. Solo lo aprobado queda disponible.
-
-**Ideas centrales de la propuesta.**
-
-1. Una receta es «lo que entra y lo que sale». Así sirve igual para ensamblar
-   (muchos insumos, un producto), mezclar a granel (kilos que rinden kilos),
-   armar un kit (varios productos, una caja) y desarmarlo (una caja, varios
-   productos). No hay recetas «de un giro».
-2. Cada reporte de producción es **un solo movimiento de inventario** con dos
-   lados: lo que salió de existencias (insumos) y lo que entró (producto). Eso
-   da tres cosas sin inventar mecanismos nuevos: el costo del producto sale del
-   costo de lo que se usó; la trazabilidad (qué lote de insumo fue a qué lote de
-   producto) se lee del propio movimiento; y nada queda a medias si falla la
-   red.
-3. Lo que necesita revisión entra **en inspección**, un estado que el sistema
-   ya tiene (`INSPECTION`). Ya funciona así con las devoluciones de clientes.
-   Mientras esté en inspección no se puede surtir, sacar ni apartar.
-4. Las etapas intermedias (material cortado, subensambles) son **productos con
-   su propia receta y su propia orden**. «Materia prima → corte → subensamble →
-   producto terminado» son tres órdenes encadenadas, no un estado nuevo.
-5. Calidad sin producción sirve desde el primer día: inspección al recibir y de
-   devoluciones. Producción sin calidad también: lo producido entra disponible
-   o en inspección según el producto, y alguien con permiso lo libera como hoy
-   se libera cualquier existencia.
-
-**Orden propuesto** (detalle en la sección 9):
-
-1. Roles y esqueleto de los dos módulos (WMS-59).
-2. Inspección al recibir y desechar o devolver lo rechazado (base en
-   Inventario y Compras; sirve antes de tener los módulos).
-3. Recetas (WMS-27) y, en paralelo, criterios de inspección (WMS-30A).
-4. Órdenes de producción con insumos apartados (WMS-28).
-5. Reporte de producción: consumo, producción, merma, turno y trabajador
-   (WMS-29, con el caso 5.5 de la especificación como prueba de aceptación).
-6. Inspección y liberación por lote (WMS-30B, PC-4 y PC-5).
-7. Producto terminado a su lugar y cierre de la orden (WMS-31).
-
-**Qué necesita decidir el fundador antes de empezar** (detalle en la sección
-8): qué entra al costo del producto (solo materiales o también mano de obra);
-si se registra producción de trabajadores que no tienen cuenta en el sistema;
-cómo salen los insumos del almacén (directo o surtidos a la línea); cómo se
-captura el consumo; qué se inspecciona; cómo se entiende «no liberar más de lo
-inspeccionado» cuando se inspecciona por muestra; si con Calidad contratada
-alguien más puede liberar a mano; cómo se nombra el lote del producto
-terminado; si Calidad puede contratarse sin Producción; y qué hacer cuando se
-produce de más.
+| # | Pregunta | Respuesta del fundador (textual) | Cómo queda |
+| --- | --- | --- | --- |
+| D1 | ¿Qué entra al costo de lo producido? | «el costo de lo producido si solo es de los materiales, tipo si un crate lleva 5 pijas una tabla de triplay, espuma, pintura, etc, cada cosa cuesta para armar un solo crate, asi con todos los productos que se fabriquen» | **Decidido:** solo materiales. Sección 6. |
+| D2 | ¿Se registra producción de personas sin cuenta? | «esto no entiendo a que te refieres, todos deben de tener cuenta para que tengan un usuario con rol y haya una trasabilidad» | **Decidido:** no hay trabajadores sin cuenta. Todo el que produce tiene usuario con rol; «producción por trabajador» es por usuario. Se quitan el catálogo de trabajadores y su ajuste. Para que muchos operarios usen pocos dispositivos está WMS-38 (terminales compartidas con PIN). |
+| D3 | ¿Cómo salen los insumos? | «pueden ser ambas, puede haber empresa que tenga los insumos en almacen de insumos y de ahi los tomen para crear el producto» | **Decidido:** las dos formas, como ajuste de la empresa. El valor por omisión es propuesta (P2). |
+| D4 | ¿Cómo se captura lo que se usó? | «se captura creando productos, y en el producto se pone la receta de que requiere para crear ese producto» | **Decidido** dónde vive la receta: **en la ficha del producto** (sigue versionada). Cómo se captura el consumo al reportar queda **por confirmar** (P1). |
+| D5 | ¿Qué se inspecciona? | «me parece bien eso, que si produccion dice que hizo 100 de algo se tome la foto y se mande a llamar a calidad, para que verifiquen que son las 100 piezas y una vez calidad verifique ya se suman al almacen» | **Decidido**, con flujo: producción reporta con **foto**, se **avisa a Calidad**, Calidad **verifica la cantidad** y la calidad, y **solo entonces queda disponible**. Lo producido siempre espera a Calidad. Las fotos (WMS-37) pasan a ser requisito. Secciones 4.4, 4.5 y 7. |
+| D6 | ¿Se permite inspeccionar por muestra? | «dejemoslo que si, porque no tendran tiempo de revisar 500 piezas en el dia» | **Decidido:** muestreo permitido. La cantidad sí se verifica completa (D5); la calidad puede revisarse por muestra. Sección 4.5. |
+| D7 | Con Calidad, ¿alguien más libera a mano? | «si el jefe de almacen» | **Decidido en lo esencial:** el jefe de almacén sí puede liberar a mano. A qué roles corresponde, **por confirmar** (P3). Se quita el ajuste `inventory.inspection.release` de la versión 1. |
+| D8 | ¿Cómo se nombra el lote de lo producido? | «cada empresa pone una nomenclatura y de ahi se le agrega alguna opcion, puedes poner un select box con opciones, tipo 00001 0001, etc» | **Decidido:** cada empresa define su nomenclatura (prefijo y un consecutivo con los dígitos que elija de una lista). Sección 4.6. |
+| D9 | ¿Calidad sin Producción? | «no, todo debe de seguir un orden circular y una jerarquia» | **Decidido:** Calidad **no** se contrata sin Producción. Los módulos siguen una jerarquía (como la especificación 3.2). Sección 8. |
+| D10 | ¿Etapas intermedias? | «asi es, asi como para generar algo hay procesos y sub estados, para embarques tambien, tipo, llego material, se descargo material, se hicieron lo sub productos para ensamble, se ensamblo, se inspecciono, se guardo en inventario, se cargo en camion, camion en proceso, camion repartio, camion con reestauracion llego, y asi, osea dentro de la app tu debes de poder crear sub procesos y procesos, para adaptarte a la empresa y su logistica, quizas una empresa solo quiere 3 procesos especificos y otra quiere mas, esto debe de quedar completo y bien estructurado, para poder definir los procesos de la empresa lo mas detallado» | **Decidido:** cada empresa define sus **procesos y subprocesos** (etapas y subetapas) para producción, embarques y logística. Se diseña un **motor de procesos** propio de la plataforma (WMS-74). Se conserva que lo que cambia existencias (un corte que produce tableros) es otro producto con su orden; las etapas son el seguimiento. Sección 5. |
+| D11 | ¿Producir más de lo planeado? | «en teoria no se puede producir de mas, porque solo les va a permitir hacer el flujo de lo que pida la product order que mande el gerente, pero se podria poner una opcion, de que si no hay product order, pues tampoco van a estar parados, entonces podria haber una opcion, la cual sea, okay no hay ordenes, pero de este material o sub producto, queda poco, quieres mandar notificacion al gerente para ver si aprueba la produc order? de esta manera si faltan cortes especificos para un crate, el usuario puede mandar alerta al gerente para que le asigne o rechaze la tarea, al gerente le llega detallada, juan de produccion quiere hacer 20 tablas para completar inventario aceptar o denegar, etc, todo con su trazabilidad» | **Decidido:** no se produce más de lo que pide la orden. **Nuevo:** solicitud de producción desde el piso (WMS-28B). Quién aprueba, **por confirmar** (P7), porque hoy Gerencia es solo lectura. Sección 4.3. |
 
 ---
 
-## 2. Lo que ya existe y se reutiliza
+## 2. Resumen de una página (para el fundador)
 
-Hechos del código (rama `pruebas`, 2026-11-14). Producción y calidad se
-apoyan en esto; no se duplica.
+**Qué se propone construir.**
 
-| Pieza | Dónde | Cómo la usan producción y calidad (propuesta) |
+- **Producción** (módulo `production`): la receta vive en la ficha de cada
+  producto que se fabrica («para un crate: 5 pijas, 1 tabla de triplay,
+  espuma, pintura»). Quien manda las órdenes crea una **orden de producción**
+  que aparta los materiales. El piso reporta lo que hizo **con foto**, nunca
+  más de lo que pide la orden. Si no hay órdenes y algo se está acabando, el
+  operario manda una **solicitud de producción** y quien manda la acepta o la
+  rechaza.
+- **Calidad** (módulo `quality`, solo con Producción contratada): recibe el
+  aviso, **cuenta** lo producido y revisa su calidad (puede ser por muestra).
+  Solo lo que Calidad aprueba **se suma al almacén** como disponible; lo
+  rechazado nunca queda disponible.
+- **Procesos de la empresa** (pieza de plataforma, WMS-74): cada empresa
+  define las etapas y subetapas de sus documentos (por ejemplo, de una orden
+  de producción: «Corte», «Ensamble», «Pintura»; de un embarque: «Cargado al
+  camión», «En ruta», «Entregado», «Regresó»). En el piso se ve un botón
+  grande con el siguiente paso, con foto o nota si la etapa la pide. Avanzar
+  una etapa **no mueve existencias**: lo que mueve existencias sigue siendo
+  la operación de siempre (reportar producción, liberar, despachar).
+
+**Tres reglas que no cambian.**
+
+1. Cada reporte de producción es un movimiento de inventario con dos lados
+   (lo que se usó y lo que salió). De ahí salen el costo (solo materiales), la
+   trazabilidad (qué lote de insumo fue a qué lote de producto) y la
+   seguridad de que nada queda a medias.
+2. Lo producido entra «en inspección» (estado que ya existe): está en el
+   almacén pero no se puede surtir, sacar ni apartar hasta que Calidad (o el
+   jefe de almacén) decida.
+3. Un material que se transforma en otro (un corte que produce tableros) es
+   otro producto con su receta y su orden; las etapas configurables sirven
+   para seguir el trabajo, no para contar existencias.
+
+**Orden propuesto** (detalle en la sección 11): roles y módulos → fotos
+(WMS-37) → base de inspección en Inventario y Compras → recetas en el
+producto y, a la vez, el motor de procesos y los criterios de inspección →
+órdenes de producción → solicitudes de producción y reporte de producción →
+inspección y liberación → cierre de la orden y producto a su lugar →
+procesos en embarques.
+
+**Qué falta que decida el fundador** (sección 10): cómo se captura lo que se
+usó; cuál es la forma por omisión de sacar insumos; quién es «el jefe de
+almacén»; qué pasa si Calidad cuenta 97 y no 100; quién aprueba las
+solicitudes de producción; quién verifica lo producido si una empresa tiene
+Producción pero no Calidad; y varias preguntas del motor de procesos.
+
+---
+
+## 3. Lo que ya existe y se reutiliza
+
+Hechos del código (rama `pruebas`, 2026-11-14). No se duplica.
+
+| Pieza | Dónde | Uso en esta propuesta |
 | --- | --- | --- |
-| Estados del saldo `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED` | `StockStatus` en `prisma/schema.prisma`, `stock-status.ts`, ADR 0033 | Lo producido o recibido que pide revisión entra en `INSPECTION`; las decisiones lo pasan a `AVAILABLE`, `QUARANTINE` o `REJECTED`. Ningún estado nuevo. |
-| «Disponible» = solo `AVAILABLE` menos lo apartado | ADR 0033, `freeToTake`, `getProductStock` | Lo que está en inspección, cuarentena o rechazado nunca se surte, se aparta ni se consume como insumo normal (**PC-5** ya se cumple en las lecturas). |
-| Cambio de estado con motivo, `STATUS_CHANGE` | `changeStockStatus` y su núcleo `writeStatusChange` (`status-change.ts`), `permissionForStatusChange` | Cada decisión de calidad se escribe con `writeStatusChange`, igual que hoy las decisiones de devoluciones. |
-| Devoluciones de clientes entran siempre en inspección y se deciden | `receiveCustomerReturn`, `decideCustomerReturn`, `heldForReturns` (`customer-returns.ts`, `return-holds.ts`), ADR 0046 | Ya es un flujo de inspección mínimo. Calidad las muestra en su bandeja y decide **a través de `decideCustomerReturn`** (no otra forma de decidir). |
-| Lo dañado al recibir es su propia línea en `DAMAGED` | `postReceiptEntry` con `status` por línea, ADR 0052 | La inspección al recibir agrega `INSPECTION` como tercer valor posible de esa línea. |
-| Lotes, caducidad y series | `lot`, `lotForEntry`/`lotForTake` (`lot-resolve.ts`), `serial_unit`, `serialsForEntry`/`serialsForTake` (`serials.ts`), ADR 0040/0041 | Insumos y producto por lote o serie usan exactamente estas funciones. |
-| Rastreo | `findTraceMatches`, `traceLot`, `traceSerial` (`traceability.ts`) | Se amplía para seguir un lote a través de un reporte de producción (hacia adelante y hacia atrás). |
-| Reservas con fuente genérica | `stock_reservation` (`sourceType` + `sourceId`), `reserveStock`, `consumeReservation`, `releaseReservations` (`reservations.ts`), WMS-12 | Liberar una orden aparta sus insumos con la fuente `production_order_line` (nueva constante, sin tabla nueva). |
-| Tareas de almacén | `warehouse_task`, `tasks.ts`, `WAREHOUSE_TASK_TRANSITIONS`, tipos `TRANSFER`, `PICK`, `PUTAWAY`, `REPLENISH` | Surtir insumos a la línea es un tipo de tarea más; llevar producto terminado a su lugar es el acomodo que ya existe. |
-| Acomodo con recomendación | `createPutawayTasks`, `putawayTarget`, `WAITING_PLACE` (`unplaced.ts`), ADR 0042 | Lo liberado en el área de producción crea su tarea de acomodo como hoy lo liberado de una devolución (WMS-31 casi no programa nada nuevo). |
-| Costo promedio por producto | `product_cost`, `average-cost.ts` (`valueEntry`/`valueExit`), `valuation.ts`, ADR 0031 | El producto terminado entra al costo de lo consumido en su reporte. |
-| Aprobaciones | `src/platform/approvals`, `approvalTypes` (registro), ADR 0053 | Liberar de cuarentena y cerrar una orden con faltante pueden pedir autorización si la empresa lo enciende (apagado por omisión). |
-| Avisos | `notify` de `@/platform/notifications`, `notificationTypes`, ADR 0057 | «Hay un lote por inspeccionar», «Calidad liberó el lote L-…» (lo pidió la retroalimentación de campo, `PLAN_WMS_V3.md`). |
-| Incidencias | `incidents.ts`, ADR 0057 | Un paro de línea o un insumo que no llegó se reporta como incidencia; no se crea otra cosa. |
-| Ajustes por empresa | `SettingDefinition`, `readSetting`, `operationSettings`, ADR 0034 | Todo lo que admite más de una forma va como ajuste con valor por omisión (sección 6). |
-| Campos personalizados | `src/platform/custom-fields`, ADR 0056 | Recetas y órdenes pueden ser entidades nuevas más adelante (fuera de la primera versión). |
-| Registro de módulos, derechos y solo lectura | `defineModule`, `createModuleRegistry`, `assertModulePermission`, `ROLE_MODULE` (hoy vacío), MOD-11 | Cada módulo con su contrato; sus roles, ligados a su módulo. |
-| Unidades y presentaciones | `UNITS` (pieza, par, docena, kg, g, m, cm, mm, l, ml, m²), `resolveConversion`, presentaciones | «Tarima de 50 hojas de triplay» es una presentación; el consumo puede capturarse en hojas, m² o kg según el producto. |
+| Estados del saldo `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED` | `StockStatus`, `stock-status.ts`, ADR 0033 | Lo producido entra en `INSPECTION`; las decisiones lo pasan a `AVAILABLE`, `QUARANTINE` o `REJECTED`. Ningún estado nuevo. |
+| «Hay» frente a «disponible» | ADR 0033, `freeToTake`, `getProductStock` | Lo que espera a Calidad está en «hay» pero no en «disponible» (**PC-5** ya se cumple en las lecturas). |
+| Cambio de estado con motivo | `changeStockStatus`, núcleo `writeStatusChange`, `permissionForStatusChange` (`status-change.ts`) | Cada decisión de Calidad y cada liberación del jefe de almacén se escriben con este núcleo. |
+| Devoluciones de clientes en inspección | `receiveCustomerReturn`, `decideCustomerReturn`, `heldForReturns`, ADR 0046 | Siguen igual en Inventario. Con Calidad, se muestran en su bandeja y se deciden **por `decideCustomerReturn`**. |
+| Lo dañado al recibir | `postReceiptEntry` con `status` por línea, ADR 0052 | La inspección al recibir agrega `INSPECTION` como tercer valor. |
+| Lotes, caducidad y series | `lotForEntry`/`lotForTake`, `serialsForEntry`/`serialsForTake`, `normalizeLotCode` (máximo 64 caracteres), ADR 0040/0041 | Insumos y producto por lote o serie usan estas funciones; el lote generado pasa por `normalizeLotCode`. |
+| Rastreo | `findTraceMatches`, `traceLot`, `traceSerial` | Se amplía para seguir un lote a través de un reporte de producción. |
+| Reservas con fuente genérica | `stock_reservation` (`sourceType` + `sourceId`), `reserveStock`, `consumeReservation`, `releaseReservations` | Una orden liberada aparta sus materiales con la fuente `production_order_line`. |
+| Tareas de almacén | `warehouse_task`, `tasks.ts` | Surtir materiales a la línea es un tipo de tarea más (`ISSUE`, nuevo); llevar producto a su lugar es el acomodo que ya existe. |
+| Acomodo | `createPutawayTasks`, `putawayTarget`, `WAITING_PLACE` | Lo liberado en el área de producción crea su tarea de acomodo como lo liberado de una devolución. |
+| Costo promedio | `product_cost`, `valueEntry`/`valueExit`, ADR 0031 | El producto terminado entra al costo de los materiales de su reporte. |
+| Mínimos | `stock_minimum`, `listLowStock` | Dice qué se está acabando para ofrecer la solicitud de producción. |
+| Aprobaciones | `src/platform/approvals`, ADR 0053 | Solicitudes de producción, liberar de cuarentena y etapas que pidan autorización. |
+| Solicitudes de compra | `requests.ts`, `request-states.ts`, ADR 0055 | Patrón de la solicitud de producción (pedir no es hacer; «Por atender»; convertir en orden; responder `repeated`). |
+| Avisos | `notify`, `notificationTypes`, ADR 0057 | «Hay producción por verificar», «Calidad liberó…», «Juan quiere hacer 20 tablas», avisos de etapas. |
+| Archivos privados | `storeFile`, `FILE_PURPOSES`, `createFileLink` (`src/platform/files`), ADR 0014 | Base de las fotos (WMS-37, sección 7). |
+| Ajustes por empresa | `SettingDefinition`, `readSetting`, ADR 0034 | Solo admite una lista de opciones; la nomenclatura del lote necesita su propia tabla (sección 4.6). |
+| Registro de módulos | `defineModule`, `createModuleRegistry` (valida `dependsOn` y ciclos), `ROLE_MODULE` (vacío) | Calidad declara `dependsOn: ["production"]`. |
+| Unidades y presentaciones | `UNITS`, `resolveConversion` | «Tarima de 50 hojas de triplay» es una presentación. |
 
 Hechos que **limitan** la propuesta:
 
-- Las cantidades del saldo y de los movimientos tienen 3 decimales
-  (`Decimal(12, 3)`). Una receta de «0.0025 kg por pieza» no cabe: por eso se
-  propone que la receta se escriba **por una cantidad base** («para 100
-  piezas», «para un lote de 500 kg»).
-- Una tarea `PICK` exige un pedido de salida (`CHECK warehouse_task_pick_line`).
-  Surtir a producción necesita su propio tipo de tarea.
+- Cantidades con 3 decimales (`Decimal(12, 3)`): la receta se escribe por una
+  **cantidad base** («para 100 piezas», «para 500 kg»).
+- Una tarea `PICK` exige un pedido de salida (`CHECK warehouse_task_pick_line`):
+  surtir a producción necesita su propio tipo.
 - `postReceiptEntry` y `postReturnExit` solo aceptan `AVAILABLE` o `DAMAGED`;
-  `registerExit` solo saca disponible. Recibir en inspección, desechar lo
-  rechazado y devolver al proveedor lo rechazado requieren extender
-  Inventario y Compras.
-- Hoy `changeStockStatus` permite pasar `REJECTED` o `INSPECTION` a
-  disponible a quien tenga `inventory.status.release`. Ver la sección 10
-  (contradicciones).
-- No existe un uso de ubicación «Producción» (`LocationType`: `STORAGE`,
-  `PICKING`, `RECEIVING`, `STAGING`, `QUARANTINE`, `DOCK`).
+  `registerExit` solo saca disponible.
+- `FILE_PURPOSES` solo acepta `csv` y `xlsx` y las descargas son
+  `attachment`: no hay fotos todavía.
+- Los números de documento (`PS-0001`, `EM-0001`, `OC-0001`…) son un prefijo
+  fijo y 4 dígitos armados en código; el rastreo y las etiquetas los
+  reconocen por ese prefijo.
+- No existe un uso de ubicación «Producción» (`LocationType`).
 
 ---
 
-## 3. Conceptos (propuesta)
+## 4. Producción y calidad, paso a paso
 
-| Palabra en pantalla | Qué es | Tabla (nueva) |
-| --- | --- | --- |
-| Receta | Lo que entra y lo que sale para hacer una cantidad base de un producto, con su merma esperada. Tiene versiones. | `recipe`, `recipe_version`, `recipe_input`, `recipe_output`, `recipe_step` |
-| Orden de producción | «Hacer 200 crates tipo A con la receta v3 para el jueves en el almacén Norte». Número `OP-0001`. | `production_order`, `production_order_input`, `production_order_output` |
-| Reporte de producción | Lo que se hizo en un rato de trabajo: cuánto salió bien, cuántas piezas malas, qué se usó, cuánto se tiró, quién y en qué turno. Escribe un movimiento `PRODUCTION`. | `production_report`, `production_report_scrap` |
-| Trabajador | Persona que produce. Puede no tener cuenta en el sistema (ver decisión D2). | `production_worker` |
-| Turno | Nombre y horario por almacén («Matutino 6:00-14:00»). | `production_shift` |
-| Área de producción | Una ubicación con uso «Producción» donde se dejan insumos surtidos y aparece lo producido. | `LocationType.PRODUCTION` (valor nuevo) |
-| Inspección | La revisión de una cantidad de un producto (y lote) que espera en inspección. Número `IN-0001`. | `quality_inspection`, `quality_inspection_result`, `quality_inspection_defect` |
-| Plan de inspección | Qué se revisa de un producto o categoría: preguntas sí/no, mediciones con mínimo y máximo, notas; y si es por muestra o completa. | `quality_plan`, `quality_check` |
-| Defecto | Catálogo de la empresa («rayado», «medida fuera», «humedad»). | `quality_defect` |
-| Disposición de lo rechazado | Qué se hace con lo rechazado: devolver al proveedor, desechar o reprocesar. | Usa movimientos existentes y nuevos (sección 4.6) |
+### 4.1 WMS-27 · Receta en la ficha del producto (versionada)
 
----
+**Decidido (D4):** la receta se captura y se ve desde el producto.
 
-## 4. Flujos paso a paso
-
-### 4.1 WMS-27 · Recetas versionadas
-
-**Quién y dónde.** Supervisor de producción o administración, en escritorio.
+**Quién y dónde.** Supervisor de producción o administración, en escritorio,
+en la ficha del producto (`/inventario/[id]`), pestaña o sección **«Receta»**.
+Solo aparece con Producción contratada y para quien puede verla.
 
 **Flujo (propuesta).**
 
-1. En Producción › Recetas, «Nueva receta» para un producto. La receta dice:
-   - **Cantidad base** y su unidad (la del producto): «para 1 crate», «para
-     100 piezas», «para 500 kg».
-   - **Entradas (insumos):** producto, cantidad por la cantidad base (en la
-     unidad del producto o en una presentación, convertida con
-     `resolveConversion` al guardar), merma esperada en % (opcional),
-     sustitutos permitidos (otros productos con su propia cantidad).
-   - **Salidas:** el producto principal (siempre una) y, si hay, coproductos o
-     subproductos con su cantidad esperada y su **parte del costo** (por
-     omisión 100 % al principal y 0 % a los demás; ver D-E3).
-   - **Pasos** (opcional): nombres libres en orden («Corte», «Ensamble»,
-     «Pintura»). Solo sirven para decir en qué paso se reportó algo; no crean
-     existencias intermedias (decisión D10).
-2. Guardar crea la versión 1 en borrador. «Activar» la vuelve la versión que
-   usan las órdenes nuevas. Un producto tiene como mucho una versión activa
-   por receta; puede tener varias recetas (p. ej. «en planta» y «de emergencia»)
-   y una marcada como principal.
-3. Una versión que ya usó una orden **no se edita**: «Nueva versión» copia la
-   activa en un borrador nuevo (disparador en la base, como las órdenes de
-   compra).
+1. En la ficha del producto, «Agregar receta». Se escribe:
+   - **Para cuánto**: cantidad base en la unidad del producto («1 crate», «100
+     piezas», «500 kg»).
+   - **Materiales**: producto (por clave o código de barras), cantidad para la
+     cantidad base (en su unidad o presentación, convertida con
+     `resolveConversion` al guardar), merma esperada en % (opcional) y
+     sustitutos permitidos con su cantidad.
+   - **Lo que sale además** (opcional): coproductos o subproductos con su
+     cantidad esperada y su parte del costo (por omisión 100 % al producto de
+     la ficha).
+   - **Proceso** (opcional): qué proceso de la empresa siguen sus órdenes
+     (sección 5), si la empresa tiene más de uno para órdenes de producción.
+2. «Guardar» deja la versión en borrador; «Activar» la hace la que usan las
+   órdenes nuevas. La ficha muestra la versión activa y el historial de
+   versiones.
+3. Una versión que ya usó una orden no se edita: «Cambiar receta» crea la
+   versión siguiente copiando la activa (disparador en la base).
+4. Un producto puede tener más de una receta (p. ej. «normal» y «con
+   sustituto»), una marcada como principal. La propuesta para la primera
+   versión es **una sola receta por producto** con sus versiones (P13).
 
-**Qué valida el sistema.** Cantidades con `parseQuantity` y la regla de cada
-producto; un insumo no puede ser el mismo producto que la salida principal
-salvo en reproceso (D-E2); sin ciclos directos (A usa B y B usa A); productos
-activos; las partes del costo suman 100 %.
+**Qué valida.** `parseQuantity` con la regla de cada material; materiales
+activos; sin ciclos (A usa B y B usa A, a cualquier profundidad dentro de un
+tope); las partes del costo suman 100 %.
 
-**Rastro.** La versión guarda quién la creó y la activó (bitácora
-`production.recipe_activated`). Las versiones nunca se borran.
+**Rastro.** Bitácora `production.recipe_activated` (quién y cuándo). Las
+versiones no se borran. Estados de una versión: `DRAFT → ACTIVE → RETIRED`,
+`DRAFT → DISCARDED` (tabla pura y disparador).
 
-**Estados de una versión.** `DRAFT → ACTIVE → RETIRED` (`DRAFT → DISCARDED`).
-Tabla de transiciones pura más disparador, como `order-states.ts`.
+**El mismo modelo para todos los giros.**
 
-**Mismo modelo para todos los giros.**
-
-| Empresa | Cantidad base | Entradas | Salidas |
+| Empresa | Para cuánto | Materiales | Sale |
 | --- | --- | --- | --- |
-| Ensambla (crates, muebles, equipos) | 1 pieza | 2.5 hojas de triplay, 40 clavos, 4 patines | 1 crate |
-| Mezcla a granel (alimentos, químicos, pinturas) | 500 kg | 300 kg A, 150 kg B, 60 l agua; merma esperada 2 % | 500 kg de mezcla |
-| Reempaca (kits, promociones) | 1 kit | 1 de A, 2 de B, 1 caja | 1 kit |
-| Desarma (abrir kits, despiezar) | 1 kit | 1 kit | 1 de A, 2 de B (coproductos con su parte del costo) |
-| Corta (materia prima a material cortado) | 1 hoja | 1 hoja de triplay | 4 tableros (y recorte como subproducto, si se aprovecha) |
+| Ensambla (crates, muebles, equipos) | 1 crate | 5 pijas, 1 tabla de triplay, 0.5 m² de espuma, 0.2 l de pintura | 1 crate |
+| Mezcla a granel | 500 kg | 300 kg A, 150 kg B, 60 l de agua; merma esperada 2 % | 500 kg de mezcla |
+| Reempaca (kits) | 1 kit | 1 de A, 2 de B, 1 caja | 1 kit |
+| Desarma | 1 kit | 1 kit | 1 de A, 2 de B (coproductos) |
+| Corta | 1 hoja | 1 hoja de triplay | 4 tableros |
 
-**Reutiliza:** conversión de unidades y presentaciones, catálogo de productos,
-bitácora. **Nuevo:** tablas de receta, servicios en `src/modules/production`.
+**Tablas (nuevas):** `recipe` (producto, principal), `recipe_version`,
+`recipe_input`, `recipe_output`. Viven en Producción y se muestran en la ficha
+del producto, que es del núcleo: la ficha recibe el bloque «Receta» desde el
+módulo por el registro, como los campos personalizados reciben sus
+definiciones (la plataforma no importa módulos).
 
 **Permisos (propuesta):** `production.recipe.read`, `production.recipe.manage`.
 
-**Listo cuando:** una receta se crea, se activa, se versiona; la versión usada
-no cambia (disparador); el caso «0.0025 kg por pieza» se escribe como «0.25 kg
-por 100 piezas» sin perder exactitud; aislamiento entre empresas.
+**Listo cuando:** la receta se crea, activa y versiona desde la ficha; la
+versión usada no cambia (disparador); «0.25 kg por 100 piezas» es exacto;
+sin ciclos; entre empresas.
 
 ---
 
-### 4.2 WMS-28 · Órdenes de producción con insumos apartados
+### 4.2 WMS-28 · Orden de producción con materiales apartados
 
-**Quién y dónde.** Supervisor de producción, en escritorio o tableta.
+**Quién y dónde.** Quien manda las órdenes (supervisor de producción; ver
+P7), en escritorio o tableta.
 
 **Flujo (propuesta).**
 
-1. «Nueva orden»: producto, cantidad objetivo, receta (la principal por
-   omisión), día compromiso, prioridad, área de producción (ubicación con uso
-   «Producción» del almacén activo) y notas. Número `OP-0001`. La orden copia
-   de la versión de receta, multiplicadas por la cantidad objetivo, sus
-   líneas de insumo y de salida (`production_order_input`,
-   `production_order_output`): así cambiar la receta después no cambia la
-   orden.
-2. En borrador se pueden ajustar cantidades de los insumos (con motivo
-   guardado) o cambiar un insumo por un sustituto de la receta.
-3. **«Liberar orden»**: en una transacción, bloquea productos → orden, y
-   aparta cada insumo con `reserveStock` (fuente `production_order_line` + id
-   de la línea, sin ubicación, igual que un pedido de salida). Si algo no
-   alcanza, responde qué falta y se puede liberar apartando lo que hay
-   (`takeWhatThereIs`, igual que los pedidos), o no liberar (ajuste
-   `production.release.short`, D-E5).
+1. «Nueva orden»: producto (con receta activa), cantidad, día compromiso,
+   prioridad, área de producción (ubicación de uso «Producción» del almacén
+   activo), persona o personas asignadas (opcional) y notas. Número
+   `OP-0001`. La orden copia de la receta sus materiales y salidas
+   multiplicados por la cantidad: cambiar la receta después no cambia la orden.
+2. En borrador se puede cambiar un material por un sustituto de la receta o
+   ajustar una cantidad (con motivo).
+3. **«Liberar orden»**: en una transacción, candados productos → orden; aparta
+   cada material con `reserveStock` (fuente `production_order_line`, sin
+   ubicación). Si algo no alcanza, dice qué falta y deja apartar lo que hay o
+   no liberar (P-E5).
 4. Según el ajuste `production.materials.mode` (D3):
-   - `direct` (propuesta por omisión): los insumos se quedan donde están; al
-     reportar se consumen de donde estén apartados (el sistema propone de
-     dónde con el mismo orden de `rankStockSources`: lo que caduca antes,
-     primero).
-   - `issue`: liberar crea tareas **«Surtir a producción»** (tipo nuevo de
-     `warehouse_task`, ver abajo) desde almacenamiento hasta el área de
-     producción. Al entregar, lo surtido queda apartado ahí para la misma línea
-     (como `deliverPick` deja lo surtido apartado en Preparación).
-5. Avisa a los operarios del almacén y área (`notify`, tipo
-   `production.order_released`).
+   - `direct`: los materiales se quedan donde están; al reportar se consumen
+     de donde estén apartados (lo que caduca antes, primero:
+     `rankStockSources`).
+   - `issue`: liberar crea tareas **«Surtir a producción»** (tipo nuevo
+     `ISSUE` de `warehouse_task`) desde el almacén de insumos al área de
+     producción. Al entregar, lo surtido queda apartado ahí para la misma
+     línea. Inventario no conoce las tablas de Producción: la tarea lleva la
+     fuente opaca de la reserva, no la orden (servicio nuevo de Inventario
+     `createIssueTasks(tx, …)`).
+5. Avisa a las personas asignadas o, sin asignar, a los operarios del área
+   (`production.order_released`).
+6. Si la empresa definió un proceso para órdenes de producción (sección 5),
+   la orden empieza en su primera etapa.
 
-**Estados de la orden (propuesta).**
+**Estados fijos (hitos) de la orden (propuesta).**
 
 ```text
 DRAFT -> RELEASED -> IN_PROGRESS -> CLOSED
   \-> CANCELLED   \-> CANCELLED   \-> (cerrar con faltante: CLOSED, motivo)
 ```
 
-- `IN_PROGRESS` empieza con el primer reporte.
-- `CLOSED` se alcanza con «Cerrar orden» (WMS-31): si lo producido no llega
-  al objetivo, pide motivo (faltante derivado, nunca guardado, como
-  `closePurchaseOrder`).
-- Tabla `PRODUCTION_ORDER_TRANSITIONS` pura y disparador
-  `production_order_transition` que la repite.
+Tabla pura `PRODUCTION_ORDER_TRANSITIONS` y disparador
+`production_order_transition`. `IN_PROGRESS` empieza con el primer reporte.
 
-**Tarea «Surtir a producción» (propuesta).** Tipo nuevo `ISSUE` de
-`warehouse_task`. Como Inventario no debe conocer las tablas de Producción, la
-tarea no apunta a la orden: lleva la **reserva** de la línea (fuente opaca
-`production_order_line` + id) y su destino. Inventario ofrece un servicio
-genérico (nuevo, `createIssueTasks(tx, …)`, dentro de la transacción de quien
-libera) que aparta en el origen como hoy `TASK_HOLD`, y al entregar mueve y
-vuelve a apartar en el destino para la misma fuente. Montacarguistas y
-almacenistas ya pueden ejecutarla con `inventory.task.execute`. Ninguna regla
-de surtido nueva: el origen lo elige `rankStockSources`.
+**No se produce de más (decidido, D11).** Lo reportado como bueno nunca pasa
+de lo que falta de la orden (cantidad − bueno ya reportado), comprobado bajo
+el candado de la orden. Es una regla fija, no un ajuste: el fundador la
+decidió así. Para hacer más se pide otra orden (4.3).
 
-**Qué valida.** Permiso y módulo; área de producción del almacén activo y
-dentro del alcance de la persona (`assertLocationsInScope`); insumos activos;
-la orden solo cambia en borrador (disparador, como las órdenes de compra).
+**Cancelar.** Desde `DRAFT` o `RELEASED` sin reportes: libera las reservas y
+cancela las tareas `ISSUE` abiertas (lo ya surtido queda en el área,
+disponible y sin apartar, y aparece en «Sin acomodar»). Con reportes: se
+cierra con faltante.
 
-**Rastro.** Bitácora de liberar, cancelar y cerrar; las reservas tienen su
-fuente; las tareas, su historia.
-
-**Cancelar.** Desde `DRAFT` o `RELEASED` sin reportes: libera las reservas
-(`releaseReservations`) y cancela las tareas `ISSUE` abiertas (lo ya
-entregado al área queda ahí, disponible y sin apartar, y aparece en «Sin
-acomodar» para regresarlo). Con reportes ya registrados: no se cancela, se
-**cierra con faltante** (los consumos ya hechos son un hecho; ver 5.6).
-
-**Permisos (propuesta):** `production.order.read`, `production.order.create`
-(borrador), `production.order.release`, `production.order.cancel`,
+**Permisos (propuesta):** `production.order.read`, `production.order.create`,
+`production.order.release`, `production.order.cancel`,
 `production.order.close`.
 
 **Listo cuando:** estados con disparador; liberar aparta exactamente lo de la
-orden y dos órdenes a la vez no apartan más de lo disponible (**PC-2**, prueba
-con `Promise.all`); cancelar libera todo; con `issue`, las tareas surten al
-área y lo surtido sigue apartado para la orden; alcance por almacén y zona
-(`tests/inventory/scope.int.test.ts`); `reconcileStock` vacío.
+orden y dos órdenes a la vez no apartan más de lo disponible (**PC-2**);
+cancelar libera todo; con `issue`, lo surtido sigue apartado; alcance;
+`reconcileStock` vacío.
 
 ---
 
-### 4.3 WMS-29 · Reporte de producción: consumo, producción, merma, turno y trabajador
+### 4.3 WMS-28B · Solicitud de producción desde el piso (nuevo, D11)
 
-Es el corazón de la propuesta.
+**Decidido:** si no hay órdenes y algo se está acabando, el operario puede
+pedir que se produzca; quien manda las órdenes acepta o rechaza, con rastro.
 
-**Quién y dónde.** Operario de producción o su supervisor, en teléfono o
-tableta junto a la línea; puede ser una tableta compartida (ver D2 y WMS-38,
-PIN).
+**Quién y dónde.** Operario de producción, en el teléfono o la tableta.
 
-**Flujo en pantalla (propuesta, KISS: «capturo y guardo»).**
+**Flujo (propuesta, patrón de las solicitudes de compra WMS-57).**
 
-1. «Mis órdenes» muestra las órdenes liberadas o en curso de su área. Toca
-   una.
+1. En «Mis órdenes», si no tiene ninguna, la pantalla dice «No tienes órdenes»
+   y debajo muestra **«Se está acabando»**: productos con receta que están por
+   debajo de su mínimo en el almacén activo (`listLowStock`, con su alcance).
+   También se llega desde la ficha de un producto con receta.
+2. «Pedir producción»: producto, cantidad (propuesta: lo que falta para el
+   mínimo, editable) y motivo opcional. Número `SP-0001` (nuevo). No aparta
+   nada.
+3. Enviar la deja **«Por atender»** y avisa a quien puede aceptarla
+   (`production.request_submitted`), con el detalle: «Juan Pérez (Producción)
+   quiere hacer 20 Tablas 60×40 para completar inventario. Hay 4; el mínimo es
+   24.»
+4. Quien la atiende:
+   - **«Aceptar»**: crea la orden de producción en borrador (o liberada, si así
+     lo elige) asignada a quien la pidió, con la cantidad (editable al
+     aceptar). La solicitud queda ligada a su orden. Aceptar dos veces
+     responde `repeated`.
+   - **«Rechazar»** con motivo.
+5. Quien pidió recibe el aviso de la respuesta (`production.request_answered`).
+6. Quien pidió puede cancelarla mientras esté «Por atender».
+
+**Estados (fijos):** `SUBMITTED → ACCEPTED | REJECTED | CANCELLED`. Tabla pura
+y disparador.
+
+**Motor de aprobaciones (opcional).** Si la empresa enciende la regla
+`production.request` (apagada por omisión), aceptar pasa por el motor de
+WMS-56 con sus roles; si no, la acepta cualquiera con
+`production.order.create`. Así funciona desde el primer día sin configurar
+nada, y la empresa que quiera controlar quién decide lo hace en Reglas de
+aprobación.
+
+**Permisos (propuesta):** `production.request.read`,
+`production.request.create` (el operario), y aceptar o rechazar con
+`production.order.create`. Quién tiene ese permiso es la pregunta P7: el
+fundador dijo «el gerente», pero el rol Gerencia (`manager`) es de solo
+lectura por diseño (WMS-50, `catalog.test.ts` lo exige).
+
+**Listo cuando:** una solicitud se convierte en una sola orden; avisos a
+quien debe y a nadie más; rechazar con motivo; entre empresas; alcance.
+
+---
+
+### 4.4 WMS-29 · Reporte de producción con foto
+
+**Quién y dónde.** El operario (cada uno con su usuario, D2), en teléfono o
+tableta; en una tableta compartida, con cambio rápido de persona por PIN
+(WMS-38).
+
+**Flujo en pantalla (propuesta; «capturo y guardo»).**
+
+1. «Mis órdenes» → toca una orden.
 2. «Reportar producción»:
-   - **Salió bien:** cantidad (en la unidad del producto o en una
-     presentación). Si el producto es por lote, el lote se propone solo (D8)
-     y, si sus lotes llevan caducidad obligatoria, la pide. Si es por serie,
-     se escanean o escriben las series (una por renglón, como `SerialsField`).
-   - **Piezas malas** (opcional): cantidad y motivo de una lista de la
-     empresa. No entran a existencias; cuentan para la conciliación.
-   - **Se usó** (prellenado): el sistema calcula lo que pide la receta para lo
-     producido (bueno + malas) y lo muestra; el operario confirma o corrige
-     cada renglón (D4). Para cada insumo por lote o serie, propone de dónde y
-     de qué lote (lo apartado para la orden, lo que caduca antes primero) y se
-     puede escanear otro lote.
-   - **De lo usado, se tiró** (opcional): merma de insumo, cantidad y motivo
-     (recortes, derrame).
-   - **Quién y cuándo:** trabajador(es) (por omisión, quien captura), turno
-     (propuesto por la hora y el horario del almacén), paso de la receta si
-     tiene pasos.
-3. «Guardar». Aviso verde con lo registrado.
+   - **Hice**: cantidad buena (nunca más de lo que falta de la orden; la
+     pantalla lo dice antes de enviar). Si el producto es por lote, el lote se
+     genera con la nomenclatura de la empresa (4.6); si es por serie, se
+     escanean las series.
+   - **Piezas malas** (opcional): cantidad y motivo. No entran al almacén.
+   - **Foto** (obligatoria por omisión, D5; ajuste
+     `production.report.photo`): una o varias desde la cámara.
+   - **Se usó**: según P1, la pantalla propone lo de la receta para lo hecho
+     (buenas + malas) y el operario confirma o corrige cada renglón; para
+     materiales por lote, propone de qué lote (lo apartado para la orden, lo
+     que caduca antes primero).
+   - **De lo usado, se tiró** (opcional): merma de material con motivo.
+   - Turno (propuesto por la hora y el horario del almacén) y etapa del
+     proceso de la orden, si tiene.
+3. «Guardar». Aviso verde: «Registrado: 100 crates esperando a Calidad.»
 
-**Qué escribe el sistema (propuesta).** En **una** transacción
-(`LOCKING_TRANSACTION`), candados en el orden del proyecto: productos
-(insumos y salidas, en una sola llamada a `lockRows`) → ubicaciones → orden →
-contenedor (si aplica) → capacidad:
+**Qué escribe el sistema (propuesta).** En una transacción
+(`LOCKING_TRANSACTION`), candados productos → ubicaciones → orden →
+contenedor → capacidad:
 
-1. Busca la clave de confirmación (`idempotencyKey`); si ya existe y es lo
-   mismo, responde `repeated` (INV-21/22).
-2. Comprueba que la orden siga liberada o en curso.
-3. Resuelve lotes (`lotForTake` para insumos, `lotForEntry` para lo
-   producido) y series (`serialsForTake`, `serialsForEntry` y
-   `writeSerialMoves` antes de las líneas).
-4. Consume primero lo apartado para la orden (`consumeReservation`); si usa
-   más de lo apartado, toma lo libre (`freeToTake`); si no hay, rechaza con el
-   renglón y lo que falta. Un insumo que no está en la receta ni en sus
-   sustitutos: solo con el ajuste `production.consumption.unlisted = allow` y
-   motivo.
-5. Escribe **un movimiento `PRODUCTION`** (tipo nuevo de
-   `StockMovementType`) con:
-   - líneas `OUT`: cada insumo usado, de su ubicación, estado `AVAILABLE` y
-     lote (la merma de insumo es parte de estas líneas; se marca aparte en
-     `production_report_scrap`, ligada a la línea);
-   - líneas `IN`: lo que salió bien, en el área de producción de la orden, en
-     estado `INSPECTION` si el producto pide inspección al producirse
-     (sección 4.4) o `AVAILABLE` si no; coproductos y subproductos igual.
-6. Costo (sección 5): `valueExit` por cada insumo al costo promedio; el valor
-   total se reparte entre las salidas según su parte del costo y se aplica con
-   `valueEntry` a cada una; cada línea guarda su `unitCost`.
-7. `checkPlacement` una vez con todas las llegadas (modo `report`: no
-   detiene una producción que ya ocurrió, lo dice en el resumen).
-8. Escribe `production_report` (orden, movimiento, bueno, malas con motivo,
-   trabajador, turno, paso, quién capturó) y pasa la orden a `IN_PROGRESS`.
-9. Si lo producido entró disponible en el área de producción y el acomodo por
-   tareas está encendido, crea su tarea de acomodo (`createPutawayTasks`; el
-   área de producción se agrega a `WAITING_PLACE`).
-10. Si algo entró en inspección, avisa a quien lo puede decidir en ese
-    almacén (`notify`): con el tipo `production.output_to_inspect`, declarado
-    por Producción (no por Calidad, para no depender de ella), a quien tenga
-    `quality.inspection.create` o, sin Calidad, `inventory.status.release`.
+1. Clave de confirmación (`idempotencyKey`): un reintento responde `repeated`.
+2. La orden sigue liberada o en curso; lo bueno no pasa de lo que falta.
+3. Lotes y series con `lotForTake`/`lotForEntry` y
+   `serialsForTake`/`serialsForEntry` + `writeSerialMoves`.
+4. Consume lo apartado para la orden (`consumeReservation`) y, si usa más, lo
+   libre (`freeToTake`); un material que no está en la receta, solo con
+   `production.consumption.unlisted = allow` y motivo.
+5. **Un movimiento `PRODUCTION`** (tipo nuevo): líneas `OUT` con cada material
+   usado (incluida la merma de material, marcada en `production_report_scrap`)
+   y líneas `IN` con lo hecho, en el área de producción, **siempre en
+   `INSPECTION`** (D5).
+6. Costo: sección 6.
+7. `checkPlacement` una vez (modo `report`).
+8. `production_report` (orden, movimiento, buenas, malas con motivo, usuario,
+   turno, etapa, fotos) y la orden pasa a `IN_PROGRESS`.
+9. Avisa a quien verifica en ese almacén (`production.output_to_verify`): con
+   Calidad, a `quality.inspection.create`; sin Calidad, a quien libera (P5).
 
-**Rastro.** El movimiento (autor, fecha, líneas, lotes, series, costo); el
-reporte (trabajador, turno, paso, piezas malas y merma con motivo). Nada se
-edita: un error se corrige con una reversa del reporte (sección 5.7).
+Las fotos se suben **antes** de guardar (cada una con `storeFile`, sección 7)
+y el reporte solo guarda sus ids: así un fallo de red al subir una foto no
+deja un movimiento a medias.
 
-**Producción por turno y trabajador.** Sale de `production_report`
-(cantidad buena, malas y merma por trabajador, turno, paso, producto y día del
-calendario de la empresa, `dayWindow`). La especificación (sección 7) pide no
-usar piezas como única medida: el reporte trae producto y paso para comparar
-lo comparable; las gráficas son WMS-33 (Fase 4).
+**Rastro.** El movimiento (quién, cuándo, líneas, lotes, series, costo); el
+reporte (usuario, turno, etapa, fotos, piezas malas y merma con motivo).
+Producción por persona, turno, producto y día sale de `production_report`
+(día del calendario de la empresa, `dayWindow`); las gráficas son WMS-33.
 
-**Caso 5.5 de la especificación como prueba de aceptación (propuesta de
-guion).**
+**Corregir un reporte (propuesta, P-E4).** Se reversa entero (INV-25) y se
+captura otra vez, solo si lo hecho sigue en el área, en inspección y sin
+verificar. Después de la verificación, la diferencia se corrige como en 4.5.
 
-1. Productos: «Triplay 12 mm 1.22×2.44» por lote (unidad hoja, presentación
-   «Tarima de 50 hojas»), «Clavo 2"» (kg), «Patín» (pieza), «Crate tipo A» por
-   lote con inspección al producirse, «Crate tipo B».
-2. Se recibe una orden de compra: 2 tarimas de triplay (lote T-01), en
-   inspección al recibir; Calidad aprueba 95 hojas y rechaza 5 (humedad), que
-   se devuelven al proveedor.
-3. Receta del crate A: para 1 crate, 2.5 hojas, 0.2 kg de clavo, 4 patines;
-   merma esperada de triplay 4 %.
-4. Orden OP-0001: 30 crates A. Liberar aparta 75 hojas, 6 kg, 120 patines.
-5. Turno matutino, trabajadora «Ana» (sin cuenta): reporta 18 buenos, 1 malo
-   (medida), usa 49 hojas (1.5 de recorte tirado, motivo «corte»), 3.8 kg,
-   76 patines.
-6. Turno vespertino, «Luis»: 10 buenos, usa 26 hojas, 2 kg, 40 patines.
-7. Los 28 crates entran en inspección, lote OP-0001-1 y OP-0001-2. Calidad
-   inspecciona 28: aprueba 26, rechaza 1 (para reproceso), pone 1 en
-   cuarentena.
-8. Lo aprobado crea tareas de acomodo a producto terminado; el montacarguista
-   las entrega.
-9. Cierre con faltante: objetivo 30, bueno 28, malo 1; motivo «faltó
-   triplay». Se libera lo que quedaba apartado.
-10. Comprobaciones: existencias y valor reconcilian (`reconcileStock`,
-    `reconcileValue` vacíos); el costo de cada crate = valor de lo consumido en
-    su reporte ÷ buenos; rastrear T-01 lleva a OP-0001-1 y OP-0001-2 y de
-    ahí a su ubicación; rastrear OP-0001-1 lleva a T-01; producción por turno
-    y trabajador da Ana 18 / 1 malo y Luis 10; aprobado + rechazado +
-    cuarentena = inspeccionado (**PC-4**); el crate rechazado no aparece como
-    disponible (**PC-5**).
+**Permisos (propuesta):** `production.report.create`,
+`production.report.reverse`, `production.shift.manage` (turnos).
 
-**Permisos (propuesta):** `production.report.create` (reportar),
-`production.report.reverse` (corregir), `production.worker.manage`
-(trabajadores y turnos).
+**Caso 5.5 de la especificación como prueba de aceptación.** Ver 4.8.
 
-**Listo cuando:** el guion del caso 5.5 pasa completo como prueba de
-integración; reintentar un reporte no duplica (**PC-3**); dos reportes a la
-vez sobre los mismos insumos no consumen más de lo que hay (**PC-2**); un
-producto por serie o lote queda trazado; `reconcileStock` y `reconcileValue`
-vacíos.
+**Listo cuando:** el caso 5.5 pasa completo; reintento no duplica (**PC-3**);
+dos reportes a la vez no consumen más de lo que hay (**PC-2**); no se reporta
+más de lo que falta de la orden; sin foto no se guarda (con el ajuste en
+`required`); `reconcileStock` y `reconcileValue` vacíos.
 
 ---
 
-### 4.4 Inspección al recibir (base, sin módulo de calidad) · WMS-30 parte 0
+### 4.5 WMS-30 · Verificación e inspección de Calidad
 
-Hecho: la especificación pide «Enviar a inspección cuando aplique» al recibir
-(5.1) y la recepción con inspección de calidad (instrucciones, 4.C). Hoy una
-recepción entra disponible o dañada.
+**Decidido (D5, D6):** Calidad verifica que sean las 100 y revisa su calidad,
+que puede ser por muestra; solo entonces quedan disponibles.
 
-**Propuesta.** Una regla del producto (columna nueva en `product`, como
-`tracking`): **«Inspeccionar al entrar»** con dos casillas, «al recibir de un
-proveedor» y «al producirse». Por omisión ninguna (nada cambia para quien no
-la usa). Ver D5 para reglas por proveedor o categoría.
+**Quién y dónde.** Inspector de calidad, en tableta junto al producto.
 
-**Flujo.** Quien recibe la orden de compra (teléfono o tableta) ve, junto al
-producto, «Entra a inspección». Lo sano de esa línea se escribe con
-`postReceiptEntry` en `INSPECTION` (en vez de `AVAILABLE`); lo dañado sigue
-siendo su línea `DAMAGED`. No se reparte por cross-docking, no lleva tarea de
-acomodo y no va en tarima hasta decidirse (igual que lo dañado hoy). La
-orden de compra cuenta lo recibido igual: recibir no es aprobar.
-
-**Quién decide sin Calidad.** Quien tenga `inventory.status.release` o
-`inventory.status.change`, con «Cambiar estado» (como cualquier existencia
-hoy). **Con Calidad**, ver 4.5 y D7.
-
-**Listo cuando:** una recepción de un producto con la regla entra en
-inspección; lo dañado sigue aparte; lo que espera no se surte ni se aparta;
-`sameReceipt` compara también el estado; una devolución al proveedor puede
-salir de inspección o de rechazado (4.6).
-
----
-
-### 4.5 WMS-30 · Inspección y liberación por lote (módulo Calidad)
-
-**Quién y dónde.** Inspector de calidad, en tableta junto al producto
-(especificación 4.4); revisión en escritorio.
-
-**Qué espera inspección (derivado, sin banderas).** Toda existencia en
-`INSPECTION` del almacén activo y dentro del alcance de la persona, agrupada
-por producto, lote, ubicación y **origen**, que se lee del movimiento que la
-metió: `RECEIPT` (recepción de compra), `PRODUCTION` (reporte de producción),
-`CUSTOMER_RETURN` (devolución), `STATUS_CHANGE` (alguien la mandó a
-inspección a mano). Menos lo que ya cubre una inspección abierta.
+**Qué espera verificación (derivado).** Toda existencia en `INSPECTION` del
+almacén activo y del alcance de la persona, agrupada por producto, lote,
+ubicación y origen (leído del movimiento que la metió: `PRODUCTION`,
+`RECEIPT`, `CUSTOMER_RETURN`, `STATUS_CHANGE`), menos lo que ya cubre una
+inspección abierta.
 
 **Flujo (propuesta).**
 
-1. Bandeja «Por inspeccionar» (Inicio del inspector). Toca un grupo, o escanea
-   la etiqueta del lote o la ubicación.
-2. «Iniciar inspección»: crea `IN-0001` con producto, lote, ubicación,
-   origen (texto y referencia opaca: `purchase_receipt_line:<id>`,
-   `production_report:<id>`, `customer_return_line:<id>`), y **cantidad
-   recibida para inspección** = lo que hay en inspección de ese grupo. Esa
-   cantidad queda **retenida para la inspección** (ver «Retención» abajo).
-3. Captura, en el orden que quiera:
-   - **Cantidad inspeccionada** (con muestreo, el tamaño de la muestra; ver
-     D6) y las respuestas del plan: sí/no, mediciones (fuera de rango se
-     marca sola), notas.
-   - **Defectos** de la lista de la empresa, con cantidad.
-   - **Evidencia**: fotos, cuando exista WMS-37 (obligatorias si la empresa
-     lo pide; la retroalimentación de campo lo pidió).
-4. **Decisión:** cantidad aprobada, rechazada y en cuarentena, con motivo
-   para rechazo y cuarentena. Regla: aprobada + rechazada + cuarentena =
-   inspeccionada (inspección completa) o = recibida (muestreo con decisión
-   sobre el lote, D6); y nunca más de lo recibido para inspección (**PC-4**).
-5. «Confirmar decisión»: en una transacción, candados productos → ubicaciones
-   → inspección, escribe un `STATUS_CHANGE` por destino con `writeStatusChange`
-   (el núcleo de «Cambiar estado»): `INSPECTION → AVAILABLE`, `→ REJECTED`,
-   `→ QUARANTINE`. Opcionalmente cada parte cambia de lugar (`toLocationId`,
-   mismo almacén: p. ej. lo rechazado a la ubicación de cuarentena). La
-   inspección queda `DECIDED` y es inmutable.
-6. Lo aprobado que quedó en un lugar «de paso» (General, recepción, área de
-   producción) crea su tarea de acomodo (lo mismo que hoy hace la decisión de
-   una devolución). «Solicitar traslado» crea una tarea normal a otro lugar.
-7. Avisos: a quien reportó la producción o recibió (`quality.decided`, «Calidad
-   liberó 26 de OP-0001-1»).
+1. Llega el aviso; bandeja «Por verificar». Toca el grupo o escanea la
+   etiqueta del lote. Ve la foto del reporte y quién lo hizo.
+2. «Iniciar verificación»: crea `IN-0001` (nuevo) con lo **reportado** (lo
+   que hay en inspección de ese grupo). Esa cantidad queda **retenida** para la
+   inspección: nadie la cambia de estado a mano mientras esté abierta
+   (retención genérica nueva en Inventario, fuente opaca, que generaliza
+   `heldForReturns`).
+3. **Contado**: cuántas hay de verdad (siempre completo: es lo que el
+   fundador pidió verificar).
+4. **Revisión de calidad**: completa o por muestra (D6; el plan de inspección
+   del producto dice cuál y el tamaño de muestra). Respuestas del plan (sí/no,
+   mediciones con mínimo y máximo, notas), defectos con cantidad y fotos
+   (obligatorias al rechazar o poner en cuarentena si la empresa lo pide).
+5. **Decisión**: aprobadas, rechazadas y en cuarentena, que suman **lo
+   contado**; con motivo para rechazo y cuarentena. Nunca se aprueba más de lo
+   contado ni se cuenta más de lo reportado (**PC-4**, leída como «no se
+   libera más de lo verificado»; con muestra, la decisión vale para todo lo
+   contado).
+6. «Confirmar»: candados productos → ubicaciones → inspección; un
+   `STATUS_CHANGE` por destino con `writeStatusChange`
+   (`INSPECTION → AVAILABLE`, `→ REJECTED`, `→ QUARANTINE`, cada uno con
+   cambio de lugar opcional en el mismo almacén). Lo aprobado **se suma al
+   almacén** (queda disponible) y, si está en un lugar de paso, crea su tarea
+   de acomodo. La inspección queda inmutable.
+7. Avisos: a quien reportó y a quien manda la orden («Calidad liberó 97 de
+   OP-0001-0003; 3 no se encontraron»).
 
-**Devoluciones de clientes.** Aparecen en la misma bandeja; la decisión se
-escribe **llamando a `decideCustomerReturn`** (Calidad importa Inventario),
-así la devolución sigue cerrándose como hoy y no hay dos caminos.
+**Si Calidad cuenta 97 y no 100 (propuesta, P4).** Las 100 entraron al
+almacén en inspección cuando se reportaron; 3 no están. Propuesta: al
+confirmar, la diferencia sale en el mismo movimiento de la decisión como
+**«faltante de verificación»** (línea `OUT` desde `INSPECTION` ligada al
+reporte, al costo con que entró), con motivo obligatorio; la orden **no**
+recupera esas 3 como pendientes de producir (fueron reportadas), pero el
+cierre las muestra aparte; y se avisa a quien manda la orden. Así las
+existencias y el valor cuadran con lo que hay, y queda quién reportó 100 y
+quién contó 97. Si Calidad cuenta **más** de lo reportado (103), no puede
+crear existencias: lo dice y quien manda decide (un reporte adicional si la
+orden lo permite, o un ajuste autorizado).
 
-**Cuarentena.** Lo que queda en `QUARANTINE` se vuelve a inspeccionar
-(«Reinspeccionar», otra `IN-…` con origen = la inspección anterior) o se
-libera con decisión autorizada: permiso `quality.lot.release` y, si la empresa
-enciende la regla `quality.release` del motor de aprobaciones (apagada por
-omisión), espera autorización (`pending_approval`) como un ajuste grande.
-Hecho: la especificación 5.6 pide «no liberar producto en cuarentena sin una
-decisión autorizada».
+**Inspección al recibir y devoluciones.** Con Calidad contratada, lo recibido
+en inspección (4.7) y las devoluciones de clientes aparecen en la misma
+bandeja. Las devoluciones se deciden **llamando a `decideCustomerReturn`**
+(Calidad importa Inventario), así no hay dos caminos.
 
-**Retención (propuesta).** Mientras una inspección está abierta, su cantidad
-no se puede cambiar de estado a mano ni tomar por otra inspección. Hoy existe
-`heldForReturns` solo para devoluciones; se propone que Inventario ofrezca una
-retención genérica de existencias no disponibles con fuente opaca (como la de
-las reservas, pero para estados distintos de `AVAILABLE`), que Calidad escribe
-y libera con servicios de Inventario. Así Inventario no conoce a Calidad.
+**Cuarentena.** Se vuelve a inspeccionar («Reinspeccionar», otra `IN-…`) o se
+libera con permiso `quality.lot.release` y, si la empresa enciende la regla
+`quality.release` (apagada por omisión), con autorización.
 
-**Quién puede liberar a mano con Calidad contratada** (D7): propuesta, un
-ajuste de Inventario `inventory.inspection.release` = `manual` (hoy) |
-`inspection_only` (solo una inspección o una decisión de devolución saca
-existencias de `INSPECTION`, `QUARANTINE` y `REJECTED`). Por omisión
-`manual`; al contratar Calidad, la pantalla de Operación sugiere encenderlo. Si
-la empresa deja de tener Calidad, se lee como `manual` para que nada quede
-atrapado (Inventario pregunta a la plataforma si el módulo `quality` está
-activo por su id, sin importarlo).
+**El jefe de almacén libera a mano (decidido, D7).** Sigue existiendo
+«Cambiar estado» para quien tenga `inventory.status.release`, con motivo y
+rastro, también con Calidad contratada, salvo sobre lo retenido por una
+inspección abierta. A qué roles corresponde, **por confirmar** (P3).
 
-**Estados de la inspección.** `OPEN → DECIDED`, `OPEN → CANCELLED` (suelta la
-retención; motivo). Tabla pura y disparador.
+**Estados de la inspección.** `OPEN → DECIDED`, `OPEN → CANCELLED` (suelta
+la retención; motivo). Tabla pura y disparador.
 
-**Permisos (propuesta):** `quality.inspection.read`, `quality.inspection.create`
-(iniciar y capturar), `quality.inspection.decide` (aprobar, rechazar, poner en
-cuarentena), `quality.lot.release` (liberar de cuarentena),
-`quality.plan.manage` (planes y defectos). Decidir pide además los permisos
-de Inventario del cambio que escribe (`permissionForStatusChange`), igual que
-las devoluciones: decidir nunca da más poder.
+**Permisos (propuesta):** `quality.inspection.read`,
+`quality.inspection.create` (iniciar, contar, capturar),
+`quality.inspection.decide`, `quality.lot.release`, `quality.plan.manage`.
+Decidir pide además el permiso de Inventario del cambio que escribe
+(`permissionForStatusChange`), como las devoluciones.
 
-**Listo cuando:** no se aprueba más de lo inspeccionado ni se libera más de lo
-aprobado (**PC-4**); lo rechazado nunca aparece disponible, tampoco por
-«Cambiar estado» con `inspection_only` (**PC-5**); dos inspectores no deciden
-la misma cantidad dos veces (concurrencia); reintento no duplica; alcance; la
-decisión de una devolución pasa por `decideCustomerReturn`; `reconcileStock`
-vacío.
+**Listo cuando:** **PC-4** y **PC-5**; el caso 97 de 100 cuadra en existencias
+y valor; dos inspectores no deciden lo mismo dos veces; reintento no duplica;
+la decisión de una devolución pasa por `decideCustomerReturn`; alcance;
+`reconcileStock` vacío.
 
 ---
 
-### 4.6 Lo rechazado: devolver, desechar o reprocesar
+### 4.6 Nomenclatura del lote de lo producido (decidido, D8)
 
-| Destino | Cómo (propuesta) | Qué escribe |
+**Propuesta.** Configuración › Producción › «Lotes de lo producido»:
+
+| Campo | Opciones | Ejemplo |
 | --- | --- | --- |
-| Devolver al proveedor | `returnToSupplier` (Compras) acepta salir de `REJECTED` o `INSPECTION` además de `AVAILABLE` y `DAMAGED`, por la recepción de donde vino (lote y series de esa línea). Resuelve también el pendiente de ADR 0046 («devolver al proveedor lo que un cliente regresó y se rechazó» queda como siguiente). | Movimiento `RETURN` existente |
-| Desechar | Operación nueva de Inventario «Desechar» desde `DAMAGED` o `REJECTED`, con motivo, permiso `inventory.status.change` (o uno nuevo `inventory.disposal.create`, D-E7). Sale al costo promedio (ADR 0033 ya lo prevé: «lo rechazado o dañado que se desecha sale con una salida normal»; hoy `registerExit` solo saca disponible). | Movimiento nuevo `DISPOSAL` |
-| Reprocesar | Una orden de producción de tipo «Reproceso» cuyo insumo es el mismo producto en `REJECTED` (o `DAMAGED`) y cuya salida es el producto bueno, con insumos extra si hace falta. | Movimiento `PRODUCTION` que consume de un estado no disponible (D-E2) |
+| Prefijo | Texto libre de la empresa: letras, números y guion, hasta 12 | `CR-` |
+| Agregar fecha | Ninguna, `AAAA`, `AAMM`, `AAMMDD` | `2611` |
+| Consecutivo | Lista: `001`, `0001`, `00001`, `000001` | `0001` |
+| Reinicia | Nunca, cada año, cada mes | Nunca |
+| Por producto | Un consecutivo por producto o uno para toda la empresa | Por producto |
+
+Vista previa en la misma pantalla: `CR-2611-0001`. El lote resultante pasa
+por `normalizeLotCode` (máximo 64) y es único por producto, como hoy.
+
+- Como `SettingDefinition` solo admite una lista de opciones, la nomenclatura
+  es una tabla propia (nueva, `lot_numbering`, una fila por empresa) y el
+  consecutivo otra (`lot_sequence`: empresa + producto o empresa sola +
+  periodo + último número), que se bloquea y avanza dentro de la transacción
+  del reporte. Un número no se reutiliza aunque el reporte se reverse.
+- Sin configurar, el valor por omisión es el número de la orden y un
+  consecutivo: `OP-0001-01` (propuesta).
+- Cada reporte genera un lote nuevo (un lote = lo hecho en un reporte), salvo
+  que la empresa elija «un lote por orden» (P12).
+- Productos por serie: las series se escanean (generarlas queda fuera).
+
+**¿Sirve el mismo mecanismo para otros consecutivos?** Sí podría servir, más
+adelante, para lotes que se escriben al recibir, para series generadas y para
+los números de documento. Esta propuesta **no lo amplía**: los números de
+documento (`PS-`, `EM-`, `OC-`…) están fijos en el código y el rastreo y las
+etiquetas los reconocen por su prefijo, así que cambiarlos es otra decisión
+(P15).
 
 ---
 
-### 4.7 WMS-31 · Producto terminado a su ubicación y cierre de la orden
+### 4.7 Inspección al recibir y lo rechazado (base en Inventario y Compras)
 
-**Llevar a su lugar (propuesta).** No se programa un flujo nuevo:
+**Hecho:** la especificación pide «enviar a inspección cuando aplique» al
+recibir (5.1). Hoy una recepción entra disponible o dañada.
 
-- Lo que entra disponible al área de producción, o lo que Calidad libera ahí,
-  crea su tarea `PUTAWAY` con `createPutawayTasks` (agregando el uso
-  «Producción» a `WAITING_PLACE`); el lugar lo recomienda `putawayTarget`
-  (junto a lo mismo, respeta capacidad y restricciones).
-- Con el acomodo manual (`inventory.putaway.mode = manual`, por omisión), lo
-  producido aparece en «Sin acomodar» y se reubica como hoy.
-- Si se produce sobre tarima, «Armar tarima» con lo producido y una tarea por
-  tarima (`createContainerPutawayTask`) cuando `inventory.containers.mode =
-  on`.
+**Propuesta.** Una regla del producto (columna nueva en `product`):
+**«Inspeccionar al recibir»** (por omisión no). Lo sano de esa línea entra con
+`postReceiptEntry` en `INSPECTION`; lo dañado sigue siendo su línea
+`DAMAGED`; no se reparte por cross-docking, no va en tarima ni lleva tarea de
+acomodo hasta decidirse. «Al producirse» no necesita regla: lo producido
+siempre entra en inspección (D5).
 
-**Cerrar la orden.** Supervisor, en escritorio o tableta. «Cerrar orden»
-muestra la conciliación, derivada en la consulta:
+**Con la jerarquía decidida (D9)** esta base queda en Inventario y Compras,
+sin módulo de Calidad: quien no tiene Calidad (ni Producción) decide con
+«Cambiar estado» como hoy decide las devoluciones. Con Calidad, aparece en su
+bandeja. **Por confirmar** (P6).
+
+**Lo rechazado: devolver, desechar o reprocesar.**
+
+| Destino | Cómo (propuesta) | Movimiento |
+| --- | --- | --- |
+| Devolver al proveedor | `returnToSupplier` acepta salir de `REJECTED` o `INSPECTION` (resuelve el pendiente de ADR 0046) | `RETURN` |
+| Desechar | Operación nueva «Desechar» desde `DAMAGED` o `REJECTED`, con motivo, al costo promedio (ADR 0033 lo preveía) | `DISPOSAL` (nuevo) |
+| Reprocesar | Una orden «Reproceso» que consume el producto rechazado y produce el bueno | `PRODUCTION` (fuera de la primera versión, P-E2) |
+
+---
+
+### 4.8 WMS-31 · Producto a su lugar y cierre de la orden
+
+**A su lugar.** Lo aprobado en el área de producción crea su tarea de acomodo
+(`createPutawayTasks`, con el uso «Producción» en `WAITING_PLACE`); con el
+acomodo manual aparece en «Sin acomodar». Producido sobre tarima: una tarea
+por tarima con `inventory.containers.mode = on`.
+
+**Cerrar la orden.** Conciliación derivada en la consulta:
 
 ```text
-Objetivo                     30
-Salió bien                   28   (reportes)
-Piezas malas                  1   (reportes, por motivo)
-Faltante                      1   (objetivo − bueno, si es positivo)
-De lo bueno, con Calidad:
-  Aprobado 26 · Rechazado 1 · Cuarentena 1 · Sin inspeccionar 0
-Insumos: planeado / usado / merma / diferencia contra receta, por insumo
+Pedido                       100
+Reportado bueno              100   (reportes)
+Piezas malas                   2   (reportes, por motivo)
+Verificado por Calidad:
+  Aprobado 95 · Rechazado 1 · Cuarentena 1 · Faltante de verificación 3 · Sin verificar 0
+Faltante de producción         0   (pedido − reportado bueno)
+Materiales: planeado / usado / merma / diferencia contra receta
 ```
 
-Hecho: el plan v2 pide «producido = liberado + rechazado + merma». Propuesta:
-esa igualdad se comprueba como «bueno = aprobado + rechazado + cuarentena +
-sin inspeccionar», y «bueno + malas + faltante = objetivo» cuando se produjo
-menos. Cerrar con faltante pide motivo (y autorización si la regla
+Cerrar con faltante pide motivo (y autorización si la regla
 `production.close_short` está encendida, apagada por omisión). Cerrar libera
-todo lo que siga apartado para la orden y deja la orden inmutable. Una orden
-puede cerrarse con existencias aún en inspección: la inspección sigue su curso
-aparte (D-E6).
+lo que siga apartado y deja la orden inmutable. Se puede cerrar con algo aún
+en inspección (P-E6).
 
-**Listo cuando:** el cierre cuadra; cerrar libera reservas; lo liberado crea
-su acomodo; la conciliación muestra lo de Calidad solo si Calidad está
-contratada.
+**Caso 5.5 de la especificación (guion de la prueba de aceptación).**
+
+1. Productos: «Triplay 12 mm» por lote (presentación «Tarima de 50 hojas»),
+   «Pija 1"», «Espuma» (m²), «Pintura» (l), «Tabla 60×40» (con receta: 1
+   hoja → 4 tablas) y «Crate tipo A» por lote (receta: 4 tablas, 5 pijas,
+   0.5 m² de espuma, 0.2 l de pintura).
+2. Se recibe la orden de compra: 2 tarimas (lote T-01), con «inspeccionar al
+   recibir»; Calidad cuenta 100 hojas, aprueba 95 y rechaza 5, que se devuelven
+   al proveedor.
+3. Orden OP-0001 de 120 tablas; Juan reporta 120 con foto, se usan 30 hojas,
+   1 hoja de merma («corte»); Calidad cuenta 120 y aprueba.
+4. No hay más órdenes de tablas y quedan pocas: Juan pide 20 tablas
+   (`SP-0001`); quien manda acepta y se crea OP-0002.
+5. Orden OP-0003 de 30 crates. Ana reporta 18 buenos y 1 malo (medida) con
+   foto; Luis, 10 buenos. Lotes según la nomenclatura de la empresa.
+6. Calidad cuenta 27 de los 28 que reportaron Ana y Luis (falta 1: «faltante de
+   verificación»), aprueba 25 por muestra, rechaza 1, pone 1 en cuarentena.
+7. Lo aprobado crea tareas de acomodo; el montacarguista las entrega.
+8. Las etapas que la empresa definió para órdenes de producción («Corte»,
+   «Ensamble», «Pintura») se avanzan con su botón y quedan en el historial.
+9. Cierre con faltante: pedido 30, reportado 28; motivo «faltó triplay».
+10. Comprobaciones: `reconcileStock` y `reconcileValue` vacíos; costo de cada
+    crate = materiales de su reporte ÷ buenos; rastrear T-01 llega a las
+    tablas, de ahí a los crates y a su ubicación, y al revés; producción por
+    persona (Ana 18 / 1 mala, Luis 10); **PC-4** y **PC-5**.
+
+**Listo cuando:** el cierre cuadra; libera lo apartado; lo aprobado crea su
+acomodo.
 
 ---
 
-### 4.8 WMS-59 · Roles de producción y calidad
+### 4.9 WMS-59 · Roles de producción y calidad
 
-Hecho: la especificación 4.2 y 4.4 describe «Producción / Operario»,
-«Supervisor de producción» y «Calidad / inspector»; el plan v3 los nombra
-igual y pide ligarlos a sus módulos (`ROLE_MODULE`, hoy vacío).
+**Hecho:** la especificación 4.2/4.4 describe Operario de producción,
+Supervisor de producción y Calidad / inspector; el plan v3 pide ligarlos a
+sus módulos (`ROLE_MODULE`).
 
 **Propuesta.**
 
-| Rol (pantalla) | Clave | Módulo (`ROLE_MODULE`) | Dispositivo dominante | Puede |
+| Rol | Clave | Módulo | Dispositivo | Puede |
 | --- | --- | --- | --- | --- |
-| Operario de producción | `production_operator` | `production` | Teléfono o tableta (compartida) | Ver órdenes de su área, reportar producción, consumo, merma; reportar incidencias; ejecutar tareas `ISSUE` si lo necesita (`inventory.task.execute`); leer productos y existencias. **Sin** costos, ajustes ni cambios de estado. |
-| Supervisor de producción | `production_supervisor` | `production` | Tableta y escritorio | Todo lo del operario; recetas; crear, liberar, cancelar y cerrar órdenes; corregir reportes; trabajadores y turnos; ver costos si además tiene `inventory.cost.read` (D1). |
-| Inspector de calidad | `quality_inspector` | `quality` | Tableta | Ver lo que espera; iniciar, capturar y decidir inspecciones; mover lo decidido a su lugar (`inventory.transfer.create`) y pedir traslado (`inventory.task.create`); planes y defectos. Liberar de cuarentena (`quality.lot.release`) solo si la empresa lo deja a este rol (D-E8). |
+| Operario de producción | `production_operator` | `production` | Teléfono o tableta compartida | Ver sus órdenes, reportar con foto, pedir producción, avanzar las etapas que su rol tenga, reportar incidencias, ejecutar tareas `ISSUE`. Sin costos, ajustes ni cambios de estado. |
+| Supervisor de producción | `production_supervisor` | `production` | Tableta y escritorio | Lo del operario; recetas; crear, liberar, cancelar y cerrar órdenes; aceptar o rechazar solicitudes de producción (P7); corregir reportes; turnos. Costos solo si además tiene `inventory.cost.read`. |
+| Inspector de calidad | `quality_inspector` | `quality` | Tableta | Verificar, inspeccionar y decidir; mover lo decidido a su lugar (`inventory.transfer.create`) y pedir traslado (`inventory.task.create`); planes y defectos. Liberar de cuarentena, según P-E8. |
 
-- Titular y Administrador reciben todos los permisos nuevos; **Gerencia** todos
-  los `*.read` (`catalog.test.ts` ya lo exige).
-- Supervisor de almacén (`supervisor`) recibe lectura de órdenes e
-  inspecciones y ejecuta tareas `ISSUE`; Almacenista y Montacarguista solo
-  ejecutan tareas `ISSUE` (ya tienen `inventory.task.execute`).
-- Sin el módulo, el rol no da nada del módulo (regla vigente de
-  `ROLE_MODULE`); el equipo solo lo ofrece con el módulo activo.
-- Cambio de roles = matriz `docs/MATRIZ_ROLES_PERMISOS.md` + catálogo +
-  migración del `CHECK` de `membership_role` + `team-rules.test.ts` y
-  `navigation.int.test.ts` (convención WMS-05).
+- Titular y Administrador reciben todos los permisos nuevos; Gerencia todos
+  los `*.read` (regla vigente de `catalog.test.ts`), salvo lo que se decida en
+  P7.
+- Supervisor de almacén: lectura de órdenes e inspecciones; ejecuta tareas
+  `ISSUE`. Almacenista y Montacarguista ejecutan tareas `ISSUE` (ya tienen
+  `inventory.task.execute`).
+- Sin su módulo, el rol no da nada (`ROLE_MODULE`).
+- Cambio de roles: matriz + catálogo + migración del `CHECK` de
+  `membership_role` + `team-rules.test.ts` y `navigation.int.test.ts`.
 
 **Listo cuando:** matriz y catálogo coinciden; cada rol ve solo su menú;
-casos negativos (`NEG-xx` nuevos: el operario no ve costos ni decide calidad;
-el inspector no reporta producción; un rol sin su módulo no hace nada).
+casos negativos nuevos (el operario no ve costos ni decide calidad; el
+inspector no reporta producción; un rol sin su módulo no hace nada).
 
 ---
 
-## 5. Costo, merma y correcciones
+## 5. WMS-74 · Motor de procesos de la empresa (nuevo, D10)
 
-Hecho: el costo es el promedio móvil por producto (ADR 0031), cubre todos los
-estados, y una entrada **sin** costo entra al precio vigente (no a cero).
+### 5.1 Qué resuelve
 
-### 5.1 Costo del producto terminado (propuesta)
+**Decidido:** cada empresa define sus procesos y subprocesos (etapas y
+subetapas), con tres o con muchas, para producción, embarques y logística.
 
-- Cada reporte es un movimiento con su propio costo: valor del reporte =
-  suma de cantidad × costo promedio de cada insumo consumido (incluida la
-  merma de insumo).
-- Ese valor se reparte entre las salidas del reporte según la parte del costo
-  de la receta (por omisión 100 % al producto principal) y se divide entre lo
-  que salió bien: **costo por unidad = valor ÷ buenos**. Las piezas malas no
-  entran a existencias, así que su costo queda absorbido en las buenas.
-- Ese costo entra con `valueEntry` y mueve el promedio del producto
-  terminado como cualquier entrada.
-- Primera versión: **solo materiales** (D1). Mano de obra y gastos
-  indirectos, si se deciden, serían una tarifa por hora o por unidad de la
-  empresa que se suma al valor del reporte.
-- Un insumo sin costo conocido: el reporte se registra (no detiene la
-  operación) y el producto entra con el costo de los insumos que sí lo
-  tienen; la pantalla lo advierte a quien puede ver costos. Si ningún insumo
-  tiene costo, el producto entra sin costo (regla vigente de `valueEntry`).
-- Subproducto con 0 % de costo: entra con costo explícito 0 (no «sin
-  costo», que lo valuaría al precio vigente y crearía valor de la nada).
-- Costos solo para quien tiene `inventory.cost.read` (regla vigente: el dato
-  no existe en la respuesta para los demás).
+Hoy cada documento tiene **estados fijos** que protegen las existencias, cada
+uno con su tabla pura y su disparador (hechos): pedido de salida
+(`OUTBOUND_ORDER_TRANSITIONS`), embarque (`SHIPMENT_TRANSITIONS`: `DRAFT →
+SHIPPED | CANCELLED`), tarea (`WAREHOUSE_TASK_TRANSITIONS`), traslado,
+orden de compra, devolución, y las nuevas de producción y calidad. **Esos no
+se tocan.**
 
-### 5.2 Merma (propuesta)
+**Propuesta:** las etapas de la empresa son una **capa de seguimiento encima**
+de los estados fijos:
 
-| Tipo | Ejemplo | Qué pasa con existencias | Qué pasa con el costo |
+- Cada etapa pertenece a un **hito** (un estado fijo) del documento.
+- Avanzar una etapa **nunca mueve existencias** por sí solo. Lo que mueve
+  existencias sigue siendo la operación de siempre (reportar producción,
+  verificar, despachar, recibir).
+- Cuando la operación cambia el estado fijo, el documento pasa al primer
+  tramo de etapas del nuevo hito.
+
+### 5.2 Cómo conviven, con ejemplos
+
+**Orden de producción** (hitos `RELEASED`, `IN_PROGRESS`, `CLOSED`):
+
+```text
+Hito RELEASED       [Materiales surtidos]           <- etapa de la empresa
+Hito IN_PROGRESS    [Corte] -> [Ensamble] -> [Pintura] -> [Listo para Calidad]
+                       subetapas de Ensamble: [Base] [Paredes] [Tapa]
+Hito CLOSED         (sin etapas)
+```
+
+«Corte» aquí es seguimiento de la orden del crate. Si el corte **produce otro
+producto que se guarda** (tablas que pueden usarse en varios crates), es su
+propia orden con su receta (se conserva la D10 original: lo que cambia
+existencias es una operación; las etapas son seguimiento).
+
+**Embarque** (hitos `DRAFT`, `SHIPPED`):
+
+```text
+Hito DRAFT     [Cargando] -> [Cargado al camión]
+Hito SHIPPED   [En ruta] -> [Entregado] -> [Camión de regreso]
+```
+
+Hoy el embarque **termina** en «despachado» (`SHIPPED`): la mercancía ya salió
+del inventario con su movimiento `SHIPMENT`. «En ruta», «Entregado» y «Camión
+de regreso» son **etapas posteriores al despacho**, de seguimiento: no
+existen hoy, no cambian existencias ni el estado del embarque, y sirven para
+saber dónde va el camión y cuándo regresó. Si regresa mercancía, eso es una
+**devolución de cliente** (WMS-17), que sí mueve existencias; la etapa puede
+ofrecer el enlace «Registrar devolución».
+
+**La cadena completa que describió el fundador**, documento por documento:
+
+| Lo que dijo | Documento y hito | Qué lo mueve |
+| --- | --- | --- |
+| Llegó material | Orden de compra, hito `SENT` | Etapa |
+| Se descargó material | Orden de compra, hito `SENT` | Etapa |
+| (Se recibió) | Orden de compra `PARTIAL`/`RECEIVED` | Operación: recepción |
+| Se hicieron los subproductos para ensamble | Orden de producción de tablas | Operación: reporte |
+| Se ensambló | Orden del crate, hito `IN_PROGRESS` | Etapa y reporte |
+| Se inspeccionó | Inspección `DECIDED` | Operación: decisión de Calidad |
+| Se guardó en inventario | Tarea de acomodo entregada | Operación: acomodo |
+| Se cargó al camión | Embarque, hito `DRAFT` | Etapa |
+| Camión en proceso / repartió | Embarque, hito `SHIPPED` | Etapas |
+| Camión regresó | Embarque, hito `SHIPPED` | Etapa (y devolución si trae mercancía) |
+
+Cada documento tiene su proceso. Ver todo junto en una línea de tiempo por
+lote o por pedido es posible después, uniendo el rastreo que ya existe con las
+etapas (P9).
+
+### 5.3 Qué tiene una etapa
+
+| Propiedad | Opciones | Tope |
+| --- | --- | --- |
+| Nombre | Texto de la empresa | 60 caracteres |
+| Orden y hito | Posición dentro de su hito | 30 etapas por proceso |
+| Subetapas | Una lista dentro de la etapa; en orden o en cualquier orden | 2 niveles; 10 subetapas por etapa |
+| Quién la avanza | Roles del catálogo (además de poder ver el documento y estar en su alcance) | — |
+| Evidencia | Nada, nota, foto, cantidad (o varias); obligatoria u opcional | 5 fotos por paso; nota 500 caracteres |
+| Aviso | A roles o a quien tenga un permiso, en el almacén del documento (`notify`) | El tope del motor de avisos (50) |
+| Autorización | Pide autorización al motor de aprobaciones antes de quedar hecha | — |
+| Saltar | Se puede saltar con motivo, o no | — |
+| Regresar | Se puede regresar a la anterior con motivo, o no | — |
+| Detiene el hito siguiente | La operación que cambia el estado fijo no se deja hacer si esta etapa no está hecha (p. ej. no despachar sin «Cargado al camión») | Opcional, apagado por omisión (P10) |
+
+**Rastro de cada paso** (inmutable): etapa, acción (avanzó, saltó, regresó),
+quién, cuándo, desde qué dispositivo (navegador y si es la app instalada,
+como texto corto), nota, cantidad, fotos.
+
+### 5.4 Diseño técnico (propuesta)
+
+- **Plataforma:** `src/platform/processes` (nuevo), como aprobaciones, avisos
+  y campos personalizados. La plataforma no importa módulos.
+- **Registro:** cada módulo declara en `processDocuments`
+  (`src/modules/registry/processes.ts`, nuevo) los documentos que admiten
+  procesos: clave (`production.order`, `inventory.shipment`), nombre, hitos
+  (sus estados fijos en orden, con su nombre), cuáles admiten etapas, permiso
+  de lectura, cómo se resuelve su almacén y ubicación (alcance y avisos) y su
+  dirección en la app.
+- **Tablas (nuevas):** `process_definition` (empresa + documento),
+  `process_version` (versiones), `process_stage` (etapa o subetapa, hito,
+  orden, propiedades), `process_stage_role`, `process_progress` (documento +
+  id opaco + versión + etapa actual; uno por documento) y `process_step`
+  (rastro inmutable, disparador) con sus fotos.
+- **Módulos:** al crear un documento con proceso, el módulo llama
+  `startProcess(tx, …)`; al cambiar su estado fijo, `reachMilestone(tx, …)`
+  dentro de la misma transacción; y, si alguna etapa detiene el hito,
+  `assertStagesDone(tx, …)` antes de cambiarlo. Avanzar una etapa es un
+  servicio de la plataforma con candado del progreso, clave de confirmación
+  (`repeated`) y comprobación de rol, alcance y módulo.
+- **Autorización:** un tipo genérico `process.stage` en el motor de
+  aprobaciones; su regla la define la etapa (roles que aprueban).
+
+### 5.5 Versiones
+
+Cambiar un proceso crea una versión nueva; **los documentos en curso siguen
+con la versión con que empezaron** hasta terminar, y los nuevos usan la
+nueva (propuesta, P11). Nada se borra: una etapa que ya no se usa queda en las
+versiones viejas y en el rastro.
+
+### 5.6 En pantalla
+
+- **Quién configura:** Administración (`platform.organization.update`) en
+  Configuración › **Procesos**: lista de documentos de los módulos
+  contratados; por cada uno, sus hitos fijos como renglones grises y entre
+  ellos las etapas de la empresa, con «Agregar etapa», subir/bajar, y las
+  propiedades de la tabla 5.3. «Publicar» activa la versión.
+- **El piso:** en la pantalla del documento (orden de producción, embarque),
+  arriba, **un botón grande con el siguiente paso** («Siguiente: Pintura»), que
+  pide la foto, nota o cantidad si la etapa la exige, y debajo la línea de
+  tiempo. Solo aparece para quien puede avanzar esa etapa. Una lista
+  «Seguimiento» filtra documentos por etapa («Embarques en ruta»).
+- Sin proceso definido, nada nuevo se ve.
+
+### 5.7 Primera versión del motor
+
+- **Entra:** etapas y subetapas, quién avanza, evidencia, avisos, saltar y
+  regresar, versiones, rastro; documentos **orden de producción** (con WMS-28)
+  y **embarque** (WMS-74B, después).
+- **Después:** orden de compra y recepción («llegó», «se descargó»), pedido de
+  salida, traslados; «detiene el hito siguiente» si se decide (P10);
+  autorización por etapa; tiempos entre etapas en los indicadores (WMS-33);
+  vista de toda la cadena por lote (P9).
+- **ID propuesto:** WMS-74 (motor) y WMS-74B (embarques). Va en la Fase 3,
+  antes de WMS-28 para que las órdenes nazcan con su proceso.
+
+---
+
+## 6. Costo y merma (decidido D1: solo materiales)
+
+- Cada reporte tiene su costo: valor = suma de cantidad × costo promedio de
+  cada material usado, incluida la merma de material.
+- Se reparte entre lo que sale según la parte del costo de la receta (100 % al
+  producto por omisión) y se divide entre las piezas buenas: **costo por
+  unidad = valor ÷ buenas**. Ejemplo: un crate con 5 pijas a $1, 1 tabla a $80,
+  0.5 m² de espuma a $40 el m² y 0.2 l de pintura a $150 el litro cuesta
+  $5 + $80 + $20 + $30 = $135.
+- Las piezas malas no entran: su material queda en el costo de las buenas.
+- Faltante de verificación (4.5): sale al costo con que entró, como pérdida.
+- Un material sin costo conocido no detiene el reporte; quien ve costos recibe
+  el aviso. Un subproducto con 0 % entra con costo explícito 0 (no «sin
+  costo», que lo valuaría al precio vigente).
+- Costos solo para quien tiene `inventory.cost.read`.
+
+| Merma | Existencias | Costo |
+| --- | --- | --- |
+| De material (recorte) | Sale como parte de lo usado | En el costo de lo bueno |
+| Piezas malas | Nunca entran | En el costo de lo bueno |
+| Rechazo de Calidad | Queda en `REJECTED` | Ya en el valor; sale al desechar |
+| Faltante de verificación | Sale de `INSPECTION` | Pérdida |
+
+---
+
+## 7. Fotos: qué necesita de WMS-37 y si WMS-67 es requisito
+
+**Hecho:** `storeFile` guarda archivos privados por empresa, con un propósito
+de `FILE_PURPOSES` que dice permiso de escritura y lectura, tamaño máximo y
+extensiones (hoy solo `csv` y `xlsx`); la descarga es un enlace temporal
+firmado para esa persona (`createFileLink`) que responde `attachment`. Los
+bytes viven en una carpeta del servidor (`FILE_STORAGE_DIR`, `storage.ts`).
+
+**Lo que WMS-37 tiene que agregar (propuesta):**
+
+1. Extensiones de imagen (`jpg`, `png`, `webp`) con su tipo de contenido y
+   **comprobación del contenido real** (los primeros bytes), no solo la
+   extensión.
+2. Propósitos nuevos, uno por permiso de escritura:
+   `production_report_photo` (`production.report.create`),
+   `quality_inspection_photo` (`quality.inspection.create`) y
+   `process_step_photo` (el permiso de la etapa se comprueba en el servicio
+   del motor). Tope propuesto: 5 MB por foto.
+3. Ver una foto **dentro de la página** (miniatura y ampliación): respuesta
+   `inline` solo para imágenes, con `nosniff` y la política de contenido que
+   ya existe.
+4. Tomar la foto con la cámara del teléfono (`<input type="file"
+   accept="image/*" capture>`), reducirla y volver a codificarla en el
+   navegador antes de subir (sin dependencias nuevas, con canvas); eso además
+   **quita los metadatos**, incluida la ubicación GPS (la especificación 16.1
+   descarta rastrear al trabajador).
+5. Una tabla que liga cada foto a su documento (o el id en el renglón del
+   reporte, inspección o paso), sin borrar fotos ligadas a un registro
+   inmutable.
+
+**¿WMS-67 (almacenamiento externo) es requisito?** No para construir ni
+probar esto: `storeFile` ya guarda en disco y el resto del sistema no cambia
+cuando cambie dónde se guardan los bytes (esa es la idea de WMS-67). **Sí
+pasa a ser necesario antes de operar en producción con fotos** (WMS-47): las
+fotos crecen rápido (cientos de KB cada una, varias por reporte) y los
+respaldos de archivos deben ser independientes del servidor (instrucciones,
+sección 8). Propuesta: WMS-37 sin WMS-67; WMS-67 antes del primer piloto.
+
+---
+
+## 8. Módulos y su jerarquía (decidido D9)
+
+**Decidido:** Calidad no se contrata sin Producción.
+
+| Módulo | `dependsOn` | Importa | Nunca importa |
 | --- | --- | --- | --- |
-| Merma de insumo | Recorte de triplay | Sale como parte del consumo | Absorbida en el costo de lo bueno |
-| Piezas malas en la línea | Un crate con medida fuera | Nunca entran | Absorbida en lo bueno |
-| Rechazo de Calidad | Crate rechazado en inspección | Entró, queda en `REJECTED` | Ya está en el valor; sale al desecharse (`DISPOSAL`) o se reprocesa |
-| Consumo sin producción | Se tiró una mezcla entera | Sale con el reporte (bueno = 0) | Sale del valor como pérdida |
+| Inventario | — | — | Producción, Calidad |
+| Compras | `inventory` | `inventory` | Producción, Calidad |
+| Producción | `inventory` | `inventory` | Calidad |
+| Calidad | `production` (y por ella `inventory`) | `inventory`, `production` (solo lecturas: la orden de un reporte) | — |
 
-Cada merma guarda motivo de una lista de la empresa, para el reporte de merma
-por material, producto, orden y causa (especificación 7, WMS-33).
+El registro (`createModuleRegistry`) ya rechaza dependencias desconocidas y
+ciclos, y la plataforma no deja activar un módulo sin sus dependencias ni
+quitar uno del que otro depende.
 
-### 5.3 Corregir un reporte (propuesta, D-E4)
-
-Un reporte mal capturado se **reversa** entero (movimiento de reversa que
-copia sus líneas, INV-25) y se captura otra vez. Solo se permite si lo
-producido sigue donde entró, en el mismo estado y sin tomarse (ni
-inspeccionado, ni movido, ni consumido): igual que hoy una reversa exige que
-haya existencias. Si ya se movió, se corrige con un ajuste autorizado. La
-reversa pide `production.report.reverse` y motivo; los insumos regresan a su
-ubicación y lote al costo con que salieron.
-
----
-
-## 6. Ajustes por empresa (propuesta)
-
-Todos con valor por omisión que no cambia nada para quien no los toca (regla
-11 de las instrucciones, ADR 0034). Claves `modulo.area.nombre`.
-
-| Clave | Opciones (por omisión en negritas) | Qué decide |
-| --- | --- | --- |
-| `production.materials.mode` | **`direct`**, `issue` | Consumir de donde están (apartados) o surtir a la línea con tareas |
-| `production.consumption.mode` | **`confirm`** (propone la receta, se confirma o corrige), `declared` (se escribe todo), `backflush` (se toma la receta sin preguntar) | Cómo se captura lo usado (D4) |
-| `production.consumption.unlisted` | **`forbid`**, `allow` | Usar un insumo que no está en la receta (con motivo) |
-| `production.release.short` | **`ask`** (dice lo que falta y deja apartar lo que hay), `block` | Liberar una orden sin insumos completos |
-| `production.output.over` | **`warn`** (avisa y pide «Registrar de todos modos»), `block`, `allow` | Producir más del objetivo (D11) |
-| `production.lot.code` | **`order`** (`OP-0001-1`, `-2`…), `typed` | Cómo se nombra el lote de lo producido (D8) |
-| `production.serial.mode` | **`typed`** (se escanean) | Series de lo producido; generarlas queda fuera |
-| `production.workers.mode` | **`users`** o `catalog` | Quién aparece como trabajador (D2) |
-| `quality.sampling.default` | **`full`**, `sample` | Inspección completa o por muestra cuando el plan no lo dice (D6) |
-| `quality.evidence.photo` | **`optional`**, `required` | Foto obligatoria al rechazar o poner en cuarentena (cuando exista WMS-37) |
-| `inventory.inspection.release` | **`manual`**, `inspection_only` | Si con Calidad contratada se puede liberar a mano (D7) |
-
-Reglas de aprobación nuevas (apagadas por omisión, en Configuración › Reglas
-de aprobación): `quality.release` (liberar de cuarentena),
-`production.close_short` (cerrar una orden con faltante sobre un umbral).
-
-Iguales para todas las empresas (no son ajustes, por integridad): un reporte
-es un movimiento atómico; lo que espera inspección no está disponible; lo
-rechazado nunca vuelve a disponible sin una decisión; las versiones de receta
-usadas no cambian; los costos solo los ve quien puede.
-
----
-
-## 7. Dos módulos que se contratan por separado
-
-Hecho: la plataforma nunca importa módulos (`AGENTS.md`, ADR 0007); un módulo
-puede importar otro por su `index.ts`; el registro valida dependencias
-declaradas (`dependsOn`).
-
-**Propuesta.**
-
-| | Producción | Calidad |
-| --- | --- | --- |
-| Contrato | `dependsOn: ["inventory"]` | `dependsOn: ["inventory"]` (no Producción; ver sección 10) |
-| Importa | `@/modules/inventory` | `@/modules/inventory` (y `@/modules/purchasing` solo para mostrar la orden de compra de una recepción, si Compras está activo) |
-| Nunca importa | Calidad | Producción |
-
-**Qué funciona con cada combinación.**
+**Qué funciona en cada combinación.**
 
 | Contratado | Funciona |
 | --- | --- |
-| Solo Inventario (hoy) | La regla «inspeccionar al recibir» (si se hace en Inventario/Compras, sección 4.4) y «Cambiar estado» para liberar; devoluciones con su decisión. |
-| Inventario + Calidad | Bandeja de inspección de recepciones, devoluciones y existencias mandadas a inspección; planes, defectos, decisión, cuarentena, rechazo, desecho y devolución al proveedor. |
-| Inventario + Producción | Recetas, órdenes, reportes, merma, turnos y trabajadores; lo producido con la regla «al producirse» entra en inspección y se libera con «Cambiar estado». |
-| Los dos | Todo, y la bandeja de Calidad incluye lo producido; el cierre de la orden muestra lo aprobado y rechazado. |
+| Inventario (con o sin Compras) | Como hoy: devoluciones de clientes en inspección, decididas en Inventario; con la base de 4.7, «Inspeccionar al recibir» y decisión con «Cambiar estado» (P6). |
+| + Producción | Recetas, órdenes, solicitudes y reportes con foto; lo producido entra en inspección y lo verifica quien la empresa decida (P5). |
+| + Calidad | Bandeja de verificación e inspección de lo producido, lo recibido y lo devuelto; planes, defectos, cuarentena, rechazo. |
 
-**Cómo se hablan sin importarse.**
+**Cómo se hablan.** Calidad lee de Inventario qué está en inspección y de
+dónde vino; lee de Producción (por su `index.ts`) la orden y la foto de un
+reporte. Producción no conoce a Calidad: para el cierre lee el estado actual
+del lote producido en Inventario. Los avisos de cada módulo los declara ese
+módulo.
 
-- Calidad sabe qué viene de producción leyendo el **movimiento** que metió
-  esa existencia en inspección (tipo `PRODUCTION` y su referencia `OP-…`): es
-  de Inventario, no de Producción.
-- Producción conoce los resultados de Calidad para el cierre leyendo **el
-  estado actual y los cambios de estado** del lote que produjo (Inventario).
-  Sin lote (producto que no se controla por lote) solo se puede mostrar el
-  total del producto en el área, no por orden: por eso la propuesta recomienda
-  que lo que se produce y se inspecciona se controle por lote (D8).
-- Los avisos de cada módulo los declara ese módulo (`notificationTypes`).
-- La retención de inspección y la liberación «solo por inspección» son
-  servicios y ajustes de Inventario que Calidad usa.
-
-**Plan vencido.** Hecho (MOD-11): todo queda en solo lectura; los permisos
-`.read` siguen. Se puede ver recetas, órdenes, reportes, inspecciones y
-rastreo; no se reporta, no se decide, no se libera.
+**Plan vencido.** Hecho (MOD-11): solo lectura; se ven recetas, órdenes,
+reportes, inspecciones, procesos y rastreo; no se reporta, verifica, libera ni
+avanza etapas.
 
 **Quitar un módulo.** Hecho (CMP-17): nunca se borra nada; la consola avisa
-del trabajo a medias (`moduleOpenWork`). Propuesta: Producción avisa de
-órdenes liberadas o en curso y sus apartados; Calidad, de inspecciones
-abiertas. Las reservas de órdenes de un módulo quitado siguen apartando hasta
-que alguien las libere: la propuesta es que quitar Producción ofrezca
-«Liberar lo apartado por órdenes abiertas» como parte de aceptar el trabajo a
-medias (no automático), y que al quitar Calidad el ajuste
-`inventory.inspection.release` se lea como `manual`.
+del trabajo a medias (`moduleOpenWork`): órdenes abiertas con lo apartado,
+solicitudes por atender, inspecciones abiertas. Quitar Producción obliga a
+quitar Calidad antes (jerarquía). Propuesta: al aceptar quitar Producción se
+ofrece «Liberar lo apartado por órdenes abiertas» (no automático); lo que
+quede en inspección se decide con «Cambiar estado».
 
-**Varios almacenes y alcance.** Una orden es del almacén activo de quien la
-crea y consume, surte y produce solo ahí (como los pedidos de salida, WMS-18).
-Una inspección es del almacén de la existencia. Con alcance por zona
-(WMS-20), una orden o inspección existe solo para quien alcanza su área de
-producción o su ubicación (`assertLocationsInScope`, `locationScopeWhere`);
-los mensajes nunca nombran algo de fuera del alcance. Mover producto
-terminado a otro almacén es un traslado entre almacenes (WMS-19), no parte de
-la orden.
+**Varios almacenes y alcance.** Una orden es del almacén activo y produce y
+consume solo ahí; una inspección es del almacén de la existencia; un
+documento con proceso avisa en su almacén. Con alcance por zona, una orden o
+inspección existe solo para quien alcanza su área o ubicación.
 
 ---
 
-## 8. Decisiones para el fundador
+## 9. Ajustes por empresa (propuesta)
 
-Cada una con la pregunta, opciones y la recomendación de esta propuesta.
+| Clave | Opciones (por omisión en negritas) | Qué decide |
+| --- | --- | --- |
+| `production.materials.mode` | **`direct`**, `issue` | Consumir de donde están o surtir a la línea (D3; omisión: P2) |
+| `production.consumption.mode` | **`confirm`**, `declared`, `backflush` | Cómo se captura lo usado (P1) |
+| `production.consumption.unlisted` | **`forbid`**, `allow` | Usar un material que no está en la receta |
+| `production.release.short` | **`ask`**, `block` | Liberar sin materiales completos |
+| `production.report.photo` | **`required`**, `optional` | Foto en cada reporte (D5) |
+| `quality.sampling.default` | **`full`**, `sample` | Revisión de calidad completa o por muestra cuando el plan no lo dice (D6) |
+| `quality.evidence.photo` | **`optional`**, `required` | Foto al rechazar o poner en cuarentena |
 
-### Hay que decidir antes de empezar
+Con tabla propia (no caben en una lista de opciones): nomenclatura del lote
+(4.6), turnos por almacén y procesos (sección 5).
 
-**D1. ¿Qué entra al costo de lo que se produce?**
-- a) Solo materiales (lo que se consumió). Sencillo, exacto, sale del
-  inventario que ya existe.
-- b) Materiales + mano de obra y gastos con una tarifa de la empresa (por hora
-  o por unidad). Requiere capturar tiempos o tarifas.
-- **Recomendación: a)** en la primera versión; b) como paso posterior.
+Reglas de aprobación nuevas, apagadas por omisión: `production.request`,
+`quality.release`, `production.close_short` y `process.stage`.
 
-**D2. ¿Se registra producción de personas que no tienen cuenta en el
-sistema?** La retroalimentación de campo habla de unas 100 personas de las que
-unas 10 usarían el sistema.
-- a) Solo usuarios con cuenta. Obliga a dar cuenta (y cupo de usuarios) a cada
-  operario.
-- b) Catálogo de trabajadores sin acceso (nombre y número de empleado); quien
-  captura elige a uno o varios. El rastro dice quién capturó y a quién se le
-  acredita.
-- **Recomendación: b)**, como ajuste (`production.workers.mode`), con `users`
-  por omisión para no mostrar nada nuevo a quien no lo necesite.
+Fijas para todas las empresas: no se produce de más (D11); lo producido
+siempre espera verificación (D5); un reporte es un movimiento atómico; lo
+rechazado no vuelve a disponible sin decisión; avanzar una etapa nunca mueve
+existencias; versiones usadas no cambian; costos solo para quien puede.
 
-**D3. ¿Cómo salen los insumos del almacén?**
-- a) Directo: se consumen de donde están, ya apartados para la orden.
-- b) Surtidos a la línea con tareas «Surtir a producción».
-- **Recomendación:** los dos como ajuste, **a) por omisión** (menos pasos).
+Se quitaron respecto a la versión 1: `production.workers.mode` (D2),
+`production.output.over` (D11), `production.lot.code` (reemplazado por 4.6) e
+`inventory.inspection.release` (D7).
 
-**D4. ¿Cómo se captura lo que se usó?**
+---
+
+## 10. Preguntas que siguen abiertas para el fundador
+
+### Antes de empezar
+
+**P1. ¿Cómo se captura lo que se usó al reportar?** (D4, por confirmar)
 - a) La pantalla propone lo de la receta y el operario confirma o corrige.
 - b) Se escribe todo a mano.
-- c) Se descuenta la receta sin preguntar (backflush).
-- **Recomendación: a)** por omisión; b) y c) como opciones del ajuste.
+- c) Se descuenta la receta sin preguntar.
+- **Recomendación: a)** por omisión; b) y c) como opciones de la empresa.
 
-**D5. ¿Qué se inspecciona al recibir y al producir?**
-- a) Una regla por producto («al recibir», «al producirse»).
-- b) Además por categoría o por proveedor (p. ej. «todo de este proveedor
-  nuevo»).
-- **Recomendación: a)** primero; b) puede esperar.
+**P2. ¿Cuál es la forma por omisión de sacar los materiales?** (D3)
+- a) Directo de donde están.
+- b) Surtidos a la línea con tareas desde el almacén de insumos.
+- **Recomendación: a)** (menos pasos); la empresa que tiene almacén de insumos
+  elige b).
 
-**D6. Muestreo y «no liberar más de lo inspeccionado» (PC-4).** Si se revisan
-10 piezas de un lote de 500 y salen bien, ¿se liberan las 500?
-- a) Solo inspección completa: aprobado + rechazado + cuarentena =
-  inspeccionado, siempre. Literal a PC-4; con lotes grandes es poco práctico.
-- b) También por muestra: se guarda el tamaño de la muestra y sus resultados,
-  y la decisión se toma sobre lo recibido para inspección (aprobar el lote,
-  rechazarlo o ponerlo en cuarentena). PC-4 se lee como «nunca se libera más
-  de lo decidido ni se decide más de lo recibido para inspección».
-- **Recomendación: b)**, con inspección completa por omisión
-  (`quality.sampling.default = full`) y la regla por plan.
+**P3. ¿Quién es «el jefe de almacén» que puede liberar a mano?** (D7) Hoy
+pueden liberar (`inventory.status.release`) el titular, Administrador,
+Almacén y Supervisor de almacén.
+- a) Igual que hoy (Administrador, Almacén y Supervisor de almacén).
+- b) Solo Supervisor de almacén y Administrador.
+- **Recomendación: a)**: no cambia nada de lo que ya funciona; cada liberación
+  queda con motivo y nombre.
 
-**D7. Con Calidad contratada, ¿alguien más puede liberar a mano?**
-- a) Sí, como hoy (quien tenga permiso de liberar en Inventario).
-- b) No: solo una inspección (o la decisión de una devolución) saca algo de
-  inspección, cuarentena o rechazado.
-- **Recomendación: b)** como ajuste que la empresa enciende al contratar
-  Calidad (`inventory.inspection.release`); a) sigue siendo lo que pasa sin
-  Calidad. Es la única forma de cumplir PC-4 y PC-5 sin agujeros.
+**P4. Si Calidad cuenta 97 y producción reportó 100, ¿qué pasa con las 3?**
+- a) Salen como «faltante de verificación» (pérdida, con motivo), se avisa a
+  quien manda la orden y la orden no las vuelve a pedir.
+- b) Igual, pero la orden sí las vuelve a pedir (quedan pendientes de
+  producir).
+- c) Se bloquea todo hasta que producción corrija su reporte.
+- **Recomendación: a)**. Las existencias cuadran enseguida y queda quién
+  reportó y quién contó.
 
-**D8. ¿Cómo se identifica lo producido?**
-- a) Lote automático por orden y reporte (`OP-0001-1`).
-- b) Lote que escribe el operario.
-- c) Sin lote (el producto no se controla por lote).
-- **Recomendación: a)** por omisión, b) como opción; y recomendar en pantalla
-  que todo producto que se fabrica y se inspecciona se controle por lote (sin
-  lote no hay trazabilidad por orden).
+**P5. Si una empresa tiene Producción pero no Calidad, ¿quién verifica lo
+producido?** Lo producido siempre espera verificación (D5).
+- a) El supervisor de producción o el jefe de almacén, con una verificación
+  sencilla (contar y «Sumar al almacén»).
+- b) Producción exige Calidad (no se contrata sola).
+- **Recomendación: a)**.
 
-**D9. ¿Calidad puede contratarse sin Producción?** La especificación (3.2)
-pone a Calidad como dependiente de Producción; el plan v3 dice que se
-contratan por separado.
-- a) Calidad depende de Producción.
-- b) Calidad solo depende de Inventario (inspección al recibir y de
-  devoluciones sin producir nada).
-- **Recomendación: b)**.
+**P6. Inspeccionar al recibir sin Calidad.** Hoy las devoluciones ya entran en
+inspección y se deciden en Inventario.
+- a) La regla «Inspeccionar al recibir» queda en Inventario y Compras para
+  todas las empresas; quien no tiene Calidad decide con «Cambiar estado».
+- b) Solo con Calidad contratada.
+- **Recomendación: a)**: es la misma forma que ya tienen las devoluciones.
 
-**D10. ¿Cómo se manejan las etapas intermedias (corte, subensamble)?**
-- a) Cada etapa es un producto con su receta y su orden; lo que sale de una
-  es insumo de la siguiente.
-- b) Un estado nuevo «en proceso» dentro de una sola orden con pasos.
-- **Recomendación: a)**. No toca la llave del saldo, se rastrea con lo que ya
-  existe y sirve igual a todos los giros. Los pasos de una receta quedan solo
-  como etiqueta para productividad.
+**P7. ¿Quién acepta las solicitudes de producción y manda las órdenes?** El
+fundador dijo «el gerente», pero hoy Gerencia solo consulta (no escribe nada,
+por diseño).
+- a) El Supervisor de producción (y Administración).
+- b) Solo Administración.
+- c) Darle a Gerencia esa decisión como única excepción de escritura.
+- **Recomendación: a)**; si en la empresa «el gerente» es quien manda las
+  órdenes, se le asigna también el rol Supervisor de producción (los roles se
+  combinan).
 
-**D11. ¿Qué pasa si se produce más de lo planeado?**
-- a) Se permite con aviso («Registrar de todos modos»).
-- b) No se permite.
-- c) Se permite sin decir nada.
-- **Recomendación: a)** por omisión; b) y c) como opciones.
+**P8. ¿Las solicitudes de producción necesitan autorización de alguien más
+que quien las acepta?**
+- a) No: se aceptan o rechazan en «Por atender»; la empresa que quiera
+  reglas enciende `production.request`.
+- b) Siempre por el motor de aprobaciones.
+- **Recomendación: a)**.
+
+**P9. ¿Un proceso por documento o una sola cadena de principio a fin?**
+- a) Cada documento con su proceso (orden de compra, orden de producción,
+  embarque); después, una vista de toda la cadena por lote o pedido.
+- b) Una sola cadena que atraviesa todos los documentos.
+- **Recomendación: a)**: cada etapa sabe a qué documento pertenece y quién
+  puede moverla.
+
+**P10. ¿Una etapa puede impedir el siguiente paso fijo?** (p. ej. no despachar
+sin «Cargado al camión»)
+- a) Sí, por etapa, apagado por omisión.
+- b) No: las etapas solo informan.
+- **Recomendación: a)**, pero en una segunda entrega del motor.
+
+**P11. Si la empresa cambia un proceso, ¿qué pasa con lo que está en curso?**
+- a) Sigue con el proceso con que empezó; lo nuevo usa el nuevo.
+- b) Se pasa al nuevo y se acomoda por nombre de etapa.
+- **Recomendación: a)**.
+
+**P12. ¿Un lote por reporte o un lote por orden?**
+- a) Un lote por cada reporte (mejor rastreo por turno y persona).
+- b) Un lote por orden.
+- **Recomendación: a)** por omisión, b) como opción.
+
+**P13. ¿Un producto puede tener varias recetas?**
+- a) Una receta con versiones (y sustitutos dentro).
+- b) Varias recetas a elegir en la orden.
+- **Recomendación: a)** en la primera versión.
 
 ### Puede esperar
 
-**D-E1. Mano de obra y gastos indirectos** en el costo (si D1 = a).
-
-**D-E2. Reproceso:** una orden que consume lo rechazado o dañado para volverlo
-bueno. Recomendación: segunda versión, con el mismo reporte.
-
-**D-E3. Coproductos y subproductos:** cómo repartir el costo. Recomendación:
-parte fija del costo en la receta (100 % al principal por omisión);
-subproductos a costo 0.
-
-**D-E4. Corregir reportes:** solo reversa mientras nada se movió (propuesta) o
-también ajuste parcial.
-
-**D-E5. Liberar órdenes sin insumos completos:** preguntar (por omisión) o
-bloquear.
-
-**D-E6. Cerrar una orden con producto aún en inspección:** permitir
-(propuesta) o esperar a que Calidad decida.
-
-**D-E7. Desechar:** con el permiso de cambiar estado o con uno propio.
-
-**D-E8. Quién libera de cuarentena:** el inspector, solo el supervisor, o con
-autorización (regla `quality.release`).
-
-**D-E9. Foto obligatoria** al rechazar o poner en cuarentena (depende de
-WMS-37).
-
-**D-E10. Pausas y tiempos por operación** (especificación 4.2: «iniciar y
-pausar una operación si está permitido»): fuera de la primera versión, salvo
-que el fundador lo necesite para el primer cliente.
-
-**D-E11. Producir para inventario según el historial** (retroalimentación de
-campo): sugerencias de órdenes por mínimos, como las sugerencias de compra
-(WMS-33/WMS-23, después).
+- **P14.** Nomenclatura del lote por producto además de por empresa.
+- **P15.** Usar la misma nomenclatura para lotes al recibir, series y números
+  de documento (no se amplía ahora; ver 4.6).
+- **P-E2.** Reproceso de lo rechazado.
+- **P-E3.** Reparto de costo entre coproductos y subproductos (propuesta:
+  parte fija en la receta).
+- **P-E4.** Corregir reportes (propuesta: reversa mientras no se verificó).
+- **P-E5.** Liberar órdenes sin materiales completos (propuesta: preguntar).
+- **P-E6.** Cerrar una orden con algo aún en inspección (propuesta: permitir).
+- **P-E7.** Permiso propio para «Desechar».
+- **P-E8.** Quién libera de cuarentena (inspector, supervisor o con
+  autorización).
+- **P-E10.** Pausas y tiempos por etapa (las etapas ya dan quién y cuándo).
+- **P-E11.** Sugerir órdenes por mínimos o historial sin que nadie las pida
+  (WMS-33).
 
 ---
 
-## 9. Plan de implementación propuesto
+## 11. Plan de implementación propuesto
 
-Las letras dicen qué puede ir en paralelo. «Corazón» = toca saldos,
-movimientos, reservas o tareas: va **uno tras otro**, nunca en paralelo con
-otro paso de corazón.
+«Corazón» = toca saldos, movimientos, reservas o tareas: va **uno tras otro**.
 
-| Sub-paso | Qué | Depende de | Corazón | Paralelo con |
-| --- | --- | --- | --- | --- |
-| **WMS-59** | Contratos `production` y `quality` (sin pantallas), permisos, roles, matriz, `ROLE_MODULE`, guardas de módulo | Decisiones D1–D11 | No | — (primero, para que los demás no choquen en `catalog.ts`) |
-| **WMS-30-0** | Regla «inspeccionar al entrar» del producto; recepción en `INSPECTION`; devolver al proveedor desde `INSPECTION`/`REJECTED`; «Desechar» (`DISPOSAL`); ajuste `inventory.inspection.release`; retención genérica de inspección | WMS-59 (solo el ajuste) | **Sí** | WMS-27, WMS-30A |
-| **WMS-27** | Recetas versionadas | WMS-59 | No | WMS-30-0, WMS-30A |
-| **WMS-30A** | Planes de inspección, defectos, catálogo de motivos | WMS-59 | No | WMS-27, WMS-30-0 |
-| **WMS-28** | Órdenes, liberar con reservas, tarea `ISSUE`, uso de ubicación «Producción», cancelar | WMS-27, WMS-30-0 | **Sí** | WMS-30A |
-| **WMS-29** | Reporte de producción (`PRODUCTION`), costo, merma, trabajadores y turnos, rastreo hacia adelante y atrás, reversa del reporte | WMS-28 | **Sí** | WMS-30A |
-| **WMS-30B** | Bandeja e inspección con decisión, cuarentena, devoluciones por `decideCustomerReturn`, avisos | WMS-30-0, WMS-30A (y WMS-29 para ver lo producido) | **Sí** | — |
-| **WMS-31** | Uso «Producción» en `WAITING_PLACE`, cierre con conciliación, regla `production.close_short` | WMS-29 (y WMS-30B para la parte de Calidad) | **Sí** (pequeño) | — |
-| Después | Reproceso, mano de obra, series generadas, pausas, campos personalizados en órdenes, indicadores (WMS-33) | — | — | — |
+| Orden | Paso | Qué | Depende de | Corazón | En paralelo con |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **WMS-59** | Contratos `production` (`dependsOn: inventory`) y `quality` (`dependsOn: production`), permisos, roles, matriz, `ROLE_MODULE`, guardas | P3, P7 | No | — (primero: evita choques en `catalog.ts`) |
+| 2 | **WMS-37** | Fotos privadas (sección 7) | — | No | WMS-27, WMS-74, WMS-30A |
+| 3 | **WMS-30-0** | Recibir en inspección, devolver y desechar lo rechazado, retención genérica de inspección | WMS-59 | **Sí** | WMS-27, WMS-74, WMS-30A, WMS-37 |
+| 3 | **WMS-27** | Receta en la ficha del producto | WMS-59 | No | WMS-37, WMS-74, WMS-30A |
+| 3 | **WMS-74** | Motor de procesos (plataforma, sin documentos todavía, probado con un documento de prueba) | WMS-37 (fotos de etapas) | No | WMS-27, WMS-30A |
+| 3 | **WMS-30A** | Planes de inspección y defectos | WMS-59 | No | WMS-27, WMS-74 |
+| 4 | **WMS-28** | Órdenes, materiales apartados, tarea `ISSUE`, uso «Producción», proceso de la orden | WMS-27, WMS-30-0, WMS-74 | **Sí** | — |
+| 5 | **WMS-28B** | Solicitudes de producción | WMS-28 | No | WMS-29 (archivos distintos) |
+| 5 | **WMS-29** | Reporte con foto (`PRODUCTION`), costo, merma, nomenclatura del lote, turnos, rastreo | WMS-28, WMS-37 | **Sí** | WMS-28B |
+| 6 | **WMS-30B** | Verificación e inspección, cuarentena, devoluciones por `decideCustomerReturn` | WMS-29, WMS-30A | **Sí** | WMS-74B |
+| 7 | **WMS-31** | Producto a su lugar y cierre con conciliación | WMS-30B | **Sí** (pequeño) | WMS-74B |
+| 6–7 | **WMS-74B** | Procesos en embarques (etapas posteriores al despacho) | WMS-74 | No | WMS-30B, WMS-31 |
+| Antes del piloto | **WMS-38**, **WMS-67** | PIN en terminales compartidas; almacenamiento externo de archivos | — | No | Cualquiera |
 
-Si el fundador quiere Calidad antes que Producción (por ejemplo, para un
-cliente que solo recibe), el orden WMS-59 → WMS-30-0 → WMS-30A → WMS-30B
-funciona sin Producción.
+**«Listo cuando» y pruebas** (además de `npm run check`, `npm run build`,
+documentación de arquitectura, `CHANGELOG.md` y ADR):
 
-**«Listo cuando» y pruebas por sub-paso** (además de `npm run check`,
-`npm run build`, documentación de arquitectura, `CHANGELOG.md` y ADR):
-
-- **WMS-59.** `catalog.test.ts` (matriz = catálogo, Gerencia con todas las
-  lecturas, roles ligados a su módulo); `registry.int.test.ts` (dos módulos,
-  dependencias); `navigation.int.test.ts`; `team-rules.test.ts`; guardas
-  `tests/production/module-guard.int.test.ts` y
-  `tests/quality/module-guard.int.test.ts`; casos `NEG-xx` nuevos.
-- **WMS-30-0.** `tests/purchasing/receipts-inspection.int.test.ts` (entra en
-  inspección; lo dañado aparte; no se reparte ni se acomoda; reintento);
-  devolución al proveedor desde rechazado; «Desechar» con costo; con
-  `inspection_only`, «Cambiar estado» rechaza sacar de inspección; alcance;
-  `reconcileStock`/`reconcileValue` vacíos.
-- **WMS-27.** Unitarias de reglas puras (cantidades por base, partes del
-  costo, sin ciclos); `tests/production/recipes.int.test.ts` (versión usada
-  inmutable, disparador; entre empresas).
-- **WMS-30A.** `tests/quality/plans.int.test.ts` (tipos de pregunta, rangos,
-  entre empresas).
-- **WMS-28.** Estados con disparador y tabla pura; reservas con
-  `Promise.all` (**PC-2**); `issue` con tareas y lo surtido apartado en el
-  área; cancelar libera; alcance; `reconcileStock` vacío.
-- **WMS-29.** Guion del caso 5.5 completo (`tests/production/case-5-5.int.test.ts`);
-  reintento (**PC-3**); concurrencia; lotes y series; rastreo hacia adelante y
-  atrás (`traceability.int.test.ts`); costo exacto contra datos conocidos;
-  reversa permitida y rechazada; `reconcileStock`/`reconcileValue` vacíos.
-- **WMS-30B.** **PC-4** y **PC-5**; dos inspectores a la vez; reinspección de
-  cuarentena; regla `quality.release`; devolución decidida por Calidad igual
-  que por Inventario; avisos (quién sí y quién no); alcance.
-- **WMS-31.** Conciliación contra el caso 5.5; cierre con faltante libera
-  reservas; lo liberado crea su acomodo; con el módulo de calidad apagado, la
-  conciliación no muestra su parte.
-
----
-
-## 10. Contradicciones y huecos encontrados
-
-1. **Dependencia de Calidad.** La especificación (3.2) dice que Calidad
-   depende de Producción e Inventario; el plan v3 («WMS-27..31») y este
-   encargo dicen que se contratan por separado. Decisión D9.
-2. **PC-4 y muestreo.** La especificación (5.6) dice «no se puede aprobar más
-   de lo inspeccionado», pero el muestreo, que es práctica común, decide un
-   lote entero con una muestra. Decisión D6.
-3. **Hoy se puede liberar lo rechazado a mano.** `permissionForStatusChange`
-   deja pasar `REJECTED` (o `INSPECTION`) a disponible con
-   `inventory.status.release`. Lo rechazado no aparece disponible mientras
-   está rechazado (PC-5 se cumple en las lecturas), pero una persona con ese
-   permiso puede volverlo disponible sin inspección. Decisión D7 y ajuste
-   `inventory.inspection.release`.
-4. **«En producción / trabajo en proceso» de la especificación (6.2) no es un
-   estado del saldo** (`StockStatus` no lo tiene; ADR 0033 no lo incluyó). La
-   propuesta lo resuelve sin estado nuevo (insumos apartados o surtidos al
-   área; etapas como productos, D10). Si el fundador quiere el estado, toca la
-   llave del saldo y debe decidirse antes de WMS-28.
-5. **WMS-59 depende de WMS-27 en el plan v3**, pero los permisos y roles
-   tienen que existir antes de que haya pantallas de recetas; la propuesta lo
-   pone primero (solo contratos, permisos y roles).
-6. **Recepción con inspección.** ADR 0033 dice «recepción con inspección en
-   WMS-17/30»; WMS-17 (devoluciones) se cerró sin tocar la recepción de
-   compras, que hoy solo entra disponible o dañada. Queda en WMS-30-0.
-7. **Devolver al proveedor lo rechazado** está pendiente desde ADR 0046
-   (devoluciones de clientes) y hoy `returnToSupplier` solo sale de
-   disponible o dañado. Queda en WMS-30-0.
-8. **Desechar** está previsto en ADR 0033 («sale con una salida normal»), pero
-   `registerExit` solo saca disponible, así que hoy no hay forma de sacar lo
-   dañado o rechazado sin cambiarlo antes a disponible (lo que contradice
-   PC-5 en espíritu). Queda en WMS-30-0.
-9. **Precisión de 3 decimales** en cantidades: una receta por unidad puede
-   necesitar más. La propuesta usa cantidad base; si no basta para algún
-   cliente, ampliar la precisión es un cambio de la base que debe decidirse
-   aparte.
-10. **Trabajadores sin cuenta** no existen en el modelo actual (todo autor es
-    una cuenta). La retroalimentación de campo (unas 100 personas, unas 10
-    usuarias) lo hace necesario para «producción por trabajador». Decisión D2.
+- **WMS-59.** `catalog.test.ts`; `registry.int.test.ts` (Calidad no se activa
+  sin Producción; Producción no se quita con Calidad activa);
+  `navigation.int.test.ts`; `team-rules.test.ts`; guardas de módulo;
+  casos `NEG-xx` nuevos.
+- **WMS-37.** Rechaza un archivo que dice ser foto y no lo es; tope de
+  tamaño; la foto de otra empresa «no existe»; enlace temporal por persona;
+  sin metadatos de ubicación en lo guardado (prueba con una imagen con GPS).
+- **WMS-30-0.** Recepción en inspección; lo dañado aparte; no se reparte ni
+  se acomoda; devolución desde rechazado; «Desechar» con costo; alcance;
+  reconciliación.
+- **WMS-27.** Reglas puras (cantidad base, partes del costo, sin ciclos);
+  versión usada inmutable; la ficha muestra la receta solo con el módulo.
+- **WMS-74.** Tablas puras de etapas; avanzar con clave (`repeated`);
+  evidencia obligatoria; quién puede avanzar; saltar y regresar con motivo;
+  versión fija para lo que está en curso; avisos; entre empresas; alcance;
+  la plataforma no importa módulos (`lint:boundaries`).
+- **WMS-28.** Estados con disparador; **PC-2**; cancelar libera; `issue`;
+  la orden empieza en su primera etapa; alcance; reconciliación.
+- **WMS-28B.** Una solicitud, una orden; avisos a quien debe; rechazo con
+  motivo; regla `production.request` encendida y apagada.
+- **WMS-29.** Caso 5.5 completo (`tests/production/case-5-5.int.test.ts`);
+  **PC-3**; no más de lo que falta de la orden; foto obligatoria; nomenclatura
+  y consecutivo sin repetir con reportes simultáneos; rastreo hacia adelante y
+  atrás; costo exacto; reconciliación de existencias y valor.
+- **WMS-30B.** **PC-4**, **PC-5**; caso 97 de 100; muestreo; dos inspectores
+  a la vez; cuarentena; devolución decidida por Calidad igual que por
+  Inventario; avisos.
+- **WMS-31.** Conciliación contra el caso 5.5; cierre libera; lo aprobado
+  crea su acomodo.
+- **WMS-74B.** Etapas después de `SHIPPED` sin tocar existencias ni el estado
+  del embarque; «Registrar devolución» desde la etapa.
 
 ---
 
-## 11. Lo que queda fuera de la primera versión
+## 12. Contradicciones y huecos encontrados
 
-Dicho explícitamente, para que nadie lo programe sin decisión:
+1. **Resuelto (D9):** la especificación 3.2 ponía a Calidad bajo Producción y
+   el plan v3 decía «contratables por separado». Manda la jerarquía.
+2. **Resuelto (D6):** PC-4 frente al muestreo; queda «no se libera más de lo
+   verificado».
+3. **«El gerente» aprueba (D11) frente a Gerencia solo lectura (WMS-50).**
+   Pregunta P7.
+4. **«En producción / trabajo en proceso» de la especificación 6.2** no es un
+   estado del saldo. Con D10 se resuelve sin estado nuevo: las etapas
+   configurables dicen en qué va la orden, y lo que se transforma en otro
+   producto es su propia orden.
+5. **El plan v3 pone WMS-59 después de WMS-27**; se propone primero.
+6. **ADR 0033 preveía recepción con inspección en WMS-17/30**; sigue sin
+   existir (WMS-30-0).
+7. **Devolver al proveedor lo rechazado** (pendiente de ADR 0046) y
+   **desechar** (previsto en ADR 0033, pero `registerExit` solo saca
+   disponible): WMS-30-0.
+8. **Precisión de 3 decimales:** recetas por cantidad base.
+9. **WMS-37 depende de WMS-67 en el plan v3**; esta propuesta dice que no hace
+   falta para construirlo, solo antes de operar en producción (sección 7).
+10. **Los números de documento son fijos en el código**; la nomenclatura
+    configurable se limita a los lotes de lo producido (P15).
 
-- Mano de obra, gastos indirectos y costeo estándar (solo materiales, D1).
-- Planeación de capacidad, programación de la línea (MRP/APS), sugerencias de
-  órdenes por mínimos o historial (D-E11, WMS-33).
-- Rutas con centros de trabajo, tiempos, pausas y paros por operación (los
-  pasos son solo etiqueta; los paros se reportan como incidencias).
-- Estado «en proceso» en el saldo (D10).
-- Reproceso (D-E2), salvo que el fundador lo pida en la primera versión.
-- Generar series de lo producido (se escanean o escriben).
-- Vida útil para calcular la caducidad del producto (se escribe si el
-  producto la pide; el fundador ya descartó vida útil mínima y fecha de
-  fabricación para el surtido, ver `AGENTS.md`).
-- Certificados de análisis, control estadístico de procesos y planes de
-  muestreo por tablas (AQL); el muestreo es solo «tamaño de muestra +
-  decisión».
-- Reglas de inspección por proveedor o categoría (D5 b).
-- Fotos de evidencia hasta que exista WMS-37; PIN o tarjeta en terminales
-  compartidas hasta WMS-38.
-- Indicadores y gráficas de producción y calidad (WMS-33, Fase 4); solo
-  listas con filtros.
-- Campos personalizados en recetas, órdenes e inspecciones.
-- Importar recetas u órdenes desde Excel; API y webhooks (WMS-60).
-- Integración con básculas o equipos de medición.
-- Producción entre almacenes (se produce en un almacén; lo demás es un
-  traslado).
+---
+
+## 13. Lo que queda fuera de la primera versión
+
+- Mano de obra, gastos indirectos y costeo estándar (D1: solo materiales).
+- Planeación de capacidad y programación de la línea (MRP/APS); sugerir
+  órdenes sin solicitud (P-E11, WMS-33).
+- Tiempos, pausas y paros por etapa (los paros son incidencias).
+- Reproceso (P-E2).
+- Generar series de lo producido; vida útil para calcular caducidad.
+- Certificados de análisis, control estadístico y tablas de muestreo (AQL).
+- Reglas de inspección por proveedor o categoría.
+- Etapas en órdenes de compra, recepciones, pedidos de salida y traslados
+  (llegan después de WMS-74B); vista de toda la cadena (P9); «detiene el hito
+  siguiente» (P10).
+- Nomenclatura configurable para otros consecutivos (P15).
+- Indicadores y gráficas de producción, calidad y tiempos por etapa (WMS-33).
+- Campos personalizados en recetas, órdenes e inspecciones; importar recetas
+  u órdenes; API y webhooks (WMS-60); básculas.
+- Producción entre almacenes (se produce en uno; lo demás es un traslado).
 - Inventario de terceros (3PL).

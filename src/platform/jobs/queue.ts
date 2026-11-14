@@ -84,6 +84,27 @@ export async function enqueueJob(
   organizationId: string,
   input: EnqueueInput,
 ): Promise<{ jobId: string }> {
+  const row = jobRow(organizationId, input);
+  await client.job.create({ data: row });
+  return { jobId: row.id };
+}
+
+/**
+ * Adds several jobs of a company in one write (WMS-39B: one mail per
+ * notified person), with the same rules as `enqueueJob`.
+ */
+export async function enqueueJobs(
+  client: Pick<TenantDb, "job">,
+  organizationId: string,
+  inputs: readonly EnqueueInput[],
+): Promise<{ jobIds: string[] }> {
+  const rows = inputs.map((input) => jobRow(organizationId, input));
+  if (rows.length > 0) await client.job.createMany({ data: rows });
+  return { jobIds: rows.map((row) => row.id) };
+}
+
+/** The row of a job, checked: type, payload size and attempts. */
+function jobRow(organizationId: string, input: EnqueueInput) {
   if (!TYPE.test(input.type) || input.type.length > 64) {
     throw new Error(`Invalid job type: ${input.type}`);
   }
@@ -95,19 +116,15 @@ export async function enqueueJob(
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
     throw new Error("maxAttempts must be between 1 and 20");
   }
-  const jobId = newId();
-  await client.job.create({
-    data: {
-      id: jobId,
-      organizationId,
-      type: input.type,
-      payload: JSON.parse(payload),
-      maxAttempts,
-      runAt: input.runAt ?? new Date(),
-      createdByUserId: input.createdByUserId ?? null,
-    },
-  });
-  return { jobId };
+  return {
+    id: newId(),
+    organizationId,
+    type: input.type,
+    payload: JSON.parse(payload) as object,
+    maxAttempts,
+    runAt: input.runAt ?? new Date(),
+    createdByUserId: input.createdByUserId ?? null,
+  };
 }
 
 export type JobInfo = {

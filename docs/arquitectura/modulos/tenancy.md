@@ -17,6 +17,13 @@ resuelve en cada petición con qué empresa trabaja la persona.
 Toda pantalla y acción de negocio toma `organization.id` y `user.id` de
 `requireOrganizationContext()`, nunca del formulario.
 
+Una sesión creada antes del corte de su membresía (`sessionsRevokedAt`,
+«Cerrar todas sus sesiones» o desactivar, WMS-40) no entra a esa empresa:
+ni como empresa activa, ni por el respaldo, ni con `switchOrganization`
+(`SIGN_IN_AGAIN_MESSAGE`). Si no le queda otra empresa,
+`requireOrganizationContext()` la borra y manda a «Ingresar». También
+anota la última actividad de la sesión (`noteSessionActivity`).
+
 ## Permisos
 
 `platform.organization.read|update` (los comprueban las pantallas de

@@ -884,6 +884,13 @@ const REVIEWED: Record<string, Review> = {
     identity: "sesión y empresa activa (requireOrganizationContext)",
     coveredBy: "tests/platform/team-disable.int.test.ts",
   },
+  revokeMemberSessionsAction: {
+    input:
+      "id de usuario, id de una sesión (vacío = todas sus sesiones en la empresa) y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo se cierran sesiones de esa persona cuya empresa activa es la de quien actúa",
+    coveredBy: "tests/platform/team-sessions.int.test.ts",
+  },
   reactivateMemberAction: {
     input: "id de usuario",
     identity: "sesión y empresa activa (requireOrganizationContext)",
@@ -1109,10 +1116,12 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/platform/notifications.int.test.ts",
   },
   setNotificationPreferenceAction: {
-    input: "clave del tipo de aviso y si se recibe",
+    input:
+      "clave del tipo de aviso, canal (en la app o por correo, WMS-39B) y si se recibe",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); cambia solo la preferencia de esa persona; solo acepta tipos del registro",
-    coveredBy: "tests/platform/notifications.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); cambia solo la preferencia de esa persona; solo acepta tipos del registro; el correo al que se manda sale de la cuenta, nunca del formulario",
+    coveredBy:
+      "tests/platform/notifications.int.test.ts, tests/platform/notice-emails.int.test.ts",
   },
   reportIncidentAction: {
     input:

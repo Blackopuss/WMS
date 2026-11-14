@@ -44,6 +44,14 @@ eventos principales.
    sigue igual y la llave queda recortada a su alcance. Una persona
    desactivada pierde sus llaves en la siguiente llamada: la llave exige
    una membresía `ACTIVE` de quien la creó (prueba en `api.int.test.ts`).
+   **Con WMS-40 (ADR 0059):** al reactivar a la persona sus llaves vuelven a
+   servir (no se revocaron: la llave es un acceso aparte de las sesiones, y
+   quien administra la revoca en esta pantalla si ya no la quiere). «Cerrar
+   todas sus sesiones» no toca las llaves: cierra sesiones de navegador y la
+   llave no es una. Las dos acciones escriben el mismo
+   `membership.sessionsRevokedAt`, así que la llave no lo lee; si el
+   fundador quiere que desactivar mate las llaves para siempre, se revocan
+   dentro de `disableMember` (pendiente de decisión).
 7. **Rastro.** Bitácora al crear (`api_key.created`), cambiar
    (`api_key.changed`) y revocar (`api_key.revoked`); `lastUsedAt` se
    actualiza como mucho una vez por minuto. Lo que la llave escribe queda a
@@ -157,8 +165,9 @@ anota aquí.
    dirección apunta a una red privada»…; nunca el cuerpo ni el error crudo)
    y suma un fallo seguido al destino; al llegar a 5 se **pausa solo** y
    avisa dentro de la app a quien tiene `platform.api.manage`
-   (`platform.webhook_paused`, WMS-39). Una entrega correcta reinicia la
-   cuenta.
+   (`platform.webhook_paused`, WMS-39; también por correo a quien lo pidió,
+   WMS-39B, por eso su texto no lleva la dirección ni nada del destino). Una
+   entrega correcta reinicia la cuenta.
 6. **Registro visible.** La pantalla muestra las últimas entregas por
    destino: evento, estado, intentos, código de respuesta y motivo. Eventos
    y entregas de más de 30 días los borra la ronda

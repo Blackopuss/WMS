@@ -240,3 +240,44 @@ describe("limiting where a person works", () => {
     });
   });
 });
+
+// WMS-40: closing someone's sessions from the team screen.
+describe("closing a person's sessions", () => {
+  const change = { kind: "revoke_sessions" } as const;
+  const supervisor = person("super", ["supervisor"]);
+  const manager = person("gerencia", ["manager"]);
+  const operator = person("piso", ["operator"]);
+
+  it("never the titular's, never one's own", () => {
+    expect(checkTeamChange(admin, titular, change)).toEqual({
+      ok: false,
+      reason: "owner_protected",
+    });
+    expect(checkTeamChange(titular, titular, change)).toEqual({
+      ok: false,
+      reason: "owner_protected",
+    });
+    expect(checkTeamChange(admin, admin, change)).toEqual({
+      ok: false,
+      reason: "self",
+    });
+  });
+
+  it("an administrator's only by the titular", () => {
+    expect(checkTeamChange(admin, otherAdmin, change)).toEqual({
+      ok: false,
+      reason: "administrator_reserved",
+    });
+    expect(checkTeamChange(titular, admin, change)).toEqual({ ok: true });
+    expect(checkTeamChange(admin, warehouse, change)).toEqual({ ok: true });
+  });
+
+  it("supervision, management and the floor cannot close sessions", () => {
+    for (const actor of [supervisor, manager, operator, viewer, warehouse]) {
+      expect(checkTeamChange(actor, operator, change)).toEqual({
+        ok: false,
+        reason: "forbidden",
+      });
+    }
+  });
+});

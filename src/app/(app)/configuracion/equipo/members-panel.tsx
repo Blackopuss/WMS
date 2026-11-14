@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, UserCheck, UserCog, UserX, Warehouse } from "lucide-react";
+import Link from "next/link";
 import {
   useActionState,
   useEffect,
@@ -49,6 +50,8 @@ export type MemberRow = {
   /** «Norte · Sur (Zona A, Zona B)»; null without a limit. */
   scopeText: string | null;
   canScope: boolean;
+  /** The person's detail with their sessions (WMS-40); null without access. */
+  href: string | null;
 };
 
 type Editing = {
@@ -116,15 +119,26 @@ export function MembersPanel({
         {members.map((member) => (
           <li
             key={member.userId}
-            className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:px-5"
+            className="relative flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:px-5"
           >
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-2 font-medium">
-                <span
-                  className={member.disabled ? "text-muted-foreground" : ""}
-                >
-                  {member.name}
-                </span>
+                {member.href ? (
+                  // The whole row opens the person (KISS); the buttons sit
+                  // above the link.
+                  <Link
+                    href={member.href}
+                    className={`rounded underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 ${member.disabled ? "text-muted-foreground" : ""}`}
+                  >
+                    {member.name}
+                  </Link>
+                ) : (
+                  <span
+                    className={member.disabled ? "text-muted-foreground" : ""}
+                  >
+                    {member.name}
+                  </span>
+                )}
                 {member.isMe && <Badge variant="outline">Tú</Badge>}
                 {member.disabled && (
                   <Badge variant="secondary">Desactivado</Badge>
@@ -151,7 +165,7 @@ export function MembersPanel({
               )}
             </div>
             {(member.canAssign || member.canDisable || member.canScope) && (
-              <div className="flex flex-wrap gap-2">
+              <div className="relative z-10 flex flex-wrap gap-2">
                 {member.canAssign && (
                   <Button
                     variant="outline"

@@ -3,7 +3,11 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import { requireSession, type CurrentUser } from "@/platform/auth";
+import {
+  noteSessionActivity,
+  requireSession,
+  type CurrentUser,
+} from "@/platform/auth";
 import { db } from "@/server";
 
 import { CREATE_ORGANIZATION_PATH } from "./organizations";
@@ -40,6 +44,12 @@ export type OrganizationContext = {
 
 export type MyOrganization = { id: string; name: string };
 
+/** Where a session goes when its companies closed it (WMS-40). */
+export const SIGN_IN_AGAIN_PATH = "/ingresar";
+
+export const SIGN_IN_AGAIN_MESSAGE =
+  "Vuelve a iniciar sesión para entrar a esta empresa.";
+
 /** Companies where the person is an active member, oldest first. */
 export async function listMyOrganizations(
   userId: string,
@@ -61,12 +71,65 @@ export async function resolveActiveOrganization(
   userId: string,
   sessionId: string,
 ): Promise<ActiveOrganization | null> {
+  return (await resolveWithActivity(userId, sessionId)).organization;
+}
+
+/**
+ * A membership this session may work in: active, and not closed for the
+ * person after the session began («Cerrar todas sus sesiones» or disabling
+ * write `sessionsRevokedAt`, WMS-40). A session older than that cut must
+ * sign in again to enter the company; it may keep working in others.
+ */
+function usableMembership(userId: string, sessionCreatedAt: Date) {
+  return {
+    userId,
+    status: "ACTIVE" as const,
+    OR: [
+      { sessionsRevokedAt: null },
+      { sessionsRevokedAt: { lt: sessionCreatedAt } },
+    ],
+  };
+}
+
+type Resolved = {
+  organization: ActiveOrganization | null;
+  lastActiveAt: Date | null;
+  /** No company, but one would take this person after signing in again. */
+  signInAgain: boolean;
+};
+
+/**
+ * The same, plus the session's last activity read in the same query
+ * (WMS-40): the request guard uses it to decide whether to note activity.
+ */
+async function resolveWithActivity(
+  userId: string,
+  sessionId: string,
+): Promise<Resolved> {
   const session = await db.session.findUnique({
     where: { id: sessionId },
-    select: { userId: true, activeOrganizationId: true },
+    select: {
+      userId: true,
+      activeOrganizationId: true,
+      lastActiveAt: true,
+      createdAt: true,
+    },
   });
-  if (!session || session.userId !== userId) return null;
+  if (!session || session.userId !== userId) {
+    return { organization: null, lastActiveAt: null, signInAgain: false };
+  }
+  const organization = await organizationOf(userId, sessionId, session);
+  const signInAgain =
+    !organization &&
+    (await db.membership.count({ where: { userId, status: "ACTIVE" } })) > 0;
+  return { organization, lastActiveAt: session.lastActiveAt, signInAgain };
+}
 
+async function organizationOf(
+  userId: string,
+  sessionId: string,
+  session: { activeOrganizationId: string | null; createdAt: Date },
+): Promise<ActiveOrganization | null> {
   const select = {
     organization: {
       select: {
@@ -78,14 +141,11 @@ export async function resolveActiveOrganization(
       },
     },
   } as const;
+  const usable = usableMembership(userId, session.createdAt);
 
   let membership = session.activeOrganizationId
     ? await db.membership.findFirst({
-        where: {
-          userId,
-          organizationId: session.activeOrganizationId,
-          status: "ACTIVE",
-        },
+        where: { ...usable, organizationId: session.activeOrganizationId },
         select,
       })
     : null;
@@ -107,7 +167,7 @@ export async function resolveActiveOrganization(
 
   if (!membership) {
     membership = await db.membership.findFirst({
-      where: { userId, status: "ACTIVE" },
+      where: usable,
       orderBy: { createdAt: "asc" },
       select,
     });
@@ -137,11 +197,21 @@ export async function resolveActiveOrganization(
 export const requireOrganizationContext = cache(
   async (): Promise<OrganizationContext> => {
     const session = await requireSession();
-    const organization = await resolveActiveOrganization(
-      session.user.id,
-      session.sessionId,
-    );
+    const { organization, lastActiveAt, signInAgain } =
+      await resolveWithActivity(session.user.id, session.sessionId);
+    if (!organization && signInAgain) {
+      // Its companies closed this person's sessions (WMS-40) and it works
+      // in no other: it is of no use any more. Signing in again opens a
+      // session that may enter them.
+      await db.session.deleteMany({
+        where: { id: session.sessionId, userId: session.user.id },
+      });
+      redirect(SIGN_IN_AGAIN_PATH);
+    }
     if (!organization) redirect(CREATE_ORGANIZATION_PATH);
+    // «Última actividad» of the team's sessions (WMS-40): at most every few
+    // minutes, after the response.
+    noteSessionActivity(session.sessionId, lastActiveAt);
     return { ...session, organization };
   },
 );
@@ -161,10 +231,21 @@ export async function switchOrganization(
 ): Promise<SwitchOrganizationResult> {
   const membership = await db.membership.findFirst({
     where: { userId, organizationId: String(organizationId), status: "ACTIVE" },
-    select: { id: true },
+    select: { id: true, sessionsRevokedAt: true },
   });
   if (!membership) {
     return { ok: false, error: "No tienes acceso a esa empresa." };
+  }
+  // The company closed this person's sessions after this one began
+  // (WMS-40): only a new session enters it.
+  if (membership.sessionsRevokedAt) {
+    const session = await db.session.findFirst({
+      where: { id: sessionId, userId },
+      select: { createdAt: true },
+    });
+    if (session && session.createdAt <= membership.sessionsRevokedAt) {
+      return { ok: false, error: SIGN_IN_AGAIN_MESSAGE };
+    }
   }
   const updated = await db.session.updateMany({
     where: { id: sessionId, userId },

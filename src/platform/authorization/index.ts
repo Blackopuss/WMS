@@ -127,3 +127,16 @@ export {
   revokeSupportAccess,
 } from "./support";
 export type { EnterSupportResult, SupportAccessView } from "./support";
+export {
+  MEMBER_SESSIONS_MAX,
+  SESSION_REVOKE_REASON_MAX,
+  listMemberSessions,
+  revokeAllMemberSessions,
+  revokeMemberSession,
+} from "./team-sessions";
+export type {
+  MemberSession,
+  MemberSessionsView,
+  SessionRevokeResult,
+} from "./team-sessions";
+export { SESSIONS_CLOSED_NOTICE, TEAM_NOTIFICATION_TYPES } from "./notices";

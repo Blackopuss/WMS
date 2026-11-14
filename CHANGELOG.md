@@ -8,6 +8,15 @@ cerrar cada paso.
 
 ## 2026-11-14
 
+- **WMS-39B** · Avisos por correo y resumen diario (ADR 0060): cada persona
+  elige qué avisos recibe también por correo (apagado por omisión), agrupados
+  y espaciados; resumen diario de lotes por caducar y existencias bajas a la
+  hora que elija la empresa, según lo que cada quien puede ver.
+- **WMS-40** · Sesiones del equipo (ADR 0059): el titular y la administración
+  ven las sesiones abiertas de cada persona en la empresa (dispositivo,
+  navegador, IP, última actividad) y las cierran a distancia; «Cerrar todas»
+  deja fuera también a las sesiones viejas que estén en otra empresa;
+  desactivar a alguien ya no le cierra las sesiones de otra empresa.
 - **WMS-57B** · El mensaje al archivar un producto solo nombra y cuenta las
   órdenes de compra y las existencias que la persona alcanza (ADR 0055); el
   producto sigue sin archivarse.

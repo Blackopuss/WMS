@@ -529,6 +529,7 @@ export {
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
   ADJUSTMENT_APPROVAL_THRESHOLD,
+  DIGEST_HOUR,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -726,7 +727,20 @@ export {
   takeTasks,
 } from "./tasks";
 export type { TaskGroupResult } from "./tasks";
-export { INVENTORY_NOTIFICATION_TYPES } from "./notices";
+export { DAILY_DIGEST_NOTICE, INVENTORY_NOTIFICATION_TYPES } from "./notices";
+export {
+  DAILY_DIGEST_JOB_TYPE,
+  DIGEST_LINES,
+  dailyDigestJobHandlers,
+  digestSections,
+  runDailyDigestRound,
+  sendDailyDigest,
+} from "./daily-digest";
+export type {
+  DigestOutcome,
+  DigestRoundResult,
+  DigestSection,
+} from "./daily-digest";
 export { INVENTORY_WEBHOOK_EVENTS } from "./webhooks";
 export {
   INCIDENT_PAGE_SIZE,

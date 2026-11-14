@@ -27,6 +27,7 @@ import {
   registerEntry,
   releaseOutboundOrder,
   setOutboundLine,
+  DIGEST_HOUR,
   type InventoryActor,
 } from "@/modules/inventory";
 import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
@@ -236,6 +237,9 @@ describe("operation settings", () => {
       },
       // WMS-25: picking goes order by order unless the company uses waves.
       { key: PICKING_MODE.key, value: "orders", defaultValue: "orders" },
+      // WMS-39B: the daily summary at 7:00; mail is up to each person.
+      { key: DIGEST_HOUR.key, value: "7", defaultValue: "7" },
+      { key: "platform.notices.email", value: "on", defaultValue: "on" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -259,6 +263,8 @@ describe("operation settings", () => {
       { key: CROSS_DOCK_MODE.key, value: "off" },
       { key: ADJUSTMENT_APPROVAL_THRESHOLD.key, value: "any" },
       { key: PICKING_MODE.key, value: "orders" },
+      { key: DIGEST_HOUR.key, value: "7" },
+      { key: "platform.notices.email", value: "on" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

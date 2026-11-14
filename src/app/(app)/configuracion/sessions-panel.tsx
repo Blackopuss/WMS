@@ -143,7 +143,7 @@ export function SessionsPanel({ sessions }: { sessions: SessionRow[] }) {
                     ) : (
                       <LogOut aria-hidden="true" />
                     )}
-                    <span className="hidden sm:inline">Cerrar</span>
+                    Cerrar
                   </Button>
                 )}
               </motion.li>
