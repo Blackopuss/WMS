@@ -3,7 +3,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { safeRedirectPath, verifySignInCode } from "@/platform/auth";
+import {
+  TERMINAL_PASSWORD_PATH,
+  safeRedirectPath,
+  verifySignInCode,
+} from "@/platform/auth";
 
 export type CodeFormState = { error?: string; restart?: boolean };
 
@@ -20,5 +24,6 @@ export async function verifyCodeAction(
     await headers(),
   );
   if (result.ok) redirect(next);
+  if (result.reason === "terminal") redirect(TERMINAL_PASSWORD_PATH);
   return { error: result.error, restart: result.reason === "restart" };
 }

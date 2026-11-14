@@ -7,6 +7,7 @@ import { approvalTypes, operationSettings } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { listLocations } from "@/platform/locations";
 import { getOperationSettings } from "@/platform/settings";
+import { TERMINAL_SETTINGS } from "@/platform/terminals";
 
 import { SettingForm, StagingForm } from "./setting-forms";
 
@@ -47,9 +48,14 @@ export default async function OperacionPage() {
       (type.settings ?? []).map((setting) => setting.key),
     ),
   );
+  // WMS-38: the settings of shared terminals live on their screen.
   const settings = (
     await getOperationSettings(actor, operationSettings)
-  ).filter((setting) => !withRules.has(setting.key));
+  ).filter(
+    (setting) =>
+      !withRules.has(setting.key) &&
+      !TERMINAL_SETTINGS.some((each) => each.key === setting.key),
+  );
   const inventory =
     access.hasModule("inventory") && access.allows("inventory.location.update");
   const tree = inventory ? await listLocations(actor) : null;

@@ -10,11 +10,13 @@ import { countUnreadNotifications } from "@/platform/notifications";
 import { listMyOrganizations } from "@/platform/tenancy";
 
 import {
+  keepTerminalSessionAction,
   leaveSupportAction,
   signOutAction,
   switchFacilityAction,
   switchOrganizationAction,
 } from "./actions";
+import { TerminalBar } from "./terminal-bar";
 import {
   countNotificationsAction,
   loadNotificationsAction,
@@ -27,12 +29,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // the session and company itself (layouts are not re-run on client
   // navigation).
   const access = await getModuleAccess();
-  const { user, organization } = access;
+  const { user, organization, terminal } = access;
   // The warehouse the person works in (WMS-18), switchable with several.
   const actor = { organizationId: organization.id, userId: user.id };
   // WMS-39: one count over its index (company, person, unread).
+  // A PIN session works only in its terminal's company (WMS-38): no
+  // company switcher.
   const [organizations, unread] = await Promise.all([
-    listMyOrganizations(user.id),
+    terminal ? [] : listMyOrganizations(user.id),
     countUnreadNotifications(actor),
   ]);
   const seesWarehouses =
@@ -65,6 +69,16 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         markAllAction: markAllNotificationsReadAction,
       }}
     >
+      {/* PIN session on a shared terminal (WMS-38): who, and the way out. */}
+      {terminal && (
+        <TerminalBar
+          terminalName={terminal.name}
+          personName={user.name}
+          idleSeconds={terminal.idleSeconds}
+          signOutAction={signOutAction}
+          keepAction={keepTerminalSessionAction}
+        />
+      )}
       {/* Support looking in with the titular's leave (PIL-12): always said. */}
       {organization.supportUntil && (
         <div

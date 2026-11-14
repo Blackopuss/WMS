@@ -124,6 +124,102 @@ describe("support (PIL-12)", () => {
   });
 });
 
+describe("shared terminal (WMS-38)", () => {
+  it("keeps the floor's work and cuts every platform permission but reading the company", () => {
+    const supervisor = { isOwner: false, roles: ["supervisor"] };
+    const atTerminal = { ...supervisor, terminal: true };
+    expect(can(supervisor, "platform.team.read")).toBe(true);
+    expect(can(atTerminal, "platform.team.read")).toBe(false);
+    expect(can(atTerminal, "platform.organization.read")).toBe(true);
+    expect(can(atTerminal, "inventory.task.execute")).toBe(true);
+    const everything = { isOwner: true, roles: [...ROLES], terminal: true };
+    const platform = [...permissionsOf(everything)].filter((p) =>
+      p.startsWith("platform."),
+    );
+    // Concrete permissions, not the policy's own lists (WMS-38 review).
+    // Bulk exports and reports: never, whatever the roles.
+    for (const permission of [
+      "inventory.export.create",
+      "purchasing.order.export",
+      "purchasing.report.export",
+    ] as const) {
+      expect(can(everything, permission)).toBe(false);
+    }
+    // Documents of one operation without costs: kept for the floor.
+    const floor = { isOwner: false, roles: ["warehouse"], terminal: true };
+    expect(can(floor, "inventory.shipment.export")).toBe(true);
+    expect(can(floor, "inventory.facility_transfer.export")).toBe(true);
+    // Reading costs: never. Recording the last cost shows nothing: kept.
+    expect(can(everything, "inventory.cost.read")).toBe(false);
+    expect(can(everything, "purchasing.cost.read")).toBe(false);
+    expect(can(everything, "purchasing.cost.record")).toBe(true);
+    // No team, sessions, audit, plan, terminals nor approvals' rules.
+    for (const permission of [
+      "platform.team.invite",
+      "platform.session.revoke",
+      "platform.audit.read",
+      "platform.plan.read",
+      "platform.terminal.manage",
+      "platform.organization.update",
+    ] as const) {
+      expect(can(everything, permission)).toBe(false);
+    }
+    expect(can(everything, "inventory.task.execute")).toBe(true);
+    expect(can(everything, "purchasing.receipt.create")).toBe(true);
+    expect(platform.sort()).toEqual(
+      [
+        "platform.capacity.read",
+        "platform.module.read",
+        "platform.organization.read",
+      ].sort(),
+    );
+  });
+
+  it("applies on top of an API key's cut, never instead of it (WMS-60)", () => {
+    const both: Subject = {
+      isOwner: false,
+      roles: ["supervisor"],
+      terminal: true,
+      limit: {
+        permissions: new Set([
+          "inventory.stock.read",
+          "inventory.export.create",
+          "platform.team.read",
+        ]),
+        scope: buildScope([{ facilityId: "B", locationId: null }]),
+      },
+    };
+    // The key drops what it does not name; the terminal drops exports and
+    // the team, so only what both keep survives.
+    expect([...permissionsOf(both)]).toEqual(["inventory.stock.read"]);
+    expect(can(both, "inventory.task.execute")).toBe(false);
+    expect(inScope(both, { facilityId: "B" })).toBe(true);
+    expect(inScope(both, { facilityId: "A" })).toBe(false);
+  });
+
+  it("support and terminal together keep only what both keep", () => {
+    const both = {
+      isOwner: false,
+      roles: ["administrator"],
+      support: true,
+      terminal: true,
+    };
+    expect(can(both, "platform.team.read")).toBe(false);
+    expect(can(both, "platform.audit.read")).toBe(false);
+    expect(can(both, "inventory.cost.read")).toBe(false);
+    expect(can(both, "inventory.stock.read")).toBe(true);
+    expect(can(both, "inventory.task.execute")).toBe(false);
+  });
+
+  it("never manages API keys nor webhooks", () => {
+    const titular = { isOwner: true, roles: [...ROLES] };
+    expect(can(titular, "platform.api.manage")).toBe(true);
+    expect(can({ ...titular, terminal: true }, "platform.api.manage")).toBe(
+      false,
+    );
+  });
+});
+
 describe("combined roles", () => {
   it("join their permissions and add nothing else", () => {
     for (const a of ROLES) {

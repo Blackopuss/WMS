@@ -3,7 +3,12 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { VERIFY_EMAIL_COOKIE, safeRedirectPath, signIn } from "@/platform/auth";
+import {
+  TERMINAL_PASSWORD_PATH,
+  VERIFY_EMAIL_COOKIE,
+  safeRedirectPath,
+  signIn,
+} from "@/platform/auth";
 
 export type SignInFormState = { error?: string; email: string };
 
@@ -21,6 +26,10 @@ export async function signInAction(
   const next = safeRedirectPath(formData.get("siguiente"));
 
   const result = await signIn({ email, password }, await headers());
+  // A shared terminal (WMS-38): there one enters with a PIN.
+  if (!result.ok && result.reason === "terminal") {
+    redirect(TERMINAL_PASSWORD_PATH);
+  }
   // The verification link's token was used (or is not needed any more).
   if (result.ok || result.reason === "mfa") {
     (await cookies()).delete(VERIFY_EMAIL_COOKIE);

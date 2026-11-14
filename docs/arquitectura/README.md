@@ -12,6 +12,7 @@ decisiones, en `docs/adr/`.
 | [modulos/](modulos/) | Un documento por módulo y por área de plataforma |
 | [modulos/approvals.md](modulos/approvals.md) | Motor de aprobaciones: reglas por empresa, solicitudes, decidir (WMS-56) |
 | [modulos/notifications.md](modulos/notifications.md) | Avisos dentro de la app: `notify` en la transacción del hecho, campana, preferencias (WMS-39) |
+| [modulos/terminals.md](modulos/terminals.md) | Terminales compartidas con PIN: registrar dispositivos, PIN de cada persona, sesión corta y recortada (WMS-38) |
 | [modulos/api.md](modulos/api.md) | API REST por empresa con llaves recortadas, límites, OpenAPI y webhooks firmados (WMS-60) |
 | [modulos/custom-fields.md](modulos/custom-fields.md) | Campos personalizados de productos, ubicaciones y proveedores: definir, validar y guardar valores (WMS-58) |
 | [agregar-un-modulo.md](agregar-un-modulo.md) | Paso a paso para agregar un módulo nuevo |

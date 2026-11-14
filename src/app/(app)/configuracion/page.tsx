@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   ListPlus,
   MapPin,
+  MonitorSmartphone,
   ShieldCheck,
   SlidersHorizontal,
   Users,
@@ -22,6 +23,7 @@ import { formatDateTime } from "@/lib";
 import { getMfaStatus, listActiveSessions } from "@/platform/auth";
 import { getSupportAccess } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
+import { getMyPinStatus } from "@/platform/terminals";
 
 import { grantSupportAccessAction, revokeSupportAccessAction } from "./actions";
 
@@ -32,16 +34,24 @@ export const metadata: Metadata = { title: "Configuración" };
 
 export default async function ConfiguracionPage() {
   const access = await getModuleAccess();
-  const { user, sessionId } = access;
+  const { user, sessionId, terminal } = access;
   // Locations are set up once, so they live here and not in the menu.
   const showLocations =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
   const canGrantSupport = access.can("platform.support.grant");
-  const [sessions, mfa, support] = await Promise.all([
-    listActiveSessions(user.id, sessionId),
-    getMfaStatus(user.id),
+  // A PIN session of a shared terminal (WMS-38) sees nothing of account
+  // security: the services refuse it, so it is not even asked.
+  const [sessions, mfa, support, pin] = await Promise.all([
+    terminal ? [] : listActiveSessions(user.id, sessionId),
+    terminal ? null : getMfaStatus(user.id),
     canGrantSupport ? getSupportAccess(access.organization.id) : null,
+    terminal
+      ? null
+      : getMyPinStatus({
+          organizationId: access.organization.id,
+          userId: user.id,
+        }),
   ]);
 
   return (
@@ -49,6 +59,7 @@ export default async function ConfiguracionPage() {
       <PageHeader title="Configuración" />
       {(showLocations ||
         access.can("platform.team.read") ||
+        access.can("platform.terminal.read") ||
         access.can("platform.plan.read") ||
         access.can("platform.audit.read") ||
         access.can("platform.api.manage") ||
@@ -95,6 +106,14 @@ export default async function ConfiguracionPage() {
               icon={Users}
               title="Equipo"
               description="Personas, roles e invitaciones."
+            />
+          )}
+          {access.can("platform.terminal.read") && (
+            <SettingsLink
+              href="/configuracion/terminales"
+              icon={MonitorSmartphone}
+              title="Terminales compartidas"
+              description="Dispositivos del piso donde cada persona entra con su PIN."
             />
           )}
           {access.can("platform.plan.read") && (
@@ -204,23 +223,37 @@ export default async function ConfiguracionPage() {
           </div>
         </section>
       )}
-      <section aria-labelledby="seguridad" className="space-y-3">
-        <h2 id="seguridad" className="text-lg font-semibold">
-          Seguridad
-        </h2>
-        <MfaPanel
-          enabled={mfa.enabled}
-          required={mfa.required}
-          backupCodesLeft={mfa.backupCodesLeft}
-        />
-        <SessionsPanel
-          sessions={sessions.map((s) => ({
-            ...s,
-            createdAt: s.createdAt.toISOString(),
-            lastActiveAt: s.lastActiveAt.toISOString(),
-          }))}
-        />
-      </section>
+      {mfa && (
+        <section aria-labelledby="seguridad" className="space-y-3">
+          <h2 id="seguridad" className="text-lg font-semibold">
+            Seguridad
+          </h2>
+          <MfaPanel
+            enabled={mfa.enabled}
+            required={mfa.required}
+            backupCodesLeft={mfa.backupCodesLeft}
+          />
+          {pin?.available && (
+            <SettingsLink
+              href="/configuracion/pin"
+              icon={KeyRound}
+              title="Mi PIN"
+              description={
+                pin.hasPin
+                  ? "Para entrar en las terminales compartidas. Cámbialo o quítalo."
+                  : "Ponlo para entrar rápido en las terminales compartidas."
+              }
+            />
+          )}
+          <SessionsPanel
+            sessions={sessions.map((s) => ({
+              ...s,
+              createdAt: s.createdAt.toISOString(),
+              lastActiveAt: s.lastActiveAt.toISOString(),
+            }))}
+          />
+        </section>
+      )}
       <section aria-labelledby="telefono" className="space-y-3">
         <h2 id="telefono" className="text-lg font-semibold">
           En tu teléfono
@@ -245,6 +278,8 @@ function SettingsLink({
     | "/configuracion/equipo"
     | "/configuracion/avisos"
     | "/configuracion/plan"
+    | "/configuracion/terminales"
+    | "/configuracion/pin"
     | "/configuracion/api"
     | "/configuracion/bitacora"
     | "/aprobaciones"

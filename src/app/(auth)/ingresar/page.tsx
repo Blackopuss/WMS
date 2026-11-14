@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { getCurrentSession, safeRedirectPath } from "@/platform/auth";
+import {
+  getCurrentSession,
+  refuseOnTerminal,
+  safeRedirectPath,
+} from "@/platform/auth";
 
 import { SignInForm } from "./sign-in-form";
 
@@ -13,6 +17,8 @@ export const metadata: Metadata = {
 export default async function IngresarPage({
   searchParams,
 }: PageProps<"/ingresar">) {
+  // A shared terminal is entered with a PIN only (WMS-38).
+  await refuseOnTerminal();
   const { siguiente, confirmar } = await searchParams;
   const next = safeRedirectPath(siguiente);
   // Already signed in (validated against the database): go straight in.

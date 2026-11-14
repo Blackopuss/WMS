@@ -43,6 +43,8 @@ export type MemberSession = {
   lastActiveAt: Date;
   /** The session the viewer is using right now. */
   current: boolean;
+  /** Shared terminal it was opened on with a PIN (WMS-38); null otherwise. */
+  terminalName: string | null;
 };
 
 export type MemberSessionsView = {
@@ -120,8 +122,20 @@ export async function listMemberSessions(
       createdAt: true,
       updatedAt: true,
       lastActiveAt: true,
+      terminalId: true,
     },
   });
+  // Shared terminals of PIN sessions (WMS-38), read in this company only.
+  const terminalIds = [
+    ...new Set(rows.flatMap((row) => (row.terminalId ? [row.terminalId] : []))),
+  ];
+  const terminals = terminalIds.length
+    ? await forOrganization(organizationId).sharedTerminal.findMany({
+        where: { id: { in: terminalIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const terminalNames = new Map(terminals.map((t) => [t.id, t.name]));
   const sessions = rows
     .map((row) => {
       const device = describeUserAgent(row.userAgent);
@@ -134,6 +148,9 @@ export async function listMemberSessions(
         createdAt: row.createdAt,
         lastActiveAt: row.lastActiveAt ?? row.updatedAt,
         current: row.id === currentSessionId,
+        terminalName: row.terminalId
+          ? (terminalNames.get(row.terminalId) ?? null)
+          : null,
       };
     })
     .sort(

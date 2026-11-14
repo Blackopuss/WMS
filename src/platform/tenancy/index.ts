@@ -12,6 +12,7 @@ export type {
 } from "./organizations";
 export {
   SIGN_IN_AGAIN_MESSAGE,
+  TERMINAL_SWITCH_MESSAGE,
   listMyOrganizations,
   requireOrganizationContext,
   resolveActiveOrganization,

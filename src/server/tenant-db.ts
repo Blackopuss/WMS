@@ -113,6 +113,9 @@ export const TENANT_MODELS = [
   "CustomField",
   "CustomFieldOption",
   "CustomFieldValue",
+  "SharedTerminal",
+  "SharedTerminalSecret",
+  "MemberPin",
   "ApiKey",
   "WebhookEndpoint",
   "WebhookEvent",
@@ -332,6 +335,7 @@ const LOCKABLE = {
   incident: "incident",
   webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
+  sharedTerminal: "shared_terminal",
 } as const;
 
 /**

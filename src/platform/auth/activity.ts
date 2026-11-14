@@ -20,11 +20,9 @@ export const SESSION_ACTIVITY_INTERVAL_MS = 5 * 60 * 1000;
 export function activityIsStale(
   lastActiveAt: Date | null | undefined,
   now: Date = new Date(),
+  intervalMs: number = SESSION_ACTIVITY_INTERVAL_MS,
 ): boolean {
-  return (
-    !lastActiveAt ||
-    now.getTime() - lastActiveAt.getTime() >= SESSION_ACTIVITY_INTERVAL_MS
-  );
+  return !lastActiveAt || now.getTime() - lastActiveAt.getTime() >= intervalMs;
 }
 
 /**
@@ -35,8 +33,9 @@ export function activityIsStale(
 export async function recordSessionActivity(
   sessionId: string,
   now: Date = new Date(),
+  intervalMs: number = SESSION_ACTIVITY_INTERVAL_MS,
 ): Promise<boolean> {
-  const cutoff = new Date(now.getTime() - SESSION_ACTIVITY_INTERVAL_MS);
+  const cutoff = new Date(now.getTime() - intervalMs);
   const { count } = await db.session.updateMany({
     where: {
       id: String(sessionId),
@@ -51,17 +50,19 @@ export async function recordSessionActivity(
  * Called by the request guard with what it already read from the session
  * row (no extra query). Schedules the write after the response; outside a
  * request (tests, scripts) it does nothing. A failure is logged, never
- * shown.
+ * shown. A PIN session of a shared terminal passes a shorter interval
+ * (WMS-38): its inactivity closes it.
  */
 export function noteSessionActivity(
   sessionId: string,
   lastActiveAt: Date | null | undefined,
+  intervalMs: number = SESSION_ACTIVITY_INTERVAL_MS,
 ): void {
-  if (!activityIsStale(lastActiveAt)) return;
+  if (!activityIsStale(lastActiveAt, new Date(), intervalMs)) return;
   try {
     after(async () => {
       try {
-        await recordSessionActivity(sessionId);
+        await recordSessionActivity(sessionId, new Date(), intervalMs);
       } catch (error) {
         log.warn("session.activity_failed", { error: String(error) });
       }

@@ -411,34 +411,42 @@ export async function archiveFacility(
     if (facility.isDefault) {
       stop("not_allowed", "El almacén principal no se archiva.");
     }
-    const [stock, orders, tasks, boxes, transfers] = await Promise.all([
-      tx.stockBalance.count({
-        where: { quantity: { gt: 0 }, location: { facilityId: facility.id } },
-      }),
-      tx.outboundOrder.count({
-        where: {
-          facilityId: facility.id,
-          status: { notIn: ["SHIPPED", "CANCELLED"] },
-        },
-      }),
-      tx.warehouseTask.count({
-        where: {
-          fromLocation: { facilityId: facility.id },
-          status: { notIn: ["DELIVERED", "CANCELLED"] },
-        },
-      }),
-      // WMS-53: nor a pallet or box still put together (even empty).
-      tx.container.count({
-        where: { status: "OPEN", location: { facilityId: facility.id } },
-      }),
-      // WMS-19: nor a transfer from or to it that is not finished.
-      tx.facilityTransfer.count({
-        where: {
-          status: { in: ["DRAFT", "SENT"] },
-          OR: [{ fromFacilityId: facility.id }, { toFacilityId: facility.id }],
-        },
-      }),
-    ]);
+    const [stock, orders, tasks, boxes, transfers, terminals] =
+      await Promise.all([
+        tx.stockBalance.count({
+          where: { quantity: { gt: 0 }, location: { facilityId: facility.id } },
+        }),
+        tx.outboundOrder.count({
+          where: {
+            facilityId: facility.id,
+            status: { notIn: ["SHIPPED", "CANCELLED"] },
+          },
+        }),
+        tx.warehouseTask.count({
+          where: {
+            fromLocation: { facilityId: facility.id },
+            status: { notIn: ["DELIVERED", "CANCELLED"] },
+          },
+        }),
+        // WMS-53: nor a pallet or box still put together (even empty).
+        tx.container.count({
+          where: { status: "OPEN", location: { facilityId: facility.id } },
+        }),
+        // WMS-19: nor a transfer from or to it that is not finished.
+        tx.facilityTransfer.count({
+          where: {
+            status: { in: ["DRAFT", "SENT"] },
+            OR: [
+              { fromFacilityId: facility.id },
+              { toFacilityId: facility.id },
+            ],
+          },
+        }),
+        // WMS-38: nor a shared terminal still registered on its floor.
+        tx.sharedTerminal.count({
+          where: { facilityId: facility.id, removedAt: null },
+        }),
+      ]);
     if (stock > 0) {
       stop("not_allowed", "Este almacén todavía tiene existencias.");
     }
@@ -458,6 +466,12 @@ export async function archiveFacility(
       stop(
         "not_allowed",
         "Este almacén tiene traslados sin terminar: termínalos o cancélalos primero.",
+      );
+    }
+    if (terminals > 0) {
+      stop(
+        "not_allowed",
+        "Este almacén tiene terminales compartidas: quítalas primero en Configuración › Terminales compartidas.",
       );
     }
     await tx.membership.updateMany({

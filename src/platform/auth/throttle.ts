@@ -56,6 +56,21 @@ export const RULES = {
     windowSeconds: 15 * 60,
     blockSeconds: 15 * 60,
   },
+  // PINs on shared terminals (WMS-38, ADR 0061): per person on one
+  // terminal (low: a coworker typing wrong PINs on purpose blocks only
+  // that terminal for that person, for a while); per person in every
+  // terminal, above what one terminal can produce in its window (with 5
+  // every 15 minutes and a 15-minute block, one terminal gives at most 20
+  // an hour against one person: 30 needs tries from more than one
+  // terminal, so a coworker at one terminal never locks the person out of
+  // the others); both cleared when the person signs in with the password.
+  // And per terminal, which stops everyone there for a while. Each block
+  // warns who manages terminals.
+  pinUserTerminal: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  pinUser: { max: 30, windowSeconds: 60 * 60, blockSeconds: 60 * 60 },
+  pinTerminal: { max: 20, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  // Wrong passwords while setting one's own PIN, per person.
+  pinSetup: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
 } as const satisfies Record<string, ThrottleRule>;
 
 export type ThrottleKey = { key: string; rule: ThrottleRule };
@@ -123,6 +138,22 @@ export const throttleKeys = {
   discountAuthorizeIp: (ip: string): ThrottleKey => ({
     key: `discount:ip:${ip}`,
     rule: RULES.discountAuthorizeIp,
+  }),
+  pinUserTerminal: (userId: string, terminalId: string): ThrottleKey => ({
+    key: `pin:user:${userId}:${terminalId}`,
+    rule: RULES.pinUserTerminal,
+  }),
+  pinUser: (userId: string): ThrottleKey => ({
+    key: `pin:user:${userId}`,
+    rule: RULES.pinUser,
+  }),
+  pinTerminal: (terminalId: string): ThrottleKey => ({
+    key: `pin:terminal:${terminalId}`,
+    rule: RULES.pinTerminal,
+  }),
+  pinSetup: (userId: string): ThrottleKey => ({
+    key: `pin:setup:${userId}`,
+    rule: RULES.pinSetup,
   }),
   totpUsed: (userId: string, code: string): ThrottleKey => ({
     key: `mfa:used:${userId}:${hash(code)}`,
@@ -256,6 +287,35 @@ export async function settleFailure(keys: ThrottleKey[]): Promise<void> {
   }
 }
 
+/**
+ * Counts one event in a fixed window that never blocks and returns the
+ * count in the window (e.g. wrong PINs of a terminal in a day, to warn of
+ * sustained guessing below the blocking limits). Atomic: the value a
+ * caller gets is reached by exactly one call.
+ */
+export async function countInWindow(
+  key: string,
+  windowSeconds: number,
+): Promise<number> {
+  return db.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO auth_throttle (\`key\`, count, windowStart, blockedUntil)
+       VALUES (?, 1, UTC_TIMESTAMP(3), NULL)
+       ON DUPLICATE KEY UPDATE
+         count = IF(windowStart < UTC_TIMESTAMP(3) - INTERVAL ? SECOND, 1, count + 1),
+         windowStart = IF(windowStart < UTC_TIMESTAMP(3) - INTERVAL ? SECOND, UTC_TIMESTAMP(3), windowStart)`,
+      key,
+      windowSeconds,
+      windowSeconds,
+    );
+    const [row] = await tx.$queryRawUnsafe<{ count: number }[]>(
+      "SELECT count FROM auth_throttle WHERE `key` = ?",
+      key,
+    );
+    return Number(row?.count ?? 0);
+  }, LOCKING_TRANSACTION);
+}
+
 /** Gives back an attempt taken by `reserveAttempt` that went well. */
 export async function refundAttempt(keys: ThrottleKey[]): Promise<void> {
   for (const { key } of keys) {
@@ -271,6 +331,22 @@ export async function clearAttempts(keys: ThrottleKey[]): Promise<void> {
   if (keys.length === 0) return;
   await db.authThrottle.deleteMany({
     where: { key: { in: keys.map((k) => k.key) } },
+  });
+}
+
+/**
+ * Clears every counter of a person's PIN (WMS-38): all terminals and the
+ * global one. Signing in with the password proves who it is.
+ */
+export async function clearPinAttempts(userId: string): Promise<void> {
+  const id = String(userId);
+  await db.authThrottle.deleteMany({
+    where: {
+      OR: [
+        { key: `pin:user:${id}` },
+        { key: { startsWith: `pin:user:${id}:` } },
+      ],
+    },
   });
 }
 

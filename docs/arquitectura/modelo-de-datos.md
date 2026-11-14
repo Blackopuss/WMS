@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-109 tablas en 27 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+112 tablas en 28 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -16,6 +16,7 @@
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
 | Plataforma › Avisos | 4 | [notifications](modulos/notifications.md) |
+| Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
@@ -71,8 +72,10 @@ No es de una empresa (sin `organizationId`).
 | `userId` | `String · Char(36)` |  |  |
 | `activeOrganizationId` | `String? · Char(36)` |  | Company this session works in (PLT-11). Re-checked against an active membership on every request; never trusted on its own. |
 | `lastActiveAt` | `DateTime? · DateTime(3)` |  | Last request seen on this session (WMS-40, ADR 0059), written at most every few minutes after the response. Null on sessions older than the column: show updatedAt. |
+| `terminalId` | `String? · Char(36)` |  | Shared terminal this session was opened on with a PIN (WMS-38, ADR 0061); null for sessions opened with a password. No relation: a person's row never points to a company table (PLT-13); removing the terminal deletes its sessions, and terminals are never deleted. |
+| `terminalIdleSeconds` | `Int?` |  | Inactivity that closes a terminal session, copied from the company's setting when it was opened. |
 
-- Índices: `userId`; `activeOrganizationId`.
+- Índices: `userId`; `activeOrganizationId`; `terminalId`.
 - Relaciones: `user` → `User` por `userId` (al borrar: Cascade); `activeOrganization` → `Organization` por `activeOrganizationId` (al borrar: SetNull).
 
 ### Account · `account`
@@ -838,6 +841,71 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `NotificationEmailStatus`: `QUEUED`, `SENT`, `SKIPPED`, `FAILED`.
 - `DailyDigestStatus`: `QUEUED`, `SENT`, `EMPTY`, `SKIPPED`, `FAILED`.
+
+## Plataforma › Terminales compartidas
+
+Dispositivos registrados como terminal compartida de un almacén y cada secreto que se les dio (solo su hash, para detectar una cookie copiada; se quitan, no se borran) y el PIN de cada persona en cada empresa (hash lento, nunca en claro).
+
+Documento: [modulos/terminals.md](modulos/terminals.md).
+
+### SharedTerminal · `shared_terminal`
+
+A device registered as a shared terminal of a warehouse (WMS-38, ADR 0061). The device keeps a random secret in an HttpOnly cookie; only its SHA-256 is stored (SharedTerminalSecret). Never deleted: removing it marks `removedAt`, which makes the secret useless and closes its sessions.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(60)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `lastUsedAt` | `DateTime? · DateTime(3)` |  |  |
+| `removedAt` | `DateTime? · DateTime(3)` |  |  |
+| `removedByUserId` | `String? · Char(36)` |  | Null when the system removed it (a copied cookie was used). |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `removedAt`, `name`); (`organizationId`, `facilityId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
+
+### SharedTerminalSecret · `shared_terminal_secret`
+
+Every secret given to a shared terminal (WMS-38, ADR 0061 §1): only its SHA-256. The newest is the current one; an older one keeps working while no newer one has been presented (a lost answer breaks nothing), and presented after a newer one was (beyond a short grace) it means two devices: the terminal is removed. Only `presentedAt` changes, once. Rows older than 30 days are cleaned up when the terminal rotates.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `terminalId` | `String · Char(36)` |  |  |
+| `secretHash` | `String · Char(64)` |  | única |
+| `issuedAt` | `DateTime · DateTime(3)` |  |  |
+| `presentedAt` | `DateTime? · DateTime(3)` |  | First time a request brought it (the device really has it). |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `terminalId`, `issuedAt`).
+- Relaciones: `terminal` → `SharedTerminal` por (`organizationId`, `terminalId`) (al borrar: Restrict).
+
+### MemberPin · `member_pin`
+
+The PIN of a person in a company (WMS-38, ADR 0061): scrypt over an HMAC of the PIN with the server secret, the company and the person. Never stored or logged in clear. Deleted when removed or when the person is disabled.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `userId` | `String · Char(36)` |  |  |
+| `pinHash` | `String · VarChar(255)` |  |  |
+| `setAt` | `DateTime · DateTime(3)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `userId`).
 
 ## Plataforma › API y webhooks
 

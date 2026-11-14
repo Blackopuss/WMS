@@ -25,6 +25,13 @@ export type Subject = {
    */
   support?: boolean;
   /**
+   * A PIN session of a shared terminal (WMS-38, ADR 0061 §8): of its
+   * platform permissions it keeps only TERMINAL_PLATFORM_KEEP — no team,
+   * sessions, audit, plan, configuration, terminals or support — and it
+   * never exports in bulk nor reads costs (`keptAtTerminal`).
+   */
+  terminal?: boolean;
+  /**
    * Where the person may work (WMS-20). Absent or null = every warehouse.
    * It never limits the titular.
    */
@@ -129,6 +136,46 @@ export function inScope(subject: Subject, place: Place): boolean {
   return place.path.some((id) => zones.has(id));
 }
 
+/**
+ * Platform permissions a PIN session keeps (WMS-38): what screens of the
+ * floor read to know the company and its modules. Every other
+ * `platform.*` permission is cut, whatever the roles say.
+ */
+export const TERMINAL_PLATFORM_KEEP: readonly Permission[] = [
+  "platform.organization.read",
+  "platform.module.read",
+  "platform.capacity.read",
+];
+
+/**
+ * Besides the platform, a PIN session never takes data out in bulk
+ * (`*.export.create` and the reports: the file would stay on the shared
+ * device) nor reads costs (WMS-38). It keeps only the documents of one
+ * operation that carry no costs, named here. Recording a cost (a receipt
+ * updating the last cost) shows nothing and stays. Deciding approvals is
+ * refused in the approval engine.
+ */
+export const TERMINAL_EXPORT_KEEP: readonly Permission[] = [
+  "inventory.shipment.export",
+  "inventory.facility_transfer.export",
+];
+
+export const TERMINAL_COST_PERMISSIONS: readonly Permission[] = [
+  "inventory.cost.read",
+  "purchasing.cost.read",
+];
+
+/** True when a PIN session keeps this permission of its roles. */
+export function keptAtTerminal(permission: Permission): boolean {
+  if (permission.startsWith("platform.")) {
+    return TERMINAL_PLATFORM_KEEP.includes(permission);
+  }
+  if (permission.endsWith(".export") || permission.endsWith(".export.create")) {
+    return TERMINAL_EXPORT_KEEP.includes(permission);
+  }
+  return !TERMINAL_COST_PERMISSIONS.includes(permission);
+}
+
 /** Known roles of the subject, without repeats, in catalog order. */
 export function knownRoles(roles: readonly string[]): Role[] {
   return [...new Set(roles.filter(isRole))].sort();
@@ -146,10 +193,15 @@ export function permissionsOf(subject: Subject): ReadonlySet<Permission> {
   const limited = subject.limit
     ? new Set([...granted].filter((p) => subject.limit?.permissions.has(p)))
     : granted;
-  if (subject.support === true) {
-    return new Set([...limited].filter((p) => p.endsWith(".read")));
-  }
-  return limited;
+  // Each cut on top of the one before, never instead of it: the API key
+  // (WMS-60), support (PIL-12), a shared terminal (WMS-38).
+  const supported =
+    subject.support === true
+      ? new Set([...limited].filter((p) => p.endsWith(".read")))
+      : limited;
+  return subject.terminal === true
+    ? new Set([...supported].filter(keptAtTerminal))
+    : supported;
 }
 
 /**
