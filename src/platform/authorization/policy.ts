@@ -29,6 +29,20 @@ export type Subject = {
    * It never limits the titular.
    */
   scope?: Scope | null;
+  /**
+   * WMS-60 (ADR 0058): an API key acts for the person who created it, cut
+   * down to what the key allows. Its permissions are intersected with the
+   * person's and its scope with the person's (the titular's scope never
+   * limits them, the scope of their key does).
+   */
+  limit?: SubjectLimit;
+};
+
+/** What an API key leaves of its creator's power (WMS-60). */
+export type SubjectLimit = {
+  permissions: ReadonlySet<string>;
+  /** Null: the key adds no limit of place. */
+  scope: Scope | null;
 };
 
 /**
@@ -68,8 +82,36 @@ export function buildScope(
 
 /** The scope that limits the subject, or null when nothing does. */
 export function scopeOf(subject: Subject): Scope | null {
-  if (subject.isOwner === true) return null;
-  return subject.scope ?? null;
+  const own = subject.isOwner === true ? null : (subject.scope ?? null);
+  return intersectScopes(own, subject.limit?.scope ?? null);
+}
+
+/**
+ * The places both scopes open (WMS-60): a warehouse open in both, with
+ * the zones of the one that has zones (both: the zones of one that are
+ * inside, or contain, the other's are not known here, so only the zones
+ * named by both stay). Null on either side means no limit from it.
+ */
+export function intersectScopes(
+  a: Scope | null,
+  b: Scope | null,
+): Scope | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  const facilities = new Map<string, ReadonlySet<string> | null>();
+  for (const [facilityId, zonesA] of a.facilities) {
+    if (!b.facilities.has(facilityId)) continue;
+    const zonesB = b.facilities.get(facilityId) ?? null;
+    if (zonesA === null) facilities.set(facilityId, zonesB);
+    else if (zonesB === null) facilities.set(facilityId, zonesA);
+    else {
+      facilities.set(
+        facilityId,
+        new Set([...zonesA].filter((zone) => zonesB.has(zone))),
+      );
+    }
+  }
+  return { facilities };
 }
 
 /**
@@ -101,10 +143,13 @@ export function permissionsOf(subject: Subject): ReadonlySet<Permission> {
   for (const role of knownRoles(subject.roles)) {
     for (const permission of ROLE_PERMISSIONS[role]) granted.add(permission);
   }
+  const limited = subject.limit
+    ? new Set([...granted].filter((p) => subject.limit?.permissions.has(p)))
+    : granted;
   if (subject.support === true) {
-    return new Set([...granted].filter((p) => p.endsWith(".read")));
+    return new Set([...limited].filter((p) => p.endsWith(".read")));
   }
-  return granted;
+  return limited;
 }
 
 /**

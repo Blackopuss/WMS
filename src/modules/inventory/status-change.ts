@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { dec, newId } from "@/lib";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import type { Permission } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
@@ -29,6 +30,7 @@ import {
   isStockStatus,
   type StockStatus,
 } from "./stock-status";
+import { STOCK_STATUS_CHANGED_EVENT } from "./webhooks";
 import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { lotColumns } from "./stock-status";
@@ -535,6 +537,24 @@ export async function writeStatusChange(
     });
   }
 
+  // WMS-60: who listens by webhook hears of it, inside this transaction.
+  await emitWebhookEvent(tx, STOCK_STATUS_CHANGED_EVENT, {
+    organizationId,
+    data: {
+      movementId,
+      source: options.returnLineId ? "customer_return" : "manual",
+      productId: product.id,
+      lotId: lot?.id ?? null,
+      fromLocationId: location.id,
+      toLocationId: destination.id,
+      fromStatus: data.from,
+      toStatus: data.to,
+      quantity: base.toString(),
+      unitCode: product.unitCode,
+      serials: units.map((unit) => unit.serial),
+      reason: data.reason ?? null,
+    },
+  });
   await recordAuditEvent(tx, {
     organizationId,
     actorUserId: userId,

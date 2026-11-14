@@ -101,6 +101,8 @@ const SCREENS = [
   "/aprobaciones",
   "/aprobaciones?vista=mias",
   "/configuracion/aprobaciones",
+  // WMS-60: API keys and webhook destinations.
+  "/configuracion/api",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.

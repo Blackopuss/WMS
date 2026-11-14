@@ -1292,3 +1292,256 @@ export async function getOutboundOrder(
 /** «con OC-0007», or «con una entrada» when it has no reference. */
 const arrivedWith = (reference: string | null) =>
   reference ? `con ${reference}` : "con una entrada";
+
+// ── Draft with its lines in one step (WMS-60) ───────────────────────────
+
+/**
+ * The stored lines are exactly the ones sent, as a multiset: each stored
+ * line matches one sent line and none is used twice ([A:2, B:3] is not
+ * [A:2, A:2]).
+ */
+function sameLines(
+  stored: readonly { productId: string; quantity: string }[],
+  sent: readonly { productId: string | null; quantity: unknown }[],
+): boolean {
+  if (stored.length !== sent.length) return false;
+  const left = [...stored];
+  for (const line of sent) {
+    const at = left.findIndex(
+      (row) =>
+        row.productId === line.productId &&
+        sameQuantity(row.quantity, line.quantity),
+    );
+    if (at < 0) return false;
+    left.splice(at, 1);
+  }
+  return left.length === 0;
+}
+
+/** The stored quantity equals what was sent (an exact decimal text). */
+function sameQuantity(stored: string, sent: unknown): boolean {
+  const text = String(sent ?? "").trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return false;
+  return dec(stored).equals(text);
+}
+
+/** Idempotency key of an order created by the API (ADR 0058). */
+const API_REQUEST_KEY = /^[0-9a-f]{64}$/;
+
+export type OutboundDraftLineInput = {
+  /** Id or code (SKU) of the product. */
+  product: string;
+  /** In the product's unit, as text: «12», «2.5». */
+  quantity: string;
+};
+
+export type OutboundDraftResult =
+  | { ok: true; orderId: string; repeated: boolean }
+  | {
+      ok: false;
+      reason: "invalid" | "key_reused";
+      fieldErrors?: Partial<Record<OutboundField, string>>;
+      /** By position of the line sent. */
+      lineErrors?: Record<number, string>;
+      formError?: string;
+    };
+
+/**
+ * Creates a draft order with all its lines in one transaction (WMS-60):
+ * what the API sends at once. Same rules as the screen (header, active
+ * product, quantity by the product's rule, one line per product, at most
+ * OUTBOUND_MAX_LINES), in the warehouse the person (or key) works in.
+ * `apiRequestKey` (its own unique column, apart from the `sourceKey` of
+ * imports) makes it idempotent: the same key with the same content —
+ * every field of the header and every line — gives back the same order
+ * (`repeated`); with any other content, `key_reused`.
+ */
+export async function createOutboundDraft(
+  actor: InventoryActor,
+  input: OutboundHeaderInput & {
+    lines: readonly OutboundDraftLineInput[];
+    apiRequestKey: string;
+  },
+): Promise<OutboundDraftResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.create",
+  );
+  if (!API_REQUEST_KEY.test(String(input.apiRequestKey))) {
+    throw new Error("createOutboundDraft needs an API request key");
+  }
+  const header = readHeader(input);
+  if (!header.ok) {
+    return { ok: false, reason: "invalid", fieldErrors: header.fieldErrors };
+  }
+  const lines = Array.isArray(input.lines) ? input.lines : [];
+  if (lines.length === 0 || lines.length > OUTBOUND_MAX_LINES) {
+    return {
+      ok: false,
+      reason: "invalid",
+      formError: `Un pedido lleva de 1 a ${OUTBOUND_MAX_LINES} productos.`,
+    };
+  }
+  const { data } = header;
+  const client = forOrganization(organizationId);
+  const facility = await activeFacilityOf(client, userId);
+  const wanted = lines.map((line) =>
+    String(line.product ?? "")
+      .trim()
+      .slice(0, 64),
+  );
+  // Products by id or by code, read before the locks to know what to lock.
+  const found = await client.product.findMany({
+    where: { OR: [{ id: { in: wanted } }, { sku: { in: wanted } }] },
+    select: { id: true, sku: true },
+  });
+  const idOf = (value: string) =>
+    found.find((each) => each.id === value)?.id ??
+    found.find((each) => each.sku.toLowerCase() === value.toLowerCase())?.id ??
+    null;
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await client.$transaction(async (tx) => {
+        const existing = await tx.outboundOrder.findFirst({
+          where: { apiRequestKey: input.apiRequestKey },
+          select: {
+            id: true,
+            recipient: true,
+            address: true,
+            reference: true,
+            note: true,
+            dueOn: true,
+            priority: true,
+            lines: { select: { productId: true, quantity: true } },
+          },
+        });
+        const ids = wanted.map(idOf);
+        if (existing) {
+          const same =
+            existing.recipient === data.recipient &&
+            existing.address === data.address &&
+            existing.reference === data.reference &&
+            existing.note === data.note &&
+            (existing.dueOn?.toISOString().slice(0, 10) ?? null) ===
+              data.dueOn &&
+            existing.priority === data.priority &&
+            sameLines(
+              existing.lines.map((row) => ({
+                productId: row.productId,
+                quantity: row.quantity.toString(),
+              })),
+              lines.map((line, index) => ({
+                productId: ids[index] ?? null,
+                quantity: line.quantity,
+              })),
+            );
+          return same
+            ? { ok: true as const, orderId: existing.id, repeated: true }
+            : {
+                ok: false as const,
+                reason: "key_reused" as const,
+                formError:
+                  "Esta clave de idempotencia ya se usó para otro pedido.",
+              };
+        }
+        await lockRows(
+          tx,
+          "product",
+          ids.filter((id): id is string => id !== null),
+        );
+        const products = await tx.product.findMany({
+          where: { id: { in: ids.filter((id): id is string => id !== null) } },
+          select: {
+            id: true,
+            status: true,
+            unitCode: true,
+            quantityStep: true,
+          },
+        });
+        const lineErrors: Record<number, string> = {};
+        const rows: {
+          productId: string;
+          quantity: string;
+          unitCode: string;
+        }[] = [];
+        const seen = new Set<string>();
+        lines.forEach((line, index) => {
+          const product = products.find((each) => each.id === ids[index]);
+          if (!product) {
+            lineErrors[index] = "Este producto no existe.";
+            return;
+          }
+          if (product.status !== "ACTIVE") {
+            lineErrors[index] = "Este producto está archivado.";
+            return;
+          }
+          if (seen.has(product.id)) {
+            lineErrors[index] = "Este producto ya está en otra línea.";
+            return;
+          }
+          seen.add(product.id);
+          const quantity = parseQuantity(
+            {
+              unitCode: product.unitCode,
+              quantityStep: product.quantityStep.toString(),
+            },
+            String(line.quantity ?? ""),
+          );
+          if (!quantity.ok) {
+            lineErrors[index] = quantity.error;
+            return;
+          }
+          rows.push({
+            productId: product.id,
+            quantity: quantity.quantity.toString(),
+            unitCode: product.unitCode,
+          });
+        });
+        if (Object.keys(lineErrors).length > 0) {
+          return { ok: false as const, reason: "invalid" as const, lineErrors };
+        }
+        const last = await tx.outboundOrder.findFirst({
+          orderBy: { number: "desc" },
+          select: { number: true },
+        });
+        const orderId = newId();
+        await tx.outboundOrder.create({
+          data: {
+            id: orderId,
+            organizationId,
+            facilityId: facility.id,
+            number: (last?.number ?? 0) + 1,
+            recipient: data.recipient,
+            address: data.address,
+            reference: data.reference,
+            note: data.note,
+            dueOn: dayOf(data.dueOn),
+            priority: data.priority,
+            createdByUserId: userId,
+            apiRequestKey: input.apiRequestKey,
+          },
+        });
+        await tx.outboundOrderLine.createMany({
+          data: rows.map((row, index) => ({
+            id: newId(),
+            organizationId,
+            orderId,
+            lineNumber: index + 1,
+            ...row,
+          })),
+        });
+        return { ok: true as const, orderId, repeated: false };
+      }, LOCKING_TRANSACTION);
+    } catch (error) {
+      // Same number taken at once, or the same key sent twice at once:
+      // again (the second time the key is found and compared).
+      if ((error as { code?: string }).code === "P2002" && attempt < 4) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}

@@ -1,8 +1,8 @@
 import "server-only";
 
-import type { TenantDb } from "@/server";
+import { delegationOf, type TenantDb } from "@/server";
 
-import { buildScope, type Scope } from "./policy";
+import { buildScope, intersectScopes, type Scope } from "./policy";
 
 /**
  * Where a member may work (WMS-20, ADR 0038), read from `membership_scope`
@@ -27,10 +27,18 @@ export async function loadScope(
       scopes: { select: { facilityId: true, locationId: true } },
     },
   });
-  if (!membership || membership.organization.ownerUserId === userId) {
-    return null;
+  const own =
+    !membership || membership.organization.ownerUserId === userId
+      ? null
+      : buildScope(membership.scopes);
+  // WMS-60: an API key limited to its warehouse narrows its creator's scope.
+  const delegated = delegationOf(null, String(userId));
+  if (delegated.kind === "key" && delegated.delegation.facilityOnly) {
+    return intersectScopes(own, {
+      facilities: new Map([[delegated.delegation.facilityId, null]]),
+    });
   }
-  return buildScope(membership.scopes);
+  return own;
 }
 
 /**

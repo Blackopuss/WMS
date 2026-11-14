@@ -11,6 +11,7 @@ import {
   type ApprovalContext,
   type ApprovalTx,
 } from "@/platform/approvals";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -48,6 +49,7 @@ import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { COUNT_REVIEW_THRESHOLD } from "./settings";
 import { todayCountsWhere } from "./cycle-counts";
 import { COUNT_APPROVAL } from "./approval-keys";
+import { ADJUSTMENT_APPLIED_EVENT } from "./webhooks";
 
 /**
  * Physical counts: capture (INV-31). A count belongs to one location.
@@ -1710,6 +1712,31 @@ async function applyIn(
     }
   }
 
+  if (movementId) {
+    // WMS-60: who listens by webhook hears of the adjustment of the count.
+    await emitWebhookEvent(tx, ADJUSTMENT_APPLIED_EVENT, {
+      organizationId,
+      data: {
+        movementId,
+        source: "count",
+        countId: count.id,
+        locationId: count.locationId,
+        reason: data.reason,
+        reference: `Conteo de ${count.location.name}`.slice(0, 120),
+        lines: adjustments.map((adjustment) => ({
+          productId: adjustment.productId,
+          lotId: adjustment.lotId ?? null,
+          unitCode: adjustment.unitCode,
+          previousQuantity: null,
+          countedQuantity: null,
+          difference:
+            adjustment.direction === "IN"
+              ? String(adjustment.amount)
+              : `-${String(adjustment.amount)}`,
+        })),
+      },
+    });
+  }
   await tx.stockCount.updateMany({
     where: { id: count.id },
     data: {

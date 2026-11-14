@@ -135,6 +135,20 @@ export const AREAS = [
     ],
   },
   {
+    id: "api",
+    title: "Plataforma › API y webhooks",
+    doc: "api",
+    summary:
+      "Llaves de la API por empresa (solo el hash del secreto), contadores de llamadas por minuto, destinos de webhooks (secreto cifrado), eventos y entregas.",
+    models: [
+      "ApiKey",
+      "ApiRateWindow",
+      "WebhookEndpoint",
+      "WebhookEvent",
+      "WebhookDelivery",
+    ],
+  },
+  {
     id: "custom-fields",
     title: "Plataforma › Campos personalizados",
     doc: "custom-fields",

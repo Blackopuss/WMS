@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-104 tablas en 26 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+109 tablas en 27 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -16,6 +16,7 @@
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
 | Plataforma › Avisos | 4 | [notifications](modulos/notifications.md) |
+| Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
@@ -837,6 +838,126 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `NotificationEmailStatus`: `QUEUED`, `SENT`, `SKIPPED`, `FAILED`.
 - `DailyDigestStatus`: `QUEUED`, `SENT`, `EMPTY`, `SKIPPED`, `FAILED`.
+
+## Plataforma › API y webhooks
+
+Llaves de la API por empresa (solo el hash del secreto), contadores de llamadas por minuto, destinos de webhooks (secreto cifrado), eventos y entregas.
+
+Documento: [modulos/api.md](modulos/api.md).
+
+### ApiKey · `api_key`
+
+A key of the API of a company (WMS-60, ADR 0058). It acts for the person who created it, cut down to its capabilities and, if limited, to its warehouse. Only the hash of the secret is kept. Never deleted: revoked.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(80)` |  | «ERP», «Tienda»: how people recognize it. |
+| `prefix` | `String · VarChar(16)` |  | Visible part of the key («wms_ab12cd34»). |
+| `secretHash` | `String · Char(64)` |  | única. sha256 of the whole key, hex: how a call finds it. |
+| `capabilities` | `Json` |  | Capabilities of version 1 («stock.read»). |
+| `facilityId` | `String · Char(36)` |  | Warehouse it works in (lists and new documents). |
+| `facilityOnly` | `Boolean` | `false` | True: it reaches only that warehouse. |
+| `requestsPerMinute` | `Int` |  | Calls per minute of this key; never more than the company. |
+| `expiresAt` | `DateTime? · DateTime(3)` |  |  |
+| `lastUsedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `revokedAt` | `DateTime? · DateTime(3)` |  |  |
+| `revokedByUserId` | `String? · Char(36)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `prefix`).
+- Índices: (`organizationId`, `revokedAt`, `createdAt`); (`organizationId`, `facilityId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
+
+### ApiRateWindow · `api_rate_window`
+
+Fixed one-minute window of calls of a key or of a company (WMS-60). One row per counter, reused in each window; not a company table: the key says whose it is («api:key:<id>», «api:org:<id>»).
+
+No es de una empresa (sin `organizationId`).
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `key` | `String · VarChar(80)` |  | llave primaria |
+| `windowStart` | `DateTime · DateTime(3)` |  |  |
+| `count` | `Int` |  |  |
+
+### WebhookEndpoint · `webhook_endpoint`
+
+Where a company wants its events (WMS-60). The signing secret is kept encrypted (it must be usable to sign); the previous one lives 24 hours after a change.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `url` | `String · VarChar(500)` |  |  |
+| `description` | `String? · VarChar(120)` |  |  |
+| `events` | `Json` |  | Keys of the event types it receives. |
+| `status` | `WebhookEndpointStatus` | `ACTIVE` |  |
+| `pausedByFailures` | `Boolean` | `false` | True when it paused itself after repeated failures. |
+| `consecutiveFailures` | `Int` | `0` |  |
+| `secretCiphertext` | `String · VarChar(255)` |  |  |
+| `previousSecretCiphertext` | `String? · VarChar(255)` |  |  |
+| `previousSecretExpiresAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+| `removedAt` | `DateTime? · DateTime(3)` |  | Removed: kept for its deliveries, receives nothing. |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `removedAt`, `createdAt`).
+
+### WebhookEvent · `webhook_event`
+
+A fact sent to webhooks (WMS-60); its id is the same in every attempt.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `type` | `String · VarChar(80)` |  |  |
+| `payload` | `Json` |  | The whole body sent, already without costs. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `createdAt`).
+
+### WebhookDelivery · `webhook_delivery`
+
+One event to one destination (WMS-60): what people see of each attempt.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `endpointId` | `String · Char(36)` |  |  |
+| `eventId` | `String · Char(36)` |  |  |
+| `status` | `WebhookDeliveryStatus` | `PENDING` |  |
+| `attempts` | `Int` | `0` |  |
+| `lastAttemptAt` | `DateTime? · DateTime(3)` |  |  |
+| `lastStatusCode` | `Int?` |  |  |
+| `reason` | `String? · VarChar(200)` |  | Own reason, for people; never the body nor the raw error. |
+| `deliveredAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `endpointId`, `eventId`).
+- Índices: (`organizationId`, `endpointId`, `createdAt`); (`organizationId`, `eventId`).
+- Relaciones: `endpoint` → `WebhookEndpoint` por (`organizationId`, `endpointId`) (al borrar: Restrict); `event` → `WebhookEvent` por (`organizationId`, `eventId`) (al borrar: Restrict).
+
+#### Enumeraciones de Plataforma › API y webhooks
+
+- `WebhookEndpointStatus`: `ACTIVE`, `PAUSED`.
+- `WebhookDeliveryStatus`: `PENDING`, `DELIVERED`, `FAILED`, `SKIPPED`.
 
 ## Plataforma › Campos personalizados
 
@@ -1768,8 +1889,9 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `facilityId` | `String · Char(36)` |  | The warehouse it leaves from (WMS-18): it is picked there. |
 | `importId` | `String? · Char(36)` |  | The file it came from (WMS-13B); null when written by hand. |
 | `sourceKey` | `String? · VarChar(80)` |  | Imported orders only: its «Pedido» of the file, folded. Unique in the company, so the same order of a file never becomes two (WMS-13B). |
+| `apiRequestKey` | `String? · Char(64)` |  | WMS-60: sha256 (hex) of the API key and its Idempotency-Key: an order created by the API is not created twice. Apart from sourceKey, so a file can never take it nor the other way round. |
 
-- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `sourceKey`).
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `sourceKey`); (`organizationId`, `apiRequestKey`).
 - Índices: (`organizationId`, `status`, `number`).
 - Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `import` → `OutboundImport` por (`organizationId`, `importId`) (al borrar: Restrict).
 

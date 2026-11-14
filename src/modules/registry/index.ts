@@ -11,6 +11,7 @@ export { customFieldReservedLabels } from "./custom-fields";
 export { moduleOpenWork } from "./open-work";
 export { notificationTypes } from "./notifications";
 export { operationSettings } from "./settings";
+export { webhookEventTypes } from "./webhooks";
 
 /**
  * Installed modules. Inventario and Compras can be contracted; CRM is
