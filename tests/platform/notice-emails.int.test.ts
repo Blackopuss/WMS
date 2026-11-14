@@ -191,7 +191,12 @@ beforeAll(async () => {
 }, 60_000);
 
 afterEach(() => invalidateEntitlements());
-afterAll(() => db.$disconnect());
+afterAll(async () => {
+  // These tests leave hundreds of mail jobs in the queue; the files that
+  // run the worker afterwards would spend their rounds on them.
+  await db.job.deleteMany({});
+  await db.$disconnect();
+});
 
 describe("choosing to get a notice by mail", () => {
   it("is off by default: a notice does not become a mail", async () => {

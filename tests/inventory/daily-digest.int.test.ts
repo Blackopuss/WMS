@@ -224,7 +224,12 @@ beforeAll(async () => {
 }, 120_000);
 
 afterEach(() => invalidateEntitlements());
-afterAll(() => db.$disconnect());
+afterAll(async () => {
+  // These tests leave hundreds of mail jobs in the queue; the files that
+  // run the worker afterwards would spend their rounds on them.
+  await db.job.deleteMany({});
+  await db.$disconnect();
+});
 
 describe("the daily summary by mail", () => {
   it("waits for the company's hour", async () => {
