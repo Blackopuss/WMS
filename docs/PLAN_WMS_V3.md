@@ -62,7 +62,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Dónde quedó (2026-11-13):** el fundador pidió detenerse al cerrar WMS-39 y WMS-58; no se empieza ningún paso nuevo hasta que lo indique. Fases 1 y 2 cerradas; de la Fase 3 están hechos WMS-56, WMS-41, WMS-57 y WMS-58; transversales hechos: WMS-35, WMS-36 y WMS-39.
 
-**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048) y WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055). En curso, cada uno en su rama: WMS-60, WMS-40, WMS-39B (avisos por correo y resumen diario).
+**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048), WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055) y WMS-40 (sesiones del equipo, ADR 0059). En curso, cada uno en su rama: WMS-60 y WMS-39B (avisos por correo y resumen diario). Sigue WMS-38 (PIN), sobre WMS-40.
 
 **Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
 
@@ -146,7 +146,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, ~~WMS-19~~, ~~WMS-54~~, ~~WMS-55~~, ~~WMS-26~~, ~~WMS-36~~, ~~WMS-23~~, ~~WMS-24~~, ~~WMS-25~~ | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
 | 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, ~~WMS-58~~, ~~WMS-41~~, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
-| Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, WMS-37, WMS-38, ~~WMS-39~~, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
+| Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, WMS-37, WMS-38, ~~WMS-39~~, ~~WMS-40~~, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
 | 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, WMS-46, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
 
 Los pasos transversales se intercalan cuando su dependencia está lista (por
@@ -678,7 +678,7 @@ costos solo para quien puede verlos; carga con p95 < 500 ms.
 | WMS-37 | Evidencias fotográficas (archivos privados) en recepción, tareas, devoluciones, inspecciones y ajustes | WMS-67 |
 | WMS-38 | Terminales compartidas: cambio rápido de persona con PIN, cierre automático y rastro individual | — |
 | WMS-39 | Incidencias y notificaciones dentro de la app | WMS-16 |
-| WMS-40 | Sesiones del equipo para el administrador: dispositivo, navegador, IP, última actividad; cerrarlas a distancia | — |
+| ~~WMS-40~~ | Sesiones del equipo para el administrador: dispositivo, navegador, IP, última actividad; cerrarlas a distancia. **Hecho (ADR 0059).** Pendiente: ubicación aproximada por IP (WMS-68) | — |
 | WMS-68 | Historial de accesos por persona y alertas de accesos sospechosos (país o dispositivo nuevo, muchos fallos) | WMS-40 |
 | WMS-42 | Equipos (montacargas): registro, mantenimiento e incidencias; la tarea puede pedir un tipo de equipo | WMS-06 |
 | WMS-67 | Almacenamiento externo de archivos (compatible con S3) detrás de la interfaz actual de archivos, con respaldo independiente | — |
