@@ -8,6 +8,11 @@ cerrar cada paso.
 
 ## 2026-11-14
 
+- **WMS-38** · Terminales compartidas con PIN (ADR 0061): un dispositivo del
+  piso se registra como terminal y cada persona entra ahí con su PIN a su
+  propia sesión, recortada y con cierre por inactividad; el secreto de la
+  terminal rota en cada entrada y detecta copias; en una terminal no se entra
+  con contraseña.
 - **WMS-60** · API y webhooks (ADR 0058): API REST por llave (`/api/v1`) con
   permisos por llave que nunca pasan de los de quien la creó, límites de uso,
   documento OpenAPI generado, lecturas de inventario y compras, alta de

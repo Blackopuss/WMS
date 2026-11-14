@@ -14,17 +14,13 @@ para arrancar sin releer la conversación anterior.
   del equipo), WMS-39B (avisos por correo y resumen diario) y WMS-60 (API y
   webhooks). Fuera de lo que él pidió, un chat nuevo pregunta qué sigue; no
   retoma el plan por su cuenta.
-- **En curso, cada uno en su chat y su rama:**
-  - `wms-38-terminales-pin` (WMS-38, PIN en terminales compartidas; ADR 0061):
-    implementado y revisado por un revisor independiente de seguridad; está
-    corrigiendo doce hallazgos (cuatro medios) y debe traer `pruebas` para
-    combinar su recorte `Subject.terminal` con `Subject.limit` de WMS-60 y
-    renombrar su migración a `20261116130000_…`. Al llegar su reporte: revisar
-    las correcciones (otro revisor), unir, documentar.
-  - La propuesta de producción y calidad (`docs/flujos/PRODUCCION_CALIDAD.md`)
-    quedó unida en su quinta versión; su rama ya no tiene nada pendiente.
+- **Nada en curso:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
+  unido el 2026-11-14 tras tres vueltas de revisión de seguridad, y la
+  propuesta de producción y calidad está unida en su quinta versión. No hay
+  chats ni ramas con trabajo pendiente.
 - Las ramas ya unidas (`pend-traslado-pdf-archivar`, `wms-40-sesiones-equipo`,
-  `pend-avisos-correo`, `wms-60-api-webhooks`) siguen en GitHub: desde un chat
+  `pend-avisos-correo`, `wms-60-api-webhooks`, `wms-38-terminales-pin`,
+  `flujo-produccion-calidad`) siguen en GitHub: desde un chat
   de la nube no se pueden borrar (el `git push --delete` no tiene efecto); las
   borra el fundador si quiere.
 - `main` se avanzó hasta `pruebas` el 2026-11-13. Si al abrir un chat `main` va
@@ -70,10 +66,11 @@ para arrancar sin releer la conversación anterior.
   nuevo «En restauración» y orden de reproceso), R2 (lo restaurado, directo a
   disponible o por inspección) y R3 (si el Almacenista manda a restauración).
   Cuando las conteste y apruebe la propuesta, el primer paso es WMS-59.
-- WMS-38: tres decisiones de quien coordina que puede cambiar (en una terminal
-  no se entra con contraseña; PIN de 5 o 6 dígitos; una sesión de PIN no
-  exporta, no autoriza ni ve costos) y qué roles usan PIN por omisión (hoy el
-  piso).
+- WMS-38: decisiones de quien coordina que puede cambiar (en una terminal no se
+  entra con contraseña; PIN de 6 dígitos por omisión y 5 como opción; una
+  sesión de PIN no hace exportaciones masivas, no autoriza ni ve costos) y qué
+  roles usan PIN por omisión (hoy el piso). Falta probar en navegador el
+  cierre por inactividad en una pantalla que se refresca sola.
 - WMS-60: límites de uso por plan (hoy 60 por llave y 300 por empresa por
   minuto); si desactivar a alguien debe revocar sus llaves para siempre.
 - WMS-40: si Supervisión ve las sesiones de su gente de piso (hoy no).
