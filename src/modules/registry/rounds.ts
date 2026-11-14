@@ -1,5 +1,6 @@
 import { runCycleCountRound, runReplenishmentRound } from "@/modules/inventory";
 import type { ScheduledRound } from "@/platform/jobs";
+import { purgeWebhookHistory } from "@/platform/api";
 import { purgeReadNotifications } from "@/platform/notifications";
 
 /**
@@ -25,5 +26,11 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "platform.notifications_cleanup",
     module: "inventory",
     run: (organizationId) => purgeReadNotifications(organizationId),
+  },
+  // WMS-60 (ADR 0058): webhook events and deliveries older than 30 days.
+  {
+    name: "platform.webhooks_cleanup",
+    module: "inventory",
+    run: (organizationId) => purgeWebhookHistory(organizationId),
   },
 ];

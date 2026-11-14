@@ -725,6 +725,7 @@ export {
 } from "./tasks";
 export type { TaskGroupResult } from "./tasks";
 export { INVENTORY_NOTIFICATION_TYPES } from "./notices";
+export { INVENTORY_WEBHOOK_EVENTS } from "./webhooks";
 export {
   INCIDENT_PAGE_SIZE,
   addIncidentNote,

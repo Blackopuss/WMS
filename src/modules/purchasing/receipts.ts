@@ -13,6 +13,7 @@ import {
   postReceiptEntry,
   type CrossDockSent,
 } from "@/modules/inventory";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -40,6 +41,7 @@ import {
   transitionProblem,
   type PurchaseOrderStatus,
 } from "./order-states";
+import { RECEIPT_CONFIRMED_EVENT } from "./webhooks";
 import { recordLastCost, type PurchasingActor } from "./product-suppliers";
 
 /**
@@ -610,6 +612,26 @@ async function receiveOnce(
         places.length === 1
           ? places[0]!
           : `${places.slice(0, -1).join(", ")} y ${places.at(-1)}`;
+      // WMS-60: who listens by webhook hears of it, inside this transaction.
+      await emitWebhookEvent(tx, RECEIPT_CONFIRMED_EVENT, {
+        organizationId,
+        data: {
+          receiptId,
+          purchaseOrderId: current.id,
+          purchaseOrderNumber: numberText,
+          orderStatus: status,
+          movementId: entry.movementId,
+          reference: data.reference ?? null,
+          lines: entry.lines.map((line) => ({
+            productId: line.productId,
+            locationId: line.locationId,
+            lotId: line.lotId ?? null,
+            quantity: line.baseQuantity.toString(),
+            unitCode: line.unitCode,
+            damaged: line.status === "DAMAGED",
+          })),
+        },
+      });
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,

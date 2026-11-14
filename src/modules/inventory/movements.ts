@@ -11,6 +11,7 @@ import {
   type ApprovalContext,
   type ApprovalTx,
 } from "@/platform/approvals";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -43,6 +44,7 @@ import {
 } from "./placement";
 import { ADJUSTMENT_APPROVAL_THRESHOLD, ENTRY_REPEAT_WINDOW } from "./settings";
 import { ADJUSTMENT_APPROVAL } from "./approval-keys";
+import { ADJUSTMENT_APPLIED_EVENT } from "./webhooks";
 import { exceedsThreshold } from "./approval-rules";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
 import {
@@ -2556,6 +2558,27 @@ async function adjustIn(
       },
     });
   }
+  // WMS-60: who listens by webhook hears of it, inside this transaction.
+  await emitWebhookEvent(tx, ADJUSTMENT_APPLIED_EVENT, {
+    organizationId,
+    data: {
+      movementId,
+      source: mode.kind === "approved" ? "approval" : "manual",
+      locationId: location.id,
+      reason: data.reason,
+      reference: data.reference ?? null,
+      lines: [
+        {
+          productId: product.id,
+          lotId: lot?.id ?? null,
+          unitCode,
+          previousQuantity: before.toString(),
+          countedQuantity: counted.toString(),
+          difference: (direction === "IN" ? amount : amount.negated()).toString(),
+        },
+      ],
+    },
+  });
   await recordAuditEvent(tx, {
     organizationId,
     actorUserId: userId,

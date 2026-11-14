@@ -3,12 +3,14 @@ import "server-only";
 import { z } from "zod";
 
 import { dec, newId, type Decimal } from "@/lib";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
 import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
+import { SHIPMENT_DISPATCHED_EVENT } from "./webhooks";
 import { containerName, weightText } from "./container-rules";
 import { lotDayOf, lotLabel } from "./lot-rules";
 import { formatStock, type InventoryActor } from "./movements";
@@ -1238,6 +1240,29 @@ export async function dispatchShipment(
           shippedAt: new Date(),
           shippedByUserId: userId,
           movementId,
+        },
+      });
+      // WMS-60: who listens by webhook hears of it, inside this transaction.
+      await emitWebhookEvent(tx, SHIPMENT_DISPATCHED_EVENT, {
+        organizationId,
+        data: {
+          shipmentId: shipment.id,
+          number: numberText,
+          movementId,
+          trackingNumber: shipment.trackingNumber ?? null,
+          orders: orders.map((order) => ({
+            id: order.id,
+            number: formatOutboundNumber(order.number),
+            lines: drafts
+              .filter((draft) => draft.orderId === order.id)
+              .map((draft) => ({
+                productId: draft.productId,
+                lotId: draft.lotId ?? null,
+                quantity: draft.quantity.toString(),
+                unitCode: draft.unitCode,
+                serials: draft.units.map((unit) => unit.serial),
+              })),
+          })),
         },
       });
       await recordAuditEvent(tx, {

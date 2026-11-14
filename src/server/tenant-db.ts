@@ -328,6 +328,7 @@ const LOCKABLE = {
   pickWave: "pick_wave",
   purchaseRequest: "purchase_request",
   incident: "incident",
+  webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
 } as const;
 
