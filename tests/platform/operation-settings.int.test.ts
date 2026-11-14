@@ -27,6 +27,7 @@ import {
   registerEntry,
   releaseOutboundOrder,
   setOutboundLine,
+  DIGEST_HOUR,
   type InventoryActor,
 } from "@/modules/inventory";
 import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
@@ -237,6 +238,9 @@ describe("operation settings", () => {
       },
       // WMS-25: picking goes order by order unless the company uses waves.
       { key: PICKING_MODE.key, value: "orders", defaultValue: "orders" },
+      // WMS-39B: the daily summary at 7:00; mail is up to each person.
+      { key: DIGEST_HOUR.key, value: "7", defaultValue: "7" },
+      { key: "platform.notices.email", value: "on", defaultValue: "on" },
       // WMS-38: shared terminals (always visible; shown on their screen).
       { key: PIN_ROLES.key, value: "floor", defaultValue: "floor" },
       { key: PIN_LENGTH.key, value: "6", defaultValue: "6" },
@@ -264,6 +268,8 @@ describe("operation settings", () => {
       { key: CROSS_DOCK_MODE.key, value: "off" },
       { key: ADJUSTMENT_APPROVAL_THRESHOLD.key, value: "any" },
       { key: PICKING_MODE.key, value: "orders" },
+      { key: DIGEST_HOUR.key, value: "7" },
+      { key: "platform.notices.email", value: "on" },
       { key: PIN_ROLES.key, value: "floor" },
       { key: PIN_LENGTH.key, value: "6" },
       { key: IDLE_MINUTES.key, value: "5" },

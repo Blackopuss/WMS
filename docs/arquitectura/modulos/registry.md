@@ -9,9 +9,9 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | --- | --- | --- |
 | `index.ts` | `moduleRegistry` (contratos de `inventory`, `purchasing` y `crm` anunciado), `ModuleId` | guard, consola interna, `provisionCompany` |
 | `announced.ts` | `crmModule` (`availability: "unavailable"`, sin permisos) | `index.ts` |
-| `jobs.ts` | `jobHandlers` | el worker |
-| `rounds.ts` | `scheduledRounds` (`inventory.replenishment`, WMS-24; `inventory.cycle_counts`, WMS-55; `platform.notifications_cleanup`, WMS-39: borra los avisos leídos hace más de 90 días) | el worker |
-| `settings.ts` | `operationSettings` (validados al cargar) | Configuración › Operación |
+| `jobs.ts` | `jobHandlers` (incluye `notifications.send_email` con `noticeEmailJobHandlers(notificationTypes)` e `inventory.send_daily_digest`, WMS-39B) | el worker |
+| `rounds.ts` | `scheduledRounds` (`inventory.replenishment`, WMS-24; `inventory.cycle_counts`, WMS-55; `platform.notifications_cleanup`, WMS-39: borra los avisos leídos y los correos de avisos terminados hace más de 90 días; `inventory.daily_digest`, WMS-39B: resumen diario por correo) | el worker |
+| `settings.ts` | `operationSettings` (validados al cargar; incluye el ajuste de plataforma `platform.notices.email`, WMS-39B) | Configuración › Operación |
 | `open-work.ts` | `moduleOpenWork` | `provisionCompany` al quitar un módulo |
 | `approvals.ts` | `approvalTypes` (tipos de aprobación de cada módulo con su efecto, validados al cargar; WMS-56) | Aprobaciones, Inicio, Configuración › Reglas de aprobación |
 | `notifications.ts` | `notificationTypes` (tipos de aviso de la plataforma y de cada módulo, validados al cargar; WMS-39) | Configuración › Avisos que recibo |

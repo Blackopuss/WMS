@@ -62,7 +62,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Dónde quedó (2026-11-13):** el fundador pidió detenerse al cerrar WMS-39 y WMS-58; no se empieza ningún paso nuevo hasta que lo indique. Fases 1 y 2 cerradas; de la Fase 3 están hechos WMS-56, WMS-41, WMS-57 y WMS-58; transversales hechos: WMS-35, WMS-36 y WMS-39.
 
-**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048), WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055) y WMS-40 (sesiones del equipo, ADR 0059). En curso, cada uno en su rama: WMS-60 y WMS-39B (avisos por correo y resumen diario). Sigue WMS-38 (PIN), sobre WMS-40.
+**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048), WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055) , WMS-40 (sesiones del equipo, ADR 0059) y WMS-39B (avisos por correo y resumen diario, ADR 0060). En curso, cada uno en su rama: WMS-60 (correcciones de la revisión) y WMS-38 (PIN), sobre WMS-40.
 
 **Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
 
@@ -72,7 +72,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 - El escaneo se hace con **lector USB** y con la **cámara en Android desde Chrome**; el iPhone no es requisito y no se agrega una librería de decodificación (ADR 0049).
 - El Montacarguista **sí** reporta incidencias: el permiso se queda (ADR 0057).
 
-- Avisos por correo como segundo canal y resumen diario de lotes por caducar y existencias bajas (ADR 0057).
+- Avisos por correo (ADR 0060): que los avisos dirigidos a personas lleven su almacén o ubicación para revalidar el alcance al enviar; correo en HTML; enlace de baja sin entrar a la app; elegir los días del resumen; el resumen llama `listLowStock` una vez por persona suscrita (costoso con muchos mínimos); la limpieza de avisos y correos viejos no corre en empresas sin Inventario vigente.
 - Tipos de incidencia configurables por empresa y fotos de evidencia (WMS-37; ADR 0057).
 - Campos personalizados en documentos (órdenes de compra, pedidos de salida), filtros en ubicaciones y proveedores, y en las exportaciones de existencias y movimientos (ADR 0056).
 - Surtir directo de una tarima; quien está limitado a zonas no ve tareas de surtido si «Preparación» queda fuera de su zona; agregar o quitar pedidos de una ola (ADR 0054, ADR 0043).
@@ -625,8 +625,12 @@ también la inspección en recepción) y producto terminado a su ubicación
 (WMS-31). Módulos `production` y `quality`, contratables por separado.
 
 **Propuesta de flujo (2026-11-14):** [`docs/flujos/PRODUCCION_CALIDAD.md`](flujos/PRODUCCION_CALIDAD.md),
-con el flujo por paso, los sub-pasos y su orden, y las decisiones D1 a D11 que
-el fundador debe tomar antes de programar. Nada de esto está decidido todavía.
+segunda versión con las respuestas del fundador a D1–D11 (sección 1). Agrega
+tres pasos que este plan no tenía: **WMS-74** (motor de procesos y subprocesos
+configurables por empresa, de plataforma), **WMS-74B** (procesos en embarques)
+y **WMS-28B** (solicitud de producción desde el piso); hace de las fotos
+(WMS-37) un requisito y pone WMS-59 primero. Faltan las respuestas del
+fundador a las preguntas P1–P13 de su sección 10 antes de programar.
 
 ### WMS-60 · API y webhooks
 

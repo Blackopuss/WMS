@@ -3,7 +3,11 @@ import "server-only";
 import { isInternalHref, newId } from "@/lib";
 import { forOrganization } from "@/server";
 
-import type { NotificationType } from "./definitions";
+import { isAllowed, type Permission } from "@/platform/authorization";
+import { readSetting } from "@/platform/settings";
+
+import { isEmailOnly, type NotificationType } from "./definitions";
+import { NOTICE_EMAIL_CHANNEL } from "./settings";
 
 /**
  * Reading and marking notices (WMS-39, ADR 0057). A notice exists only for
@@ -170,10 +174,17 @@ export type NotificationPreferenceView = {
   key: string;
   label: string;
   description: string;
+  /** In the app (always false for a type only by mail). */
   enabled: boolean;
+  /** Also by mail (WMS-39B): off unless the person asked. */
+  email: boolean;
+  /** Only by mail (a summary): there is no notice in the app. */
+  emailOnly: boolean;
+  /** Offered only to who holds one of these (empty: everybody). */
+  visibleWith: readonly Permission[];
 };
 
-/** Each type the person may hear about, with whether it is on for them. */
+/** Each type the person may hear about, with how it reaches them. */
 export async function getNotificationPreferences(
   actor: Actor,
   types: readonly NotificationType[],
@@ -183,41 +194,88 @@ export async function getNotificationPreferences(
     actor.organizationId,
   ).notificationPreference.findMany({
     where: { userId: actor.userId },
-    select: { typeKey: true, enabled: true },
+    select: { typeKey: true, enabled: true, email: true },
   });
-  const chosen = new Map(rows.map((row) => [row.typeKey, row.enabled]));
+  const chosen = new Map(rows.map((row) => [row.typeKey, row]));
   return types
     .filter((type) => type.module === null || modules(type.module))
-    .map((type) => ({
-      key: type.key,
-      label: type.label,
-      description: type.description,
-      enabled: chosen.get(type.key) ?? type.defaultEnabled,
-    }));
+    .map((type) => {
+      const row = chosen.get(type.key);
+      const emailOnly = isEmailOnly(type);
+      const enabled = emailOnly ? false : (row?.enabled ?? type.defaultEnabled);
+      return {
+        key: type.key,
+        label: type.label,
+        description: type.description,
+        enabled,
+        // By mail only while it is on in the app (ADR 0060).
+        email: row?.email === true && (emailOnly || enabled),
+        emailOnly,
+        visibleWith: type.visibleWith ?? [],
+      };
+    });
 }
 
 export type SetPreferenceResult =
-  { ok: true } | { ok: false; reason: "not_found" };
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "not_allowed" | "email_off" };
 
 /**
- * Turns a type on or off for the person. Back to its default, the row is
- * removed: only what the person changed is stored.
+ * Turns a type on or off for the person, in the app (`app`) or by mail
+ * (`email`). Off in the app is off by mail too; on by mail turns it on in
+ * the app. A type only by mail has no `app` channel. When both are back at
+ * their defaults the row is removed: only what the person changed is
+ * stored.
  */
 export async function setNotificationPreference(
   actor: Actor,
   types: readonly NotificationType[],
   typeKey: string,
   enabled: boolean,
+  channel: "app" | "email" = "app",
 ): Promise<SetPreferenceResult> {
   const type = types.find((each) => each.key === String(typeKey));
   if (!type) return { ok: false, reason: "not_found" };
+  const emailOnly = isEmailOnly(type);
+  if (emailOnly && channel === "app") return { ok: false, reason: "not_found" };
+  // What the screen does not offer is refused here too (ADR 0060).
+  if (type.visibleWith && type.visibleWith.length > 0) {
+    let allowed = false;
+    for (const permission of type.visibleWith) {
+      if (await isAllowed(actor.organizationId, actor.userId, permission)) {
+        allowed = true;
+        break;
+      }
+    }
+    if (!allowed) return { ok: false, reason: "not_allowed" };
+  }
   const client = forOrganization(actor.organizationId);
+  if (
+    channel === "email" &&
+    enabled &&
+    (await readSetting(client, NOTICE_EMAIL_CHANNEL)) !== "on"
+  ) {
+    return { ok: false, reason: "email_off" };
+  }
   await client.$transaction(async (tx) => {
     const existing = await tx.notificationPreference.findFirst({
       where: { userId: actor.userId, typeKey: type.key },
-      select: { id: true },
+      select: { id: true, enabled: true, email: true },
     });
-    if (enabled === type.defaultEnabled) {
+    const before = {
+      enabled: existing?.enabled ?? type.defaultEnabled,
+      email: existing?.email ?? false,
+    };
+    const after =
+      channel === "app"
+        ? { enabled, email: enabled ? before.email : false }
+        : {
+            enabled: emailOnly
+              ? type.defaultEnabled
+              : enabled || before.enabled,
+            email: enabled,
+          };
+    if (after.enabled === type.defaultEnabled && !after.email) {
       if (existing) {
         await tx.notificationPreference.deleteMany({
           where: { id: existing.id },
@@ -228,7 +286,7 @@ export async function setNotificationPreference(
     if (existing) {
       await tx.notificationPreference.updateMany({
         where: { id: existing.id },
-        data: { enabled },
+        data: after,
       });
     } else {
       await tx.notificationPreference.create({
@@ -237,7 +295,7 @@ export async function setNotificationPreference(
           organizationId: actor.organizationId,
           userId: actor.userId,
           typeKey: type.key,
-          enabled,
+          ...after,
         },
       });
     }

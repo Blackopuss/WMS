@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-104 tablas en 27 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+106 tablas en 27 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -15,7 +15,7 @@
 | Plataforma › Aceptación de documentos | 1 | [legal](modulos/legal.md) |
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
-| Plataforma › Avisos | 2 | [notifications](modulos/notifications.md) |
+| Plataforma › Avisos | 4 | [notifications](modulos/notifications.md) |
 | Plataforma › Terminales compartidas | 2 | [terminals](modulos/terminals.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
@@ -746,7 +746,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Plataforma › Avisos
 
-Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído») y los tipos que cada persona apagó; los tipos los declara cada módulo.
+Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído»), los tipos que cada persona apagó o pidió por correo, los avisos que salen por correo y el resumen diario por correo de cada persona; los tipos los declara cada módulo.
 
 Documento: [modulos/notifications.md](modulos/notifications.md).
 
@@ -785,9 +785,61 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `userId` | `String · Char(36)` |  |  |
 | `typeKey` | `String · VarChar(80)` |  |  |
 | `enabled` | `Boolean` |  |  |
+| `email` | `Boolean` | `false` | Also by mail (WMS-39B, ADR 0060). Off by default: only who asks. |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `userId`, `typeKey`).
+- Índices: (`organizationId`, `typeKey`, `email`).
+
+### NotificationEmail · `notification_email`
+
+A notice that also goes out by mail (WMS-39B, ADR 0060). Written by `notify` in the transaction of the fact; sent by the worker, grouped per person. Text and destination are a copy of the notice: the notice may be cleaned up before this row is.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `notificationId` | `String · Char(36)` |  | The notice it repeats (no relation: notices are cleaned up). |
+| `recipientUserId` | `String · Char(36)` |  |  |
+| `typeKey` | `String · VarChar(80)` |  |  |
+| `text` | `String · VarChar(300)` |  |  |
+| `href` | `String · VarChar(300)` |  |  |
+| `requirement` | `Json` |  | What receiving it required (permissions, match, facility or location): checked again before it is sent. |
+| `status` | `NotificationEmailStatus` | `QUEUED` |  |
+| `claimedBy` | `String? · Char(36)` |  | Job that took it to send; null while it waits. |
+| `reason` | `String? · VarChar(300)` |  | Why it did not go out (SKIPPED, FAILED). |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `sentAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `notificationId`).
+- Índices: (`organizationId`, `recipientUserId`, `status`, `claimedBy`); (`organizationId`, `recipientUserId`, `sentAt`); (`organizationId`, `status`, `createdAt`).
+
+### DailyDigest · `daily_digest`
+
+The daily summary by mail of one person for one day of the company's calendar (WMS-39B, ADR 0060): lots about to expire and low stock. One per person and day; the round that sets it aside never makes two.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `userId` | `String · Char(36)` |  |  |
+| `day` | `DateTime · Date` |  | Day of the company's calendar. |
+| `status` | `DailyDigestStatus` | `QUEUED` |  |
+| `reason` | `String? · VarChar(300)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `sentAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `userId`, `day`).
+- Índices: (`organizationId`, `createdAt`).
+
+#### Enumeraciones de Plataforma › Avisos
+
+- `NotificationEmailStatus`: `QUEUED`, `SENT`, `SKIPPED`, `FAILED`.
+- `DailyDigestStatus`: `QUEUED`, `SENT`, `EMPTY`, `SKIPPED`, `FAILED`.
 
 ## Plataforma › Terminales compartidas
 

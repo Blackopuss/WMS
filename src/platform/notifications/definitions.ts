@@ -5,6 +5,8 @@
  * modules. Pure: no database.
  */
 
+import type { Permission } from "@/platform/authorization";
+
 export type NotificationType = {
   /** «inventory.task_assigned»: module and thing. */
   key: string;
@@ -16,13 +18,30 @@ export type NotificationType = {
   description: string;
   /** On unless the person turns it off (true for what asks them to act). */
   defaultEnabled: boolean;
+  /**
+   * Where it reaches the person (WMS-39B, ADR 0060). `app` (the default):
+   * the bell, and by mail too if the person asks. `email`: only by mail
+   * (a summary), never a notice in the app; off unless asked for.
+   */
+  channels?: "app" | "email";
+  /**
+   * Shown in the preferences only to who holds one of these (a summary
+   * nobody could read is not offered). Empty or absent: to everybody.
+   */
+  visibleWith?: readonly Permission[];
 };
+
+/** Whether a type reaches the person only by mail. */
+export function isEmailOnly(type: Pick<NotificationType, "channels">): boolean {
+  return type.channels === "email";
+}
 
 export const NOTIFICATION_TEXT_MAX = 300;
 
 /** A list of types is valid when keys are well formed and unique. */
 export function assertValidNotificationTypes(
-  types: readonly Pick<NotificationType, "key" | "label">[],
+  types: readonly (Pick<NotificationType, "key" | "label"> &
+    Partial<Pick<NotificationType, "channels" | "defaultEnabled">>)[],
 ): void {
   const keys = new Set<string>();
   for (const type of types) {
@@ -35,6 +54,10 @@ export function assertValidNotificationTypes(
     }
     keys.add(type.key);
     if (!type.label.trim()) throw new Error(`No label for ${type.key}`);
+    // Nobody receives mail without asking for it (ADR 0060).
+    if (type.channels === "email" && type.defaultEnabled) {
+      throw new Error(`Mail-only ${type.key} must be off by default`);
+    }
   }
 }
 

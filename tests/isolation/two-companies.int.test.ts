@@ -1210,6 +1210,27 @@ beforeAll(async () => {
         enabled: false,
       },
     });
+    // A notice by mail and a daily summary (WMS-39B).
+    await db.notificationEmail.create({
+      data: {
+        id: newId(),
+        organizationId,
+        notificationId: newId(),
+        recipientUserId: who,
+        typeKey: "inventory.task_assigned",
+        text: "Te asignaron una tarea.",
+        href: "/tareas",
+        requirement: {},
+      },
+    });
+    await db.dailyDigest.create({
+      data: {
+        id: newId(),
+        organizationId,
+        userId: who,
+        day: new Date("2026-11-14T00:00:00.000Z"),
+      },
+    });
     const incidentId = newId();
     await db.incident.create({
       data: {

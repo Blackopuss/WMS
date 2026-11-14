@@ -159,7 +159,8 @@ código»):
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
 | Incidencias (WMS-39) | `incidents.ts`, `incident-states.ts` | `reportIncident` (del almacén activo; ubicación y producto escaneados; tarea o pedido opcionales; clave de confirmación), `startIncident` («Atender»), `resolveIncident` (qué se hizo), `dismissIncident` (motivo), `addIncidentNote`, `listIncidents` (`open`, `closed`, `mine`), `getIncident`, `countOpenIncidents` (Inicio, para quien atiende); transiciones `INCIDENT_TRANSITIONS`, tipos `INCIDENT_KINDS`, número `INC-0001`. No tocan existencias |
-| Avisos (WMS-39) | `notices.ts` | `INVENTORY_NOTIFICATION_TYPES`: los tipos que este módulo manda con `notify` (ver «Avisos») |
+| Avisos (WMS-39) | `notices.ts` | `INVENTORY_NOTIFICATION_TYPES`: los tipos que este módulo manda con `notify` (ver «Avisos») y `DAILY_DIGEST_NOTICE` (solo por correo) |
+| Resumen diario por correo (WMS-39B) | `daily-digest.ts` | `runDailyDigestRound` (ronda), `sendDailyDigest` y `dailyDigestJobHandlers` (worker), `digestSections` (lee con `listExpiringLots` por almacén alcanzado y `listLowStock`, como la persona; `DIGEST_LINES` por sección) |
 | Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido y embarque, con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar; los campos personalizados de productos (WMS-58) se reconocen por título (`customImportColumns`), se revisan con las reglas del formulario y se aplican con `prepareCustomValues`/`writeCustomValues`; la plantilla trae sus columnas |
@@ -261,6 +262,7 @@ la transacción que decide:
 | `inventory.crossdock.mode` | **`off`**, `on` (lo que llega para un pedido que espera va directo a preparación; WMS-54) |
 | `inventory.picking.mode` | **`orders`** (pedido por pedido), `waves` (por olas; WMS-25) |
 | `inventory.adjustment.approval_threshold` | **`any`**, `10`, `25`, `50` (% de lo que hay en la ubicación que, con la regla de `inventory.adjustment` encendida, hace esperar una corrección; WMS-41) |
+| `inventory.digest.hour` | `6`, **`7`**, `8`, `9`, `12`, `17` (hora del calendario de la empresa a la que sale el resumen diario por correo; WMS-39B) |
 
 `inventory.count.review_threshold` e `inventory.adjustment.approval_threshold` se muestran en Configuración › Reglas de aprobación, junto a la
 regla de su tipo, y no en Operación.
@@ -291,12 +293,25 @@ Tipos en `notices.ts` (`INVENTORY_NOTIFICATION_TYPES`), registrados en
 | `inventory.incident_reported` | `reportIncident` | `inventory.incident.manage` que alcance su ubicación o su almacén |
 | `inventory.incident_changed` | atender, resolver, descartar, nota | quien la reportó |
 
+Cualquiera de estos puede salir también por correo a quien lo pidió (WMS-39B,
+ADR 0060): lo decide `notify`, el módulo no hace nada más.
+
+`inventory.daily_digest` (solo por correo, apagado por omisión; se ofrece a
+quien tiene `inventory.stock.read` o `inventory.minimum.read`): la ronda
+`inventory.daily_digest` aparta, cuando en la empresa ya es la hora de
+`inventory.digest.hour`, un resumen por persona y día (`daily_digest`, única
+por persona y día) y encola `inventory.send_daily_digest`; el trabajo lee
+como esa persona con `listExpiringLots` (un bloque por almacén que alcanza;
+acepta `facilityId`) y `listLowStock` (solo para quien no tiene límite), y
+no manda nada si no hay qué decir. Nunca costos.
+
 ## Trabajos en segundo plano
 
 | Tipo | Manejador | Qué hace |
 | --- | --- | --- |
 | `inventory.import_products` | `inventoryJobHandlers` (`import-apply.ts`) | Aplica una importación confirmada por lotes; `onFailed` devuelve el cupo apartado |
 | `inventory.import_exits` | `exitImportJobHandlers` (`exit-import-apply.ts`) | Registra las salidas de un archivo confirmado; el folio evita descontar dos veces |
+| `inventory.send_daily_digest` | `dailyDigestJobHandlers` (`daily-digest.ts`) | Manda el resumen diario de una persona si hay algo que decir; vuelve a comprobar membresía, correo confirmado, preferencia, canal y plan; `onFailed` lo deja `FAILED` |
 
 Rondas (`scheduledRounds` de `src/modules/registry/rounds.ts`, cada hora):
 
@@ -304,6 +319,7 @@ Rondas (`scheduledRounds` de `src/modules/registry/rounds.ts`, cada hora):
 | --- | --- | --- |
 | `inventory.replenishment` | `runReplenishmentRound` (`replenishment.ts`) | Con `inventory.replenishment.mode = round` y el módulo con escritura, crea en cada almacén activo las tareas de reposición que hacen falta, como el titular; repetirla o correrla dos veces a la vez no duplica (ADR 0051) |
 | `inventory.cycle_counts` | `runCycleCountRound` (`cycle-counts.ts`) | Genera los conteos de hoy de cada programa activo; repetirla no duplica (programa bloqueado, cupo del día contado bajo el candado y llave única programa + día + ubicación). |
+| `inventory.daily_digest` | `runDailyDigestRound` (`daily-digest.ts`) | A partir de la hora de la empresa, aparta el resumen de hoy de quien lo pidió y encola su envío; repetirla o correrla dos veces a la vez no duplica (llave única persona + día). Borra los resúmenes terminados de más de 90 días. |
 
 ## ADR
 
@@ -316,7 +332,7 @@ contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
-0054 (surtido por olas), 0057 (avisos e incidencias).
+0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario).
 
 ## Pruebas
 
