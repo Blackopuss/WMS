@@ -8,18 +8,22 @@ import { z } from "zod";
 
 import { recordSecurityEvent } from "@/platform/audit";
 import { pendingLegalDocuments } from "@/platform/legal";
+import { db } from "@/server";
 
 import { VERIFY_EMAIL_COOKIE, auth } from "./auth";
 import { isMfaRequired } from "./mfa-policy";
 import { resendVerification } from "./register";
 import {
+  TERMINAL_PASSWORD_PATH,
   TERMINAL_PATH,
+  TERMINAL_SESSION_MAX_HOURS,
   checkTerminalSession,
   hasTerminalCookie,
   terminalOfDevice,
 } from "./terminal-session";
 import {
   clearAttempts,
+  clearPinAttempts,
   clientIp,
   refundAttempt,
   reserveAttempt,
@@ -42,10 +46,30 @@ export const getCurrentSession = cache(async () => {
   // On a shared terminal (WMS-38) sessions are never extended: a PIN
   // session ends at its fixed time and Better Auth must not push it to
   // seven days (ADR 0061 §7).
-  return auth.api.getSession({
+  const session = await auth.api.getSession({
     headers: requestHeaders,
     ...((await hasTerminalCookie()) ? { query: { disableRefresh: true } } : {}),
   });
+  // A PIN session read on a browser without the terminal cookie (a page
+  // that only looks at the session) may have been extended by Better Auth:
+  // its end is put back to the fixed one, so it never lives seven days.
+  if (session) {
+    const { terminalId, createdAt, expiresAt } = session.session as {
+      terminalId?: string | null;
+      createdAt: Date;
+      expiresAt: Date;
+    };
+    const end = new Date(
+      new Date(createdAt).getTime() + TERMINAL_SESSION_MAX_HOURS * 3600_000,
+    );
+    if (terminalId && new Date(expiresAt) > end) {
+      await db.session.updateMany({
+        where: { id: session.session.id, terminalId },
+        data: { expiresAt: end },
+      });
+    }
+  }
+  return session;
 });
 
 export type CurrentUser = { id: string; name: string; email: string };
@@ -88,13 +112,19 @@ export async function requireSession(
   terminal: SessionTerminal | null;
 }> {
   const session = await getCurrentSession();
-  if (!session) {
-    redirect((await terminalOfDevice()) ? TERMINAL_PATH : "/ingresar");
-  }
+  const device = await terminalOfDevice();
+  if (!session) redirect(device ? TERMINAL_PATH : "/ingresar");
   const { id, name, email } = session.user;
   const mfaEnabled = Boolean(session.user.twoFactorEnabled);
   const terminalId = (session.session as { terminalId?: string | null })
     .terminalId;
+  // On a shared terminal only PIN sessions work (ADR 0061 §1): a session
+  // opened with a password there (or brought in some other way) is closed,
+  // so nobody leaves a full session behind on a shared device.
+  if (device && !terminalId) {
+    await db.session.deleteMany({ where: { id: session.session.id } });
+    redirect(TERMINAL_PATH);
+  }
   if (terminalId) {
     const terminal = await checkTerminalSession(session.session.id, id);
     if (!terminal) redirect(TERMINAL_PATH);
@@ -159,6 +189,8 @@ const signInSchema = z.object({
 
 export type SignInResult =
   | { ok: true }
+  /** This browser is a shared terminal: there one enters with a PIN. */
+  | { ok: false; reason: "terminal" }
   | { ok: false; reason: "invalid" | "unverified" | "unavailable" }
   /** Password accepted; no session until the MFA code is confirmed. */
   | { ok: false; reason: "mfa" }
@@ -175,6 +207,8 @@ export async function signIn(
   requestHeaders: Headers,
   afterVerifying = false,
 ): Promise<SignInResult> {
+  // On a shared terminal there is no sign-in with a password (WMS-38).
+  if (await terminalOfDevice()) return { ok: false, reason: "terminal" };
   const parsed = signInSchema.safeParse(input);
   const ip = clientIp(requestHeaders);
   const email = parsed.success ? parsed.data.email : "";
@@ -210,7 +244,7 @@ export async function signIn(
     }
     // The password proves who it is: a PIN blocked after wrong tries works
     // again (WMS-38, ADR 0061 §6).
-    await clearAttempts([throttleKeys.pinUser(result.user.id)]);
+    await clearPinAttempts(result.user.id);
     await recordSecurityEvent({
       userId: result.user.id,
       action: "sign_in.succeeded",
@@ -252,6 +286,15 @@ export async function signIn(
     console.error("signIn failed", error);
     return { ok: false, reason: "unavailable" };
   }
+}
+
+/**
+ * Screens of signing in, registering, codes and invitations call it first:
+ * on a shared terminal they send to «¿Quién eres?», which explains that a
+ * password is used on another device (ADR 0061 §1).
+ */
+export async function refuseOnTerminal(): Promise<void> {
+  if (await terminalOfDevice()) redirect(TERMINAL_PASSWORD_PATH);
 }
 
 /** Revokes the current session in the database and clears the cookie. */

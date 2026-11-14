@@ -15,7 +15,10 @@ export const metadata: Metadata = { title: "¿Quién eres?" };
  * anyone: on a browser that is not an active terminal it says so and
  * offers the usual sign-in, nothing else (the PIN does not exist there).
  */
-export default async function TerminalPage() {
+export default async function TerminalPage({
+  searchParams,
+}: PageProps<"/terminal">) {
+  const { aviso } = await searchParams;
   const screen = await getTerminalScreen();
   return (
     <div className="flex min-h-dvh flex-col">
@@ -38,7 +41,20 @@ export default async function TerminalPage() {
       >
         <div className="w-full max-w-3xl">
           {screen ? (
-            <WhoAreYou people={screen.people} />
+            <>
+              {/* Came from a password screen (WMS-38): here only PINs. */}
+              {aviso === "contrasena" && (
+                <p
+                  role="status"
+                  className="mb-5 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+                >
+                  Este dispositivo es una terminal compartida: aquí se entra con
+                  PIN. Para entrar con tu correo y contraseña, usa tu teléfono o
+                  tu computadora.
+                </p>
+              )}
+              <WhoAreYou people={screen.people} />
+            </>
           ) : (
             <div className="mx-auto max-w-md space-y-4 rounded-xl border bg-card p-6 text-center">
               <h1 className="text-2xl font-semibold tracking-tight">

@@ -3875,18 +3875,23 @@ model SharedTerminal {
   facilityId      String       @db.Char(36)
   facility        Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   name            String       @db.VarChar(60)
-  /// SHA-256 (hex) of the device's secret.
-  secretHash      String       @unique @db.Char(64)
+  /// SHA-256 (hex) of the device's secret. It changes on every PIN
+  /// sign-in (rotation); the one before stays to recognize a copied cookie.
+  secretHash         String    @unique @db.Char(64)
+  previousSecretHash String?   @db.Char(64)
+  secretRotatedAt    DateTime? @db.DateTime(3)
   createdByUserId String       @db.Char(36)
   createdAt       DateTime     @default(now()) @db.DateTime(3)
   lastUsedAt      DateTime?    @db.DateTime(3)
   removedAt       DateTime?    @db.DateTime(3)
+  /// Null when the system removed it (a copied cookie was used).
   removedByUserId String?      @db.Char(36)
   updatedAt       DateTime     @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@index([organizationId, removedAt, name])
   @@index([organizationId, facilityId])
+  @@index([previousSecretHash])
   @@map("shared_terminal")
 }
 

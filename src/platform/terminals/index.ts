@@ -41,4 +41,8 @@ export {
   PIN_ROLES,
   TERMINAL_SETTINGS,
 } from "./settings";
-export { TERMINAL_LOCKED_NOTICE, TERMINAL_NOTIFICATION_TYPES } from "./notices";
+export {
+  TERMINAL_CLONED_NOTICE,
+  TERMINAL_LOCKED_NOTICE,
+  TERMINAL_NOTIFICATION_TYPES,
+} from "./notices";

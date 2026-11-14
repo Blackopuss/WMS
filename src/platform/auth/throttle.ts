@@ -54,11 +54,15 @@ export const RULES = {
     windowSeconds: 15 * 60,
     blockSeconds: 15 * 60,
   },
-  // PINs on shared terminals (WMS-38, ADR 0061): per person in every
-  // terminal (moving to another terminal gives no more tries), cleared when
-  // the person signs in with the password; and per terminal, which stops
-  // everyone there for a while and warns who manages terminals.
-  pinUser: { max: 5, windowSeconds: 15 * 60, blockSeconds: 30 * 60 },
+  // PINs on shared terminals (WMS-38, ADR 0061): per person on one
+  // terminal (low: a coworker typing wrong PINs on purpose blocks only
+  // that terminal for that person, for a while); per person in every
+  // terminal (higher: moving between terminals gives few more tries); both
+  // cleared when the person signs in with the password. And per terminal,
+  // which stops everyone there for a while. Each block warns who manages
+  // terminals.
+  pinUserTerminal: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  pinUser: { max: 15, windowSeconds: 60 * 60, blockSeconds: 60 * 60 },
   pinTerminal: { max: 20, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   // Wrong passwords while setting one's own PIN, per person.
   pinSetup: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
@@ -125,6 +129,10 @@ export const throttleKeys = {
   discountAuthorizeIp: (ip: string): ThrottleKey => ({
     key: `discount:ip:${ip}`,
     rule: RULES.discountAuthorizeIp,
+  }),
+  pinUserTerminal: (userId: string, terminalId: string): ThrottleKey => ({
+    key: `pin:user:${userId}:${terminalId}`,
+    rule: RULES.pinUserTerminal,
   }),
   pinUser: (userId: string): ThrottleKey => ({
     key: `pin:user:${userId}`,
@@ -285,6 +293,22 @@ export async function clearAttempts(keys: ThrottleKey[]): Promise<void> {
   if (keys.length === 0) return;
   await db.authThrottle.deleteMany({
     where: { key: { in: keys.map((k) => k.key) } },
+  });
+}
+
+/**
+ * Clears every counter of a person's PIN (WMS-38): all terminals and the
+ * global one. Signing in with the password proves who it is.
+ */
+export async function clearPinAttempts(userId: string): Promise<void> {
+  const id = String(userId);
+  await db.authThrottle.deleteMany({
+    where: {
+      OR: [
+        { key: `pin:user:${id}` },
+        { key: { startsWith: `pin:user:${id}:` } },
+      ],
+    },
   });
 }
 

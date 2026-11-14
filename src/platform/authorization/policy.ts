@@ -27,7 +27,8 @@ export type Subject = {
   /**
    * A PIN session of a shared terminal (WMS-38, ADR 0061 §8): of its
    * platform permissions it keeps only TERMINAL_PLATFORM_KEEP — no team,
-   * sessions, audit, plan, configuration, terminals or support.
+   * sessions, audit, plan, configuration, terminals or support — and it
+   * never exports nor sees costs (`keptAtTerminal`).
    */
   terminal?: boolean;
   /**
@@ -104,6 +105,29 @@ export const TERMINAL_PLATFORM_KEEP: readonly Permission[] = [
   "platform.capacity.read",
 ];
 
+/**
+ * Besides the platform, a PIN session never takes data out (exports and
+ * documents: the file would stay on the shared device) nor sees or records
+ * costs (WMS-38). Deciding approvals is refused in the approval engine.
+ */
+export const TERMINAL_COST_PERMISSIONS: readonly Permission[] = [
+  "inventory.cost.read",
+  "inventory.cost.record",
+  "purchasing.cost.read",
+  "purchasing.cost.record",
+];
+
+/** True when a PIN session keeps this permission of its roles. */
+export function keptAtTerminal(permission: Permission): boolean {
+  if (permission.startsWith("platform.")) {
+    return TERMINAL_PLATFORM_KEEP.includes(permission);
+  }
+  if (permission.endsWith(".export") || permission.endsWith(".export.create")) {
+    return false;
+  }
+  return !TERMINAL_COST_PERMISSIONS.includes(permission);
+}
+
 /** Known roles of the subject, without repeats, in catalog order. */
 export function knownRoles(roles: readonly string[]): Role[] {
   return [...new Set(roles.filter(isRole))].sort();
@@ -122,11 +146,7 @@ export function permissionsOf(subject: Subject): ReadonlySet<Permission> {
     return new Set([...granted].filter((p) => p.endsWith(".read")));
   }
   if (subject.terminal === true) {
-    return new Set(
-      [...granted].filter(
-        (p) => !p.startsWith("platform.") || TERMINAL_PLATFORM_KEEP.includes(p),
-      ),
-    );
+    return new Set([...granted].filter(keptAtTerminal));
   }
   return granted;
 }

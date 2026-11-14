@@ -134,6 +134,12 @@ describe("shared terminal (WMS-38)", () => {
     const platform = [...permissionsOf(everything)].filter((p) =>
       p.startsWith("platform."),
     );
+    // Never takes data out nor sees costs, whatever the roles (WMS-38).
+    const kept = [...permissionsOf(everything)];
+    expect(kept.some((p) => p.endsWith(".export"))).toBe(false);
+    expect(kept.some((p) => p.endsWith(".export.create"))).toBe(false);
+    expect(kept.some((p) => p.includes(".cost."))).toBe(false);
+    expect(can(everything, "inventory.task.execute")).toBe(true);
     expect(platform.sort()).toEqual(
       [
         "platform.capacity.read",

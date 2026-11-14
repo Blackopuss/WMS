@@ -48,10 +48,42 @@ fuera de este paso (ver «Lo que queda previsto»).
   una sesión de administración abierta. La pantalla pasa a «¿Quién eres?».
 - **Rastro:** bitácora de la empresa `terminal.registered` (nombre y
   almacén; nunca el secreto).
+- **El secreto rota en cada entrada con PIN** (`rotateTerminalSecret`): la
+  cookie se reescribe con un secreto nuevo (eso también la renueva, así que
+  una terminal en uso no vence a los 400 días) y la base guarda el anterior
+  (`previousSecretHash`, `secretRotatedAt`). El anterior sigue sirviendo
+  `TERMINAL_SECRET_GRACE_MS` (2 minutos: dos pestañas, una petición ya en
+  camino). Después, un secreto ya rotado solo puede venir de una **copia de
+  la cookie** (`HttpOnly` no protege del acceso físico a las herramientas
+  del navegador): el sistema quita la terminal (`removedByUserId` vacío),
+  cierra sus sesiones, deja bitácora `terminal.cloned` y avisa a quien
+  administra terminales del almacén (`platform.terminal_cloned`). Rota
+  condicionado al secreto que mandó el navegador: dos entradas a la vez
+  rotan una sola vez. Falso positivo aceptado: si una respuesta con el
+  secreto nuevo se pierde y el navegador vuelve con el viejo pasados 2
+  minutos, la terminal se quita y hay que registrarla otra vez.
+- Pendiente (no se hizo): una lista de redes permitidas por terminal.
 - Si el dispositivo ya era terminal de la misma empresa, la pantalla lo dice
   y no ofrece registrarlo otra vez (se quita primero). Si era terminal de
   otra empresa, registrarlo reemplaza la cookie; la otra empresa la sigue
   viendo en su lista hasta que la quite (no se toca nada de otra empresa).
+
+### 1 bis. En una terminal no se entra con contraseña (regla fija)
+
+En un navegador con cookie de terminal válida **no se inicia sesión con
+correo y contraseña**: `signIn` y `verifySignInCode` responden `terminal`,
+y las pantallas `/ingresar`, `/registro`, `/verificar-codigo` e
+`/invitacion` (y sus acciones) mandan a `/terminal?aviso=contrasena`, que
+explica que ahí se entra con PIN y que para la contraseña se use otro
+dispositivo (`refuseOnTerminal`). Además `requireSession` **cierra
+cualquier sesión sin `terminalId` que llegue con cookie de terminal
+válida**: nadie deja una sesión completa (de 7 días, sin recorte ni cierre
+por inactividad) en un dispositivo compartido. Por eso quitar una terminal
+se hace desde otro dispositivo.
+
+Alternativa para el fundador (no se hizo): permitir la contraseña en la
+terminal, con la misma barra y el mismo cierre por inactividad que una
+sesión de PIN.
 
 ### 2. Lista y quitar
 
@@ -77,11 +109,15 @@ fuera de este paso (ver «Lo que queda previsto»).
 - **Qué pide:** su contraseña actual (con límite de intentos por persona,
   como al activar dos pasos), el PIN y el PIN otra vez.
 - **Reglas del PIN:** solo dígitos, con la longitud del ajuste de la empresa
-  (4, 5 o 6; por omisión 6). Se rechazan los triviales: todos iguales
-  (`000000`), escaleras hacia arriba o abajo (`123456`, `654321`, también
-  dando la vuelta: `890123`) y patrones repetidos de dos o tres dígitos
-  (`121212`, `123123`, `1212`). Las reglas son puras
-  (`pinProblem`, con prueba unitaria).
+  (5 o 6; por omisión 6; 4 se quitó en la revisión: con el ritmo real de
+  intentos aguanta días, y con PIN elegidos por personas, horas). Se
+  rechazan los triviales: todos iguales (`000000`), escaleras hacia arriba
+  o abajo (`123456`, `654321`, también dando la vuelta: `890123`), patrones
+  repetidos de dos o tres dígitos (`121212`, `123123`), los que empiezan o
+  terminan con un año de 1930 a 2039 (`198712`, `042019`) y los de seis
+  que se leen como fecha (DDMMAA, MMDDAA, AAMMDD). Quedan unas 895,000
+  combinaciones de seis dígitos. Las reglas son puras (`pinProblem`, con
+  prueba unitaria).
 - **Cómo se guarda:** con el mismo hash lento de las contraseñas (scrypt,
   `hashPassword`) sobre un HMAC del PIN con el secreto del servidor, la
   empresa y la persona (`pinMaterial`). Así una copia de la base sin el
@@ -169,24 +205,31 @@ quitan el almacén), la sesión deja de servir en la siguiente petición.
 
 ### 6. Intentos
 
-- **Por persona** (`pinUser`, en todas las terminales y empresas): 5 fallos
-  en 15 minutos la dejan sin PIN 30 minutos. Al iniciar sesión con su
-  contraseña se borra el bloqueo (probó quién es). Se elige por persona y no
-  por persona y terminal para que pasar de una terminal a otra no dé más
-  intentos. Con 5 intentos cada 30 minutos, adivinar un PIN de 6 dígitos al
-  azar lleva en promedio más de 5 años, uno de 4 dígitos unas 5 semanas de
-  intentos continuos, que además bloquean la terminal (abajo) y avisan.
-- **Por terminal** (`pinTerminal`): 20 fallos en 15 minutos la bloquean 15
-  minutos para todos, dejan bitácora `terminal.locked` y avisan dentro de la
-  app (`platform.terminal_locked`) a quien administra terminales del almacén.
-- Se aparta el intento antes de verificar (`reserveAttempt`), así que
-  peticiones simultáneas no pasan del límite; un PIN correcto devuelve el
-  intento a la terminal (`refundAttempt`) y borra el de la persona.
+Tres llaves, todas apartadas **antes** de verificar (`reserveAttempt`):
+
+| Llave | Límite | Bloqueo | Para qué |
+| --- | --- | --- | --- |
+| `pinUserTerminal` (persona en esa terminal) | 5 en 15 min | 15 min | El bajo: un compañero que teclea PIN malos a propósito solo bloquea a esa persona en esa terminal, un rato |
+| `pinUser` (persona en todas) | 15 en 1 hora | 1 hora | Pasar de una terminal a otra da pocos intentos más |
+| `pinTerminal` (la terminal) | 20 en 15 min | 15 min | Quien prueba con muchas personas detiene la terminal para todos |
+
+- Cada bloqueo deja bitácora (`pin.locked` o `terminal.locked`) y avisa
+  dentro de la app (`platform.terminal_locked`) a quien administra
+  terminales del almacén; el de una persona la nombra. El evento de
+  seguridad `pin.locked` queda en la cuenta.
+- Entrar con su contraseña **desde su propio dispositivo** borra los
+  bloqueos de su PIN (`clearPinAttempts`): probó quién es. La pantalla lo
+  dice al bloquear: «Si es tu PIN, entra con tu contraseña desde tu propio
+  dispositivo para desbloquearlo.»
+- Un PIN correcto devuelve el intento a la terminal y borra los de la
+  persona. Un error del servidor devuelve el intento **solo si ocurrió antes
+  de terminar de comprobar el PIN**; después, el intento queda contado.
 - Las respuestas no dicen si la persona tiene PIN: fallar con o sin PIN
-  cuenta igual y dice lo mismo; el bloqueo dice «Demasiados intentos…» para
-  cualquiera.
-- Eventos de seguridad de la cuenta: `pin_sign_in.failed` (persona de la
-  empresa elegida en la lista) y `pin.locked` cuando su llave se bloquea.
+  cuenta igual y dice lo mismo; el bloqueo dice lo mismo sea de quien sea.
+- Tiempo para adivinar al azar con el ritmo permitido (por persona, una
+  terminal, el peor caso: 15 intentos por hora en todas): PIN de 6 dígitos
+  (≈895,000 válidos), en promedio ≈3 años; de 5 dígitos (≈89,000), ≈4
+  meses; cada bloqueo avisa. Ver la tabla de `docs/seguridad/REVISION_PIN.md`.
 
 ### 7. La sesión de PIN: corta y de una sola empresa
 
@@ -194,23 +237,25 @@ quitan el almacén), la sesión deja de servir en la siguiente petición.
   `platform.terminal.idle_minutes` (2, 5 por omisión, 10 o 15 minutos).
   Cómo se mide sin escribir en cada petición:
   - El servidor compara `session.lastActiveAt` (o `createdAt`) con el tiempo
-    guardado en la sesión. `lastActiveAt` es la columna de WMS-40; para una
-    sesión de terminal se escribe como mucho **cada 30 segundos** (en vez de
-    cada 5 minutos), después de responder, con la misma escritura
-    condicionada de una fila (`recordSessionActivity`). Error máximo: 30
-    segundos.
+    guardado en la sesión. `lastActiveAt` es la columna de WMS-40; en una
+    sesión de terminal **ninguna petición la escribe** (la campana de avisos
+    y los refrescos periódicos mantendrían viva una sesión abandonada): solo
+    la entrada y los toques de la persona.
   - En la terminal, una barra cliente cuenta el tiempo desde el último toque
     o tecla. Mientras la persona toca la pantalla avisa al servidor como
     mucho cada 30 segundos (`keepTerminalSessionAction`, que solo escribe
-    `lastActiveAt` condicionado); si pasa el tiempo sin toques, cierra la
-    sesión y vuelve a «¿Quién eres?». Si el navegador estaba dormido, el
-    servidor la rechaza igual en la siguiente petición.
+    `lastActiveAt` condicionado; el primer toque siempre se avisa); si pasa
+    el tiempo sin toques, cierra la sesión y vuelve a «¿Quién eres?». Si el
+    cierre falla o tarda más de 8 segundos, saca a la persona de todos modos
+    (el servidor ya la considera inactiva). Si el navegador estaba dormido,
+    el servidor la rechaza igual en la siguiente petición.
   - Costo: como mucho dos escrituras de una fila por minuto **por terminal
     en uso** (hay una sesión por terminal), fuera del tiempo de respuesta.
 - **Límite absoluto:** 12 horas desde que entró (un turno largo), sin
-  importar la actividad: la fila vence a esa hora (`expiresAt`) y Better
-  Auth no la extiende (la sesión se lee sin renovación cuando el dispositivo
-  es terminal).
+  importar la actividad: la fila vence a esa hora (`expiresAt`). Better Auth
+  no la extiende: la sesión se lee sin renovación cuando el navegador trae
+  cookie de terminal, y si una página la lee sin esa cookie y Better Auth la
+  alarga, `getCurrentSession` le devuelve su fin fijo.
 - **«Cambiar de persona»:** botón grande con texto, siempre a la vista en la
   barra de la terminal (también en teléfono). Borra la sesión y vuelve a
   «¿Quién eres?».
@@ -232,18 +277,25 @@ La decisión vive en el servidor, en dos lugares de una sola regla
 
 - **Permisos:** el sujeto de una petición hecha con sesión de terminal lleva
   `terminal: true` y la política (`permissionsOf`, la misma que recorta a
-  soporte) le quita **todo permiso de plataforma** salvo leer la empresa,
-  los módulos y la capacidad (`TERMINAL_PLATFORM_KEEP`). Así no hay equipo,
+  soporte, con `keptAtTerminal`) le quita **todo permiso de plataforma**
+  salvo leer la empresa, los módulos y la capacidad
+  (`TERMINAL_PLATFORM_KEEP`), **toda exportación** (`*.export`,
+  `*.export.create`: el archivo quedaría en la tableta) y **todo costo**
+  (`TERMINAL_COST_PERMISSIONS`: `inventory.cost.read|record`,
+  `purchasing.cost.read|record`). Además **nunca decide una aprobación**:
+  el motor (`mayDecide`) la rechaza como a soporte. Así no hay equipo,
   invitaciones, sesiones del equipo, bitácora, plan, configuración del
   negocio, reglas, terminales, soporte ni titularidad, aunque su rol los
   tuviera, y aunque alguien llame la acción o la dirección sin enlace. Los
   permisos de inventario y compras de sus roles se quedan: para eso está en
   la terminal. `loadSubject` lo sabe por la sesión de la petición
-  (`terminalOfRequest`, en caché por petición); fuera de una petición (el
-  worker) no hay terminal.
+  (`terminalUserOfRequest`, en caché por petición); fuera de una petición
+  (el worker) no hay terminal. Dentro de una petición, si leer la sesión
+  falla, el error se propaga: el recorte nunca falla abierto.
 - **Seguridad de la cuenta** (no depende de un permiso): activar,
   desactivar o regenerar dos pasos, ver o cerrar sus sesiones, poner o
-  quitar su PIN. Cada servicio llama `assertNotTerminalSession` y responde
+  quitar su PIN, aceptar una invitación a otra empresa. Cada servicio llama
+  `assertNotTerminalSession` y responde
   «Desde una terminal compartida no se cambia la seguridad de tu cuenta.»
   Hoy no hay cambio de contraseña ni de correo con sesión (se hace por
   recuperación, sin sesión).
@@ -275,7 +327,7 @@ bitácora `settings.changed`):
 | Clave | Opciones | Por omisión |
 | --- | --- | --- |
 | `platform.terminal.pin_roles` | `floor`, `floor_supervision`, `without_mfa` | `floor` |
-| `platform.terminal.pin_length` | `4`, `5`, `6` | `6` |
+| `platform.terminal.pin_length` | `5`, `6` | `6` |
 | `platform.terminal.idle_minutes` | `2`, `5`, `10`, `15` | `5` |
 
 Fijo en el código (no admite otra forma razonable, o es seguridad): el
@@ -294,8 +346,10 @@ Poner el PIN propio no es un permiso: lo decide §5.
 ## Tablas
 
 - `shared_terminal` (de empresa): almacén, nombre, `secretHash` (SHA-256,
-  único), quién la registró y cuándo, `lastUsedAt`, `removedAt` y quién la
-  quitó. No se borra.
+  único), `previousSecretHash` y `secretRotatedAt` (rotación), quién la
+  registró y cuándo, `lastUsedAt`, `removedAt` y quién la quitó (vacío si la
+  quitó el sistema por copia). No se borra; el secreto solo cambia rotando
+  (disparador).
 - `member_pin` (de empresa): persona, `pinHash`, quién y cuándo lo puso.
   Única por empresa y persona. Se borra al quitarlo o al desactivar a la
   persona (un PIN no se archiva: no hay nada que rastrear de un hash viejo;

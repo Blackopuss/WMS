@@ -20,7 +20,7 @@ type Person = { userId: string; name: string };
 
 /** Digits a PIN may have (the company decides 4, 5 or 6). */
 const PIN_MAX = 6;
-const PIN_MIN = 4;
+const PIN_MIN = 5;
 /** With more people than this, the search box appears. */
 const SEARCH_FROM = 8;
 
@@ -114,14 +114,8 @@ export function WhoAreYou({ people }: { people: Person[] }) {
         </>
       )}
       <p className="text-sm text-muted-foreground">
-        ¿No tienes PIN?{" "}
-        <Link
-          href="/ingresar"
-          className="font-medium text-foreground underline underline-offset-4"
-        >
-          Entra con tu correo
-        </Link>{" "}
-        y ponlo en Configuración › Mi PIN.
+        ¿No tienes PIN o se bloqueó? Entra con tu correo desde tu teléfono o tu
+        computadora y ve a Configuración › Mi PIN.
       </p>
     </section>
   );

@@ -23,7 +23,7 @@ import {
   throttleKeys,
   tooManyAttemptsMessage,
 } from "./throttle";
-import { assertNotTerminalSession } from "./terminal-session";
+import { assertNotTerminalSession, terminalOfDevice } from "./terminal-session";
 
 /**
  * MFA enrollment with an authenticator app (PLT-08A). Two steps, both for
@@ -204,7 +204,9 @@ export type SignInCodeResult =
   | { ok: true }
   | { ok: false; reason: "invalid"; error: string }
   /** The challenge expired, was used up or the code was replayed. */
-  | { ok: false; reason: "restart"; error: string };
+  | { ok: false; reason: "restart"; error: string }
+  /** This browser is a shared terminal: no sign-in with a password. */
+  | { ok: false; reason: "terminal"; error: string };
 
 /**
  * Second step of signing in with MFA on (PLT-08B). `headers` must carry the
@@ -216,6 +218,15 @@ export async function verifySignInCode(
   input: { code: string; method?: "totp" | "backup" },
   headers: Headers,
 ): Promise<SignInCodeResult> {
+  // On a shared terminal one enters with a PIN, never a password (WMS-38).
+  if (await terminalOfDevice()) {
+    return {
+      ok: false,
+      reason: "terminal",
+      error:
+        "Este dispositivo es una terminal compartida: aquí se entra con PIN.",
+    };
+  }
   const backup = input.method === "backup";
   const raw = String(input.code ?? "");
   const code = backup ? normalizeBackupCode(raw) : normalizeTotpCode(raw);

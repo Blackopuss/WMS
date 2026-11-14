@@ -859,16 +859,18 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `organizationId` | `String · Char(36)` |  |  |
 | `facilityId` | `String · Char(36)` |  |  |
 | `name` | `String · VarChar(60)` |  |  |
-| `secretHash` | `String · Char(64)` |  | única. SHA-256 (hex) of the device's secret. |
+| `secretHash` | `String · Char(64)` |  | única. SHA-256 (hex) of the device's secret. It changes on every PIN sign-in (rotation); the one before stays to recognize a copied cookie. |
+| `previousSecretHash` | `String? · Char(64)` |  |  |
+| `secretRotatedAt` | `DateTime? · DateTime(3)` |  |  |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `lastUsedAt` | `DateTime? · DateTime(3)` |  |  |
 | `removedAt` | `DateTime? · DateTime(3)` |  |  |
-| `removedByUserId` | `String? · Char(36)` |  |  |
+| `removedByUserId` | `String? · Char(36)` |  | Null when the system removed it (a copied cookie was used). |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`).
-- Índices: (`organizationId`, `removedAt`, `name`); (`organizationId`, `facilityId`).
+- Índices: (`organizationId`, `removedAt`, `name`); (`organizationId`, `facilityId`); `previousSecretHash`.
 - Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
 
 ### MemberPin · `member_pin`

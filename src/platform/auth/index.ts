@@ -26,6 +26,7 @@ export { BACKUP_CODE_COUNT, normalizeBackupCode } from "./backup-codes";
 export { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "./password";
 export { verifyAccountPassword } from "./account-password";
 export { hashPin, verifyNoPin, verifyPin } from "./pin-hash";
+export { usersWhoMustUseMfa } from "./mfa-policy";
 export { requestPasswordReset, resetPassword } from "./recovery";
 export type {
   PasswordResetRequestResult,
@@ -43,6 +44,7 @@ export {
   LEGAL_ACCEPTANCE_PATH,
   MFA_SETUP_PATH,
   getCurrentSession,
+  refuseOnTerminal,
   requireSession,
   signIn,
   signOut,
@@ -55,6 +57,8 @@ export {
   PIN_ROLE_SETS,
   TERMINAL_ACTIVITY_INTERVAL_MS,
   TERMINAL_COOKIE,
+  TERMINAL_SECRET_GRACE_MS,
+  TERMINAL_PASSWORD_PATH,
   TERMINAL_PATH,
   TERMINAL_SESSION_MAX_HOURS,
   TERMINAL_SESSION_MESSAGE,
@@ -63,6 +67,7 @@ export {
   newTerminalSecret,
   openTerminalSession,
   pinCandidates,
+  rotateTerminalSecret,
   terminalCookieOptions,
   terminalCookieValue,
   terminalOfDevice,
@@ -91,6 +96,7 @@ export { handleAuthRequest, isAllowedAuthRequest } from "./http";
 export {
   blockedFor,
   clearAttempts,
+  clearPinAttempts,
   clientIp,
   recordAttempt,
   refundAttempt,

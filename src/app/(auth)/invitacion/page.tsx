@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 
 import { WarehouseCard } from "@/components";
-import { PASSWORD_MIN_LENGTH, getCurrentSession } from "@/platform/auth";
+import {
+  PASSWORD_MIN_LENGTH,
+  getCurrentSession,
+  refuseOnTerminal,
+} from "@/platform/auth";
 import {
   INVITATION_PATH,
   ROLE_LABELS,
@@ -27,6 +31,8 @@ export const metadata: Metadata = {
 export default async function InvitacionPage({
   searchParams,
 }: PageProps<"/invitacion">) {
+  // A shared terminal is entered with a PIN only (WMS-38).
+  await refuseOnTerminal();
   const { token } = await searchParams;
   const invitation =
     typeof token === "string" ? await previewInvitation(token) : null;

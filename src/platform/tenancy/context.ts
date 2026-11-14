@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import {
-  TERMINAL_ACTIVITY_INTERVAL_MS,
   TERMINAL_PATH,
   noteSessionActivity,
   requireSession,
@@ -243,12 +242,9 @@ export const requireOrganizationContext = cache(
         });
         redirect(TERMINAL_PATH);
       }
-      // Inactivity closes it: noted every few seconds, after the response.
-      noteSessionActivity(
-        session.sessionId,
-        lastActiveAt,
-        TERMINAL_ACTIVITY_INTERVAL_MS,
-      );
+      // No activity is noted from requests: the bell and periodic
+      // refreshes would keep an abandoned session alive. Only the person's
+      // touches count (keepTerminalSessionAction, ADR 0061 §7).
       return { ...session, organization };
     }
     if (!organization && signInAgain) {

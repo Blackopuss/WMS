@@ -121,6 +121,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "terminal.registered": "Registró una terminal compartida",
   "terminal.removed": "Quitó una terminal compartida",
   "terminal.locked": "Una terminal se bloqueó por PIN incorrectos",
+  "terminal.cloned":
+    "El sistema quitó una terminal porque se usó una copia de su cookie",
+  "pin.locked": "Se bloqueó el PIN de una persona por intentos fallidos",
   "pin.set": "Puso su PIN para las terminales",
   "pin.changed": "Cambió su PIN para las terminales",
   "pin.removed": "Quitó su PIN para las terminales",

@@ -9,6 +9,8 @@ CREATE TABLE `shared_terminal` (
     `facilityId` CHAR(36) NOT NULL,
     `name` VARCHAR(60) NOT NULL,
     `secretHash` CHAR(64) NOT NULL,
+    `previousSecretHash` CHAR(64) NULL,
+    `secretRotatedAt` DATETIME(3) NULL,
     `createdByUserId` CHAR(36) NOT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `lastUsedAt` DATETIME(3) NULL,
@@ -19,6 +21,7 @@ CREATE TABLE `shared_terminal` (
     UNIQUE INDEX `shared_terminal_secretHash_key`(`secretHash`),
     INDEX `shared_terminal_organizationId_removedAt_name_idx`(`organizationId`, `removedAt`, `name`),
     INDEX `shared_terminal_organizationId_facilityId_idx`(`organizationId`, `facilityId`),
+    INDEX `shared_terminal_previousSecretHash_idx`(`previousSecretHash`),
     UNIQUE INDEX `shared_terminal_organizationId_id_key`(`organizationId`, `id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -49,6 +52,7 @@ ALTER TABLE `shared_terminal` ADD CONSTRAINT `shared_terminal_organizationId_fac
 -- AddForeignKey
 ALTER TABLE `member_pin` ADD CONSTRAINT `member_pin_organizationId_fkey` FOREIGN KEY (`organizationId`) REFERENCES `organization`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
+
 -- WMS-38 (ADR 0061). Una sesión de terminal guarda su terminal y su tiempo
 -- sin actividad, juntos (de 1 a 60 minutos). Sin llave foránea: la fila de
 -- una persona no apunta a una tabla de empresa; quitar una terminal borra
@@ -61,13 +65,20 @@ ALTER TABLE `session` ADD CONSTRAINT `session_terminal_check` CHECK (
 ALTER TABLE `shared_terminal` ADD CONSTRAINT `shared_terminal_name_check` CHECK (
     CHAR_LENGTH(TRIM(`name`)) > 0
 );
+-- Quién la quitó solo existe si se quitó (vacío = la quitó el sistema al
+-- ver su cookie copiada).
 ALTER TABLE `shared_terminal` ADD CONSTRAINT `shared_terminal_removed_check` CHECK (
-    (`removedAt` IS NULL AND `removedByUserId` IS NULL)
-    OR (`removedAt` IS NOT NULL AND `removedByUserId` IS NOT NULL)
+    `removedByUserId` IS NULL OR `removedAt` IS NOT NULL
+);
+-- El secreto anterior y la hora de la rotación van juntos.
+ALTER TABLE `shared_terminal` ADD CONSTRAINT `shared_terminal_rotation_check` CHECK (
+    (`previousSecretHash` IS NULL AND `secretRotatedAt` IS NULL)
+    OR (`previousSecretHash` IS NOT NULL AND `secretRotatedAt` IS NOT NULL)
 );
 
--- Una terminal no se borra ni cambia de empresa, almacén o secreto; quitada,
--- no vuelve.
+-- Una terminal no se borra ni cambia de empresa o almacén; su secreto solo
+-- cambia rotando (el de antes pasa a ser el anterior); quitada, no vuelve
+-- ni rota.
 CREATE TRIGGER `shared_terminal_no_delete` BEFORE DELETE ON `shared_terminal` FOR EACH ROW
 BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'shared_terminal: terminals are removed, never deleted';
@@ -76,9 +87,13 @@ END;
 CREATE TRIGGER `shared_terminal_fixed` BEFORE UPDATE ON `shared_terminal` FOR EACH ROW
 BEGIN
     IF NEW.`organizationId` <> OLD.`organizationId` OR NEW.`facilityId` <> OLD.`facilityId`
-        OR NEW.`secretHash` <> OLD.`secretHash` OR NEW.`createdByUserId` <> OLD.`createdByUserId`
+        OR NEW.`createdByUserId` <> OLD.`createdByUserId`
         OR NEW.`createdAt` <> OLD.`createdAt` THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'shared_terminal: only name, use and removal change';
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'shared_terminal: only name, secret, use and removal change';
+    END IF;
+    IF NEW.`secretHash` <> OLD.`secretHash`
+        AND (OLD.`removedAt` IS NOT NULL OR NOT (NEW.`previousSecretHash` <=> OLD.`secretHash`)) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'shared_terminal: the secret only rotates';
     END IF;
     IF OLD.`removedAt` IS NOT NULL AND NOT (NEW.`removedAt` <=> OLD.`removedAt`) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'shared_terminal: already removed';

@@ -39,8 +39,7 @@ export const PIN_LENGTH: SettingDefinition = {
   label: "Largo del PIN",
   options: [
     { value: "6", label: "6 dígitos", help: "El más difícil de adivinar." },
-    { value: "5", label: "5 dígitos", help: "Intermedio." },
-    { value: "4", label: "4 dígitos", help: "Más rápido de escribir." },
+    { value: "5", label: "5 dígitos", help: "Más rápido de escribir." },
   ],
   defaultValue: "6",
 };

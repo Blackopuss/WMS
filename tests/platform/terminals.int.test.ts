@@ -1,4 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+
+import { NextRequest } from "next/server";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +10,7 @@ import {
   PIN_ROLE_SETS,
   TERMINAL_COOKIE,
   TERMINAL_SESSION_MAX_HOURS,
+  auth,
   listActiveSessions,
   requireSession,
   signIn,
@@ -33,7 +36,7 @@ import {
   getTerminal,
   getTerminalScreen,
   listTerminals,
-  pinSignIn,
+  pinSignIn as pinSignInOnce,
   registerTerminal,
   removeMyPin,
   removeTerminal,
@@ -44,6 +47,12 @@ import {
   requireOrganizationContext,
   switchOrganization,
 } from "@/platform/tenancy";
+import { GET as exportRoute } from "@/app/api/exportaciones/[tipo]/route";
+import { keepTerminalSessionAction } from "@/app/(app)/actions";
+import { moduleRegistry } from "@/modules/registry";
+import { buildExport } from "@/modules/inventory";
+import { can } from "@/platform/authorization";
+import { provisionCompany } from "@/platform/billing";
 import { db, forOrganization } from "@/server";
 
 import { grantSeats } from "../setup/plan";
@@ -72,6 +81,13 @@ vi.mock("next/headers", () => ({
     toString: () =>
       [...jar].map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("; "),
   }),
+}));
+// `after()` runs right away, so activity written after a response is seen.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (task: unknown) => {
+    void (typeof task === "function" ? task() : task);
+  },
 }));
 vi.mock("next/navigation", () => ({
   redirect: (path: string) => {
@@ -141,6 +157,23 @@ async function newCompany(name: string) {
   const created = await createOrganization(owner.id, { name, timeZone: "" });
   if (!created.ok) throw new Error("company setup failed");
   await grantSeats(created.organizationId);
+  // Inventory contracted, so floor permissions are really in use.
+  const staff = await newUser(`Personal ${name}`);
+  await db.platformStaff.create({ data: { userId: staff.id } });
+  const plan = await provisionCompany(
+    moduleRegistry,
+    staff.id,
+    created.organizationId,
+    {
+      productLimit: 20,
+      users: 50,
+      facilities: 3,
+      modules: ["inventory"],
+      validUntil: null,
+      reason: "Prueba de terminales",
+    },
+  );
+  if (!plan.ok) throw new Error("provision failed");
   const facility = await db.facility.findFirstOrThrow({
     where: { organizationId: created.organizationId, isDefault: true },
   });
@@ -212,6 +245,20 @@ let supervisor = "";
 let chooser = "";
 let adminB = "";
 let terminalCookie = "";
+
+/**
+ * Signs in with a PIN; a right PIN rotates the terminal's secret, so the
+ * cookie of the main terminal is kept as the browser now has it.
+ */
+async function pinSignIn(
+  input: { userId: unknown; pin: unknown },
+  headers: Headers,
+) {
+  const result = await pinSignInOnce(input, headers);
+  const now = jar.get(TERMINAL_COOKIE);
+  if (result.ok && now?.startsWith(`${terminalId}.`)) terminalCookie = now;
+  return result;
+}
 let terminalId = "";
 
 beforeAll(async () => {
@@ -241,6 +288,8 @@ beforeAll(async () => {
 }, SLOW);
 
 afterAll(async () => {
+  // Notices may queue emails (WMS-39B): leave the queue empty.
+  await db.job.deleteMany({});
   await db.$disconnect();
 });
 
@@ -640,7 +689,9 @@ describe("attempts", () => {
           where: { userId: victim, action: "pin.locked" },
         }),
       ).toBeGreaterThanOrEqual(1);
-      // Signing in with the password proves who it is: the PIN works again.
+      // Signing in with the password, from their own device, proves who it
+      // is: the PIN works again.
+      onDevice(null);
       const signed = await signIn(
         {
           email: (await db.user.findUniqueOrThrow({ where: { id: victim } }))
@@ -910,6 +961,225 @@ describe("the PIN session", () => {
       expect(result.ok).toBe(true);
       expect(await db.session.count({ where: { id: session.id } })).toBe(0);
       expect(await db.memberPin.count({ where: { userId: leaving } })).toBe(0);
+    },
+    SLOW,
+  );
+});
+
+describe("review of the step (WMS-38)", () => {
+  const emailOf = async (userId: string) =>
+    (await db.user.findUniqueOrThrow({ where: { id: userId } })).email;
+
+  async function newTerminal(name: string) {
+    onDevice(null);
+    const registered = await registerTerminal(
+      { organizationId: A.org, userId: admin },
+      { name, facilityId: A.facility },
+    );
+    if (!registered.ok) throw new Error("terminal setup failed");
+    return registered;
+  }
+
+  it(
+    "no password on a terminal: the sign-in is refused and a full session brought there is closed",
+    async () => {
+      onDevice(terminalCookie);
+      expect(
+        await signIn(
+          { email: await emailOf(olivia), password: PASSWORD },
+          from(),
+        ),
+      ).toEqual({ ok: false, reason: "terminal" });
+      // Signed in elsewhere, then the same browser shows a terminal cookie.
+      onDevice(null);
+      expect(
+        await signIn(
+          { email: await emailOf(olivia), password: PASSWORD },
+          from(),
+        ),
+      ).toEqual({ ok: true });
+      const full = await db.session.findFirstOrThrow({
+        where: { userId: olivia, terminalId: null },
+        orderBy: { createdAt: "desc" },
+      });
+      // The browser carries that session (signed as Better Auth signs it).
+      const context = await auth.$context;
+      jar.clear();
+      jar.set(
+        SESSION_COOKIE,
+        `${full.token}.${createHmac("sha256", context.secret).update(full.token).digest("base64")}`,
+      );
+      expect((await requireSession()).user.id).toBe(olivia);
+      // The same browser with a terminal cookie: the session is closed.
+      jar.set(TERMINAL_COOKIE, terminalCookie);
+      await redirectsTo(requireSession(), "/terminal");
+      expect(await db.session.count({ where: { id: full.id } })).toBe(0);
+    },
+    SLOW,
+  );
+
+  it(
+    "the secret rotates on every PIN sign-in; an old copy after the grace removes the terminal",
+    async () => {
+      const copied = await newTerminal("Copiada");
+      onDevice(copied.cookieValue);
+      expect(
+        await pinSignInOnce({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      const rotated = jar.get(TERMINAL_COOKIE)!;
+      expect(rotated).not.toBe(copied.cookieValue);
+      expect(rotated.startsWith(`${copied.terminalId}.`)).toBe(true);
+      // Within the grace (a request already on its way) the old one works.
+      onDevice(copied.cookieValue);
+      expect((await getTerminalScreen())?.terminal.id).toBe(copied.terminalId);
+      // Later, the old secret can only be a copy.
+      await db.sharedTerminal.update({
+        where: { id: copied.terminalId },
+        data: { secretRotatedAt: new Date(Date.now() - 5 * 60_000) },
+      });
+      onDevice(copied.cookieValue);
+      expect(await getTerminalScreen()).toBeNull();
+      const row = await db.sharedTerminal.findUniqueOrThrow({
+        where: { id: copied.terminalId },
+      });
+      expect(row.removedAt).not.toBeNull();
+      expect(row.removedByUserId).toBeNull();
+      expect(
+        await db.session.count({ where: { terminalId: copied.terminalId } }),
+      ).toBe(0);
+      onDevice(rotated);
+      expect(await getTerminalScreen()).toBeNull();
+      const warned = await db.notification.findMany({
+        where: { organizationId: A.org, typeKey: "platform.terminal_cloned" },
+        select: { recipientUserId: true },
+      });
+      expect(warned.map((n) => n.recipientUserId)).toContain(admin);
+      const events = await listAuditEvents(forOrganization(A.org), {
+        limit: 200,
+      });
+      expect(events.some((e) => e.action === "terminal.cloned")).toBe(true);
+    },
+    SLOW,
+  );
+
+  it(
+    "automatic queries do not keep a PIN session alive; touches do",
+    async () => {
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      const session = await db.session.findFirstOrThrow({
+        where: { userId: olivia, terminalId },
+      });
+      const before = new Date(Date.now() - 4 * 60_000);
+      await db.session.update({
+        where: { id: session.id },
+        data: { lastActiveAt: before },
+      });
+      // What the bell and periodic refreshes go through.
+      await requireOrganizationContext();
+      expect(
+        (await db.session.findUniqueOrThrow({ where: { id: session.id } }))
+          .lastActiveAt,
+      ).toEqual(before);
+      // A touch of the person.
+      await keepTerminalSessionAction();
+      expect(
+        (
+          await db.session.findUniqueOrThrow({ where: { id: session.id } })
+        ).lastActiveAt!.getTime(),
+      ).toBeGreaterThan(before.getTime());
+    },
+    SLOW,
+  );
+
+  it(
+    "wrong PINs block the person on that terminal only, and who manages terminals is told",
+    async () => {
+      const target = await member(A.org, "Tere Blanco", ["operator"]);
+      await setPin(A.org, target, "614298");
+      onDevice(terminalCookie);
+      for (let i = 0; i < 5; i++) {
+        await pinSignIn({ userId: target, pin: `70010${i}` }, from());
+      }
+      expect(
+        await pinSignIn({ userId: target, pin: "614298" }, from()),
+      ).toMatchObject({
+        ok: false,
+        reason: "throttled",
+        message: expect.stringContaining("entra con tu contraseña"),
+      });
+      const notices = await db.notification.findMany({
+        where: { organizationId: A.org, typeKey: "platform.terminal_locked" },
+        select: { recipientUserId: true, text: true },
+      });
+      expect(
+        notices.some(
+          (n) => n.recipientUserId === admin && n.text.includes("Tere Blanco"),
+        ),
+      ).toBe(true);
+      // On another terminal the person still enters.
+      const other = await newTerminal("Andén 4");
+      onDevice(other.cookieValue);
+      expect(
+        await pinSignInOnce({ userId: target, pin: "614298" }, from()),
+      ).toEqual({ ok: true });
+    },
+    SLOW,
+  );
+
+  it(
+    "a person of another company never enters on this terminal",
+    async () => {
+      const outsider = await member(B.org, "Omar Otra", ["operator"]);
+      await setPin(B.org, outsider, "839104");
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: outsider, pin: "839104" }, from()),
+      ).toEqual({ ok: false, reason: "wrong", message: WRONG_PIN_MESSAGE });
+      onDevice(terminalCookie);
+      expect(
+        (await getTerminalScreen())?.people.map((p) => p.userId),
+      ).not.toContain(outsider);
+    },
+    SLOW,
+  );
+
+  it(
+    "the cut also holds through a real route: no exports from a terminal",
+    async () => {
+      await setSetting(
+        A.org,
+        "platform.terminal.pin_roles",
+        "floor_supervision",
+      );
+      // The same person may export from their own device.
+      expect(
+        can(
+          { isOwner: false, roles: ["supervisor"] },
+          "inventory.export.create",
+        ),
+      ).toBe(true);
+      onDevice(null);
+      expect(
+        await buildExport(
+          { organizationId: A.org, userId: supervisor },
+          { kind: "catalogo", format: "csv" },
+        ),
+      ).toMatchObject({ ok: true });
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: supervisor, pin: "395182" }, from()),
+      ).toEqual({ ok: true });
+      const response = await exportRoute(
+        new NextRequest(
+          "http://localhost/api/exportaciones/catalogo?formato=csv",
+        ),
+        { params: Promise.resolve({ tipo: "catalogo" }) },
+      );
+      expect(response.status).toBe(404);
+      await setSetting(A.org, "platform.terminal.pin_roles", "floor");
     },
     SLOW,
   );

@@ -3,7 +3,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { registerUser, type RegisterField } from "@/platform/auth";
+import {
+  refuseOnTerminal,
+  registerUser,
+  type RegisterField,
+} from "@/platform/auth";
 
 export type RegisterFormState = {
   fieldErrors: Partial<Record<RegisterField, string>>;
@@ -16,6 +20,8 @@ export async function registerAction(
   _prev: RegisterFormState,
   formData: FormData,
 ): Promise<RegisterFormState> {
+  // A shared terminal is entered with a PIN only (WMS-38).
+  await refuseOnTerminal();
   const input = {
     name: String(formData.get("name") ?? ""),
     email: String(formData.get("email") ?? ""),

@@ -1,15 +1,16 @@
 import "server-only";
 
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
-import { ForbiddenError, newId } from "@/lib";
+import { ForbiddenError, log, newId } from "@/lib";
+import { recordAuditEvent } from "@/platform/audit";
 import { pendingLegalDocuments } from "@/platform/legal";
 import { db } from "@/server";
 
 import { auth } from "./auth";
-import { isMfaRequired } from "./mfa-policy";
+import { isMfaRequired, usersWhoMustUseMfa } from "./mfa-policy";
 import { getCurrentSession } from "./session";
 import { clientIp } from "./throttle";
 
@@ -26,6 +27,15 @@ import { clientIp } from "./throttle";
 
 /** Where a terminal asks «¿Quién eres?». */
 export const TERMINAL_PATH = "/terminal";
+
+/** Where a shared terminal explains that there one enters with a PIN. */
+export const TERMINAL_PASSWORD_PATH = "/terminal?aviso=contrasena";
+
+/**
+ * A rotated secret still opens the terminal this long (two tabs, a request
+ * already on its way). Later, the old secret means a copied cookie.
+ */
+export const TERMINAL_SECRET_GRACE_MS = 2 * 60 * 1000;
 
 /** A PIN session never lives longer than this (a long shift). */
 export const TERMINAL_SESSION_MAX_HOURS = 12;
@@ -145,28 +155,142 @@ export const terminalOfDevice = cache(
   },
 );
 
-/** The active terminal with that id and secret, or null. */
-export async function terminalBySecret(
-  id: string,
-  secret: string,
-): Promise<DeviceTerminal | null> {
-  const terminal = await db.sharedTerminal.findUnique({
-    where: { secretHash: hashTerminalSecret(secret) },
-    select: {
-      id: true,
-      organizationId: true,
-      facilityId: true,
-      name: true,
-      removedAt: true,
-    },
-  });
-  if (!terminal || terminal.removedAt || terminal.id !== id) return null;
+const TERMINAL_SELECT = {
+  id: true,
+  organizationId: true,
+  facilityId: true,
+  name: true,
+  removedAt: true,
+  secretRotatedAt: true,
+} as const;
+
+function deviceOf(terminal: {
+  id: string;
+  organizationId: string;
+  facilityId: string;
+  name: string;
+}): DeviceTerminal {
   return {
     id: terminal.id,
     organizationId: terminal.organizationId,
     facilityId: terminal.facilityId,
     name: terminal.name,
   };
+}
+
+/**
+ * The active terminal with that id and secret, or null. The secret rotates
+ * on every PIN sign-in (ADR 0061 §1): the one before still works for a
+ * short grace; after it, it can only come from a copy of the cookie, so
+ * the terminal is removed, its sessions closed and who manages it warned.
+ */
+export async function terminalBySecret(
+  id: string,
+  secret: string,
+  now: Date = new Date(),
+): Promise<DeviceTerminal | null> {
+  const hash = hashTerminalSecret(secret);
+  const terminal = await db.sharedTerminal.findUnique({
+    where: { secretHash: hash },
+    select: TERMINAL_SELECT,
+  });
+  if (terminal) {
+    return terminal.removedAt || terminal.id !== id ? null : deviceOf(terminal);
+  }
+  const rotated = await db.sharedTerminal.findFirst({
+    where: { previousSecretHash: hash, id },
+    select: TERMINAL_SELECT,
+  });
+  if (!rotated || rotated.removedAt || !rotated.secretRotatedAt) return null;
+  if (
+    now.getTime() - rotated.secretRotatedAt.getTime() <=
+    TERMINAL_SECRET_GRACE_MS
+  ) {
+    return deviceOf(rotated);
+  }
+  await removeClonedTerminal(deviceOf(rotated));
+  return null;
+}
+
+/**
+ * A secret replaced long ago came back: the cookie was copied. The
+ * terminal is removed (by the system), its sessions closed, the trail
+ * written and who manages terminals of its warehouse warned.
+ */
+async function removeClonedTerminal(terminal: DeviceTerminal): Promise<void> {
+  try {
+    const removed = await db.$transaction(async (tx) => {
+      const { count } = await tx.sharedTerminal.updateMany({
+        where: { id: terminal.id, removedAt: null },
+        data: { removedAt: new Date() },
+      });
+      if (count === 0) return false;
+      const closed = await tx.session.deleteMany({
+        where: { terminalId: terminal.id },
+      });
+      await recordAuditEvent(tx, {
+        organizationId: terminal.organizationId,
+        actorUserId: null,
+        action: "terminal.cloned",
+        target: { type: "shared_terminal", id: terminal.id },
+        metadata: { name: terminal.name, sessionsClosed: closed.count },
+      });
+      return true;
+    });
+    if (!removed) return;
+    // Loaded here: notifications and terminals depend on this area.
+    const { notify } = await import("@/platform/notifications");
+    const { TERMINAL_CLONED_NOTICE } = await import("@/platform/terminals");
+    const { forOrganization } = await import("@/server");
+    await forOrganization(terminal.organizationId).$transaction((tx) =>
+      notify(tx, TERMINAL_CLONED_NOTICE, {
+        organizationId: terminal.organizationId,
+        actorUserId: null,
+        to: {
+          permissions: ["platform.terminal.manage"],
+          facilityId: terminal.facilityId,
+        },
+        text: `Se quitó la terminal «${terminal.name}»: alguien usó una copia de su cookie. Para volver a usarla, regístrala de nuevo.`,
+        href: "/configuracion/terminales",
+        key: `terminal_cloned:${terminal.id}`,
+      }),
+    );
+  } catch (error) {
+    log.error("terminal.clone_report_failed", error);
+  }
+}
+
+/**
+ * Gives this browser's terminal a new secret (ADR 0061 §1), after a PIN
+ * sign-in: a copy of the old cookie stops working once the grace passes.
+ * Conditioned on the secret this browser sent, so two sign-ins at once
+ * rotate once; only the one that rotated writes the cookie.
+ */
+export async function rotateTerminalSecret(
+  terminal: DeviceTerminal,
+): Promise<boolean> {
+  const parsed = parseTerminalCookie(await readTerminalCookie());
+  if (!parsed || parsed.id !== terminal.id) return false;
+  const secret = newTerminalSecret();
+  const { count } = await db.sharedTerminal.updateMany({
+    where: {
+      id: terminal.id,
+      removedAt: null,
+      secretHash: hashTerminalSecret(parsed.secret),
+    },
+    data: {
+      secretHash: hashTerminalSecret(secret),
+      previousSecretHash: hashTerminalSecret(parsed.secret),
+      secretRotatedAt: new Date(),
+    },
+  });
+  if (count !== 1) return false;
+  (await cookies()).set(
+    TERMINAL_COOKIE,
+    terminalCookieValue(terminal.id, secret),
+    terminalCookieOptions,
+  );
+  return true;
 }
 
 /** The role set the company allows with a PIN (its setting or the default). */
@@ -232,31 +356,8 @@ export async function pinCandidates(
         m.scopes.some((s) => s.facilityId === facilityId)),
   );
   if (fit.length === 0) return [];
-  const ids = fit.map((m) => m.userId);
-  // isMfaRequired, for the whole list at once: titular of any company,
-  // administrator anywhere, platform staff.
-  const [owners, administrators, staff] = await Promise.all([
-    db.organization.findMany({
-      where: { ownerUserId: { in: ids } },
-      select: { ownerUserId: true },
-    }),
-    db.membershipRole.findMany({
-      where: {
-        role: "administrator",
-        membership: { userId: { in: ids }, status: "ACTIVE" },
-      },
-      select: { membership: { select: { userId: true } } },
-    }),
-    db.platformStaff.findMany({
-      where: { userId: { in: ids }, disabledAt: null },
-      select: { userId: true },
-    }),
-  ]);
-  const mustUseMfa = new Set([
-    ...owners.map((o) => o.ownerUserId),
-    ...administrators.map((a) => a.membership.userId),
-    ...staff.map((s) => s.userId),
-  ]);
+  // The rule of isMfaRequired, for the whole list at once.
+  const mustUseMfa = await usersWhoMustUseMfa(fit.map((m) => m.userId));
   return fit
     .filter((m) => !mustUseMfa.has(m.userId))
     .map((m) => ({
@@ -422,14 +523,18 @@ async function stillMayUsePin(
  */
 export const terminalUserOfRequest = cache(async (): Promise<string | null> => {
   try {
-    const session = await getCurrentSession();
-    const terminalId = (
-      session?.session as { terminalId?: string | null } | undefined
-    )?.terminalId;
-    return terminalId ? session!.user.id : null;
+    await headers();
   } catch {
+    // No request (worker, scripts, tests): there is no terminal.
     return null;
   }
+  // Inside a request a failure to read the session is not «no terminal»:
+  // it propagates, so the cut never fails open.
+  const session = await getCurrentSession();
+  const terminalId = (
+    session?.session as { terminalId?: string | null } | undefined
+  )?.terminalId;
+  return terminalId ? session!.user.id : null;
 });
 
 /**

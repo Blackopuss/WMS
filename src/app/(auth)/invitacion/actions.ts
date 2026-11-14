@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import {
   DEFAULT_AFTER_SIGN_IN,
+  refuseOnTerminal,
   requireSession,
   signIn,
   signOut,
@@ -25,6 +26,8 @@ export async function acceptInvitationAction(
   _prev: AcceptInvitationState,
   formData: FormData,
 ): Promise<AcceptInvitationState> {
+  // A shared terminal is entered with a PIN only (WMS-38).
+  await refuseOnTerminal();
   // Joining needs no MFA yet; the app asks for it right after if the new
   // roles require it.
   const { user, sessionId } = await requireSession({ allowMissingMfa: true });
@@ -53,6 +56,7 @@ export async function joinAsNewUserAction(
   _prev: JoinAsNewUserState,
   formData: FormData,
 ): Promise<JoinAsNewUserState> {
+  await refuseOnTerminal();
   const requestHeaders = await headers();
   const name = String(formData.get("name") ?? "");
   const password = String(formData.get("password") ?? "");

@@ -3,6 +3,7 @@ import "server-only";
 import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import {
+  assertNotTerminalSession,
   clientIp,
   insertInvitedAccount,
   prepareInvitedAccount,
@@ -198,6 +199,8 @@ export async function acceptInvitation(
   userId: string,
   token: string,
 ): Promise<AcceptInvitationResult> {
+  // A PIN session never joins another company (WMS-38).
+  await assertNotTerminalSession(userId);
   return db.$transaction(async (tx) => {
     const invitation = await findUsable(tx, token, true);
     if (!invitation) return refuse("invalid");

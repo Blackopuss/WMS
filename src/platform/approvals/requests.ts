@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import { terminalUserOfRequest } from "@/platform/auth";
 import {
   buildScope,
   knownRoles,
@@ -196,10 +197,13 @@ async function subjectIn(
   if (!membership) return null;
   const isOwner = membership.organization.ownerUserId === userId;
   const scope = isOwner ? null : buildScope(membership.scopes);
+  // A PIN session of a shared terminal (WMS-38) never decides.
+  const terminal = (await terminalUserOfRequest()) === userId;
   return {
     isOwner,
     roles: membership.roles.map((each) => each.role),
     ...(scope ? { scope } : {}),
+    ...(terminal ? { terminal } : {}),
     name: membership.user.name,
   };
 }
@@ -215,7 +219,8 @@ function mayDecide(
   rule: ApprovalRuleValue,
   entitlements: Entitlements,
 ): boolean {
-  if (subject.support === true) return false;
+  // Support only looks (PIL-12); a shared terminal never decides (WMS-38).
+  if (subject.support === true || subject.terminal === true) return false;
   const byRole =
     subject.isOwner === true ||
     knownRoles(subject.roles).some((role) => rule.roles.includes(role));
