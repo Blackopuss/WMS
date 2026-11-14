@@ -21,9 +21,8 @@ para arrancar sin releer la conversación anterior.
     combinar su recorte `Subject.terminal` con `Subject.limit` de WMS-60 y
     renombrar su migración a `20261116130000_…`. Al llegar su reporte: revisar
     las correcciones (otro revisor), unir, documentar.
-  - `flujo-produccion-calidad` (solo `docs/flujos/PRODUCCION_CALIDAD.md`): va en
-    su cuarta versión, con todas las respuestas del fundador. Al llegar: leerla,
-    unirla y pasarle al fundador lo que siga abierto.
+  - La propuesta de producción y calidad (`docs/flujos/PRODUCCION_CALIDAD.md`)
+    quedó unida en su quinta versión; su rama ya no tiene nada pendiente.
 - Las ramas ya unidas (`pend-traslado-pdf-archivar`, `wms-40-sesiones-equipo`,
   `pend-avisos-correo`, `wms-60-api-webhooks`) siguen en GitHub: desde un chat
   de la nube no se pueden borrar (el `git push --delete` no tiene efecto); las
@@ -64,9 +63,13 @@ para arrancar sin releer la conversación anterior.
 ## Esperan al fundador
 
 - Producción y calidad: el fundador contestó D1 a D11, P1 a P13 y P10b
-  (2026-11-14; todo está en `MEMORY.md`). Falta que vea la cuarta versión de la
-  propuesta: cómo se cubre «restauración» y si Almacén y Supervisor de almacén
-  también deciden las solicitudes de producción o solo el Encargado.
+  (2026-11-14; todo está en `MEMORY.md` y en la sección 1 de la propuesta).
+  Le faltan cinco preguntas de la sección 11 de la quinta versión: P7c (si
+  Almacén y Supervisor de almacén también deciden las solicitudes de producción
+  o solo se enteran), P8c (qué cuenta como «tareas asignadas»), R1 (estado
+  nuevo «En restauración» y orden de reproceso), R2 (lo restaurado, directo a
+  disponible o por inspección) y R3 (si el Almacenista manda a restauración).
+  Cuando las conteste y apruebe la propuesta, el primer paso es WMS-59.
 - WMS-38: tres decisiones de quien coordina que puede cambiar (en una terminal
   no se entra con contraseña; PIN de 5 o 6 dígitos; una sesión de PIN no
   exporta, no autoriza ni ve costos) y qué roles usan PIN por omisión (hoy el

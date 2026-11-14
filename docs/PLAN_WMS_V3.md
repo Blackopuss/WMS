@@ -632,9 +632,11 @@ y **WMS-28B** (solicitud de producción desde el piso); hace de las fotos
 (WMS-37) un requisito y pone WMS-59 primero. La tercera versión (2026-11-14) trae además sus
 respuestas a P1–P13, la sección de roles y el motor de procesos con candado
 entre etapas y relevo automático entre áreas. El fundador ya contestó también P3, P6, P7, P1b,
-P8b y P10b (están en `MEMORY.md`); la cuarta versión las incorpora y deja
-abierto solo cómo se cubre «restauración» y quién más decide las solicitudes
-de producción. Nada se programa hasta que apruebe esa versión.
+P8b y P10b (están en `MEMORY.md`); la quinta versión (unida el 2026-11-14) las
+incorpora, agrega **WMS-75** (estado «En restauración») y **WMS-29B** (orden de
+reproceso), y deja abiertas cinco preguntas: P7c, P8c, R1, R2 y R3 (su sección
+11). Nada se programa hasta que el fundador las conteste y apruebe la
+propuesta.
 
 ### WMS-60 · API y webhooks
 
