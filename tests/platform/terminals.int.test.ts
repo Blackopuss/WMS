@@ -1376,6 +1376,50 @@ describe("review of the step (WMS-38)", () => {
     SLOW,
   );
 
+  it(
+    "after more than 30 days unused, a copy that signs in never leaves the real terminal unnoticed",
+    async () => {
+      const quiet = await newTerminal("Poco usada");
+      const shared = quiet.cookieValue;
+      // Both devices have the first secret; it was presented.
+      onDevice(shared);
+      expect((await getTerminalScreen())?.terminal.id).toBe(quiet.terminalId);
+      const month = 31 * 86_400_000;
+      // The copy signs in 31 days later: a new secret, the old one kept.
+      const copyAt = new Date(Date.now() + month);
+      const device = await terminalBySecret(
+        quiet.terminalId,
+        secretOf(shared),
+        copyAt,
+      );
+      expect(device).not.toBeNull();
+      expect(await rotateTerminalSecret(device!, copyAt)).toBe(true);
+      const copy = jar.get(TERMINAL_COOKIE)!;
+      expect(
+        await terminalBySecret(quiet.terminalId, secretOf(copy), copyAt),
+      ).not.toBeNull();
+      expect(
+        await db.sharedTerminalSecret.count({
+          where: { terminalId: quiet.terminalId },
+        }),
+      ).toBe(2);
+      // The real one comes back with the first secret: caught, not lost.
+      const realAt = new Date(copyAt.getTime() + 10 * 60_000);
+      expect(
+        await terminalBySecret(quiet.terminalId, secretOf(shared), realAt),
+      ).toBeNull();
+      const row = await db.sharedTerminal.findUniqueOrThrow({
+        where: { id: quiet.terminalId },
+      });
+      expect(row.removedAt).not.toBeNull();
+      // Once removed, its secrets may be cleaned up.
+      await db.sharedTerminalSecret.deleteMany({
+        where: { terminalId: quiet.terminalId },
+      });
+    },
+    SLOW,
+  );
+
   it("a secret is never rewritten nor its dates moved back", async () => {
     const fixed = await newTerminal("Fija");
     const row = await db.sharedTerminalSecret.findFirstOrThrow({

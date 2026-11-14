@@ -61,7 +61,7 @@ de la API nunca es una sesión de terminal.
 `removedAt`; no se borra ni cambia de empresa o almacén: disparador),
 `shared_terminal_secret` (SHA-256 de cada secreto emitido, cuándo se emitió
 y cuándo se presentó por primera vez; solo cambia `presentedAt`, una vez;
-solo se borran los de más de 30 días, al rotar: disparadores; lo usan
+los de una terminal activa nunca se borran: disparadores; lo usan
 `terminalBySecret` y `rotateTerminalSecret` para la rotación con detección
 de reúso, ADR 0061 §1) y `member_pin` (persona + empresa, hash scrypt sobre
 un HMAC del PIN con el secreto del servidor, la empresa y la persona; se

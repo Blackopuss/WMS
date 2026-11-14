@@ -52,16 +52,25 @@ export function TerminalBar({
   const pathname = usePathname();
   const lastTouch = useRef(0);
   const lastKeep = useRef(0);
+  // The actions arrive as new references on every refresh of the layout
+  // (`router.refresh()`): kept in refs, so a screen that refreshes itself
+  // never counts as activity nor restarts the idle close.
+  const keep = useRef(keepAction);
+  const signOut = useRef(signOutAction);
+  useEffect(() => {
+    keep.current = keepAction;
+    signOut.current = signOutAction;
+  }, [keepAction, signOutAction]);
 
   // A navigation of the person (a new screen) is activity too; automatic
   // refreshes keep the same path and do not count.
   useEffect(() => {
     lastTouch.current = Date.now();
     lastKeep.current = lastTouch.current;
-    keepAction().catch(() => {
+    keep.current().catch(() => {
       lastKeep.current = 0;
     });
-  }, [pathname, keepAction]);
+  }, [pathname]);
 
   useEffect(() => {
     let closing = false;
@@ -69,7 +78,7 @@ export function TerminalBar({
     let trail: number | undefined;
     function report() {
       lastKeep.current = Date.now();
-      keepAction().catch(() => {
+      keep.current().catch(() => {
         // A lost call is not a problem: the next touch tries again, and
         // the server decides with what it has.
         lastKeep.current = 0;
@@ -105,7 +114,7 @@ export function TerminalBar({
       // The action signs out and redirects; if it fails or takes too long,
       // the person is taken out anyway.
       fallback = window.setTimeout(leave, FALLBACK_AFTER_MS);
-      signOutAction().catch((error: unknown) => {
+      signOut.current().catch((error: unknown) => {
         // A redirect from the action is how it ends well.
         if (isRedirect(error)) return;
         window.clearTimeout(fallback);
@@ -118,7 +127,7 @@ export function TerminalBar({
       window.clearTimeout(fallback);
       window.clearTimeout(trail);
     };
-  }, [idleSeconds, keepAction, signOutAction, router]);
+  }, [idleSeconds, router]);
 
   return (
     <div className="flex flex-wrap items-center gap-3 border-b bg-accent/40 px-4 py-2 sm:px-6">

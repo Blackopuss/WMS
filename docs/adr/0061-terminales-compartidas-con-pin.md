@@ -75,9 +75,25 @@ fuera de este paso (ver «Lo que queda previsto»).
   Rotar bloquea la terminal: dos entradas a la vez rotan una sola vez (la
   segunda ve un secreto emitido hace menos de la gracia y no rota otra vez).
   De un secreto solo cambia `presentedAt`, una vez y nunca antes de
-  emitido; hash, terminal y fechas no cambian, y solo se borran los de más
-  de 30 días (limpieza al rotar; un secreto borrado ya no abre nada):
+  emitido; hash, terminal y fechas no cambian, y **los secretos de una
+  terminal activa nunca se borran** (filas pequeñas): una limpieza por
+  antigüedad podía dejar viva solo a una copia, porque la terminal real
+  volvía con un secreto borrado que ya contaba como «nunca emitido», y
+  rompía la regla 2. Solo se pueden borrar los de una terminal quitada:
   disparadores y `CHECK`.
+- **Límites conocidos de la detección** (revisión final, sin código):
+  - Un cliente que no acepta el `Set-Cookie` de la rotación (curl, un
+    editor de cookies) entra con la copia y la terminal real conserva el
+    mismo secreto: solo se detecta si la copia se sigue usando después de
+    la siguiente entrada con PIN de la real. Arreglo posible para después:
+    guardar en la sesión de PIN el secreto emitido al entrar y exigir en
+    `checkTerminalSession` que el presentado sea ese o uno posterior.
+  - El orden «más nuevo» sale del `id` UUIDv7, hecho con el reloj de la
+    aplicación: con varias instancias y relojes desfasados podría
+    invertirse. Hoy hay un solo servidor; es un requisito a revisar antes de
+    escalar a varias instancias.
+- Al entrar, el secreto se rota **antes** de abrir la sesión: si rotar
+  falla, no queda una sesión que sirva sin haber rotado.
 - Pendiente (no se hizo): una lista de redes permitidas por terminal.
 - Si el dispositivo ya era terminal de la misma empresa, la pantalla lo dice
   y no ofrece registrarlo otra vez (se quita primero). Si era terminal de
@@ -181,7 +197,9 @@ sesión de PIN.
      contraseña para terminar de configurar tu cuenta.» Se decide **antes**
      de mirar el PIN y sin gastar intento, así la respuesta nunca confirma
      que un PIN era correcto (antes, solo el PIN correcto daba esta
-     respuesta y servía de oráculo).
+     respuesta y servía de oráculo). Aceptado: esta respuesta dice, sin
+     gastar intento, que la cuenta de un compañero de la lista no está
+     lista (correo sin confirmar o documentos pendientes).
 - **Qué pasa al entrar:**
   - Se borra cualquier otra sesión de esa terminal (una terminal es un
     dispositivo: una persona a la vez).
@@ -256,10 +274,11 @@ Tres llaves, todas apartadas **antes** de verificar (`reserveAttempt`):
   cuenta igual y dice lo mismo; el bloqueo dice lo mismo sea de quien sea.
 - Tiempo para adivinar al azar (ver la tabla de
   `docs/seguridad/REVISION_PIN.md`): contra una persona desde una terminal,
-  ≈14 intentos por hora: PIN de 6 dígitos ≈3.6 años en promedio (1 % en
-  ≈27 días); de 5 dígitos ≈4.8 meses (1 % en ≈3 días). Contra cualquiera de
-  N personas desde una terminal, ≈76 por hora: 6 dígitos ≈24 días con 20
-  personas; 5 dígitos ≈2.7 días. Por eso **6 dígitos es el único valor por
+  a lo más 20 intentos por hora (5 y 15 minutos de bloqueo): PIN de 6
+  dígitos ≈2.55 años en promedio (1 % en ≈18.6 días); de 5 dígitos ≈3.3
+  meses (1 % en ≈2 días). Contra cualquiera de N personas desde una
+  terminal, a lo más 80 por hora: 6 dígitos ≈23 días con 20 personas; 5
+  dígitos ≈2.5 días. Por eso **6 dígitos es el único valor por
   omisión** y la pantalla del ajuste dice que 5 es diez veces más fácil de
   adivinar. Las reglas rechazan además repetidos, escaleras, bloques,
   años, fechas y figuras del teclado (`147258`, `159753`, `112233`).

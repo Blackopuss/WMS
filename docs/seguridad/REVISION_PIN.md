@@ -56,9 +56,9 @@ azar; por eso las reglas rechazan esos patrones.
 
 | Ataque | Ritmo real | 6 dígitos | 5 dígitos |
 | --- | --- | --- | --- |
-| Contra una persona desde una terminal | ≈14 intentos por hora | ≈3.6 años en promedio; 1 % en ≈27 días | ≈4.8 meses; 1 % en ≈3 días |
+| Contra una persona desde una terminal | a lo más 20 por hora (5 y 15 minutos de bloqueo) | ≈2.55 años en promedio; 1 % en ≈18.6 días | ≈3.3 meses; 1 % en ≈2 días |
 | Contra una persona desde varias terminales | hasta 30 por hora (límite global) | ≈1.7 años; 1 % en ≈12 días | ≈2.2 meses; 1 % en ≈1.4 días |
-| Contra cualquiera de N personas desde una terminal | ≈76 por hora (límite de la terminal) | ≈24 días con 20 personas, ≈10 con 50 | ≈2.7 días con 20, ≈1 día con 50 |
+| Contra cualquiera de N personas desde una terminal | a lo más 80 por hora (límite de la terminal) | ≈23 días con 20 personas, ≈9 con 50 | ≈2.5 días con 20, ≈1 día con 50 |
 
 Cada bloqueo avisa y los fallos sostenidos también (30 en un día). Con estos
 números, **6 dígitos es el único valor por omisión**; la pantalla del ajuste
@@ -82,6 +82,13 @@ dice que 5 es diez veces más fácil de adivinar.
 | PIN-S13 | Media | (2.ª revisión) El bloqueo global (15 en 1 h) lo alcanzaba un compañero desde una sola terminal; por debajo de los umbrales no había aviso; cifras de la tabla imprecisas. | Corregido: global 30 en 1 h (exige más de una terminal), aviso por 30 fallos en un día, cifras con el espacio real, figuras del teclado rechazadas, 6 dígitos por omisión. |
 | PIN-S14 | Baja | (2.ª revisión) Un PIN correcto de una cuenta sin terminar respondía distinto de «PIN incorrecto» (oráculo). | Corregido: esa respuesta se da antes de mirar el PIN. |
 | PIN-S15 | Baja | (2.ª revisión) El recorte quitaba la hoja de embarque y la de traslado, y registrar el último costo; los cambios de equipo armaban el sujeto sin la marca de terminal; el `CHECK` de la sesión dejaba pasar una terminal sin tiempo de inactividad. | Corregido: lista explícita de documentos que se conservan, solo se corta leer costos, la marca viaja en `withTeamChange` y en las opciones de alcance, `CHECK` sin «desconocido». |
+| PIN-S16 | Media | (revisión final) La limpieza de secretos de más de 30 días podía dejar viva solo a una copia (la terminal real volvía con un secreto ya borrado, sin aviso) y rompía «una respuesta perdida no importa». | Corregido: los secretos de una terminal activa nunca se borran (disparador; prueba de la secuencia de 31 días). |
+| PIN-S17 | Media-baja | (revisión final) Cada `router.refresh()` entregaba una referencia nueva de la acción y la barra lo contaba como actividad: una pantalla que se refresca sola mantenía viva una sesión abandonada. | Corregido: las acciones van en refs; solo un cambio de pantalla cuenta. No se comprobó en navegador. |
+| PIN-S18 | Baja | (revisión final) La sesión se abría antes de rotar: si rotar fallaba, quedaba una sesión sin rotación. Con `support` y `terminal` a la vez, `support` no aplicaba el recorte de terminal. | Corregido: se rota antes de abrir la sesión; los recortes se aplican en secuencia (llave, soporte, terminal). |
+| PIN-S19 | Baja | (revisión final, aceptado) Un cliente que no acepta el `Set-Cookie` de la rotación entra con la copia y la real conserva el mismo secreto: solo se detecta si la copia se sigue usando tras la siguiente entrada con PIN de la real. | Pendiente: guardar en la sesión de PIN el secreto emitido y exigir en `checkTerminalSession` ese o uno posterior. |
+| PIN-S20 | Baja | (revisión final, aceptado) El orden «más nuevo» sale del UUIDv7 con el reloj de la aplicación; con varias instancias desfasadas podría invertirse. | Requisito a revisar antes de escalar a varias instancias. |
+| PIN-S21 | Informativa | (revisión final, aceptado) «Entra con tu correo y contraseña» dice, sin gastar intento, que la cuenta de un compañero de la lista no está lista. | Aceptado. |
+| PIN-S22 | Informativa | La prueba «dos entradas a la vez rotan una sola vez» llama `rotateTerminalSecret` directo: con dos `pinSignIn` simultáneos las pruebas comparten un solo frasco de cookies, y la segunda vería el secreto ya rotado por la primera (algo que dos peticiones reales no ven). | Aceptado así. |
 | PIN-S06 | Informativa | Un trabajo del worker pedido desde una sesión de PIN se revisa con los permisos completos de la persona (fuera de una petición no hay terminal). | Aceptado: el piso no tiene trabajos de plataforma. Las llaves de la API (WMS-60) no se crean desde una sesión de PIN y sus llamadas llevan su propio recorte (`Subject.limit`). |
 
 ## Siguiente revisión

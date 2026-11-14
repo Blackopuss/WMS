@@ -197,6 +197,20 @@ describe("shared terminal (WMS-38)", () => {
     expect(inScope(both, { facilityId: "A" })).toBe(false);
   });
 
+  it("support and terminal together keep only what both keep", () => {
+    const both = {
+      isOwner: false,
+      roles: ["administrator"],
+      support: true,
+      terminal: true,
+    };
+    expect(can(both, "platform.team.read")).toBe(false);
+    expect(can(both, "platform.audit.read")).toBe(false);
+    expect(can(both, "inventory.cost.read")).toBe(false);
+    expect(can(both, "inventory.stock.read")).toBe(true);
+    expect(can(both, "inventory.task.execute")).toBe(false);
+  });
+
   it("never manages API keys nor webhooks", () => {
     const titular = { isOwner: true, roles: [...ROLES] };
     expect(can(titular, "platform.api.manage")).toBe(true);

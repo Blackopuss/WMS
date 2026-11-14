@@ -193,14 +193,15 @@ export function permissionsOf(subject: Subject): ReadonlySet<Permission> {
   const limited = subject.limit
     ? new Set([...granted].filter((p) => subject.limit?.permissions.has(p)))
     : granted;
-  if (subject.support === true) {
-    return new Set([...limited].filter((p) => p.endsWith(".read")));
-  }
-  if (subject.terminal === true) {
-    // WMS-38: on top of the API key's cut (WMS-60), never instead of it.
-    return new Set([...limited].filter(keptAtTerminal));
-  }
-  return limited;
+  // Each cut on top of the one before, never instead of it: the API key
+  // (WMS-60), support (PIL-12), a shared terminal (WMS-38).
+  const supported =
+    subject.support === true
+      ? new Set([...limited].filter((p) => p.endsWith(".read")))
+      : limited;
+  return subject.terminal === true
+    ? new Set([...supported].filter(keptAtTerminal))
+    : supported;
 }
 
 /**

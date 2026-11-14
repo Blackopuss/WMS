@@ -46,9 +46,6 @@ export const TERMINAL_PASSWORD_PATH = "/terminal?aviso=contrasena";
  */
 export const TERMINAL_SECRET_GRACE_MS = 2 * 60 * 1000;
 
-/** Secrets issued more than this long ago are cleaned up when rotating. */
-export const TERMINAL_SECRET_KEEP_DAYS = 30;
-
 /** A PIN session never lives longer than this (a long shift). */
 export const TERMINAL_SESSION_MAX_HOURS = 12;
 
@@ -311,8 +308,10 @@ async function removeClonedTerminal(terminal: DeviceTerminal): Promise<void> {
  * sign-in, under the terminal's lock. It rotates from any secret that
  * still works (also an older one whose successor never arrived), except
  * when a newer secret was issued within the grace: two sign-ins at once
- * rotate once, and only the one that rotated writes the cookie. Secrets
- * older than TERMINAL_SECRET_KEEP_DAYS are cleaned up.
+ * rotate once, and only the one that rotated writes the cookie. No secret
+ * of an active terminal is ever deleted (small rows): a cleanup could
+ * leave only a copy alive, or turn an old lost answer into «not a
+ * terminal» without any warning.
  */
 export async function rotateTerminalSecret(
   terminal: DeviceTerminal,
@@ -353,16 +352,6 @@ export async function rotateTerminalSecret(
           terminalId: terminal.id,
           secretHash: hashTerminalSecret(secret),
           issuedAt: now,
-        },
-      });
-      await tx.sharedTerminalSecret.deleteMany({
-        where: {
-          terminalId: terminal.id,
-          issuedAt: {
-            lt: new Date(
-              now.getTime() - TERMINAL_SECRET_KEEP_DAYS * 24 * 3600 * 1000,
-            ),
-          },
         },
       });
       return true;

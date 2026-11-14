@@ -290,14 +290,16 @@ export async function pinSignIn(
         data: { lastUsedAt: new Date() },
       });
     });
+    // A copy of the cookie taken before now stops working (ADR 0061 §1).
+    // Rotated before the session opens: if rotating fails, no session is
+    // left working without having rotated.
+    await rotateTerminalSecret(terminal);
     await openTerminalSession({
       userId,
       terminal,
       idleSeconds: idleMinutes * 60,
       headers,
     });
-    // A copy of the cookie taken before now stops working (ADR 0061 §1).
-    await rotateTerminalSecret(terminal);
     await recordSecurityEvent({
       userId,
       action: "pin_sign_in.succeeded",
