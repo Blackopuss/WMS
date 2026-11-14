@@ -14,6 +14,11 @@ import {
 } from "@/platform/custom-fields";
 import { consumeQuota, releaseQuota } from "@/platform/entitlements";
 import {
+  isFacilityInScope,
+  isLimited,
+  locationScopeWhere,
+} from "@/platform/locations";
+import {
   LOCKING_TRANSACTION,
   forOrganization,
   lockRows,
@@ -1151,12 +1156,30 @@ export async function archiveProduct(
         _count: true,
       });
       if (product.status === "ACTIVE" && stock._count > 0) {
+        // The message counts only what the person reaches (WMS-20): stock
+        // in warehouses or zones outside their scope is neither named nor
+        // counted, it only keeps the product from being archived.
+        const scoped = await locationScopeWhere(tx, userId);
+        const seen = isLimited(scoped)
+          ? await tx.stockBalance.aggregate({
+              where: {
+                productId: id,
+                quantity: { gt: 0 },
+                location: scoped,
+              },
+              _sum: { quantity: true },
+              _count: true,
+            })
+          : stock;
         const unit = getUnit(product.unitCode);
-        const total = dec((stock._sum.quantity ?? 0).toString());
+        const total = dec((seen._sum.quantity ?? 0).toString());
         throw new StatusRejected({
           ok: false,
           reason: "has_stock",
-          error: `Todavía hay ${formatDecimal(total)} ${total.equals(1) ? unit.name : unit.plural} de este producto${stock._count > 1 ? ` en ${stock._count} ubicaciones` : ""}. Regístralas como salida o ajústalas a cero antes de archivarlo.`,
+          error:
+            seen._count > 0
+              ? `Todavía hay ${formatDecimal(total)} ${total.equals(1) ? unit.name : unit.plural} de este producto${seen._count > 1 ? ` en ${seen._count} ubicaciones` : ""}. Regístralas como salida o ajústalas a cero antes de archivarlo.`
+              : STOCK_OUT_OF_SCOPE,
         });
       }
       // Nor one still expected from a supplier (CMP-11): a purchase order
@@ -1167,11 +1190,19 @@ export async function archiveProduct(
       if (product.status === "ACTIVE") {
         const open = await openOrdersFor(tx, id);
         if (open.length > 0) {
-          const listed = open.slice(0, 3).join(", ");
+          // Only the orders the person reaches are named and counted
+          // (WMS-20, WMS-57B): an order of the whole company, or of a
+          // warehouse in their scope. The others still keep the product
+          // from being archived, without saying which, how many or where.
+          const visible = await ordersInScope(tx, userId, open);
+          const listed = visible.slice(0, 3).join(", ");
           throw new StatusRejected({
             ok: false,
             reason: "has_open_orders",
-            error: `Este producto todavía está por llegar en ${open.length === 1 ? "la orden" : "las órdenes"} ${listed}${open.length > 3 ? ` y ${open.length - 3} más` : ""}. Recíbela, ciérrala con faltante o cancélala antes de archivarlo.`,
+            error:
+              visible.length > 0
+                ? `Este producto todavía está por llegar en ${visible.length === 1 ? "la orden" : "las órdenes"} ${listed}${visible.length > 3 ? ` y ${visible.length - 3} más` : ""}. ${visible.length === 1 ? "Recíbela, ciérrala con faltante o cancélala" : "Recíbelas, ciérralas con faltante o cancélalas"} antes de archivarlo.`
+                : ORDERS_OUT_OF_SCOPE,
           });
         }
         // Nor one being counted: applying the count would put stock back
@@ -1220,15 +1251,26 @@ export async function archiveProduct(
   return { ok: true };
 }
 
+/** Archiving refused by stock the person does not reach (WMS-20). */
+const STOCK_OUT_OF_SCOPE =
+  "Todavía hay existencias de este producto en almacenes o zonas que no tienes asignados. Quien trabaja ahí debe registrarlas como salida o ajustarlas a cero antes de archivarlo.";
+
+/** Archiving refused by purchase orders the person does not reach. */
+const ORDERS_OUT_OF_SCOPE =
+  "Este producto todavía está por llegar en órdenes de compra de almacenes que no tienes asignados. Quien las atiende debe recibirlas, cerrarlas con faltante o cancelarlas antes de archivarlo.";
+
+type OpenOrder = { number: string; facilityId: string | null };
+
 /**
  * Purchase orders («OC-0007») sent or received in part that still wait for
- * some of this product. Read by archiving, in its transaction; the numbers
- * are formatted here because the platform does not import modules.
+ * some of this product, with their warehouse (WMS-57; null = of the whole
+ * company). Read by archiving, in its transaction; the numbers are
+ * formatted here because the platform does not import modules.
  */
 async function openOrdersFor(
   tx: Pick<TenantDb, "purchaseOrderLine" | "purchaseReceiptLine">,
   productId: string,
-): Promise<string[]> {
+): Promise<OpenOrder[]> {
   const lines = await tx.purchaseOrderLine.findMany({
     where: { productId, order: { status: { in: ["SENT", "PARTIAL"] } } },
     orderBy: { order: { number: "asc" } },
@@ -1236,7 +1278,7 @@ async function openOrdersFor(
     select: {
       id: true,
       capturedQuantity: true,
-      order: { select: { number: true } },
+      order: { select: { number: true, facilityId: true } },
     },
   });
   if (lines.length === 0) return [];
@@ -1251,14 +1293,41 @@ async function openOrdersFor(
       dec(row._sum.capturedQuantity?.toString() ?? 0),
     ]),
   );
-  const numbers = lines
-    .filter((line) =>
-      dec(line.capturedQuantity.toString()).greaterThan(
+  const orders = new Map<string, OpenOrder>();
+  for (const line of lines) {
+    if (
+      !dec(line.capturedQuantity.toString()).greaterThan(
         got.get(line.id) ?? dec(0),
-      ),
+      )
+    ) {
+      continue;
+    }
+    const number = `OC-${String(line.order.number).padStart(4, "0")}`;
+    orders.set(number, { number, facilityId: line.order.facilityId });
+  }
+  return [...orders.values()];
+}
+
+/**
+ * The numbers of the open orders the person reaches: of the whole company
+ * or of a warehouse in their scope (as `orderInScope` of Compras).
+ */
+async function ordersInScope(
+  tx: Parameters<typeof isFacilityInScope>[0],
+  userId: string,
+  orders: OpenOrder[],
+): Promise<string[]> {
+  const reached = new Map<string, boolean>();
+  for (const facilityId of new Set(orders.map((order) => order.facilityId))) {
+    if (facilityId === null) continue;
+    reached.set(facilityId, await isFacilityInScope(tx, userId, facilityId));
+  }
+  return orders
+    .filter(
+      (order) =>
+        order.facilityId === null || reached.get(order.facilityId) === true,
     )
-    .map((line) => `OC-${String(line.order.number).padStart(4, "0")}`);
-  return [...new Set(numbers)];
+    .map((order) => order.number);
 }
 
 /** Brings an archived product back. It needs a free place of the quota. */

@@ -1,4 +1,11 @@
-import { ChevronLeft, ChevronRight, Search, Truck, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Search,
+  Truck,
+  X,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
@@ -40,6 +47,9 @@ import {
 } from "./transfer-forms";
 
 export const metadata: Metadata = { title: "Traslado" };
+
+const linkClass =
+  "inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50";
 
 const backClass =
   "inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -150,8 +160,17 @@ export default async function TrasladoPage({
       {back}
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader title={`Traslado ${view.numberText}`} />
-      <div className="-mt-2 flex flex-wrap items-center gap-2">
+      <div className="-mt-2 flex flex-wrap items-center gap-x-6 gap-y-1">
         <Badge variant={STATUS_VARIANT[view.status]}>{view.statusLabel}</Badge>
+        {access.can("inventory.facility_transfer.export") && (
+          <a
+            href={`/api/movimientos/traslados/${idPath(view.id)}/pdf`}
+            className={linkClass}
+          >
+            <Download aria-hidden="true" className="size-4" />
+            Descargar PDF
+          </a>
+        )}
       </div>
       <Details view={view} timeZone={timeZone} />
 
@@ -396,6 +415,7 @@ function Details({
   view: FacilityTransferDetail;
   timeZone: string;
 }) {
+  const who = view.sentAt ? view.sentByName : view.createdByName;
   return (
     <dl className="grid max-w-3xl gap-x-6 gap-y-3 rounded-xl border bg-card p-4 text-sm sm:grid-cols-2 sm:px-5">
       <div>
@@ -418,6 +438,14 @@ function Details({
           </time>
         </dd>
       </div>
+      {who && (
+        <div>
+          <dt className="text-muted-foreground">
+            {view.sentAt ? "Lo envió" : "Lo creó"}
+          </dt>
+          <dd className="[overflow-wrap:anywhere]">{who}</dd>
+        </div>
+      )}
       {view.carrier && (
         <div>
           <dt className="text-muted-foreground">Lo lleva</dt>

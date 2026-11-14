@@ -4,6 +4,7 @@ import { newId } from "@/lib";
 import {
   PUTAWAY_MODE,
   addFacilityTransferLine,
+  buildFacilityTransferPdf,
   cancelFacilityTransfer,
   changeStockStatus,
   countTransfersToReceive,
@@ -45,7 +46,10 @@ import {
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
+import { listAuditTrail } from "@/platform/audit";
 import { db } from "@/server";
+
+import { objectsAreWhereTheTableSays, textsOf } from "../setup/pdf";
 
 // WMS-19 (ADR 0048): warehouse A sends, the goods wait in transit at B
 // (IN_TRANSIT, available nowhere) and B receives them, recording what did
@@ -1112,6 +1116,172 @@ describe("drafts, warehouses and who sees what (WMS-19)", () => {
     if (lastActor) {
       expect(await reconcileStock(lastActor.organizationId)).toEqual([]);
     }
+  });
+});
+
+describe("the transfer as PDF (WMS-19B)", () => {
+  it("carries origin, destination, who sent it, each line with lot and serials, what arrived and the signatures", async () => {
+    const w = await world();
+    lastActor = w.owner;
+    const lotItem = await product(w.owner, { tracking: "LOT" });
+    const serialItem = await product(w.owner, { tracking: "SERIAL" });
+    await enter(w.owner, lotItem, w.shelfA, "5", { lotCode: "L-PDF" });
+    await enter(w.owner, serialItem, w.shelfA, "2", {
+      serials: "SP-1\nSP-2",
+    });
+    const lot = await db.lot.findFirstOrThrow({
+      where: { productId: lotItem },
+    });
+    const transferId = await draft(w.owner, w.facilityB, [
+      { productId: lotItem, source: `${w.shelfA}|${lot.id}`, quantity: "5" },
+      {
+        productId: serialItem,
+        source: w.shelfA,
+        quantity: "2",
+        serials: "SP-1\nSP-2",
+      },
+    ]);
+    // A draft says so.
+    const inDraft = await buildFacilityTransferPdf(w.owner, transferId);
+    expect(textsOf(inDraft!.bytes).join("\n")).toContain(
+      "BORRADOR · todavía no sale",
+    );
+    const sentOut = await sendFacilityTransfer(w.owner, {
+      transferId,
+      carrier: "Fletes Martínez",
+      idempotencyKey: key(),
+    });
+    if (!sentOut.ok) throw new Error(JSON.stringify(sentOut));
+    await switchFacility(w.owner, w.facilityB);
+    const [lotLine, serialLine] = await linesOf(transferId);
+    expect(
+      await receiveFacilityTransfer(w.owner, {
+        transferId,
+        locationId: w.dockB,
+        idempotencyKey: key(),
+        lines: [
+          { lineId: lotLine!.id, quantity: "2", damaged: "1" },
+          { lineId: serialLine!.id, quantity: "1", serials: "SP-1" },
+        ],
+      }),
+    ).toMatchObject({ ok: true });
+
+    const pdf = await buildFacilityTransferPdf(w.owner, transferId);
+    expect(pdf).toMatchObject({
+      name: "TR-0001.pdf",
+      contentType: "application/pdf",
+    });
+    expect(objectsAreWhereTheTableSays(pdf!.bytes)).toBe(true);
+    const text = textsOf(pdf!.bytes).join("\n");
+    for (const expected of [
+      "HOJA DE TRASLADO",
+      "TR-0001",
+      "Bodega B (B)",
+      "Fletes Martínez",
+      "Lo envió:",
+      "Titular",
+      "(TRA-",
+      "Lote L-PDF",
+      "5 piezas",
+      "Series: SP-1, SP-2",
+      "Sale de Estante A1",
+      "Bien: 2 piezas",
+      "Dañado: 1 pieza",
+      "En camino: 2 piezas",
+      "En camino: 1 pieza",
+      "RECEPCIONES Y DIFERENCIAS",
+      "Recepción",
+      "en Andén B",
+      "Entrega",
+      "Recibe",
+      "Página 1 de 1",
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toContain("BORRADOR");
+    // The transit place is of the system: never named.
+    expect(text).not.toContain("tránsito entre almacenes");
+    expect(text).not.toMatch(/\$|precio|costo/i);
+    const trail = await listAuditTrail(w.owner.organizationId, { limit: 20 });
+    expect(trail.map((entry) => entry.action)).toContain(
+      "inventory.facility_transfer_exported",
+    );
+  });
+
+  it("who reads transfers downloads it; Compras and Montacargas do not; another company gets nothing", async () => {
+    const w = await world();
+    const other = await world();
+    lastActor = w.owner;
+    const item = await product(w.owner);
+    await enter(w.owner, item, w.shelfA, "2");
+    const transferId = await draft(w.owner, w.facilityB, [
+      { productId: item, source: w.shelfA, quantity: "2" },
+    ]);
+    for (const role of ["manager", "viewer", "operator"] as const) {
+      const reader = await member(w.owner.organizationId, role);
+      expect(
+        await buildFacilityTransferPdf(reader, transferId),
+        role,
+      ).not.toBeNull();
+    }
+    for (const role of ["forklift", "buyer"] as const) {
+      const outsider = await member(w.owner.organizationId, role);
+      await expect(
+        buildFacilityTransferPdf(outsider, transferId),
+      ).rejects.toMatchObject({ kind: "forbidden" });
+    }
+    expect(await buildFacilityTransferPdf(other.owner, transferId)).toBeNull();
+  });
+
+  it("who reaches one side does not see the places of the other; who reaches neither gets nothing", async () => {
+    const w = await world();
+    lastActor = w.owner;
+    const third = await createFacility(w.owner, {
+      name: "Bodega C",
+      code: "C",
+    });
+    if (!third.ok) throw new Error(JSON.stringify(third));
+    const item = await product(w.owner);
+    await enter(w.owner, item, w.shelfA, "3");
+    const atA = await member(w.owner.organizationId, "supervisor");
+    const atB = await member(w.owner.organizationId, "supervisor");
+    const atC = await member(w.owner.organizationId, "supervisor");
+    for (const [who, facilityId] of [
+      [atA, w.facilityA],
+      [atB, w.facilityB],
+      [atC, third.facilityId],
+    ] as const) {
+      const scoped = await setMemberScope(
+        w.owner.organizationId,
+        w.owner.userId,
+        { userId: who.userId, facilities: [{ facilityId }] },
+      );
+      if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    }
+    const transferId = await sent(atA, w.facilityB, [
+      { productId: item, source: w.shelfA, quantity: "3" },
+    ]);
+    const lineId = (await linesOf(transferId))[0]!.id;
+    expect(
+      await receiveFacilityTransfer(atB, {
+        transferId,
+        locationId: w.dockB,
+        idempotencyKey: key(),
+        lines: [{ lineId, quantity: "3" }],
+      }),
+    ).toMatchObject({ ok: true });
+    const fromB = textsOf(
+      (await buildFacilityTransferPdf(atB, transferId))!.bytes,
+    ).join("\n");
+    expect(fromB).toContain("en Andén B");
+    expect(fromB).not.toContain("Estante A1");
+    const fromA = textsOf(
+      (await buildFacilityTransferPdf(atA, transferId))!.bytes,
+    ).join("\n");
+    expect(fromA).toContain("Sale de Estante A1");
+    expect(fromA).not.toContain("Andén B");
+    expect(await buildFacilityTransferPdf(atC, transferId)).toBeNull();
+    expect(await reconcileStock(w.owner.organizationId)).toEqual([]);
   });
 });
 

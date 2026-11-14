@@ -126,7 +126,7 @@ import {
 } from "@/platform/approvals";
 import { setMemberScope, type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
-import { createProduct } from "@/platform/catalog";
+import { archiveProduct, createProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
 import { readSpreadsheet } from "@/platform/files";
 import {
@@ -1634,5 +1634,116 @@ describe("PC-12: incidents and their notices (WMS-39)", () => {
       ok: false,
       fieldErrors: { location: expect.any(String) },
     });
+  });
+});
+
+describe("PC-12: archiving a product (WMS-57B)", () => {
+  async function item(sku: string) {
+    const made = await createProduct(owner, { sku, name: `Archivable ${sku}` });
+    if (!made.ok) throw new Error("product setup failed");
+    return made.productId;
+  }
+
+  async function orderFor(
+    product: string,
+    supplierId: string,
+    facilityId: string,
+  ) {
+    const order = await createPurchaseOrder(owner, { supplierId, facilityId });
+    if (!order.ok) throw new Error(JSON.stringify(order));
+    const line = await addOrderLine(owner, order.orderId, {
+      productId: product,
+      capture: "base",
+      quantity: "2",
+    });
+    if (!line.ok) throw new Error(JSON.stringify(line));
+    const sent = await submitPurchaseOrder(owner, order.orderId);
+    if (!sent.ok) throw new Error(JSON.stringify(sent));
+    const { number } = await db.purchaseOrder.findFirstOrThrow({
+      where: { id: order.orderId },
+      select: { number: true },
+    });
+    return `OC-${String(number).padStart(4, "0")}`;
+  }
+
+  async function stillActive(product: string) {
+    const row = await db.product.findFirstOrThrow({
+      where: { id: product },
+      select: { status: true },
+    });
+    expect(row.status).toBe("ACTIVE");
+  }
+
+  it("orders of A keep it from being archived but are neither named nor counted from B", async () => {
+    const supplier = await createSupplier(owner, {
+      name: "Proveedor del archivado",
+    });
+    if (!supplier.ok) throw new Error("supplier setup failed");
+    const product = await item("ALC-ARC-1");
+    const inA = await orderFor(product, supplier.supplierId, facilityA);
+    const alsoInA = await orderFor(product, supplier.supplierId, facilityA);
+
+    // From B: refused, without which, how many nor where.
+    const fromB = await archiveProduct(limited, product);
+    expect(fromB).toMatchObject({ ok: false, reason: "has_open_orders" });
+    const generic = !fromB.ok ? fromB.error : "";
+    expect(generic).not.toMatch(/OC-|\d|Bodega|Almacén principal/);
+    expect(generic).toContain("almacenes que no tienes asignados");
+    await stillActive(product);
+
+    // Without a limit: named as before.
+    const fromFree = await archiveProduct(free, product);
+    expect(fromFree).toMatchObject({
+      ok: false,
+      reason: "has_open_orders",
+      error: expect.stringContaining(`las órdenes ${inA}, ${alsoInA}`),
+    });
+
+    // With one of B too, from B only that one is named.
+    const inB = await orderFor(product, supplier.supplierId, facilityB);
+    const withB = await archiveProduct(limited, product);
+    expect(withB).toMatchObject({ ok: false, reason: "has_open_orders" });
+    const named = !withB.ok ? withB.error : "";
+    expect(named).toContain(`la orden ${inB}.`);
+    expect(named).not.toContain(inA);
+    expect(named).not.toContain(alsoInA);
+    expect(named).not.toContain("más");
+    await stillActive(product);
+  });
+
+  it("stock in A keeps it from being archived but is neither named nor counted from B", async () => {
+    const product = await item("ALC-ARC-2");
+    const put = async (locationId: string, quantity: string) => {
+      const result = await registerEntry(owner, {
+        acceptRepeat: true,
+        productId: product,
+        locationId,
+        quantity,
+      });
+      if (!result.ok) throw new Error(JSON.stringify(result));
+    };
+    await put(shelfA, "4");
+    await put(generalA, "5");
+    const fromB = await archiveProduct(limited, product);
+    expect(fromB).toMatchObject({ ok: false, reason: "has_stock" });
+    const generic = !fromB.ok ? fromB.error : "";
+    expect(generic).not.toMatch(/\d/);
+    expect(generic).toContain("almacenes o zonas que no tienes asignados");
+    expect(await archiveProduct(free, product)).toMatchObject({
+      ok: false,
+      reason: "has_stock",
+      error: expect.stringContaining(
+        "Todavía hay 9 piezas de este producto en 2 ubicaciones.",
+      ),
+    });
+    // With some in B, from B only that part is counted.
+    await put(shelfB, "2");
+    expect(await archiveProduct(limited, product)).toMatchObject({
+      ok: false,
+      reason: "has_stock",
+      error: expect.stringContaining("Todavía hay 2 piezas de este producto."),
+    });
+    await stillActive(product);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });
