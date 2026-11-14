@@ -21,7 +21,9 @@ export type DeliveryAttempt =
   | { kind: "delivered"; status: number }
   | { kind: "failed"; reason: string; status?: number };
 
-export type Resolver = (host: string) => Promise<{ address: string; family: number }[]>;
+export type Resolver = (
+  host: string,
+) => Promise<{ address: string; family: number }[]>;
 
 export type WebhookTransport = (input: {
   url: string;
@@ -36,7 +38,9 @@ const defaultResolver: Resolver = (host) =>
 export async function resolveTarget(
   host: string,
   resolver: Resolver = defaultResolver,
-): Promise<{ ok: true; address: string; family: number } | { ok: false; reason: string }> {
+): Promise<
+  { ok: true; address: string; family: number } | { ok: false; reason: string }
+> {
   const literal = host.replace(/^\[|\]$/g, "");
   const kind = isIP(literal);
   let addresses: { address: string; family: number }[];
@@ -54,10 +58,17 @@ export async function resolveTarget(
   }
   // If any address is private, none is used: the name could alternate.
   if (addresses.some((each) => isBlockedAddress(each.address))) {
-    return { ok: false, reason: "La dirección apunta a una red privada o reservada." };
+    return {
+      ok: false,
+      reason: "La dirección apunta a una red privada o reservada.",
+    };
   }
   const first = addresses[0]!;
-  return { ok: true, address: first.address, family: first.family === 6 ? 6 : 4 };
+  return {
+    ok: true,
+    address: first.address,
+    family: first.family === 6 ? 6 : 4,
+  };
 }
 
 /**
@@ -70,7 +81,10 @@ export function pinnedLookup(address: string, family: number) {
     options: unknown,
     callback: (...args: unknown[]) => void,
   ) => {
-    const all = typeof options === "object" && options !== null && (options as { all?: boolean }).all;
+    const all =
+      typeof options === "object" &&
+      options !== null &&
+      (options as { all?: boolean }).all;
     if (all) callback(null, [{ address, family }]);
     else callback(null, address, family);
   };
@@ -119,15 +133,21 @@ export function createTransport(
             if (read > RESPONSE_MAX_BYTES) response.destroy();
           });
           const done = () => {
-            if (status >= 200 && status < 300) finish({ kind: "delivered", status });
+            if (status >= 200 && status < 300)
+              finish({ kind: "delivered", status });
             else if (status >= 300 && status < 400) {
               finish({
                 kind: "failed",
                 status,
-                reason: "El destino respondió con una redirección; no se siguen.",
+                reason:
+                  "El destino respondió con una redirección; no se siguen.",
               });
             } else {
-              finish({ kind: "failed", status, reason: `El destino respondió ${status}.` });
+              finish({
+                kind: "failed",
+                status,
+                reason: `El destino respondió ${status}.`,
+              });
             }
           };
           response.on("end", done);

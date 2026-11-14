@@ -289,6 +289,25 @@ Tipos en `notices.ts` (`INVENTORY_NOTIFICATION_TYPES`), registrados en
 | `inventory.incident_reported` | `reportIncident` | `inventory.incident.manage` que alcance su ubicación o su almacén |
 | `inventory.incident_changed` | atender, resolver, descartar, nota | quien la reportó |
 
+## Eventos de webhooks
+
+Tipos en `webhooks.ts` (`INVENTORY_WEBHOOK_EVENTS`), registrados en
+`src/modules/registry/webhooks.ts`; cada servicio llama `emitWebhookEvent`
+de `@/platform/api` en su transacción, después de sus escrituras (WMS-60,
+ADR 0058). El cuerpo lleva ids y cantidades como texto, nunca costos.
+
+| Evento | Quién lo emite |
+| --- | --- |
+| `inventory.shipment.dispatched` | `dispatchShipment` (pedidos y lo que salió de cada uno) |
+| `inventory.adjustment.applied` | el núcleo del ajuste (`registerAdjustment` y el efecto de la autorización) y `applyCount` (un evento por conteo) |
+| `inventory.stock_status.changed` | `writeStatusChange` (`changeStockStatus` y las decisiones de devoluciones de clientes) |
+
+`createOutboundDraft` (`outbound-orders.ts`) crea un pedido en borrador con
+sus líneas en una transacción, idempotente por `sourceKey` `API:…`: lo usa
+`POST /api/v1/outbound-orders`. `MovementSummary`, `ShipmentLineView`
+agregan los datos exactos (producto, cantidad base, unidad, estado) que la
+API necesita.
+
 ## Trabajos en segundo plano
 
 | Tipo | Manejador | Qué hace |

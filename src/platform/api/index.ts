@@ -45,12 +45,7 @@ export {
   pageQuery,
   pageShape,
 } from "./http";
-export type {
-  ApiActor,
-  ApiOutcome,
-  ApiRoute,
-  ApiRouteContext,
-} from "./http";
+export type { ApiActor, ApiOutcome, ApiRoute, ApiRouteContext } from "./http";
 export {
   assertValidWebhookEventTypes,
   WEBHOOK_API_VERSION,

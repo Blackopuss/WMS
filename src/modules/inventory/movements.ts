@@ -2574,7 +2574,10 @@ async function adjustIn(
           unitCode,
           previousQuantity: before.toString(),
           countedQuantity: counted.toString(),
-          difference: (direction === "IN" ? amount : amount.negated()).toString(),
+          difference: (direction === "IN"
+            ? amount
+            : amount.negated()
+          ).toString(),
         },
       ],
     },

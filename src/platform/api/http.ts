@@ -12,10 +12,7 @@ import {
 } from "@/platform/auth";
 import { runDelegated } from "@/server";
 
-import {
-  API_CAPABILITIES,
-  type ApiCapability,
-} from "./capabilities";
+import { API_CAPABILITIES, type ApiCapability } from "./capabilities";
 import {
   authenticateApiKey,
   companyRequestsPerMinute,
@@ -94,7 +91,11 @@ const HEADERS = {
   "x-content-type-options": "nosniff",
 };
 
-function json(status: number, body: unknown, extra: Record<string, string> = {}) {
+function json(
+  status: number,
+  body: unknown,
+  extra: Record<string, string> = {},
+) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...HEADERS, ...extra },
@@ -248,7 +249,9 @@ export async function handleApiRequest(
   if (candidates.length === 0) return errorResponse(notFound());
   const found = candidates.find((each) => each.route.method === request.method);
   if (!found) {
-    const allow = [...new Set(candidates.map((each) => each.route.method))].join(", ");
+    const allow = [
+      ...new Set(candidates.map((each) => each.route.method)),
+    ].join(", ");
     return errorResponse(
       new ApiError(405, "method_not_allowed", `Usa ${allow}.`),
       { allow },
@@ -261,7 +264,11 @@ export async function handleApiRequest(
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!token) {
     return errorResponse(
-      new ApiError(401, "unauthorized", "Falta la llave en Authorization: Bearer."),
+      new ApiError(
+        401,
+        "unauthorized",
+        "Falta la llave en Authorization: Bearer.",
+      ),
       { "www-authenticate": "Bearer" },
     );
   }
@@ -269,7 +276,11 @@ export async function handleApiRequest(
   const wait = await reserveAttempt(ipKey);
   if (wait > 0) {
     return errorResponse(
-      new ApiError(429, "too_many_attempts", "Demasiados intentos con llaves que no sirven."),
+      new ApiError(
+        429,
+        "too_many_attempts",
+        "Demasiados intentos con llaves que no sirven.",
+      ),
       { "retry-after": String(wait) },
     );
   }
@@ -285,7 +296,10 @@ export async function handleApiRequest(
 
   // Limits: the company first, then the key.
   const companyMax = await companyRequestsPerMinute(auth.organizationId);
-  const company = await takeRateWindow(rateKeys.company(auth.organizationId), companyMax);
+  const company = await takeRateWindow(
+    rateKeys.company(auth.organizationId),
+    companyMax,
+  );
   const own = company.ok
     ? await takeRateWindow(
         rateKeys.key(auth.keyId),
@@ -294,7 +308,11 @@ export async function handleApiRequest(
     : company;
   if (!own.ok) {
     return errorResponse(
-      new ApiError(429, "rate_limited", "Llegaste al límite de llamadas por minuto."),
+      new ApiError(
+        429,
+        "rate_limited",
+        "Llegaste al límite de llamadas por minuto.",
+      ),
       { "retry-after": String(own.retryAfter) },
     );
   }
@@ -353,7 +371,9 @@ export async function handleApiRequest(
         path: route.path,
         issue: shaped.error.issues[0]?.path.join(".") ?? "",
       });
-      return errorResponse(new ApiError(500, "server_error", "Algo falló de nuestro lado."));
+      return errorResponse(
+        new ApiError(500, "server_error", "Algo falló de nuestro lado."),
+      );
     }
     return json(outcome.status ?? route.status ?? 200, shaped.data);
   } catch (error) {
@@ -364,7 +384,9 @@ export async function handleApiRequest(
       path: route.path,
       error: error instanceof Error ? error.name : "unknown",
     });
-    return errorResponse(new ApiError(500, "server_error", "Algo falló de nuestro lado."));
+    return errorResponse(
+      new ApiError(500, "server_error", "Algo falló de nuestro lado."),
+    );
   }
 }
 
@@ -388,7 +410,10 @@ function schemaOf(schema: z.ZodType, io: "input" | "output") {
   return out;
 }
 
-function parametersOf(schema: z.ZodObject | undefined, place: "path" | "query") {
+function parametersOf(
+  schema: z.ZodObject | undefined,
+  place: "path" | "query",
+) {
   if (!schema) return [];
   const json = schemaOf(schema, "input") as {
     properties?: Record<string, Record<string, unknown>>;
@@ -421,7 +446,9 @@ const errorRef = (description: string) => ({
 export function buildOpenApiDocument(routes: readonly ApiRoute[]) {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const route of routes) {
-    const capability = API_CAPABILITIES.find((each) => each.key === route.capability);
+    const capability = API_CAPABILITIES.find(
+      (each) => each.key === route.capability,
+    );
     const operation: Record<string, unknown> = {
       tags: [route.tag],
       summary: route.summary,
@@ -471,8 +498,12 @@ export function buildOpenApiDocument(routes: readonly ApiRoute[]) {
         },
         "400": errorRef("Datos que no son válidos."),
         "401": errorRef("Falta la llave o no es válida."),
-        "403": errorRef("La llave no puede hacer esto, o el plan está en solo lectura."),
-        "404": errorRef("No existe, es de otra empresa o queda fuera del alcance de la llave."),
+        "403": errorRef(
+          "La llave no puede hacer esto, o el plan está en solo lectura.",
+        ),
+        "404": errorRef(
+          "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+        ),
         "429": {
           ...errorRef("Límite de llamadas por minuto."),
           headers: {
@@ -483,7 +514,11 @@ export function buildOpenApiDocument(routes: readonly ApiRoute[]) {
           },
         },
         ...(route.idempotent
-          ? { "409": errorRef("La clave de idempotencia ya se usó con otro contenido.") }
+          ? {
+              "409": errorRef(
+                "La clave de idempotencia ya se usó con otro contenido.",
+              ),
+            }
           : {}),
       },
     };
@@ -502,7 +537,11 @@ export function buildOpenApiDocument(routes: readonly ApiRoute[]) {
     security: [{ bearer: [] }],
     components: {
       securitySchemes: {
-        bearer: { type: "http", scheme: "bearer", description: "Llave de la API: wms_xxxxxxxx_…" },
+        bearer: {
+          type: "http",
+          scheme: "bearer",
+          description: "Llave de la API: wms_xxxxxxxx_…",
+        },
       },
       schemas: { Error: schemaOf(ERROR_SCHEMA, "output") },
     },
@@ -543,7 +582,9 @@ export const decimalText = z
   .meta({ description: "Cantidad decimal exacta, como texto." });
 
 /** A moment in UTC, ISO 8601. */
-export const isoDate = z.string().meta({ description: "Fecha y hora en UTC (ISO 8601)." });
+export const isoDate = z
+  .string()
+  .meta({ description: "Fecha y hora en UTC (ISO 8601)." });
 
 export const iso = (value: Date | null | undefined) =>
   value ? value.toISOString() : null;

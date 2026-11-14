@@ -23,9 +23,7 @@ import {
  * does not exist in the answer.
  */
 
-const status = z.enum(
-  PURCHASE_ORDER_STATUSES as [string, ...string[]],
-);
+const status = z.enum(PURCHASE_ORDER_STATUSES as [string, ...string[]]);
 
 const purchaseOrders: ApiRoute = {
   method: "GET",

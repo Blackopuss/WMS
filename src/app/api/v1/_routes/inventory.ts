@@ -320,7 +320,11 @@ const outboundDetail = z.object({
     }),
   ),
   shipment: z
-    .object({ id: z.string(), number: z.string(), status: z.enum(SHIPMENT_STATUSES) })
+    .object({
+      id: z.string(),
+      number: z.string(),
+      status: z.enum(SHIPMENT_STATUSES),
+    })
     .nullable(),
 });
 
@@ -360,7 +364,8 @@ const outboundOrders: ApiRoute = {
   capability: "outbound.read",
   tag: "Pedidos de salida",
   summary: "Pedidos de salida",
-  description: "Pedidos del almacén de la llave, del más reciente al más antiguo.",
+  description:
+    "Pedidos del almacén de la llave, del más reciente al más antiguo.",
   query: z.object({ page: pageQuery, status: outboundStatus.optional() }),
   response: z.object({ ...pageShape, items: z.array(outboundSummary) }),
   async handle({ actor, query }) {
@@ -429,7 +434,9 @@ const createOutbound: ApiRoute = {
             .min(1)
             .max(64)
             .meta({ description: "Id o clave (SKU) del producto." }),
-          quantity: decimalText.meta({ description: "Cantidad en la unidad del producto." }),
+          quantity: decimalText.meta({
+            description: "Cantidad en la unidad del producto.",
+          }),
         }),
       )
       .min(1)
@@ -463,7 +470,9 @@ const createOutbound: ApiRoute = {
         );
       }
       const details: Record<string, string> = {};
-      for (const [field, message] of Object.entries(created.fieldErrors ?? {})) {
+      for (const [field, message] of Object.entries(
+        created.fieldErrors ?? {},
+      )) {
         if (message) details[field] = message;
       }
       for (const [index, message] of Object.entries(created.lineErrors ?? {})) {
@@ -494,7 +503,8 @@ const shipments: ApiRoute = {
   capability: "shipments.read",
   tag: "Embarques",
   summary: "Embarques",
-  description: "Embarques del almacén de la llave, del más reciente al más antiguo.",
+  description:
+    "Embarques del almacén de la llave, del más reciente al más antiguo.",
   query: z.object({ page: pageQuery, status: shipmentStatus.optional() }),
   response: z.object({
     ...pageShape,

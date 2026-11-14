@@ -68,7 +68,11 @@ export function expandV6(ip: string): number[] | null {
   const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
   const missing = 8 - left.length - right.length;
   if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
-  const groups = [...left, ...Array<string>(halves.length === 2 ? missing : 0).fill("0"), ...right];
+  const groups = [
+    ...left,
+    ...Array<string>(halves.length === 2 ? missing : 0).fill("0"),
+    ...right,
+  ];
   if (groups.length !== 8) return null;
   const numbers = groups.map((group) =>
     /^[0-9a-f]{1,4}$/.test(group) ? parseInt(group, 16) : NaN,
@@ -82,7 +86,8 @@ function v6Blocked(ip: string): boolean {
   const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, h7 = 0, h8 = 0] = g;
   const embeddedV4 = `${h7 >> 8}.${h7 & 255}.${h8 >> 8}.${h8 & 255}`;
   // :: and ::1, and the deprecated IPv4-compatible ::a.b.c.d.
-  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0) return true;
+  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0)
+    return true;
   // ::ffff:a.b.c.d (mapped): the IPv4 decides.
   if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0xffff) {
     return v4Blocked(embeddedV4);
@@ -111,11 +116,10 @@ export function isBlockedAddress(ip: string): boolean {
   return true;
 }
 
-export type UrlCheck =
-  | { ok: true; url: URL }
-  | { ok: false; reason: string };
+export type UrlCheck = { ok: true; url: URL } | { ok: false; reason: string };
 
-const NAMES_BLOCKED = /(^|\.)(localhost|local|internal|localdomain|home\.arpa)$/i;
+const NAMES_BLOCKED =
+  /(^|\.)(localhost|local|internal|localdomain|home\.arpa)$/i;
 
 /**
  * What can be said of a destination without resolving it: https, no
@@ -125,26 +129,43 @@ const NAMES_BLOCKED = /(^|\.)(localhost|local|internal|localdomain|home\.arpa)$/
 export function checkWebhookUrl(value: string): UrlCheck {
   const text = String(value ?? "").trim();
   if (text.length === 0 || text.length > 500) {
-    return { ok: false, reason: "Escribe la dirección completa (hasta 500 caracteres)." };
+    return {
+      ok: false,
+      reason: "Escribe la dirección completa (hasta 500 caracteres).",
+    };
   }
   let url: URL;
   try {
     url = new URL(text);
   } catch {
-    return { ok: false, reason: "Escribe una dirección válida, como https://ejemplo.com/webhooks." };
+    return {
+      ok: false,
+      reason:
+        "Escribe una dirección válida, como https://ejemplo.com/webhooks.",
+    };
   }
   if (url.protocol !== "https:") {
     return { ok: false, reason: "La dirección debe empezar con https://." };
   }
   if (url.username || url.password) {
-    return { ok: false, reason: "La dirección no puede llevar usuario ni contraseña." };
+    return {
+      ok: false,
+      reason: "La dirección no puede llevar usuario ni contraseña.",
+    };
   }
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (!host || NAMES_BLOCKED.test(host) || !host.includes(".") && isIP(host) === 0) {
+  if (
+    !host ||
+    NAMES_BLOCKED.test(host) ||
+    (!host.includes(".") && isIP(host) === 0)
+  ) {
     return { ok: false, reason: "Usa una dirección pública de internet." };
   }
   if (isIP(host) !== 0 && isBlockedAddress(host)) {
-    return { ok: false, reason: "La dirección apunta a una red privada o reservada." };
+    return {
+      ok: false,
+      reason: "La dirección apunta a una red privada o reservada.",
+    };
   }
   if (url.port && url.port !== "443" && Number(url.port) < 1024) {
     return { ok: false, reason: "Usa el puerto 443 o uno desde el 1024." };

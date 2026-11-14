@@ -48,15 +48,21 @@ describe("isBlockedAddress", () => {
     expect(isBlockedAddress(ip)).toBe(true);
   });
 
-  it.each(["8.8.8.8", "1.1.1.1", "172.32.0.1", "2606:4700:4700::1111", "::ffff:8.8.8.8", "64:ff9b::808:808"])(
-    "allows %s",
-    (ip) => {
-      expect(isBlockedAddress(ip)).toBe(false);
-    },
-  );
+  it.each([
+    "8.8.8.8",
+    "1.1.1.1",
+    "172.32.0.1",
+    "2606:4700:4700::1111",
+    "::ffff:8.8.8.8",
+    "64:ff9b::808:808",
+  ])("allows %s", (ip) => {
+    expect(isBlockedAddress(ip)).toBe(false);
+  });
 
   it("expands IPv6 with :: and an IPv4 tail", () => {
-    expect(expandV6("::ffff:1.2.3.4")).toEqual([0, 0, 0, 0, 0, 0xffff, 0x102, 0x304]);
+    expect(expandV6("::ffff:1.2.3.4")).toEqual([
+      0, 0, 0, 0, 0, 0xffff, 0x102, 0x304,
+    ]);
     expect(expandV6("1::")).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
     expect(expandV6("1:2:3:4:5:6:7:8")).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(expandV6("1::2::3")).toBeNull();
@@ -66,7 +72,9 @@ describe("isBlockedAddress", () => {
 describe("checkWebhookUrl", () => {
   it("accepts a public https address", () => {
     const checked = checkWebhookUrl("https://hooks.ejemplo.com/wms?x=1#frag");
-    expect(checked.ok && checked.url.toString()).toBe("https://hooks.ejemplo.com/wms?x=1");
+    expect(checked.ok && checked.url.toString()).toBe(
+      "https://hooks.ejemplo.com/wms?x=1",
+    );
     expect(checkWebhookUrl("https://hooks.ejemplo.com:8443/x").ok).toBe(true);
   });
 

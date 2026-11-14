@@ -22,7 +22,9 @@ const VERSION = "v1";
 function key(): Buffer {
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!secret || secret.length < 16) {
-    throw new Error("BETTER_AUTH_SECRET is required to protect webhook secrets");
+    throw new Error(
+      "BETTER_AUTH_SECRET is required to protect webhook secrets",
+    );
   }
   return Buffer.from(hkdfSync("sha256", secret, "wms", LABEL, 32));
 }
@@ -38,7 +40,9 @@ export function encryptSecret(plain: string): string {
   const cipher = createCipheriv("aes-256-gcm", key(), iv);
   const data = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   return [VERSION, iv, cipher.getAuthTag(), data]
-    .map((part) => (typeof part === "string" ? part : part.toString("base64url")))
+    .map((part) =>
+      typeof part === "string" ? part : part.toString("base64url"),
+    )
     .join(".");
 }
 
@@ -73,7 +77,8 @@ export function signatureHeader(
   return [
     `t=${timestamp}`,
     ...secrets.map(
-      (secret) => `v1=${createHmac("sha256", secret).update(signed).digest("hex")}`,
+      (secret) =>
+        `v1=${createHmac("sha256", secret).update(signed).digest("hex")}`,
     ),
   ].join(",");
 }

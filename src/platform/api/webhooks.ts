@@ -21,10 +21,7 @@ import {
   newSigningSecret,
   signatureHeader,
 } from "./webhook-crypto";
-import {
-  WEBHOOK_API_VERSION,
-  type WebhookEventType,
-} from "./webhook-events";
+import { WEBHOOK_API_VERSION, type WebhookEventType } from "./webhook-events";
 import { checkWebhookUrl } from "./webhook-target";
 import { createTransport, type WebhookTransport } from "./webhook-transport";
 
@@ -91,7 +88,11 @@ const endpointSchema = z.object({
 });
 
 function readEndpoint(
-  input: { url: string; description?: string | null; events: readonly string[] },
+  input: {
+    url: string;
+    description?: string | null;
+    events: readonly string[];
+  },
   types: readonly Pick<WebhookEventType, "key">[],
 ) {
   const parsed = endpointSchema.safeParse({
@@ -112,10 +113,15 @@ function readEndpoint(
     .map((type) => type.key)
     .filter((key) => parsed.data.events.includes(key));
   if (events.length === 0) fieldErrors.events = "Elige al menos un evento.";
-  if (!url.ok || events.length === 0) return { ok: false as const, fieldErrors };
+  if (!url.ok || events.length === 0)
+    return { ok: false as const, fieldErrors };
   return {
     ok: true as const,
-    data: { url: url.url.toString(), description: parsed.data.description, events },
+    data: {
+      url: url.url.toString(),
+      description: parsed.data.description,
+      events,
+    },
   };
 }
 
@@ -125,15 +131,22 @@ function readEndpoint(
  */
 export async function createWebhookEndpoint(
   actor: Actor,
-  input: { url: string; description?: string | null; events: readonly string[] },
+  input: {
+    url: string;
+    description?: string | null;
+    events: readonly string[];
+  },
   types: readonly Pick<WebhookEventType, "key">[],
 ): Promise<WebhookResult> {
   const { organizationId, userId } = actor;
   await assertAllowed(organizationId, userId, MANAGE);
   const read = readEndpoint(input, types);
-  if (!read.ok) return { ok: false, reason: "invalid", fieldErrors: read.fieldErrors };
+  if (!read.ok)
+    return { ok: false, reason: "invalid", fieldErrors: read.fieldErrors };
   const client = forOrganization(organizationId);
-  const active = await client.webhookEndpoint.count({ where: { removedAt: null } });
+  const active = await client.webhookEndpoint.count({
+    where: { removedAt: null },
+  });
   if (active >= WEBHOOK_ENDPOINTS_MAX) {
     return {
       ok: false,
@@ -192,7 +205,11 @@ async function inEndpoint(
 export async function updateWebhookEndpoint(
   actor: Actor,
   endpointId: string,
-  input: { url: string; description?: string | null; events: readonly string[] },
+  input: {
+    url: string;
+    description?: string | null;
+    events: readonly string[];
+  },
   types: readonly Pick<WebhookEventType, "key">[],
 ): Promise<WebhookResult> {
   const read = readEndpoint(input, types);
@@ -326,7 +343,9 @@ export async function listWebhookEndpoints(
 ): Promise<WebhookEndpointView[]> {
   await assertAllowed(actor.organizationId, actor.userId, MANAGE);
   const take = Math.min(Math.max(options.deliveries ?? 10, 0), 50);
-  const rows = await forOrganization(actor.organizationId).webhookEndpoint.findMany({
+  const rows = await forOrganization(
+    actor.organizationId,
+  ).webhookEndpoint.findMany({
     where: { removedAt: null },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: WEBHOOK_ENDPOINTS_MAX,
@@ -403,7 +422,8 @@ export async function emitWebhookEvent(
     take: WEBHOOK_ENDPOINTS_MAX,
   });
   const listening = endpoints.filter(
-    (endpoint) => Array.isArray(endpoint.events) && endpoint.events.includes(type.key),
+    (endpoint) =>
+      Array.isArray(endpoint.events) && endpoint.events.includes(type.key),
   );
   if (listening.length === 0) return null;
   const eventId = newId();
@@ -495,7 +515,10 @@ export function webhookDeliveryHandler(
       if (endpoint.removedAt || endpoint.status !== "ACTIVE") {
         await client.webhookDelivery.updateMany({
           where: { id: delivery.id, status: "PENDING" },
-          data: { status: "SKIPPED", reason: "El destino estaba pausado o se quitó." },
+          data: {
+            status: "SKIPPED",
+            reason: "El destino estaba pausado o se quitó.",
+          },
         });
         return { skipped: true };
       }
@@ -515,7 +538,11 @@ export function webhookDeliveryHandler(
         headers: {
           "wms-event-id": event.id,
           "wms-event-type": event.type,
-          "wms-signature": signatureHeader(secrets, Math.floor(now.getTime() / 1000), body),
+          "wms-signature": signatureHeader(
+            secrets,
+            Math.floor(now.getTime() / 1000),
+            body,
+          ),
         },
       });
       await client.webhookDelivery.updateMany({
@@ -558,10 +585,16 @@ export function webhookDeliveryHandler(
         });
         const endpoint = await tx.webhookEndpoint.findFirstOrThrow({
           where: { id: delivery.endpointId },
-          select: { id: true, status: true, consecutiveFailures: true, url: true },
+          select: {
+            id: true,
+            status: true,
+            consecutiveFailures: true,
+            url: true,
+          },
         });
         const failures = endpoint.consecutiveFailures + 1;
-        const pause = endpoint.status === "ACTIVE" && failures >= WEBHOOK_PAUSE_AFTER;
+        const pause =
+          endpoint.status === "ACTIVE" && failures >= WEBHOOK_PAUSE_AFTER;
         await tx.webhookEndpoint.update({
           where: { id: endpoint.id },
           data: {
@@ -603,7 +636,9 @@ export async function purgeWebhookHistory(
   organizationId: string,
   now: Date = new Date(),
 ): Promise<{ events: number; deliveries: number }> {
-  const before = new Date(now.getTime() - WEBHOOK_HISTORY_DAYS * 24 * 60 * 60 * 1000);
+  const before = new Date(
+    now.getTime() - WEBHOOK_HISTORY_DAYS * 24 * 60 * 60 * 1000,
+  );
   const client = forOrganization(organizationId);
   const deliveries = await client.webhookDelivery.deleteMany({
     where: { event: { createdAt: { lt: before } }, status: { not: "PENDING" } },

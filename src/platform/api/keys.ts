@@ -65,11 +65,7 @@ export async function companyRequestsPerMinute(
 }
 
 export type ApiKeyField =
-  | "name"
-  | "capabilities"
-  | "facilityId"
-  | "requestsPerMinute"
-  | "lifetime";
+  "name" | "capabilities" | "facilityId" | "requestsPerMinute" | "lifetime";
 
 export type CreateApiKeyInput = {
   name: string;
@@ -110,7 +106,10 @@ const createSchema = z.object({
   capabilities: z
     .array(z.string())
     .transform((list) => capabilitiesOf(list))
-    .refine((list) => list.length > 0, "Elige al menos una cosa que pueda hacer."),
+    .refine(
+      (list) => list.length > 0,
+      "Elige al menos una cosa que pueda hacer.",
+    ),
   facilityId: z
     .string()
     .trim()
@@ -124,7 +123,8 @@ const createSchema = z.object({
   ),
   lifetimeDays: optionalInt.refine(
     (value) =>
-      value === null || (API_KEY_LIFETIMES as readonly number[]).includes(value),
+      value === null ||
+      (API_KEY_LIFETIMES as readonly number[]).includes(value),
     "Elige cuánto dura la llave.",
   ),
 });
@@ -132,9 +132,9 @@ const createSchema = z.object({
 function fieldErrorsOf(error: z.ZodError) {
   const fieldErrors: Partial<Record<ApiKeyField, string>> = {};
   for (const issue of error.issues) {
-    const field = (issue.path[0] === "lifetimeDays"
-      ? "lifetime"
-      : issue.path[0]) as ApiKeyField;
+    const field = (
+      issue.path[0] === "lifetimeDays" ? "lifetime" : issue.path[0]
+    ) as ApiKeyField;
     fieldErrors[field] ??= issue.message;
   }
   return fieldErrors;
@@ -153,7 +153,11 @@ export async function createApiKey(
   await assertAllowed(organizationId, userId, MANAGE);
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, reason: "invalid", fieldErrors: fieldErrorsOf(parsed.error) };
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: fieldErrorsOf(parsed.error),
+    };
   }
   const data = parsed.data;
   const subject = await loadSubject(organizationId, userId);
@@ -280,7 +284,11 @@ export async function updateApiKey(
     .pick({ name: true, requestsPerMinute: true })
     .safeParse(input);
   if (!parsed.success) {
-    return { ok: false, reason: "invalid", fieldErrors: fieldErrorsOf(parsed.error) };
+    return {
+      ok: false,
+      reason: "invalid",
+      fieldErrors: fieldErrorsOf(parsed.error),
+    };
   }
   const companyLimit = await companyRequestsPerMinute(organizationId);
   const requestsPerMinute =
@@ -301,7 +309,12 @@ export async function updateApiKey(
       where: { id: String(keyId), revokedAt: null },
       select: { id: true, name: true, requestsPerMinute: true },
     });
-    if (!key) return { ok: false as const, reason: "not_found" as const, error: NOT_FOUND };
+    if (!key)
+      return {
+        ok: false as const,
+        reason: "not_found" as const,
+        error: NOT_FOUND,
+      };
     await tx.apiKey.update({
       where: { id: key.id },
       data: { name: parsed.data.name, requestsPerMinute },
@@ -313,7 +326,10 @@ export async function updateApiKey(
       target: { type: "api_key", id: key.id },
       metadata: {
         antes: { nombre: key.name, llamadasPorMinuto: key.requestsPerMinute },
-        despues: { nombre: parsed.data.name, llamadasPorMinuto: requestsPerMinute },
+        despues: {
+          nombre: parsed.data.name,
+          llamadasPorMinuto: requestsPerMinute,
+        },
       },
     });
     return { ok: true as const };
@@ -333,7 +349,12 @@ export async function revokeApiKey(
       where: { id: String(keyId) },
       select: { id: true, revokedAt: true, prefix: true, name: true },
     });
-    if (!key) return { ok: false as const, reason: "not_found" as const, error: NOT_FOUND };
+    if (!key)
+      return {
+        ok: false as const,
+        reason: "not_found" as const,
+        error: NOT_FOUND,
+      };
     if (key.revokedAt) return { ok: true as const, repeated: true };
     const changed = await tx.apiKey.updateMany({
       where: { id: key.id, revokedAt: null },
@@ -390,7 +411,9 @@ export async function listApiKeys(actor: ApiActor): Promise<ApiKeyView[]> {
     },
   });
   const people = await client.membership.findMany({
-    where: { userId: { in: [...new Set(rows.map((row) => row.createdByUserId))] } },
+    where: {
+      userId: { in: [...new Set(rows.map((row) => row.createdByUserId))] },
+    },
     select: { userId: true, user: { select: { name: true } } },
   });
   const nameOf = new Map(people.map((each) => [each.userId, each.user.name]));
@@ -470,7 +493,10 @@ export async function authenticateApiKey(
   if (!same || key.revokedAt) return null;
   if (key.expiresAt && key.expiresAt.getTime() <= Date.now()) return null;
   const member = await forOrganization(key.organizationId).membership.findFirst(
-    { where: { userId: key.createdByUserId, status: "ACTIVE" }, select: { id: true } },
+    {
+      where: { userId: key.createdByUserId, status: "ACTIVE" },
+      select: { id: true },
+    },
   );
   if (!member) return null;
   return {

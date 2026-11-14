@@ -1363,7 +1363,11 @@ export async function createOutboundDraft(
   const { data } = header;
   const client = forOrganization(organizationId);
   const facility = await activeFacilityOf(client, userId);
-  const wanted = lines.map((line) => String(line.product ?? "").trim().slice(0, 64));
+  const wanted = lines.map((line) =>
+    String(line.product ?? "")
+      .trim()
+      .slice(0, 64),
+  );
   // Products by id or by code, read before the locks to know what to lock.
   const found = await client.product.findMany({
     where: { OR: [{ id: { in: wanted } }, { sku: { in: wanted } }] },

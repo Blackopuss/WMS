@@ -3,7 +3,11 @@ import { createHmac } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
-import { changeStockStatus, registerAdjustment, registerEntry } from "@/modules/inventory";
+import {
+  changeStockStatus,
+  registerAdjustment,
+  registerEntry,
+} from "@/modules/inventory";
 import { moduleRegistry, webhookEventTypes } from "@/modules/registry";
 import {
   WEBHOOK_DELIVERY_JOB,
@@ -59,14 +63,19 @@ async function company(): Promise<Actor> {
   if (!created.ok) throw new Error("company setup failed");
   const staff = await newUser("Personal");
   await db.platformStaff.create({ data: { userId: staff } });
-  const plan = await provisionCompany(moduleRegistry, staff, created.organizationId, {
-    productLimit: 20,
-    users: 20,
-    facilities: 3,
-    modules: ["inventory", "purchasing"],
-    validUntil: null,
-    reason: "Prueba de webhooks",
-  });
+  const plan = await provisionCompany(
+    moduleRegistry,
+    staff,
+    created.organizationId,
+    {
+      productLimit: 20,
+      users: 20,
+      facilities: 3,
+      modules: ["inventory", "purchasing"],
+      validUntil: null,
+      reason: "Prueba de webhooks",
+    },
+  );
   if (!plan.ok) throw new Error("provision failed");
   return { organizationId: created.organizationId, userId: ownerId };
 }
@@ -86,7 +95,9 @@ function fakeTransport(answers: DeliveryAttempt[]) {
 
 /** Runs the due webhook jobs of the queue with the given transport. */
 async function runDeliveries(transport: WebhookTransport, at = new Date()) {
-  const handlers = { [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler({ transport }) };
+  const handlers = {
+    [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler({ transport }),
+  };
   let ran = 0;
   for (;;) {
     const outcome = await runNextJob(handlers, { now: () => at });
@@ -99,14 +110,21 @@ async function runDeliveries(transport: WebhookTransport, at = new Date()) {
 
 /** Clears pending jobs of earlier tests so each test sees only its own. */
 async function drain() {
-  await runDeliveries(fakeTransport([]).transport, new Date(Date.now() + 864e5));
+  await runDeliveries(
+    fakeTransport([]).transport,
+    new Date(Date.now() + 864e5),
+  );
 }
 
 function verify(secret: string, header: string, body: string) {
   const parts = header.split(",");
   const t = parts.find((part) => part.startsWith("t="))!.slice(2);
-  const expected = createHmac("sha256", secret).update(`${t}.${body}`).digest("hex");
-  return parts.filter((part) => part.startsWith("v1=")).some((part) => part.slice(3) === expected);
+  const expected = createHmac("sha256", secret)
+    .update(`${t}.${body}`)
+    .digest("hex");
+  return parts
+    .filter((part) => part.startsWith("v1="))
+    .some((part) => part.slice(3) === expected);
 }
 
 let a: Actor;
@@ -120,10 +138,16 @@ beforeAll(async () => {
   const product = await createProduct(a, { sku: "WH-1", name: "Producto WH" });
   if (!product.ok) throw new Error("product");
   productId = product.productId;
-  general = (await db.location.findFirstOrThrow({
-    where: { organizationId: a.organizationId, isDefault: true },
-  })).id;
-  const entry = await registerEntry(a, { productId, locationId: general, quantity: "50" });
+  general = (
+    await db.location.findFirstOrThrow({
+      where: { organizationId: a.organizationId, isDefault: true },
+    })
+  ).id;
+  const entry = await registerEntry(a, {
+    productId,
+    locationId: general,
+    quantity: "50",
+  });
   if (!entry.ok) throw new Error(JSON.stringify(entry));
 }, 60_000);
 
@@ -150,12 +174,17 @@ describe("destinos", () => {
     expect(privateUrl.ok).toBe(false);
     const created = await createWebhookEndpoint(
       a,
-      { url: "https://hooks.ejemplo.com/wms", events: [...ALL, "otro.evento.x"] },
+      {
+        url: "https://hooks.ejemplo.com/wms",
+        events: [...ALL, "otro.evento.x"],
+      },
       webhookEventTypes,
     );
     if (!created.ok) throw new Error(JSON.stringify(created));
     expect(created.secret).toMatch(/^whsec_/);
-    const row = await db.webhookEndpoint.findUniqueOrThrow({ where: { id: created.endpointId } });
+    const row = await db.webhookEndpoint.findUniqueOrThrow({
+      where: { id: created.endpointId },
+    });
     expect(row.secretCiphertext).not.toContain(created.secret!.slice(6));
     expect(row.events).toEqual(ALL);
     const listed = await listWebhookEndpoints(a);
@@ -170,10 +199,12 @@ describe("destinos", () => {
       webhookEventTypes,
     );
     if (!created.ok) throw new Error("endpoint");
-    expect((await listWebhookEndpoints(b)).map((each) => each.id)).not.toContain(
-      created.endpointId,
-    );
-    expect(await setWebhookEndpointPaused(b, created.endpointId, true)).toMatchObject({
+    expect(
+      (await listWebhookEndpoints(b)).map((each) => each.id),
+    ).not.toContain(created.endpointId);
+    expect(
+      await setWebhookEndpointPaused(b, created.endpointId, true),
+    ).toMatchObject({
       ok: false,
       reason: "not_found",
     });
@@ -198,7 +229,10 @@ describe("destinos", () => {
       },
     });
     await expect(
-      listWebhookEndpoints({ organizationId: a.organizationId, userId: viewerId }),
+      listWebhookEndpoints({
+        organizationId: a.organizationId,
+        userId: viewerId,
+      }),
     ).rejects.toMatchObject({ kind: "forbidden" });
     await removeWebhookEndpoint(a, created.endpointId);
   });
@@ -206,7 +240,9 @@ describe("destinos", () => {
 
 describe("emisión", () => {
   it("sin destinos no escribe nada; con uno, evento, entrega y trabajo", async () => {
-    const before = await db.webhookEvent.count({ where: { organizationId: a.organizationId } });
+    const before = await db.webhookEvent.count({
+      where: { organizationId: a.organizationId },
+    });
     const adjusted = await registerAdjustment(a, {
       productId,
       locationId: general,
@@ -214,11 +250,18 @@ describe("emisión", () => {
       reason: "Conteo físico de prueba",
     });
     expect(adjusted.ok).toBe(true);
-    expect(await db.webhookEvent.count({ where: { organizationId: a.organizationId } })).toBe(before);
+    expect(
+      await db.webhookEvent.count({
+        where: { organizationId: a.organizationId },
+      }),
+    ).toBe(before);
 
     const created = await createWebhookEndpoint(
       a,
-      { url: "https://hooks.ejemplo.com/ajustes", events: ["inventory.adjustment.applied"] },
+      {
+        url: "https://hooks.ejemplo.com/ajustes",
+        events: ["inventory.adjustment.applied"],
+      },
       webhookEventTypes,
     );
     if (!created.ok) throw new Error("endpoint");
@@ -265,7 +308,10 @@ describe("emisión", () => {
     expect(status.ok).toBe(true);
     expect(
       await db.webhookEvent.count({
-        where: { organizationId: a.organizationId, type: "inventory.stock_status.changed" },
+        where: {
+          organizationId: a.organizationId,
+          type: "inventory.stock_status.changed",
+        },
       }),
     ).toBe(0);
     await removeWebhookEndpoint(a, created.endpointId);
@@ -277,7 +323,10 @@ describe("emisión", () => {
       a,
       {
         url: "https://hooks.ejemplo.com/hechos",
-        events: ["inventory.stock_status.changed", "purchasing.receipt.confirmed"],
+        events: [
+          "inventory.stock_status.changed",
+          "purchasing.receipt.confirmed",
+        ],
       },
       webhookEventTypes,
     );
@@ -293,7 +342,10 @@ describe("emisión", () => {
     });
     if (!changed.ok) throw new Error(JSON.stringify(changed));
     const status = await db.webhookEvent.findFirstOrThrow({
-      where: { organizationId: a.organizationId, type: "inventory.stock_status.changed" },
+      where: {
+        organizationId: a.organizationId,
+        type: "inventory.stock_status.changed",
+      },
     });
     expect(status.payload).toMatchObject({
       data: {
@@ -315,8 +367,12 @@ describe("emisión", () => {
         createdByUserId: a.userId,
       },
     });
-    const { addOrderLine, createPurchaseOrder, receivePurchaseOrder, submitPurchaseOrder } =
-      await import("@/modules/purchasing");
+    const {
+      addOrderLine,
+      createPurchaseOrder,
+      receivePurchaseOrder,
+      submitPurchaseOrder,
+    } = await import("@/modules/purchasing");
     const order = await createPurchaseOrder(a, { supplierId: supplier.id });
     if (!order.ok) throw new Error(JSON.stringify(order));
     await addOrderLine(a, order.orderId, {
@@ -327,10 +383,15 @@ describe("emisión", () => {
     });
     const sent = await submitPurchaseOrder(a, order.orderId);
     if (!sent.ok) throw new Error(JSON.stringify(sent));
-    const received = await receivePurchaseOrder(a, order.orderId, { idempotencyKey: newId() });
+    const received = await receivePurchaseOrder(a, order.orderId, {
+      idempotencyKey: newId(),
+    });
     if (!received.ok) throw new Error(JSON.stringify(received));
     const receipt = await db.webhookEvent.findFirstOrThrow({
-      where: { organizationId: a.organizationId, type: "purchasing.receipt.confirmed" },
+      where: {
+        organizationId: a.organizationId,
+        type: "purchasing.receipt.confirmed",
+      },
     });
     expect(receipt.payload).toMatchObject({
       data: {
@@ -353,17 +414,27 @@ describe("emisión", () => {
       webhookEventTypes,
     );
     if (!created.ok) throw new Error("endpoint");
-    const before = await db.webhookEvent.count({ where: { organizationId: a.organizationId } });
+    const before = await db.webhookEvent.count({
+      where: { organizationId: a.organizationId },
+    });
     await expect(
       forOrganization(a.organizationId).$transaction(async (tx) => {
-        await emitWebhookEvent(tx, { key: "inventory.adjustment.applied" }, {
-          organizationId: a.organizationId,
-          data: { x: 1 },
-        });
+        await emitWebhookEvent(
+          tx,
+          { key: "inventory.adjustment.applied" },
+          {
+            organizationId: a.organizationId,
+            data: { x: 1 },
+          },
+        );
         throw new Error("se revierte");
       }),
     ).rejects.toThrow("se revierte");
-    expect(await db.webhookEvent.count({ where: { organizationId: a.organizationId } })).toBe(before);
+    expect(
+      await db.webhookEvent.count({
+        where: { organizationId: a.organizationId },
+      }),
+    ).toBe(before);
     await removeWebhookEndpoint(a, created.endpointId);
   });
 });
@@ -378,10 +449,14 @@ describe("entrega", () => {
     );
     if (!created.ok) throw new Error("endpoint");
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(tx, { key: "inventory.shipment.dispatched" }, {
-        organizationId: a.organizationId,
-        data: { shipmentId: "x", lines: [{ quantity: "2.5" }] },
-      }),
+      emitWebhookEvent(
+        tx,
+        { key: "inventory.shipment.dispatched" },
+        {
+          organizationId: a.organizationId,
+          data: { shipmentId: "x", lines: [{ quantity: "2.5" }] },
+        },
+      ),
     );
     const { sent, transport } = fakeTransport([
       { kind: "failed", status: 500, reason: "El destino respondió 500." },
@@ -391,17 +466,37 @@ describe("entrega", () => {
     const delivery = await db.webhookDelivery.findFirstOrThrow({
       where: { endpointId: created.endpointId },
     });
-    expect(delivery).toMatchObject({ status: "PENDING", attempts: 1, lastStatusCode: 500 });
+    expect(delivery).toMatchObject({
+      status: "PENDING",
+      attempts: 1,
+      lastStatusCode: 500,
+    });
     expect(delivery.reason).toBe("El destino respondió 500.");
     // The retry waits; at its time it goes again with the same event id.
     await runDeliveries(transport, new Date(Date.now() + 60_000));
     expect(sent).toHaveLength(2);
-    expect(sent[0]!.headers["wms-event-id"]).toBe(sent[1]!.headers["wms-event-id"]);
+    expect(sent[0]!.headers["wms-event-id"]).toBe(
+      sent[1]!.headers["wms-event-id"],
+    );
     expect(sent[0]!.body).toBe(sent[1]!.body);
-    expect(verify(created.secret!, sent[1]!.headers["wms-signature"]!, sent[1]!.body)).toBe(true);
-    expect(verify("whsec_otro", sent[1]!.headers["wms-signature"]!, sent[1]!.body)).toBe(false);
-    const done = await db.webhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(done).toMatchObject({ status: "DELIVERED", attempts: 2, lastStatusCode: 204 });
+    expect(
+      verify(
+        created.secret!,
+        sent[1]!.headers["wms-signature"]!,
+        sent[1]!.body,
+      ),
+    ).toBe(true);
+    expect(
+      verify("whsec_otro", sent[1]!.headers["wms-signature"]!, sent[1]!.body),
+    ).toBe(false);
+    const done = await db.webhookDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
+    expect(done).toMatchObject({
+      status: "DELIVERED",
+      attempts: 2,
+      lastStatusCode: 204,
+    });
     // Running the job again (at least once) sends nothing more.
     const handler = webhookDeliveryHandler({ transport });
     await handler.handle({
@@ -437,10 +532,14 @@ describe("entrega", () => {
     const rotated = await rotateWebhookSecret(a, created.endpointId);
     if (!rotated.ok) throw new Error("rotate");
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(tx, { key: "purchasing.receipt.confirmed" }, {
-        organizationId: a.organizationId,
-        data: { receiptId: "r" },
-      }),
+      emitWebhookEvent(
+        tx,
+        { key: "purchasing.receipt.confirmed" },
+        {
+          organizationId: a.organizationId,
+          data: { receiptId: "r" },
+        },
+      ),
     );
     const { sent, transport } = fakeTransport([]);
     await runDeliveries(transport);
@@ -461,10 +560,14 @@ describe("entrega", () => {
     if (!created.ok) throw new Error("endpoint");
     for (let i = 0; i < WEBHOOK_PAUSE_AFTER; i++) {
       await forOrganization(a.organizationId).$transaction((tx) =>
-        emitWebhookEvent(tx, { key: "inventory.adjustment.applied" }, {
-          organizationId: a.organizationId,
-          data: { n: i },
-        }),
+        emitWebhookEvent(
+          tx,
+          { key: "inventory.adjustment.applied" },
+          {
+            organizationId: a.organizationId,
+            data: { n: i },
+          },
+        ),
       );
     }
     const failing: WebhookTransport = async () => ({
@@ -479,9 +582,18 @@ describe("entrega", () => {
       where: { endpointId: created.endpointId },
     });
     expect(deliveries.every((each) => each.status === "FAILED")).toBe(true);
-    expect(deliveries.every((each) => each.reason === "No se pudo conectar con el destino.")).toBe(true);
-    const endpoint = await db.webhookEndpoint.findUniqueOrThrow({ where: { id: created.endpointId } });
-    expect(endpoint).toMatchObject({ status: "PAUSED", pausedByFailures: true });
+    expect(
+      deliveries.every(
+        (each) => each.reason === "No se pudo conectar con el destino.",
+      ),
+    ).toBe(true);
+    const endpoint = await db.webhookEndpoint.findUniqueOrThrow({
+      where: { id: created.endpointId },
+    });
+    expect(endpoint).toMatchObject({
+      status: "PAUSED",
+      pausedByFailures: true,
+    });
     const notice = await db.notification.findFirst({
       where: {
         organizationId: a.organizationId,
@@ -491,17 +603,31 @@ describe("entrega", () => {
     });
     expect(notice?.href).toBe("/configuracion/api");
     // Paused: new facts do not reach it.
-    const before = await db.webhookDelivery.count({ where: { endpointId: created.endpointId } });
+    const before = await db.webhookDelivery.count({
+      where: { endpointId: created.endpointId },
+    });
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(tx, { key: "inventory.adjustment.applied" }, {
-        organizationId: a.organizationId,
-        data: {},
-      }),
+      emitWebhookEvent(
+        tx,
+        { key: "inventory.adjustment.applied" },
+        {
+          organizationId: a.organizationId,
+          data: {},
+        },
+      ),
     );
-    expect(await db.webhookDelivery.count({ where: { endpointId: created.endpointId } })).toBe(before);
+    expect(
+      await db.webhookDelivery.count({
+        where: { endpointId: created.endpointId },
+      }),
+    ).toBe(before);
     // Resuming forgets the failures.
-    expect(await setWebhookEndpointPaused(a, created.endpointId, false)).toMatchObject({ ok: true });
-    const resumed = await db.webhookEndpoint.findUniqueOrThrow({ where: { id: created.endpointId } });
+    expect(
+      await setWebhookEndpointPaused(a, created.endpointId, false),
+    ).toMatchObject({ ok: true });
+    const resumed = await db.webhookEndpoint.findUniqueOrThrow({
+      where: { id: created.endpointId },
+    });
     expect(resumed).toMatchObject({ status: "ACTIVE", consecutiveFailures: 0 });
     await removeWebhookEndpoint(a, created.endpointId);
   }, 60_000);
@@ -515,10 +641,14 @@ describe("entrega", () => {
     );
     if (!created.ok) throw new Error("endpoint");
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(tx, { key: "inventory.adjustment.applied" }, {
-        organizationId: a.organizationId,
-        data: {},
-      }),
+      emitWebhookEvent(
+        tx,
+        { key: "inventory.adjustment.applied" },
+        {
+          organizationId: a.organizationId,
+          data: {},
+        },
+      ),
     );
     await setWebhookEndpointPaused(a, created.endpointId, true);
     const { sent, transport } = fakeTransport([]);
@@ -538,7 +668,13 @@ describe("entrega", () => {
       where: { organizationId: a.organizationId },
     });
     await db.webhookEvent.create({
-      data: { id: eventId, organizationId: a.organizationId, type: "x.y.z", payload: {}, createdAt: old },
+      data: {
+        id: eventId,
+        organizationId: a.organizationId,
+        type: "x.y.z",
+        payload: {},
+        createdAt: old,
+      },
     });
     await db.webhookDelivery.create({
       data: {
@@ -551,7 +687,9 @@ describe("entrega", () => {
     });
     const purged = await purgeWebhookHistory(a.organizationId);
     expect(purged.events).toBeGreaterThanOrEqual(1);
-    expect(await db.webhookEvent.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(
+      await db.webhookEvent.findUnique({ where: { id: eventId } }),
+    ).toBeNull();
   });
 });
 
@@ -561,7 +699,11 @@ describe("protección de destinos (SSRF)", () => {
 
   it("rechaza direcciones privadas, también si el nombre resuelve a una", async () => {
     const literal = createTransport();
-    for (const url of ["https://127.0.0.1/x", "https://[::1]/x", "https://169.254.169.254/x"]) {
+    for (const url of [
+      "https://127.0.0.1/x",
+      "https://[::1]/x",
+      "https://169.254.169.254/x",
+    ]) {
       expect(await send(literal, url)).toMatchObject({ kind: "failed" });
     }
     const toPrivate = createTransport({
@@ -584,7 +726,9 @@ describe("protección de destinos (SSRF)", () => {
     const metadataV6 = createTransport({
       resolver: async () => [{ address: "fd00:ec2::254", family: 6 }],
     });
-    expect(await send(metadataV6, "https://hooks.ejemplo.com/x")).toMatchObject({ kind: "failed" });
+    expect(await send(metadataV6, "https://hooks.ejemplo.com/x")).toMatchObject(
+      { kind: "failed" },
+    );
     const unknown = createTransport({
       resolver: async () => {
         throw new Error("ENOTFOUND");
@@ -594,7 +738,9 @@ describe("protección de destinos (SSRF)", () => {
       kind: "failed",
       reason: "No se encontró la dirección del destino.",
     });
-    expect(await send(literal, "http://hooks.ejemplo.com/x")).toMatchObject({ kind: "failed" });
+    expect(await send(literal, "http://hooks.ejemplo.com/x")).toMatchObject({
+      kind: "failed",
+    });
   });
 
   it("conecta solo a la dirección validada", () => {

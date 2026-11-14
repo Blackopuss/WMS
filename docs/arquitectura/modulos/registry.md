@@ -9,12 +9,13 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | --- | --- | --- |
 | `index.ts` | `moduleRegistry` (contratos de `inventory`, `purchasing` y `crm` anunciado), `ModuleId` | guard, consola interna, `provisionCompany` |
 | `announced.ts` | `crmModule` (`availability: "unavailable"`, sin permisos) | `index.ts` |
-| `jobs.ts` | `jobHandlers` | el worker |
-| `rounds.ts` | `scheduledRounds` (`inventory.replenishment`, WMS-24; `inventory.cycle_counts`, WMS-55; `platform.notifications_cleanup`, WMS-39: borra los avisos leídos hace más de 90 días) | el worker |
+| `jobs.ts` | `jobHandlers` (incluye `platform.webhook_delivery`, WMS-60) | el worker |
+| `rounds.ts` | `scheduledRounds` (`inventory.replenishment`, WMS-24; `inventory.cycle_counts`, WMS-55; `platform.notifications_cleanup`, WMS-39: borra los avisos leídos hace más de 90 días; `platform.webhooks_cleanup`, WMS-60: eventos y entregas de más de 30 días) | el worker |
 | `settings.ts` | `operationSettings` (validados al cargar) | Configuración › Operación |
 | `open-work.ts` | `moduleOpenWork` | `provisionCompany` al quitar un módulo |
 | `approvals.ts` | `approvalTypes` (tipos de aprobación de cada módulo con su efecto, validados al cargar; WMS-56) | Aprobaciones, Inicio, Configuración › Reglas de aprobación |
 | `notifications.ts` | `notificationTypes` (tipos de aviso de la plataforma y de cada módulo, validados al cargar; WMS-39) | Configuración › Avisos que recibo |
+| `webhooks.ts` | `webhookEventTypes` (eventos que cada módulo manda por webhook, validados al cargar; WMS-60) | Configuración › API y webhooks, servicios de destinos |
 
 `jobs.ts` y `rounds.ts` no salen por `index.ts`: los importa directamente
 `scripts/worker.mts`.

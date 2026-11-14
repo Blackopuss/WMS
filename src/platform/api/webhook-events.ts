@@ -24,7 +24,8 @@ export function assertValidWebhookEventTypes(
       throw new Error(`Bad webhook event key ${type.key}`);
     }
     if (type.key.length > 80) throw new Error(`Long key ${type.key}`);
-    if (keys.has(type.key)) throw new Error(`Repeated webhook event key ${type.key}`);
+    if (keys.has(type.key))
+      throw new Error(`Repeated webhook event key ${type.key}`);
     keys.add(type.key);
     if (!type.label.trim()) throw new Error(`No label for ${type.key}`);
   }

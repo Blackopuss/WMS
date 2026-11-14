@@ -11,7 +11,7 @@ asientos del plan, alcance por almacén y zona, y el acceso de soporte.
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
 | Catálogo | `catalog.ts` | `ROLES`, `ROLE_LABELS`, `PERMISSIONS`, `ROLE_PERMISSIONS`, `OWNER_PERMISSIONS`, `ROLE_MODULE`; igual que `docs/MATRIZ_ROLES_PERMISOS.md` |
-| Política | `policy.ts` | `can`, `canAll`, `canAny`, `inScope`, `permissionsOf`, `OWNER_ONLY_PERMISSIONS` (pura, denegar por defecto) |
+| Política | `policy.ts` | `can`, `canAll`, `canAny`, `inScope`, `permissionsOf`, `intersectScopes`, `OWNER_ONLY_PERMISSIONS` (pura, denegar por defecto); `Subject.limit`: el recorte de una llave de la API (WMS-60) |
 | Acceso | `access.ts` | `getAccess()` (pantallas), `requirePermission`, `assertAllowed`, `isAllowed`, `loadSubject`; `requireOwnerAction` / `assertOwnerAction` para lo del titular |
 | Alcance | `scope.ts`, `scope-rows.ts` | `loadScope`, `seesWholeCompany`; validación de filas de alcance al editar o invitar |
 | Equipo | `team.ts`, `team-rules.ts` | `listTeamMembers`, `assignRoles`, `disableMember`, `reactivateMember`, `setMemberScope`; reglas `checkTeamChange`, `checkInvitationRoles` |
@@ -27,7 +27,7 @@ permisos, ni para el titular. Soporte solo recibe permisos `.read`.
 
 Usa: `platform.team.read|invite|assign_roles|disable`,
 `platform.invitation.resend|cancel`, `platform.ownership.transfer`,
-`platform.support.grant`. Es dueño del catálogo completo (todos los módulos
+`platform.support.grant`. `platform.api.manage` (WMS-60) lo usa `platform/api`. Es dueño del catálogo completo (todos los módulos
 declaran sus permisos aquí y en la matriz).
 
 ## Tablas

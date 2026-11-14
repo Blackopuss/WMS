@@ -2,7 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { apiRoutes } from "@/app/api/v1/_routes";
 import { newId } from "@/lib";
-import { createOutboundOrder, registerEntry, setOutboundLine } from "@/modules/inventory";
+import {
+  createOutboundOrder,
+  registerEntry,
+  setOutboundLine,
+} from "@/modules/inventory";
 import { moduleRegistry } from "@/modules/registry";
 import {
   buildOpenApiDocument,
@@ -50,14 +54,19 @@ async function company(modules = ["inventory", "purchasing"]): Promise<Actor> {
   if (!created.ok) throw new Error("company setup failed");
   const staff = await newUser("Personal");
   await db.platformStaff.create({ data: { userId: staff } });
-  const plan = await provisionCompany(moduleRegistry, staff, created.organizationId, {
-    productLimit: 20,
-    users: 20,
-    facilities: 3,
-    modules,
-    validUntil: null,
-    reason: "Prueba de la API",
-  });
+  const plan = await provisionCompany(
+    moduleRegistry,
+    staff,
+    created.organizationId,
+    {
+      productLimit: 20,
+      users: 20,
+      facilities: 3,
+      modules,
+      validUntil: null,
+      reason: "Prueba de la API",
+    },
+  );
   if (!plan.ok) throw new Error("provision failed");
   return { organizationId: created.organizationId, userId: ownerId };
 }
@@ -87,14 +96,17 @@ function call(
   const headers: Record<string, string> = {
     "x-forwarded-for": options.ip ?? `198.51.100.${(++ipCounter % 250) + 1}`,
     ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
-    ...(options.body !== undefined ? { "content-type": "application/json" } : {}),
+    ...(options.body !== undefined
+      ? { "content-type": "application/json" }
+      : {}),
     ...options.headers,
   };
   return handleApiRequest(
     new Request(`http://localhost/api/v1${path}`, {
       method: options.method ?? "GET",
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body:
+        options.body !== undefined ? JSON.stringify(options.body) : undefined,
     }),
     apiRoutes,
   );
@@ -166,9 +178,15 @@ describe("llaves", () => {
     expect(JSON.stringify(row)).not.toContain(created.token.slice(13));
     const listed = await listApiKeys(a);
     expect(JSON.stringify(listed)).not.toContain(created.token);
-    expect(listed.find((each) => each.id === created.keyId)?.state).toBe("active");
+    expect(listed.find((each) => each.id === created.keyId)?.state).toBe(
+      "active",
+    );
     const audit = await db.auditEvent.findFirst({
-      where: { organizationId: a.organizationId, action: "api_key.created", targetId: created.keyId },
+      where: {
+        organizationId: a.organizationId,
+        action: "api_key.created",
+        targetId: created.keyId,
+      },
     });
     expect(audit).not.toBeNull();
     expect(JSON.stringify(audit?.metadata)).not.toContain(created.token);
@@ -184,13 +202,19 @@ describe("llaves", () => {
       createApiKey(supervisor, { name: "X", capabilities: ["stock.read"] }),
     ).rejects.toMatchObject({ kind: "forbidden" });
     const admin = await member(a.organizationId, "administrator");
-    const ok = await createApiKey(admin, { name: "ERP", capabilities: ["stock.read"] });
+    const ok = await createApiKey(admin, {
+      name: "ERP",
+      capabilities: ["stock.read"],
+    });
     expect(ok.ok).toBe(true);
     // Support (no membership) cannot manage keys.
     const staff = await newUser("Soporte");
     await db.platformStaff.create({ data: { userId: staff } });
     await expect(
-      createApiKey({ organizationId: a.organizationId, userId: staff }, { name: "S", capabilities: ["stock.read"] }),
+      createApiKey(
+        { organizationId: a.organizationId, userId: staff },
+        { name: "S", capabilities: ["stock.read"] },
+      ),
     ).rejects.toMatchObject({ kind: "forbidden" });
   });
 
@@ -198,27 +222,47 @@ describe("llaves", () => {
     const empty = await createApiKey(a, { name: " ", capabilities: [] });
     expect(empty).toMatchObject({
       ok: false,
-      fieldErrors: { name: expect.any(String), capabilities: expect.any(String) },
+      fieldErrors: {
+        name: expect.any(String),
+        capabilities: expect.any(String),
+      },
     });
-    const unknown = await createApiKey(a, { name: "X", capabilities: ["platform.team.invite"] });
-    expect(unknown).toMatchObject({ ok: false, fieldErrors: { capabilities: expect.any(String) } });
+    const unknown = await createApiKey(a, {
+      name: "X",
+      capabilities: ["platform.team.invite"],
+    });
+    expect(unknown).toMatchObject({
+      ok: false,
+      fieldErrors: { capabilities: expect.any(String) },
+    });
     const tooMany = await createApiKey(a, {
       name: "X",
       capabilities: ["stock.read"],
       requestsPerMinute: 100000,
     });
-    expect(tooMany).toMatchObject({ ok: false, fieldErrors: { requestsPerMinute: expect.any(String) } });
-    const otherCompany = await db.facility.findFirst({ where: { organizationId: b.organizationId } });
+    expect(tooMany).toMatchObject({
+      ok: false,
+      fieldErrors: { requestsPerMinute: expect.any(String) },
+    });
+    const otherCompany = await db.facility.findFirst({
+      where: { organizationId: b.organizationId },
+    });
     const foreign = await createApiKey(a, {
       name: "X",
       capabilities: ["stock.read"],
       facilityId: otherCompany!.id,
     });
-    expect(foreign).toMatchObject({ ok: false, fieldErrors: { facilityId: expect.any(String) } });
+    expect(foreign).toMatchObject({
+      ok: false,
+      fieldErrors: { facilityId: expect.any(String) },
+    });
   });
 
   it("no da un almacén fuera del alcance de quien la crea", async () => {
-    const second = await createFacility(a, { name: "Norte", code: `N${counter}` });
+    const second = await createFacility(a, {
+      name: "Norte",
+      code: `N${counter}`,
+    });
     if (!second.ok) throw new Error(JSON.stringify(second));
     const admin = await member(a.organizationId, "administrator");
     const membership = await db.membership.findFirstOrThrow({
@@ -240,20 +284,34 @@ describe("llaves", () => {
       capabilities: ["stock.read"],
       facilityId: second.facilityId,
     });
-    expect(refused).toMatchObject({ ok: false, fieldErrors: { facilityId: expect.any(String) } });
+    expect(refused).toMatchObject({
+      ok: false,
+      fieldErrors: { facilityId: expect.any(String) },
+    });
   });
 
   it("cambia nombre y límite, y revoca con efecto inmediato", async () => {
     const created = await keyFor(a, ["products.read"]);
-    expect((await call("/products", { token: created.token })).status).toBe(200);
-    const changed = await updateApiKey(a, created.keyId, { name: "Tienda", requestsPerMinute: "10" });
+    expect((await call("/products", { token: created.token })).status).toBe(
+      200,
+    );
+    const changed = await updateApiKey(a, created.keyId, {
+      name: "Tienda",
+      requestsPerMinute: "10",
+    });
     expect(changed.ok).toBe(true);
     const revoked = await revokeApiKey(a, created.keyId);
     expect(revoked).toEqual({ ok: true });
-    expect(await revokeApiKey(a, created.keyId)).toEqual({ ok: true, repeated: true });
+    expect(await revokeApiKey(a, created.keyId)).toEqual({
+      ok: true,
+      repeated: true,
+    });
     const after = await call("/products", { token: created.token });
     expect(after.status).toBe(401);
-    expect(await revokeApiKey(b, created.keyId)).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await revokeApiKey(b, created.keyId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
     const actions = await db.auditEvent.findMany({
       where: { organizationId: a.organizationId, targetId: created.keyId },
       select: { action: true },
@@ -271,7 +329,9 @@ describe("llaves", () => {
       where: { id: expiring.keyId },
       data: { expiresAt: new Date(Date.now() - 1000) },
     });
-    expect((await call("/products", { token: expiring.token })).status).toBe(401);
+    expect((await call("/products", { token: expiring.token })).status).toBe(
+      401,
+    );
 
     const admin = await member(a.organizationId, "administrator");
     const own = await keyFor(admin, ["products.read"]);
@@ -296,7 +356,9 @@ describe("autenticación", () => {
       headers: { cookie: "better-auth.session_token=cualquiera" },
     });
     expect(cookie.status).toBe(401);
-    const bad = await call("/stock", { token: "wms_abcdefgh_" + "x".repeat(43) });
+    const bad = await call("/stock", {
+      token: "wms_abcdefgh_" + "x".repeat(43),
+    });
     expect(bad.status).toBe(401);
   });
 
@@ -304,10 +366,15 @@ describe("autenticación", () => {
     const ip = "203.0.113.77";
     let last = 0;
     for (let i = 0; i < 31; i++) {
-      last = (await call("/stock", { token: `wms_zzzzzzzz_${"y".repeat(43)}`, ip })).status;
+      last = (
+        await call("/stock", { token: `wms_zzzzzzzz_${"y".repeat(43)}`, ip })
+      ).status;
     }
     expect(last).toBe(429);
-    const blocked = await call("/stock", { token: `wms_zzzzzzzz_${"y".repeat(43)}`, ip });
+    const blocked = await call("/stock", {
+      token: `wms_zzzzzzzz_${"y".repeat(43)}`,
+      ip,
+    });
     expect(blocked.status).toBe(429);
     expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
   });
@@ -316,7 +383,9 @@ describe("autenticación", () => {
     const created = await keyFor(a, ["products.read"]);
     const ip = "203.0.113.88";
     for (let i = 0; i < 35; i++) {
-      expect((await call("/products", { token: created.token, ip })).status).toBe(200);
+      expect(
+        (await call("/products", { token: created.token, ip })).status,
+      ).toBe(200);
     }
   }, 60_000);
 });
@@ -330,21 +399,41 @@ describe("lecturas", () => {
     const body = await response.json();
     expect(body).toMatchObject({ page: 1, pageCount: 1, total: 1 });
     expect(body.items).toEqual([
-      expect.objectContaining({ productId: productA, sku: "API-A", onHand: "12.5" }),
+      expect.objectContaining({
+        productId: productA,
+        sku: "API-A",
+        onHand: "12.5",
+      }),
     ]);
-    const detail = await (await call(`/products/${productA}/stock`, { token: created.token })).json();
-    expect(detail).toMatchObject({ total: "12.5", available: "12.5", reserved: "0" });
+    const detail = await (
+      await call(`/products/${productA}/stock`, { token: created.token })
+    ).json();
+    expect(detail).toMatchObject({
+      total: "12.5",
+      available: "12.5",
+      reserved: "0",
+    });
     expect(detail.locations[0]).toMatchObject({ quantity: "12.5" });
   });
 
   it("una llave no alcanza otra empresa (PC-1)", async () => {
-    const created = await keyFor(a, ["stock.read", "outbound.read", "movements.read"]);
-    const foreignStock = await call(`/products/${productB}/stock`, { token: created.token });
+    const created = await keyFor(a, [
+      "stock.read",
+      "outbound.read",
+      "movements.read",
+    ]);
+    const foreignStock = await call(`/products/${productB}/stock`, {
+      token: created.token,
+    });
     expect(foreignStock.status).toBe(404);
-    const foreignOrder = await call(`/outbound-orders/${orderB}`, { token: created.token });
+    const foreignOrder = await call(`/outbound-orders/${orderB}`, {
+      token: created.token,
+    });
     expect(foreignOrder.status).toBe(404);
     // Same answer as something that does not exist.
-    const missing = await call(`/outbound-orders/${newId()}`, { token: created.token });
+    const missing = await call(`/outbound-orders/${newId()}`, {
+      token: created.token,
+    });
     expect(await foreignOrder.json()).toEqual(await missing.json());
     const list = await (await call("/stock", { token: created.token })).json();
     expect(JSON.stringify(list)).not.toContain(productB);
@@ -374,32 +463,49 @@ describe("lecturas", () => {
     const first = await call("/outbound-orders", {
       token: created.token,
       method: "POST",
-      body: { recipient: "Cliente", lines: [{ product: "API-A", quantity: "1" }] },
+      body: {
+        recipient: "Cliente",
+        lines: [{ product: "API-A", quantity: "1" }],
+      },
       headers: { "idempotency-key": "antes" },
     });
     expect(first.status).toBe(201);
     // The creator loses the role: the key loses the power at once.
     await db.membershipRole.updateMany({
-      where: { organizationId: a.organizationId, membership: { userId: admin.userId } },
+      where: {
+        organizationId: a.organizationId,
+        membership: { userId: admin.userId },
+      },
       data: { role: "viewer" },
     });
     const second = await call("/outbound-orders", {
       token: created.token,
       method: "POST",
-      body: { recipient: "Cliente", lines: [{ product: "API-A", quantity: "1" }] },
+      body: {
+        recipient: "Cliente",
+        lines: [{ product: "API-A", quantity: "1" }],
+      },
       headers: { "idempotency-key": "despues" },
     });
     expect(second.status).toBe(403);
-    expect((await call("/outbound-orders", { token: created.token })).status).toBe(200);
+    expect(
+      (await call("/outbound-orders", { token: created.token })).status,
+    ).toBe(200);
   });
 
   it("sin el módulo el recurso no existe; con el plan vencido solo lee", async () => {
     const onlyInventory = await company(["inventory"]);
-    const created = await keyFor(onlyInventory, ["purchase_orders.read", "products.read"]);
+    const created = await keyFor(onlyInventory, [
+      "purchase_orders.read",
+      "products.read",
+    ]);
     const orders = await call("/purchase-orders", { token: created.token });
     expect(orders.status).toBe(404);
     // Plan ended: reads go on, the write is refused.
-    const writer = await keyFor(onlyInventory, ["outbound.create", "products.read"]);
+    const writer = await keyFor(onlyInventory, [
+      "outbound.create",
+      "products.read",
+    ]);
     await db.entitlement.updateMany({
       where: { organizationId: onlyInventory.organizationId },
       data: {
@@ -430,7 +536,8 @@ describe("lecturas", () => {
         createdByUserId: a.userId,
       },
     });
-    const { createPurchaseOrder, addOrderLine } = await import("@/modules/purchasing");
+    const { createPurchaseOrder, addOrderLine } =
+      await import("@/modules/purchasing");
     const order = await createPurchaseOrder(a, { supplierId: supplier.id });
     if (!order.ok) throw new Error(JSON.stringify(order));
     const line = await addOrderLine(a, order.orderId, {
@@ -442,11 +549,18 @@ describe("lecturas", () => {
     if (!line.ok) throw new Error(JSON.stringify(line));
     const plain = await keyFor(a, ["purchase_orders.read"]);
     const withCosts = await keyFor(a, ["purchase_orders.read", "costs.read"]);
-    const without = await (await call(`/purchase-orders/${order.orderId}`, { token: plain.token })).json();
-    expect(without.lines[0]).toMatchObject({ orderedQuantity: "3", orderedIn: "base" });
+    const without = await (
+      await call(`/purchase-orders/${order.orderId}`, { token: plain.token })
+    ).json();
+    expect(without.lines[0]).toMatchObject({
+      orderedQuantity: "3",
+      orderedIn: "base",
+    });
     expect("unitCost" in without.lines[0]).toBe(false);
     const visible = await (
-      await call(`/purchase-orders/${order.orderId}`, { token: withCosts.token })
+      await call(`/purchase-orders/${order.orderId}`, {
+        token: withCosts.token,
+      })
     ).json();
     expect(visible.lines[0].unitCost).toBe("10.5");
   });
@@ -459,7 +573,10 @@ describe("lecturas", () => {
       error: { code: "invalid_request", details: { from: expect.any(String) } },
     });
     expect((await call("/nada", { token: created.token })).status).toBe(404);
-    const method = await call("/movements", { token: created.token, method: "DELETE" });
+    const method = await call("/movements", {
+      token: created.token,
+      method: "DELETE",
+    });
     expect(method.status).toBe(405);
   });
 });
@@ -503,7 +620,9 @@ describe("crear pedidos de salida", () => {
       headers: { "idempotency-key": "pedido-1" },
     });
     expect(other.status).toBe(409);
-    const stored = await db.outboundOrder.findUniqueOrThrow({ where: { id: order.id } });
+    const stored = await db.outboundOrder.findUniqueOrThrow({
+      where: { id: order.id },
+    });
     expect(stored.sourceKey).toMatch(/^API:[0-9a-f]{64}$/);
     expect(stored.importId).toBeNull();
     // At once with the same key: one order.
@@ -517,7 +636,9 @@ describe("crear pedidos de salida", () => {
         }),
       ),
     );
-    const ids = new Set(await Promise.all(results.map(async (r) => (await r.json()).id)));
+    const ids = new Set(
+      await Promise.all(results.map(async (r) => (await r.json()).id)),
+    );
     expect(ids.size).toBe(1);
   });
 
@@ -530,7 +651,9 @@ describe("crear pedidos de salida", () => {
     });
     expect(noKey.status).toBe(400);
     expect((await noKey.json()).error.code).toBe("idempotency_key_required");
-    const before = await db.outboundOrder.count({ where: { organizationId: a.organizationId } });
+    const before = await db.outboundOrder.count({
+      where: { organizationId: a.organizationId },
+    });
     const bad = await call("/outbound-orders", {
       token: created.token,
       method: "POST",
@@ -544,14 +667,22 @@ describe("crear pedidos de salida", () => {
       headers: { "idempotency-key": "malo" },
     });
     expect(bad.status).toBe(400);
-    expect((await bad.json()).error.details).toMatchObject({ "lines.1": expect.any(String) });
-    expect(await db.outboundOrder.count({ where: { organizationId: a.organizationId } })).toBe(before);
+    expect((await bad.json()).error.details).toMatchObject({
+      "lines.1": expect.any(String),
+    });
+    expect(
+      await db.outboundOrder.count({
+        where: { organizationId: a.organizationId },
+      }),
+    ).toBe(before);
   });
 });
 
 describe("límites de uso", () => {
   it("responde 429 con Retry-After al pasar el límite de la llave", async () => {
-    const created = await keyFor(a, ["products.read"], { requestsPerMinute: "3" });
+    const created = await keyFor(a, ["products.read"], {
+      requestsPerMinute: "3",
+    });
     const statuses = [];
     for (let i = 0; i < 4; i++) {
       statuses.push((await call("/products", { token: created.token })).status);
@@ -576,10 +707,20 @@ describe("límites de uso", () => {
     });
     const { invalidateEntitlements } = await import("@/platform/entitlements");
     invalidateEntitlements(small.organizationId);
-    const one = await keyFor(small, ["products.read"], { requestsPerMinute: "4" });
-    const two = await keyFor(small, ["products.read"], { requestsPerMinute: "4" });
+    const one = await keyFor(small, ["products.read"], {
+      requestsPerMinute: "4",
+    });
+    const two = await keyFor(small, ["products.read"], {
+      requestsPerMinute: "4",
+    });
     const statuses = [];
-    for (const token of [one.token, two.token, one.token, two.token, one.token]) {
+    for (const token of [
+      one.token,
+      two.token,
+      one.token,
+      two.token,
+      one.token,
+    ]) {
       statuses.push((await call("/products", { token })).status);
     }
     expect(statuses).toEqual([200, 200, 200, 200, 429]);
@@ -591,7 +732,9 @@ describe("documentación", () => {
     const response = await call("/openapi.json");
     expect(response.status).toBe(200);
     const document = await response.json();
-    expect(document).toEqual(JSON.parse(JSON.stringify(buildOpenApiDocument(apiRoutes))));
+    expect(document).toEqual(
+      JSON.parse(JSON.stringify(buildOpenApiDocument(apiRoutes))),
+    );
     expect(document.openapi).toBe("3.1.0");
     expect(Object.keys(document.paths)).toContain("/outbound-orders");
   });
