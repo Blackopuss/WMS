@@ -136,12 +136,36 @@ describe("shared terminal (WMS-38)", () => {
     const platform = [...permissionsOf(everything)].filter((p) =>
       p.startsWith("platform."),
     );
-    // Never takes data out nor sees costs, whatever the roles (WMS-38).
-    const kept = [...permissionsOf(everything)];
-    expect(kept.some((p) => p.endsWith(".export"))).toBe(false);
-    expect(kept.some((p) => p.endsWith(".export.create"))).toBe(false);
-    expect(kept.some((p) => p.includes(".cost."))).toBe(false);
+    // Concrete permissions, not the policy's own lists (WMS-38 review).
+    // Bulk exports and reports: never, whatever the roles.
+    for (const permission of [
+      "inventory.export.create",
+      "purchasing.order.export",
+      "purchasing.report.export",
+    ] as const) {
+      expect(can(everything, permission)).toBe(false);
+    }
+    // Documents of one operation without costs: kept for the floor.
+    const floor = { isOwner: false, roles: ["warehouse"], terminal: true };
+    expect(can(floor, "inventory.shipment.export")).toBe(true);
+    expect(can(floor, "inventory.facility_transfer.export")).toBe(true);
+    // Reading costs: never. Recording the last cost shows nothing: kept.
+    expect(can(everything, "inventory.cost.read")).toBe(false);
+    expect(can(everything, "purchasing.cost.read")).toBe(false);
+    expect(can(everything, "purchasing.cost.record")).toBe(true);
+    // No team, sessions, audit, plan, terminals nor approvals' rules.
+    for (const permission of [
+      "platform.team.invite",
+      "platform.session.revoke",
+      "platform.audit.read",
+      "platform.plan.read",
+      "platform.terminal.manage",
+      "platform.organization.update",
+    ] as const) {
+      expect(can(everything, permission)).toBe(false);
+    }
     expect(can(everything, "inventory.task.execute")).toBe(true);
+    expect(can(everything, "purchasing.receipt.create")).toBe(true);
     expect(platform.sort()).toEqual(
       [
         "platform.capacity.read",

@@ -49,14 +49,60 @@ function isDateLike(pin: string): boolean {
 }
 
 /**
+ * Lines of three keys on a keypad (1-2-3 on top, 0 below 8): rows,
+ * columns and diagonals, both ways.
+ */
+const KEYPAD_LINES: readonly string[] = (() => {
+  const lines = ["123", "456", "789", "147", "258", "369", "159", "357", "580"];
+  return [...lines, ...lines.map((line) => [...line].reverse().join(""))];
+})();
+
+/**
+ * Drawn on the keypad: two lines of three keys one after the other
+ * («147258», «159753», «789456»), or the first five keys of such a shape.
+ */
+function isKeypadShape(pin: string): boolean {
+  for (const first of KEYPAD_LINES) {
+    for (const second of KEYPAD_LINES) {
+      if ((first + second).startsWith(pin)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Each digit typed twice (or three times) along a staircase: «112233»,
+ * «998877», «111222».
+ */
+function isDoubledStaircase(pin: string): boolean {
+  for (const size of [2, 3]) {
+    if (pin.length % size !== 0) continue;
+    let doubled = true;
+    let single = "";
+    for (let i = 0; i < pin.length; i += size) {
+      const block = pin.slice(i, i + size);
+      if (block !== block[0]!.repeat(size)) doubled = false;
+      single += block[0];
+    }
+    if (doubled && (isStaircase(single, 1) || isStaircase(single, -1))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Easy to guess: «000000», «123456», «654321», «890123», «121212»,
- * «123123», a year or a date.
+ * «123123», «112233», shapes on the keypad («147258», «159753»), a year
+ * or a date.
  */
 export function isTrivialPin(pin: string): boolean {
   return (
     isRepeatedBlock(pin) ||
     isStaircase(pin, 1) ||
     isStaircase(pin, -1) ||
+    isDoubledStaircase(pin) ||
+    isKeypadShape(pin) ||
     isDateLike(pin)
   );
 }
@@ -69,7 +115,7 @@ export function pinProblem(pin: string, length: number): string | null {
   if (!/^\d+$/.test(pin)) return "El PIN lleva solo números.";
   if (pin.length !== length) return `El PIN lleva ${length} números.`;
   if (isTrivialPin(pin)) {
-    return "Ese PIN es muy fácil de adivinar: evita números repetidos o seguidos, años y fechas.";
+    return "Ese PIN es muy fácil de adivinar: evita números repetidos o seguidos, figuras del teclado, años y fechas.";
   }
   return null;
 }

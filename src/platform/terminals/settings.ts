@@ -38,8 +38,12 @@ export const PIN_LENGTH: SettingDefinition = {
   area: "Terminales compartidas",
   label: "Largo del PIN",
   options: [
-    { value: "6", label: "6 dígitos", help: "El más difícil de adivinar." },
-    { value: "5", label: "5 dígitos", help: "Más rápido de escribir." },
+    { value: "6", label: "6 dígitos", help: "Lo recomendado." },
+    {
+      value: "5",
+      label: "5 dígitos",
+      help: "Más rápido de escribir, pero diez veces más fácil de adivinar.",
+    },
   ],
   defaultValue: "6",
 };

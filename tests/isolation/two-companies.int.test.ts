@@ -1333,14 +1333,23 @@ beforeAll(async () => {
       },
     });
     // WMS-38: a shared terminal and a PIN.
+    const sharedTerminalId = newId();
     await db.sharedTerminal.create({
       data: {
-        id: newId(),
+        id: sharedTerminalId,
         organizationId,
         facilityId: outboundFacility,
         name: "Andén",
-        secretHash: newId().replace(/-/g, "").padEnd(64, "0"),
         createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.sharedTerminalSecret.create({
+      data: {
+        id: newId(),
+        organizationId,
+        terminalId: sharedTerminalId,
+        secretHash: newId().replace(/-/g, "").padEnd(64, "0"),
+        issuedAt: new Date(),
       },
     });
     await db.memberPin.create({

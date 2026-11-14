@@ -2,6 +2,7 @@ import "server-only";
 
 import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import { terminalUserOfRequest } from "@/platform/auth";
 import { db, forOrganization } from "@/server";
 
 import { isRole, type Role } from "./catalog";
@@ -91,14 +92,18 @@ export async function withTeamChange(
     target: LoadedMember & { actorIsOwner: boolean },
   ) => Promise<TeamActionResult | undefined>,
 ): Promise<TeamActionResult> {
+  // A PIN session (WMS-38) is cut down here as everywhere else: one
+  // decision, the policy. Read before the transaction (another connection).
+  const atTerminal = (await terminalUserOfRequest()) === actorUserId;
   return db.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<
       { ownerUserId: string }[]
     >`SELECT ownerUserId FROM organization WHERE id = ${organizationId} FOR UPDATE`;
     const owner = rows[0]?.ownerUserId;
     if (!owner) return fail("forbidden");
-    const actor = await memberIn(tx, organizationId, owner, actorUserId);
-    if (!actor || actor.status !== "ACTIVE") return fail("forbidden");
+    const member = await memberIn(tx, organizationId, owner, actorUserId);
+    if (!member || member.status !== "ACTIVE") return fail("forbidden");
+    const actor = atTerminal ? { ...member, terminal: true } : member;
     const target = await memberIn(
       tx,
       organizationId,
@@ -512,6 +517,9 @@ export async function listScopeOptions(
     isOwner,
     roles: membership.roles.map((r) => r.role),
     scope: isOwner ? null : buildScope(membership.scopes),
+    ...((await terminalUserOfRequest()) === actorUserId
+      ? { terminal: true }
+      : {}),
   };
   if (!can(actor, "platform.team.assign_roles")) {
     return { options: [], actorLimited: false };

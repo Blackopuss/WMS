@@ -114,6 +114,7 @@ export const TENANT_MODELS = [
   "CustomFieldOption",
   "CustomFieldValue",
   "SharedTerminal",
+  "SharedTerminalSecret",
   "MemberPin",
   "ApiKey",
   "WebhookEndpoint",

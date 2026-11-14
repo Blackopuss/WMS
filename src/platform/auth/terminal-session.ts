@@ -7,7 +7,13 @@ import { cache } from "react";
 import { ForbiddenError, log, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { pendingLegalDocuments } from "@/platform/legal";
-import { currentDelegation, db } from "@/server";
+import {
+  LOCKING_TRANSACTION,
+  currentDelegation,
+  db,
+  forOrganization,
+  lockRows,
+} from "@/server";
 
 import { auth } from "./auth";
 import { isMfaRequired, usersWhoMustUseMfa } from "./mfa-policy";
@@ -32,19 +38,27 @@ export const TERMINAL_PATH = "/terminal";
 export const TERMINAL_PASSWORD_PATH = "/terminal?aviso=contrasena";
 
 /**
- * A rotated secret still opens the terminal this long (two tabs, a request
- * already on its way). Later, the old secret means a copied cookie.
+ * An older secret presented after a newer one was already presented still
+ * opens the terminal this long (requests already on their way, two tabs).
+ * Later it means two devices: the terminal is removed. Also: a sign-in
+ * that finds a newer secret issued this recently does not rotate again
+ * (two sign-ins at once rotate once).
  */
 export const TERMINAL_SECRET_GRACE_MS = 2 * 60 * 1000;
+
+/** Secrets issued more than this long ago are cleaned up when rotating. */
+export const TERMINAL_SECRET_KEEP_DAYS = 30;
 
 /** A PIN session never lives longer than this (a long shift). */
 export const TERMINAL_SESSION_MAX_HOURS = 12;
 
 /**
- * How often the last activity of a terminal session is written (shorter
- * than the 5 minutes of WMS-40: inactivity closes these sessions).
+ * How often the terminal bar reports the person's touches (at most), and
+ * it always reports the end of a burst of touches. The server writes every
+ * report: the stored activity is never more than a burst behind the last
+ * touch, so nobody is taken out in the middle of an operation.
  */
-export const TERMINAL_ACTIVITY_INTERVAL_MS = 30 * 1000;
+export const TERMINAL_ACTIVITY_INTERVAL_MS = 15 * 1000;
 
 /** What a PIN session is refused (account security). */
 export const TERMINAL_SESSION_MESSAGE =
@@ -161,7 +175,6 @@ const TERMINAL_SELECT = {
   facilityId: true,
   name: true,
   removedAt: true,
-  secretRotatedAt: true,
 } as const;
 
 function deviceOf(terminal: {
@@ -179,37 +192,71 @@ function deviceOf(terminal: {
 }
 
 /**
- * The active terminal with that id and secret, or null. The secret rotates
- * on every PIN sign-in (ADR 0061 §1): the one before still works for a
- * short grace; after it, it can only come from a copy of the cookie, so
- * the terminal is removed, its sessions closed and who manages it warned.
+ * The active terminal with that id and secret, or null (ADR 0061 §1:
+ * rotation with reuse detection, like refresh tokens). Every secret issued
+ * for a terminal is kept (its hash) with when it was first presented:
+ * - the secret must have been issued for that terminal: a forged or
+ *   unknown one does nothing;
+ * - an older secret keeps working while no newer one has been presented
+ *   (an answer that never arrived breaks nothing, however long ago);
+ * - presented after a newer one was presented, beyond the grace for
+ *   requests on their way, there are two devices: the terminal is removed,
+ *   its sessions closed and who manages it warned. Any older generation,
+ *   not only the one before.
  */
 export async function terminalBySecret(
   id: string,
   secret: string,
   now: Date = new Date(),
 ): Promise<DeviceTerminal | null> {
-  const hash = hashTerminalSecret(secret);
-  const terminal = await db.sharedTerminal.findUnique({
-    where: { secretHash: hash },
-    select: TERMINAL_SELECT,
+  const found = await presentedSecret(id, secret);
+  if (!found) return null;
+  const { terminal, secretRow } = found;
+  const newer = await db.sharedTerminalSecret.findFirst({
+    where: {
+      organizationId: terminal.organizationId,
+      terminalId: terminal.id,
+      id: { gt: secretRow.id },
+      presentedAt: { not: null },
+    },
+    orderBy: { presentedAt: "asc" },
+    select: { presentedAt: true },
   });
-  if (terminal) {
-    return terminal.removedAt || terminal.id !== id ? null : deviceOf(terminal);
-  }
-  const rotated = await db.sharedTerminal.findFirst({
-    where: { previousSecretHash: hash, id },
-    select: TERMINAL_SELECT,
-  });
-  if (!rotated || rotated.removedAt || !rotated.secretRotatedAt) return null;
   if (
-    now.getTime() - rotated.secretRotatedAt.getTime() <=
-    TERMINAL_SECRET_GRACE_MS
+    newer?.presentedAt &&
+    now.getTime() - newer.presentedAt.getTime() > TERMINAL_SECRET_GRACE_MS
   ) {
-    return deviceOf(rotated);
+    await removeClonedTerminal(deviceOf(terminal));
+    return null;
   }
-  await removeClonedTerminal(deviceOf(rotated));
-  return null;
+  if (!secretRow.presentedAt) {
+    // The first request that brings it: this device really has it.
+    await db.sharedTerminalSecret.updateMany({
+      where: { id: secretRow.id, presentedAt: null },
+      data: { presentedAt: now },
+    });
+  }
+  return deviceOf(terminal);
+}
+
+/** The secret row and its active terminal, when it was issued for that id. */
+async function presentedSecret(id: string, secret: string) {
+  const secretRow = await db.sharedTerminalSecret.findUnique({
+    where: { secretHash: hashTerminalSecret(secret) },
+    select: {
+      id: true,
+      terminalId: true,
+      organizationId: true,
+      presentedAt: true,
+    },
+  });
+  if (!secretRow || secretRow.terminalId !== id) return null;
+  const terminal = await db.sharedTerminal.findFirst({
+    where: { id, organizationId: secretRow.organizationId },
+    select: TERMINAL_SELECT,
+  });
+  if (!terminal || terminal.removedAt) return null;
+  return { terminal, secretRow };
 }
 
 /**
@@ -241,7 +288,6 @@ async function removeClonedTerminal(terminal: DeviceTerminal): Promise<void> {
     // Loaded here: notifications and terminals depend on this area.
     const { notify } = await import("@/platform/notifications");
     const { TERMINAL_CLONED_NOTICE } = await import("@/platform/terminals");
-    const { forOrganization } = await import("@/server");
     await forOrganization(terminal.organizationId).$transaction((tx) =>
       notify(tx, TERMINAL_CLONED_NOTICE, {
         organizationId: terminal.organizationId,
@@ -262,29 +308,68 @@ async function removeClonedTerminal(terminal: DeviceTerminal): Promise<void> {
 
 /**
  * Gives this browser's terminal a new secret (ADR 0061 §1), after a PIN
- * sign-in: a copy of the old cookie stops working once the grace passes.
- * Conditioned on the secret this browser sent, so two sign-ins at once
- * rotate once; only the one that rotated writes the cookie.
+ * sign-in, under the terminal's lock. It rotates from any secret that
+ * still works (also an older one whose successor never arrived), except
+ * when a newer secret was issued within the grace: two sign-ins at once
+ * rotate once, and only the one that rotated writes the cookie. Secrets
+ * older than TERMINAL_SECRET_KEEP_DAYS are cleaned up.
  */
 export async function rotateTerminalSecret(
   terminal: DeviceTerminal,
+  now: Date = new Date(),
 ): Promise<boolean> {
   const parsed = parseTerminalCookie(await readTerminalCookie());
   if (!parsed || parsed.id !== terminal.id) return false;
   const secret = newTerminalSecret();
-  const { count } = await db.sharedTerminal.updateMany({
-    where: {
-      id: terminal.id,
-      removedAt: null,
-      secretHash: hashTerminalSecret(parsed.secret),
+  const rotated = await forOrganization(terminal.organizationId).$transaction(
+    async (tx) => {
+      const [locked] = await lockRows(tx, "sharedTerminal", [terminal.id]);
+      if (!locked) return false;
+      const current = await tx.sharedTerminal.findFirst({
+        where: { id: terminal.id, removedAt: null },
+        select: { id: true },
+      });
+      const sent = await tx.sharedTerminalSecret.findFirst({
+        where: {
+          terminalId: terminal.id,
+          secretHash: hashTerminalSecret(parsed.secret),
+        },
+        select: { id: true },
+      });
+      if (!current || !sent) return false;
+      const recent = await tx.sharedTerminalSecret.findFirst({
+        where: {
+          terminalId: terminal.id,
+          id: { gt: sent.id },
+          issuedAt: { gt: new Date(now.getTime() - TERMINAL_SECRET_GRACE_MS) },
+        },
+        select: { id: true },
+      });
+      if (recent) return false;
+      await tx.sharedTerminalSecret.create({
+        data: {
+          id: newId(),
+          organizationId: terminal.organizationId,
+          terminalId: terminal.id,
+          secretHash: hashTerminalSecret(secret),
+          issuedAt: now,
+        },
+      });
+      await tx.sharedTerminalSecret.deleteMany({
+        where: {
+          terminalId: terminal.id,
+          issuedAt: {
+            lt: new Date(
+              now.getTime() - TERMINAL_SECRET_KEEP_DAYS * 24 * 3600 * 1000,
+            ),
+          },
+        },
+      });
+      return true;
     },
-    data: {
-      secretHash: hashTerminalSecret(secret),
-      previousSecretHash: hashTerminalSecret(parsed.secret),
-      secretRotatedAt: new Date(),
-    },
-  });
-  if (count !== 1) return false;
+    LOCKING_TRANSACTION,
+  );
+  if (!rotated) return false;
   (await cookies()).set(
     TERMINAL_COOKIE,
     terminalCookieValue(terminal.id, secret),
@@ -554,21 +639,22 @@ export async function assertNotTerminalSession(userId: string): Promise<void> {
 
 /**
  * Keeps a terminal session alive while the person touches the screen:
- * writes its last activity, at most every TERMINAL_ACTIVITY_INTERVAL_MS
- * (one row by primary key, conditioned). Returns whether it wrote.
+ * writes its last activity on every report of the terminal bar (which
+ * already limits itself to TERMINAL_ACTIVITY_INTERVAL_MS and reports the
+ * end of every burst), never backwards. Returns whether it wrote. Only the
+ * person's touches and navigations call it, never automatic queries.
  */
 export async function touchTerminalSession(
   sessionId: string,
   userId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  const cutoff = new Date(now.getTime() - TERMINAL_ACTIVITY_INTERVAL_MS);
   const { count } = await db.session.updateMany({
     where: {
       id: String(sessionId),
       userId,
       terminalId: { not: null },
-      OR: [{ lastActiveAt: null }, { lastActiveAt: { lte: cutoff } }],
+      OR: [{ lastActiveAt: null }, { lastActiveAt: { lt: now } }],
     },
     data: { lastActiveAt: now },
   });

@@ -18,7 +18,7 @@ import { pinSignInAction, type PinSignInState } from "./actions";
 
 type Person = { userId: string; name: string };
 
-/** Digits a PIN may have (the company decides 4, 5 or 6). */
+/** Digits a PIN may have (the company decides 5 or 6; 6 by default). */
 const PIN_MAX = 6;
 const PIN_MIN = 5;
 /** With more people than this, the search box appears. */

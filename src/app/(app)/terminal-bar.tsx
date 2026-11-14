@@ -1,13 +1,15 @@
 "use client";
 
 import { MonitorSmartphone, UserRoundCog } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 
-/** Touches are reported to the server at most this often. */
-const KEEP_EVERY_MS = 30 * 1000;
+/** Touches are reported to the server at most this often... */
+const KEEP_EVERY_MS = 15 * 1000;
+/** ...and the end of a burst of touches is reported this long after it. */
+const TRAIL_AFTER_MS = 2 * 1000;
 /** How often the idle time is looked at. */
 const CHECK_EVERY_MS = 5 * 1000;
 /** If signing out does not take the person away by then, leave anyway. */
@@ -26,7 +28,9 @@ function isRedirect(error: unknown): boolean {
 /**
  * Bar of a PIN session on a shared terminal (WMS-38, ADR 0061 §7): who is
  * signed in, «Cambiar de persona» always in sight, and the idle close.
- * Touches keep the session alive (at most one call every 30 seconds);
+ * Touches and the person's navigations keep the session alive (at most
+ * one call every 15 seconds, plus one at the end of each burst, so the
+ * server is never more than a burst behind the last touch);
  * with no touch for the company's time, it signs out and the terminal
  * asks «¿Quién eres?» again. The server closes it anyway if this page was
  * asleep.
@@ -45,23 +49,44 @@ export function TerminalBar({
   keepAction: () => Promise<void>;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const lastTouch = useRef(0);
+  const lastKeep = useRef(0);
+
+  // A navigation of the person (a new screen) is activity too; automatic
+  // refreshes keep the same path and do not count.
+  useEffect(() => {
+    lastTouch.current = Date.now();
+    lastKeep.current = lastTouch.current;
+    keepAction().catch(() => {
+      lastKeep.current = 0;
+    });
+  }, [pathname, keepAction]);
 
   useEffect(() => {
-    let lastTouch = Date.now();
-    // The first touch is always reported: the server counts from it.
-    let lastKeep = 0;
     let closing = false;
     let fallback: number | undefined;
+    let trail: number | undefined;
+    function report() {
+      lastKeep.current = Date.now();
+      keepAction().catch(() => {
+        // A lost call is not a problem: the next touch tries again, and
+        // the server decides with what it has.
+        lastKeep.current = 0;
+      });
+    }
     function touched() {
-      lastTouch = Date.now();
-      if (lastTouch - lastKeep >= KEEP_EVERY_MS) {
-        lastKeep = lastTouch;
-        keepAction().catch(() => {
-          // A lost call is not a problem: the next touch tries again, and
-          // the server decides with what it has.
-          lastKeep = 0;
-        });
+      lastTouch.current = Date.now();
+      window.clearTimeout(trail);
+      if (lastTouch.current - lastKeep.current >= KEEP_EVERY_MS) {
+        report();
+        return;
       }
+      // The end of a burst is reported too, so the server's activity is
+      // never more than a burst behind the last touch.
+      trail = window.setTimeout(() => {
+        if (lastTouch.current > lastKeep.current) report();
+      }, TRAIL_AFTER_MS);
     }
     // Leaves this screen no matter what: the server already treats the
     // session as idle, so whatever comes next asks «¿Quién eres?».
@@ -73,7 +98,9 @@ export function TerminalBar({
       window.addEventListener(name, touched, { passive: true });
     }
     const timer = window.setInterval(() => {
-      if (closing || Date.now() - lastTouch < idleSeconds * 1000) return;
+      if (closing || Date.now() - lastTouch.current < idleSeconds * 1000) {
+        return;
+      }
       closing = true;
       // The action signs out and redirects; if it fails or takes too long,
       // the person is taken out anyway.
@@ -89,6 +116,7 @@ export function TerminalBar({
       for (const name of events) window.removeEventListener(name, touched);
       window.clearInterval(timer);
       window.clearTimeout(fallback);
+      window.clearTimeout(trail);
     };
   }, [idleSeconds, keepAction, signOutAction, router]);
 

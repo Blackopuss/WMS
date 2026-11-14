@@ -11,15 +11,24 @@ import {
   TERMINAL_COOKIE,
   TERMINAL_SESSION_MAX_HOURS,
   auth,
+  clearPinAttempts,
+  getCurrentSession,
   listActiveSessions,
+  refuseOnTerminal,
+  throttleKeys,
+  touchTerminalSession,
+  verifySignInCode,
   requireSession,
   signIn,
+  rotateTerminalSecret,
+  terminalBySecret,
   terminalSessionExpiry,
   terminalUserOfRequest,
 } from "@/platform/auth";
 import { hashPassword } from "@/platform/auth/password";
 import {
   ROLES,
+  acceptInvitation,
   assertAllowed,
   disableMember,
   getAccess,
@@ -27,10 +36,17 @@ import {
   listMemberSessions,
   type Role,
 } from "@/platform/authorization";
+import {
+  decideApproval,
+  openApprovalRequest,
+  updateApprovalRule,
+  type ApprovalType,
+} from "@/platform/approvals";
 import { recordLegalAcceptance } from "@/platform/legal";
 import { assertValidRegistry } from "@/platform/settings";
 import {
   ACCOUNT_SETUP_MESSAGE,
+  PIN_DAILY_FAILURES_NOTICE,
   PIN_ROLES,
   TERMINAL_SETTINGS,
   WRONG_PIN_MESSAGE,
@@ -201,6 +217,10 @@ async function member(
 
 const SESSION_COOKIE = "better-auth.session_token";
 
+/** The secret part of a terminal cookie. */
+const secretOf = (cookieValue: string) =>
+  cookieValue.slice(cookieValue.indexOf(".") + 1);
+
 /** This browser is the terminal (or nothing) and has no session. */
 function onDevice(cookieValue: string | null) {
   jar.clear();
@@ -304,10 +324,17 @@ describe("registering terminals", () => {
     });
     const secret = terminalCookie.slice(terminalCookie.indexOf(".") + 1);
     expect(secret).toHaveLength(43);
-    expect(row.secretHash).toBe(
+    expect(row.id).toBe(terminalId);
+    const secrets = await db.sharedTerminalSecret.findMany({
+      where: { terminalId },
+      orderBy: { id: "asc" },
+    });
+    // Its first secret, and one more for each PIN sign-in since.
+    expect(secrets.length).toBeGreaterThanOrEqual(1);
+    expect(secrets.at(-1)!.secretHash).toBe(
       createHash("sha256").update(secret).digest("hex"),
     );
-    expect(row.secretHash).not.toContain(secret);
+    expect(JSON.stringify(secrets)).not.toContain(secret);
     const events = await listAuditEvents(forOrganization(A.org), {
       limit: 200,
     });
@@ -620,7 +647,7 @@ describe("signing in with a PIN", () => {
   );
 
   it(
-    "a right PIN of an account that is not finished asks for the password",
+    "an account that is not finished asks for the password, whatever the PIN",
     async () => {
       const fresh = await member(A.org, "Fede Nuevo", ["operator"]);
       await setPin(A.org, fresh, "593017");
@@ -629,18 +656,34 @@ describe("signing in with a PIN", () => {
         data: { emailVerified: false },
       });
       onDevice(terminalCookie);
-      expect(await pinSignIn({ userId: fresh, pin: "593017" }, from())).toEqual(
-        { ok: false, reason: "account", message: ACCOUNT_SETUP_MESSAGE },
-      );
+      // Right or wrong, the same answer: it never confirms a PIN.
+      for (const pin of ["593017", "593019"]) {
+        expect(await pinSignIn({ userId: fresh, pin }, from())).toEqual({
+          ok: false,
+          reason: "account",
+          message: ACCOUNT_SETUP_MESSAGE,
+        });
+      }
       // Documents not accepted yet: the same.
       const unsigned = await member(A.org, "Gil Sin Firmar", ["operator"], {
         legal: false,
       });
+      await setPin(A.org, unsigned, "593018");
+      for (const pin of ["593018", "593016"]) {
+        expect(await pinSignIn({ userId: unsigned, pin }, from())).toEqual({
+          ok: false,
+          reason: "account",
+          message: ACCOUNT_SETUP_MESSAGE,
+        });
+      }
+      // A stored hash is bound to its person: copied to another, it does
+      // not open that one.
+      const ready = await member(A.org, "Lía Lista", ["operator"]);
       await db.memberPin.create({
         data: {
           id: newId(),
           organizationId: A.org,
-          userId: unsigned,
+          userId: ready,
           pinHash: (
             await db.memberPin.findFirstOrThrow({
               where: { userId: fresh },
@@ -649,19 +692,9 @@ describe("signing in with a PIN", () => {
           setAt: new Date(),
         },
       });
-      // That hash is bound to the other person: it does not open this one.
       expect(
-        await pinSignIn({ userId: unsigned, pin: "593017" }, from()),
+        await pinSignIn({ userId: ready, pin: "593017" }, from()),
       ).toMatchObject({ ok: false, reason: "wrong" });
-      // With a PIN of its own, the right one asks for the password.
-      await setPin(A.org, unsigned, "593018");
-      expect(
-        await pinSignIn({ userId: unsigned, pin: "593018" }, from()),
-      ).toEqual({
-        ok: false,
-        reason: "account",
-        message: ACCOUNT_SETUP_MESSAGE,
-      });
     },
     SLOW,
   );
@@ -1007,11 +1040,17 @@ describe("the PIN session", () => {
           await isAllowed(A.org, supervisor, "inventory.task.execute"),
         ).toBe(false);
       });
-      // The secret rotated at sign-in; the old one is now long past grace,
-      // which for a session would be a copied cookie.
-      await db.sharedTerminal.update({
-        where: { id: registered.terminalId },
-        data: { secretRotatedAt: new Date(Date.now() - 60 * 60_000) },
+      // A newer secret presented long ago: for a session, the old cookie
+      // of this browser would now be a copy (two devices).
+      await db.sharedTerminalSecret.create({
+        data: {
+          id: newId(),
+          organizationId: A.org,
+          terminalId: registered.terminalId,
+          secretHash: createHash("sha256").update(newId()).digest("hex"),
+          issuedAt: new Date(Date.now() - 10 * 60_000),
+          presentedAt: new Date(Date.now() - 9 * 60_000),
+        },
       });
       jar.set(TERMINAL_COOKIE, firstSecret);
       const key = await createApiKey(
@@ -1058,11 +1097,17 @@ describe("the PIN session", () => {
           true,
         );
       });
-      await removeTerminal(
-        { organizationId: A.org, userId: admin },
-        registered.terminalId,
-        "Fin de la prueba",
-      );
+      // The setup was real: outside a call of a key the same cookie is
+      // taken as a copy and the terminal is removed.
+      jar.set(TERMINAL_COOKIE, firstSecret);
+      expect(await getTerminalScreen()).toBeNull();
+      expect(
+        (
+          await db.sharedTerminal.findUniqueOrThrow({
+            where: { id: registered.terminalId },
+          })
+        ).removedAt,
+      ).not.toBeNull();
       await setSetting(A.org, "platform.terminal.pin_roles", "floor");
     },
     SLOW,
@@ -1137,7 +1182,7 @@ describe("review of the step (WMS-38)", () => {
   );
 
   it(
-    "the secret rotates on every PIN sign-in; an old copy after the grace removes the terminal",
+    "the secret rotates on every PIN sign-in; an old copy presented after a newer one removes the terminal",
     async () => {
       const copied = await newTerminal("Copiada");
       onDevice(copied.cookieValue);
@@ -1147,16 +1192,21 @@ describe("review of the step (WMS-38)", () => {
       const rotated = jar.get(TERMINAL_COOKIE)!;
       expect(rotated).not.toBe(copied.cookieValue);
       expect(rotated.startsWith(`${copied.terminalId}.`)).toBe(true);
+      // The device brings the new one: presented.
+      onDevice(rotated);
+      expect((await getTerminalScreen())?.terminal.id).toBe(copied.terminalId);
       // Within the grace (a request already on its way) the old one works.
       onDevice(copied.cookieValue);
       expect((await getTerminalScreen())?.terminal.id).toBe(copied.terminalId);
-      // Later, the old secret can only be a copy.
-      await db.sharedTerminal.update({
-        where: { id: copied.terminalId },
-        data: { secretRotatedAt: new Date(Date.now() - 5 * 60_000) },
-      });
-      onDevice(copied.cookieValue);
-      expect(await getTerminalScreen()).toBeNull();
+      // Later, the old secret can only come from another device.
+      const later = new Date(Date.now() + 5 * 60_000);
+      expect(
+        await terminalBySecret(
+          copied.terminalId,
+          secretOf(copied.cookieValue),
+          later,
+        ),
+      ).toBeNull();
       const row = await db.sharedTerminal.findUniqueOrThrow({
         where: { id: copied.terminalId },
       });
@@ -1179,6 +1229,182 @@ describe("review of the step (WMS-38)", () => {
     },
     SLOW,
   );
+
+  it(
+    "a lost answer breaks nothing: the old secret still enters and rotates five minutes later",
+    async () => {
+      const lost = await newTerminal("Respuesta perdida");
+      const first = lost.cookieValue;
+      onDevice(first);
+      expect(
+        await pinSignInOnce({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      // The answer with the new secret never arrived: the browser kept the old.
+      onDevice(first);
+      // Right away, a second sign-in enters without rotating again.
+      expect(
+        await pinSignInOnce({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      expect(jar.get(TERMINAL_COOKIE)).toBe(first);
+      expect(
+        await db.sharedTerminalSecret.count({
+          where: { terminalId: lost.terminalId },
+        }),
+      ).toBe(2);
+      // Five minutes later the old one still opens it, and rotates again.
+      const later = new Date(Date.now() + 5 * 60_000);
+      const device = await terminalBySecret(
+        lost.terminalId,
+        secretOf(first),
+        later,
+      );
+      expect(device?.id).toBe(lost.terminalId);
+      expect(await rotateTerminalSecret(device!, later)).toBe(true);
+      const third = jar.get(TERMINAL_COOKIE)!;
+      expect(third).not.toBe(first);
+      expect(
+        await terminalBySecret(lost.terminalId, secretOf(third), later),
+      ).not.toBeNull();
+      const row = await db.sharedTerminal.findUniqueOrThrow({
+        where: { id: lost.terminalId },
+      });
+      expect(row.removedAt).toBeNull();
+    },
+    SLOW,
+  );
+
+  it(
+    "a copy that rotates twice is caught when the real terminal comes back",
+    async () => {
+      const real = await newTerminal("Real");
+      const original = real.cookieValue;
+      onDevice(original);
+      expect((await getTerminalScreen())?.terminal.id).toBe(real.terminalId);
+      // The copy signs in twice from elsewhere, rotating each time.
+      onDevice(original);
+      expect(
+        await pinSignInOnce({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      const second = jar.get(TERMINAL_COOKIE)!;
+      const soon = new Date(Date.now() + 3 * 60_000);
+      const device = await terminalBySecret(
+        real.terminalId,
+        secretOf(second),
+        soon,
+      );
+      expect(device).not.toBeNull();
+      jar.set(TERMINAL_COOKIE, second);
+      expect(await rotateTerminalSecret(device!, soon)).toBe(true);
+      const third = jar.get(TERMINAL_COOKIE)!;
+      expect(
+        await terminalBySecret(real.terminalId, secretOf(third), soon),
+      ).not.toBeNull();
+      // The real terminal still has the first secret, two generations back.
+      const back = new Date(Date.now() + 10 * 60_000);
+      expect(
+        await terminalBySecret(real.terminalId, secretOf(original), back),
+      ).toBeNull();
+      const row = await db.sharedTerminal.findUniqueOrThrow({
+        where: { id: real.terminalId },
+      });
+      expect(row.removedAt).not.toBeNull();
+      const events = await listAuditEvents(forOrganization(A.org), {
+        limit: 300,
+      });
+      expect(
+        events.some(
+          (e) =>
+            e.action === "terminal.cloned" && e.targetId === real.terminalId,
+        ),
+      ).toBe(true);
+    },
+    SLOW,
+  );
+
+  it(
+    "two sign-ins at once rotate once",
+    async () => {
+      const both = await newTerminal("A la vez");
+      onDevice(both.cookieValue);
+      const device = await getTerminalScreen();
+      expect(device?.terminal.id).toBe(both.terminalId);
+      // Both requests carry the same cookie and rotate at the same time.
+      const terminal = {
+        id: both.terminalId,
+        organizationId: A.org,
+        facilityId: A.facility,
+        name: "A la vez",
+      };
+      const rotated = await Promise.all([
+        rotateTerminalSecret(terminal),
+        rotateTerminalSecret(terminal),
+      ]);
+      expect(rotated.filter(Boolean)).toHaveLength(1);
+      expect(
+        await db.sharedTerminalSecret.count({
+          where: { terminalId: both.terminalId },
+        }),
+      ).toBe(2);
+    },
+    SLOW,
+  );
+
+  it(
+    "a forged or foreign secret does nothing to the terminal",
+    async () => {
+      const target = await newTerminal("Objetivo");
+      const other = await newTerminal("Otra");
+      const forged = `${target.terminalId}.${"A".repeat(43)}`;
+      onDevice(forged);
+      expect(await getTerminalScreen()).toBeNull();
+      // The secret of another terminal, under this one's id.
+      onDevice(`${target.terminalId}.${secretOf(other.cookieValue)}`);
+      expect(await getTerminalScreen()).toBeNull();
+      const later = new Date(Date.now() + 60 * 60_000);
+      expect(
+        await terminalBySecret(target.terminalId, "B".repeat(43), later),
+      ).toBeNull();
+      for (const id of [target.terminalId, other.terminalId]) {
+        const row = await db.sharedTerminal.findUniqueOrThrow({
+          where: { id },
+        });
+        expect(row.removedAt).toBeNull();
+      }
+      onDevice(target.cookieValue);
+      expect((await getTerminalScreen())?.terminal.id).toBe(target.terminalId);
+    },
+    SLOW,
+  );
+
+  it("a secret is never rewritten nor its dates moved back", async () => {
+    const fixed = await newTerminal("Fija");
+    const row = await db.sharedTerminalSecret.findFirstOrThrow({
+      where: { terminalId: fixed.terminalId },
+    });
+    await expect(
+      db.sharedTerminalSecret.update({
+        where: { id: row.id },
+        data: { secretHash: "0".repeat(64) },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.sharedTerminalSecret.update({
+        where: { id: row.id },
+        data: { issuedAt: new Date(Date.now() - 86_400_000) },
+      }),
+    ).rejects.toThrow();
+    onDevice(fixed.cookieValue);
+    await getTerminalScreen();
+    await expect(
+      db.sharedTerminalSecret.update({
+        where: { id: row.id },
+        data: { presentedAt: new Date(Date.now() + 60_000) },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.sharedTerminalSecret.delete({ where: { id: row.id } }),
+    ).rejects.toThrow();
+  });
 
   it(
     "automatic queries do not keep a PIN session alive; touches do",
@@ -1298,6 +1524,280 @@ describe("review of the step (WMS-38)", () => {
       );
       expect(response.status).toBe(404);
       await setSetting(A.org, "platform.terminal.pin_roles", "floor");
+    },
+    SLOW,
+  );
+});
+
+describe("second review of the step (WMS-38)", () => {
+  async function newTerminal(name: string) {
+    onDevice(null);
+    const registered = await registerTerminal(
+      { organizationId: A.org, userId: admin },
+      { name, facilityId: A.facility },
+    );
+    if (!registered.ok) throw new Error("terminal setup failed");
+    return registered;
+  }
+  const emailOf = async (userId: string) =>
+    (await db.user.findUniqueOrThrow({ where: { id: userId } })).email;
+  const counterOf = async (key: string) =>
+    (await db.authThrottle.findUnique({ where: { key } }))?.count ?? 0;
+
+  it(
+    "a touch is written whenever the bar reports it: nobody leaves 66 seconds after touching",
+    async () => {
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      const session = await db.session.findFirstOrThrow({
+        where: { userId: olivia, terminalId },
+        orderBy: { createdAt: "desc" },
+      });
+      const t0 = new Date(Date.now() + 1000);
+      expect(await touchTerminalSession(session.id, olivia, t0)).toBe(true);
+      // 20 seconds later: written too (it used to wait 30 seconds).
+      const t1 = new Date(t0.getTime() + 20_000);
+      expect(await touchTerminalSession(session.id, olivia, t1)).toBe(true);
+      const stored = await db.session.findUniqueOrThrow({
+        where: { id: session.id },
+      });
+      expect(stored.lastActiveAt).toEqual(t1);
+      // With 2 minutes of idle time, 110 seconds after the last touch it
+      // is still alive.
+      expect(
+        terminalSessionExpiry(
+          {
+            createdAt: session.createdAt,
+            lastActiveAt: stored.lastActiveAt,
+            terminalIdleSeconds: 120,
+          },
+          new Date(t1.getTime() + 110_000),
+        ),
+      ).toBeNull();
+      // Never backwards.
+      expect(await touchTerminalSession(session.id, olivia, t0)).toBe(false);
+    },
+    SLOW,
+  );
+
+  it(
+    "an account that is not ready is told so without looking at the PIN, and spends no attempt",
+    async () => {
+      const pending = await member(A.org, "Paula Pendiente", ["operator"], {
+        legal: false,
+      });
+      await db.memberPin.create({
+        data: {
+          id: newId(),
+          organizationId: A.org,
+          userId: pending,
+          pinHash: "sin-uso",
+          setAt: new Date(),
+        },
+      });
+      onDevice(terminalCookie);
+      for (const pin of ["000001", "927461", "x"]) {
+        expect(await pinSignIn({ userId: pending, pin }, from())).toMatchObject(
+          { ok: false, reason: "account" },
+        );
+      }
+      expect(
+        await counterOf(throttleKeys.pinUserTerminal(pending, terminalId).key),
+      ).toBe(0);
+    },
+    SLOW,
+  );
+
+  it(
+    "the limit for a person in every terminal needs tries from more than one terminal",
+    async () => {
+      const target = await member(A.org, "Gil Global", ["operator"]);
+      await setPin(A.org, target, "583920");
+      // One terminal: 5 wrong block only there; another still lets in.
+      for (let t = 0; t < 6; t++) {
+        const terminal = await newTerminal(`Global ${t}`);
+        onDevice(terminal.cookieValue);
+        for (let i = 0; i < 5; i++) {
+          expect(
+            await pinSignInOnce(
+              { userId: target, pin: `70${t}20${i}` },
+              from(),
+            ),
+          ).toMatchObject({ ok: false });
+        }
+      }
+      // Thirty wrong from six terminals: blocked in all of them for an hour.
+      const last = await newTerminal("Global final");
+      onDevice(last.cookieValue);
+      expect(
+        await pinSignInOnce({ userId: target, pin: "583920" }, from()),
+      ).toMatchObject({ ok: false, reason: "throttled" });
+    },
+    SLOW * 3,
+  );
+
+  it(
+    "many wrong PINs in a day warn who manages terminals once, even without a block",
+    async () => {
+      const slow = await newTerminal("Lenta");
+      await db.authThrottle.create({
+        data: {
+          key: `pin:terminal-day:${slow.terminalId}`,
+          count: PIN_DAILY_FAILURES_NOTICE - 2,
+          windowStart: new Date(),
+        },
+      });
+      onDevice(slow.cookieValue);
+      for (const pin of ["700901", "700902", "700903"]) {
+        await pinSignInOnce({ userId: pedro, pin }, from());
+      }
+      const notices = await db.notification.findMany({
+        where: {
+          organizationId: A.org,
+          typeKey: "platform.terminal_locked",
+          text: { contains: "Lenta" },
+        },
+        select: { recipientUserId: true, text: true },
+      });
+      const toAdmin = notices.filter((n) => n.recipientUserId === admin);
+      expect(toAdmin).toHaveLength(1);
+      expect(toAdmin[0]!.text).toContain("PIN incorrectos");
+      await clearPinAttempts(pedro);
+    },
+    SLOW,
+  );
+
+  it(
+    "on a terminal, codes, the sign-in screens and invitations are refused without spending attempts",
+    async () => {
+      const ip = "203.0.113.38";
+      const headersFrom = () =>
+        new Headers({ "x-forwarded-for": ip, "user-agent": "Tableta" });
+      onDevice(terminalCookie);
+      expect(
+        await verifySignInCode({ code: "123456" }, headersFrom()),
+      ).toMatchObject({ ok: false, reason: "terminal" });
+      expect(await counterOf(throttleKeys.mfaChallengeIp(ip).key)).toBe(0);
+      expect(
+        await signIn(
+          { email: await emailOf(olivia), password: "no es la contraseña" },
+          headersFrom(),
+        ),
+      ).toEqual({ ok: false, reason: "terminal" });
+      expect(
+        await counterOf(throttleKeys.signInAccount(await emailOf(olivia)).key),
+      ).toBe(0);
+      expect(await counterOf(throttleKeys.signInIp(ip).key)).toBe(0);
+      await redirectsTo(refuseOnTerminal(), "/terminal?aviso=contrasena");
+      // A PIN session never joins another company.
+      expect(
+        await pinSignIn({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      await expect(
+        acceptInvitation(olivia, "x".repeat(43)),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    },
+    SLOW,
+  );
+
+  it(
+    "a PIN session never decides an approval",
+    async () => {
+      await setSetting(
+        A.org,
+        "platform.terminal.pin_roles",
+        "floor_supervision",
+      );
+      const THING: ApprovalType = {
+        key: "test.terminal_thing",
+        module: null,
+        label: "Cosa de prueba",
+        description: "Solo existe en esta prueba.",
+        requestPermissions: ["inventory.adjustment.create"],
+        decidePermissions: ["inventory.adjustment.create"],
+        async approve() {
+          return { outcome: "Se aplicó." };
+        },
+      };
+      const owner = { organizationId: A.org, userId: A.owner };
+      const ruled = await updateApprovalRule(owner, [THING], THING.key, {
+        enabled: true,
+        roles: ["supervisor"],
+        allowSelfApproval: false,
+      });
+      expect(ruled.ok).toBe(true);
+      const ask = () =>
+        forOrganization(A.org).$transaction((tx) =>
+          openApprovalRequest(tx, THING, owner, {
+            summary: "Pedir cosa",
+            payload: {},
+          }),
+        );
+      onDevice(null);
+      const asked = await ask();
+      if (!asked.ok) throw new Error(JSON.stringify(asked));
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: supervisor, pin: "395182" }, from()),
+      ).toEqual({ ok: true });
+      const atTerminal = await decideApproval(
+        { organizationId: A.org, userId: supervisor },
+        [THING],
+        asked.requestId,
+        { decision: "approve" },
+      );
+      expect(atTerminal.ok).toBe(false);
+      // The same person on their own device decides it.
+      onDevice(null);
+      const own = await decideApproval(
+        { organizationId: A.org, userId: supervisor },
+        [THING],
+        asked.requestId,
+        { decision: "approve" },
+      );
+      expect(own.ok).toBe(true);
+      await setSetting(A.org, "platform.terminal.pin_roles", "floor");
+    },
+    SLOW,
+  );
+
+  it(
+    "a PIN session's end stays fixed, and a failure to read it never fails open",
+    async () => {
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      const session = await db.session.findFirstOrThrow({
+        where: { userId: olivia, terminalId },
+        orderBy: { createdAt: "desc" },
+      });
+      const end =
+        session.createdAt.getTime() + TERMINAL_SESSION_MAX_HOURS * 3600_000;
+      expect(session.expiresAt.getTime()).toBeLessThanOrEqual(end);
+      // Pushed to seven days (as Better Auth would): read, it goes back.
+      await db.session.update({
+        where: { id: session.id },
+        data: { expiresAt: new Date(Date.now() + 7 * 86_400_000) },
+      });
+      await getCurrentSession();
+      expect(
+        (
+          await db.session.findUniqueOrThrow({ where: { id: session.id } })
+        ).expiresAt.getTime(),
+      ).toBe(end);
+      // Reading the session fails inside a request: the cut propagates the
+      // error instead of answering «no terminal».
+      const spy = vi
+        .spyOn(auth.api, "getSession")
+        .mockRejectedValueOnce(new Error("base caída"));
+      try {
+        await expect(terminalUserOfRequest()).rejects.toThrow("base caída");
+      } finally {
+        spy.mockRestore();
+      }
     },
     SLOW,
   );

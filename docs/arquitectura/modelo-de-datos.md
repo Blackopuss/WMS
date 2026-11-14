@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-111 tablas en 28 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+112 tablas en 28 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -16,7 +16,7 @@
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
 | Plataforma › Avisos | 4 | [notifications](modulos/notifications.md) |
-| Plataforma › Terminales compartidas | 2 | [terminals](modulos/terminals.md) |
+| Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 1 | [files](modulos/files.md) |
@@ -844,13 +844,13 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Plataforma › Terminales compartidas
 
-Dispositivos registrados como terminal compartida de un almacén (solo el hash de su secreto; se quitan, no se borran) y el PIN de cada persona en cada empresa (hash lento, nunca en claro).
+Dispositivos registrados como terminal compartida de un almacén y cada secreto que se les dio (solo su hash, para detectar una cookie copiada; se quitan, no se borran) y el PIN de cada persona en cada empresa (hash lento, nunca en claro).
 
 Documento: [modulos/terminals.md](modulos/terminals.md).
 
 ### SharedTerminal · `shared_terminal`
 
-A device registered as a shared terminal of a warehouse (WMS-38, ADR 0061). The device keeps a random secret in an HttpOnly cookie; only its SHA-256 is stored. Never deleted: removing it marks `removedAt`, which makes the secret useless and closes its sessions.
+A device registered as a shared terminal of a warehouse (WMS-38, ADR 0061). The device keeps a random secret in an HttpOnly cookie; only its SHA-256 is stored (SharedTerminalSecret). Never deleted: removing it marks `removedAt`, which makes the secret useless and closes its sessions.
 
 De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
@@ -860,9 +860,6 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `organizationId` | `String · Char(36)` |  |  |
 | `facilityId` | `String · Char(36)` |  |  |
 | `name` | `String · VarChar(60)` |  |  |
-| `secretHash` | `String · Char(64)` |  | única. SHA-256 (hex) of the device's secret. It changes on every PIN sign-in (rotation); the one before stays to recognize a copied cookie. |
-| `previousSecretHash` | `String? · Char(64)` |  |  |
-| `secretRotatedAt` | `DateTime? · DateTime(3)` |  |  |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `lastUsedAt` | `DateTime? · DateTime(3)` |  |  |
@@ -871,8 +868,27 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`).
-- Índices: (`organizationId`, `removedAt`, `name`); (`organizationId`, `facilityId`); `previousSecretHash`.
+- Índices: (`organizationId`, `removedAt`, `name`); (`organizationId`, `facilityId`).
 - Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
+
+### SharedTerminalSecret · `shared_terminal_secret`
+
+Every secret given to a shared terminal (WMS-38, ADR 0061 §1): only its SHA-256. The newest is the current one; an older one keeps working while no newer one has been presented (a lost answer breaks nothing), and presented after a newer one was (beyond a short grace) it means two devices: the terminal is removed. Only `presentedAt` changes, once. Rows older than 30 days are cleaned up when the terminal rotates.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `terminalId` | `String · Char(36)` |  |  |
+| `secretHash` | `String · Char(64)` |  | única |
+| `issuedAt` | `DateTime · DateTime(3)` |  |  |
+| `presentedAt` | `DateTime? · DateTime(3)` |  | First time a request brought it (the device really has it). |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `terminalId`, `issuedAt`).
+- Relaciones: `terminal` → `SharedTerminal` por (`organizationId`, `terminalId`) (al borrar: Restrict).
 
 ### MemberPin · `member_pin`
 

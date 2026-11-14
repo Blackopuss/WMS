@@ -17,8 +17,8 @@ cuenta con rol**: el PIN no crea trabajadores sin usuario, es otra forma de
 que una persona con cuenta abra **su propia** sesión en un dispositivo
 compartido.
 
-Un PIN de 4 a 6 dígitos es un secreto débil (10 000 a 1 000 000 de
-combinaciones). Todo el diseño parte de eso: el PIN solo sirve en un
+Un PIN de 5 o 6 dígitos es un secreto débil (97,450 o 893,660 válidos
+tras quitar los fáciles de adivinar). Todo el diseño parte de eso: el PIN solo sirve en un
 dispositivo que la empresa registró, para pocas personas, con pocos intentos
 y para sesiones cortas que no pueden tocar nada de seguridad ni de
 administración.
@@ -48,20 +48,36 @@ fuera de este paso (ver «Lo que queda previsto»).
   una sesión de administración abierta. La pantalla pasa a «¿Quién eres?».
 - **Rastro:** bitácora de la empresa `terminal.registered` (nombre y
   almacén; nunca el secreto).
-- **El secreto rota en cada entrada con PIN** (`rotateTerminalSecret`): la
-  cookie se reescribe con un secreto nuevo (eso también la renueva, así que
-  una terminal en uso no vence a los 400 días) y la base guarda el anterior
-  (`previousSecretHash`, `secretRotatedAt`). El anterior sigue sirviendo
-  `TERMINAL_SECRET_GRACE_MS` (2 minutos: dos pestañas, una petición ya en
-  camino). Después, un secreto ya rotado solo puede venir de una **copia de
-  la cookie** (`HttpOnly` no protege del acceso físico a las herramientas
-  del navegador): el sistema quita la terminal (`removedByUserId` vacío),
-  cierra sus sesiones, deja bitácora `terminal.cloned` y avisa a quien
-  administra terminales del almacén (`platform.terminal_cloned`). Rota
-  condicionado al secreto que mandó el navegador: dos entradas a la vez
-  rotan una sola vez. Falso positivo aceptado: si una respuesta con el
-  secreto nuevo se pierde y el navegador vuelve con el viejo pasados 2
-  minutos, la terminal se quita y hay que registrarla otra vez.
+- **El secreto rota en cada entrada con PIN** (`rotateTerminalSecret`), con
+  **detección de reúso** (como los tokens de refresco). La cookie se
+  reescribe con un secreto nuevo (eso también la renueva, así que una
+  terminal en uso no vence a los 400 días) y la base guarda **cada** secreto
+  emitido (`shared_terminal_secret`: solo su SHA-256, cuándo se emitió y
+  cuándo lo presentó por primera vez una petición). Reglas
+  (`terminalBySecret`):
+  1. El vigente es el más nuevo.
+  2. Uno más viejo sigue sirviendo, y puede volver a rotar, **mientras
+     ningún secreto más nuevo se haya presentado**: si la respuesta con el
+     secreto nuevo se pierde (wifi del almacén), el nuevo nunca llegó a
+     nadie y la terminal sigue funcionando con el viejo, pase el tiempo que
+     pase.
+  3. Si se presenta uno más viejo **después** de que uno más nuevo ya se
+     presentó, y fuera de `TERMINAL_SECRET_GRACE_MS` (2 minutos para
+     peticiones en camino), hay dos dispositivos con la cookie: el sistema
+     quita la terminal (`removedByUserId` vacío), cierra sus sesiones, deja
+     bitácora `terminal.cloned` y avisa a quien administra terminales del
+     almacén (`platform.terminal_cloned`). Vale para cualquier generación
+     anterior, no solo la inmediata: una copia que entra con PIN varias
+     veces deja a la terminal real atrás, y cuando la real vuelve se
+     detecta.
+  4. Un secreto que nunca se emitió para esa terminal no hace nada:
+     forjar `id.secreto` no la tumba.
+  Rotar bloquea la terminal: dos entradas a la vez rotan una sola vez (la
+  segunda ve un secreto emitido hace menos de la gracia y no rota otra vez).
+  De un secreto solo cambia `presentedAt`, una vez y nunca antes de
+  emitido; hash, terminal y fechas no cambian, y solo se borran los de más
+  de 30 días (limpieza al rotar; un secreto borrado ya no abre nada):
+  disparadores y `CHECK`.
 - Pendiente (no se hizo): una lista de redes permitidas por terminal.
 - Si el dispositivo ya era terminal de la misma empresa, la pantalla lo dice
   y no ofrece registrarlo otra vez (se quita primero). Si era terminal de
@@ -115,8 +131,11 @@ sesión de PIN.
   o abajo (`123456`, `654321`, también dando la vuelta: `890123`), patrones
   repetidos de dos o tres dígitos (`121212`, `123123`), los que empiezan o
   terminan con un año de 1930 a 2039 (`198712`, `042019`) y los de seis
-  que se leen como fecha (DDMMAA, MMDDAA, AAMMDD). Quedan unas 895,000
-  combinaciones de seis dígitos. Las reglas son puras (`pinProblem`, con
+  que se leen como fecha (DDMMAA, MMDDAA, AAMMDD), cada dígito doble o
+  triple en escalera (`112233`, `111222`) y las figuras del teclado: dos
+  líneas de tres teclas seguidas, en filas, columnas o diagonales (`147258`,
+  `159753`, `789456`) o sus primeras cinco. Quedan 893,660 combinaciones de
+  seis dígitos y 97,450 de cinco. Las reglas son puras (`pinProblem`, con
   prueba unitaria).
 - **Cómo se guarda:** con el mismo hash lento de las contraseñas (scrypt,
   `hashPassword`) sobre un HMAC del PIN con el secreto del servidor, la
@@ -129,7 +148,7 @@ sesión de PIN.
 - **Cambiarlo o quitarlo** cierra sus sesiones de terminal en esa empresa.
   Bitácora `pin.set`, `pin.changed` o `pin.removed` (sin el PIN).
 - **Cambiar la longitud del ajuste** no invalida los PINs que ya existen: el
-  teclado acepta de 4 a 6 dígitos y la nueva longitud se exige al ponerlo o
+  teclado acepta 5 o 6 dígitos y la nueva longitud se exige al ponerlo o
   cambiarlo. Bajar la longitud no debilita los existentes; subirla se aplica
   a cada persona cuando lo cambie (se dice junto al ajuste).
 
@@ -157,9 +176,12 @@ sesión de PIN.
      coincida. Si no tiene PIN, o no puede usarlo, se calcula de todas
      formas un hash con un PIN falso (mismo tiempo) y la respuesta es la
      misma: «PIN incorrecto.»
-  4. Si el PIN es correcto pero a la cuenta le falta algo (correo sin
-     confirmar o documentos legales vigentes sin aceptar), no entra: «Entra
-     con tu correo y contraseña para terminar de configurar tu cuenta.»
+  4. Si a la cuenta le falta algo (correo sin confirmar o documentos
+     legales vigentes sin aceptar), no entra: «Entra con tu correo y
+     contraseña para terminar de configurar tu cuenta.» Se decide **antes**
+     de mirar el PIN y sin gastar intento, así la respuesta nunca confirma
+     que un PIN era correcto (antes, solo el PIN correcto daba esta
+     respuesta y servía de oráculo).
 - **Qué pasa al entrar:**
   - Se borra cualquier otra sesión de esa terminal (una terminal es un
     dispositivo: una persona a la vez).
@@ -210,9 +232,15 @@ Tres llaves, todas apartadas **antes** de verificar (`reserveAttempt`):
 | Llave | Límite | Bloqueo | Para qué |
 | --- | --- | --- | --- |
 | `pinUserTerminal` (persona en esa terminal) | 5 en 15 min | 15 min | El bajo: un compañero que teclea PIN malos a propósito solo bloquea a esa persona en esa terminal, un rato |
-| `pinUser` (persona en todas) | 15 en 1 hora | 1 hora | Pasar de una terminal a otra da pocos intentos más |
+| `pinUser` (persona en todas) | 30 en 1 hora | 1 hora | Por encima de lo que una sola terminal puede producir (con 5 cada 15 minutos y 15 de bloqueo, a lo más 20 por hora contra una persona): exige intentos desde más de una terminal, así un compañero en una terminal nunca deja a la persona fuera de las demás |
 | `pinTerminal` (la terminal) | 20 en 15 min | 15 min | Quien prueba con muchas personas detiene la terminal para todos |
 
+- **Fallos sostenidos sin bloqueo:** por debajo de los límites (4 por
+  persona y 19 por terminal cada 15 minutos) no se bloquea nada, así que se
+  cuentan los PIN incorrectos de cada terminal en 24 horas
+  (`countInWindow`, `pin:terminal-day:<id>`); al llegar a
+  `PIN_DAILY_FAILURES_NOTICE` (30) se avisa una vez a quien administra
+  terminales del almacén.
 - Cada bloqueo deja bitácora (`pin.locked` o `terminal.locked`) y avisa
   dentro de la app (`platform.terminal_locked`) a quien administra
   terminales del almacén; el de una persona la nombra. El evento de
@@ -226,10 +254,15 @@ Tres llaves, todas apartadas **antes** de verificar (`reserveAttempt`):
   de terminar de comprobar el PIN**; después, el intento queda contado.
 - Las respuestas no dicen si la persona tiene PIN: fallar con o sin PIN
   cuenta igual y dice lo mismo; el bloqueo dice lo mismo sea de quien sea.
-- Tiempo para adivinar al azar con el ritmo permitido (por persona, una
-  terminal, el peor caso: 15 intentos por hora en todas): PIN de 6 dígitos
-  (≈895,000 válidos), en promedio ≈3 años; de 5 dígitos (≈89,000), ≈4
-  meses; cada bloqueo avisa. Ver la tabla de `docs/seguridad/REVISION_PIN.md`.
+- Tiempo para adivinar al azar (ver la tabla de
+  `docs/seguridad/REVISION_PIN.md`): contra una persona desde una terminal,
+  ≈14 intentos por hora: PIN de 6 dígitos ≈3.6 años en promedio (1 % en
+  ≈27 días); de 5 dígitos ≈4.8 meses (1 % en ≈3 días). Contra cualquiera de
+  N personas desde una terminal, ≈76 por hora: 6 dígitos ≈24 días con 20
+  personas; 5 dígitos ≈2.7 días. Por eso **6 dígitos es el único valor por
+  omisión** y la pantalla del ajuste dice que 5 es diez veces más fácil de
+  adivinar. Las reglas rechazan además repetidos, escaleras, bloques,
+  años, fechas y figuras del teclado (`147258`, `159753`, `112233`).
 
 ### 7. La sesión de PIN: corta y de una sola empresa
 
@@ -240,16 +273,23 @@ Tres llaves, todas apartadas **antes** de verificar (`reserveAttempt`):
     guardado en la sesión. `lastActiveAt` es la columna de WMS-40; en una
     sesión de terminal **ninguna petición la escribe** (la campana de avisos
     y los refrescos periódicos mantendrían viva una sesión abandonada): solo
-    la entrada y los toques de la persona.
+    la entrada, los toques y las navegaciones de la persona.
   - En la terminal, una barra cliente cuenta el tiempo desde el último toque
     o tecla. Mientras la persona toca la pantalla avisa al servidor como
-    mucho cada 30 segundos (`keepTerminalSessionAction`, que solo escribe
-    `lastActiveAt` condicionado; el primer toque siempre se avisa); si pasa
+    mucho cada 15 segundos y siempre al final de cada racha de toques (2
+    segundos después del último), y también al cambiar de pantalla (una
+    navegación de la persona; los refrescos automáticos no cambian de
+    pantalla). `keepTerminalSessionAction` escribe `lastActiveAt` en cada
+    aviso, nunca hacia atrás: lo guardado va como mucho una racha detrás
+    del último toque, así nadie sale a media operación (antes podía ir un
+    minuto atrás y, con 2 minutos, sacar a alguien 66 segundos después de
+    tocar). Un Server Action de la persona empieza siempre con un toque o
+    una tecla, que la barra avisa; si pasa
     el tiempo sin toques, cierra la sesión y vuelve a «¿Quién eres?». Si el
     cierre falla o tarda más de 8 segundos, saca a la persona de todos modos
     (el servidor ya la considera inactiva). Si el navegador estaba dormido,
     el servidor la rechaza igual en la siguiente petición.
-  - Costo: como mucho dos escrituras de una fila por minuto **por terminal
+  - Costo: unas cuatro escrituras de una fila por minuto **por terminal
     en uso** (hay una sesión por terminal), fuera del tiempo de respuesta.
 - **Límite absoluto:** 12 horas desde que entró (un turno largo), sin
   importar la actividad: la fila vence a esa hora (`expiresAt`). Better Auth
@@ -279,10 +319,20 @@ La decisión vive en el servidor, en dos lugares de una sola regla
   `terminal: true` y la política (`permissionsOf`, la misma que recorta a
   soporte, con `keptAtTerminal`) le quita **todo permiso de plataforma**
   salvo leer la empresa, los módulos y la capacidad
-  (`TERMINAL_PLATFORM_KEEP`), **toda exportación** (`*.export`,
-  `*.export.create`: el archivo quedaría en la tableta) y **todo costo**
-  (`TERMINAL_COST_PERMISSIONS`: `inventory.cost.read|record`,
-  `purchasing.cost.read|record`). Además **nunca decide una aprobación**:
+  (`TERMINAL_PLATFORM_KEEP`), **toda exportación masiva**
+  (`*.export.create` y los reportes como `purchasing.report.export`: el
+  archivo quedaría en la tableta) y **leer costos**
+  (`TERMINAL_COST_PERMISSIONS`: `inventory.cost.read`,
+  `purchasing.cost.read`). Conserva, en una lista explícita
+  (`TERMINAL_EXPORT_KEEP`), los documentos de una operación que no llevan
+  costos y que el piso necesita: la hoja de embarque
+  (`inventory.shipment.export`) y la hoja de traslado
+  (`inventory.facility_transfer.export`). Conserva también registrar el
+  último costo (`purchasing.cost.record`): no deja ver nada y, cortado, una
+  recepción hecha en la terminal dejaría de actualizar el último costo sin
+  decirlo. Los cambios de equipo (`withTeamChange`) y las opciones de
+  alcance arman su sujeto con la misma marca de terminal (una sola
+  decisión). Además **nunca decide una aprobación**:
   el motor (`mayDecide`) la rechaza como a soporte. Así no hay equipo,
   invitaciones, sesiones del equipo, bitácora, plan, configuración del
   negocio, reglas, terminales, soporte ni titularidad, aunque su rol los
@@ -375,13 +425,19 @@ Poner el PIN propio no es un permiso: lo decide §5.
   sesión recortada: la tarjeta reemplaza al PIN (o lo acompaña) y lo demás
   no cambia. Necesita decidir el lector (Web NFC solo existe en Chrome para
   Android) y cómo se da de alta una tarjeta. Fuera de este paso.
+- **Enlace de correo abierto en la terminal:** la cookie de la terminal es
+  `SameSite=Strict` y no viaja al llegar desde un enlace externo, así que
+  la sesión de PIN se cierra (falta su terminal). Pendiente de decidir.
+- **Navegador que fue terminal y conserva la cookie:** no alarga una sesión
+  completa (pendiente de revisar si conviene borrar la cookie al quitar la
+  terminal desde otro dispositivo).
 - **Historial de accesos (WMS-68):** los eventos `pin_sign_in.*` y
   `pin.locked` ya quedan en los eventos de seguridad de la cuenta.
 
 ## Opciones descartadas
 
 - **PIN válido en cualquier dispositivo** (como segunda contraseña corta):
-  con 4 a 6 dígitos y la página en internet, solo los límites de intentos
+  con 5 o 6 dígitos y la página en internet, solo los límites de intentos
   protegerían la cuenta. Se exige la terminal registrada.
 - **Trabajadores sin cuenta, solo con PIN:** el fundador decidió que toda
   persona que opera tiene cuenta con rol.
@@ -396,8 +452,10 @@ Poner el PIN propio no es un permiso: lo decide §5.
   la primera diría quién tiene PIN; no hay número de empleado en el sistema
   y agregarlo sería un dato nuevo para un solo uso. Se lista a todo el que
   puede usar PIN y se busca por nombre.
-- **Bloquear por persona y terminal:** cambiar de terminal daría más
-  intentos. Se bloquea por persona en todas.
+- **Bloquear solo por persona en todas las terminales con un umbral bajo:**
+  un compañero en una sola terminal dejaba a la persona fuera de todas una
+  hora. Se bloquea bajo por persona y terminal, y en todas solo con
+  intentos de más de una terminal.
 - **Medir la inactividad escribiendo en cada petición, o con una cookie
   firmada que se renueva en el proxy:** la primera es una escritura por
   pantalla; la segunda no se puede escribir desde un Server Component y

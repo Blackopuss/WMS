@@ -125,11 +125,12 @@ export async function registerTerminal(
     return { ok: false, fieldErrors };
   }
   const { name, facilityId } = parsed.data;
+  // Defensive: on a terminal nobody has a full session to get here.
   const device = await terminalOfDevice();
   if (device?.organizationId === actor.organizationId) {
     return {
       ok: false,
-      formError: `Este dispositivo ya es la terminal «${device.name}». Quítala primero para registrarlo de nuevo.`,
+      formError: `Este dispositivo ya es la terminal «${device.name}».`,
     };
   }
   const secret = newTerminalSecret();
@@ -166,8 +167,17 @@ export async function registerTerminal(
         organizationId: actor.organizationId,
         facilityId: facility.id,
         name,
-        secretHash: hashTerminalSecret(secret),
         createdByUserId: actor.userId,
+      },
+    });
+    // Its first secret; it counts as presented once a request brings it.
+    await tx.sharedTerminalSecret.create({
+      data: {
+        id: newId(),
+        organizationId: actor.organizationId,
+        terminalId,
+        secretHash: hashTerminalSecret(secret),
+        issuedAt: new Date(),
       },
     });
     await recordAuditEvent(tx, {

@@ -6,6 +6,7 @@ import {
   blockedFor,
   clearAttempts,
   clientIp,
+  countInWindow,
   openTerminalSession,
   pinCandidates,
   refundAttempt,
@@ -146,6 +147,41 @@ async function reportBlock(
   }
 }
 
+/**
+ * Wrong PINs on one terminal in a day that warn who manages terminals,
+ * once, even if no limit blocked anything: guessing slowly, below the
+ * limits, does not go unnoticed (WMS-38 review).
+ */
+export const PIN_DAILY_FAILURES_NOTICE = 30;
+const DAY_SECONDS = 24 * 60 * 60;
+
+/** Counts a wrong PIN of the terminal in its day and warns at the mark. */
+async function countDailyFailure(terminal: DeviceTerminal): Promise<void> {
+  try {
+    const count = await countInWindow(
+      `pin:terminal-day:${terminal.id}`,
+      DAY_SECONDS,
+    );
+    if (count !== PIN_DAILY_FAILURES_NOTICE) return;
+    const day = new Date().toISOString().slice(0, 10);
+    await forOrganization(terminal.organizationId).$transaction(async (tx) => {
+      await notify(tx, TERMINAL_LOCKED_NOTICE, {
+        organizationId: terminal.organizationId,
+        actorUserId: null,
+        to: {
+          permissions: ["platform.terminal.manage"],
+          facilityId: terminal.facilityId,
+        },
+        text: `La terminal «${terminal.name}» lleva ${PIN_DAILY_FAILURES_NOTICE} PIN incorrectos en las últimas 24 horas. Revisa quién la está usando.`,
+        href: `/configuracion/terminales/${terminal.id}`,
+        key: `pin_daily_failures:${terminal.id}:${day}`,
+      });
+    });
+  } catch (error) {
+    log.error("terminal.daily_failures_report_failed", error);
+  }
+}
+
 /** What a blocked attempt says (it never tells whose block it is). */
 export function blockedMessage(seconds: number): string {
   return `${tooManyAttemptsMessage(seconds)} Si es tu PIN, entra con tu contraseña desde tu propio dispositivo para desbloquearlo.`;
@@ -156,7 +192,9 @@ export function blockedMessage(seconds: number): string {
  * before the PIN is checked: for the person on this terminal (low), for
  * the person in every terminal (higher) and for the terminal. Whoever has
  * no PIN, or may not use one here, gets the same answer, in the same time,
- * as a wrong PIN. A right PIN rotates the terminal's secret.
+ * as a wrong PIN. A right PIN rotates the terminal's secret. Someone whose
+ * account is not ready (email not confirmed, documents to accept) is told
+ * so before the PIN is looked at: the answer never confirms a PIN.
  */
 export async function pinSignIn(
   input: { userId: unknown; pin: unknown },
@@ -186,6 +224,15 @@ export async function pinSignIn(
           userId,
         ])
       : [];
+    // Decided before the PIN, so this answer never tells it was right.
+    if (
+      candidate &&
+      (!candidate.emailVerified ||
+        (await pendingLegalDocuments(candidate.userId)).length > 0)
+    ) {
+      await refundAttempt(keys);
+      return { ok: false, reason: "account", message: ACCOUNT_SETUP_MESSAGE };
+    }
     const stored = candidate
       ? await forOrganization(terminal.organizationId).memberPin.findFirst({
           where: { userId: candidate.userId },
@@ -200,6 +247,7 @@ export async function pinSignIn(
 
     if (!right) {
       await settleFailure(keys);
+      await countDailyFailure(terminal);
       if (candidate) {
         await recordSecurityEvent({
           userId: candidate.userId,
@@ -228,12 +276,6 @@ export async function pinSignIn(
     // start again.
     await refundAttempt([terminalKey]);
     await clearAttempts([hereKey, userKey]);
-    if (
-      !candidate!.emailVerified ||
-      (await pendingLegalDocuments(candidate!.userId)).length > 0
-    ) {
-      return { ok: false, reason: "account", message: ACCOUNT_SETUP_MESSAGE };
-    }
 
     const client = forOrganization(terminal.organizationId);
     const idleMinutes = Number(await readSetting(client, IDLE_MINUTES));

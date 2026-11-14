@@ -218,6 +218,7 @@ model Organization {
   incidentNotes                IncidentNote[]
   /// Shared terminals and PINs (WMS-38).
   sharedTerminals              SharedTerminal[]
+  sharedTerminalSecrets        SharedTerminalSecret[]
   memberPins                   MemberPin[]
   pickWaves                    PickWave[]
   pickWaveOrders               PickWaveOrder[]
@@ -3878,33 +3879,50 @@ model IncidentNote {
 
 /// A device registered as a shared terminal of a warehouse (WMS-38,
 /// ADR 0061). The device keeps a random secret in an HttpOnly cookie; only
-/// its SHA-256 is stored. Never deleted: removing it marks `removedAt`,
+/// its SHA-256 is stored (SharedTerminalSecret). Never deleted: removing it marks `removedAt`,
 /// which makes the secret useless and closes its sessions.
 model SharedTerminal {
-  id                 String       @id @db.Char(36)
-  organizationId     String       @db.Char(36)
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  facilityId         String       @db.Char(36)
-  facility           Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  name               String       @db.VarChar(60)
-  /// SHA-256 (hex) of the device's secret. It changes on every PIN
-  /// sign-in (rotation); the one before stays to recognize a copied cookie.
-  secretHash         String       @unique @db.Char(64)
-  previousSecretHash String?      @db.Char(64)
-  secretRotatedAt    DateTime?    @db.DateTime(3)
-  createdByUserId    String       @db.Char(36)
-  createdAt          DateTime     @default(now()) @db.DateTime(3)
-  lastUsedAt         DateTime?    @db.DateTime(3)
-  removedAt          DateTime?    @db.DateTime(3)
+  id              String                 @id @db.Char(36)
+  organizationId  String                 @db.Char(36)
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId      String                 @db.Char(36)
+  facility        Facility               @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  name            String                 @db.VarChar(60)
+  createdByUserId String                 @db.Char(36)
+  createdAt       DateTime               @default(now()) @db.DateTime(3)
+  lastUsedAt      DateTime?              @db.DateTime(3)
+  removedAt       DateTime?              @db.DateTime(3)
   /// Null when the system removed it (a copied cookie was used).
-  removedByUserId    String?      @db.Char(36)
-  updatedAt          DateTime     @updatedAt @db.DateTime(3)
+  removedByUserId String?                @db.Char(36)
+  updatedAt       DateTime               @updatedAt @db.DateTime(3)
+  secrets         SharedTerminalSecret[]
 
   @@unique([organizationId, id])
   @@index([organizationId, removedAt, name])
   @@index([organizationId, facilityId])
-  @@index([previousSecretHash])
   @@map("shared_terminal")
+}
+
+/// Every secret given to a shared terminal (WMS-38, ADR 0061 §1): only its
+/// SHA-256. The newest is the current one; an older one keeps working
+/// while no newer one has been presented (a lost answer breaks nothing),
+/// and presented after a newer one was (beyond a short grace) it means two
+/// devices: the terminal is removed. Only `presentedAt` changes, once.
+/// Rows older than 30 days are cleaned up when the terminal rotates.
+model SharedTerminalSecret {
+  id             String         @id @db.Char(36)
+  organizationId String         @db.Char(36)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  terminalId     String         @db.Char(36)
+  terminal       SharedTerminal @relation(fields: [organizationId, terminalId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  secretHash     String         @unique @db.Char(64)
+  issuedAt       DateTime       @db.DateTime(3)
+  /// First time a request brought it (the device really has it).
+  presentedAt    DateTime?      @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, terminalId, issuedAt])
+  @@map("shared_terminal_secret")
 }
 
 /// The PIN of a person in a company (WMS-38, ADR 0061): scrypt over an

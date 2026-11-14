@@ -139,8 +139,8 @@ export const AREAS = [
     title: "Plataforma › Terminales compartidas",
     doc: "terminals",
     summary:
-      "Dispositivos registrados como terminal compartida de un almacén (solo el hash de su secreto; se quitan, no se borran) y el PIN de cada persona en cada empresa (hash lento, nunca en claro).",
-    models: ["SharedTerminal", "MemberPin"],
+      "Dispositivos registrados como terminal compartida de un almacén y cada secreto que se les dio (solo su hash, para detectar una cookie copiada; se quitan, no se borran) y el PIN de cada persona en cada empresa (hash lento, nunca en claro).",
+    models: ["SharedTerminal", "SharedTerminalSecret", "MemberPin"],
   },
   {
     id: "api",

@@ -8,9 +8,9 @@ import type { NotificationType } from "@/platform/notifications";
 export const TERMINAL_LOCKED_NOTICE: NotificationType = {
   key: "platform.terminal_locked",
   module: null,
-  label: "Terminal o PIN bloqueado por intentos",
+  label: "PIN incorrectos en una terminal",
   description:
-    "Cuando una terminal compartida o el PIN de una persona se bloquean un rato por demasiados PIN incorrectos.",
+    "Cuando una terminal compartida o el PIN de una persona se bloquean un rato por demasiados PIN incorrectos, o una terminal junta muchos en un día.",
   defaultEnabled: true,
 };
 

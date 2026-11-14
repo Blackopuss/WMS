@@ -23,6 +23,15 @@ describe("PIN rules", () => {
       "250388",
       "031288",
       "880325",
+      // Shapes on the keypad and doubled staircases (WMS-38 review).
+      "147258",
+      "159753",
+      "789456",
+      "258369",
+      "14725",
+      "112233",
+      "998877",
+      "111222",
     ]) {
       expect(isTrivialPin(pin), pin).toBe(true);
     }

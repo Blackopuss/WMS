@@ -19,6 +19,7 @@ export { getMyPinStatus, removeMyPin, setMyPin } from "./pins";
 export type { MyPinStatus, PinResult } from "./pins";
 export {
   ACCOUNT_SETUP_MESSAGE,
+  PIN_DAILY_FAILURES_NOTICE,
   WRONG_PIN_MESSAGE,
   getTerminalScreen,
   pinSignIn,

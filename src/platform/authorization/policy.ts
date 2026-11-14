@@ -28,7 +28,7 @@ export type Subject = {
    * A PIN session of a shared terminal (WMS-38, ADR 0061 §8): of its
    * platform permissions it keeps only TERMINAL_PLATFORM_KEEP — no team,
    * sessions, audit, plan, configuration, terminals or support — and it
-   * never exports nor sees costs (`keptAtTerminal`).
+   * never exports in bulk nor reads costs (`keptAtTerminal`).
    */
   terminal?: boolean;
   /**
@@ -148,15 +148,21 @@ export const TERMINAL_PLATFORM_KEEP: readonly Permission[] = [
 ];
 
 /**
- * Besides the platform, a PIN session never takes data out (exports and
- * documents: the file would stay on the shared device) nor sees or records
- * costs (WMS-38). Deciding approvals is refused in the approval engine.
+ * Besides the platform, a PIN session never takes data out in bulk
+ * (`*.export.create` and the reports: the file would stay on the shared
+ * device) nor reads costs (WMS-38). It keeps only the documents of one
+ * operation that carry no costs, named here. Recording a cost (a receipt
+ * updating the last cost) shows nothing and stays. Deciding approvals is
+ * refused in the approval engine.
  */
+export const TERMINAL_EXPORT_KEEP: readonly Permission[] = [
+  "inventory.shipment.export",
+  "inventory.facility_transfer.export",
+];
+
 export const TERMINAL_COST_PERMISSIONS: readonly Permission[] = [
   "inventory.cost.read",
-  "inventory.cost.record",
   "purchasing.cost.read",
-  "purchasing.cost.record",
 ];
 
 /** True when a PIN session keeps this permission of its roles. */
@@ -165,7 +171,7 @@ export function keptAtTerminal(permission: Permission): boolean {
     return TERMINAL_PLATFORM_KEEP.includes(permission);
   }
   if (permission.endsWith(".export") || permission.endsWith(".export.create")) {
-    return false;
+    return TERMINAL_EXPORT_KEEP.includes(permission);
   }
   return !TERMINAL_COST_PERMISSIONS.includes(permission);
 }

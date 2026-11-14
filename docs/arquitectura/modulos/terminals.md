@@ -44,8 +44,9 @@ es un permiso: lo decide `pinCandidates`.
 
 Una sesión de PIN lleva `Subject.terminal`: la política (`keptAtTerminal`)
 le quita todo `platform.*` salvo `TERMINAL_PLATFORM_KEEP` (leer empresa,
-módulos y capacidad), toda exportación y todo costo
-(`TERMINAL_COST_PERMISSIONS`); el motor de aprobaciones no la deja
+módulos y capacidad), toda exportación masiva (salvo los documentos de
+`TERMINAL_EXPORT_KEEP`: hoja de embarque y de traslado) y leer costos
+(`TERMINAL_COST_PERMISSIONS`; registrar el último costo se conserva); el motor de aprobaciones no la deja
 decidir. Aceptar una invitación también la rechaza. La seguridad de la cuenta (dos pasos, sesiones, PIN) la rechaza
 cada servicio con `assertNotTerminalSession`.
 
@@ -56,10 +57,13 @@ de la API nunca es una sesión de terminal.
 
 ## Tablas
 
-`shared_terminal` (almacén, nombre, SHA-256 del secreto, quién la registró,
-último uso, `removedAt`, secreto anterior y hora de la rotación; no se
-borra ni cambia de empresa o almacén, y el secreto solo cambia rotando:
-disparadores) y `member_pin` (persona + empresa, hash scrypt sobre
+`shared_terminal` (almacén, nombre, quién la registró, último uso,
+`removedAt`; no se borra ni cambia de empresa o almacén: disparador),
+`shared_terminal_secret` (SHA-256 de cada secreto emitido, cuándo se emitió
+y cuándo se presentó por primera vez; solo cambia `presentedAt`, una vez;
+solo se borran los de más de 30 días, al rotar: disparadores; lo usan
+`terminalBySecret` y `rotateTerminalSecret` para la rotación con detección
+de reúso, ADR 0061 §1) y `member_pin` (persona + empresa, hash scrypt sobre
 un HMAC del PIN con el secreto del servidor, la empresa y la persona; se
 borra al quitarlo o al desactivar a la persona). En `session`:
 `terminalId` y `terminalIdleSeconds`.
@@ -67,11 +71,18 @@ borra al quitarlo o al desactivar a la persona). En `session`:
 ## Intentos
 
 `pinUserTerminal` (persona en esa terminal: 5 en 15 minutos → 15 minutos),
-`pinUser` (persona en todas: 15 en 1 hora → 1 hora) y `pinTerminal` (20 en
-15 minutos → 15 minutos para todos). Cada bloqueo deja bitácora
+`pinUser` (persona en todas: 30 en 1 hora → 1 hora; exige intentos de más
+de una terminal) y `pinTerminal` (20 en
+15 minutos → 15 minutos para todos). Los PIN incorrectos de una terminal
+en 24 horas se cuentan aparte, sin bloquear (`countInWindow`,
+`pin:terminal-day:<id>`), y al llegar a `PIN_DAILY_FAILURES_NOTICE` (30) se
+avisa una vez. Una cuenta sin terminar recibe su respuesta antes de mirar
+el PIN y sin gastar intento. Cada bloqueo deja bitácora
 (`pin.locked`, `terminal.locked`) y avisa; entrar con contraseña borra los
-de la persona (`clearPinAttempts`). Solo los toques de la persona
-(`keepTerminalSessionAction`) mueven la actividad de una sesión de PIN. Bitácora de empresa: `terminal.registered`,
+de la persona (`clearPinAttempts`). Solo los toques y las navegaciones de
+la persona (`keepTerminalSessionAction`, escrito en cada aviso de la barra:
+como mucho cada 15 segundos y al final de cada racha) mueven la actividad
+de una sesión de PIN. Bitácora de empresa: `terminal.registered`,
 `terminal.removed`, `terminal.locked`, `terminal.cloned`, `pin.locked`,
 `pin.set`, `pin.changed`, `pin.removed`. Eventos de seguridad: `pin_sign_in.succeeded`,
 `pin_sign_in.failed`, `pin.locked`.
