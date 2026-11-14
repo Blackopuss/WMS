@@ -24,6 +24,12 @@ ni como empresa activa, ni por el respaldo, ni con `switchOrganization`
 `requireOrganizationContext()` la borra y manda a «Ingresar». También
 anota la última actividad de la sesión (`noteSessionActivity`).
 
+Sesión de terminal (WMS-38): `requireOrganizationContext` devuelve
+`terminal`, solo acepta la empresa de la terminal (sin respaldo a otra ni
+ventana de soporte; si deja de servir, borra la sesión y manda a
+`/terminal`) y anota la actividad cada 30 segundos.
+`switchOrganization` responde `TERMINAL_SWITCH_MESSAGE`.
+
 ## Permisos
 
 `platform.organization.read|update` (los comprueban las pantallas de

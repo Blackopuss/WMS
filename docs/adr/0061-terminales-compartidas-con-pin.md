@@ -1,0 +1,373 @@
+# ADR 0061 — Terminales compartidas: cambio rápido de persona con PIN
+
+Fecha: 2026-11-14 · Estado: aceptada · Paso: WMS-38 (transversal) · Usa
+ADR 0003 (autenticación), ADR 0005 (empresas), ADR 0034 (ajustes de
+operación), ADR 0035 (varios almacenes), ADR 0038 (alcance), ADR 0049 (app
+instalable), ADR 0057 (avisos), ADR 0059 (sesiones del equipo)
+
+## Contexto
+
+La especificación (terminales compartidas y pantallas táctiles,
+identificación rápida con PIN, cierre de sesión y trazabilidad individual) y
+el plan v3 («WMS-38 · Terminales compartidas: cambio rápido de persona con
+PIN, cierre automático y rastro individual») piden que en el piso muchas
+personas usen pocos dispositivos sin escribir correo y contraseña cada vez.
+El fundador decidió el 2026-11-14 que **toda persona que opera tiene su
+cuenta con rol**: el PIN no crea trabajadores sin usuario, es otra forma de
+que una persona con cuenta abra **su propia** sesión en un dispositivo
+compartido.
+
+Un PIN de 4 a 6 dígitos es un secreto débil (10 000 a 1 000 000 de
+combinaciones). Todo el diseño parte de eso: el PIN solo sirve en un
+dispositivo que la empresa registró, para pocas personas, con pocos intentos
+y para sesiones cortas que no pueden tocar nada de seguridad ni de
+administración.
+
+La identificación con tarjeta NFC que menciona la especificación queda
+fuera de este paso (ver «Lo que queda previsto»).
+
+## Flujo operativo
+
+### 1. Registrar una terminal (una vez por dispositivo)
+
+- **Quién:** el titular o un administrador (permiso nuevo
+  `platform.terminal.manage`), con su sesión completa (contraseña y, por ser
+  quien es, verificación en dos pasos).
+- **Dónde:** en el **mismo dispositivo** que será la terminal (una tableta o
+  computadora de piso, de preferencia con la app instalada, ADR 0049):
+  Configuración › Terminales compartidas › «Registrar este dispositivo».
+- **Qué captura:** nombre de la terminal («Andén 2», hasta 60 caracteres,
+  único entre las terminales activas de la empresa) y almacén (uno activo,
+  dentro de su alcance).
+- **Qué pasa:** se crea la terminal con un secreto propio de 256 bits. El
+  dispositivo lo guarda en una cookie `HttpOnly`, `Secure` (fuera de
+  desarrollo, con prefijo `__Host-`), `SameSite=Strict`, `Path=/`, de 400
+  días; la base guarda solo su SHA-256 (un secreto aleatorio de 256 bits no
+  necesita hash lento). **La sesión del administrador se cierra en ese
+  dispositivo** en el mismo paso: un dispositivo compartido no se queda con
+  una sesión de administración abierta. La pantalla pasa a «¿Quién eres?».
+- **Rastro:** bitácora de la empresa `terminal.registered` (nombre y
+  almacén; nunca el secreto).
+- Si el dispositivo ya era terminal de la misma empresa, la pantalla lo dice
+  y no ofrece registrarlo otra vez (se quita primero). Si era terminal de
+  otra empresa, registrarlo reemplaza la cookie; la otra empresa la sigue
+  viendo en su lista hasta que la quite (no se toca nada de otra empresa).
+
+### 2. Lista y quitar
+
+- Configuración › Terminales compartidas lista las terminales activas:
+  nombre, almacén, quién la registró y cuándo, último uso. Ver la lista pide
+  `platform.terminal.read` (titular, administración y Gerencia); quien está
+  limitado a almacenes (WMS-20) solo ve las de su alcance.
+- La fila abre el detalle; ahí está «Quitar terminal» (con confirmación y
+  motivo opcional, `platform.terminal.manage`).
+- **Quitar** marca la terminal como quitada (no se borra: la bitácora y los
+  eventos de seguridad la nombran), invalida su secreto (ninguna cookie
+  vuelve a servir) y **borra todas sus sesiones** en la misma transacción.
+  Bitácora `terminal.removed`.
+- Archivar un almacén con terminales activas se rechaza (hay que quitarlas
+  antes), como con los traslados abiertos.
+
+### 3. Poner mi PIN
+
+- **Quién:** cada persona, para sí misma, con su sesión completa (nunca desde
+  una sesión de PIN), en Configuración › «Mi PIN».
+- **Cuándo aparece:** solo si la persona puede usar PIN en esa empresa (ver
+  §5); si no, la tarjeta no se muestra.
+- **Qué pide:** su contraseña actual (con límite de intentos por persona,
+  como al activar dos pasos), el PIN y el PIN otra vez.
+- **Reglas del PIN:** solo dígitos, con la longitud del ajuste de la empresa
+  (4, 5 o 6; por omisión 6). Se rechazan los triviales: todos iguales
+  (`000000`), escaleras hacia arriba o abajo (`123456`, `654321`, también
+  dando la vuelta: `890123`) y patrones repetidos de dos o tres dígitos
+  (`121212`, `123123`, `1212`). Las reglas son puras
+  (`pinProblem`, con prueba unitaria).
+- **Cómo se guarda:** con el mismo hash lento de las contraseñas (scrypt,
+  `hashPassword`) sobre un HMAC del PIN con el secreto del servidor, la
+  empresa y la persona (`pinMaterial`). Así una copia de la base sin el
+  secreto no basta para probar PINs fuera de línea, y el hash de una persona
+  no sirve en otra fila. Nunca en claro, ni en logs, ni en la bitácora, ni en
+  eventos.
+- **Es de la persona en esa empresa** (`member_pin`, única por empresa y
+  persona). En otra empresa pone otro.
+- **Cambiarlo o quitarlo** cierra sus sesiones de terminal en esa empresa.
+  Bitácora `pin.set`, `pin.changed` o `pin.removed` (sin el PIN).
+- **Cambiar la longitud del ajuste** no invalida los PINs que ya existen: el
+  teclado acepta de 4 a 6 dígitos y la nueva longitud se exige al ponerlo o
+  cambiarlo. Bajar la longitud no debilita los existentes; subirla se aplica
+  a cada persona cuando lo cambie (se dice junto al ajuste).
+
+### 4. Entrar con PIN («¿Quién eres?»)
+
+- **Dónde:** solo en una terminal registrada, en `/terminal`. La pantalla lee
+  la cookie de la terminal; si no hay una terminal activa que coincida, dice
+  «Este dispositivo no es una terminal compartida» y ofrece «Ingresar» con
+  correo. Desde cualquier otro dispositivo o desde internet **el PIN no
+  existe**: ni la lista de personas, ni el teclado, ni la acción responden
+  algo distinto a eso.
+- **Elegir persona:** botones grandes con el nombre de las personas del
+  almacén de la terminal que **pueden** usar PIN (§5), en orden alfabético,
+  con un cuadro «Busca tu nombre» que filtra la lista. La lista **no dice
+  quién tiene PIN**: aparece todo el que podría usarlo. Solo el nombre (sin
+  correo, roles ni nada más). Tope 300 personas.
+- **Teclado numérico:** en pantalla, de botones grandes (≥ 64 px), con
+  «Borrar» y «Entrar» con texto; sin teclado físico funciona igual. Los
+  dígitos se muestran como puntos.
+- **Qué valida el servidor**, en este orden:
+  1. La terminal (cookie → secreto → terminal activa de una empresa).
+  2. El intento se aparta **antes** de verificar (`reserveAttempt`) en dos
+     llaves: la persona y la terminal (§6).
+  3. Que la persona aparezca en la lista de esa terminal (§5) y que su PIN
+     coincida. Si no tiene PIN, o no puede usarlo, se calcula de todas
+     formas un hash con un PIN falso (mismo tiempo) y la respuesta es la
+     misma: «PIN incorrecto.»
+  4. Si el PIN es correcto pero a la cuenta le falta algo (correo sin
+     confirmar o documentos legales vigentes sin aceptar), no entra: «Entra
+     con tu correo y contraseña para terminar de configurar tu cuenta.»
+- **Qué pasa al entrar:**
+  - Se borra cualquier otra sesión de esa terminal (una terminal es un
+    dispositivo: una persona a la vez).
+  - Se crea una **sesión propia de esa persona** (`session` de Better Auth,
+    con su token y cookie firmada de siempre) marcada con la terminal
+    (`session.terminalId`), con la empresa de la terminal como empresa
+    activa y el tiempo sin actividad del ajuste guardado en la misma fila
+    (`terminalIdleSeconds`).
+  - El almacén activo de la persona pasa a ser el de la terminal
+    (`membership.activeFacilityId`), porque todo lo que hace en el piso es
+    de ese almacén. Consecuencia aceptada: si después abre la app en su
+    teléfono, la verá en ese almacén (puede cambiarlo, como hoy).
+  - Último uso de la terminal (`lastUsedAt`), evento de seguridad
+    `pin_sign_in.succeeded` con la terminal.
+  - Va a Inicio. Todo lo que haga queda a su nombre, igual que con
+    contraseña.
+
+### 5. Quién puede entrar con PIN
+
+Todas las condiciones, revisadas al listar, al entrar y en cada petición de
+la sesión:
+
+- Miembro **activo** de la empresa de la terminal, cuyo alcance (WMS-20)
+  incluye el almacén de la terminal.
+- **Nunca** quien tiene verificación en dos pasos obligatoria
+  (`isMfaRequired`: titular de cualquier empresa, administrador, personal de
+  plataforma), ni quien la activó por su cuenta: el PIN la saltaría.
+- **Todos** sus roles están entre los que la empresa permite con PIN (ajuste
+  `platform.terminal.pin_roles`):
+  - `floor` (por omisión): Almacenista y Montacarguista.
+  - `floor_supervision`: además Supervisor de almacén y Almacén.
+  - `without_mfa`: todos los roles que no exigen dos pasos (además
+    Comprador, Consulta y Gerencia).
+  
+  Nunca más que eso: Administrador no es opción en ningún valor. Una persona
+  con un rol fuera del valor elegido no aparece (aunque tenga otro que sí).
+- Correo confirmado y documentos legales vigentes aceptados (si falta, se le
+  dice que entre con contraseña después de un PIN correcto, §4).
+
+Si algo de esto deja de cumplirse con una sesión de PIN abierta (le dan un
+rol de administrador, activa dos pasos, la desactivan, cambia el ajuste, le
+quitan el almacén), la sesión deja de servir en la siguiente petición.
+
+### 6. Intentos
+
+- **Por persona** (`pinUser`, en todas las terminales y empresas): 5 fallos
+  en 15 minutos la dejan sin PIN 30 minutos. Al iniciar sesión con su
+  contraseña se borra el bloqueo (probó quién es). Se elige por persona y no
+  por persona y terminal para que pasar de una terminal a otra no dé más
+  intentos. Con 5 intentos cada 30 minutos, adivinar un PIN de 6 dígitos al
+  azar lleva en promedio más de 5 años, uno de 4 dígitos unas 5 semanas de
+  intentos continuos, que además bloquean la terminal (abajo) y avisan.
+- **Por terminal** (`pinTerminal`): 20 fallos en 15 minutos la bloquean 15
+  minutos para todos, dejan bitácora `terminal.locked` y avisan dentro de la
+  app (`platform.terminal_locked`) a quien administra terminales del almacén.
+- Se aparta el intento antes de verificar (`reserveAttempt`), así que
+  peticiones simultáneas no pasan del límite; un PIN correcto devuelve el
+  intento a la terminal (`refundAttempt`) y borra el de la persona.
+- Las respuestas no dicen si la persona tiene PIN: fallar con o sin PIN
+  cuenta igual y dice lo mismo; el bloqueo dice «Demasiados intentos…» para
+  cualquiera.
+- Eventos de seguridad de la cuenta: `pin_sign_in.failed` (persona de la
+  empresa elegida en la lista) y `pin.locked` cuando su llave se bloquea.
+
+### 7. La sesión de PIN: corta y de una sola empresa
+
+- **Sin actividad:** se cierra sola tras el tiempo del ajuste
+  `platform.terminal.idle_minutes` (2, 5 por omisión, 10 o 15 minutos).
+  Cómo se mide sin escribir en cada petición:
+  - El servidor compara `session.lastActiveAt` (o `createdAt`) con el tiempo
+    guardado en la sesión. `lastActiveAt` es la columna de WMS-40; para una
+    sesión de terminal se escribe como mucho **cada 30 segundos** (en vez de
+    cada 5 minutos), después de responder, con la misma escritura
+    condicionada de una fila (`recordSessionActivity`). Error máximo: 30
+    segundos.
+  - En la terminal, una barra cliente cuenta el tiempo desde el último toque
+    o tecla. Mientras la persona toca la pantalla avisa al servidor como
+    mucho cada 30 segundos (`keepTerminalSessionAction`, que solo escribe
+    `lastActiveAt` condicionado); si pasa el tiempo sin toques, cierra la
+    sesión y vuelve a «¿Quién eres?». Si el navegador estaba dormido, el
+    servidor la rechaza igual en la siguiente petición.
+  - Costo: como mucho dos escrituras de una fila por minuto **por terminal
+    en uso** (hay una sesión por terminal), fuera del tiempo de respuesta.
+- **Límite absoluto:** 12 horas desde que entró (un turno largo), sin
+  importar la actividad: la fila vence a esa hora (`expiresAt`) y Better
+  Auth no la extiende (la sesión se lee sin renovación cuando el dispositivo
+  es terminal).
+- **«Cambiar de persona»:** botón grande con texto, siempre a la vista en la
+  barra de la terminal (también en teléfono). Borra la sesión y vuelve a
+  «¿Quién eres?».
+- **Al cerrarse por cualquier motivo** (tiempo, cambio de persona, terminal
+  quitada, persona desactivada, sesión cerrada desde Equipo) vuelve a
+  «¿Quién eres?», no a «Ingresar».
+- **Ligada al dispositivo:** en cada petición la sesión de PIN exige la
+  cookie de **su** terminal en ese navegador y la terminal activa. Copiar
+  solo la cookie de sesión a otro navegador no sirve.
+- **Una sola empresa:** la empresa activa es siempre la de la terminal; no se
+  puede cambiar de empresa ni cae a otra (`switchOrganization` lo rechaza y
+  el selector no aparece). Si la membresía deja de servir, la sesión se
+  borra.
+
+### 8. Qué no puede una sesión de PIN
+
+La decisión vive en el servidor, en dos lugares de una sola regla
+(«una sesión de terminal es una sesión recortada»):
+
+- **Permisos:** el sujeto de una petición hecha con sesión de terminal lleva
+  `terminal: true` y la política (`permissionsOf`, la misma que recorta a
+  soporte) le quita **todo permiso de plataforma** salvo leer la empresa,
+  los módulos y la capacidad (`TERMINAL_PLATFORM_KEEP`). Así no hay equipo,
+  invitaciones, sesiones del equipo, bitácora, plan, configuración del
+  negocio, reglas, terminales, soporte ni titularidad, aunque su rol los
+  tuviera, y aunque alguien llame la acción o la dirección sin enlace. Los
+  permisos de inventario y compras de sus roles se quedan: para eso está en
+  la terminal. `loadSubject` lo sabe por la sesión de la petición
+  (`terminalOfRequest`, en caché por petición); fuera de una petición (el
+  worker) no hay terminal.
+- **Seguridad de la cuenta** (no depende de un permiso): activar,
+  desactivar o regenerar dos pasos, ver o cerrar sus sesiones, poner o
+  quitar su PIN. Cada servicio llama `assertNotTerminalSession` y responde
+  «Desde una terminal compartida no se cambia la seguridad de tu cuenta.»
+  Hoy no hay cambio de contraseña ni de correo con sesión (se hace por
+  recuperación, sin sesión).
+- **API (WMS-60):** cuando exista, sus tokens se crean desde la
+  configuración, que una sesión de terminal no alcanza (permisos de
+  plataforma recortados). Si WMS-60 agrega a `Subject` un recorte propio
+  (`limit`), el de terminal se combina con él en `permissionsOf` (la
+  intersección), no en otro lugar.
+
+### 9. Con WMS-40 (sesiones del equipo)
+
+- Una sesión de PIN tiene la empresa de la terminal como empresa activa, así
+  que aparece sola en la lista de sesiones de la persona; la lista agrega
+  «Terminal: <nombre>» y se cierra igual.
+- Respeta `membership.sessionsRevokedAt` (`usableMembership`): una sesión de
+  terminal anterior al corte no entra. Después del corte la persona puede
+  volver a entrar con PIN, igual que con contraseña.
+- **Desactivar a una persona le quita el PIN** (se borra su `member_pin` en
+  la misma transacción) además de cerrar sus sesiones. Al reactivarla tiene
+  que poner otro.
+
+### 10. Qué se configura por empresa
+
+Tres ajustes (`TERMINAL_SETTINGS`, `module: null`), mostrados en la pantalla
+de terminales (no en Operación: una sola forma de cambiar cada cosa) y
+cambiados con `updateOperationSetting` (`platform.organization.update`,
+bitácora `settings.changed`):
+
+| Clave | Opciones | Por omisión |
+| --- | --- | --- |
+| `platform.terminal.pin_roles` | `floor`, `floor_supervision`, `without_mfa` | `floor` |
+| `platform.terminal.pin_length` | `4`, `5`, `6` | `6` |
+| `platform.terminal.idle_minutes` | `2`, `5`, `10`, `15` | `5` |
+
+Fijo en el código (no admite otra forma razonable, o es seguridad): el
+límite absoluto de 12 horas, los límites de intentos, las reglas de PIN
+trivial y que administradores y titulares nunca usan PIN.
+
+## Permisos
+
+| Permiso | T | A | AL | CO | CN | SU | AS | MO | GE |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `platform.terminal.read` | Sí | Sí | No | No | No | No | No | No | Sí |
+| `platform.terminal.manage` | Sí | Sí | No | No | No | No | No | No | No |
+
+Poner el PIN propio no es un permiso: lo decide §5.
+
+## Tablas
+
+- `shared_terminal` (de empresa): almacén, nombre, `secretHash` (SHA-256,
+  único), quién la registró y cuándo, `lastUsedAt`, `removedAt` y quién la
+  quitó. No se borra.
+- `member_pin` (de empresa): persona, `pinHash`, quién y cuándo lo puso.
+  Única por empresa y persona. Se borra al quitarlo o al desactivar a la
+  persona (un PIN no se archiva: no hay nada que rastrear de un hash viejo;
+  el rastro está en la bitácora).
+- `session.terminalId` y `session.terminalIdleSeconds` (opcionales, juntos:
+  `CHECK`). Sin llave foránea: la fila de una persona no apunta a una tabla
+  de empresa (PLT-13); quitar una terminal borra sus sesiones y una terminal
+  nunca se borra (disparador).
+
+## Lo que queda previsto
+
+- **Tarjeta NFC o gafete:** la especificación la pide «cuando el hardware lo
+  permita». Encaja como otro método de §4 sobre la misma terminal y la misma
+  sesión recortada: la tarjeta reemplaza al PIN (o lo acompaña) y lo demás
+  no cambia. Necesita decidir el lector (Web NFC solo existe en Chrome para
+  Android) y cómo se da de alta una tarjeta. Fuera de este paso.
+- **Historial de accesos (WMS-68):** los eventos `pin_sign_in.*` y
+  `pin.locked` ya quedan en los eventos de seguridad de la cuenta.
+
+## Opciones descartadas
+
+- **PIN válido en cualquier dispositivo** (como segunda contraseña corta):
+  con 4 a 6 dígitos y la página en internet, solo los límites de intentos
+  protegerían la cuenta. Se exige la terminal registrada.
+- **Trabajadores sin cuenta, solo con PIN:** el fundador decidió que toda
+  persona que opera tiene cuenta con rol.
+- **PIN temporal puesto por un administrador** (que obliga a cambiarlo):
+  quien lo dio podría entrar como esa persona hasta que lo cambie, y el
+  rastro individual dejaría de ser de una sola persona. Si alguien olvida su
+  PIN, entra con su contraseña y pone otro.
+- **La misma sesión de la terminal para todos, con «quién es» guardado
+  aparte:** rompería el rastro individual (todo lo hecho es de la sesión) y
+  las sesiones del equipo de WMS-40.
+- **Lista de solo quienes tienen PIN, o escribir el número de empleado:**
+  la primera diría quién tiene PIN; no hay número de empleado en el sistema
+  y agregarlo sería un dato nuevo para un solo uso. Se lista a todo el que
+  puede usar PIN y se busca por nombre.
+- **Bloquear por persona y terminal:** cambiar de terminal daría más
+  intentos. Se bloquea por persona en todas.
+- **Medir la inactividad escribiendo en cada petición, o con una cookie
+  firmada que se renueva en el proxy:** la primera es una escritura por
+  pantalla; la segunda no se puede escribir desde un Server Component y
+  repartiría la decisión entre el proxy y el servidor. Se usa
+  `lastActiveAt` con intervalo corto solo para sesiones de terminal.
+- **Leer el ajuste de inactividad en cada petición:** `platform/auth` no
+  puede depender de `platform/settings` (que depende de billing y
+  authorization). Se copia a la sesión al entrar; un cambio del ajuste vale
+  desde la siguiente entrada (las sesiones duran minutos).
+- **Ocultar los enlaces de administración en la terminal** como única
+  defensa: se decide en la política y en los servicios.
+- **Guardar el secreto de la terminal en `localStorage`:** lo leería
+  cualquier script de la página; la cookie `HttpOnly` no.
+- **Ajuste para el límite absoluto o los intentos:** son seguridad, no forma
+  de trabajar.
+
+## Consecuencias
+
+- Área nueva `src/platform/terminals` (registrar, quitar, listar, PIN,
+  personas de la terminal, entrar con PIN, ajustes y avisos). La parte que
+  vive en cada petición (leer la cookie, validar la sesión de terminal,
+  recortar) está en `src/platform/auth/terminal-session.ts`, porque
+  `requireSession` la necesita y `platform/auth` no puede depender de otras
+  áreas que dependen de él.
+- `requireSession` devuelve `terminal` (`{ id, organizationId }` o `null`);
+  `requireOrganizationContext` lo pasa y fija la empresa de la terminal.
+- `getCurrentSession` lee la sesión sin renovarla cuando el navegador trae
+  cookie de terminal.
+- `loadSubject` agrega `terminal: true` para la persona de una sesión de
+  terminal; `permissionsOf` recorta.
+- Pantallas: `/terminal` («¿Quién eres?» y teclado, fuera del menú y sin
+  sesión), Configuración › «Terminales compartidas»
+  (`/configuracion/terminales`, `/configuracion/terminales/[id]`) y
+  Configuración › «Mi PIN» (`/configuracion/pin`). La barra de la terminal
+  («Terminal: Andén 2 · Olivia» y «Cambiar de persona») va arriba de cada
+  pantalla de la app en una sesión de terminal.

@@ -4,9 +4,12 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import {
+  TERMINAL_ACTIVITY_INTERVAL_MS,
+  TERMINAL_PATH,
   noteSessionActivity,
   requireSession,
   type CurrentUser,
+  type SessionTerminal,
 } from "@/platform/auth";
 import { db } from "@/server";
 
@@ -40,6 +43,8 @@ export type OrganizationContext = {
   sessionId: string;
   mfaEnabled: boolean;
   organization: ActiveOrganization;
+  /** The shared terminal of a PIN session (WMS-38); null otherwise. */
+  terminal: SessionTerminal | null;
 };
 
 export type MyOrganization = { id: string; name: string };
@@ -49,6 +54,10 @@ export const SIGN_IN_AGAIN_PATH = "/ingresar";
 
 export const SIGN_IN_AGAIN_MESSAGE =
   "Vuelve a iniciar sesión para entrar a esta empresa.";
+
+/** A PIN session works only in its terminal's company (WMS-38). */
+export const TERMINAL_SWITCH_MESSAGE =
+  "En una terminal compartida no se cambia de empresa.";
 
 /** Companies where the person is an active member, oldest first. */
 export async function listMyOrganizations(
@@ -105,6 +114,7 @@ type Resolved = {
 async function resolveWithActivity(
   userId: string,
   sessionId: string,
+  onlyOrganizationId?: string,
 ): Promise<Resolved> {
   const session = await db.session.findUnique({
     where: { id: sessionId },
@@ -118,7 +128,12 @@ async function resolveWithActivity(
   if (!session || session.userId !== userId) {
     return { organization: null, lastActiveAt: null, signInAgain: false };
   }
-  const organization = await organizationOf(userId, sessionId, session);
+  const organization = await organizationOf(
+    userId,
+    sessionId,
+    session,
+    onlyOrganizationId,
+  );
   const signInAgain =
     !organization &&
     (await db.membership.count({ where: { userId, status: "ACTIVE" } })) > 0;
@@ -129,6 +144,7 @@ async function organizationOf(
   userId: string,
   sessionId: string,
   session: { activeOrganizationId: string | null; createdAt: Date },
+  onlyOrganizationId?: string,
 ): Promise<ActiveOrganization | null> {
   const select = {
     organization: {
@@ -149,6 +165,20 @@ async function organizationOf(
         select,
       })
     : null;
+
+  // A PIN session (WMS-38) works in its terminal's company or nowhere: no
+  // support window, no fallback to another company.
+  if (onlyOrganizationId !== undefined) {
+    if (!membership || session.activeOrganizationId !== onlyOrganizationId) {
+      return null;
+    }
+    const { ownerUserId, ...organization } = membership.organization;
+    return {
+      ...organization,
+      isOwner: ownerUserId === userId,
+      supportUntil: null,
+    };
+  }
 
   // Support is in a company where it has no membership, while the
   // titular's access stays open (PIL-12).
@@ -197,8 +227,30 @@ async function organizationOf(
 export const requireOrganizationContext = cache(
   async (): Promise<OrganizationContext> => {
     const session = await requireSession();
+    const { terminal } = session;
     const { organization, lastActiveAt, signInAgain } =
-      await resolveWithActivity(session.user.id, session.sessionId);
+      await resolveWithActivity(
+        session.user.id,
+        session.sessionId,
+        terminal?.organizationId,
+      );
+    if (terminal) {
+      if (!organization) {
+        // Its company no longer takes this person: the PIN session is over
+        // and the terminal asks «¿Quién eres?» again.
+        await db.session.deleteMany({
+          where: { id: session.sessionId, userId: session.user.id },
+        });
+        redirect(TERMINAL_PATH);
+      }
+      // Inactivity closes it: noted every few seconds, after the response.
+      noteSessionActivity(
+        session.sessionId,
+        lastActiveAt,
+        TERMINAL_ACTIVITY_INTERVAL_MS,
+      );
+      return { ...session, organization };
+    }
     if (!organization && signInAgain) {
       // Its companies closed this person's sessions (WMS-40) and it works
       // in no other: it is of no use any more. Signing in again opens a
@@ -229,6 +281,10 @@ export async function switchOrganization(
   sessionId: string,
   organizationId: string,
 ): Promise<SwitchOrganizationResult> {
+  const terminalSession = await db.session.count({
+    where: { id: sessionId, userId, terminalId: { not: null } },
+  });
+  if (terminalSession > 0) return { ok: false, error: TERMINAL_SWITCH_MESSAGE };
   const membership = await db.membership.findFirst({
     where: { userId, organizationId: String(organizationId), status: "ACTIVE" },
     select: { id: true, sessionsRevokedAt: true },

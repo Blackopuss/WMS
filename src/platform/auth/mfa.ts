@@ -23,6 +23,7 @@ import {
   throttleKeys,
   tooManyAttemptsMessage,
 } from "./throttle";
+import { assertNotTerminalSession } from "./terminal-session";
 
 /**
  * MFA enrollment with an authenticator app (PLT-08A). Two steps, both for
@@ -82,6 +83,7 @@ export async function startTotpEnrollment(
   input: { password: string },
   headers: Headers,
 ): Promise<StartTotpResult> {
+  await assertNotTerminalSession(userId);
   const password = z.string().max(1024).safeParse(input.password);
   if (!password.success || !password.data) {
     return { ok: false, error: "Escribe tu contraseña para continuar." };
@@ -140,6 +142,7 @@ export async function confirmTotpEnrollment(
   input: { code: string },
   headers: Headers,
 ): Promise<ConfirmTotpResult> {
+  await assertNotTerminalSession(userId);
   const code = normalizeTotpCode(String(input.code ?? ""));
   if (!code) {
     return {

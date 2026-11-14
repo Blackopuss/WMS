@@ -101,11 +101,16 @@ const SCREENS = [
   "/aprobaciones",
   "/aprobaciones?vista=mias",
   "/configuracion/aprobaciones",
+  // WMS-38: shared terminals and the person's PIN.
+  "/configuracion/terminales",
+  "/configuracion/pin",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
 const PUBLIC = [
   "/ingresar",
+  // WMS-38: «¿Quién eres?» (on a browser that is not a terminal it says so).
+  "/terminal",
   "/registro",
   "/recuperar-contrasena",
   "/sin-conexion",

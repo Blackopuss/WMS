@@ -959,6 +959,36 @@ const REVIEWED: Record<string, Review> = {
     identity: "sesión propia",
     coveredBy: "tests/platform/session.int.test.ts",
   },
+  pinSignInAction: {
+    input: "id de la persona elegida en la lista y el PIN tecleado",
+    identity:
+      "terminal y empresa salen de la cookie HttpOnly de la terminal registrada en este navegador (nunca del formulario); la persona solo entra si es de la lista de esa terminal y su PIN coincide",
+    coveredBy: "tests/platform/terminals.int.test.ts",
+  },
+  keepTerminalSessionAction: {
+    input: "nada",
+    identity:
+      "sesión propia de terminal (requireSession la valida contra su terminal); solo escribe la última actividad de esa sesión",
+    coveredBy: "tests/platform/terminals.int.test.ts",
+  },
+  registerTerminalAction: {
+    input: "nombre de la terminal y almacén",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y dentro del alcance; el secreto lo crea el servidor",
+    coveredBy: "tests/platform/terminals.int.test.ts",
+  },
+  removeTerminalAction: {
+    input: "id de la terminal y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la terminal se busca solo en esa empresa y dentro del alcance",
+    coveredBy: "tests/platform/terminals.int.test.ts",
+  },
+  pinAction: {
+    input: "PIN nuevo, confirmación, contraseña e intención (poner o quitar)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el PIN es siempre de la persona de la sesión en esa empresa; se rechaza desde una sesión de terminal",
+    coveredBy: "tests/platform/terminals.int.test.ts",
+  },
   grantSupportAccessAction: {
     input: "nada",
     identity:

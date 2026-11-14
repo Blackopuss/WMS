@@ -111,6 +111,8 @@ export const TENANT_MODELS = [
   "CustomField",
   "CustomFieldOption",
   "CustomFieldValue",
+  "SharedTerminal",
+  "MemberPin",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -325,6 +327,7 @@ const LOCKABLE = {
   purchaseRequest: "purchase_request",
   incident: "incident",
   customField: "custom_field",
+  sharedTerminal: "shared_terminal",
 } as const;
 
 /**

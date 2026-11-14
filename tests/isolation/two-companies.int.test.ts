@@ -1269,6 +1269,26 @@ beforeAll(async () => {
         updatedByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // WMS-38: a shared terminal and a PIN.
+    await db.sharedTerminal.create({
+      data: {
+        id: newId(),
+        organizationId,
+        facilityId: outboundFacility,
+        name: "Andén",
+        secretHash: newId().replace(/-/g, "").padEnd(64, "0"),
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.memberPin.create({
+      data: {
+        id: newId(),
+        organizationId,
+        userId: organizationId === orgA ? ids.ana : ids.beto,
+        pinHash: "scrypt$1$1$1$AA==$AA==",
+        setAt: new Date(),
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

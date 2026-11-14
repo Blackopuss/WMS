@@ -31,6 +31,7 @@ import {
 } from "@/modules/inventory";
 import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
 import { moduleRegistry, operationSettings } from "@/modules/registry";
+import { IDLE_MINUTES, PIN_LENGTH, PIN_ROLES } from "@/platform/terminals";
 import { listAuditTrail } from "@/platform/audit";
 import type { Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
@@ -236,6 +237,10 @@ describe("operation settings", () => {
       },
       // WMS-25: picking goes order by order unless the company uses waves.
       { key: PICKING_MODE.key, value: "orders", defaultValue: "orders" },
+      // WMS-38: shared terminals (always visible; shown on their screen).
+      { key: PIN_ROLES.key, value: "floor", defaultValue: "floor" },
+      { key: PIN_LENGTH.key, value: "6", defaultValue: "6" },
+      { key: IDLE_MINUTES.key, value: "5", defaultValue: "5" },
     ]);
     expect(await getOperationSettings(other, operationSettings)).toMatchObject([
       { key: PICKING_STRATEGY.key, value: "fullest" },
@@ -259,6 +264,9 @@ describe("operation settings", () => {
       { key: CROSS_DOCK_MODE.key, value: "off" },
       { key: ADJUSTMENT_APPROVAL_THRESHOLD.key, value: "any" },
       { key: PICKING_MODE.key, value: "orders" },
+      { key: PIN_ROLES.key, value: "floor" },
+      { key: PIN_LENGTH.key, value: "6" },
+      { key: IDLE_MINUTES.key, value: "5" },
     ]);
     const trail = await listAuditTrail(one.organizationId, { limit: 20 });
     expect(trail.map((entry) => entry.action)).toContain("settings.changed");

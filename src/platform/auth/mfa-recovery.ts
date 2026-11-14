@@ -24,6 +24,7 @@ import {
   throttleKeys,
   tooManyAttemptsMessage,
 } from "./throttle";
+import { assertNotTerminalSession } from "./terminal-session";
 
 /**
  * Backup codes and turning MFA off (PLT-09), for the signed-in user.
@@ -51,6 +52,7 @@ export async function regenerateBackupCodes(
   input: { password: string },
   headers: Headers,
 ): Promise<Result<{ backupCodes: string[] }>> {
+  await assertNotTerminalSession(userId);
   const password = passwordSchema.safeParse(input.password);
   if (!password.success) {
     return { ok: false, error: "Escribe tu contraseña para continuar." };
@@ -101,6 +103,7 @@ export async function disableMfa(
   input: { password: string; code: string },
   headers: Headers,
 ): Promise<Result> {
+  await assertNotTerminalSession(userId);
   if (await isMfaRequired(userId)) {
     return {
       ok: false,

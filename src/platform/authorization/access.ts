@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 
 import { ForbiddenError } from "@/lib";
+import { terminalUserOfRequest } from "@/platform/auth";
 import {
   requireOrganizationContext,
   supportWindowFor,
@@ -61,10 +62,14 @@ export async function loadSubject(
   // Where the person may work (WMS-20); the titular is never limited, and
   // without a limit the subject carries no scope at all.
   const scope = isOwner ? null : buildScope(membership.scopes);
+  // A PIN session of a shared terminal (WMS-38): the person of this request
+  // is cut down by the policy, in every check of the request.
+  const terminal = (await terminalUserOfRequest()) === userId;
   return {
     isOwner,
     roles: membership.roles.map((r) => r.role),
     ...(scope ? { scope } : {}),
+    ...(terminal ? { terminal } : {}),
   };
 }
 

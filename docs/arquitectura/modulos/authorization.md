@@ -24,10 +24,16 @@ asientos del plan, alcance por almacén y zona, y el acceso de soporte.
 Los roles se leen de la base en cada petición. Sin membresía activa no hay
 permisos, ni para el titular. Soporte solo recibe permisos `.read`.
 
+Sesión de terminal (WMS-38): `loadSubject` marca `Subject.terminal` cuando
+la petición es de una sesión de PIN de esa persona, y `permissionsOf` le
+quita todo `platform.*` salvo `TERMINAL_PLATFORM_KEEP`. Desactivar a una
+persona borra su PIN (`member_pin`). Las sesiones del equipo muestran
+`terminalName`.
+
 ## Permisos
 
 Usa: `platform.team.read|invite|assign_roles|disable`,
-`platform.session.read|revoke` (WMS-40),
+`platform.session.read|revoke` (WMS-40), `platform.terminal.read|manage` (WMS-38),
 `platform.invitation.resend|cancel`, `platform.ownership.transfer`,
 `platform.support.grant`. Es dueño del catálogo completo (todos los módulos
 declaran sus permisos aquí y en la matriz).

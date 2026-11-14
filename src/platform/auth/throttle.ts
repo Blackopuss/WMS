@@ -54,6 +54,14 @@ export const RULES = {
     windowSeconds: 15 * 60,
     blockSeconds: 15 * 60,
   },
+  // PINs on shared terminals (WMS-38, ADR 0061): per person in every
+  // terminal (moving to another terminal gives no more tries), cleared when
+  // the person signs in with the password; and per terminal, which stops
+  // everyone there for a while and warns who manages terminals.
+  pinUser: { max: 5, windowSeconds: 15 * 60, blockSeconds: 30 * 60 },
+  pinTerminal: { max: 20, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  // Wrong passwords while setting one's own PIN, per person.
+  pinSetup: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
 } as const satisfies Record<string, ThrottleRule>;
 
 export type ThrottleKey = { key: string; rule: ThrottleRule };
@@ -117,6 +125,18 @@ export const throttleKeys = {
   discountAuthorizeIp: (ip: string): ThrottleKey => ({
     key: `discount:ip:${ip}`,
     rule: RULES.discountAuthorizeIp,
+  }),
+  pinUser: (userId: string): ThrottleKey => ({
+    key: `pin:user:${userId}`,
+    rule: RULES.pinUser,
+  }),
+  pinTerminal: (terminalId: string): ThrottleKey => ({
+    key: `pin:terminal:${terminalId}`,
+    rule: RULES.pinTerminal,
+  }),
+  pinSetup: (userId: string): ThrottleKey => ({
+    key: `pin:setup:${userId}`,
+    rule: RULES.pinSetup,
   }),
   totpUsed: (userId: string, code: string): ThrottleKey => ({
     key: `mfa:used:${userId}:${hash(code)}`,

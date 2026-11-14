@@ -3,6 +3,7 @@ import "server-only";
 import { describeUserAgent, formatIp } from "@/lib";
 import { recordSecurityEvent } from "@/platform/audit";
 import { db } from "@/server";
+import { assertNotTerminalSession } from "./terminal-session";
 
 /**
  * Active sessions of the signed-in user (PLT-05). Queries are always scoped
@@ -24,6 +25,7 @@ export async function listActiveSessions(
   userId: string,
   currentSessionId: string,
 ): Promise<ActiveSession[]> {
+  await assertNotTerminalSession(userId);
   const sessions = await db.session.findMany({
     where: { userId, expiresAt: { gt: new Date() } },
     orderBy: { updatedAt: "desc" },
@@ -62,6 +64,7 @@ export async function revokeSession(
   sessionId: string,
   currentSessionId: string,
 ): Promise<boolean> {
+  await assertNotTerminalSession(userId);
   if (sessionId === currentSessionId) return false;
   const { count } = await db.session.deleteMany({
     where: { id: sessionId, userId },
@@ -77,6 +80,7 @@ export async function revokeOtherSessions(
   userId: string,
   currentSessionId: string,
 ): Promise<number> {
+  await assertNotTerminalSession(userId);
   const { count } = await db.session.deleteMany({
     where: { userId, id: { not: currentSessionId } },
   });

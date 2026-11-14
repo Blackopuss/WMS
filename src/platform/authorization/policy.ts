@@ -25,6 +25,12 @@ export type Subject = {
    */
   support?: boolean;
   /**
+   * A PIN session of a shared terminal (WMS-38, ADR 0061 §8): of its
+   * platform permissions it keeps only TERMINAL_PLATFORM_KEEP — no team,
+   * sessions, audit, plan, configuration, terminals or support.
+   */
+  terminal?: boolean;
+  /**
    * Where the person may work (WMS-20). Absent or null = every warehouse.
    * It never limits the titular.
    */
@@ -87,6 +93,17 @@ export function inScope(subject: Subject, place: Place): boolean {
   return place.path.some((id) => zones.has(id));
 }
 
+/**
+ * Platform permissions a PIN session keeps (WMS-38): what screens of the
+ * floor read to know the company and its modules. Every other
+ * `platform.*` permission is cut, whatever the roles say.
+ */
+export const TERMINAL_PLATFORM_KEEP: readonly Permission[] = [
+  "platform.organization.read",
+  "platform.module.read",
+  "platform.capacity.read",
+];
+
 /** Known roles of the subject, without repeats, in catalog order. */
 export function knownRoles(roles: readonly string[]): Role[] {
   return [...new Set(roles.filter(isRole))].sort();
@@ -103,6 +120,13 @@ export function permissionsOf(subject: Subject): ReadonlySet<Permission> {
   }
   if (subject.support === true) {
     return new Set([...granted].filter((p) => p.endsWith(".read")));
+  }
+  if (subject.terminal === true) {
+    return new Set(
+      [...granted].filter(
+        (p) => !p.startsWith("platform.") || TERMINAL_PLATFORM_KEEP.includes(p),
+      ),
+    );
   }
   return granted;
 }

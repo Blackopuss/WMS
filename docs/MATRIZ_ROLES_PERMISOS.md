@@ -65,6 +65,8 @@ Los prefijos describen la capacidad funcional, no la ubicación física del serv
 | `platform.team.disable` | Desactivar miembro permitido, cerrar sus sesiones en la empresa (las que tenga en otra empresa siguen, pero ya no entran a esta) y conservar autoría; USR-07, USR-03B, WMS-40. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.session.read` | Ver las sesiones abiertas en la empresa de cada miembro (dispositivo, navegador, IP, inicio y última actividad), nunca las de otra empresa ni el token; WMS-40, ADR 0059. | Sí | Sí | No | No | No | No | No | No | Sí |
 | `platform.session.revoke` | Cerrar a distancia una o todas las sesiones de un miembro en la empresa (con «todas», sus sesiones anteriores ya no entran a la empresa sin volver a iniciar sesión), nunca las del titular ni las propias; las de un administrador solo el titular; WMS-40, ADR 0059. | Sí | Sí | No | No | No | No | No | No | No |
+| `platform.terminal.read` | Ver las terminales compartidas de la empresa (nombre, almacén, quién la registró y último uso) dentro de su alcance; WMS-38, ADR 0061. | Sí | Sí | No | No | No | No | No | No | Sí |
+| `platform.terminal.manage` | Registrar el dispositivo propio como terminal compartida de un almacén y quitar terminales (invalida su secreto y cierra sus sesiones); WMS-38, ADR 0061. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.ownership.transfer` | Transferir titularidad mediante flujo exclusivo y atómico; USR-03B. | Sí | No | No | No | No | No | No | No | No |
 | `platform.audit.read` | Consultar bitácora de empresa, equipo y operaciones sensibles, sin secretos; USR-11, PLT-14 y sección 5; pregunta 7. | Sí | Sí | No | No | No | No | No | No | Sí |
 

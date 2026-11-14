@@ -52,9 +52,18 @@ model Session {
   /// every few minutes after the response. Null on sessions older than the
   /// column: show updatedAt.
   lastActiveAt         DateTime?     @db.DateTime(3)
+  /// Shared terminal this session was opened on with a PIN (WMS-38,
+  /// ADR 0061); null for sessions opened with a password. No relation: a
+  /// person's row never points to a company table (PLT-13); removing the
+  /// terminal deletes its sessions, and terminals are never deleted.
+  terminalId           String?       @db.Char(36)
+  /// Inactivity that closes a terminal session, copied from the company's
+  /// setting when it was opened.
+  terminalIdleSeconds  Int?
 
   @@index([userId])
   @@index([activeOrganizationId])
+  @@index([terminalId])
   @@map("session")
 }
 
@@ -200,6 +209,9 @@ model Organization {
   notificationPreferences NotificationPreference[]
   incidents               Incident[]
   incidentNotes           IncidentNote[]
+  /// Shared terminals and PINs (WMS-38).
+  sharedTerminals         SharedTerminal[]
+  memberPins              MemberPin[]
   pickWaves               PickWave[]
   pickWaveOrders          PickWaveOrder[]
   purchaseRequests        PurchaseRequest[]
@@ -248,6 +260,8 @@ model Facility {
   approvalRequests ApprovalRequest[]
   /// Incidents reported in it (WMS-39).
   incidents        Incident[]
+  /// Shared terminals of its floor (WMS-38).
+  sharedTerminals  SharedTerminal[]
   /// Its picking waves (WMS-25).
   pickWaves       PickWave[]
   /// Purchase requests and orders of this warehouse (WMS-57).
@@ -3772,4 +3786,48 @@ model IncidentNote {
   @@unique([organizationId, id])
   @@index([organizationId, incidentId, createdAt, id])
   @@map("incident_note")
+}
+
+/// A device registered as a shared terminal of a warehouse (WMS-38,
+/// ADR 0061). The device keeps a random secret in an HttpOnly cookie; only
+/// its SHA-256 is stored. Never deleted: removing it marks `removedAt`,
+/// which makes the secret useless and closes its sessions.
+model SharedTerminal {
+  id              String       @id @db.Char(36)
+  organizationId  String       @db.Char(36)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId      String       @db.Char(36)
+  facility        Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  name            String       @db.VarChar(60)
+  /// SHA-256 (hex) of the device's secret.
+  secretHash      String       @unique @db.Char(64)
+  createdByUserId String       @db.Char(36)
+  createdAt       DateTime     @default(now()) @db.DateTime(3)
+  lastUsedAt      DateTime?    @db.DateTime(3)
+  removedAt       DateTime?    @db.DateTime(3)
+  removedByUserId String?      @db.Char(36)
+  updatedAt       DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, removedAt, name])
+  @@index([organizationId, facilityId])
+  @@map("shared_terminal")
+}
+
+/// The PIN of a person in a company (WMS-38, ADR 0061): scrypt over an
+/// HMAC of the PIN with the server secret, the company and the person.
+/// Never stored or logged in clear. Deleted when removed or when the
+/// person is disabled.
+model MemberPin {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String       @db.Char(36)
+  pinHash        String       @db.VarChar(255)
+  setAt          DateTime     @db.DateTime(3)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId])
+  @@map("member_pin")
 }

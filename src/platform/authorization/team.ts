@@ -200,6 +200,11 @@ export async function disableMember(
       const closed = await tx.session.deleteMany({
         where: { userId: target.userId, activeOrganizationId: organizationId },
       });
+      // Their PIN for shared terminals goes with their access (WMS-38): if
+      // they come back, they set a new one.
+      await tx.memberPin.deleteMany({
+        where: { organizationId, userId: target.userId },
+      });
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId,

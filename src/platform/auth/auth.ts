@@ -204,6 +204,12 @@ export const auth = betterAuth({
     },
   },
   session: {
+    // Shared terminal of a PIN session (WMS-38, ADR 0061): read with the
+    // session so each request knows it without another query. Never set
+    // through Better Auth (`input: false`); `openTerminalSession` writes it.
+    additionalFields: {
+      terminalId: { type: "string", required: false, input: false },
+    },
     // Sessions last 7 days and are extended once a day while in use.
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,

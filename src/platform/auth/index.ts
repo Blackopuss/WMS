@@ -25,6 +25,7 @@ export { disableMfa, regenerateBackupCodes } from "./mfa-recovery";
 export { BACKUP_CODE_COUNT, normalizeBackupCode } from "./backup-codes";
 export { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "./password";
 export { verifyAccountPassword } from "./account-password";
+export { hashPin, verifyNoPin, verifyPin } from "./pin-hash";
 export { requestPasswordReset, resetPassword } from "./recovery";
 export type {
   PasswordResetRequestResult,
@@ -46,7 +47,34 @@ export {
   signIn,
   signOut,
 } from "./session";
-export type { CurrentUser, SignInResult } from "./session";
+export type { CurrentUser, SessionTerminal, SignInResult } from "./session";
+export {
+  DEFAULT_PIN_ROLES,
+  PIN_CANDIDATES_MAX,
+  PIN_ROLES_SETTING_KEY,
+  PIN_ROLE_SETS,
+  TERMINAL_ACTIVITY_INTERVAL_MS,
+  TERMINAL_COOKIE,
+  TERMINAL_PATH,
+  TERMINAL_SESSION_MAX_HOURS,
+  TERMINAL_SESSION_MESSAGE,
+  assertNotTerminalSession,
+  hashTerminalSecret,
+  newTerminalSecret,
+  openTerminalSession,
+  pinCandidates,
+  terminalCookieOptions,
+  terminalCookieValue,
+  terminalOfDevice,
+  terminalSessionExpiry,
+  terminalUserOfRequest,
+  touchTerminalSession,
+} from "./terminal-session";
+export type {
+  DeviceTerminal,
+  PinCandidate,
+  PinRoleSet,
+} from "./terminal-session";
 export {
   SESSION_ACTIVITY_INTERVAL_MS,
   activityIsStale,
@@ -62,6 +90,7 @@ export type { ActiveSession } from "./sessions";
 export { handleAuthRequest, isAllowedAuthRequest } from "./http";
 export {
   blockedFor,
+  clearAttempts,
   clientIp,
   recordAttempt,
   refundAttempt,

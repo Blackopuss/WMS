@@ -38,6 +38,8 @@ export async function updateSettingAction(
     revalidatePath("/configuracion/operacion");
     // WMS-56: the settings of an approval are shown with its rule.
     revalidatePath("/configuracion/aprobaciones");
+    // WMS-38: the settings of shared terminals are shown on their screen.
+    revalidatePath("/configuracion/terminales");
     return { ok: true, message: result.summary, answers };
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {

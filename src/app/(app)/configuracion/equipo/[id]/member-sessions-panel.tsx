@@ -39,6 +39,8 @@ export type MemberSessionRow = {
   lastActiveText: string;
   lastActiveAt: string;
   current: boolean;
+  /** Shared terminal of a PIN session (WMS-38). */
+  terminalName: string | null;
 };
 
 const ICONS = {
@@ -128,6 +130,11 @@ export function MemberSessionsPanel({
                       {session.deviceLabel} · {session.label}
                       {session.current && (
                         <Badge variant="success">Esta sesión</Badge>
+                      )}
+                      {session.terminalName && (
+                        <Badge variant="secondary">
+                          Terminal: {session.terminalName}
+                        </Badge>
                       )}
                     </p>
                     <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">

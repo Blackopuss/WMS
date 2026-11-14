@@ -118,6 +118,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "team.session_revoked": "Cerró una sesión de una persona",
   "team.sessions_revoked":
     "Cerró todas las sesiones de una persona en la empresa",
+  "terminal.registered": "Registró una terminal compartida",
+  "terminal.removed": "Quitó una terminal compartida",
+  "terminal.locked": "Una terminal se bloqueó por PIN incorrectos",
+  "pin.set": "Puso su PIN para las terminales",
+  "pin.changed": "Cambió su PIN para las terminales",
+  "pin.removed": "Quitó su PIN para las terminales",
   "inventory.count_program_created": "Creó un programa de conteo cíclico",
   "inventory.count_program_changed": "Cambió un programa de conteo cíclico",
   "approval.rule_changed": "Cambió una regla de aprobación",

@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 
 import {
   DEFAULT_AFTER_SIGN_IN,
+  TERMINAL_PATH,
   requireSession,
   signOut,
+  terminalOfDevice,
+  touchTerminalSession,
 } from "@/platform/auth";
 import { leaveSupport } from "@/platform/authorization";
 import { switchFacility } from "@/platform/locations";
@@ -15,9 +18,24 @@ import {
   switchOrganization,
 } from "@/platform/tenancy";
 
+/**
+ * Signs out. On a shared terminal (WMS-38) it is «Cambiar de persona»:
+ * the device goes back to «¿Quién eres?», not to «Ingresar».
+ */
 export async function signOutAction(): Promise<void> {
+  const terminal = await terminalOfDevice();
   await signOut();
-  redirect("/ingresar");
+  redirect(terminal ? TERMINAL_PATH : "/ingresar");
+}
+
+/**
+ * Keeps a PIN session alive while the person touches the screen (WMS-38):
+ * writes its last activity, at most every 30 seconds. The session and its
+ * person come from the request; nothing from the browser.
+ */
+export async function keepTerminalSessionAction(): Promise<void> {
+  const { user, sessionId, terminal } = await requireSession();
+  if (terminal) await touchTerminalSession(sessionId, user.id);
 }
 
 /** Switches the session's company; the server re-checks the membership. */

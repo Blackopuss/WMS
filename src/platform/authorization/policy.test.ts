@@ -122,6 +122,28 @@ describe("support (PIL-12)", () => {
   });
 });
 
+describe("shared terminal (WMS-38)", () => {
+  it("keeps the floor's work and cuts every platform permission but reading the company", () => {
+    const supervisor = { isOwner: false, roles: ["supervisor"] };
+    const atTerminal = { ...supervisor, terminal: true };
+    expect(can(supervisor, "platform.team.read")).toBe(true);
+    expect(can(atTerminal, "platform.team.read")).toBe(false);
+    expect(can(atTerminal, "platform.organization.read")).toBe(true);
+    expect(can(atTerminal, "inventory.task.execute")).toBe(true);
+    const everything = { isOwner: true, roles: [...ROLES], terminal: true };
+    const platform = [...permissionsOf(everything)].filter((p) =>
+      p.startsWith("platform."),
+    );
+    expect(platform.sort()).toEqual(
+      [
+        "platform.capacity.read",
+        "platform.module.read",
+        "platform.organization.read",
+      ].sort(),
+    );
+  });
+});
+
 describe("combined roles", () => {
   it("join their permissions and add nothing else", () => {
     for (const a of ROLES) {

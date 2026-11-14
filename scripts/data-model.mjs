@@ -130,6 +130,14 @@ export const AREAS = [
     models: ["Notification", "NotificationPreference"],
   },
   {
+    id: "terminals",
+    title: "Plataforma › Terminales compartidas",
+    doc: "terminals",
+    summary:
+      "Dispositivos registrados como terminal compartida de un almacén (solo el hash de su secreto; se quitan, no se borran) y el PIN de cada persona en cada empresa (hash lento, nunca en claro).",
+    models: ["SharedTerminal", "MemberPin"],
+  },
+  {
     id: "custom-fields",
     title: "Plataforma › Campos personalizados",
     doc: "custom-fields",

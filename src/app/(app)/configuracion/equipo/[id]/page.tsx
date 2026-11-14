@@ -100,6 +100,7 @@ export default async function PersonaPage({
           lastActiveText: formatDateTime(session.lastActiveAt, tz),
           lastActiveAt: session.lastActiveAt.toISOString(),
           current: session.current,
+          terminalName: session.terminalName,
         }))}
       />
     </PageContainer>

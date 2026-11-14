@@ -12,6 +12,7 @@ export {
 export type { Permission, Role } from "./catalog";
 export {
   OWNER_ONLY_PERMISSIONS,
+  TERMINAL_PLATFORM_KEEP,
   buildScope,
   can,
   canAll,
