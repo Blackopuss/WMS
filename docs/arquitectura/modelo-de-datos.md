@@ -69,6 +69,7 @@ No es de una empresa (sin `organizationId`).
 | `userAgent` | `String? · Text` |  |  |
 | `userId` | `String · Char(36)` |  |  |
 | `activeOrganizationId` | `String? · Char(36)` |  | Company this session works in (PLT-11). Re-checked against an active membership on every request; never trusted on its own. |
+| `lastActiveAt` | `DateTime? · DateTime(3)` |  | Last request seen on this session (WMS-40, ADR 0059), written at most every few minutes after the response. Null on sessions older than the column: show updatedAt. |
 
 - Índices: `userId`; `activeOrganizationId`.
 - Relaciones: `user` → `User` por `userId` (al borrar: Cascade); `activeOrganization` → `Organization` por `activeOrganizationId` (al borrar: SetNull).
@@ -200,6 +201,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 | `activeFacilityId` | `String? · Char(36)` |  | The warehouse this person works in (WMS-18); null = the main one. |
+| `sessionsRevokedAt` | `DateTime? · DateTime(3)` |  | «Cerrar todas sus sesiones» or disabling (WMS-40, ADR 0059): a session created before this moment never works in this company again (it may keep working in others); signing in again is needed. |
 
 - Únicas: (`organizationId`, `userId`); (`organizationId`, `id`).
 - Índices: `userId`.

@@ -48,6 +48,12 @@ export {
 } from "./session";
 export type { CurrentUser, SignInResult } from "./session";
 export {
+  SESSION_ACTIVITY_INTERVAL_MS,
+  activityIsStale,
+  noteSessionActivity,
+  recordSessionActivity,
+} from "./activity";
+export {
   listActiveSessions,
   revokeOtherSessions,
   revokeSession,

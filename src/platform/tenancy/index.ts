@@ -11,6 +11,7 @@ export type {
   OrganizationInput,
 } from "./organizations";
 export {
+  SIGN_IN_AGAIN_MESSAGE,
   listMyOrganizations,
   requireOrganizationContext,
   resolveActiveOrganization,

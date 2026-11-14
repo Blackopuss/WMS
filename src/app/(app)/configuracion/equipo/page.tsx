@@ -167,6 +167,9 @@ export default async function EquipoPage() {
             member.status === "ACTIVE" &&
             allows(member, "set_scope") &&
             (scopeUseful || member.limitedTo.length > 0),
+          href: access.can("platform.session.read")
+            ? `/configuracion/equipo/${encodeURIComponent(member.userId)}`
+            : null,
         }))}
       />
 

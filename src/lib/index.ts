@@ -29,8 +29,8 @@ export {
   nowUtc,
   toIsoUtc,
 } from "./time";
-export { describeUserAgent } from "./user-agent";
-export type { DeviceInfo } from "./user-agent";
+export { DEVICE_KIND_LABELS, describeUserAgent } from "./user-agent";
+export type { DeviceInfo, DeviceKind } from "./user-agent";
 export { formatIp, isLoopbackHost } from "./ip";
 export { contentSecurityPolicy, newNonce } from "./csp";
 export { log, pathWithoutQuery, recentErrorCount } from "./log";

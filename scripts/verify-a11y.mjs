@@ -326,6 +326,8 @@ try {
       ["/movimientos/traslados", /^\/movimientos\/traslados\/[0-9a-f-]{36}$/],
       // WMS-25: a picking wave, with what comes next.
       ["/pedidos/olas", /^\/tareas\/olas\/[0-9a-f-]{36}$/],
+      // WMS-40: a person of the team, with their sessions.
+      ["/configuracion/equipo", /^\/configuracion\/equipo\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

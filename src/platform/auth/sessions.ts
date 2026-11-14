@@ -33,6 +33,7 @@ export async function listActiveSessions(
       ipAddress: true,
       createdAt: true,
       updatedAt: true,
+      lastActiveAt: true,
     },
   });
   return sessions
@@ -45,7 +46,7 @@ export async function listActiveSessions(
         mobile: device.mobile,
         ipAddress: formatIp(s.ipAddress),
         createdAt: s.createdAt,
-        lastActiveAt: s.updatedAt,
+        lastActiveAt: s.lastActiveAt ?? s.updatedAt,
       };
     })
     .sort((a, b) => Number(b.current) - Number(a.current));

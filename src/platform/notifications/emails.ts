@@ -355,7 +355,11 @@ export async function sendNoticeEmails(
       select: { status: true, attempts: true },
     });
     if (job && (job.status !== "RUNNING" || job.attempts !== options.attempt)) {
-      return { sent: 0, skipped: dropped.length, reason: "Otro intento lo tomó." };
+      return {
+        sent: 0,
+        skipped: dropped.length,
+        reason: "Otro intento lo tomó.",
+      };
     }
   }
 
@@ -397,7 +401,10 @@ export async function sendNoticeEmails(
 }
 
 /** When the last mail of notices went out to a person, if ever. */
-async function lastMailAt(client: Client, userId: string): Promise<Date | null> {
+async function lastMailAt(
+  client: Client,
+  userId: string,
+): Promise<Date | null> {
   const last = await client.notificationEmail.aggregate({
     where: { recipientUserId: userId },
     _max: { sentAt: true },

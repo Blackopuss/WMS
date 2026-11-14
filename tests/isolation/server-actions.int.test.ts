@@ -884,6 +884,13 @@ const REVIEWED: Record<string, Review> = {
     identity: "sesión y empresa activa (requireOrganizationContext)",
     coveredBy: "tests/platform/team-disable.int.test.ts",
   },
+  revokeMemberSessionsAction: {
+    input:
+      "id de usuario, id de una sesión (vacío = todas sus sesiones en la empresa) y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo se cierran sesiones de esa persona cuya empresa activa es la de quien actúa",
+    coveredBy: "tests/platform/team-sessions.int.test.ts",
+  },
   reactivateMemberAction: {
     input: "id de usuario",
     identity: "sesión y empresa activa (requireOrganizationContext)",

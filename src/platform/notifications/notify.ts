@@ -117,8 +117,13 @@ export async function notify(
     place = { facilityId: to.facilityId };
   }
 
+  // The company is also named in each filter (the scoped client adds the
+  // same): a platform fact written with the plain client of its own
+  // transaction (team sessions, WMS-40) reads only this company too.
+  const organizationId = input.organizationId;
   const members = await tx.membership.findMany({
     where: {
+      organizationId,
       status: "ACTIVE",
       ...(wanted ? { userId: { in: wanted } } : {}),
       ...(input.actorUserId ? { NOT: { userId: input.actorUserId } } : {}),
@@ -134,7 +139,7 @@ export async function notify(
 
   // Preferences: a row only where the person changed the default.
   const changed = await tx.notificationPreference.findMany({
-    where: { userId: { in: candidates }, typeKey: type.key },
+    where: { organizationId, userId: { in: candidates }, typeKey: type.key },
     select: { userId: true, enabled: true, email: true },
   });
   const choice = new Map(changed.map((row) => [row.userId, row]));
@@ -145,7 +150,7 @@ export async function notify(
   const capped = listening.slice(0, NOTIFY_MAX_RECIPIENTS);
 
   const already = await tx.notification.findMany({
-    where: { recipientUserId: { in: capped }, dedupeKey: key },
+    where: { organizationId, recipientUserId: { in: capped }, dedupeKey: key },
     select: { recipientUserId: true },
   });
   const done = new Set(already.map((row) => row.recipientUserId));
