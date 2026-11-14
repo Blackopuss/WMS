@@ -160,6 +160,9 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  // Jobs left in the queue (webhook hand-outs and deliveries) would make
+  // later files that run the worker spend their rounds on them.
+  await db.job.deleteMany({});
   await db.$disconnect();
 });
 
@@ -765,6 +768,9 @@ describe("entrega", () => {
       },
     });
     expect(notice?.href).toBe("/configuracion/api");
+    // Nothing of the destination in the text: it may also go by email.
+    expect(notice?.text).not.toContain("hooks.ejemplo.com");
+    expect(notice?.text).not.toMatch(/https?:/);
     // Paused: new facts do not reach it.
     const before = await db.webhookDelivery.count({
       where: { endpointId: created.endpointId },

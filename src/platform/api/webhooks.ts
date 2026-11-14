@@ -711,21 +711,15 @@ export function webhookDeliveryHandler(
           organizationId,
           actorUserId: null,
           to: { permissions: [MANAGE] },
-          text: `El webhook a ${hostOf(endpoint.url)} se pausó después de ${failures} entregas fallidas seguidas.`,
+          // No address nor anything of the destination: the notice may also
+          // leave by email (WMS-39B). The screen says which one it is.
+          text: `Un destino de webhooks se pausó después de ${failures} entregas fallidas seguidas. Revísalo en API y webhooks.`,
           href: "/configuracion/api",
           key: `webhook:${endpoint.id}:paused:${delivery.id}`,
         });
       }, LOCKING_TRANSACTION);
     },
   };
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return "un destino";
-  }
 }
 
 /** Events and deliveries older than WEBHOOK_HISTORY_DAYS (a round of the worker). */

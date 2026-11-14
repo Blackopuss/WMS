@@ -171,6 +171,9 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  // Jobs left in the queue (webhook hand-outs and deliveries) would make
+  // later files that run the worker spend their rounds on them.
+  await db.job.deleteMany({});
   await db.$disconnect();
 });
 
