@@ -218,8 +218,13 @@ export async function createApiKey(
       // changes of the team: two keys created at once never pass it.
       const full = await db.$transaction(async (tx) => {
         await lockOrganization(tx, organizationId);
+        // Expired keys do not count: the screen cannot revoke them.
         const active = await tx.apiKey.count({
-          where: { organizationId, revokedAt: null },
+          where: {
+            organizationId,
+            revokedAt: null,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
         });
         if (active >= API_KEYS_MAX) return true;
         await tx.apiKey.create({
@@ -257,7 +262,10 @@ export async function createApiKey(
         return {
           ok: false,
           reason: "not_allowed",
-          error: `Tu empresa ya tiene ${API_KEYS_MAX} llaves activas. Revoca una que ya no uses.`,
+          // Someone limited does not learn how many keys others have.
+          error: (await seesWholeCompany(client, userId))
+            ? `Tu empresa ya tiene ${API_KEYS_MAX} llaves activas. Revoca una que ya no uses.`
+            : "Tu empresa llegó al límite de llaves. Pide a quien administra la API que revoque una que ya no se use.",
         };
       }
       return { ok: true, keyId, token, prefix: `wms_${prefix}` };

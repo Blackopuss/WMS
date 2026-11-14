@@ -71,6 +71,18 @@ cliente real. Decisiones en `docs/adr/0058-api-y-webhooks.md`.
 | API-S14 | Baja | SSRF en profundidad: punto final en nombres, `::ffff:0:0/96`, tiempo de DNS, propio dominio. | **Corregido** con pruebas en `webhook-target.test.ts`. |
 | API-S15 | Baja | `listMovements` y `getOrderReceipts` devolvían todas las líneas de un documento aunque solo una esté en el alcance. | **Corregido para la API** (`onlyLinesInScope`); la pantalla sigue igual (pendiente de ADR 0038). |
 
+## Segunda revisión de quien coordina (2026-11-14)
+
+| ID | Severidad | Hallazgo | Estado |
+| --- | --- | --- | --- |
+| API-S16 | Media | El aviso de pausa iba a todo el que tuviera `platform.api.manage`, también a un administrador limitado, y nombraba el host del destino (con WMS-39B, también por correo). | **Corregido:** solo a quien ve toda la empresa; el texto dice el nombre del destino, nunca su dirección. Prueba en `webhooks.int.test.ts`. |
+| API-S17 | Baja | El tope de llaves contaba las caducadas, y su mensaje revelaba a un limitado cuántas llaves había. | **Corregido.** |
+| API-S18 | Baja | Idempotencia con líneas repetidas ([A, B] guardado, [A, A] enviado) respondía `repeated`. | **Corregido:** comparación como multiconjunto. |
+| API-S19 | Baja | En movimientos de la API, el filtro por producto buscaba también en líneas fuera del alcance, y las reversas podían nombrar movimientos que la llave no alcanza. | **Corregido** con `onlyLinesInScope`. |
+| API-S20 | Baja | El tiempo límite de DNS no cancelaba `dns.lookup` (hilo del pool ocupado). | **Corregido:** `dns.promises.Resolver` con `timeout` y `cancel()`. |
+| API-S21 | Informativa | El límite por IP ya no frena a un adivino: una IP bloqueada que acierte recibe 200. | **Aceptado:** excepción razonada a `throttle.ts`, válida solo por los 256 bits de azar de la llave (ADR 0058). Cada token malo cuesta dos lecturas y una escritura. |
+| API-S22 | Informativa | Con el plan vencido los webhooks se siguen entregando. | **Aceptado:** es lectura que sale (MOD-11); los hechos que los emiten son escrituras y ya se niegan (ADR 0058). |
+
 ## Siguiente revisión
 
 Antes de dar la primera llave a un cliente real, y al agregar escrituras

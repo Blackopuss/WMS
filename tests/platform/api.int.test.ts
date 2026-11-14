@@ -352,6 +352,219 @@ describe("llaves", () => {
   });
 });
 
+describe("líneas dentro del alcance (onlyLinesInScope)", () => {
+  async function zoned() {
+    const c = await company();
+    const product = await createProduct(c, {
+      sku: "MIX-1",
+      name: "Producto mixto",
+    });
+    if (!product.ok) throw new Error("product");
+    const zoneA = await createLocation(c, { level: 1, name: "Zona A" });
+    const zoneB = await createLocation(c, { level: 1, name: "Zona B" });
+    if (!zoneA.ok || !zoneB.ok) throw new Error("zones");
+    const admin = await member(c.organizationId, "administrator");
+    const membership = await db.membership.findFirstOrThrow({
+      where: { organizationId: c.organizationId, userId: admin.userId },
+    });
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: c.organizationId, isDefault: true },
+    });
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId: c.organizationId,
+        membershipId: membership.id,
+        facilityId: main.id,
+        locationId: zoneA.locationId,
+      },
+    });
+    return {
+      c,
+      product: product.productId,
+      zoneA: zoneA.locationId,
+      zoneB: zoneB.locationId,
+      admin,
+      main,
+    };
+  }
+
+  it("una reubicación entre zonas muestra solo su lado y el producto se busca solo dentro", async () => {
+    const { registerTransfer } = await import("@/modules/inventory");
+    const { c, product, zoneA, zoneB, admin } = await zoned();
+    // Only in zone B: invisible to the key, also when filtering by product.
+    const onlyB = await registerEntry(c, {
+      productId: product,
+      locationId: zoneB,
+      quantity: "4",
+      acceptRepeat: true,
+    });
+    if (!onlyB.ok) throw new Error(JSON.stringify(onlyB));
+    const inA = await registerEntry(c, {
+      productId: product,
+      locationId: zoneA,
+      quantity: "6",
+      acceptRepeat: true,
+    });
+    if (!inA.ok) throw new Error(JSON.stringify(inA));
+    const moved = await registerTransfer(c, {
+      productId: product,
+      locationId: zoneA,
+      toLocationId: zoneB,
+      quantity: "2",
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    const key = await keyFor(admin, ["movements.read"]);
+    const body = await (
+      await call(`/movements?productId=${product}`, { token: key.token })
+    ).json();
+    const ids = body.items.map((each: { id: string }) => each.id);
+    expect(ids).not.toContain(onlyB.movementId);
+    expect(ids).toContain(inA.movementId);
+    const transfer = body.items.find(
+      (each: { id: string }) => each.id === moved.movementId,
+    );
+    expect(
+      transfer.lines.map((line: { locationId: string }) => line.locationId),
+    ).toEqual([zoneA]);
+  }, 60_000);
+
+  it("las recepciones de una orden de toda la empresa solo traen lo recibido dentro del alcance", async () => {
+    const { addOrderLine, receivePurchaseOrder, submitPurchaseOrder } =
+      await import("@/modules/purchasing");
+    const c = await company();
+    const product = await createProduct(c, {
+      sku: "REC-1",
+      name: "Producto recepción",
+    });
+    if (!product.ok) throw new Error("product");
+    const north = await createFacility(c, {
+      name: "Norte",
+      code: `RN${counter}`,
+    });
+    if (!north.ok) throw new Error(JSON.stringify(north));
+    const northGeneral = await db.location.findFirstOrThrow({
+      where: {
+        organizationId: c.organizationId,
+        facilityId: north.facilityId,
+        isDefault: true,
+      },
+    });
+    const supplier = await db.contact.create({
+      data: {
+        id: newId(),
+        organizationId: c.organizationId,
+        name: "Proveedor recepción",
+        isSupplier: true,
+        createdByUserId: c.userId,
+      },
+    });
+    // An order of the whole company (no warehouse), as older ones are.
+    const orderId = newId();
+    await db.purchaseOrder.create({
+      data: {
+        id: orderId,
+        organizationId: c.organizationId,
+        number: 1,
+        contactId: supplier.id,
+        createdByUserId: c.userId,
+      },
+    });
+    const line = await addOrderLine(c, orderId, {
+      productId: product.productId,
+      capture: "base",
+      quantity: "3",
+    });
+    if (!line.ok) throw new Error(JSON.stringify(line));
+    const sent = await submitPurchaseOrder(c, orderId);
+    if (!sent.ok) throw new Error(JSON.stringify(sent));
+    const received = await receivePurchaseOrder(c, orderId, {
+      locationId: northGeneral.id,
+      idempotencyKey: newId(),
+    });
+    if (!received.ok) throw new Error(JSON.stringify(received));
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: c.organizationId, isDefault: true },
+    });
+    const limited = await keyFor(c, ["receipts.read"], {
+      facilityId: main.id,
+      facilityOnly: true,
+    });
+    const wide = await keyFor(c, ["receipts.read"]);
+    expect(
+      (
+        await (
+          await call(`/purchase-orders/${orderId}/receipts`, {
+            token: limited.token,
+          })
+        ).json()
+      ).receipts,
+    ).toEqual([]);
+    expect(
+      (
+        await (
+          await call(`/purchase-orders/${orderId}/receipts`, {
+            token: wide.token,
+          })
+        ).json()
+      ).receipts,
+    ).toHaveLength(1);
+  }, 60_000);
+});
+
+describe("topes con altas simultáneas", () => {
+  it("nunca pasa de 20 llaves activas; las caducadas no cuentan", async () => {
+    const c = await company(["inventory"]);
+    for (let i = 0; i < 19; i++) await keyFor(c, ["products.read"]);
+    const results = await Promise.all(
+      [1, 2, 3].map(() =>
+        createApiKey(c, {
+          name: "Simultánea",
+          capabilities: ["products.read"],
+        }),
+      ),
+    );
+    expect(results.filter((each) => each.ok)).toHaveLength(1);
+    const refused = results.find((each) => !each.ok);
+    expect(refused).toMatchObject({ ok: false, reason: "not_allowed" });
+    // Someone limited is not told how many keys others have.
+    const admin = await member(c.organizationId, "administrator");
+    const membership = await db.membership.findFirstOrThrow({
+      where: { organizationId: c.organizationId, userId: admin.userId },
+    });
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: c.organizationId, isDefault: true },
+    });
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId: c.organizationId,
+        membershipId: membership.id,
+        facilityId: main.id,
+      },
+    });
+    const limitedTry = await createApiKey(admin, {
+      name: "X",
+      capabilities: ["products.read"],
+    });
+    expect(limitedTry).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect((limitedTry as { error?: string }).error).not.toMatch(/\d/);
+    // Expired keys free their place.
+    await db.apiKey.updateMany({
+      where: { organizationId: c.organizationId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    expect(
+      (
+        await createApiKey(c, {
+          name: "Nueva",
+          capabilities: ["products.read"],
+        })
+      ).ok,
+    ).toBe(true);
+  }, 60_000);
+});
+
 describe("sesiones del equipo (WMS-40)", () => {
   it("desactivar al creador detiene su llave, reactivarlo la devuelve y cerrar sesiones no la toca", async () => {
     const { disableMember, reactivateMember, revokeAllMemberSessions } =
@@ -876,8 +1089,17 @@ describe("crear pedidos de salida", () => {
       headers: { "idempotency-key": "pedido-1" },
     });
     expect(other.status).toBe(409);
-    // Any other field counts: the address, the day, the priority.
+    // Any other field counts: the address, the day, the priority, the
+    // note and the lines (also repeated ones).
     for (const change of [
+      { note: "Otra nota" },
+      {
+        lines: [
+          { product: "api-a", quantity: "2.5" },
+          { product: "api-a", quantity: "2.5" },
+        ],
+      },
+      { lines: [{ product: "api-a", quantity: "2" }] },
       { address: "Otra dirección" },
       { dueOn: "2026-12-02" },
       { priority: "NORMAL" },
@@ -912,6 +1134,56 @@ describe("crear pedidos de salida", () => {
       await Promise.all(results.map(async (r) => (await r.json()).id)),
     );
     expect(ids.size).toBe(1);
+  });
+
+  it("compara las líneas como conjunto: [A, B] no es [A, A]", async () => {
+    const second = await createProduct(a, {
+      sku: "API-A2",
+      name: "Producto A2",
+      unit: "kg",
+      step: "0.1",
+    });
+    if (!second.ok) throw new Error("product");
+    const created = await keyFor(a, ["outbound.create"]);
+    const first = await call("/outbound-orders", {
+      token: created.token,
+      method: "POST",
+      body: {
+        recipient: "Conjunto",
+        lines: [
+          { product: "API-A", quantity: "2" },
+          { product: "API-A2", quantity: "3" },
+        ],
+      },
+      headers: { "idempotency-key": "conjunto" },
+    });
+    expect(first.status).toBe(201);
+    const same = await call("/outbound-orders", {
+      token: created.token,
+      method: "POST",
+      body: {
+        recipient: "Conjunto",
+        lines: [
+          { product: "API-A2", quantity: "3" },
+          { product: "API-A", quantity: "2" },
+        ],
+      },
+      headers: { "idempotency-key": "conjunto" },
+    });
+    expect(same.status).toBe(200);
+    const doubled = await call("/outbound-orders", {
+      token: created.token,
+      method: "POST",
+      body: {
+        recipient: "Conjunto",
+        lines: [
+          { product: "API-A", quantity: "2" },
+          { product: "API-A", quantity: "2" },
+        ],
+      },
+      headers: { "idempotency-key": "conjunto" },
+    });
+    expect(doubled.status).toBe(409);
   });
 
   it("exige la clave y rechaza líneas inválidas sin crear nada", async () => {

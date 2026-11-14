@@ -3491,6 +3491,14 @@ export async function listMovements(
     null;
 
   const scope = await movementScope(actor.organizationId, actor.userId);
+  // WMS-60: with `onlyLinesInScope` the product is looked for only in
+  // the lines inside the scope, so a movement does not show up because the
+  // product moved in a place outside it.
+  const scopedPlaces = filters.onlyLinesInScope
+    ? await locationScopeWhere(client, actor.userId)
+    : null;
+  const lineInScope =
+    scopedPlaces && isLimited(scopedPlaces) ? { location: scopedPlaces } : {};
   const where = {
     // WMS-20 and WMS-21B: both conditions on the lines, side by side.
     AND: [
@@ -3511,9 +3519,17 @@ export async function listMovements(
     ...(userId ? { createdByUserId: userId } : {}),
 
     ...(lotId
-      ? { lines: { some: { lotId, ...(productId ? { productId } : {}) } } }
+      ? {
+          lines: {
+            some: {
+              lotId,
+              ...(productId ? { productId } : {}),
+              ...lineInScope,
+            },
+          },
+        }
       : productId
-        ? { lines: { some: { productId } } }
+        ? { lines: { some: { productId, ...lineInScope } } }
         : {}),
     ...(productSearch
       ? {
@@ -3555,8 +3571,40 @@ export async function listMovements(
         ),
       ),
     );
+    // A reversal of (or by) a movement outside the scope is not named.
+    const linked = [
+      ...new Set(
+        fetched.flatMap((movement) =>
+          [movement.reversesMovementId, movement.reversedByMovementId].filter(
+            (id): id is string => id !== null,
+          ),
+        ),
+      ),
+    ];
+    const visible = new Set(
+      linked.length === 0
+        ? []
+        : (
+            await client.stockMovement.findMany({
+              where: {
+                id: { in: linked },
+                ...(await movementScope(actor.organizationId, actor.userId)),
+              },
+              select: { id: true },
+            })
+          ).map((row) => row.id),
+    );
     items = fetched.map((movement) => ({
       ...movement,
+      reversesMovementId:
+        movement.reversesMovementId && visible.has(movement.reversesMovementId)
+          ? movement.reversesMovementId
+          : null,
+      reversedByMovementId:
+        movement.reversedByMovementId &&
+        visible.has(movement.reversedByMovementId)
+          ? movement.reversedByMovementId
+          : null,
       lines: movement.lines.filter((line) => !outside.has(line.locationId)),
     }));
   }

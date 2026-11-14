@@ -1,6 +1,6 @@
 import "server-only";
 
-import { lookup as dnsLookup } from "node:dns/promises";
+import { Resolver as DnsResolver } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 
@@ -33,8 +33,35 @@ export type WebhookTransport = (input: {
   headers: Record<string, string>;
 }) => Promise<DeliveryAttempt>;
 
-const defaultResolver: Resolver = (host) =>
-  dnsLookup(host, { all: true, verbatim: true });
+/**
+ * Resolves with c-ares (`dns.promises.Resolver`), not `dns.lookup`: a
+ * lookup that never answers would keep a thread of the libuv pool busy,
+ * and a few of them would stall the worker. The resolver has its own time
+ * limit and is cancelled when it runs out.
+ */
+const defaultResolver: Resolver = async (host) => {
+  const resolver = new DnsResolver({ timeout: DNS_TIMEOUT_MS, tries: 1 });
+  const timer = setTimeout(() => resolver.cancel(), DNS_TIMEOUT_MS);
+  timer.unref?.();
+  try {
+    const [v4, v6] = await Promise.allSettled([
+      resolver.resolve4(host),
+      resolver.resolve6(host),
+    ]);
+    const addresses = [
+      ...(v4.status === "fulfilled"
+        ? v4.value.map((address) => ({ address, family: 4 }))
+        : []),
+      ...(v6.status === "fulfilled"
+        ? v6.value.map((address) => ({ address, family: 6 }))
+        : []),
+    ];
+    if (addresses.length === 0) throw new Error("not found");
+    return addresses;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 /** The address to connect to, or why there is none. */
 export async function resolveTarget(

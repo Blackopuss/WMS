@@ -589,6 +589,84 @@ describe("emisión", () => {
     await removeWebhookEndpoint(a, created.endpointId);
   });
 
+  it("el reparto repetido o simultáneo no duplica entregas, y no llega a un destino posterior", async () => {
+    await drain();
+    const created = await createWebhookEndpoint(
+      a,
+      { url: "https://hooks.ejemplo.com/reparto", events: ALL },
+      webhookEventTypes,
+    );
+    if (!created.ok) throw new Error("endpoint");
+    const emitted = await forOrganization(a.organizationId).$transaction((tx) =>
+      emitWebhookEvent(tx, typeOf("inventory.adjustment.applied"), {
+        organizationId: a.organizationId,
+        data: {},
+      }),
+    );
+    if (!emitted) throw new Error("no event");
+    // Created after the fact: it does not receive it.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const later = await createWebhookEndpoint(
+      a,
+      { url: "https://hooks.ejemplo.com/despues", events: ALL },
+      webhookEventTypes,
+    );
+    if (!later.ok) throw new Error("endpoint");
+    const handler = webhookFanoutHandler();
+    const context = {
+      jobId: newId(),
+      organizationId: a.organizationId,
+      createdByUserId: null,
+      payload: { eventId: emitted.eventId, module: "inventory" },
+      attempt: 1,
+      maxAttempts: 5,
+    };
+    await Promise.all([
+      handler.handle(context),
+      handler.handle(context),
+      handler.handle(context),
+    ]);
+    await handler.handle(context);
+    expect(
+      await db.webhookDelivery.count({ where: { eventId: emitted.eventId } }),
+    ).toBe(1);
+    expect(
+      await db.webhookDelivery.count({
+        where: { endpointId: later.endpointId },
+      }),
+    ).toBe(0);
+    await removeWebhookEndpoint(a, created.endpointId);
+    await removeWebhookEndpoint(a, later.endpointId);
+    await drain();
+  });
+
+  it("nunca pasa de 10 destinos con altas simultáneas", async () => {
+    const c = await company();
+    for (let i = 0; i < 9; i++) {
+      const made = await createWebhookEndpoint(
+        c,
+        { url: `https://hooks.ejemplo.com/tope${i}`, events: ALL },
+        webhookEventTypes,
+      );
+      if (!made.ok) throw new Error(JSON.stringify(made));
+    }
+    const results = await Promise.all(
+      [1, 2, 3].map((n) =>
+        createWebhookEndpoint(
+          c,
+          { url: `https://hooks.ejemplo.com/simultaneo${n}`, events: ALL },
+          webhookEventTypes,
+        ),
+      ),
+    );
+    expect(results.filter((each) => each.ok)).toHaveLength(1);
+    expect(
+      await db.webhookEndpoint.count({
+        where: { organizationId: c.organizationId, removedAt: null },
+      }),
+    ).toBe(10);
+  });
+
   it("si la operación se revierte no hay evento", async () => {
     const created = await createWebhookEndpoint(
       a,
@@ -722,9 +800,42 @@ describe("entrega", () => {
 
   it("tras fallos seguidos se pausa sola y avisa a quien administra la API", async () => {
     await drain();
+    // An administrator limited to a warehouse never hears of a destination.
+    const limitedId = await newUser("Admin limitado aviso");
+    const limitedMembership = await db.membership.create({
+      data: {
+        id: newId(),
+        organizationId: a.organizationId,
+        userId: limitedId,
+      },
+    });
+    await db.membershipRole.create({
+      data: {
+        id: newId(),
+        organizationId: a.organizationId,
+        membershipId: limitedMembership.id,
+        role: "administrator",
+      },
+    });
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId: a.organizationId,
+        membershipId: limitedMembership.id,
+        facilityId: (
+          await db.facility.findFirstOrThrow({
+            where: { organizationId: a.organizationId, isDefault: true },
+          })
+        ).id,
+      },
+    });
     const created = await createWebhookEndpoint(
       a,
-      { url: "https://hooks.ejemplo.com/falla", events: ALL },
+      {
+        url: "https://hooks.ejemplo.com/falla",
+        description: "ERP central",
+        events: ALL,
+      },
       webhookEventTypes,
     );
     if (!created.ok) throw new Error("endpoint");
@@ -768,6 +879,15 @@ describe("entrega", () => {
       },
     });
     expect(notice?.href).toBe("/configuracion/api");
+    expect(notice?.text).toContain("«ERP central»");
+    expect(
+      await db.notification.count({
+        where: {
+          recipientUserId: limitedId,
+          typeKey: "platform.webhook_paused",
+        },
+      }),
+    ).toBe(0);
     // Nothing of the destination in the text: it may also go by email.
     expect(notice?.text).not.toContain("hooks.ejemplo.com");
     expect(notice?.text).not.toMatch(/https?:/);

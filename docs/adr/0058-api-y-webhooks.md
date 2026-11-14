@@ -221,6 +221,40 @@ clave con el mismo contenido (destinatario, dirección, referencia, nota,
 día, prioridad y cada línea) devuelve el mismo pedido (`200`,
 `repeated: true`); con cualquier diferencia, `409`.
 
+## Decisiones de la revisión (2026-11-14)
+
+- **Límite por IP.** Ya no frena intentos de adivinar: una IP bloqueada que
+  acierte una llave recibe 200. Es una excepción explícita a «apartar el
+  intento antes de verificar» de `throttle.ts`, válida **solo** porque el
+  secreto tiene 256 bits de azar (adivinarlo no es posible en la práctica).
+  El contador por IP protege de ruido, no del adivino. Cada token malo
+  cuesta dos lecturas (la llave por su hash y el bloqueo de la IP) y una
+  escritura.
+- **Plan vencido.** Los webhooks **sí** se siguen entregando: son datos que
+  salen, como una exportación, y MOD-11 deja leer y exportar con el plan
+  vencido. En la práctica casi no hay eventos nuevos, porque los hechos
+  que los emiten son escrituras y esas sí se niegan; lo que se entrega es
+  lo que ya estaba en camino. El correo de avisos (WMS-39B) no se manda con
+  el plan vencido porque es un servicio de la plataforma hacia personas, no
+  datos de la empresa hacia su propio sistema; por eso aquí es distinto.
+- **Un destino es de la empresa**, no de quien lo creó: sigue recibiendo
+  aunque esa persona salga, se desactive o quede limitada.
+- **Destino creado después del hecho.** El reparto solo considera los
+  destinos creados antes del evento (`createdAt <= evento`): un destino
+  nuevo no recibe hechos anteriores a su creación.
+- **El reparto no aparta nada.** Si falla en definitiva (solo si la base
+  falla varias veces) el evento queda sin entregas hasta la limpieza de
+  30 días; se deja en el registro (`webhook.fanout_failed`). No se muestra
+  en la pantalla: no hay nada que la empresa pueda hacer con él.
+- **Aviso de pausa.** Solo a quien tiene `platform.api.manage` y ve toda la
+  empresa (los mismos que pueden ver los webhooks); dice el nombre que la
+  empresa le dio al destino, o «Un destino de webhooks», nunca su dirección.
+- **Tope de llaves.** Las caducadas no cuentan (la pantalla no las puede
+  revocar). A quien está limitado el mensaje del tope no dice cuántas hay.
+- **DNS.** Se resuelve con `dns.promises.Resolver` (c-ares) con tiempo
+  límite y `cancel()`, no con `dns.lookup`, que ocupa un hilo del pool de
+  libuv mientras espera.
+
 ## Decisión central: cómo actúa una llave
 
 Los servicios reciben `{ organizationId, userId }` y deciden con

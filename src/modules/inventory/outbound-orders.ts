@@ -1295,6 +1295,29 @@ const arrivedWith = (reference: string | null) =>
 
 // ── Draft with its lines in one step (WMS-60) ───────────────────────────
 
+/**
+ * The stored lines are exactly the ones sent, as a multiset: each stored
+ * line matches one sent line and none is used twice ([A:2, B:3] is not
+ * [A:2, A:2]).
+ */
+function sameLines(
+  stored: readonly { productId: string; quantity: string }[],
+  sent: readonly { productId: string | null; quantity: unknown }[],
+): boolean {
+  if (stored.length !== sent.length) return false;
+  const left = [...stored];
+  for (const line of sent) {
+    const at = left.findIndex(
+      (row) =>
+        row.productId === line.productId &&
+        sameQuantity(row.quantity, line.quantity),
+    );
+    if (at < 0) return false;
+    left.splice(at, 1);
+  }
+  return left.length === 0;
+}
+
 /** The stored quantity equals what was sent (an exact decimal text). */
 function sameQuantity(stored: string, sent: unknown): boolean {
   const text = String(sent ?? "").trim();
@@ -1405,13 +1428,15 @@ export async function createOutboundDraft(
             (existing.dueOn?.toISOString().slice(0, 10) ?? null) ===
               data.dueOn &&
             existing.priority === data.priority &&
-            existing.lines.length === lines.length &&
-            lines.every((line, index) =>
-              existing.lines.some(
-                (row) =>
-                  row.productId === ids[index] &&
-                  sameQuantity(row.quantity.toString(), line.quantity),
-              ),
+            sameLines(
+              existing.lines.map((row) => ({
+                productId: row.productId,
+                quantity: row.quantity.toString(),
+              })),
+              lines.map((line, index) => ({
+                productId: ids[index] ?? null,
+                quantity: line.quantity,
+              })),
             );
           return same
             ? { ok: true as const, orderId: existing.id, repeated: true }

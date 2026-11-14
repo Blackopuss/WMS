@@ -2,10 +2,11 @@ import "server-only";
 
 import { z } from "zod";
 
-import { newId } from "@/lib";
+import { log, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import {
   assertAllowed,
+  can,
   lockOrganization,
   seesWholeCompany,
 } from "@/platform/authorization";
@@ -506,7 +507,7 @@ export function webhookFanoutHandler(): JobHandler {
       const client = forOrganization(organizationId);
       const event = await client.webhookEvent.findFirst({
         where: { id: String(eventId ?? "") },
-        select: { id: true, type: true },
+        select: { id: true, type: true, createdAt: true },
       });
       if (!event) return { deliveries: 0 };
       const entitlements = await getEntitlements(organizationId);
@@ -516,8 +517,13 @@ export function webhookFanoutHandler(): JobHandler {
       ) {
         return { deliveries: 0, skipped: "module" };
       }
+      // A destination added after the fact does not receive it (ADR 0058).
       const endpoints = await client.webhookEndpoint.findMany({
-        where: { status: "ACTIVE", removedAt: null },
+        where: {
+          status: "ACTIVE",
+          removedAt: null,
+          createdAt: { lte: event.createdAt },
+        },
         select: { id: true, events: true },
         take: WEBHOOK_ENDPOINTS_MAX,
       });
@@ -558,6 +564,14 @@ export function webhookFanoutHandler(): JobHandler {
         }
       }
       return { deliveries: created };
+    },
+    // It holds nothing: if it fails for good the event stays without
+    // deliveries until the cleanup (ADR 0058); it is left in the log.
+    async onFailed({ organizationId, payload }) {
+      log.warn("webhook.fanout_failed", {
+        organizationId,
+        eventId: String((payload as { eventId?: unknown })?.eventId ?? ""),
+      });
     },
   };
 }
@@ -686,7 +700,7 @@ export function webhookDeliveryHandler(
             id: true,
             status: true,
             consecutiveFailures: true,
-            url: true,
+            description: true,
           },
         });
         const failures = endpoint.consecutiveFailures + 1;
@@ -707,19 +721,56 @@ export function webhookDeliveryHandler(
           target: { type: "webhook_endpoint", id: endpoint.id },
           metadata: { motivo: "fallas seguidas", fallas: failures },
         });
+        // Only who sees the whole company manages webhooks (WMS-20): someone
+        // limited never hears of a destination, not even by email.
+        const managers = await wholeCompanyManagers(tx);
+        if (managers.length === 0) return;
+        const name = endpoint.description
+          ? `«${endpoint.description}»`
+          : "Un destino de webhooks";
         await notify(tx, WEBHOOK_PAUSED_NOTICE, {
           organizationId,
           actorUserId: null,
-          to: { permissions: [MANAGE] },
-          // No address nor anything of the destination: the notice may also
-          // leave by email (WMS-39B). The screen says which one it is.
-          text: `Un destino de webhooks se pausó después de ${failures} entregas fallidas seguidas. Revísalo en API y webhooks.`,
+          to: { userIds: managers, permissions: [MANAGE] },
+          // Never the address of the destination: the notice may also leave
+          // by email (WMS-39B). Its name is what the company called it.
+          text: `${name} se pausó después de ${failures} entregas fallidas seguidas. Revísalo en API y webhooks.`,
           href: "/configuracion/api",
           key: `webhook:${endpoint.id}:paused:${delivery.id}`,
         });
       }, LOCKING_TRANSACTION);
     },
   };
+}
+
+/**
+ * Members who may manage the API and see the whole company: those without
+ * any scope row (the titular is never limited). Read with the client of
+ * the transaction.
+ */
+async function wholeCompanyManagers(
+  tx: Pick<Tx, "membership">,
+): Promise<string[]> {
+  const members = await tx.membership.findMany({
+    where: { status: "ACTIVE" },
+    take: 2000,
+    select: {
+      userId: true,
+      roles: { select: { role: true } },
+      scopes: { select: { id: true }, take: 1 },
+      organization: { select: { ownerUserId: true } },
+    },
+  });
+  return members
+    .filter((member) => {
+      const isOwner = member.organization.ownerUserId === member.userId;
+      if (!isOwner && member.scopes.length > 0) return false;
+      return can(
+        { isOwner, roles: member.roles.map((each) => each.role) },
+        MANAGE,
+      );
+    })
+    .map((member) => member.userId);
 }
 
 /** Events and deliveries older than WEBHOOK_HISTORY_DAYS (a round of the worker). */
