@@ -9,9 +9,9 @@ import {
   type Permission,
   type Place,
 } from "@/platform/authorization";
-import { enqueueJob } from "@/platform/jobs";
+import { enqueueJobs } from "@/platform/jobs";
 import { placeOfLocation } from "@/platform/locations";
-import { readSetting } from "@/platform/settings";
+import { parseSettingValue } from "@/platform/settings";
 import type { TenantDb } from "@/server";
 
 import { isEmailOnly, noticeText, type NotificationType } from "./definitions";
@@ -258,24 +258,37 @@ async function queueNoticeEmails(
   to: NotifyRecipients,
   rows: readonly { id: string; recipientUserId: string }[],
 ): Promise<void> {
-  if ((await readSetting(tx, NOTICE_EMAIL_CHANNEL)) !== "on") return;
+  // `tx` may be a transaction without the company filter (a change of the
+  // team, WMS-40): every query here names the company itself.
+  const { organizationId } = input;
+  const setting = await tx.organizationSetting.findFirst({
+    where: { organizationId, key: NOTICE_EMAIL_CHANNEL.key },
+    select: { value: true },
+  });
+  const channel = parseSettingValue(NOTICE_EMAIL_CHANNEL, setting?.value);
+  const on = channel.ok
+    ? channel.value === "on"
+    : NOTICE_EMAIL_CHANNEL.defaultValue === "on";
+  if (!on) return;
   // Only the notices this transaction wrote (a duplicate written at the
   // same time by another one was skipped and has its own mail, if any).
   const written = new Set(
     (
       await tx.notification.findMany({
-        where: { id: { in: rows.map((row) => row.id) } },
+        where: { organizationId, id: { in: rows.map((row) => row.id) } },
         select: { id: true },
       })
     ).map((row) => row.id),
   );
   const mine = rows.filter((row) => written.has(row.id));
   if (mine.length === 0) return;
+  // Only a sent mail has `sentAt`: no state filter, so the index
+  // (company, recipient, sentAt) answers it.
   const last = await tx.notificationEmail.groupBy({
     by: ["recipientUserId"],
     where: {
+      organizationId,
       recipientUserId: { in: mine.map((row) => row.recipientUserId) },
-      status: "SENT",
     },
     _max: { sentAt: true },
   });
@@ -290,27 +303,28 @@ async function queueNoticeEmails(
     ...(to.locationId ? { locationId: to.locationId } : {}),
   };
   const now = new Date();
-  for (const row of mine) {
-    const emailId = newId();
-    await tx.notificationEmail.create({
-      data: {
-        id: emailId,
-        organizationId: input.organizationId,
-        notificationId: row.id,
-        recipientUserId: row.recipientUserId,
-        typeKey,
-        text: noticeText(input.text),
-        href: input.href,
-        requirement,
-      },
-    });
-    await enqueueJob(tx, input.organizationId, {
+  const text = noticeText(input.text);
+  const mails = mine.map((row) => ({
+    id: newId(),
+    organizationId,
+    notificationId: row.id,
+    recipientUserId: row.recipientUserId,
+    typeKey,
+    text,
+    href: input.href,
+    requirement,
+  }));
+  await tx.notificationEmail.createMany({ data: mails });
+  await enqueueJobs(
+    tx,
+    organizationId,
+    mails.map((mail) => ({
       type: NOTICE_EMAIL_JOB_TYPE,
-      payload: { emailId },
-      runAt: nextMailAt(now, lastSent.get(row.recipientUserId) ?? null),
+      payload: { emailId: mail.id },
+      runAt: nextMailAt(now, lastSent.get(mail.recipientUserId) ?? null),
       maxAttempts: NOTICE_EMAIL_MAX_ATTEMPTS,
-    });
-  }
+    })),
+  );
 }
 
 /**

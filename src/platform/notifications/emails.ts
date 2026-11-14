@@ -106,19 +106,26 @@ export async function emailSubscribers(
   typeKey: string,
   limit = 1000,
 ): Promise<string[]> {
+  // Active members first: a preference of someone who left never takes a
+  // place under the limit.
+  const active = await client.membership.findMany({
+    where: { status: "ACTIVE" },
+    orderBy: { userId: "asc" },
+    take: 5000,
+    select: { userId: true },
+  });
+  if (active.length === 0) return [];
   const rows = await client.notificationPreference.findMany({
-    where: { typeKey, email: true },
+    where: {
+      typeKey,
+      email: true,
+      userId: { in: active.map((row) => row.userId) },
+    },
     orderBy: { userId: "asc" },
     take: limit,
     select: { userId: true },
   });
-  if (rows.length === 0) return [];
-  const active = await client.membership.findMany({
-    where: { userId: { in: rows.map((row) => row.userId) }, status: "ACTIVE" },
-    select: { userId: true },
-  });
-  const ok = new Set(active.map((row) => row.userId));
-  return rows.map((row) => row.userId).filter((userId) => ok.has(userId));
+  return rows.map((row) => row.userId);
 }
 
 /**
@@ -187,6 +194,8 @@ export async function sendNoticeEmails(
   options: {
     types: readonly NotificationType[];
     jobId: string;
+    /** The attempt of the job that runs it (the worker passes it). */
+    attempt?: number;
     now?: Date;
   },
 ): Promise<NoticeEmailOutcome> {
@@ -199,34 +208,45 @@ export async function sendNoticeEmails(
   });
   if (!own) return { sent: 0, skipped: 0, reason: "El correo ya no existe." };
   const userId = own.recipientUserId;
+  // A try of this same job already took it (it failed before closing).
+  const retry = own.status === "QUEUED" && own.claimedBy === jobId;
+  if (!retry && (own.status !== "QUEUED" || own.claimedBy !== null)) {
+    // Another job took it (or it ended): that one deals with what waits.
+    return { sent: 0, skipped: 0, reason: "Otro envío ya lo tomó." };
+  }
 
-  // Not before the gap since the last mail to this person: what waits
-  // goes in the next one. If this row still waits, its job comes back.
-  if (own.claimedBy === null && own.status === "QUEUED") {
-    const last = await client.notificationEmail.findFirst({
-      where: { recipientUserId: userId, status: "SENT" },
-      orderBy: { sentAt: "desc" },
-      select: { sentAt: true },
-    });
+  const lastSentAt = await lastMailAt(client, userId);
+  if (!retry) {
+    // Not before the gap since the last mail to this person: this row
+    // waits for its next turn, and so does whatever arrived with it.
     if (
-      last?.sentAt &&
-      now.getTime() - last.sentAt.getTime() < NOTICE_EMAIL_GAP_MS
+      lastSentAt &&
+      now.getTime() - lastSentAt.getTime() < NOTICE_EMAIL_GAP_MS
     ) {
       await enqueueJob(client, organizationId, {
         type: NOTICE_EMAIL_JOB_TYPE,
         payload: { emailId: own.id },
-        runAt: nextMailAt(now, last.sentAt),
+        runAt: nextMailAt(now, lastSentAt),
         maxAttempts: NOTICE_EMAIL_MAX_ATTEMPTS,
       });
       return { sent: 0, skipped: 0, reason: "Espera al siguiente correo." };
     }
+    // Take what waits for this person, at most CLAIM_MAX rows, by id: the
+    // update touches only rows still free (two jobs never take the same
+    // row) and never a range of the index that a notice is writing.
+    const free = await client.notificationEmail.findMany({
+      where: { recipientUserId: userId, status: "QUEUED", claimedBy: null },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: CLAIM_MAX,
+      select: { id: true },
+    });
+    if (free.length > 0) {
+      await client.notificationEmail.updateMany({
+        where: { id: { in: free.map((row) => row.id) }, claimedBy: null },
+        data: { claimedBy: jobId },
+      });
+    }
   }
-
-  // Take what waits for this person (atomic: never two jobs the same row).
-  await client.notificationEmail.updateMany({
-    where: { recipientUserId: userId, status: "QUEUED", claimedBy: null },
-    data: { claimedBy: jobId },
-  });
   const rows = await client.notificationEmail.findMany({
     where: { recipientUserId: userId, status: "QUEUED", claimedBy: jobId },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -245,6 +265,7 @@ export async function sendNoticeEmails(
   const ids = rows.map((row) => row.id);
   const stop = async (reason: string): Promise<NoticeEmailOutcome> => {
     await closeRows(client, ids, "SKIPPED", reason);
+    await followUp(client, organizationId, userId, now, lastSentAt);
     return { sent: 0, skipped: ids.length, reason };
   };
 
@@ -321,7 +342,21 @@ export async function sendNoticeEmails(
     await closeRows(client, [each.id], "SKIPPED", each.reason);
   }
   if (keep.length === 0) {
+    await followUp(client, organizationId, userId, now, lastSentAt);
     return { sent: 0, skipped: dropped.length, reason: "Nada que mandar." };
+  }
+
+  // A worker that only went slow may have lost the job to another one
+  // (the queue takes it again after STALE_AFTER_MS, with one more
+  // attempt): then that one sends, never both.
+  if (options.attempt !== undefined) {
+    const job = await client.job.findFirst({
+      where: { id: jobId },
+      select: { status: true, attempts: true },
+    });
+    if (job && (job.status !== "RUNNING" || job.attempts !== options.attempt)) {
+      return { sent: 0, skipped: dropped.length, reason: "Otro intento lo tomó." };
+    }
   }
 
   try {
@@ -352,11 +387,48 @@ export async function sendNoticeEmails(
     }
     throw error;
   }
+  const sentAt = new Date();
   await client.notificationEmail.updateMany({
     where: { id: { in: keep.map((row) => row.id) }, status: "QUEUED" },
-    data: { status: "SENT", sentAt: new Date() },
+    data: { status: "SENT", sentAt },
   });
+  await followUp(client, organizationId, userId, now, sentAt);
   return { sent: keep.length, skipped: dropped.length, to: address.email };
+}
+
+/** When the last mail of notices went out to a person, if ever. */
+async function lastMailAt(client: Client, userId: string): Promise<Date | null> {
+  const last = await client.notificationEmail.aggregate({
+    where: { recipientUserId: userId },
+    _max: { sentAt: true },
+  });
+  return last._max.sentAt ?? null;
+}
+
+/**
+ * What is still free for the person after a mail (more than CLAIM_MAX
+ * rows, or what arrived meanwhile) gets a job for its next turn, so no
+ * row is left waiting without one.
+ */
+async function followUp(
+  client: Client,
+  organizationId: string,
+  userId: string,
+  now: Date,
+  lastSentAt: Date | null,
+): Promise<void> {
+  const next = await client.notificationEmail.findFirst({
+    where: { recipientUserId: userId, status: "QUEUED", claimedBy: null },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  if (!next) return;
+  await enqueueJob(client, organizationId, {
+    type: NOTICE_EMAIL_JOB_TYPE,
+    payload: { emailId: next.id },
+    runAt: nextMailAt(now, lastSentAt),
+    maxAttempts: NOTICE_EMAIL_MAX_ATTEMPTS,
+  });
 }
 
 /**
@@ -415,6 +487,7 @@ export function noticeEmailJobHandlers(
         sendNoticeEmails(context.organizationId, emailIdOf(context.payload), {
           types,
           jobId: context.jobId,
+          attempt: context.attempt,
         }),
       retryDelayMs: (attempt) =>
         RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length) - 1]!,

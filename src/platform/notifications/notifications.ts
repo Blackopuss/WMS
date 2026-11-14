@@ -3,9 +3,11 @@ import "server-only";
 import { isInternalHref, newId } from "@/lib";
 import { forOrganization } from "@/server";
 
-import type { Permission } from "@/platform/authorization";
+import { isAllowed, type Permission } from "@/platform/authorization";
+import { readSetting } from "@/platform/settings";
 
 import { isEmailOnly, type NotificationType } from "./definitions";
+import { NOTICE_EMAIL_CHANNEL } from "./settings";
 
 /**
  * Reading and marking notices (WMS-39, ADR 0057). A notice exists only for
@@ -215,7 +217,8 @@ export async function getNotificationPreferences(
 }
 
 export type SetPreferenceResult =
-  { ok: true } | { ok: false; reason: "not_found" };
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "not_allowed" | "email_off" };
 
 /**
  * Turns a type on or off for the person, in the app (`app`) or by mail
@@ -235,7 +238,25 @@ export async function setNotificationPreference(
   if (!type) return { ok: false, reason: "not_found" };
   const emailOnly = isEmailOnly(type);
   if (emailOnly && channel === "app") return { ok: false, reason: "not_found" };
+  // What the screen does not offer is refused here too (ADR 0060).
+  if (type.visibleWith && type.visibleWith.length > 0) {
+    let allowed = false;
+    for (const permission of type.visibleWith) {
+      if (await isAllowed(actor.organizationId, actor.userId, permission)) {
+        allowed = true;
+        break;
+      }
+    }
+    if (!allowed) return { ok: false, reason: "not_allowed" };
+  }
   const client = forOrganization(actor.organizationId);
+  if (
+    channel === "email" &&
+    enabled &&
+    (await readSetting(client, NOTICE_EMAIL_CHANNEL)) !== "on"
+  ) {
+    return { ok: false, reason: "email_off" };
+  }
   await client.$transaction(async (tx) => {
     const existing = await tx.notificationPreference.findFirst({
       where: { userId: actor.userId, typeKey: type.key },

@@ -331,6 +331,7 @@ export function dailyDigestEmail(input: {
     /** Lines left out, and the screen that has them all. */
     more: number;
     url: string;
+    note?: string;
   }[];
   settingsUrl: string;
 }): EmailMessage {
@@ -350,6 +351,7 @@ export function dailyDigestEmail(input: {
         section.more > 0
           ? `Y ${section.more} más: ${section.url}`
           : `Ver en WMS: ${section.url}`,
+        ...(section.note ? [oneLine(section.note, 200)] : []),
       ]),
       "",
       `Recibes este resumen porque lo pediste en WMS. Para dejar de recibirlo: ${input.settingsUrl}`,

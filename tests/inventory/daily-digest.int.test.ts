@@ -288,6 +288,9 @@ describe("the daily summary by mail", () => {
     expect(mine!.text).toContain("Y 2 más");
     expect(mine!.text).toContain("/inventario/por-caducar");
     expect(mine!.text).toContain("/inventario/bajas");
+    // «Por caducar» lists the warehouse the person works in: the mail says
+    // how to see the other one.
+    expect(mine!.text).toContain("cambia a Bodega Norte");
     expect(mine!.text.match(/lote A-/g)).toHaveLength(DIGEST_LINES);
     // Never a cost or an amount.
     expect(mine!.text).not.toMatch(/\$|costo/i);
@@ -359,5 +362,29 @@ describe("the daily summary by mail", () => {
     expect(await runDailyDigestRound(other.organizationId)).toMatchObject({
       reason: "channel_off",
     });
+  });
+
+  it("a summary that waited until another day does not go out with today's data", async () => {
+    const other = await company("Empresa con retraso");
+    const lots = await product(other, "LOTE-R", true);
+    await enter(other, lots, "1", { code: "R-1", expiresOn: inDays(1) });
+    const rosa = await member(other.organizationId, "supervisor", "Rosa");
+    await subscribe(rosa);
+    const id = newId();
+    await db.dailyDigest.create({
+      data: {
+        id,
+        organizationId: other.organizationId,
+        userId: rosa.userId,
+        day: new Date("2020-01-01T00:00:00.000Z"),
+      },
+    });
+    expect(await sendDailyDigest(other.organizationId, id)).toMatchObject({
+      sent: false,
+    });
+    expect(memoryOutboxFor(rosa.email)).toHaveLength(0);
+    expect(
+      await db.dailyDigest.findUniqueOrThrow({ where: { id } }),
+    ).toMatchObject({ status: "SKIPPED" });
   });
 });

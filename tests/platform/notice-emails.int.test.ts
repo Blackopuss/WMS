@@ -54,7 +54,15 @@ const SUMMARY: NotificationType = {
   defaultEnabled: false,
   channels: "email",
 };
-const TYPES = [THING, SUMMARY];
+const TEAM_ONLY: NotificationType = {
+  key: "test.mail_team_only",
+  module: null,
+  label: "Solo para quien invita",
+  description: "Se ofrece solo con platform.team.invite.",
+  defaultEnabled: true,
+  visibleWith: ["platform.team.invite"],
+};
+const TYPES = [THING, SUMMARY, TEAM_ONLY];
 
 type Person = InventoryActor & { email: string };
 
@@ -574,5 +582,155 @@ describe("failures and companies", () => {
       id: row.id,
       status: "SENT",
     });
+  });
+});
+
+describe("review of WMS-39B", () => {
+  it("a late job whose row another job took sends nothing new (the gap holds)", async () => {
+    const hugo = await member(owner.organizationId, "supervisor", "Hugo");
+    await byMail(hugo);
+    // A, then B: the job of A sends both.
+    await send(owner, { userIds: [hugo.userId] }, `k-${newId()}`, "A");
+    const a = await latestMailRow(hugo);
+    await send(owner, { userIds: [hugo.userId] }, `k-${newId()}`, "B");
+    const b = await latestMailRow(hugo);
+    expect(await deliver(owner, a.id, { now: later() })).toMatchObject({
+      sent: 2,
+    });
+    // C arrives; the job of B runs late, right after.
+    await send(owner, { userIds: [hugo.userId] }, `k-${newId()}`, "C");
+    const c = await latestMailRow(hugo);
+    expect(await deliver(owner, b.id, { now: new Date() })).toMatchObject({
+      sent: 0,
+    });
+    expect(memoryOutboxFor(hugo.email)).toHaveLength(1);
+    expect(await latestMailRow(hugo)).toMatchObject({
+      id: c.id,
+      status: "QUEUED",
+      claimedBy: null,
+    });
+  });
+
+  it("more than a mail takes: the rest stay free and get their job", async () => {
+    const ines = await member(owner.organizationId, "supervisor", "Inés");
+    await byMail(ines);
+    await forOrganization(owner.organizationId).$transaction(
+      async (tx) => {
+        for (let n = 1; n <= 205; n++) {
+          await notify(tx, THING, {
+            organizationId: owner.organizationId,
+            actorUserId: null,
+            to: { userIds: [ines.userId] },
+            text: `Aviso ${n}`,
+            href: "/tareas",
+            key: `many-${n}-${newId()}`,
+          });
+        }
+      },
+      { timeout: 60_000 },
+    );
+    const rows = await mailsOf(ines);
+    expect(rows).toHaveLength(205);
+    const first = await deliver(owner, rows[0]!.id, { now: later() });
+    expect(first).toMatchObject({ sent: 200 });
+    expect(memoryOutboxFor(ines.email)[0]!.text).toContain("Y 190 avisos más");
+    const left = await db.notificationEmail.findMany({
+      where: { recipientUserId: ines.userId, status: "QUEUED" },
+    });
+    expect(left).toHaveLength(5);
+    expect(left.every((row) => row.claimedBy === null)).toBe(true);
+    // A job for what is left, after the gap.
+    const oldest = left.sort((x, y) => (x.id < y.id ? -1 : 1))[0]!;
+    expect(
+      await db.job.count({
+        where: { payload: { equals: { emailId: oldest.id } } },
+      }),
+    ).toBeGreaterThanOrEqual(2);
+    const second = await deliver(owner, oldest.id, {
+      now: new Date(Date.now() + 2 * NOTICE_EMAIL_GAP_MS),
+    });
+    expect(second).toMatchObject({ sent: 5 });
+    expect(memoryOutboxFor(ines.email)).toHaveLength(2);
+  }, 120_000);
+
+  it("a job taken again as abandoned: only its current attempt sends", async () => {
+    const jose = await member(owner.organizationId, "supervisor", "José");
+    await byMail(jose);
+    await send(owner, { userIds: [jose.userId] });
+    const row = await latestMailRow(jose);
+    const job = await db.job.findFirstOrThrow({
+      where: { payload: { equals: { emailId: row.id } } },
+    });
+    // The queue gave it to another worker: attempt 2 is the one that counts.
+    await db.job.update({
+      where: { id: job.id },
+      data: { status: "RUNNING", attempts: 2, lockedBy: "other" },
+    });
+    const slow = await sendNoticeEmails(owner.organizationId, row.id, {
+      types: TYPES,
+      jobId: job.id,
+      attempt: 1,
+      now: later(),
+    });
+    expect(slow.sent).toBe(0);
+    expect(memoryOutboxFor(jose.email)).toHaveLength(0);
+    const current = await sendNoticeEmails(owner.organizationId, row.id, {
+      types: TYPES,
+      jobId: job.id,
+      attempt: 2,
+      now: later(),
+    });
+    expect(current.sent).toBe(1);
+    expect(memoryOutboxFor(jose.email)).toHaveLength(1);
+    await db.job.update({
+      where: { id: job.id },
+      data: { status: "DONE", lockedBy: null, finishedAt: new Date() },
+    });
+  });
+
+  it("a notice to a person about a place checks that place again", async () => {
+    const kim = await member(owner.organizationId, "supervisor", "Kim");
+    await byMail(kim);
+    const scoped = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: kim.userId,
+      facilities: [{ facilityId: facilityA }],
+    });
+    if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    await send(owner, { userIds: [kim.userId], facilityId: facilityA });
+    const row = await latestMailRow(kim);
+    expect(row.requirement).toMatchObject({ facilityId: facilityA });
+    const moved = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: kim.userId,
+      facilities: [{ facilityId: facilityB }],
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    await deliver(owner, row.id, { now: later() });
+    expect(memoryOutboxFor(kim.email)).toHaveLength(0);
+    expect(await latestMailRow(kim)).toMatchObject({ status: "SKIPPED" });
+  });
+
+  it("the server refuses what the screen does not offer", async () => {
+    const omar = await member(owner.organizationId, "operator", "Omar");
+    expect(
+      await setNotificationPreference(
+        omar,
+        TYPES,
+        TEAM_ONLY.key,
+        true,
+        "email",
+      ),
+    ).toEqual({ ok: false, reason: "not_allowed" });
+    const other = await company("Empresa sin canal");
+    const off = await updateOperationSetting(
+      other,
+      operationSettings,
+      "platform.notices.email",
+      "off",
+    );
+    expect(off.ok).toBe(true);
+    const lu = await member(other.organizationId, "supervisor", "Lu");
+    expect(await byMail(lu)).toEqual({ ok: false, reason: "email_off" });
+    // Turning it off is always allowed.
+    expect(await byMail(lu, THING, false)).toEqual({ ok: true });
   });
 });

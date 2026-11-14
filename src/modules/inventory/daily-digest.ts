@@ -77,7 +77,9 @@ async function timeZoneOf(client: Client): Promise<string> {
   const membership = await client.membership.findFirst({
     select: { organization: { select: { timeZone: true } } },
   });
-  return membership?.organization.timeZone || DEFAULT_TIME_ZONE;
+  // The same zone `dayWindow` uses (and the same UTC fallback when the
+  // stored one is not valid), so the hour and the day always agree.
+  return membership?.organization.timeZone ?? DEFAULT_TIME_ZONE;
 }
 
 const dayDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
@@ -164,6 +166,8 @@ export type DigestSection = {
   lines: string[];
   more: number;
   url: string;
+  /** One line under the section (how to see it in the app). */
+  note?: string;
 };
 
 /**
@@ -205,6 +209,12 @@ export async function digestSections(
         ),
         more: page.total - shown.length,
         url: appLink("/inventario/por-caducar"),
+        // «Por caducar» lists the warehouse the person works in.
+        ...(reached.length > 1
+          ? {
+              note: `Para verlos en WMS, cambia a ${facility.name} desde el menú.`,
+            }
+          : {}),
       });
     }
   }
@@ -277,13 +287,20 @@ export async function sendDailyDigest(
   if (!(await wantsEmail(client, digest.userId, DAILY_DIGEST_NOTICE))) {
     return end("SKIPPED", "La persona dejó de pedir el resumen.");
   }
+  // What it says is read now: a summary that waited until the next day
+  // of the company would carry that day's data under yesterday's date.
+  // The round of today sets aside a new one.
+  const day = digest.day.toISOString().slice(0, 10);
+  const today = await dayWindow(client, new Date());
+  if (today && today.day !== day) {
+    return end("SKIPPED", "Su día ya pasó; sale el de hoy.");
+  }
   const sections = await digestSections({
     organizationId,
     userId: digest.userId,
   });
   if (sections.length === 0) return end("EMPTY", "No había nada que decir.");
 
-  const day = digest.day.toISOString().slice(0, 10);
   try {
     await sendEmail(
       dailyDigestEmail({

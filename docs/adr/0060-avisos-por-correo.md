@@ -109,13 +109,21 @@ aviso dentro de la app.
   renglón y el trabajo se escriben con `tx`; el envío nunca bloquea ni
   revierte la operación. El aviso dentro de la app ya quedó escrito: un
   correo que falla no lo toca (prueba).
-- **Un aviso, un correo.** El trabajo reclama los renglones que esperan
-  de la persona con un `UPDATE … WHERE claimedBy IS NULL` (atómico: dos
-  trabajos a la vez no toman el mismo renglón) y los marca `SENT` al
-  salir. Un trabajo repetido encuentra sus renglones ya `SENT` y no manda
-  nada. Como en CMP-06B, si el worker muere entre mandar y cerrar, el
-  siguiente intento lo vuelve a mandar: se prefiere un correo repetido a
-  uno que se cree enviado y nunca salió.
+- **Un aviso, un correo.** El trabajo lee hasta 200 renglones libres de
+  la persona y los reclama por id con `UPDATE … WHERE id IN (…) AND
+  claimedBy IS NULL` (atómico: dos trabajos a la vez no toman el mismo
+  renglón, y nunca bloquea un rango del índice que un aviso esté
+  escribiendo dentro de una transacción de existencias). Los marca `SENT`
+  al salir. Lo que quede libre (más de 200, o lo que llegó mientras)
+  recibe un trabajo para su siguiente turno. Si el renglón propio del
+  trabajo ya lo tomó otro, el trabajo termina sin tomar nada: el otro se
+  encarga. Un trabajo repetido encuentra sus renglones ya `SENT` y no
+  manda nada. Si la cola le quita el trabajo a un worker que solo iba
+  lento (`STALE_AFTER_MS`, con un intento más), justo antes de mandar se
+  comprueba que el intento siga siendo el vigente: manda uno solo. Como
+  en CMP-06B, si el worker muere entre mandar y cerrar, el siguiente
+  intento lo vuelve a mandar: se prefiere un correo repetido a uno que se
+  cree enviado y nunca salió.
 - **Tope de volumen: agrupar y espaciar.** Cada correo espera
   `NOTICE_EMAIL_GROUP_MS` (2 minutos) para juntar lo que llega seguido, y
   entre dos correos a la misma persona pasan al menos
@@ -128,6 +136,18 @@ aviso dentro de la app.
   la ubicación que pidió `notify` se guardan en el renglón y se vuelven a
   evaluar al mandar con la misma regla (`memberReaches`, compartida con
   `notify`). Membresía inactiva, otro rol o fuera del alcance: `SKIPPED`.
+  Un aviso dirigido a personas (`userIds`) se revalida en su lugar solo si
+  el llamado lo trae (`facilityId`/`locationId`); hoy ninguno lo trae
+  (tarea asignada, traslado con diferencias, incidencia, solicitud
+  respondida, aprobación decidida): al mandar se revisa membresía,
+  preferencia y plan. Agregarles su lugar es un cambio de cada servicio.
+- **El servidor rechaza lo que la pantalla no ofrece**: pedir por correo
+  un tipo con `visibleWith` sin ninguno de esos permisos, o con el canal
+  de la empresa apagado (apagarlo siempre se puede).
+- **Las consultas de `notify` nombran la empresa** aunque el cliente ya la
+  filtre: se llama también con la transacción sin filtro de un cambio de
+  equipo (WMS-40). Los renglones se escriben con `createMany` y los
+  trabajos con `enqueueJobs` (una escritura cada uno).
 - **El destinatario sale de la cuenta**: `user.email` con
   `emailVerified`. Nunca de un formulario. Sin correo confirmado:
   `SKIPPED`.
@@ -157,7 +177,15 @@ aviso dentro de la app.
   almacén activo) para cubrir todos los almacenes de la persona.
 - **Uno por persona y día del calendario de la empresa.** Llave única
   `(organizationId, userId, day)`; el día sale de `dayWindow`. La hora se
-  compara en la zona horaria de la empresa.
+  compara en la misma zona horaria (y con el mismo respaldo en UTC si la
+  guardada no es válida). Un resumen que esperó hasta otro día de la
+  empresa no sale (`SKIPPED`): diría la fecha de ayer con los datos de hoy;
+  la ronda de hoy aparta uno nuevo. El tope de personas por ronda cuenta
+  solo membresías activas.
+- **Varios almacenes en el resumen.** «Por caducar» muestra el almacén en
+  que la persona trabaja; con más de un almacén cada bloque lleva su
+  nombre y dice «Para verlos en WMS, cambia a <almacén> desde el menú».
+  La pantalla no cambia para quien no viene del correo.
 
 ## Alternativas descartadas
 
