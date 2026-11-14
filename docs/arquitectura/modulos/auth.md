@@ -18,6 +18,7 @@ correo (`http.ts`, lista de permitidos).
 | Recuperación | `recovery.ts` | `requestPasswordReset`, `resetPassword` |
 | MFA | `mfa.ts`, `mfa-recovery.ts`, `mfa-policy.ts`, `backup-codes.ts` | alta de TOTP, `verifySignInCode`, `isMfaRequired`, `regenerateBackupCodes`, `disableMfa` |
 | Sesiones | `sessions.ts` | `listActiveSessions`, `revokeSession`, `revokeOtherSessions` |
+| Actividad | `activity.ts` | `noteSessionActivity` (la llama `requireOrganizationContext` con lo que ya leyó; escribe `session.lastActiveAt` como mucho cada `SESSION_ACTIVITY_INTERVAL_MS`, 5 minutos, después de responder), `recordSessionActivity`, `activityIsStale` (WMS-40) |
 | Intentos | `throttle.ts` | `reserveAttempt` → `settleFailure` / `refundAttempt`, `clientIp` |
 | Cuentas invitadas | `invited-account.ts` | `prepareInvitedAccount`, `insertInvitedAccount` (dentro de la transacción de quien acepta una invitación) |
 | HTTP | `http.ts` | `handleAuthRequest`, `isAllowedAuthRequest` |
@@ -31,7 +32,8 @@ administradores y personal de plataforma (`isMfaRequired`).
 ## Tablas
 
 `user`, `session`, `account`, `verification`, `twoFactor` (de Better Auth),
-`auth_throttle` (intentos propios) y `rateLimit` (de Better Auth). Ninguna es
+`auth_throttle` (intentos propios) y `rateLimit` (de Better Auth). `session`
+lleva además `lastActiveAt` (WMS-40, ADR 0059). Ninguna es
 de empresa. Los eventos de cuenta van a `security_event` ([audit](audit.md)).
 
 ## Ajustes y trabajos
@@ -40,4 +42,5 @@ Ninguno.
 
 ## ADR
 
-0003 (autenticación). Revisiones de seguridad en `docs/seguridad/`.
+0003 (autenticación), 0059 (sesiones del equipo: lo que ve y cierra la
+empresa vive en [authorization](authorization.md)). Revisiones de seguridad en `docs/seguridad/`.

@@ -46,12 +46,12 @@ const MESSAGES: Record<TeamActionReason, string> = {
     "Solo puedes dar acceso a los almacenes o zonas que tú tienes asignados.",
 };
 
-const fail = (reason: TeamActionReason) =>
+export const fail = (reason: TeamActionReason) =>
   ({ ok: false, reason, error: MESSAGES[reason] }) as const;
 
-type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 
-type LoadedMember = TeamPerson & {
+export type LoadedMember = TeamPerson & {
   membershipId: string;
   status: "ACTIVE" | "DISABLED";
 };
@@ -79,8 +79,9 @@ async function memberIn(
 /**
  * Runs `change` on `targetUserId` if the rules allow `actorUserId` to do it.
  * The actor must be an active member; the target must belong to the company.
+ * Used only inside this area (team sessions, WMS-40); not in index.ts.
  */
-async function withTeamChange(
+export async function withTeamChange(
   organizationId: string,
   actorUserId: string,
   targetUserId: string,

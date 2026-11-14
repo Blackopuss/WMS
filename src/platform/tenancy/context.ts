@@ -3,7 +3,11 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import { requireSession, type CurrentUser } from "@/platform/auth";
+import {
+  noteSessionActivity,
+  requireSession,
+  type CurrentUser,
+} from "@/platform/auth";
 import { db } from "@/server";
 
 import { CREATE_ORGANIZATION_PATH } from "./organizations";
@@ -61,12 +65,38 @@ export async function resolveActiveOrganization(
   userId: string,
   sessionId: string,
 ): Promise<ActiveOrganization | null> {
+  return (await resolveWithActivity(userId, sessionId)).organization;
+}
+
+/**
+ * The same, plus the session's last activity read in the same query
+ * (WMS-40): the request guard uses it to decide whether to note activity.
+ */
+async function resolveWithActivity(
+  userId: string,
+  sessionId: string,
+): Promise<{
+  organization: ActiveOrganization | null;
+  lastActiveAt: Date | null;
+}> {
   const session = await db.session.findUnique({
     where: { id: sessionId },
-    select: { userId: true, activeOrganizationId: true },
+    select: { userId: true, activeOrganizationId: true, lastActiveAt: true },
   });
-  if (!session || session.userId !== userId) return null;
+  if (!session || session.userId !== userId) {
+    return { organization: null, lastActiveAt: null };
+  }
+  return {
+    organization: await organizationOf(userId, sessionId, session),
+    lastActiveAt: session.lastActiveAt,
+  };
+}
 
+async function organizationOf(
+  userId: string,
+  sessionId: string,
+  session: { activeOrganizationId: string | null },
+): Promise<ActiveOrganization | null> {
   const select = {
     organization: {
       select: {
@@ -137,11 +167,14 @@ export async function resolveActiveOrganization(
 export const requireOrganizationContext = cache(
   async (): Promise<OrganizationContext> => {
     const session = await requireSession();
-    const organization = await resolveActiveOrganization(
+    const { organization, lastActiveAt } = await resolveWithActivity(
       session.user.id,
       session.sessionId,
     );
     if (!organization) redirect(CREATE_ORGANIZATION_PATH);
+    // «Última actividad» of the team's sessions (WMS-40): at most every few
+    // minutes, after the response.
+    noteSessionActivity(session.sessionId, lastActiveAt);
     return { ...session, organization };
   },
 );

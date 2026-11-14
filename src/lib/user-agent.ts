@@ -1,13 +1,33 @@
 /**
  * Human description of a browser user agent, e.g. "Edge en Windows".
- * Only for showing sessions to their owner; never for security decisions.
+ * Only for showing sessions (PLT-05, WMS-40); never for security decisions.
+ * What it does not recognize is «Otro»: the raw text never reaches a screen.
  */
+export type DeviceKind = "computer" | "phone" | "tablet" | "other";
+
 export type DeviceInfo = {
+  /** «Chrome», or «Otro» when not recognized. */
   browser: string;
+  /** «Android», or «Otro» when not recognized. */
   os: string;
+  kind: DeviceKind;
+  /** Kept for the own sessions panel: phone or tablet. */
   mobile: boolean;
+  /** «Chrome en Android», «Otro navegador». */
   label: string;
 };
+
+export const UNKNOWN = "Otro";
+
+export const DEVICE_KIND_LABELS: Record<DeviceKind, string> = {
+  computer: "Computadora",
+  phone: "Teléfono",
+  tablet: "Tableta",
+  other: "Otro",
+};
+
+/** User agents longer than this are not read (they are not real browsers). */
+const MAX_LENGTH = 1024;
 
 const BROWSERS: [RegExp, string][] = [
   [/Edg(e|A|iOS)?\//, "Edge"],
@@ -28,13 +48,30 @@ const SYSTEMS: [RegExp, string][] = [
   [/Linux/, "Linux"],
 ];
 
+const COMPUTERS = new Set(["Windows", "macOS", "ChromeOS", "Linux"]);
+
+function kindOf(text: string, os: string): DeviceKind {
+  if (os === "iPad" || /Tablet/.test(text)) return "tablet";
+  if (os === "iPhone") return "phone";
+  if (os === "Android") return /Mobile/.test(text) ? "phone" : "tablet";
+  if (COMPUTERS.has(os)) return "computer";
+  return "other";
+}
+
 export function describeUserAgent(ua: string | null | undefined): DeviceInfo {
-  const text = ua ?? "";
+  const raw = typeof ua === "string" ? ua : "";
+  const text = raw.length > MAX_LENGTH ? "" : raw;
   const browser =
-    BROWSERS.find(([pattern]) => pattern.test(text))?.[1] ?? "Navegador";
-  const os = SYSTEMS.find(([pattern]) => pattern.test(text))?.[1] ?? "";
-  const mobile =
-    /Mobile|iPhone|Android(?!.*Tablet)/.test(text) && !/iPad/.test(text);
-  const label = os ? `${browser} en ${os}` : browser;
-  return { browser, os, mobile, label };
+    BROWSERS.find(([pattern]) => pattern.test(text))?.[1] ?? UNKNOWN;
+  const os = SYSTEMS.find(([pattern]) => pattern.test(text))?.[1] ?? UNKNOWN;
+  const kind = kindOf(text, os);
+  const browserText = browser === UNKNOWN ? "Otro navegador" : browser;
+  const label = os === UNKNOWN ? browserText : `${browserText} en ${os}`;
+  return {
+    browser,
+    os,
+    kind,
+    mobile: kind === "phone" || kind === "tablet",
+    label,
+  };
 }

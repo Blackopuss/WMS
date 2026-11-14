@@ -48,6 +48,10 @@ model Session {
   /// membership on every request; never trusted on its own.
   activeOrganizationId String?       @db.Char(36)
   activeOrganization   Organization? @relation(fields: [activeOrganizationId], references: [id], onDelete: SetNull)
+  /// Last request seen on this session (WMS-40, ADR 0059), written at most
+  /// every few minutes after the response. Null on sessions older than the
+  /// column: show updatedAt.
+  lastActiveAt         DateTime?     @db.DateTime(3)
 
   @@index([userId])
   @@index([activeOrganizationId])

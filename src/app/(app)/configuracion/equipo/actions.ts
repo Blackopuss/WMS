@@ -9,6 +9,8 @@ import {
   disableMember,
   reactivateMember,
   resendInvitation,
+  revokeAllMemberSessions,
+  revokeMemberSession,
   setMemberScope,
   type InvitationField,
 } from "@/platform/authorization";
@@ -224,4 +226,43 @@ export async function setMemberScopeAction(
           : "Almacenes actualizados.",
       }
     : { ok: false, message: result.error };
+}
+
+/**
+ * Closes one session of a member (`sessionId`) or all their sessions in
+ * this company (no `sessionId`), WMS-40. Identity from the session; the
+ * service checks the rules and that the session is open in this company.
+ */
+export async function revokeMemberSessionsAction(
+  _prev: TeamActionState | null,
+  formData: FormData,
+): Promise<TeamActionState> {
+  const { userId, organizationId } = await actor();
+  const memberUserId = String(formData.get("userId") ?? "");
+  const sessionId = String(formData.get("sessionId") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  const result = sessionId
+    ? await revokeMemberSession(organizationId, userId, {
+        userId: memberUserId,
+        sessionId,
+        reason,
+      })
+    : await revokeAllMemberSessions(organizationId, userId, {
+        userId: memberUserId,
+        reason,
+      });
+  revalidatePath(`${TEAM_PATH}/${encodeURIComponent(memberUserId)}`);
+  if (!result.ok) return { ok: false, message: result.error };
+  if (sessionId) {
+    return { ok: true, message: "Sesión cerrada en ese dispositivo." };
+  }
+  return {
+    ok: true,
+    message:
+      result.closed === 0
+        ? "No tenía sesiones abiertas en tu empresa."
+        : result.closed === 1
+          ? "Se cerró 1 sesión."
+          : `Se cerraron ${result.closed} sesiones.`,
+  };
 }

@@ -69,6 +69,7 @@ No es de una empresa (sin `organizationId`).
 | `userAgent` | `String? · Text` |  |  |
 | `userId` | `String · Char(36)` |  |  |
 | `activeOrganizationId` | `String? · Char(36)` |  | Company this session works in (PLT-11). Re-checked against an active membership on every request; never trusted on its own. |
+| `lastActiveAt` | `DateTime? · DateTime(3)` |  | Last request seen on this session (WMS-40, ADR 0059), written at most every few minutes after the response. Null on sessions older than the column: show updatedAt. |
 
 - Índices: `userId`; `activeOrganizationId`.
 - Relaciones: `user` → `User` por `userId` (al borrar: Cascade); `activeOrganization` → `Organization` por `activeOrganizationId` (al borrar: SetNull).

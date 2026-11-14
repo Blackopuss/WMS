@@ -9,6 +9,9 @@
  *   people, never their own roles.
  * - The same holds for limiting a person to warehouses or zones (WMS-20):
  *   never the titular, never oneself, administrators only by the titular.
+ * - And for closing someone's sessions from the team screen (WMS-40): never
+ *   the titular's, never one's own (that is «Sesiones activas» and «Cerrar
+ *   sesión»), an administrator's only by the titular.
  */
 import { ROLES, isRole, type Permission, type Role } from "./catalog";
 import { can, type Subject } from "./policy";
@@ -19,7 +22,9 @@ export type TeamChange =
   | { kind: "assign_roles"; roles: readonly string[] }
   | { kind: "disable" }
   /** Limiting a person to warehouses or zones (WMS-20). */
-  | { kind: "set_scope" };
+  | { kind: "set_scope" }
+  /** Closing one or all of a person's sessions in the company (WMS-40). */
+  | { kind: "revoke_sessions" };
 
 export type TeamRuleReason =
   | "forbidden"
@@ -46,6 +51,7 @@ const PERMISSION_OF: Record<TeamChange["kind"], Permission> = {
   disable: "platform.team.disable",
   // Where a person may work is part of what they may do: same permission.
   set_scope: "platform.team.assign_roles",
+  revoke_sessions: "platform.session.revoke",
 };
 
 const deny = (reason: TeamRuleReason): TeamRuleResult => ({
