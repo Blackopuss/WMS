@@ -1448,6 +1448,10 @@ export async function countOrdersToShip(
 }
 
 export type ShipmentLineView = {
+  /** WMS-60: exact data for the API. */
+  productId: string;
+  quantity: string;
+  unitCode: string;
   productName: string;
   sku: string;
   /** «12 piezas». */
@@ -1583,6 +1587,7 @@ export async function getShipment(
         unitCode: true,
         serials: true,
         containerId: true,
+        productId: true,
         product: { select: { name: true, sku: true } },
       },
     });
@@ -1609,6 +1614,9 @@ export async function getShipment(
       lines: lines
         .filter((line) => line.orderId === order.id)
         .map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity.toString(),
+          unitCode: line.unitCode,
           productName: line.product.name,
           sku: line.product.sku,
           quantityText: formatStock(line.quantity.toString(), line.unitCode),
@@ -1646,6 +1654,9 @@ export async function getShipment(
       lines: load.drafts
         .filter((draft) => draft.orderId === order.id)
         .map((draft) => ({
+          productId: draft.productId,
+          quantity: draft.quantity.toString(),
+          unitCode: draft.unitCode,
           productName: draft.productName,
           sku: productOf.get(draft.productId)?.sku ?? "",
           quantityText: formatStock(draft.quantity.toString(), draft.unitCode),

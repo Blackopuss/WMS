@@ -1074,6 +1074,11 @@ export type ReceiptSummary = {
     locationPath: string;
     /** Where it was put: where a return takes it from by default. */
     locationId: string;
+    /** WMS-60: exact data for the API: product, base quantity and unit, lot. */
+    productId: string;
+    baseQuantity: string;
+    unitCode: string;
+    lotCode: string | null;
     /** What may still go back to the supplier ("2"), or "0" (CMP-12). */
     returnableQuantity: string;
     /** «2 cajas»; null when everything already went back. */
@@ -1289,6 +1294,7 @@ export async function getOrderReceipts(
               baseQuantity: true,
               unitCode: true,
               locationId: true,
+              productId: true,
               product: { select: { name: true, sku: true, tracking: true } },
               presentation: { select: { name: true } },
               location: { select: placeSelect },
@@ -1413,6 +1419,10 @@ export async function getOrderReceipts(
           : base,
         locationPath: pathOf(line.location),
         locationId: line.locationId,
+        productId: line.productId,
+        baseQuantity: line.baseQuantity.toString(),
+        unitCode: line.unitCode,
+        lotCode: line.lot?.code ?? null,
         returnableQuantity: left.greaterThan(0) ? left.toFixed() : "0",
         returnableText: left.greaterThan(0)
           ? inTermsOf(left, line.presentation, line.unitCode)

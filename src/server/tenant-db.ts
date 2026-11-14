@@ -111,6 +111,10 @@ export const TENANT_MODELS = [
   "CustomField",
   "CustomFieldOption",
   "CustomFieldValue",
+  "ApiKey",
+  "WebhookEndpoint",
+  "WebhookEvent",
+  "WebhookDelivery",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);

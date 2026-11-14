@@ -45,7 +45,12 @@ import { ADJUSTMENT_APPROVAL_THRESHOLD, ENTRY_REPEAT_WINDOW } from "./settings";
 import { ADJUSTMENT_APPROVAL } from "./approval-keys";
 import { exceedsThreshold } from "./approval-rules";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_ANY_LOT, availableOfLot, lotColumns } from "./stock-status";
+import {
+  AVAILABLE_ANY_LOT,
+  availableOfLot,
+  lotColumns,
+  type StockStatus,
+} from "./stock-status";
 import {
   LOT_RULE_SELECT,
   NO_LOT_PRODUCT,
@@ -1183,6 +1188,11 @@ export type MovementSummary = {
     /** «Zona A › Estante 3». */
     location: string;
     direction: "IN" | "OUT";
+    /** WMS-60: exact data for the API: place, base quantity, unit, state. */
+    locationId: string;
+    baseQuantity: string;
+    unitCode: string;
+    status: StockStatus;
     /** In the product's unit: «300 piezas». */
     quantity: string;
     /**
@@ -1280,6 +1290,7 @@ async function fetchMovements(
           product: { select: { name: true, sku: true } },
           lotId: true,
           lot: { select: { code: true } },
+          status: true,
         },
       },
     },
@@ -1337,6 +1348,10 @@ async function fetchMovements(
       sku: line.product.sku,
       location: paths.get(line.locationId) ?? "",
       direction: line.direction,
+      locationId: line.locationId,
+      baseQuantity: line.baseQuantity.toString(),
+      unitCode: line.unitCode,
+      status: line.status,
       quantity: formatStock(line.baseQuantity.toString(), line.unitCode),
       captured: line.presentation
         ? `${formatDecimal(line.capturedQuantity.toString())} ${pluralizeName(
