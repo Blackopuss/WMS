@@ -62,9 +62,9 @@ Los prefijos describen la capacidad funcional, no la ubicación física del serv
 | `platform.invitation.resend` | Reenviar una invitación que el actor puede gestionar; USR-08. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.invitation.cancel` | Cancelar una invitación que el actor puede gestionar y liberar su cupo; USR-08. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.team.assign_roles` | Asignar o combinar roles respetando destinatario y límites del actor; USR-06, USR-03B. | Sí | Sí | No | No | No | No | No | No | No |
-| `platform.team.disable` | Desactivar miembro permitido, revocar sesiones y conservar autoría; USR-07, USR-03B. | Sí | Sí | No | No | No | No | No | No | No |
+| `platform.team.disable` | Desactivar miembro permitido, cerrar sus sesiones en la empresa (las que tenga en otra empresa siguen, pero ya no entran a esta) y conservar autoría; USR-07, USR-03B, WMS-40. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.session.read` | Ver las sesiones abiertas en la empresa de cada miembro (dispositivo, navegador, IP, inicio y última actividad), nunca las de otra empresa ni el token; WMS-40, ADR 0059. | Sí | Sí | No | No | No | No | No | No | Sí |
-| `platform.session.revoke` | Cerrar a distancia una o todas las sesiones de un miembro en la empresa, nunca las del titular ni las propias; las de un administrador solo el titular; WMS-40, ADR 0059. | Sí | Sí | No | No | No | No | No | No | No |
+| `platform.session.revoke` | Cerrar a distancia una o todas las sesiones de un miembro en la empresa (con «todas», sus sesiones anteriores ya no entran a la empresa sin volver a iniciar sesión), nunca las del titular ni las propias; las de un administrador solo el titular; WMS-40, ADR 0059. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.ownership.transfer` | Transferir titularidad mediante flujo exclusivo y atómico; USR-03B. | Sí | No | No | No | No | No | No | No | No |
 | `platform.audit.read` | Consultar bitácora de empresa, equipo y operaciones sensibles, sin secretos; USR-11, PLT-14 y sección 5; pregunta 7. | Sí | Sí | No | No | No | No | No | No | Sí |
 

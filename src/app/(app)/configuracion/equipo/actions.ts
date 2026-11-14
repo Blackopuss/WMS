@@ -259,10 +259,11 @@ export async function revokeMemberSessionsAction(
   return {
     ok: true,
     message:
-      result.closed === 0
+      (result.closed === 0
         ? "No tenía sesiones abiertas en tu empresa."
         : result.closed === 1
           ? "Se cerró 1 sesión."
-          : `Se cerraron ${result.closed} sesiones.`,
+          : `Se cerraron ${result.closed} sesiones.`) +
+      " Para volver a entrar tendrá que iniciar sesión otra vez.",
   };
 }

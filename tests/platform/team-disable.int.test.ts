@@ -18,6 +18,7 @@ import {
 import {
   createOrganization,
   resolveActiveOrganization,
+  switchOrganization,
 } from "@/platform/tenancy";
 import { db, forOrganization } from "@/server";
 
@@ -97,9 +98,15 @@ afterAll(async () => {
 });
 
 describe("disableMember", () => {
-  it("cuts access at once and closes every session of the person", async () => {
+  it("cuts access at once and closes the person's sessions in the company", async () => {
     const userId = await addMember(org, ["warehouse"]);
-    const sessions = [await newSession(userId, org), await newSession(userId)];
+    const sessions = [
+      await newSession(userId, org),
+      await newSession(userId, org),
+    ];
+    // Without an active company it is not this company's to close (WMS-40),
+    // but it can no longer enter it.
+    const loose = await newSession(userId);
     const seats = await countSeatsInUse(org);
     expect(await isAllowed(org, userId, "inventory.entry.create")).toBe(true);
 
@@ -109,6 +116,7 @@ describe("disableMember", () => {
 
     expect(await statusOf(org, userId)).toBe("DISABLED");
     expect(await db.session.count({ where: { id: { in: sessions } } })).toBe(0);
+    expect(await resolveActiveOrganization(userId, loose)).toBeNull();
     expect(await isAllowed(org, userId, "inventory.entry.create")).toBe(false);
     expect(await isAllowed(org, userId, "inventory.product.read")).toBe(false);
     expect(await countSeatsInUse(org)).toBe(seats - 1);
@@ -116,6 +124,40 @@ describe("disableMember", () => {
     // Signing in again does not bring the company back.
     const later = await newSession(userId);
     expect(await resolveActiveOrganization(userId, later)).toBeNull();
+  });
+
+  it("keeps the person's sessions in another company, which cannot enter this one (WMS-40)", async () => {
+    const userId = await addMember(org, ["warehouse"]);
+    const { org: other } = await newCompany("Otra empresa");
+    await db.membership.create({
+      data: { id: newId(), organizationId: other, userId },
+    });
+    const there = await newSession(userId, other);
+    const loose = await newSession(userId);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(await disableMember(org, owner, { userId })).toEqual({ ok: true });
+    expect(await db.session.count({ where: { id: there } })).toBe(1);
+    expect((await resolveActiveOrganization(userId, there))?.id).toBe(other);
+    expect(await switchOrganization(userId, there, org)).toEqual({
+      ok: false,
+      error: "No tienes acceso a esa empresa.",
+    });
+    expect((await resolveActiveOrganization(userId, loose))?.id).toBe(other);
+    await db.session.update({
+      where: { id: there },
+      data: { activeOrganizationId: org },
+    });
+    expect((await resolveActiveOrganization(userId, there))?.id).toBe(other);
+
+    // Back in the team, an old session still has to sign in again.
+    await reactivateMember(org, owner, { userId });
+    expect(await switchOrganization(userId, loose, org)).toMatchObject({
+      ok: false,
+      error: "Vuelve a iniciar sesión para entrar a esta empresa.",
+    });
+    const fresh = await newSession(userId);
+    expect(await switchOrganization(userId, fresh, org)).toEqual({ ok: true });
   });
 
   it("does not touch other people's sessions", async () => {

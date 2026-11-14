@@ -7,12 +7,14 @@ import {
   type DeviceKind,
 } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import { notify, type NotifyTx } from "@/platform/notifications";
 import { db, forOrganization } from "@/server";
 
 import { assertAllowed, loadSubject } from "./access";
 import { isRole } from "./catalog";
+import { SESSIONS_CLOSED_NOTICE } from "./notices";
 import { knownRoles } from "./policy";
-import { withTeamChange, type TeamActionResult } from "./team";
+import { withTeamChange, type TeamActionResult, type Tx } from "./team";
 import { checkTeamChange, type TeamRuleReason } from "./team-rules";
 
 /**
@@ -152,6 +154,36 @@ export async function listMemberSessions(
   };
 }
 
+/**
+ * Tells the person, inside the app, that their sessions were closed: they
+ * read it when they come back. `notify` names the company in each of its
+ * filters, so the plain client of this transaction (which may touch
+ * `session`, a person's row the scoped client refuses) reads only this
+ * company; no location is passed, the only lookup that needs the scoped
+ * client.
+ */
+async function tellPerson(
+  tx: Tx,
+  organizationId: string,
+  actorUserId: string,
+  targetUserId: string,
+  text: string,
+  key: string,
+) {
+  const actor = await tx.user.findUnique({
+    where: { id: actorUserId },
+    select: { name: true },
+  });
+  await notify(tx as unknown as NotifyTx, SESSIONS_CLOSED_NOTICE, {
+    organizationId,
+    actorUserId,
+    to: { userIds: [targetUserId] },
+    text: `${actor?.name.trim() || "Alguien"} ${text}`,
+    href: "/configuracion",
+    key,
+  });
+}
+
 function cleanReason(
   value: string | undefined,
 ): { ok: true; reason: string | undefined } | { ok: false; error: string } {
@@ -205,13 +237,22 @@ export async function revokeMemberSession(
       }
       const deleted = await tx.session.deleteMany({ where });
       closed = deleted.count;
+      const device = describeUserAgent(session.userAgent).label;
+      await tellPerson(
+        tx,
+        organizationId,
+        actorUserId,
+        target.userId,
+        `cerró tu sesión en ${device}.`,
+        `session:${String(input.sessionId)}:closed`,
+      );
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId,
         action: "team.session_revoked",
         target: { type: "user", id: target.userId },
         reason: reason.reason,
-        metadata: { device: describeUserAgent(session.userAgent).label },
+        metadata: { device },
       });
       return undefined;
     },
@@ -221,7 +262,9 @@ export async function revokeMemberSession(
 
 /**
  * Closes every session the member has open in this company (never the
- * ones in another company). Closing none is not an error.
+ * ones in another company) and cuts the older ones out of it: any session
+ * begun before now must sign in again to enter this company. Closing none
+ * is not an error; the cut and the trace are written all the same.
  */
 export async function revokeAllMemberSessions(
   organizationId: string,
@@ -237,20 +280,34 @@ export async function revokeAllMemberSessions(
     String(input.userId),
     { kind: "revoke_sessions" },
     async (tx, target) => {
+      // The cut: a session of this person that began before now never
+      // enters this company again, not even one that today works for
+      // another company and would switch here (ADR 0059).
+      const now = new Date();
+      await tx.membership.update({
+        where: { id: target.membershipId },
+        data: { sessionsRevokedAt: now },
+      });
       const deleted = await tx.session.deleteMany({
         where: companySessions(organizationId, target.userId),
       });
       closed = deleted.count;
-      if (closed > 0) {
-        await recordAuditEvent(tx, {
-          organizationId,
-          actorUserId,
-          action: "team.sessions_revoked",
-          target: { type: "user", id: target.userId },
-          reason: reason.reason,
-          metadata: { sessions: closed },
-        });
-      }
+      await recordAuditEvent(tx, {
+        organizationId,
+        actorUserId,
+        action: "team.sessions_revoked",
+        target: { type: "user", id: target.userId },
+        reason: reason.reason,
+        metadata: { sessions: closed },
+      });
+      await tellPerson(
+        tx,
+        organizationId,
+        actorUserId,
+        target.userId,
+        "cerró todas tus sesiones en la empresa. Para volver a entrar, inicia sesión otra vez.",
+        `sessions:${target.membershipId}:${now.toISOString()}`,
+      );
       return undefined;
     },
   );

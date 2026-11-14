@@ -11,14 +11,22 @@ import {
   recordSessionActivity,
 } from "@/platform/auth";
 import {
+  assignRoles,
+  disableMember,
   enterSupport,
   grantSupportAccess,
+  reactivateMember,
   listMemberSessions,
   revokeAllMemberSessions,
   revokeMemberSession,
   type Role,
 } from "@/platform/authorization";
-import { createOrganization } from "@/platform/tenancy";
+import {
+  SIGN_IN_AGAIN_MESSAGE,
+  createOrganization,
+  resolveActiveOrganization,
+  switchOrganization,
+} from "@/platform/tenancy";
 import { db, forOrganization } from "@/server";
 
 import { grantSeats } from "../setup/plan";
@@ -307,7 +315,7 @@ describe("closing sessions", () => {
       ),
     ).toMatchObject({ actorUserId: owner, reason: "Cambio de turno" });
 
-    // Nothing left to close is not an error, and leaves no trace.
+    // Nothing left to close is not an error (the cut is written again).
     expect(
       await revokeAllMemberSessions(org, owner, { userId: picker }),
     ).toEqual({ ok: true, closed: 0 });
@@ -365,6 +373,141 @@ describe("closing sessions", () => {
         reason: "x".repeat(501),
       }),
     ).toMatchObject({ ok: false });
+  });
+});
+
+// The cut (ADR 0059): «Cerrar todas sus sesiones» and disabling keep the
+// person's older sessions out of the company, also those working for
+// another company today, without the company learning anything of it.
+describe("sessions older than the cut", () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+  const cutOf = async (organizationId: string, userId: string) =>
+    (
+      await db.membership.findUniqueOrThrow({
+        where: { organizationId_userId: { organizationId, userId } },
+        select: { sessionsRevokedAt: true },
+      })
+    ).sessionsRevokedAt;
+
+  async function personInBoth() {
+    // Member of this company first (the oldest: the fallback would pick it).
+    const person = await addMember(org, ["warehouse"]);
+    await join(otherOrg, person, ["warehouse"]);
+    return person;
+  }
+
+  it("a session in another company enters neither by switching nor by the fallback", async () => {
+    const person = await personInBoth();
+    const there = await newSession(person, otherOrg);
+    const loose = await newSession(person, null);
+    await tick();
+    expect(
+      await revokeAllMemberSessions(org, owner, { userId: person }),
+    ).toEqual({ ok: true, closed: 0 });
+
+    // The other company does not change in anything.
+    expect(await exists(there.id)).toBe(true);
+    expect(await cutOf(otherOrg, person)).toBeNull();
+    expect((await resolveActiveOrganization(person, there.id))?.id).toBe(
+      otherOrg,
+    );
+
+    // Switching here is refused…
+    expect(await switchOrganization(person, there.id, org)).toEqual({
+      ok: false,
+      error: SIGN_IN_AGAIN_MESSAGE,
+    });
+    // …and so is landing here by the fallback (oldest company first).
+    expect((await resolveActiveOrganization(person, loose.id))?.id).toBe(
+      otherOrg,
+    );
+    await db.session.update({
+      where: { id: there.id },
+      data: { activeOrganizationId: org },
+    });
+    expect((await resolveActiveOrganization(person, there.id))?.id).toBe(
+      otherOrg,
+    );
+
+    // A new session does enter.
+    await tick();
+    const fresh = await newSession(person, null);
+    expect((await resolveActiveOrganization(person, fresh.id))?.id).toBe(org);
+    expect(await switchOrganization(person, there.id, org)).toMatchObject({
+      ok: false,
+    });
+    expect(await switchOrganization(person, fresh.id, org)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("a person of this company only is sent to sign in again", async () => {
+    const person = await addMember(org, ["operator"]);
+    const loose = await newSession(person, null);
+    await tick();
+    await revokeAllMemberSessions(org, owner, { userId: person });
+    expect(await resolveActiveOrganization(person, loose.id)).toBeNull();
+  });
+
+  it("changing roles or reactivating does not remove the cut", async () => {
+    const person = await addMember(org, ["warehouse"]);
+    await revokeAllMemberSessions(org, owner, { userId: person });
+    const cut = await cutOf(org, person);
+    expect(cut).not.toBeNull();
+    await assignRoles(org, owner, { userId: person, roles: ["viewer"] });
+    expect(await cutOf(org, person)).toEqual(cut);
+    await disableMember(org, owner, { userId: person });
+    const disabledCut = await cutOf(org, person);
+    expect(disabledCut!.getTime()).toBeGreaterThanOrEqual(cut!.getTime());
+    await reactivateMember(org, owner, { userId: person });
+    expect(await cutOf(org, person)).toEqual(disabledCut);
+  });
+
+  it("tells the person, only them and only in this company", async () => {
+    const person = await personInBoth();
+    const phone = await newSession(person, org, { userAgent: UA.phone });
+    await newSession(person, org);
+    await revokeMemberSession(org, admin, {
+      userId: person,
+      sessionId: phone.id,
+    });
+    await revokeAllMemberSessions(org, admin, { userId: person });
+
+    const notices = await db.notification.findMany({
+      where: { typeKey: "team.sessions_closed", recipientUserId: person },
+      orderBy: { id: "asc" },
+    });
+    expect(notices.map((n) => n.organizationId)).toEqual([org, org]);
+    expect(notices[0]?.text).toMatch(/cerró tu sesión en Chrome en Android/);
+    expect(notices[1]?.text).toMatch(/cerró todas tus sesiones/);
+    expect(notices.every((n) => n.href === "/configuracion")).toBe(true);
+    expect(JSON.stringify(notices)).not.toContain("203.0.113.7");
+    expect(
+      await db.notification.count({
+        where: {
+          typeKey: "team.sessions_closed",
+          recipientUserId: { in: [admin, owner] },
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it("a person who turned the notice off does not get it", async () => {
+    const person = await addMember(org, ["operator"]);
+    await db.notificationPreference.create({
+      data: {
+        id: newId(),
+        organizationId: org,
+        userId: person,
+        typeKey: "team.sessions_closed",
+        enabled: false,
+      },
+    });
+    await newSession(person, org);
+    await revokeAllMemberSessions(org, owner, { userId: person });
+    expect(
+      await db.notification.count({ where: { recipientUserId: person } }),
+    ).toBe(0);
   });
 });
 

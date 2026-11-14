@@ -15,7 +15,7 @@ asientos del plan, alcance por almacén y zona, y el acceso de soporte.
 | Acceso | `access.ts` | `getAccess()` (pantallas), `requirePermission`, `assertAllowed`, `isAllowed`, `loadSubject`; `requireOwnerAction` / `assertOwnerAction` para lo del titular |
 | Alcance | `scope.ts`, `scope-rows.ts` | `loadScope`, `seesWholeCompany`; validación de filas de alcance al editar o invitar |
 | Equipo | `team.ts`, `team-rules.ts` | `listTeamMembers`, `assignRoles`, `disableMember`, `reactivateMember`, `setMemberScope`; reglas `checkTeamChange` (también `revoke_sessions`, WMS-40), `checkInvitationRoles` |
-| Sesiones del equipo | `team-sessions.ts` | `listMemberSessions`, `revokeMemberSession`, `revokeAllMemberSessions` (WMS-40): solo las sesiones cuya empresa activa es la empresa; las de otra no existen |
+| Sesiones del equipo | `team-sessions.ts` | `listMemberSessions`, `revokeMemberSession`, `revokeAllMemberSessions` (WMS-40): solo las sesiones cuya empresa activa es la empresa; las de otra no existen. «Todas» y desactivar escriben el corte `membership.sessionsRevokedAt` y avisan a la persona (`TEAM_NOTIFICATION_TYPES`, `notices.ts`) |
 | Invitaciones | `invitations.ts`, `invitation-accept.ts` | crear, reenviar, cancelar, previsualizar y aceptar (el token solo se guarda como hash) |
 | Titularidad | `ownership.ts` | ofrecer, cancelar y aceptar la transferencia |
 | Asientos | `seats.ts` | `lockOrganization`, `assertSeatAvailable`, `getSeatUsage` |
@@ -37,6 +37,9 @@ declaran sus permisos aquí y en la matriz).
 `membership`, `membership_role`, `membership_scope`, `invitation`,
 `ownership_transfer`, `support_access`. Lee y borra filas de `session`
 (dato de la persona, de `platform/auth`) para las sesiones del equipo.
+
+Columna `membership.sessionsRevokedAt` (WMS-40): una sesión creada antes
+no entra a la empresa (la revisa `platform/tenancy`).
 
 ## Ajustes y trabajos
 

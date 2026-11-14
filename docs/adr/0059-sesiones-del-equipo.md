@@ -57,7 +57,13 @@ Dos problemas de fondo:
    `team.session_revoked` (una sesión: quién, de quién, dispositivo y
    motivo) o `team.sessions_revoked` (todas: cuántas y motivo). Nunca el
    token ni la IP.
-6. **Qué se configura por empresa.** Nada nuevo: quién ve y quién cierra lo
+6. **Aviso a la persona.** En la misma transacción, un aviso dentro de la
+   app (`team.sessions_closed`, WMS-39) a la persona cuyas sesiones se
+   cerraron, y solo a ella: «Olivia cerró tu sesión en Chrome en Android.»
+   o «… cerró todas tus sesiones en la empresa. Para volver a entrar,
+   inicia sesión otra vez.» Lleva a Configuración (sus sesiones activas).
+   Lo ve al volver a entrar; puede apagarlo en «Avisos que recibo».
+7. **Qué se configura por empresa.** Nada nuevo: quién ve y quién cierra lo
    decide la matriz de roles (abajo). Ver «Opciones descartadas».
 
 ### Qué sesiones son «de la empresa»
@@ -78,6 +84,55 @@ cierra solo las que están en esta empresa, nunca las de otra.
 
 Una sesión sin empresa activa (recién iniciada, antes de elegir empresa) o
 de soporte de plataforma (que entra sin membresía) no aparece.
+
+### El corte: «Cerrar todas» deja fuera también lo que no se ve
+
+Con lo anterior quedaba un hueco: una sesión de esa misma persona que hoy
+trabaja en la empresa B (por ejemplo el teléfono perdido) no se ve ni se
+cierra desde A, pero después podía **entrar a A** cambiando de empresa
+(`switchOrganization`) o por el respaldo de `resolveActiveOrganization`
+(cuando su empresa activa deja de servir, toma la membresía activa más
+antigua). El administrador de A leería «Se cerraron 2 sesiones» y creería
+que la persona quedó fuera.
+
+Se cierra con un **corte por membresía**: `membership.sessionsRevokedAt`
+(`DATETIME(3)`, opcional). «Cerrar todas sus sesiones» lo escribe con la
+hora del momento, en la misma transacción en que borra las sesiones de A.
+Desde entonces **una sesión creada antes del corte no puede tener a A como
+empresa activa**:
+
+- `resolveActiveOrganization` solo acepta la membresía de la empresa
+  activa, y en el respaldo solo busca entre membresías, que estén activas
+  y cuyo corte sea anterior a la creación de la sesión (`usableMembership`).
+  Si la sesión trabajaba en B, sigue en B; si apuntaba a A, cae a B.
+- `switchOrganization` a A responde «Vuelve a iniciar sesión para entrar a
+  esta empresa.» (`SIGN_IN_AGAIN_MESSAGE`). No revela nada de otra empresa:
+  la persona sí es miembro de A.
+- Si la persona no tiene otra empresa donde esa sesión sirva,
+  `requireOrganizationContext` borra esa sesión (ya no sirve para nada) y
+  manda a «Ingresar», en vez de ofrecer crear una empresa.
+- Una sesión nueva (después del corte) entra normalmente: para volver a A
+  basta iniciar sesión otra vez.
+- `listMyOrganizations` (el selector de empresa) sigue mostrando A: al
+  elegirla, el mensaje dice qué hacer. Ocultarla haría pensar a la persona
+  que la sacaron del equipo.
+- B no cambia en nada: ni sus sesiones, ni su membresía, ni su bitácora; A
+  no se entera de que existe B.
+- Cambiar roles, alcance o reactivar no borran el corte (solo lo escriben
+  «Cerrar todas» y desactivar). «Cerrar esta sesión» (una) no escribe
+  corte: cierra ese dispositivo y nada más.
+
+### Desactivar (USR-07) cierra solo lo de la empresa
+
+Antes `disableMember` borraba **todas** las sesiones de la persona, también
+las que tenía en otra empresa: desactivarla en A la sacaba de B. Ahora
+borra solo las que tienen a A como empresa activa y escribe el mismo corte.
+Una sesión que sigue viva en B no entra a A: mientras la membresía está
+desactivada, `switchOrganization` y el respaldo solo aceptan membresías
+activas; y si la reactivan, el corte obliga a iniciar sesión otra vez (lo
+mismo que pasaba antes, cuando todas sus sesiones se borraban). Una sesión
+sin empresa activa cae a otra empresa de la persona o, si no tiene otra, a
+«Ingresar».
 
 ### Reglas al cerrar (`checkTeamChange`, cambio `revoke_sessions`)
 
@@ -151,7 +206,7 @@ con `formatIp`.
 ## Lo que queda previsto (sin construirlo)
 
 - **WMS-68 (historial de accesos y alertas).** Las acciones de este paso ya
-  dejan bitácora de empresa (`team.session_revoked`/`team.sessions_revoked`)
+  dejan aviso a la persona y bitácora de empresa (`team.session_revoked`/`team.sessions_revoked`)
   y las de la persona siguen en los eventos de seguridad (`session.revoked`).
   `lastActiveAt` y `describeUserAgent` (con `kind`) son la base para
   «dispositivo nuevo». La ubicación aproximada por IP que menciona la
@@ -186,12 +241,12 @@ con `formatIp`.
   pura y no lee ajustes); meter un ajuste que cambie un rol sería un
   mecanismo nuevo para un solo caso. Si hace falta, se decide como cambio
   de matriz.
-- **Aviso dentro de la app a la persona** cuya sesión se cerró (WMS-39):
-  `notify` exige escribirse en la transacción del hecho con el cliente de
-  empresa, y ese cliente no puede tocar `session` (dato de la persona, no
-  de la empresa). Escribirlo en otra transacción rompería la regla de
-  WMS-39. Además el dispositivo cerrado vuelve a «Ingresar» de inmediato.
-  El aviso por correo de accesos es de WMS-68.
+- **Ocultar A en el selector de empresa** de una sesión anterior al corte:
+  la persona creería que la sacaron del equipo; mejor decirle qué hacer al
+  elegirla.
+- **Borrar las sesiones de la persona en otras empresas** al cerrar todas o
+  al desactivar: A decidiría sobre el trabajo de la persona en B. El corte
+  logra lo que A necesita (que no entren a A) sin tocar B.
 - **Una librería para leer el navegador** (`ua-parser-js` y similares):
   dependencia nueva para mostrar una etiqueta; basta la función propia.
 - **Cerrar la sesión actual desde el equipo**: ya existe «Cerrar sesión».
@@ -204,6 +259,19 @@ con `formatIp`.
   `src/platform/auth/activity.ts`.
 - Pantalla `/configuracion/equipo/[persona]`; la fila de la lista de
   Equipo abre ese detalle. El menú no cambia.
-- Desactivar a una persona (USR-07) sigue cerrando **todas** sus sesiones,
-  también las que tiene en otra empresa (comportamiento anterior, sin
-  cambio en este paso; ver el reporte del paso).
+- Desactivar a una persona (USR-07) cierra solo sus sesiones en la empresa
+  y escribe el corte (ver arriba).
+- `notify` nombra la empresa en cada uno de sus filtros (miembros,
+  preferencias y avisos ya enviados), además de lo que pone el cliente de
+  empresa. Así puede llamarse con el cliente normal de la transacción de
+  un cambio de equipo, que es el único que puede tocar `session` (el
+  cliente de empresa rechaza esa tabla porque es de la persona). Quien lo
+  llame así no le pasa ubicación ni almacén (esa búsqueda sí necesita el
+  cliente de empresa). El tipo `team.sessions_closed` vive en
+  `src/platform/authorization/notices.ts` y se registra en
+  `src/modules/registry/notifications.ts`, como los de aprobaciones.
+- `platform/authorization` ahora importa `platform/notifications`, que a su
+  vez importa `platform/authorization` (la política): una dependencia
+  circular entre dos áreas de plataforma. Ninguna usa a la otra al cargar
+  el módulo, solo dentro de funciones, así que funciona; si llega a
+  estorbar, las sesiones del equipo pueden pasar a un área propia.

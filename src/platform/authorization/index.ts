@@ -137,3 +137,4 @@ export type {
   MemberSessionsView,
   SessionRevokeResult,
 } from "./team-sessions";
+export { SESSIONS_CLOSED_NOTICE, TEAM_NOTIFICATION_TYPES } from "./notices";

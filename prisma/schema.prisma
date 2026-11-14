@@ -451,6 +451,10 @@ model Membership {
   activeFacility   Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Where this person may work (WMS-20); no rows = every warehouse.
   scopes           MembershipScope[]
+  /// «Cerrar todas sus sesiones» or disabling (WMS-40, ADR 0059): a session
+  /// created before this moment never works in this company again (it may
+  /// keep working in others); signing in again is needed.
+  sessionsRevokedAt DateTime?         @db.DateTime(3)
 
   @@unique([organizationId, userId])
   /// Target of company-scoped foreign keys (PLT-13).
