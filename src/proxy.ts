@@ -32,6 +32,7 @@ const PROTECTED = [
   "/api/exportaciones",
   "/api/compras",
   "/api/pedidos",
+  "/api/movimientos",
   "/api/etiquetas",
 ];
 

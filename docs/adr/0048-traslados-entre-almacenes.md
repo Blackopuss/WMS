@@ -191,8 +191,45 @@ Así se cumple lo que el paso exige:
 - **Recibir en varias ubicaciones a la vez:** una recepción entra a una
   ubicación; se reciben las partes en varias veces.
 - **Apartar al crear el borrador:** hoy lo decide el envío.
-- **Tareas de surtido para preparar un traslado** y documento impreso del
-  traslado.
+- **Tareas de surtido para preparar un traslado.**
+
+## Hoja de traslado en PDF (WMS-19B, 2026-11-14)
+
+Cierra el pendiente «documento impreso del traslado».
+
+- **Qué es:** el papel que viaja con la mercancía y se firma al salir y al
+  llegar. Se arma con `buildFacilityTransferPdf`
+  (`facility-transfer-pdf.ts`) siguiendo la hoja de embarque (ADR 0045) y el
+  PDF propio (ADR 0019): `PdfPageWriter` + `buildPdf`, sin librería nueva.
+- **Qué lleva:** número, almacén de origen y de destino (nombre y código),
+  quién lo lleva, cuándo se creó y quién, cuándo se envió y quién, cuándo
+  se cerró, estado, y por renglón producto (clave), lote (con caducidad),
+  cantidad enviada, ubicación de origen y series. Abajo, «Entrega» y
+  «Recibe» con línea para nombre, firma y fecha. **Sin costos** (es un
+  documento de almacén). Un borrador dice «BORRADOR · todavía no sale» y un
+  cancelado «CANCELADO» con su motivo.
+- **Lo recibido sí se muestra** (decisión de este paso): una vez enviado,
+  cada renglón dice qué llegó bien, qué llegó dañado, qué se perdió, qué
+  regresó y qué sigue en camino, y una sección «Recepciones y diferencias»
+  lista cada recepción, baja o regreso con fecha, quién lo registró, dónde
+  quedó y el motivo. Así la misma hoja sirve para mandar con la mercancía
+  (recién enviada, todo «En camino») y para archivar la llegada con sus
+  diferencias. Para eso la ficha (`getFacilityTransfer`) ganó
+  `createdByName`, `sentByName` y `byName` por recepción; la pantalla
+  muestra «Lo envió» (o «Lo creó» en borrador).
+- **Alcance (WMS-20):** se lee con el mismo servicio que la ficha, así que
+  existe solo para quien alcanza el origen o el destino; quien solo alcanza
+  un lado no ve las ubicaciones del otro (ni de origen ni de llegada) y la
+  ubicación de tránsito nunca se nombra.
+- **Permiso nuevo `inventory.facility_transfer.export`**, concedido a los
+  mismos roles que `.read` (titular, administración, almacén, supervisión,
+  almacenista, Consulta y Gerencia); termina en `.export`, así que sigue
+  disponible con el plan vencido.
+- **Descarga:** `GET /api/movimientos/traslados/[id]/pdf` (agregada a
+  `PROTECTED` en `src/proxy.ts`), con `attachment`, `nosniff` y `no-store`;
+  sin permiso o sin traslado responde lo mismo (404). Cada descarga deja
+  `inventory.facility_transfer_exported` en la bitácora. Enlace «Descargar
+  PDF» en la ficha, solo si la persona tiene el permiso.
 
 ## Consecuencias
 
