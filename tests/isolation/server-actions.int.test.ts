@@ -1109,10 +1109,12 @@ const REVIEWED: Record<string, Review> = {
     coveredBy: "tests/platform/notifications.int.test.ts",
   },
   setNotificationPreferenceAction: {
-    input: "clave del tipo de aviso y si se recibe",
+    input:
+      "clave del tipo de aviso, canal (en la app o por correo, WMS-39B) y si se recibe",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); cambia solo la preferencia de esa persona; solo acepta tipos del registro",
-    coveredBy: "tests/platform/notifications.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); cambia solo la preferencia de esa persona; solo acepta tipos del registro; el correo al que se manda sale de la cuenta, nunca del formulario",
+    coveredBy:
+      "tests/platform/notifications.int.test.ts, tests/platform/notice-emails.int.test.ts",
   },
   reportIncidentAction: {
     input:

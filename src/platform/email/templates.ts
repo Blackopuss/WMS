@@ -264,3 +264,95 @@ export function operationsAlertEmail(input: {
     ].join("\n"),
   };
 }
+
+/**
+ * Notices of the app that a person asked to also get by mail (WMS-39B,
+ * ADR 0060). The texts are the notices' own (one line, nothing the person
+ * may not see); each leads to its screen. One mail gathers several.
+ */
+export function noticeEmail(input: {
+  to: string;
+  organizationName: string;
+  items: { text: string; url: string }[];
+  /** Notices left out of the list. */
+  more: number;
+  /** The list of notices of the app. */
+  allUrl: string;
+  /** Where the person stops getting them by mail. */
+  settingsUrl: string;
+}): EmailMessage {
+  const company = oneLine(input.organizationName, 80);
+  const total = input.items.length + input.more;
+  const [first] = input.items;
+  const subject =
+    total === 1 && first
+      ? `${company}: ${oneLine(first.text, 110)}`
+      : `${company}: ${total} avisos nuevos`;
+  return {
+    to: input.to,
+    subject,
+    actionUrl: total === 1 && first ? first.url : input.allUrl,
+    text: [
+      "Hola:",
+      "",
+      total === 1
+        ? `Tienes un aviso nuevo en ${company}:`
+        : `Tienes ${total} avisos nuevos en ${company}:`,
+      "",
+      ...input.items.flatMap((item) => [
+        `- ${oneLine(item.text, 300)}`,
+        `  ${item.url}`,
+      ]),
+      ...(input.more > 0
+        ? [
+            "",
+            `Y ${input.more} ${input.more === 1 ? "aviso más" : "avisos más"}: ${input.allUrl}`,
+          ]
+        : []),
+      "",
+      `Recibes este correo porque lo pediste en WMS. Para dejar de recibirlo: ${input.settingsUrl}`,
+    ].join("\n"),
+  };
+}
+
+/**
+ * The daily summary of a person (WMS-39B, ADR 0060): what asks for
+ * attention today, in sections already built by the modules (the platform
+ * does not know what they are about). Never sent empty.
+ */
+export function dailyDigestEmail(input: {
+  to: string;
+  organizationName: string;
+  /** «14 de noviembre de 2026». */
+  dayLabel: string;
+  sections: {
+    title: string;
+    lines: string[];
+    /** Lines left out, and the screen that has them all. */
+    more: number;
+    url: string;
+  }[];
+  settingsUrl: string;
+}): EmailMessage {
+  const company = oneLine(input.organizationName, 80);
+  return {
+    to: input.to,
+    subject: `${company}: resumen del ${oneLine(input.dayLabel, 40)}`,
+    actionUrl: input.sections[0]?.url,
+    text: [
+      "Hola:",
+      "",
+      `Esto pide atención hoy en ${company}:`,
+      ...input.sections.flatMap((section) => [
+        "",
+        oneLine(section.title, 120),
+        ...section.lines.map((line) => `- ${oneLine(line, 300)}`),
+        section.more > 0
+          ? `Y ${section.more} más: ${section.url}`
+          : `Ver en WMS: ${section.url}`,
+      ]),
+      "",
+      `Recibes este resumen porque lo pediste en WMS. Para dejar de recibirlo: ${input.settingsUrl}`,
+    ].join("\n"),
+  };
+}

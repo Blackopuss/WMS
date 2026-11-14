@@ -10,15 +10,22 @@ recibe, lo guarda y lo muestra. No importa módulos: la pantalla de
 preferencias recibe la lista `notificationTypes` de
 `src/modules/registry/notifications.ts`.
 
+Desde WMS-39B (ADR 0060) un aviso también puede salir **por correo** a quien
+lo pidió para ese tipo (apagado por omisión), agrupado por persona y
+mandado por el worker; y un tipo puede ser **solo por correo**
+(`channels: "email"`, como el resumen diario de Inventario).
+
 ## Servicios públicos (`index.ts`)
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Definiciones | `definitions.ts` | tipo `NotificationType` (`key` `modulo.cosa`, `module`, `label`, `description`, `defaultEnabled`), `assertValidNotificationTypes`, `noticeText` (una línea, máximo 300 caracteres) |
-| Avisar | `notify.ts` | `notify(tx, tipo, { organizationId, actorUserId, to, text, href, key })` dentro de la transacción del hecho; `memberName(tx, userId)` para escribir «Olivia reportó…» |
+| Definiciones | `definitions.ts` | tipo `NotificationType` (`key` `modulo.cosa`, `module`, `label`, `description`, `defaultEnabled`, `channels` `app`/`email`, `visibleWith`), `assertValidNotificationTypes` (un tipo solo por correo debe venir apagado), `isEmailOnly`, `noticeText` (una línea, máximo 300 caracteres) |
+| Avisar | `notify.ts` | `notify(tx, tipo, { organizationId, actorUserId, to, text, href, key })` dentro de la transacción del hecho (y, para quien lo pidió por correo, renglón `notification_email` + trabajo `notifications.send_email` en la misma transacción); `memberName(tx, userId)` para escribir «Olivia reportó…»; `nextMailAt` (agrupar `NOTICE_EMAIL_GROUP_MS`, espaciar `NOTICE_EMAIL_GAP_MS`) |
+| Correo | `emails.ts` | `sendNoticeEmails` (el worker: reclama lo que espera de la persona, vuelve a comprobar membresía, correo confirmado, preferencia, canal, plan, permisos y alcance, y manda un solo correo), `failNoticeEmails`, `noticeEmailJobHandlers(tipos)` (lo registra `src/modules/registry/jobs.ts`), `wantsEmail`, `emailSubscribers`, `memberAddress`, `isEmailChannelOn`/`companySendsNoticeEmails`, `appLink`, `purgeFinishedNoticeEmails` |
+| Ajuste | `settings.ts` | `NOTICE_EMAIL_CHANNEL` (`platform.notices.email`: `on` por omisión, `off` apaga el canal en toda la empresa), en `NOTIFICATION_SETTINGS` y `operationSettings` |
 | Leer y marcar | `notifications.ts` | `countUnreadNotifications` (una consulta sobre el índice; la usa el layout), `listRecentNotifications` (la campana), `listNotifications` (paginada, `/avisos`), `openNotification` (marca leído y dice a dónde lleva), `markAllNotificationsRead` |
-| Preferencias | `notifications.ts` | `getNotificationPreferences(actor, tipos, módulos)`, `setNotificationPreference` (una fila solo cuando cambia el valor por omisión) |
-| Limpieza | `notifications.ts` | `purgeReadNotifications(organizationId)`: borra los leídos hace más de `READ_NOTICE_DAYS` (90); ronda `platform.notifications_cleanup` de `scheduledRounds` |
+| Preferencias | `notifications.ts` | `getNotificationPreferences(actor, tipos, módulos)` (en la app, por correo, solo correo), `setNotificationPreference(actor, tipos, clave, valor, canal)` (`app` o `email`; apagar en la app apaga el correo, pedir correo enciende la app; una fila solo cuando algo difiere del valor por omisión) |
+| Limpieza | `notifications.ts`, `emails.ts` | `purgeReadNotifications(organizationId)`: borra los leídos hace más de `READ_NOTICE_DAYS` (90); `purgeFinishedNoticeEmails`: los correos terminados de esa antigüedad; ambos en la ronda `platform.notifications_cleanup` de `scheduledRounds` |
 
 ### Quién recibe un aviso (`to`)
 
@@ -42,11 +49,30 @@ Ninguno propio: cada persona ve, abre y marca solo sus avisos, y elige solo
 los suyos. Lo que dice un aviso ya pasó por los permisos y el alcance del
 destinatario al crearse.
 
+## Por correo (WMS-39B, ADR 0060)
+
+- Cada persona lo pide por tipo en «Avisos que recibo»; nadie empieza a
+  recibir correos sin pedirlo. La empresa puede apagar el canal entero.
+- `notify` escribe el renglón y el trabajo en la transacción del hecho; si
+  se revierte, no hay correo. El aviso dentro de la app nunca depende del
+  correo.
+- El worker junta en un correo todo lo que espera de esa persona (10
+  renglones a la vista y «y N más» con enlace a `/avisos`); entre dos
+  correos a la misma persona pasan al menos 15 minutos. Un renglón se
+  reclama con `claimedBy` (atómico): un aviso, un correo.
+- Al mandar se vuelve a evaluar lo que pidió el aviso (permisos, roles,
+  almacén o ubicación; `memberReaches`, la misma regla de `notify`). Lo que
+  ya no aplica queda `SKIPPED` con su motivo.
+- Destinatario: el correo confirmado de la cuenta. Enlace:
+  `BETTER_AUTH_URL` + la ruta interna. Con el plan vencido no sale.
+
 ## Tablas
 
 `notification` (texto, destino y llave fijos; solo `readAt` cambia, una vez;
-solo se borran los leídos) y `notification_preference` (persona + tipo +
-`enabled`).
+solo se borran los leídos), `notification_preference` (persona + tipo +
+`enabled` + `email`), `notification_email` (copia del texto y destino del
+aviso, lo que exigía, estado `QUEUED`/`SENT`/`SKIPPED`/`FAILED`, `claimedBy`)
+y `daily_digest` (resumen diario por persona y día; lo escribe Inventario).
 
 ## Tipos declarados
 
@@ -54,7 +80,8 @@ solo se borran los leídos) y `notification_preference` (persona + tipo +
 - [inventory](inventory.md#avisos): `inventory.task_assigned`,
   `inventory.task_blocked`, `inventory.customer_return`,
   `inventory.transfer_incoming`, `inventory.transfer_differences`,
-  `inventory.incident_reported`, `inventory.incident_changed`.
+  `inventory.incident_reported`, `inventory.incident_changed` y, solo por
+  correo, `inventory.daily_digest`.
 - [purchasing](purchasing.md#avisos): `purchasing.request_to_attend`,
   `purchasing.request_answered`.
 
@@ -63,14 +90,14 @@ solo se borran los leídos) y `notification_preference` (persona + tipo +
 La campana «Avisos» de `AppShell` (barra lateral y encabezado móvil;
 `notification-bell.tsx`, recibe el número y las acciones del layout),
 `/avisos` (todos, paginados; no es sección del menú) y Configuración › Avisos
-que recibo (`/configuracion/avisos`). El service worker no guarda nada de
-esto.
+que recibo (`/configuracion/avisos`: por tipo, en la app y por correo; los
+tipos con `visibleWith` solo para quien tiene uno de esos permisos). El
+service worker no guarda nada de esto.
 
 ## Pendientes
 
-Correo como segundo canal; resumen diario de lotes por caducar y existencias
-bajas.
+Correo en HTML; darse de baja desde el correo sin entrar a la app.
 
 ## ADR
 
-0057 (avisos e incidencias).
+0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario).

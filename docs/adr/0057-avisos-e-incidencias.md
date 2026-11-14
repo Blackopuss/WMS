@@ -148,10 +148,9 @@ almacén, tipo, descripción, a qué se refiere, quién) no cambia.
 
 ## Pendientes
 
-- **Correo** como segundo canal (renglón propio + `enqueueJob` + worker,
-  como «Correo a terceros y envíos»), con su preferencia por tipo.
-- **Resumen diario** de lotes por caducar y existencias bajas (una ronda,
-  un aviso por persona y día, solo para quien ve esas listas).
+- ~~**Correo** como segundo canal~~ y ~~**resumen diario** de lotes por
+  caducar y existencias bajas~~: hechos en WMS-39B, ver
+  [ADR 0060](0060-avisos-por-correo.md).
 - **Evidencia con fotos** (WMS-37): la incidencia tendrá sus archivos con
   `storeFile`; la ficha deja el lugar.
 - Avisar a calidad o a quien libera cuando exista ese módulo («calidad ya

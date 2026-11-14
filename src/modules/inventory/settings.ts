@@ -586,6 +586,31 @@ export const PICKING_MODE = {
   defaultValue: "orders",
 } as const satisfies SettingDefinition;
 
+/**
+ * At what time of the company's calendar the daily summary by mail goes
+ * out (WMS-39B, ADR 0060; `runDailyDigestRound`). The round runs every
+ * hour and sends it the first time it finds this hour or a later one.
+ */
+export const DIGEST_HOUR = {
+  key: "inventory.digest.hour",
+  module: "inventory",
+  area: "Avisos",
+  label: "Hora del resumen diario por correo",
+  options: [
+    {
+      value: "6",
+      label: "6:00",
+      help: "Antes de que empiece el primer turno.",
+    },
+    { value: "7", label: "7:00", help: "Al empezar el día." },
+    { value: "8", label: "8:00", help: "Al empezar el día." },
+    { value: "9", label: "9:00", help: "Ya con el día en marcha." },
+    { value: "12", label: "12:00", help: "A mediodía." },
+    { value: "17", label: "17:00", help: "Para preparar el día siguiente." },
+  ],
+  defaultValue: "7",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -608,4 +633,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   CROSS_DOCK_MODE,
   ADJUSTMENT_APPROVAL_THRESHOLD,
   PICKING_MODE,
+  DIGEST_HOUR,
 ];

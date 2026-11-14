@@ -65,6 +65,22 @@ export const INCIDENT_CHANGED_NOTICE: NotificationType = {
   defaultEnabled: true,
 };
 
+/**
+ * The daily summary by mail (WMS-39B, ADR 0060): lots about to expire and
+ * low stock. Only by mail, off unless the person asks for it, and offered
+ * only to who can see one of its sections.
+ */
+export const DAILY_DIGEST_NOTICE: NotificationType = {
+  key: "inventory.daily_digest",
+  module: "inventory",
+  label: "Resumen diario por correo",
+  description:
+    "Un correo al día con lotes por caducar y existencias bajas. Si no hay nada, no llega.",
+  defaultEnabled: false,
+  channels: "email",
+  visibleWith: ["inventory.stock.read", "inventory.minimum.read"],
+};
+
 export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   TASK_ASSIGNED_NOTICE,
   TASK_BLOCKED_NOTICE,
@@ -73,4 +89,5 @@ export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   TRANSFER_DIFFERENCES_NOTICE,
   INCIDENT_REPORTED_NOTICE,
   INCIDENT_CHANGED_NOTICE,
+  DAILY_DIGEST_NOTICE,
 ];

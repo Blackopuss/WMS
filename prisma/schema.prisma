@@ -108,101 +108,103 @@ model TwoFactor {
 // cascade across tenants: removing data is an explicit, audited process.
 
 model Organization {
-  id                      String                   @id @db.Char(36)
-  name                    String                   @db.VarChar(120)
-  timeZone                String                   @default("America/Mexico_City") @db.VarChar(64)
-  currency                String                   @default("MXN") @db.Char(3)
+  id                           String                        @id @db.Char(36)
+  name                         String                        @db.VarChar(120)
+  timeZone                     String                        @default("America/Mexico_City") @db.VarChar(64)
+  currency                     String                        @default("MXN") @db.Char(3)
   /// Titular: the only account allowed to contract or cancel (USR-03).
-  ownerUserId             String                   @db.Char(36)
-  owner                   User                     @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  createdAt               DateTime                 @default(now()) @db.DateTime(3)
-  updatedAt               DateTime                 @updatedAt @db.DateTime(3)
-  memberships             Membership[]
-  memberRoles             MembershipRole[]
-  memberScopes            MembershipScope[]
-  sessions                Session[]
-  auditEvents             AuditEvent[]
-  ownershipTransfers      OwnershipTransfer[]
-  invitations             Invitation[]
-  subscriptions           Subscription[]
-  subscriptionItems       SubscriptionItem[]
-  entitlements            Entitlement[]
-  quotaUsages             QuotaUsage[]
-  products                Product[]
-  productCategories       ProductCategory[]
-  productBrands           ProductBrand[]
-  productPresentations    ProductPresentation[]
-  presentationVersions    PresentationVersion[]
-  facilities              Facility[]
-  locationLevels          LocationLevel[]
-  locations               Location[]
-  locationCapacities      LocationCapacity[]
-  locationRestrictions    LocationRestriction[]
-  stockMovements          StockMovement[]
-  stockMovementLines      StockMovementLine[]
-  stockBalances           StockBalance[]
-  stockMinimums           StockMinimum[]
-  productCosts            ProductCost[]
-  stockCounts             StockCount[]
-  stockCountLines         StockCountLine[]
-  stockCountCaptures      StockCountCapture[]
-  jobs                    Job[]
-  storedFiles             StoredFile[]
-  productImports          ProductImport[]
-  productImportItems      ProductImportItem[]
-  exitImports             ExitImport[]
-  outboundImports         OutboundImport[]
-  settings                OrganizationSetting[]
-  exitImportRows          ExitImportRow[]
-  contacts                Contact[]
-  productSuppliers        ProductSupplier[]
-  purchaseOrders          PurchaseOrder[]
-  purchaseOrderLines      PurchaseOrderLine[]
-  purchaseOrderDeliveries PurchaseOrderDelivery[]
-  purchaseReceipts        PurchaseReceipt[]
-  purchaseReceiptLines    PurchaseReceiptLine[]
-  purchaseReturns         PurchaseReturn[]
-  purchaseReturnLines     PurchaseReturnLine[]
-  manualPayments          ManualPayment[]
-  checkoutOrders          CheckoutOrder[]
-  supportAccesses         SupportAccess[]
-  warehouseTasks          WarehouseTask[]
-  lots                    Lot[]
-  serialUnits             SerialUnit[]
-  serialMoves             SerialMove[]
-  warehouseTaskSerials    WarehouseTaskSerial[]
-  stockReservations       StockReservation[]
-  outboundOrders          OutboundOrder[]
-  outboundOrderLines      OutboundOrderLine[]
-  containers              Container[]
-  containerItems          ContainerItem[]
-  containerEvents         ContainerEvent[]
-  packShortages           OutboundPackShortage[]
-  shipments               Shipment[]
-  shipmentOrders          ShipmentOrder[]
-  shipmentLines           ShipmentLine[]
-  customerReturns         CustomerReturn[]
-  customerReturnLines     CustomerReturnLine[]
-  customerReturnDecisions CustomerReturnDecision[]
-  facilityTransfers       FacilityTransfer[]
-  facilityTransferLines   FacilityTransferLine[]
-  facilityTransferReceipts FacilityTransferReceipt[]
+  ownerUserId                  String                        @db.Char(36)
+  owner                        User                          @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  createdAt                    DateTime                      @default(now()) @db.DateTime(3)
+  updatedAt                    DateTime                      @updatedAt @db.DateTime(3)
+  memberships                  Membership[]
+  memberRoles                  MembershipRole[]
+  memberScopes                 MembershipScope[]
+  sessions                     Session[]
+  auditEvents                  AuditEvent[]
+  ownershipTransfers           OwnershipTransfer[]
+  invitations                  Invitation[]
+  subscriptions                Subscription[]
+  subscriptionItems            SubscriptionItem[]
+  entitlements                 Entitlement[]
+  quotaUsages                  QuotaUsage[]
+  products                     Product[]
+  productCategories            ProductCategory[]
+  productBrands                ProductBrand[]
+  productPresentations         ProductPresentation[]
+  presentationVersions         PresentationVersion[]
+  facilities                   Facility[]
+  locationLevels               LocationLevel[]
+  locations                    Location[]
+  locationCapacities           LocationCapacity[]
+  locationRestrictions         LocationRestriction[]
+  stockMovements               StockMovement[]
+  stockMovementLines           StockMovementLine[]
+  stockBalances                StockBalance[]
+  stockMinimums                StockMinimum[]
+  productCosts                 ProductCost[]
+  stockCounts                  StockCount[]
+  stockCountLines              StockCountLine[]
+  stockCountCaptures           StockCountCapture[]
+  jobs                         Job[]
+  storedFiles                  StoredFile[]
+  productImports               ProductImport[]
+  productImportItems           ProductImportItem[]
+  exitImports                  ExitImport[]
+  outboundImports              OutboundImport[]
+  settings                     OrganizationSetting[]
+  exitImportRows               ExitImportRow[]
+  contacts                     Contact[]
+  productSuppliers             ProductSupplier[]
+  purchaseOrders               PurchaseOrder[]
+  purchaseOrderLines           PurchaseOrderLine[]
+  purchaseOrderDeliveries      PurchaseOrderDelivery[]
+  purchaseReceipts             PurchaseReceipt[]
+  purchaseReceiptLines         PurchaseReceiptLine[]
+  purchaseReturns              PurchaseReturn[]
+  purchaseReturnLines          PurchaseReturnLine[]
+  manualPayments               ManualPayment[]
+  checkoutOrders               CheckoutOrder[]
+  supportAccesses              SupportAccess[]
+  warehouseTasks               WarehouseTask[]
+  lots                         Lot[]
+  serialUnits                  SerialUnit[]
+  serialMoves                  SerialMove[]
+  warehouseTaskSerials         WarehouseTaskSerial[]
+  stockReservations            StockReservation[]
+  outboundOrders               OutboundOrder[]
+  outboundOrderLines           OutboundOrderLine[]
+  containers                   Container[]
+  containerItems               ContainerItem[]
+  containerEvents              ContainerEvent[]
+  packShortages                OutboundPackShortage[]
+  shipments                    Shipment[]
+  shipmentOrders               ShipmentOrder[]
+  shipmentLines                ShipmentLine[]
+  customerReturns              CustomerReturn[]
+  customerReturnLines          CustomerReturnLine[]
+  customerReturnDecisions      CustomerReturnDecision[]
+  facilityTransfers            FacilityTransfer[]
+  facilityTransferLines        FacilityTransferLine[]
+  facilityTransferReceipts     FacilityTransferReceipt[]
   facilityTransferReceiptLines FacilityTransferReceiptLine[]
-  replenishmentRules      ReplenishmentRule[]
-  countPrograms           CountProgram[]
-  approvalRules           ApprovalRule[]
-  approvalRequests        ApprovalRequest[]
-  notifications           Notification[]
-  notificationPreferences NotificationPreference[]
-  incidents               Incident[]
-  incidentNotes           IncidentNote[]
-  pickWaves               PickWave[]
-  pickWaveOrders          PickWaveOrder[]
-  purchaseRequests        PurchaseRequest[]
-  purchaseRequestLines    PurchaseRequestLine[]
-  customFields            CustomField[]
-  customFieldOptions      CustomFieldOption[]
-  customFieldValues       CustomFieldValue[]
+  replenishmentRules           ReplenishmentRule[]
+  countPrograms                CountProgram[]
+  approvalRules                ApprovalRule[]
+  approvalRequests             ApprovalRequest[]
+  notifications                Notification[]
+  notificationPreferences      NotificationPreference[]
+  notificationEmails           NotificationEmail[]
+  dailyDigests                 DailyDigest[]
+  incidents                    Incident[]
+  incidentNotes                IncidentNote[]
+  pickWaves                    PickWave[]
+  pickWaveOrders               PickWaveOrder[]
+  purchaseRequests             PurchaseRequest[]
+  purchaseRequestLines         PurchaseRequestLine[]
+  customFields                 CustomField[]
+  customFieldOptions           CustomFieldOption[]
+  customFieldValues            CustomFieldValue[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -214,38 +216,38 @@ model Organization {
 /// own locations, its General and its staging location. Never deleted:
 /// archived when empty.
 model Facility {
-  id              String            @id @db.Char(36)
-  organizationId  String            @db.Char(36)
-  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name            String            @db.VarChar(120)
+  id               String             @id @db.Char(36)
+  organizationId   String             @db.Char(36)
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name             String             @db.VarChar(120)
   /// Short code people use and scan («CDMX-1»); unique in the company.
-  code            String            @db.VarChar(20)
-  address         String?           @db.VarChar(300)
+  code             String             @db.VarChar(20)
+  address          String?            @db.VarChar(300)
   /// True for the main warehouse, NULL for the others (one per company).
-  isDefault       Boolean?
-  archivedAt      DateTime?         @db.DateTime(3)
-  createdAt       DateTime          @default(now()) @db.DateTime(3)
-  updatedAt       DateTime          @updatedAt @db.DateTime(3)
-  locations       Location[]
-  levels          LocationLevel[]
-  activeFor       Membership[]
-  outboundOrders  OutboundOrder[]
-  memberScopes    MembershipScope[]
+  isDefault        Boolean?
+  archivedAt       DateTime?          @db.DateTime(3)
+  createdAt        DateTime           @default(now()) @db.DateTime(3)
+  updatedAt        DateTime           @updatedAt @db.DateTime(3)
+  locations        Location[]
+  levels           LocationLevel[]
+  activeFor        Membership[]
+  outboundOrders   OutboundOrder[]
+  memberScopes     MembershipScope[]
   /// Its shipments (WMS-16).
-  shipments       Shipment[]
+  shipments        Shipment[]
   /// What customers returned to it (WMS-17).
-  customerReturns CustomerReturn[]
+  customerReturns  CustomerReturn[]
   /// Transfers that leave from it and that come to it (WMS-19).
-  transfersOut    FacilityTransfer[] @relation("TransferFrom")
-  transfersIn     FacilityTransfer[] @relation("TransferTo")
+  transfersOut     FacilityTransfer[] @relation("TransferFrom")
+  transfersIn      FacilityTransfer[] @relation("TransferTo")
   /// Its cycle count programs (WMS-55).
-  countPrograms   CountProgram[]
+  countPrograms    CountProgram[]
   /// Approval requests about something of this warehouse (WMS-56).
   approvalRequests ApprovalRequest[]
   /// Incidents reported in it (WMS-39).
   incidents        Incident[]
   /// Its picking waves (WMS-25).
-  pickWaves       PickWave[]
+  pickWaves        PickWave[]
   /// Purchase requests and orders of this warehouse (WMS-57).
   purchaseRequests PurchaseRequest[]
   purchaseOrders   PurchaseOrder[]
@@ -290,25 +292,25 @@ model LocationLevel {
 }
 
 model Location {
-  id                  String                   @id @db.Char(36)
-  organizationId      String                   @db.Char(36)
-  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  facilityId          String                   @db.Char(36)
-  facility            Facility                 @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict)
+  id                  String                    @id @db.Char(36)
+  organizationId      String                    @db.Char(36)
+  organization        Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId          String                    @db.Char(36)
+  facility            Facility                  @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict)
   /// Name given by the business; unique among the locations of its parent.
-  name                String                   @db.VarChar(120)
+  name                String                    @db.VarChar(120)
   /// Its level in the warehouse; NULL only for General. Fixed when the
   /// location is created (trigger).
-  levelId             String?                  @db.Char(36)
-  level               LocationLevel?           @relation(fields: [organizationId, facilityId, levelId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  levelId             String?                   @db.Char(36)
+  level               LocationLevel?            @relation(fields: [organizationId, facilityId, levelId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
   /// What is scanned or typed to confirm the place («A-01-03»); unique in
   /// its warehouse, upper case. Optional: without it, the name or path.
-  code                String?                  @db.VarChar(30)
-  type                LocationType             @default(STORAGE)
+  code                String?                   @db.VarChar(30)
+  type                LocationType              @default(STORAGE)
   /// Location that contains this one, in the same facility; NULL = root.
-  parentId            String?                  @db.Char(36)
-  parent              Location?                @relation("LocationTree", fields: [organizationId, facilityId, parentId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
-  children            Location[]               @relation("LocationTree")
+  parentId            String?                   @db.Char(36)
+  parent              Location?                 @relation("LocationTree", fields: [organizationId, facilityId, parentId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  children            Location[]                @relation("LocationTree")
   movementLines       StockMovementLine[]
   balances            StockBalance[]
   counts              StockCount[]
@@ -321,17 +323,17 @@ model Location {
   exitImportRows      ExitImportRow[]
   receiptLines        PurchaseReceiptLine[]
   returnLines         PurchaseReturnLine[]
-  tasksFrom           WarehouseTask[]          @relation("TaskFrom")
-  tasksTo             WarehouseTask[]          @relation("TaskTo")
-  tasksPlaced         WarehouseTask[]          @relation("TaskPlaced")
+  tasksFrom           WarehouseTask[]           @relation("TaskFrom")
+  tasksTo             WarehouseTask[]           @relation("TaskTo")
+  tasksPlaced         WarehouseTask[]           @relation("TaskPlaced")
   reservations        StockReservation[]
   serialUnits         SerialUnit[]
   serialMoves         SerialMove[]
   memberScopes        MembershipScope[]
   containers          Container[]
   containerItems      ContainerItem[]
-  containerEvents     ContainerEvent[]         @relation("ContainerEventAt")
-  containerEventsFrom ContainerEvent[]         @relation("ContainerEventFrom")
+  containerEvents     ContainerEvent[]          @relation("ContainerEventAt")
+  containerEventsFrom ContainerEvent[]          @relation("ContainerEventFrom")
   packShortages       OutboundPackShortage[]
   shipmentLines       ShipmentLine[]
   customerReturns     CustomerReturn[]
@@ -360,9 +362,9 @@ model Location {
   /// shown nor offered: only transfers write in it, always IN_TRANSIT.
   isTransit           Boolean?
   /// Archived locations stay for the history; nothing is deleted.
-  archivedAt          DateTime?                @db.DateTime(3)
-  createdAt           DateTime                 @default(now()) @db.DateTime(3)
-  updatedAt           DateTime                 @updatedAt @db.DateTime(3)
+  archivedAt          DateTime?                 @db.DateTime(3)
+  createdAt           DateTime                  @default(now()) @db.DateTime(3)
+  updatedAt           DateTime                  @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@unique([organizationId, facilityId, id])
@@ -1245,36 +1247,36 @@ enum StockDirection {
 /// movements never change and are never deleted (triggers); a mistake is
 /// corrected with a reversal.
 model StockMovement {
-  id                 String                  @id @db.Char(36)
-  organizationId     String                  @db.Char(36)
-  organization       Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                 String                   @id @db.Char(36)
+  organizationId     String                   @db.Char(36)
+  organization       Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   type               StockMovementType
   /// Why it was made; mandatory for some kinds (adjustments, reversals).
-  reason             String?                 @db.VarChar(500)
+  reason             String?                  @db.VarChar(500)
   /// Document or note of the business: a ticket, a delivery note.
-  reference          String?                 @db.VarChar(120)
+  reference          String?                  @db.VarChar(120)
   /// Sent with the confirmation so that repeating it never duplicates the
   /// movement (INV-21). Unique in the company when present.
-  idempotencyKey     String?                 @db.VarChar(64)
+  idempotencyKey     String?                  @db.VarChar(64)
   /// Movement this one undoes; a movement is reversed at most once.
-  reversesMovementId String?                 @db.Char(36)
-  reverses           StockMovement?          @relation("StockReversal", fields: [organizationId, reversesMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  reversedBy         StockMovement?          @relation("StockReversal")
+  reversesMovementId String?                  @db.Char(36)
+  reverses           StockMovement?           @relation("StockReversal", fields: [organizationId, reversesMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversedBy         StockMovement?           @relation("StockReversal")
   /// Person who confirmed it (an account; not a company row).
-  createdByUserId    String                  @db.Char(36)
-  createdAt          DateTime                @default(now()) @db.DateTime(3)
+  createdByUserId    String                   @db.Char(36)
+  createdAt          DateTime                 @default(now()) @db.DateTime(3)
   /// The container this movement moved whole (WMS-53, ADR 0043); null for
   /// every other movement. Not reversed from Inventario.
-  containerId        String?                 @db.Char(36)
-  container          Container?              @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  containerId        String?                  @db.Char(36)
+  container          Container?               @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   containerEvents    ContainerEvent[]
   lines              StockMovementLine[]
   appliedCount       StockCount?
   purchaseReceipt    PurchaseReceipt?
   purchaseReturn     PurchaseReturn?
-  warehouseTask      WarehouseTask?          @relation("TaskMovement")
+  warehouseTask      WarehouseTask?           @relation("TaskMovement")
   /// Picking tasks this entry sent straight to an order (WMS-54, ADR 0052).
-  crossDockTasks     WarehouseTask[]         @relation("TaskCrossDock")
+  crossDockTasks     WarehouseTask[]          @relation("TaskCrossDock")
   /// The shipment whose exit this is (WMS-16, type SHIPMENT).
   shipment           Shipment?
   /// The customer return whose entry this is (WMS-17, CUSTOMER_RETURN).
@@ -1304,44 +1306,44 @@ model StockMovement {
 ///
 /// Changing a presentation later never changes these numbers.
 model StockMovementLine {
-  id                    String               @id @db.Char(36)
-  organizationId        String               @db.Char(36)
-  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  movementId            String               @db.Char(36)
-  movement              StockMovement        @relation(fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict)
+  id                    String                       @id @db.Char(36)
+  organizationId        String                       @db.Char(36)
+  organization          Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  movementId            String                       @db.Char(36)
+  movement              StockMovement                @relation(fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict)
   lineNumber            Int
-  productId             String               @db.Char(36)
-  product               Product              @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
-  locationId            String               @db.Char(36)
-  location              Location             @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict)
+  productId             String                       @db.Char(36)
+  product               Product                      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  locationId            String                       @db.Char(36)
+  location              Location                     @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict)
   direction             StockDirection
   /// State of what this line moved (ADR 0033).
-  status                StockStatus          @default(AVAILABLE)
-  lotId                 String?              @db.Char(36)
-  lot                   Lot?                 @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  lotKey                String               @default("") @db.VarChar(36)
+  status                StockStatus                  @default(AVAILABLE)
+  lotId                 String?                      @db.Char(36)
+  lot                   Lot?                         @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  lotKey                String                       @default("") @db.VarChar(36)
   /// As captured: "3" (boxes), "275" (centimeters), "25" (pieces).
-  capturedQuantity      Decimal              @db.Decimal(12, 3)
+  capturedQuantity      Decimal                      @db.Decimal(12, 3)
   /// Unit of the capture when it was another unit of the same dimension.
-  capturedUnitCode      String?              @db.VarChar(12)
-  capturedUnit          Unit?                @relation("LineCapturedUnit", fields: [capturedUnitCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  capturedUnitCode      String?                      @db.VarChar(12)
+  capturedUnit          Unit?                        @relation("LineCapturedUnit", fields: [capturedUnitCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
   /// Presentation captured, with the version whose content was applied.
-  presentationId        String?              @db.Char(36)
-  presentation          ProductPresentation? @relation(fields: [organizationId, productId, presentationId], references: [organizationId, productId, id], onDelete: Restrict, onUpdate: Restrict)
-  presentationVersionId String?              @db.Char(36)
-  presentationVersion   PresentationVersion? @relation(fields: [organizationId, presentationId, presentationVersionId], references: [organizationId, presentationId, id], onDelete: Restrict, onUpdate: Restrict)
+  presentationId        String?                      @db.Char(36)
+  presentation          ProductPresentation?         @relation(fields: [organizationId, productId, presentationId], references: [organizationId, productId, id], onDelete: Restrict, onUpdate: Restrict)
+  presentationVersionId String?                      @db.Char(36)
+  presentationVersion   PresentationVersion?         @relation(fields: [organizationId, presentationId, presentationVersionId], references: [organizationId, presentationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Multiplier applied; 1 when captured in the product's unit.
-  factor                Decimal              @db.Decimal(18, 6)
+  factor                Decimal                      @db.Decimal(18, 6)
   /// Quantity in the product's unit: what was added to or taken from stock.
-  baseQuantity          Decimal              @db.Decimal(12, 3)
+  baseQuantity          Decimal                      @db.Decimal(12, 3)
   /// Unit of the product when it moved (fixed after its first movement).
-  unitCode              String               @db.VarChar(12)
-  unit                  Unit                 @relation("LineUnit", fields: [unitCode], references: [code], onDelete: Restrict)
+  unitCode              String                       @db.VarChar(12)
+  unit                  Unit                         @relation("LineUnit", fields: [unitCode], references: [code], onDelete: Restrict)
   /// Cost of one unit of the product this line was valued at, before taxes
   /// (VAL-01, ADR 0031): the cost of an entry, or the average cost an exit
   /// took. Null when the product had no known cost.
-  unitCost              Decimal?             @db.Decimal(18, 6)
-  createdAt             DateTime             @default(now()) @db.DateTime(3)
+  unitCost              Decimal?                     @db.Decimal(18, 6)
+  createdAt             DateTime                     @default(now()) @db.DateTime(3)
   /// What this line shipped, for which order (WMS-16).
   shipmentLine          ShipmentLine?
   /// What this line brought back of a customer return (WMS-17).
@@ -1868,28 +1870,28 @@ model ExitImportRow {
 /// contact is for a module is a facet (`isSupplier`, `isCustomer`), and a
 /// contact always has at least one.
 model Contact {
-  id               String            @id @db.Char(36)
-  organizationId   String            @db.Char(36)
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id               String             @id @db.Char(36)
+  organizationId   String             @db.Char(36)
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// As the business knows it: «Ferretera del Norte».
-  name             String            @db.VarChar(160)
+  name             String             @db.VarChar(160)
   /// Legal name, when it differs: «Ferretera del Norte, S.A. de C.V.».
-  legalName        String?           @db.VarChar(200)
+  legalName        String?            @db.VarChar(200)
   /// Mexican tax id, in capitals and without spaces; optional.
-  rfc              String?           @db.VarChar(13)
-  isSupplier       Boolean           @default(false)
-  isCustomer       Boolean           @default(false)
+  rfc              String?            @db.VarChar(13)
+  isSupplier       Boolean            @default(false)
+  isCustomer       Boolean            @default(false)
   /// Who to ask for there.
-  contactPerson    String?           @db.VarChar(120)
-  email            String?           @db.VarChar(254)
-  phone            String?           @db.VarChar(40)
-  address          String?           @db.VarChar(300)
-  notes            String?           @db.VarChar(500)
+  contactPerson    String?            @db.VarChar(120)
+  email            String?            @db.VarChar(254)
+  phone            String?            @db.VarChar(40)
+  address          String?            @db.VarChar(300)
+  notes            String?            @db.VarChar(500)
   /// Set when it is no longer used; its documents keep pointing to it.
-  archivedAt       DateTime?         @db.DateTime(3)
-  createdByUserId  String            @db.Char(36)
-  createdAt        DateTime          @default(now()) @db.DateTime(3)
-  updatedAt        DateTime          @updatedAt @db.DateTime(3)
+  archivedAt       DateTime?          @db.DateTime(3)
+  createdByUserId  String             @db.Char(36)
+  createdAt        DateTime           @default(now()) @db.DateTime(3)
+  updatedAt        DateTime           @updatedAt @db.DateTime(3)
   suppliedProducts ProductSupplier[]
   purchaseOrders   PurchaseOrder[]
   /// Values of the custom fields of its supplier facet (WMS-58).
@@ -2351,71 +2353,71 @@ enum WarehouseTaskKind {
 /// What it moves (product, origin, destination, quantity) never changes
 /// after it is created (trigger).
 model WarehouseTask {
-  id               String                @id @db.Char(36)
-  organizationId   String                @db.Char(36)
-  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                  String                @id @db.Char(36)
+  organizationId      String                @db.Char(36)
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Consecutive per company («T-0001»).
-  number           Int
-  kind             WarehouseTaskKind     @default(TRANSFER)
-  status           WarehouseTaskStatus   @default(PENDING)
-  priority         WarehouseTaskPriority @default(NORMAL)
+  number              Int
+  kind                WarehouseTaskKind     @default(TRANSFER)
+  status              WarehouseTaskStatus   @default(PENDING)
+  priority            WarehouseTaskPriority @default(NORMAL)
   /// PICK only: the line of the outbound order it picks.
-  outboundLineId   String?               @db.Char(36)
-  outboundLine     OutboundOrderLine?    @relation(fields: [organizationId, outboundLineId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  outboundLineId      String?               @db.Char(36)
+  outboundLine        OutboundOrderLine?    @relation(fields: [organizationId, outboundLineId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// PICK only: what the person confirmed they took (≤ quantity), and why
   /// it was less.
-  pickedQuantity   Decimal?              @db.Decimal(12, 3)
-  shortReason      String?               @db.VarChar(300)
+  pickedQuantity      Decimal?              @db.Decimal(12, 3)
+  shortReason         String?               @db.VarChar(300)
   /// What it moves: a product (with its quantity and unit), or a whole
   /// container (WMS-53, ADR 0043; then no product, quantity, lot nor
   /// order). Exactly one of the two (CHECK); neither ever changes.
-  productId        String?               @db.Char(36)
-  product          Product?              @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  containerId      String?               @db.Char(36)
-  container        Container?            @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  fromLocationId   String                @db.Char(36)
-  fromLocation     Location              @relation("TaskFrom", fields: [organizationId, fromLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  toLocationId     String                @db.Char(36)
-  toLocation       Location              @relation("TaskTo", fields: [organizationId, toLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId           String?               @db.Char(36)
+  product             Product?              @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  containerId         String?               @db.Char(36)
+  container           Container?            @relation(fields: [organizationId, containerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  fromLocationId      String                @db.Char(36)
+  fromLocation        Location              @relation("TaskFrom", fields: [organizationId, fromLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  toLocationId        String                @db.Char(36)
+  toLocation          Location              @relation("TaskTo", fields: [organizationId, toLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// PUTAWAY only (WMS-52, ADR 0042): where the goods were really left,
   /// written once by the delivery. `toLocationId` is the recommended place
   /// (the origin itself when there was none).
-  placedLocationId String?               @db.Char(36)
-  placedLocation   Location?             @relation("TaskPlaced", fields: [organizationId, placedLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  placedLocationId    String?               @db.Char(36)
+  placedLocation      Location?             @relation("TaskPlaced", fields: [organizationId, placedLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The lot it moves, for a product by lot (WMS-21); never changes.
-  lotId            String?               @db.Char(36)
-  lot              Lot?                  @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  lotId               String?               @db.Char(36)
+  lot                 Lot?                  @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// In the product's unit (base), checked with its quantity rule; null
   /// for a container task.
-  quantity         Decimal?              @db.Decimal(12, 3)
-  unitCode         String?               @db.VarChar(12)
+  quantity            Decimal?              @db.Decimal(12, 3)
+  unitCode            String?               @db.VarChar(12)
   /// Instructions for whoever does it.
-  note             String?               @db.VarChar(300)
-  createdByUserId  String                @db.Char(36)
-  createdAt        DateTime              @default(now()) @db.DateTime(3)
+  note                String?               @db.VarChar(300)
+  createdByUserId     String                @db.Char(36)
+  createdAt           DateTime              @default(now()) @db.DateTime(3)
   /// Person who has it (assigned or who took it); null while pending.
-  assignedToUserId String?               @db.Char(36)
-  acceptedAt       DateTime?             @db.DateTime(3)
-  pickedUpAt       DateTime?             @db.DateTime(3)
-  deliveredAt      DateTime?             @db.DateTime(3)
-  blockedAt        DateTime?             @db.DateTime(3)
-  blockedReason    String?               @db.VarChar(300)
-  closedByUserId   String?               @db.Char(36)
-  cancelledAt      DateTime?             @db.DateTime(3)
-  cancelReason     String?               @db.VarChar(300)
+  assignedToUserId    String?               @db.Char(36)
+  acceptedAt          DateTime?             @db.DateTime(3)
+  pickedUpAt          DateTime?             @db.DateTime(3)
+  deliveredAt         DateTime?             @db.DateTime(3)
+  blockedAt           DateTime?             @db.DateTime(3)
+  blockedReason       String?               @db.VarChar(300)
+  closedByUserId      String?               @db.Char(36)
+  cancelledAt         DateTime?             @db.DateTime(3)
+  cancelReason        String?               @db.VarChar(300)
   /// The transfer its delivery wrote.
-  movementId       String?               @db.Char(36)
-  movement         StockMovement?        @relation("TaskMovement", fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  movementId          String?               @db.Char(36)
+  movement            StockMovement?        @relation("TaskMovement", fields: [organizationId, movementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// PICK only (WMS-54, ADR 0052): the entry (RECEIPT or ENTRY) whose goods
   /// it takes straight to its order (cross-docking); never changes.
-  crossDockMovementId String?            @db.Char(36)
-  crossDockMovement StockMovement?       @relation("TaskCrossDock", fields: [organizationId, crossDockMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  updatedAt        DateTime              @updatedAt @db.DateTime(3)
+  crossDockMovementId String?               @db.Char(36)
+  crossDockMovement   StockMovement?        @relation("TaskCrossDock", fields: [organizationId, crossDockMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  updatedAt           DateTime              @updatedAt @db.DateTime(3)
   /// Units by serial the person took (WMS-21B): scanned when picking or
   /// picking up, moved by the delivery.
-  serials          WarehouseTaskSerial[]
-  incidents        Incident[]
-  containerEvents  ContainerEvent[]
+  serials             WarehouseTaskSerial[]
+  incidents           Incident[]
+  containerEvents     ContainerEvent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
@@ -2809,28 +2811,28 @@ model CustomFieldOption {
 /// entity with a composite key of the company (CHECK: exactly that one).
 /// An empty value is no row.
 model CustomFieldValue {
-  id             String             @id @db.Char(36)
-  organizationId String             @db.Char(36)
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  fieldId        String             @db.Char(36)
+  id              String             @id @db.Char(36)
+  organizationId  String             @db.Char(36)
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fieldId         String             @db.Char(36)
   /// Repeats the field's entity so the key below ties both together.
-  entity         CustomFieldEntity
-  field          CustomField        @relation(fields: [organizationId, fieldId, entity], references: [organizationId, id, entity], onDelete: Restrict, onUpdate: Restrict)
-  productId      String?            @db.Char(36)
-  product        Product?           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  locationId     String?            @db.Char(36)
-  location       Location?          @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  contactId      String?            @db.Char(36)
-  contact        Contact?           @relation(fields: [organizationId, contactId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  textValue      String?            @db.VarChar(200)
-  numberValue    Decimal?           @db.Decimal(18, 6)
-  dateValue      DateTime?          @db.Date
+  entity          CustomFieldEntity
+  field           CustomField        @relation(fields: [organizationId, fieldId, entity], references: [organizationId, id, entity], onDelete: Restrict, onUpdate: Restrict)
+  productId       String?            @db.Char(36)
+  product         Product?           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  locationId      String?            @db.Char(36)
+  location        Location?          @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  contactId       String?            @db.Char(36)
+  contact         Contact?           @relation(fields: [organizationId, contactId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  textValue       String?            @db.VarChar(200)
+  numberValue     Decimal?           @db.Decimal(18, 6)
+  dateValue       DateTime?          @db.Date
   /// An option of the same field (the key includes the field).
-  optionId       String?            @db.Char(36)
-  option         CustomFieldOption? @relation(fields: [organizationId, fieldId, optionId], references: [organizationId, fieldId, id], onDelete: Restrict, onUpdate: Restrict)
-  boolValue      Boolean?
-  updatedByUserId String            @db.Char(36)
-  updatedAt      DateTime           @updatedAt @db.DateTime(3)
+  optionId        String?            @db.Char(36)
+  option          CustomFieldOption? @relation(fields: [organizationId, fieldId, optionId], references: [organizationId, fieldId, id], onDelete: Restrict, onUpdate: Restrict)
+  boolValue       Boolean?
+  updatedByUserId String             @db.Char(36)
+  updatedAt       DateTime           @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@unique([organizationId, fieldId, productId])
@@ -3369,38 +3371,38 @@ enum FacilityTransferReceiptKind {
 /// location of the destination (IN_TRANSIT); each receipt, loss or return
 /// takes out of it. Never deleted.
 model FacilityTransfer {
-  id               String                    @id @db.Char(36)
-  organizationId   String                    @db.Char(36)
-  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                String                    @id @db.Char(36)
+  organizationId    String                    @db.Char(36)
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Consecutive per company («TR-0001»).
-  number           Int
-  status           FacilityTransferStatus    @default(DRAFT)
-  fromFacilityId   String                    @db.Char(36)
-  fromFacility     Facility                  @relation("TransferFrom", fields: [organizationId, fromFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  toFacilityId     String                    @db.Char(36)
-  toFacility       Facility                  @relation("TransferTo", fields: [organizationId, toFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  number            Int
+  status            FacilityTransferStatus    @default(DRAFT)
+  fromFacilityId    String                    @db.Char(36)
+  fromFacility      Facility                  @relation("TransferFrom", fields: [organizationId, fromFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  toFacilityId      String                    @db.Char(36)
+  toFacility        Facility                  @relation("TransferTo", fields: [organizationId, toFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Where it waits in transit: the transit location of the destination.
-  transitLocationId String                   @db.Char(36)
-  transitLocation  Location                  @relation(fields: [organizationId, transitLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  note             String?                   @db.VarChar(500)
+  transitLocationId String                    @db.Char(36)
+  transitLocation   Location                  @relation(fields: [organizationId, transitLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  note              String?                   @db.VarChar(500)
   /// Who takes it (free text), written when it is sent.
-  carrier          String?                   @db.VarChar(160)
+  carrier           String?                   @db.VarChar(160)
   /// Sent with the creation so that repeating it creates one draft.
-  idempotencyKey   String                    @db.VarChar(64)
-  createdByUserId  String                    @db.Char(36)
-  createdAt        DateTime                  @default(now()) @db.DateTime(3)
+  idempotencyKey    String                    @db.VarChar(64)
+  createdByUserId   String                    @db.Char(36)
+  createdAt         DateTime                  @default(now()) @db.DateTime(3)
   /// The movement of the send (FACILITY_TRANSFER).
-  sendMovementId   String?                   @db.Char(36)
-  sendMovement     StockMovement?            @relation(fields: [organizationId, sendMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  sentByUserId     String?                   @db.Char(36)
-  sentAt           DateTime?                 @db.DateTime(3)
+  sendMovementId    String?                   @db.Char(36)
+  sendMovement      StockMovement?            @relation(fields: [organizationId, sendMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  sentByUserId      String?                   @db.Char(36)
+  sentAt            DateTime?                 @db.DateTime(3)
   /// When nothing was left in transit.
-  closedAt         DateTime?                 @db.DateTime(3)
-  cancelledByUserId String?                  @db.Char(36)
-  cancelledAt      DateTime?                 @db.DateTime(3)
-  cancelReason     String?                   @db.VarChar(300)
-  lines            FacilityTransferLine[]
-  receipts         FacilityTransferReceipt[]
+  closedAt          DateTime?                 @db.DateTime(3)
+  cancelledByUserId String?                   @db.Char(36)
+  cancelledAt       DateTime?                 @db.DateTime(3)
+  cancelReason      String?                   @db.VarChar(300)
+  lines             FacilityTransferLine[]
+  receipts          FacilityTransferReceipt[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
@@ -3675,11 +3677,85 @@ model NotificationPreference {
   userId         String       @db.Char(36)
   typeKey        String       @db.VarChar(80)
   enabled        Boolean
+  /// Also by mail (WMS-39B, ADR 0060). Off by default: only who asks.
+  email          Boolean      @default(false)
   updatedAt      DateTime     @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@unique([organizationId, userId, typeKey])
+  @@index([organizationId, typeKey, email])
   @@map("notification_preference")
+}
+
+/// How a notice by mail ended (WMS-39B, ADR 0060).
+enum NotificationEmailStatus {
+  QUEUED
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// A notice that also goes out by mail (WMS-39B, ADR 0060). Written by
+/// `notify` in the transaction of the fact; sent by the worker, grouped
+/// per person. Text and destination are a copy of the notice: the notice
+/// may be cleaned up before this row is.
+model NotificationEmail {
+  id              String                  @id @db.Char(36)
+  organizationId  String                  @db.Char(36)
+  organization    Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// The notice it repeats (no relation: notices are cleaned up).
+  notificationId  String                  @db.Char(36)
+  recipientUserId String                  @db.Char(36)
+  typeKey         String                  @db.VarChar(80)
+  text            String                  @db.VarChar(300)
+  href            String                  @db.VarChar(300)
+  /// What receiving it required (permissions, match, facility or
+  /// location): checked again before it is sent.
+  requirement     Json
+  status          NotificationEmailStatus @default(QUEUED)
+  /// Job that took it to send; null while it waits.
+  claimedBy       String?                 @db.Char(36)
+  /// Why it did not go out (SKIPPED, FAILED).
+  reason          String?                 @db.VarChar(300)
+  createdAt       DateTime                @default(now()) @db.DateTime(3)
+  sentAt          DateTime?               @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, notificationId])
+  @@index([organizationId, recipientUserId, status, claimedBy])
+  @@index([organizationId, recipientUserId, sentAt])
+  @@index([organizationId, status, createdAt])
+  @@map("notification_email")
+}
+
+/// How the daily summary of a person ended (WMS-39B, ADR 0060).
+enum DailyDigestStatus {
+  QUEUED
+  SENT
+  EMPTY
+  SKIPPED
+  FAILED
+}
+
+/// The daily summary by mail of one person for one day of the company's
+/// calendar (WMS-39B, ADR 0060): lots about to expire and low stock. One
+/// per person and day; the round that sets it aside never makes two.
+model DailyDigest {
+  id             String            @id @db.Char(36)
+  organizationId String            @db.Char(36)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String            @db.Char(36)
+  /// Day of the company's calendar.
+  day            DateTime          @db.Date
+  status         DailyDigestStatus @default(QUEUED)
+  reason         String?           @db.VarChar(300)
+  createdAt      DateTime          @default(now()) @db.DateTime(3)
+  sentAt         DateTime?         @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId, day])
+  @@index([organizationId, createdAt])
+  @@map("daily_digest")
 }
 
 /// What kind of problem an incident is (WMS-39): a fixed, generic list.
@@ -3705,38 +3781,38 @@ enum IncidentStatus {
 /// states with INCIDENT_TRANSITIONS and the trigger `incident_transition`.
 /// Never deleted.
 model Incident {
-  id                 String         @id @db.Char(36)
-  organizationId     String         @db.Char(36)
-  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id               String         @id @db.Char(36)
+  organizationId   String         @db.Char(36)
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Consecutive per company («INC-0001»).
-  number             Int
-  facilityId         String         @db.Char(36)
-  facility           Facility       @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  kind               IncidentKind
-  status             IncidentStatus @default(OPEN)
-  description        String         @db.VarChar(1000)
+  number           Int
+  facilityId       String         @db.Char(36)
+  facility         Facility       @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  kind             IncidentKind
+  status           IncidentStatus @default(OPEN)
+  description      String         @db.VarChar(1000)
   /// What it is about, all optional; the location is of its warehouse.
-  locationId         String?        @db.Char(36)
-  location           Location?      @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
-  productId          String?        @db.Char(36)
-  product            Product?       @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  taskId             String?        @db.Char(36)
-  task               WarehouseTask? @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  outboundOrderId    String?        @db.Char(36)
-  outboundOrder      OutboundOrder? @relation(fields: [organizationId, outboundOrderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  locationId       String?        @db.Char(36)
+  location         Location?      @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId        String?        @db.Char(36)
+  product          Product?       @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  taskId           String?        @db.Char(36)
+  task             WarehouseTask? @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  outboundOrderId  String?        @db.Char(36)
+  outboundOrder    OutboundOrder? @relation(fields: [organizationId, outboundOrderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The confirmation of the form: a retry finds the same incident.
-  idempotencyKey     String         @db.VarChar(64)
-  reportedByUserId   String         @db.Char(36)
-  createdAt          DateTime       @default(now()) @db.DateTime(3)
+  idempotencyKey   String         @db.VarChar(64)
+  reportedByUserId String         @db.Char(36)
+  createdAt        DateTime       @default(now()) @db.DateTime(3)
   /// Who took it («en atención») and when.
-  attendedByUserId   String?        @db.Char(36)
-  attendedAt         DateTime?      @db.DateTime(3)
+  attendedByUserId String?        @db.Char(36)
+  attendedAt       DateTime?      @db.DateTime(3)
   /// Resolved (what was done) or dismissed (why).
-  closedByUserId     String?        @db.Char(36)
-  closedAt           DateTime?      @db.DateTime(3)
-  resolution         String?        @db.VarChar(500)
-  updatedAt          DateTime       @updatedAt @db.DateTime(3)
-  notes              IncidentNote[]
+  closedByUserId   String?        @db.Char(36)
+  closedAt         DateTime?      @db.DateTime(3)
+  resolution       String?        @db.VarChar(500)
+  updatedAt        DateTime       @updatedAt @db.DateTime(3)
+  notes            IncidentNote[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
