@@ -1270,6 +1270,32 @@ describe("límites de uso", () => {
     expect(others).toEqual([200, 200, 200, 429]);
   });
 
+  it("al vencer la ventana con llamadas simultáneas ninguna se rechaza por la carrera", async () => {
+    const { takeRateWindow } = await import("@/platform/api");
+    for (let round = 0; round < 5; round++) {
+      const key = `test:rollover:${stamp}:${round}`;
+      // A window that ended a moment ago, with some calls counted.
+      await db.apiRateWindow.create({
+        data: { key, windowStart: new Date(Date.now() - 61_000), count: 7 },
+      });
+      const decisions = await Promise.all(
+        Array.from({ length: 40 }, () => takeRateWindow(key, 100)),
+      );
+      expect(decisions.every((decision) => decision.ok)).toBe(true);
+      const row = await db.apiRateWindow.findUniqueOrThrow({ where: { key } });
+      expect(row.count).toBe(40);
+    }
+    // And the limit still holds within the new window.
+    const key = `test:rollover:${stamp}:limit`;
+    await db.apiRateWindow.create({
+      data: { key, windowStart: new Date(Date.now() - 61_000), count: 7 },
+    });
+    const decisions = await Promise.all(
+      Array.from({ length: 40 }, () => takeRateWindow(key, 25)),
+    );
+    expect(decisions.filter((decision) => decision.ok)).toHaveLength(25);
+  }, 60_000);
+
   it("el límite de la empresa sale del plan y cubre todas sus llaves", async () => {
     const small = await company(["inventory"]);
     await db.entitlement.create({

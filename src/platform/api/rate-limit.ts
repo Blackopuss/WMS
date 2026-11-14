@@ -38,10 +38,15 @@ export async function takeRateWindow(
     if (restarted.count === 1) return { ok: true };
     const row = await db.apiRateWindow.findUnique({
       where: { key },
-      select: { windowStart: true },
+      select: { windowStart: true, count: true },
     });
     if (row) {
       if (row.windowStart.getTime() <= openSince.getTime()) continue;
+      // The window is open and has room: another call restarted it (or
+      // counted) between the two updates above. Count again; answering
+      // «limited» here would refuse calls that are within the limit every
+      // time a window ends under load.
+      if (row.count < max) continue;
       const ends = row.windowStart.getTime() + windowMs;
       return {
         ok: false,
