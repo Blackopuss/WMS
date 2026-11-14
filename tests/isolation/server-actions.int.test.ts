@@ -1180,6 +1180,33 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo de la entidad; el campo o la opción se buscan y bloquean solo en esa empresa",
     coveredBy: "tests/platform/custom-fields.int.test.ts",
   },
+  // WMS-60 (ADR 0058): API keys and webhook destinations.
+  createApiKeyAction: {
+    input:
+      "nombre, capacidades, almacén, si queda limitada a él, llamadas por minuto y caducidad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.api.manage, que la persona tenga cada permiso de las capacidades y que el almacén sea de esa empresa y de su alcance",
+    coveredBy: "tests/platform/api.int.test.ts",
+  },
+  revokeApiKeyAction: {
+    input: "id de la llave (fijado por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.api.manage y busca la llave solo en esa empresa",
+    coveredBy: "tests/platform/api.int.test.ts",
+  },
+  createWebhookAction: {
+    input: "dirección https, descripción y eventos",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.api.manage, valida la dirección (SSRF) y escribe solo en esa empresa",
+    coveredBy: "tests/platform/webhooks.int.test.ts",
+  },
+  webhookCommandAction: {
+    input:
+      "id del destino (fijado por la página) y qué hacer: pausar, reanudar, cambiar secreto o quitar",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.api.manage y bloquea el destino solo en esa empresa",
+    coveredBy: "tests/platform/webhooks.int.test.ts",
+  },
 };
 
 function actionFiles(dir: string): string[] {

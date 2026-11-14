@@ -8,12 +8,13 @@ import {
   supportWindowFor,
   type OrganizationContext,
 } from "@/platform/tenancy";
-import { db, forOrganization } from "@/server";
+import { db, delegationOf, forOrganization } from "@/server";
 
 import type { Permission, Role } from "./catalog";
 import {
   buildScope,
   can,
+  type SubjectLimit,
   isOwnerOnly,
   knownRoles,
   permissionsOf,
@@ -36,6 +37,34 @@ const SUPPORT: Subject = { isOwner: false, roles: ["viewer"], support: true };
 
 /** Titular flag and roles of the person in that company. */
 export async function loadSubject(
+  organizationId: string,
+  userId: string,
+): Promise<Subject> {
+  // WMS-60: inside a call of an API key, its creator is cut down to the key.
+  const delegated = delegationOf(organizationId, userId);
+  if (delegated.kind === "foreign") return NOBODY;
+  const subject = await loadMemberSubject(organizationId, userId);
+  if (delegated.kind === "none") return subject;
+  // A key never acts as platform support: without membership, nothing.
+  if (subject.support === true) return NOBODY;
+  return { ...subject, limit: limitOf(delegated.delegation) };
+}
+
+/** The cut of an API key (WMS-60): its permissions and, if limited, its warehouse. */
+export function limitOf(delegation: {
+  permissions: readonly string[];
+  facilityId: string;
+  facilityOnly: boolean;
+}): SubjectLimit {
+  return {
+    permissions: new Set(delegation.permissions),
+    scope: delegation.facilityOnly
+      ? { facilities: new Map([[delegation.facilityId, null]]) }
+      : null,
+  };
+}
+
+async function loadMemberSubject(
   organizationId: string,
   userId: string,
 ): Promise<Subject> {

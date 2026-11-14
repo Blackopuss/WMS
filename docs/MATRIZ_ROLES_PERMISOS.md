@@ -67,6 +67,7 @@ Los prefijos describen la capacidad funcional, no la ubicación física del serv
 | `platform.session.revoke` | Cerrar a distancia una o todas las sesiones de un miembro en la empresa (con «todas», sus sesiones anteriores ya no entran a la empresa sin volver a iniciar sesión), nunca las del titular ni las propias; las de un administrador solo el titular; WMS-40, ADR 0059. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.ownership.transfer` | Transferir titularidad mediante flujo exclusivo y atómico; USR-03B. | Sí | No | No | No | No | No | No | No | No |
 | `platform.audit.read` | Consultar bitácora de empresa, equipo y operaciones sensibles, sin secretos; USR-11, PLT-14 y sección 5; pregunta 7. | Sí | Sí | No | No | No | No | No | No | Sí |
+| `platform.api.manage` | Crear, cambiar y revocar llaves de la API y destinos de webhooks de la empresa, sin ver nunca un secreto ya creado; las llaves nunca tienen más que quien las crea; WMS-60, ADR 0058. | Sí | Sí | No | No | No | No | No | No | No |
 
 Aceptar una invitación (USR-05) no exige un rol previo en esa empresa ni concede `platform.team.invite`: exige cuenta autenticada correspondiente al correo invitado, token vigente de un solo uso, empresa y roles válidos y cupo reservado. Al aceptar se revalida que la invitación no se haya cancelado ni convertido en una vía de escalamiento. Perfil, contraseña, MFA y sesiones propias siguen los controles de identidad de PLT; no otorgan acceso al equipo ni a sesiones ajenas.
 

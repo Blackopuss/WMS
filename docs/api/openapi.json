@@ -1,0 +1,2740 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "WMS API",
+    "version": "1.0.0",
+    "description": "API REST por empresa. Cada llave actúa por quien la creó, con solo las capacidades que se le dieron. Cantidades como texto decimal y fechas en UTC (ISO 8601). Las listas se paginan con `page` (25 por página); una página fuera de rango devuelve la última."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Llave de la API: wms_xxxxxxxx_…"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "paths": {
+    "/movements": {
+      "get": {
+        "tags": [
+          "Inventario"
+        ],
+        "summary": "Movimientos de existencias",
+        "description": "Historial inmutable, del más reciente al más antiguo. Las fechas de filtro son días del calendario de la empresa.\n\nCapacidad de la llave: `movements.read` (Leer movimientos).",
+        "operationId": "getMovements",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Página, desde 1 (25 por página).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,6}$"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Primer día (año-mes-día).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Último día (año-mes-día), incluido.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ENTRY",
+                "EXIT",
+                "TRANSFER",
+                "ADJUSTMENT",
+                "INITIAL",
+                "REVERSAL",
+                "RECEIPT",
+                "RETURN",
+                "STATUS_CHANGE",
+                "SHIPMENT",
+                "CUSTOMER_RETURN",
+                "FACILITY_TRANSFER"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "pageCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "ENTRY",
+                              "EXIT",
+                              "TRANSFER",
+                              "ADJUSTMENT",
+                              "INITIAL",
+                              "REVERSAL",
+                              "RECEIPT",
+                              "RETURN",
+                              "STATUS_CHANGE",
+                              "SHIPMENT",
+                              "CUSTOMER_RETURN",
+                              "FACILITY_TRANSFER"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "Fecha y hora en UTC (ISO 8601)."
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reversesMovementId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reversedByMovementId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "productId": {
+                                  "type": "string"
+                                },
+                                "sku": {
+                                  "type": "string"
+                                },
+                                "locationId": {
+                                  "type": "string"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "IN",
+                                    "OUT"
+                                  ]
+                                },
+                                "quantity": {
+                                  "type": "string",
+                                  "pattern": "^-?\\d+(\\.\\d+)?$",
+                                  "description": "Cantidad decimal exacta, como texto."
+                                },
+                                "unitCode": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "AVAILABLE",
+                                    "RECEIVING",
+                                    "INSPECTION",
+                                    "QUARANTINE",
+                                    "DAMAGED",
+                                    "REJECTED",
+                                    "IN_TRANSIT",
+                                    "BLOCKED"
+                                  ]
+                                },
+                                "lotId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "lotCode": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "serials": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "productId",
+                                "sku",
+                                "locationId",
+                                "direction",
+                                "quantity",
+                                "unitCode",
+                                "status",
+                                "lotId",
+                                "lotCode",
+                                "serials"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type",
+                          "createdAt",
+                          "reference",
+                          "reason",
+                          "reversesMovementId",
+                          "reversedByMovementId",
+                          "lines"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageCount",
+                    "total",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outbound-orders": {
+      "get": {
+        "tags": [
+          "Pedidos de salida"
+        ],
+        "summary": "Pedidos de salida",
+        "description": "Pedidos del almacén de la llave, del más reciente al más antiguo.\n\nCapacidad de la llave: `outbound.read` (Leer pedidos de salida).",
+        "operationId": "getOutboundOrders",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Página, desde 1 (25 por página).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,6}$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "RELEASED",
+                "PICKING",
+                "PICKED",
+                "PACKING",
+                "PACKED",
+                "SHIPPED",
+                "CANCELLED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "pageCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "RELEASED",
+                              "PICKING",
+                              "PICKED",
+                              "PACKING",
+                              "PACKED",
+                              "SHIPPED",
+                              "CANCELLED"
+                            ]
+                          },
+                          "urgent": {
+                            "type": "boolean"
+                          },
+                          "recipient": {
+                            "type": "string"
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "dueOn": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lines": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "Fecha y hora en UTC (ISO 8601)."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "number",
+                          "status",
+                          "urgent",
+                          "recipient",
+                          "reference",
+                          "dueOn",
+                          "lines",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageCount",
+                    "total",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pedidos de salida"
+        ],
+        "summary": "Crear un pedido de salida en borrador",
+        "description": "Crea el pedido y sus líneas en una sola operación, en el almacén de la llave. Queda en borrador: se libera desde la app. Con la misma Idempotency-Key y el mismo contenido devuelve el mismo pedido (200, `repeated: true`).\n\nCapacidad de la llave: `outbound.create` (Crear pedidos de salida).",
+        "operationId": "postOutboundOrders",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "La misma clave con el mismo contenido devuelve lo mismo; con otro contenido responde 409.",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recipient": {
+                    "type": "string",
+                    "maxLength": 160,
+                    "description": "Para quién es."
+                  },
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "address": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "dueOn": {
+                    "description": "Día de salida (año-mes-día).",
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "NORMAL",
+                      "URGENT"
+                    ]
+                  },
+                  "lines": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "product": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "description": "Id o clave (SKU) del producto."
+                        },
+                        "quantity": {
+                          "type": "string",
+                          "pattern": "^-?\\d+(\\.\\d+)?$",
+                          "description": "Cantidad en la unidad del producto."
+                        }
+                      },
+                      "required": [
+                        "product",
+                        "quantity"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "recipient",
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "RELEASED",
+                        "PICKING",
+                        "PICKED",
+                        "PACKING",
+                        "PACKED",
+                        "SHIPPED",
+                        "CANCELLED"
+                      ]
+                    },
+                    "priority": {
+                      "type": "string",
+                      "enum": [
+                        "NORMAL",
+                        "URGENT"
+                      ]
+                    },
+                    "recipient": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "address": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dueOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "description": "Fecha y hora en UTC (ISO 8601)."
+                    },
+                    "releasedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cancelledAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "productId": {
+                            "type": "string"
+                          },
+                          "sku": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "productId",
+                          "sku",
+                          "quantity"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "shipment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "number": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "DRAFT",
+                                "SHIPPED",
+                                "CANCELLED"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "number",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "repeated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "status",
+                    "priority",
+                    "recipient",
+                    "reference",
+                    "address",
+                    "note",
+                    "dueOn",
+                    "createdAt",
+                    "releasedAt",
+                    "cancelledAt",
+                    "lines",
+                    "shipment",
+                    "repeated"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La clave de idempotencia ya se usó con otro contenido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outbound-orders/{id}": {
+      "get": {
+        "tags": [
+          "Pedidos de salida"
+        ],
+        "summary": "Un pedido de salida",
+        "description": "Capacidad de la llave: `outbound.read` (Leer pedidos de salida).",
+        "operationId": "getOutboundOrdersId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Id del recurso.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "RELEASED",
+                        "PICKING",
+                        "PICKED",
+                        "PACKING",
+                        "PACKED",
+                        "SHIPPED",
+                        "CANCELLED"
+                      ]
+                    },
+                    "priority": {
+                      "type": "string",
+                      "enum": [
+                        "NORMAL",
+                        "URGENT"
+                      ]
+                    },
+                    "recipient": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "address": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dueOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "description": "Fecha y hora en UTC (ISO 8601)."
+                    },
+                    "releasedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cancelledAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "productId": {
+                            "type": "string"
+                          },
+                          "sku": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "productId",
+                          "sku",
+                          "quantity"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "shipment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "number": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "DRAFT",
+                                "SHIPPED",
+                                "CANCELLED"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "number",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "status",
+                    "priority",
+                    "recipient",
+                    "reference",
+                    "address",
+                    "note",
+                    "dueOn",
+                    "createdAt",
+                    "releasedAt",
+                    "cancelledAt",
+                    "lines",
+                    "shipment"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": [
+          "Inventario"
+        ],
+        "summary": "Productos activos",
+        "description": "Catálogo de la empresa por nombre, 25 por página.\n\nCapacidad de la llave: `products.read` (Leer productos).",
+        "operationId": "getProducts",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Página, desde 1 (25 por página).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,6}$"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Texto a buscar en nombre, clave o código de barras.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "pageCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "sku": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "barcode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "category": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "brand": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "unitCode": {
+                            "type": "string"
+                          },
+                          "quantityStep": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "Fecha y hora en UTC (ISO 8601)."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sku",
+                          "name",
+                          "barcode",
+                          "category",
+                          "brand",
+                          "unitCode",
+                          "quantityStep",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageCount",
+                    "total",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}/stock": {
+      "get": {
+        "tags": [
+          "Inventario"
+        ],
+        "summary": "Existencias de un producto",
+        "description": "Total, disponible (sin lo apartado), apartado y en camino entre almacenes; por ubicación y por lote.\n\nCapacidad de la llave: `stock.read` (Leer existencias).",
+        "operationId": "getProductsIdStock",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Id del recurso.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "productId": {
+                      "type": "string"
+                    },
+                    "unitCode": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "string",
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "description": "Cantidad decimal exacta, como texto."
+                    },
+                    "available": {
+                      "type": "string",
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "description": "Cantidad decimal exacta, como texto."
+                    },
+                    "reserved": {
+                      "type": "string",
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "description": "Cantidad decimal exacta, como texto."
+                    },
+                    "inTransit": {
+                      "type": "string",
+                      "pattern": "^-?\\d+(\\.\\d+)?$",
+                      "description": "Cantidad decimal exacta, como texto."
+                    },
+                    "locations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locationId": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          },
+                          "available": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          }
+                        },
+                        "required": [
+                          "locationId",
+                          "path",
+                          "quantity",
+                          "available"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "lots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "locationId": {
+                            "type": "string"
+                          },
+                          "lotId": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "AVAILABLE",
+                              "RECEIVING",
+                              "INSPECTION",
+                              "QUARANTINE",
+                              "DAMAGED",
+                              "REJECTED",
+                              "IN_TRANSIT",
+                              "BLOCKED"
+                            ]
+                          },
+                          "quantity": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          }
+                        },
+                        "required": [
+                          "locationId",
+                          "lotId",
+                          "status",
+                          "quantity"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "productId",
+                    "unitCode",
+                    "total",
+                    "available",
+                    "reserved",
+                    "inTransit",
+                    "locations",
+                    "lots"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/purchase-orders": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "summary": "Órdenes de compra",
+        "description": "Órdenes del almacén de la llave y las de toda la empresa, de la más reciente a la más antigua.\n\nCapacidad de la llave: `purchase_orders.read` (Leer órdenes de compra).",
+        "operationId": "getPurchaseOrders",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Página, desde 1 (25 por página).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,6}$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SENT",
+                "PARTIAL",
+                "RECEIVED",
+                "CANCELLED",
+                "CLOSED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "pageCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "SENT",
+                              "PARTIAL",
+                              "RECEIVED",
+                              "CANCELLED",
+                              "CLOSED"
+                            ]
+                          },
+                          "supplierName": {
+                            "type": "string"
+                          },
+                          "lines": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "expectedOn": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "Fecha y hora en UTC (ISO 8601)."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "number",
+                          "status",
+                          "supplierName",
+                          "lines",
+                          "expectedOn",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageCount",
+                    "total",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/purchase-orders/{id}": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "summary": "Una orden de compra",
+        "description": "Cada línea dice lo pedido como se capturó (`orderedQuantity`, en `orderedIn`: `base` o el id de la presentación). `unitCost` solo existe para una llave con `costs.read`.\n\nCapacidad de la llave: `purchase_orders.read` (Leer órdenes de compra).",
+        "operationId": "getPurchaseOrdersId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Id del recurso.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "SENT",
+                        "PARTIAL",
+                        "RECEIVED",
+                        "CANCELLED",
+                        "CLOSED"
+                      ]
+                    },
+                    "supplierId": {
+                      "type": "string"
+                    },
+                    "supplierName": {
+                      "type": "string"
+                    },
+                    "expectedOn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "description": "Fecha y hora en UTC (ISO 8601)."
+                    },
+                    "sentAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "closedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cancelledAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "lineNumber": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "productId": {
+                            "type": "string"
+                          },
+                          "sku": {
+                            "type": "string"
+                          },
+                          "orderedQuantity": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          },
+                          "orderedIn": {
+                            "type": "string"
+                          },
+                          "unitCost": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^-?\\d+(\\.\\d+)?$",
+                                "description": "Cantidad decimal exacta, como texto."
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "lineNumber",
+                          "productId",
+                          "sku",
+                          "orderedQuantity",
+                          "orderedIn"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "status",
+                    "supplierId",
+                    "supplierName",
+                    "expectedOn",
+                    "createdAt",
+                    "sentAt",
+                    "closedAt",
+                    "cancelledAt",
+                    "lines"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/purchase-orders/{id}/receipts": {
+      "get": {
+        "tags": [
+          "Compras"
+        ],
+        "summary": "Recepciones de una orden de compra",
+        "description": "Cada recepción con lo que entró, en la unidad del producto, a qué ubicación y si llegó dañado. De la más reciente a la más antigua.\n\nCapacidad de la llave: `receipts.read` (Leer recepciones).",
+        "operationId": "getPurchaseOrdersIdReceipts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Id del recurso.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "Fecha y hora en UTC (ISO 8601)."
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "productId": {
+                                  "type": "string"
+                                },
+                                "sku": {
+                                  "type": "string"
+                                },
+                                "quantity": {
+                                  "type": "string",
+                                  "pattern": "^-?\\d+(\\.\\d+)?$",
+                                  "description": "Cantidad decimal exacta, como texto."
+                                },
+                                "unitCode": {
+                                  "type": "string"
+                                },
+                                "locationId": {
+                                  "type": "string"
+                                },
+                                "lotCode": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "damaged": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "productId",
+                                "sku",
+                                "quantity",
+                                "unitCode",
+                                "locationId",
+                                "lotCode",
+                                "damaged"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "createdAt",
+                          "reference",
+                          "lines"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "receipts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shipments": {
+      "get": {
+        "tags": [
+          "Embarques"
+        ],
+        "summary": "Embarques",
+        "description": "Embarques del almacén de la llave, del más reciente al más antiguo.\n\nCapacidad de la llave: `shipments.read` (Leer embarques).",
+        "operationId": "getShipments",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Página, desde 1 (25 por página).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,6}$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SHIPPED",
+                "CANCELLED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "pageCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "SHIPPED",
+                              "CANCELLED"
+                            ]
+                          },
+                          "orders": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "carrier": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "trackingNumber": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "description": "Fecha y hora en UTC (ISO 8601)."
+                          },
+                          "shippedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "description": "Fecha y hora en UTC (ISO 8601)."
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "number",
+                          "status",
+                          "orders",
+                          "carrier",
+                          "trackingNumber",
+                          "createdAt",
+                          "shippedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageCount",
+                    "total",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shipments/{id}": {
+      "get": {
+        "tags": [
+          "Embarques"
+        ],
+        "summary": "Un embarque",
+        "description": "En borrador, lo que cada pedido sacaría hoy; despachado, lo que salió.\n\nCapacidad de la llave: `shipments.read` (Leer embarques).",
+        "operationId": "getShipmentsId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Id del recurso.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "SHIPPED",
+                        "CANCELLED"
+                      ]
+                    },
+                    "carrier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "trackingNumber": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "description": "Fecha y hora en UTC (ISO 8601)."
+                    },
+                    "shippedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cancelledAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Fecha y hora en UTC (ISO 8601)."
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "orders": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "RELEASED",
+                              "PICKING",
+                              "PICKED",
+                              "PACKING",
+                              "PACKED",
+                              "SHIPPED",
+                              "CANCELLED"
+                            ]
+                          },
+                          "recipient": {
+                            "type": "string"
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "productId": {
+                                  "type": "string"
+                                },
+                                "sku": {
+                                  "type": "string"
+                                },
+                                "quantity": {
+                                  "type": "string",
+                                  "pattern": "^-?\\d+(\\.\\d+)?$",
+                                  "description": "Cantidad decimal exacta, como texto."
+                                },
+                                "unitCode": {
+                                  "type": "string"
+                                },
+                                "lotId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "serials": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "packageCode": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "productId",
+                                "sku",
+                                "quantity",
+                                "unitCode",
+                                "lotId",
+                                "serials",
+                                "packageCode"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "number",
+                          "status",
+                          "recipient",
+                          "reference",
+                          "lines"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "status",
+                    "carrier",
+                    "trackingNumber",
+                    "createdAt",
+                    "shippedAt",
+                    "cancelledAt",
+                    "orders"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stock": {
+      "get": {
+        "tags": [
+          "Inventario"
+        ],
+        "summary": "Existencias por producto",
+        "description": "Lo que hay de cada producto activo (todas las ubicaciones y estados que alcanza la llave), en su unidad.\n\nCapacidad de la llave: `stock.read` (Leer existencias).",
+        "operationId": "getStock",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Página, desde 1 (25 por página).",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,6}$"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Texto a buscar en nombre, clave o código de barras.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Correcto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "pageCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "productId": {
+                            "type": "string"
+                          },
+                          "sku": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "unitCode": {
+                            "type": "string"
+                          },
+                          "onHand": {
+                            "type": "string",
+                            "pattern": "^-?\\d+(\\.\\d+)?$",
+                            "description": "Cantidad decimal exacta, como texto."
+                          }
+                        },
+                        "required": [
+                          "productId",
+                          "sku",
+                          "name",
+                          "unitCode",
+                          "onHand"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "page",
+                    "pageCount",
+                    "total",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos que no son válidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta la llave o no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La llave no puede hacer esto, o el plan está en solo lectura.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No existe, es de otra empresa o queda fuera del alcance de la llave.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Límite de llamadas por minuto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que faltan para volver a intentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

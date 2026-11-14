@@ -305,6 +305,25 @@ como esa persona con `listExpiringLots` (un bloque por almacén que alcanza;
 acepta `facilityId`) y `listLowStock` (solo para quien no tiene límite), y
 no manda nada si no hay qué decir. Nunca costos.
 
+## Eventos de webhooks
+
+Tipos en `webhooks.ts` (`INVENTORY_WEBHOOK_EVENTS`), registrados en
+`src/modules/registry/webhooks.ts`; cada servicio llama `emitWebhookEvent`
+de `@/platform/api` en su transacción, después de sus escrituras (WMS-60,
+ADR 0058). El cuerpo lleva ids y cantidades como texto, nunca costos.
+
+| Evento | Quién lo emite |
+| --- | --- |
+| `inventory.shipment.dispatched` | `dispatchShipment` (pedidos y lo que salió de cada uno) |
+| `inventory.adjustment.applied` | el núcleo del ajuste (`registerAdjustment` y el efecto de la autorización) y `applyCount` (un evento por conteo) |
+| `inventory.stock_status.changed` | `writeStatusChange` (`changeStockStatus` y las decisiones de devoluciones de clientes) |
+
+`createOutboundDraft` (`outbound-orders.ts`) crea un pedido en borrador con
+sus líneas en una transacción, idempotente por su columna propia `apiRequestKey` (nunca el `sourceKey` de la importación): lo usa
+`POST /api/v1/outbound-orders`. `MovementSummary`, `ShipmentLineView`
+agregan los datos exactos (producto, cantidad base, unidad, estado) que la
+API necesita.
+
 ## Trabajos en segundo plano
 
 | Tipo | Manejador | Qué hace |

@@ -5,6 +5,10 @@ import {
 } from "@/modules/inventory";
 import type { ScheduledRound } from "@/platform/jobs";
 import {
+  organizationsWithWebhookHistory,
+  purgeWebhookHistory,
+} from "@/platform/api";
+import {
   purgeFinishedNoticeEmails,
   purgeReadNotifications,
 } from "@/platform/notifications";
@@ -42,5 +46,12 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "inventory.daily_digest",
     module: "inventory",
     run: (organizationId) => runDailyDigestRound(organizationId),
+  },
+  // WMS-60 (ADR 0058): webhook events and deliveries older than 30 days,
+  // for every company that has any (whatever its modules).
+  {
+    name: "platform.webhooks_cleanup",
+    organizations: organizationsWithWebhookHistory,
+    run: (organizationId) => purgeWebhookHistory(organizationId),
   },
 ];

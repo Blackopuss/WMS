@@ -7,7 +7,12 @@ import { recordAuditEvent } from "@/platform/audit";
 import { loadScope } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { readLimit } from "@/platform/entitlements";
-import { LOCKING_TRANSACTION, forOrganization, type TenantDb } from "@/server";
+import {
+  LOCKING_TRANSACTION,
+  delegationOf,
+  forOrganization,
+  type TenantDb,
+} from "@/server";
 
 import { createDefaultLevels } from "./bootstrap";
 import type { LocationActor } from "./locations";
@@ -86,6 +91,19 @@ export async function activeFacilityOf(
     }),
     loadScope(client, userId),
   ]);
+  // WMS-60: an API key works in its own warehouse, whatever its creator
+  // chose on screen; if it is archived or outside the scope, nothing.
+  const delegated = delegationOf(null, userId);
+  if (delegated.kind === "key") {
+    const own = await client.facility.findFirst({
+      where: { id: delegated.delegation.facilityId },
+      select: SUMMARY,
+    });
+    if (!own || own.archivedAt || !facilityInScope(scope, own.id)) {
+      throw new ForbiddenError("no_facility_in_scope", NO_FACILITY_MESSAGE);
+    }
+    return summaryOf(own);
+  }
   const chosen = membership?.activeFacility;
   if (chosen && !chosen.archivedAt && facilityInScope(scope, chosen.id)) {
     return summaryOf(chosen);

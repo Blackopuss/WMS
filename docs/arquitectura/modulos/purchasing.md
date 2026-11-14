@@ -127,6 +127,14 @@ proveedores:
 | `purchasing.request_to_attend` | `submitPurchaseRequest` (regla apagada) y el efecto de autorizarla | `purchasing.order.create` que alcance el almacén de la solicitud |
 | `purchasing.request_answered` | `rejectPurchaseRequest`, `convertPurchaseRequest` | quien la pidió (la autorización rechazada la avisa `approvals.decided`) |
 
+## Eventos de webhooks
+
+`purchasing.receipt.confirmed` (`webhooks.ts`, `PURCHASING_WEBHOOK_EVENTS`):
+lo emite `receivePurchaseOrder` en su transacción, con lo que entró por
+línea (producto, ubicación, lote, cantidad base, dañado) y cómo quedó la
+orden; nunca costos (WMS-60, ADR 0058). `ReceiptSummary` agrega producto,
+cantidad base, unidad y lote de cada línea para la API.
+
 ## Trabajos en segundo plano
 
 | Tipo | Manejador | Qué hace |

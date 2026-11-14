@@ -62,7 +62,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Dónde quedó (2026-11-13):** el fundador pidió detenerse al cerrar WMS-39 y WMS-58; no se empieza ningún paso nuevo hasta que lo indique. Fases 1 y 2 cerradas; de la Fase 3 están hechos WMS-56, WMS-41, WMS-57 y WMS-58; transversales hechos: WMS-35, WMS-36 y WMS-39.
 
-**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048), WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055) , WMS-40 (sesiones del equipo, ADR 0059) y WMS-39B (avisos por correo y resumen diario, ADR 0060). En curso, cada uno en su rama: WMS-60 (correcciones de la revisión) y WMS-38 (PIN), sobre WMS-40.
+**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048), WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055) , WMS-40 (sesiones del equipo, ADR 0059), WMS-39B (avisos por correo y resumen diario, ADR 0060) y WMS-60 (API y webhooks, ADR 0058). En curso: WMS-38 (PIN), en corrección tras su revisión de seguridad.
 
 **Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
 
@@ -144,7 +144,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | --- | --- | --- |
 | 1. Fundamentos | ~~WMS-01..12~~, ~~WMS-49~~, ~~WMS-50~~, ~~WMS-18~~, ~~WMS-22A~~, ~~WMS-20~~, ~~WMS-71~~, ~~WMS-72~~, ~~WMS-73~~, ~~WMS-22B~~, ~~WMS-21A~~, ~~WMS-21B~~, ~~WMS-51~~ | Configuración por empresa, varios almacenes, ubicaciones configurables, alcance de permisos, lotes y series, documentación base |
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, ~~WMS-19~~, ~~WMS-54~~, ~~WMS-55~~, ~~WMS-26~~, ~~WMS-36~~, ~~WMS-23~~, ~~WMS-24~~, ~~WMS-25~~ | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
-| 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, ~~WMS-58~~, ~~WMS-41~~, WMS-59, WMS-27..31, WMS-60, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
+| 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, ~~WMS-58~~, ~~WMS-41~~, WMS-59, WMS-27..31, ~~WMS-60~~, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
 | Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, WMS-37, WMS-38, ~~WMS-39~~, ~~WMS-40~~, WMS-67, WMS-42, WMS-68, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
 | 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, WMS-46, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
@@ -631,10 +631,14 @@ configurables por empresa, de plataforma), **WMS-74B** (procesos en embarques)
 y **WMS-28B** (solicitud de producción desde el piso); hace de las fotos
 (WMS-37) un requisito y pone WMS-59 primero. La tercera versión (2026-11-14) trae además sus
 respuestas a P1–P13, la sección de roles y el motor de procesos con candado
-entre etapas y relevo automático entre áreas. Siguen abiertas P3, P6 y P7 y
-las confirmaciones P1b, P8b y P10b; nada se programa hasta que las conteste.
+entre etapas y relevo automático entre áreas. El fundador ya contestó también P3, P6, P7, P1b,
+P8b y P10b (están en `MEMORY.md`); la cuarta versión las incorpora y deja
+abierto solo cómo se cubre «restauración» y quién más decide las solicitudes
+de producción. Nada se programa hasta que apruebe esa versión.
 
 ### WMS-60 · API y webhooks
+
+**Hecho (2026-11-14, ADR 0058).** Pendiente: prueba de entrega contra un servidor HTTPS real; editar llaves y reenviar entregas desde la pantalla; elegir almacén por llamada; más escrituras cuando un cliente las pida; avisar al desactivar a alguien con llaves activas; decidir los límites de uso por plan.
 
 - **Qué:** API REST por empresa con llaves propias y permisos por llave,
   límites de uso, documentación generada (OpenAPI) y webhooks firmados de los

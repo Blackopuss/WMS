@@ -11,6 +11,7 @@ import {
   type ApprovalContext,
   type ApprovalTx,
 } from "@/platform/approvals";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -43,9 +44,15 @@ import {
 } from "./placement";
 import { ADJUSTMENT_APPROVAL_THRESHOLD, ENTRY_REPEAT_WINDOW } from "./settings";
 import { ADJUSTMENT_APPROVAL } from "./approval-keys";
+import { ADJUSTMENT_APPLIED_EVENT } from "./webhooks";
 import { exceedsThreshold } from "./approval-rules";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
-import { AVAILABLE_ANY_LOT, availableOfLot, lotColumns } from "./stock-status";
+import {
+  AVAILABLE_ANY_LOT,
+  availableOfLot,
+  lotColumns,
+  type StockStatus,
+} from "./stock-status";
 import {
   LOT_RULE_SELECT,
   NO_LOT_PRODUCT,
@@ -1183,6 +1190,11 @@ export type MovementSummary = {
     /** «Zona A › Estante 3». */
     location: string;
     direction: "IN" | "OUT";
+    /** WMS-60: exact data for the API: place, base quantity, unit, state. */
+    locationId: string;
+    baseQuantity: string;
+    unitCode: string;
+    status: StockStatus;
     /** In the product's unit: «300 piezas». */
     quantity: string;
     /**
@@ -1280,6 +1292,7 @@ async function fetchMovements(
           product: { select: { name: true, sku: true } },
           lotId: true,
           lot: { select: { code: true } },
+          status: true,
         },
       },
     },
@@ -1337,6 +1350,10 @@ async function fetchMovements(
       sku: line.product.sku,
       location: paths.get(line.locationId) ?? "",
       direction: line.direction,
+      locationId: line.locationId,
+      baseQuantity: line.baseQuantity.toString(),
+      unitCode: line.unitCode,
+      status: line.status,
       quantity: formatStock(line.baseQuantity.toString(), line.unitCode),
       captured: line.presentation
         ? `${formatDecimal(line.capturedQuantity.toString())} ${pluralizeName(
@@ -2541,6 +2558,30 @@ async function adjustIn(
       },
     });
   }
+  // WMS-60: who listens by webhook hears of it, inside this transaction.
+  await emitWebhookEvent(tx, ADJUSTMENT_APPLIED_EVENT, {
+    organizationId,
+    data: {
+      movementId,
+      source: mode.kind === "approved" ? "approval" : "manual",
+      locationId: location.id,
+      reason: data.reason,
+      reference: data.reference ?? null,
+      lines: [
+        {
+          productId: product.id,
+          lotId: lot?.id ?? null,
+          unitCode,
+          previousQuantity: before.toString(),
+          countedQuantity: counted.toString(),
+          difference: (direction === "IN"
+            ? amount
+            : amount.negated()
+          ).toString(),
+        },
+      ],
+    },
+  });
   await recordAuditEvent(tx, {
     organizationId,
     actorUserId: userId,
@@ -3336,6 +3377,8 @@ export type MovementFilters = {
    */
   serialUnitId?: string;
   page?: number;
+  /** WMS-60: drop the lines of locations outside the person's scope. */
+  onlyLinesInScope?: boolean;
 };
 
 export type MovementPage = {
@@ -3448,6 +3491,14 @@ export async function listMovements(
     null;
 
   const scope = await movementScope(actor.organizationId, actor.userId);
+  // WMS-60: with `onlyLinesInScope` the product is looked for only in
+  // the lines inside the scope, so a movement does not show up because the
+  // product moved in a place outside it.
+  const scopedPlaces = filters.onlyLinesInScope
+    ? await locationScopeWhere(client, actor.userId)
+    : null;
+  const lineInScope =
+    scopedPlaces && isLimited(scopedPlaces) ? { location: scopedPlaces } : {};
   const where = {
     // WMS-20 and WMS-21B: both conditions on the lines, side by side.
     AND: [
@@ -3468,9 +3519,17 @@ export async function listMovements(
     ...(userId ? { createdByUserId: userId } : {}),
 
     ...(lotId
-      ? { lines: { some: { lotId, ...(productId ? { productId } : {}) } } }
+      ? {
+          lines: {
+            some: {
+              lotId,
+              ...(productId ? { productId } : {}),
+              ...lineInScope,
+            },
+          },
+        }
       : productId
-        ? { lines: { some: { productId } } }
+        ? { lines: { some: { productId, ...lineInScope } } }
         : {}),
     ...(productSearch
       ? {
@@ -3492,12 +3551,63 @@ export async function listMovements(
   const pageCount = Math.max(1, Math.ceil(total / MOVEMENT_PAGE_SIZE));
   const requested = Number.isInteger(filters.page) ? Number(filters.page) : 1;
   const page = Math.min(Math.max(requested, 1), pageCount);
-  const items = await fetchMovements(
+  const fetched = await fetchMovements(
     actor.organizationId,
     where,
     MOVEMENT_PAGE_SIZE,
     (page - 1) * MOVEMENT_PAGE_SIZE,
   );
+  // WMS-60: the API keeps only the lines inside the scope (a transfer
+  // between two zones shows only its side). The screen is unchanged: a
+  // known pending item of ADR 0038.
+  let items = fetched;
+  if (filters.onlyLinesInScope) {
+    const outside = new Set(
+      await locationsOutOfScope(
+        client,
+        actor.userId,
+        fetched.flatMap((movement) =>
+          movement.lines.map((line) => line.locationId),
+        ),
+      ),
+    );
+    // A reversal of (or by) a movement outside the scope is not named.
+    const linked = [
+      ...new Set(
+        fetched.flatMap((movement) =>
+          [movement.reversesMovementId, movement.reversedByMovementId].filter(
+            (id): id is string => id !== null,
+          ),
+        ),
+      ),
+    ];
+    const visible = new Set(
+      linked.length === 0
+        ? []
+        : (
+            await client.stockMovement.findMany({
+              where: {
+                id: { in: linked },
+                ...(await movementScope(actor.organizationId, actor.userId)),
+              },
+              select: { id: true },
+            })
+          ).map((row) => row.id),
+    );
+    items = fetched.map((movement) => ({
+      ...movement,
+      reversesMovementId:
+        movement.reversesMovementId && visible.has(movement.reversesMovementId)
+          ? movement.reversesMovementId
+          : null,
+      reversedByMovementId:
+        movement.reversedByMovementId &&
+        visible.has(movement.reversedByMovementId)
+          ? movement.reversedByMovementId
+          : null,
+      lines: movement.lines.filter((line) => !outside.has(line.locationId)),
+    }));
+  }
   return {
     items,
     total,

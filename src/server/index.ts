@@ -10,3 +10,5 @@ export {
 export type { TenantDb } from "./tenant-db";
 export type TransactionClient =
   import("./generated/prisma/client").Prisma.TransactionClient;
+export { currentDelegation, delegationOf, runDelegated } from "./delegation";
+export type { Delegation } from "./delegation";

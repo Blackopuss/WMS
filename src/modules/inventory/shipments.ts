@@ -3,12 +3,14 @@ import "server-only";
 import { z } from "zod";
 
 import { dec, newId, type Decimal } from "@/lib";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
 import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
+import { SHIPMENT_DISPATCHED_EVENT } from "./webhooks";
 import { containerName, weightText } from "./container-rules";
 import { lotDayOf, lotLabel } from "./lot-rules";
 import { formatStock, type InventoryActor } from "./movements";
@@ -1240,6 +1242,29 @@ export async function dispatchShipment(
           movementId,
         },
       });
+      // WMS-60: who listens by webhook hears of it, inside this transaction.
+      await emitWebhookEvent(tx, SHIPMENT_DISPATCHED_EVENT, {
+        organizationId,
+        data: {
+          shipmentId: shipment.id,
+          number: numberText,
+          movementId,
+          trackingNumber: shipment.trackingNumber ?? null,
+          orders: orders.map((order) => ({
+            id: order.id,
+            number: formatOutboundNumber(order.number),
+            lines: drafts
+              .filter((draft) => draft.orderId === order.id)
+              .map((draft) => ({
+                productId: draft.productId,
+                lotId: draft.lotId ?? null,
+                quantity: draft.quantity.toString(),
+                unitCode: draft.unitCode,
+                serials: draft.units.map((unit) => unit.serial),
+              })),
+          })),
+        },
+      });
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
@@ -1448,6 +1473,10 @@ export async function countOrdersToShip(
 }
 
 export type ShipmentLineView = {
+  /** WMS-60: exact data for the API. */
+  productId: string;
+  quantity: string;
+  unitCode: string;
   productName: string;
   sku: string;
   /** «12 piezas». */
@@ -1583,6 +1612,7 @@ export async function getShipment(
         unitCode: true,
         serials: true,
         containerId: true,
+        productId: true,
         product: { select: { name: true, sku: true } },
       },
     });
@@ -1609,6 +1639,9 @@ export async function getShipment(
       lines: lines
         .filter((line) => line.orderId === order.id)
         .map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity.toString(),
+          unitCode: line.unitCode,
           productName: line.product.name,
           sku: line.product.sku,
           quantityText: formatStock(line.quantity.toString(), line.unitCode),
@@ -1646,6 +1679,9 @@ export async function getShipment(
       lines: load.drafts
         .filter((draft) => draft.orderId === order.id)
         .map((draft) => ({
+          productId: draft.productId,
+          quantity: draft.quantity.toString(),
+          unitCode: draft.unitCode,
           productName: draft.productName,
           sku: productOf.get(draft.productId)?.sku ?? "",
           quantityText: formatStock(draft.quantity.toString(), draft.unitCode),

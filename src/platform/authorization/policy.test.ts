@@ -19,6 +19,8 @@ import {
   knownRoles,
   permissionsOf,
   scopeOf,
+  intersectScopes,
+  type Subject,
 } from "./policy";
 
 // USR-02: one decision function, tested for every role and every action,
@@ -315,5 +317,62 @@ describe("scope by warehouse and zone", () => {
     expect(
       can(limited, "platform.team.assign_roles", { facilityId: "B" }),
     ).toBe(false);
+  });
+});
+
+// WMS-60 (ADR 0058): an API key acts for its creator, cut down to the key.
+describe("the cut of an API key", () => {
+  const onlyB = { facilities: new Map([["B", null]]) };
+
+  it("keeps only the key's permissions the person also holds", () => {
+    const viewer: Subject = {
+      isOwner: false,
+      roles: ["viewer"],
+      limit: {
+        permissions: new Set([
+          "inventory.stock.read",
+          "inventory.outbound.create",
+        ]),
+        scope: null,
+      },
+    };
+    expect([...permissionsOf(viewer)]).toEqual(["inventory.stock.read"]);
+    expect(can(viewer, "inventory.outbound.create")).toBe(false);
+    expect(can(viewer, "inventory.product.read")).toBe(false);
+  });
+
+  it("never gives the titular's own powers", () => {
+    const titular: Subject = {
+      isOwner: true,
+      roles: [],
+      limit: { permissions: new Set(["inventory.stock.read"]), scope: null },
+    };
+    for (const permission of OWNER_ONLY_PERMISSIONS) {
+      expect(can(titular, permission)).toBe(false);
+    }
+  });
+
+  it("limits the titular to the key's warehouse", () => {
+    const titular: Subject = {
+      isOwner: true,
+      roles: [],
+      limit: { permissions: new Set(["inventory.stock.read"]), scope: onlyB },
+    };
+    expect(inScope(titular, { facilityId: "B" })).toBe(true);
+    expect(inScope(titular, { facilityId: "A" })).toBe(false);
+  });
+
+  it("intersects the person's scope with the key's", () => {
+    const zones = buildScope([
+      { facilityId: "A", locationId: null },
+      { facilityId: "B", locationId: "z1" },
+    ]);
+    expect(intersectScopes(zones, null)).toBe(zones);
+    expect(intersectScopes(null, onlyB)).toBe(onlyB);
+    const both = intersectScopes(zones, onlyB);
+    expect([...(both?.facilities.keys() ?? [])]).toEqual(["B"]);
+    expect([...(both?.facilities.get("B") ?? [])]).toEqual(["z1"]);
+    const none = intersectScopes(zones, { facilities: new Map([["C", null]]) });
+    expect(none?.facilities.size).toBe(0);
   });
 });

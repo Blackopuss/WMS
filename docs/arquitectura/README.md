@@ -12,6 +12,7 @@ decisiones, en `docs/adr/`.
 | [modulos/](modulos/) | Un documento por módulo y por área de plataforma |
 | [modulos/approvals.md](modulos/approvals.md) | Motor de aprobaciones: reglas por empresa, solicitudes, decidir (WMS-56) |
 | [modulos/notifications.md](modulos/notifications.md) | Avisos dentro de la app: `notify` en la transacción del hecho, campana, preferencias (WMS-39) |
+| [modulos/api.md](modulos/api.md) | API REST por empresa con llaves recortadas, límites, OpenAPI y webhooks firmados (WMS-60) |
 | [modulos/custom-fields.md](modulos/custom-fields.md) | Campos personalizados de productos, ubicaciones y proveedores: definir, validar y guardar valores (WMS-58) |
 | [agregar-un-modulo.md](agregar-un-modulo.md) | Paso a paso para agregar un módulo nuevo |
 | [`CHANGELOG.md`](../../CHANGELOG.md) | Registro de cambios por paso cerrado |
@@ -73,7 +74,8 @@ Como la plataforma no puede importar módulos, todo lo que la plataforma
 necesita saber de ellos se lo pasa `src/modules/registry` como datos: los
 contratos (`moduleRegistry`), los manejadores de trabajos (`jobHandlers`), las
 rondas (`scheduledRounds`), los ajustes (`operationSettings`), los tipos de
-aprobación con su efecto (`approvalTypes`, WMS-56) y el trabajo a medias de
+aprobación con su efecto (`approvalTypes`, WMS-56), los eventos de webhooks
+(`webhookEventTypes`, WMS-60) y el trabajo a medias de
 cada módulo (`moduleOpenWork`).
 
 ## Cómo viaja una petición
@@ -101,6 +103,13 @@ Ejemplo: liberar un pedido de salida.
    LOCKING_TRANSACTION)`: primero los candados (`lockRows`, orden fijo:
    productos → ubicaciones → documento → tarea), después leer, decidir y
    escribir (saldo, movimiento, reserva, bitácora) en la misma transacción.
+
+**La API (WMS-60, ADR 0058).** `/api/v1/*` no usa la cookie de sesión: el
+motor de `platform/api` toma la llave de `Authorization: Bearer`, aplica los
+límites y llama a los mismos servicios dentro de `runDelegated`, que hace
+que la llave actúe por quien la creó, recortada a sus capacidades y a su
+almacén (`Subject.limit` en `policy.ts`). Ver
+[modulos/api.md](modulos/api.md).
 
 Las descargas (CSV, XLSX, PDF) no pasan por Server Actions: son rutas `GET`
 bajo `src/app/api/…` que llaman `requireOrganizationContext()` y responden
@@ -185,8 +194,8 @@ organizationId, …)` dentro de la transacción del cambio que lo origina, corre
 al menos una vez (el manejador debe ser idempotente; `context.jobId` sirve de
 clave), reintenta con espera creciente hasta `maxAttempts` y trabaja solo con
 `forOrganization(context.organizationId)`. Tipos actuales:
-`inventory.import_products`, `inventory.import_exits` y
-`purchasing.send_order`.
+`inventory.import_products`, `inventory.import_exits`,
+`purchasing.send_order`, `platform.webhook_fanout` y `platform.webhook_delivery` (WMS-60).
 
 ## Base de datos
 

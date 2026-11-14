@@ -12,8 +12,13 @@ import { db } from "@/server";
 export type ScheduledRound = {
   /** «sales.overdue_reminders». */
   name: string;
-  /** Runs for the companies that hold this module. */
-  module: string;
+  /** Runs for the companies that hold this module… */
+  module?: string;
+  /**
+   * …or for the companies this says (a round of the platform that does not
+   * depend on a module, WMS-60).
+   */
+  organizations?: () => Promise<string[]>;
   run(organizationId: string): Promise<unknown>;
 };
 
@@ -44,7 +49,12 @@ export async function runScheduledRounds(
   onError: (round: string, organizationId: string, error: unknown) => void,
 ): Promise<void> {
   for (const round of rounds) {
-    for (const organizationId of await organizationsWithModule(round.module)) {
+    const companies = round.organizations
+      ? await round.organizations()
+      : round.module
+        ? await organizationsWithModule(round.module)
+        : [];
+    for (const organizationId of companies) {
       try {
         await round.run(organizationId);
       } catch (error) {

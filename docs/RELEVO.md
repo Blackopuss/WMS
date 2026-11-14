@@ -7,24 +7,34 @@ para arrancar sin releer la conversación anterior.
 
 ## Dónde quedó
 
-- **Rama con todo el trabajo: `pruebas`.** Último commit con código verificado:
-  `5cf4d35` (205 archivos de prueba, 2,267 pruebas, `npm run build` y CI en
-  verde). Encima solo hay commits de documentación.
-- **El fundador retomó el trabajo el 2026-11-14** con pasos concretos (WMS-60,
-  WMS-40 y después WMS-38, avisos por correo, pendientes de pasos cerrados y la
-  propuesta de flujo de producción y calidad). Fuera de esos, un chat nuevo
-  pregunta qué sigue; no retoma el plan por su cuenta. El avance de cada uno
-  está en «Estado actual» de `AGENTS.md` y al inicio de «Pendientes» del plan.
-- Hecho: Fases 1 y 2 completas (el recorrido recibir → acomodar → pedido →
-  surtir → empacar → despachar, con lotes, series, tarimas, devoluciones,
-  etiquetas, traslados, reposición, conteos cíclicos, cross-docking y olas). De
-  la Fase 3: aprobaciones (WMS-56/41), solicitudes de compra (WMS-57) y campos
-  personalizados (WMS-58). Transversales: app instalable y cámara (WMS-35/36),
-  avisos e incidencias (WMS-39).
-- Sin ramas ni worktrees de pasos abiertos: todo está unido a `pruebas`.
-- `main` se avanzó hasta `pruebas` el 2026-11-13 (con autorización del
-  fundador). Si al abrir un chat `main` va atrás otra vez, trabajar sobre
-  `origin/pruebas`.
+- **Rama con todo el trabajo: `pruebas`.** El conteo de pruebas y lo cerrado
+  están en «Estado actual» de `AGENTS.md`; lo último que pasó, en `MEMORY.md`.
+- **El fundador retomó el trabajo el 2026-11-14.** Cerrado y unido ese día:
+  WMS-19B (PDF del traslado), WMS-57B (mensaje al archivar), WMS-40 (sesiones
+  del equipo), WMS-39B (avisos por correo y resumen diario) y WMS-60 (API y
+  webhooks). Fuera de lo que él pidió, un chat nuevo pregunta qué sigue; no
+  retoma el plan por su cuenta.
+- **En curso, cada uno en su chat y su rama:**
+  - `wms-38-terminales-pin` (WMS-38, PIN en terminales compartidas; ADR 0061):
+    implementado y revisado por un revisor independiente de seguridad; está
+    corrigiendo doce hallazgos (cuatro medios) y debe traer `pruebas` para
+    combinar su recorte `Subject.terminal` con `Subject.limit` de WMS-60 y
+    renombrar su migración a `20261116130000_…`. Al llegar su reporte: revisar
+    las correcciones (otro revisor), unir, documentar.
+  - `flujo-produccion-calidad` (solo `docs/flujos/PRODUCCION_CALIDAD.md`): va en
+    su cuarta versión, con todas las respuestas del fundador. Al llegar: leerla,
+    unirla y pasarle al fundador lo que siga abierto.
+- Las ramas ya unidas (`pend-traslado-pdf-archivar`, `wms-40-sesiones-equipo`,
+  `pend-avisos-correo`, `wms-60-api-webhooks`) siguen en GitHub: desde un chat
+  de la nube no se pueden borrar (el `git push --delete` no tiene efecto); las
+  borra el fundador si quiere.
+- `main` se avanzó hasta `pruebas` el 2026-11-13. Si al abrir un chat `main` va
+  atrás otra vez, trabajar sobre `origin/pruebas`.
+- Cosas sueltas por atender: `/ubicaciones/etiquetas` falla «objetivos táctiles
+  ≥ 44 px» en teléfono en `verify:a11y` (sin comprobar desde cuándo), y
+  `/inventario/nuevo` tiene un aviso de React por `key` faltante en un
+  `NativeSelect` de `product-form.tsx` que hace fallar «foco visible» en modo
+  desarrollo. Ninguna es de los pasos de hoy.
 
 ## Qué leer, en orden
 
@@ -39,22 +49,31 @@ para arrancar sin releer la conversación anterior.
 
 ## Qué sigue cuando el fundador lo indique
 
-- Producción y calidad (WMS-59, WMS-27..31): **antes de programar** hay que
-  escribir su flujo y decidirlo con el fundador (regla 15 de las instrucciones).
-- WMS-60 (API y webhooks); WMS-61/62 y WMS-63 esperan decisión del fundador.
-- Transversales: WMS-37 (fotos), WMS-38 (PIN), WMS-40, WMS-67, WMS-42, WMS-68,
-  WMS-47. Después, Fases 4 y 5.
+- Producción y calidad: el orden de pasos está en la propuesta (WMS-59 roles,
+  WMS-37 fotos, base de inspección, recetas, motor de procesos WMS-74, órdenes,
+  solicitudes, reporte, inspección, cierre). **No se programa hasta que el
+  fundador apruebe la versión final de la propuesta.**
+- WMS-61/62 y WMS-63 esperan decisión del fundador.
+- Transversales: WMS-37 (fotos; pasa a ser requisito de producción), WMS-67,
+  WMS-42, WMS-68, WMS-47. Después, Fases 4 y 5.
 - Pendientes chicos de pasos cerrados (surtir directo de una tarima, conteo por
-  serie, correo como canal de avisos, impresión directa de etiquetas, despacho
-  parcial, trasladar una tarima entre almacenes…): lista completa en el plan.
+  serie, impresión directa de etiquetas, despacho parcial, trasladar una tarima
+  entre almacenes…): lista completa en el plan. Los que tocan el corazón de las
+  existencias van uno tras otro.
 
 ## Esperan al fundador
 
-- Producción y calidad: el fundador contestó D1 a D11 y P1 a P13 (2026-11-14;
-  están en `MEMORY.md` y en la sección 1 de `docs/flujos/PRODUCCION_CALIDAD.md`,
-  tercera versión). Siguen abiertas P3, P6 y P7 (pidió que se le explicaran los
-  roles; ya se le explicaron) y las confirmaciones P1b, P8b y P10b. Nada de
-  producción y calidad se programa hasta que las conteste.
+- Producción y calidad: el fundador contestó D1 a D11, P1 a P13 y P10b
+  (2026-11-14; todo está en `MEMORY.md`). Falta que vea la cuarta versión de la
+  propuesta: cómo se cubre «restauración» y si Almacén y Supervisor de almacén
+  también deciden las solicitudes de producción o solo el Encargado.
+- WMS-38: tres decisiones de quien coordina que puede cambiar (en una terminal
+  no se entra con contraseña; PIN de 5 o 6 dígitos; una sesión de PIN no
+  exporta, no autoriza ni ve costos) y qué roles usan PIN por omisión (hoy el
+  piso).
+- WMS-60: límites de uso por plan (hoy 60 por llave y 300 por empresa por
+  minuto); si desactivar a alguien debe revocar sus llaves para siempre.
+- WMS-40: si Supervisión ve las sesiones de su gente de piso (hoy no).
 - Si `taste-skill` entra a `pruebas` (hoy solo está en la rama
   `claude/elegant-pascal-tgwgmu`; pesa 40 MB).
 - Servidor y dominio, nombre comercial, precios, razón social y revisión legal.
@@ -116,7 +135,17 @@ Quien coordina no implementa: reparte, revisa e integra.
    propia rama** (se crea desde `pruebas`; levanta su entorno con la sección
    de arriba, sube **solo** a su rama y manda su reporte y sus hallazgos a
    quien coordina, que revisa y confirma antes de unir). El worktree local
-   sigue sirviendo para un paso que se haga en el mismo contenedor. Sus instrucciones llevan el flujo, lo que debe leer, y las
+   sigue sirviendo para un paso que se haga en el mismo contenedor.
+   **Relevo a los 400,000 tokens (fundador, 2026-11-14):** cuando la ventana
+   de contexto de un chat que implementa pasa de 400,000 tokens
+   (`get_session` sin argumentos, `external_metadata.context_usage.used_tokens`),
+   sube lo que tenga a su rama y manda un relevo a quien coordina, que abre un
+   chat nuevo sobre esa misma rama. Vale también para quien coordina: deja este
+   documento al día y le pide al fundador abrir un chat nuevo.
+   **Revisión antes de unir:** lo que toca seguridad o el corazón de las
+   existencias lo lee además un revisor independiente (un subagente al que se
+   le da el código, no la conclusión); sus hallazgos regresan al chat que
+   implementó y las correcciones se vuelven a verificar. Sus instrucciones llevan el flujo, lo que debe leer, y las
    prohibiciones: no editar `AGENTS.md`, `MEMORY.md`, los planes, `CHANGELOG.md`
    ni `package.json`; no subir nada; escribir su ADR con el flujo antes de
    programar; dejar `npm run check` y `npm run build` pasando; reportar qué
@@ -125,7 +154,9 @@ Quien coordina no implementa: reparte, revisa e integra.
    (`--no-ff`, de una en una; los conflictos entre pasos son casi siempre de
    «quedarse con los dos lados»), aplica migraciones, `npm run db:generate` y
    `npm run docs:modelo`.
-4. Documenta: párrafo de convención en `AGENTS.md` (antes de «Documentación
+4. Documenta **en cuanto pasa**, no al final (fundador, 2026-11-14): lo que el
+   fundador comenta o decide se anota el mismo día en `MEMORY.md`, en el plan y
+   en `AGENTS.md`. Al cerrar un paso: párrafo de convención en `AGENTS.md` (antes de «Documentación
    técnica (WMS-51)»), «Hechos», «Siguiente», lista de ADR y conteo de pruebas;
    `MEMORY.md`; `docs/PLAN_WMS_V3.md`; `CHANGELOG.md`; `docs/seguridad/ASVS.md`.
 5. `set -o pipefail && npm run check && npm run build` sobre exactamente lo que
