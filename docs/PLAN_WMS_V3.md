@@ -62,6 +62,8 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Dónde quedó (2026-11-13):** el fundador pidió detenerse al cerrar WMS-39 y WMS-58; no se empieza ningún paso nuevo hasta que lo indique. Fases 1 y 2 cerradas; de la Fase 3 están hechos WMS-56, WMS-41, WMS-57 y WMS-58; transversales hechos: WMS-35, WMS-36 y WMS-39.
 
+**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y después WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. Cerrados de esa tanda: WMS-19B (PDF del traslado, ADR 0048) y WMS-57B (el mensaje al archivar un producto ya no nombra lo de fuera del alcance, ADR 0055). En curso, cada uno en su rama: WMS-60, WMS-40, WMS-39B (avisos por correo y resumen diario).
+
 **Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
 
 **Decisiones del fundador (2026-11-13):**
@@ -76,10 +78,9 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 - Surtir directo de una tarima; quien está limitado a zonas no ve tareas de surtido si «Preparación» queda fuera de su zona; agregar o quitar pedidos de una ola (ADR 0054, ADR 0043).
 - Conteo de productos por serie; los conteos programados que nadie hizo no se cancelan solos (ADR 0050).
 - Evidencia con fotos en aprobaciones; umbral por valor (ADR 0053).
-- El mensaje al archivar un producto puede nombrar órdenes de un almacén fuera del alcance (ADR 0055).
 - Repartir por cross-docking lo que llega en tarima o a pedidos ya surtidos; mandar lo dañado directo a cuarentena al recibir (ADR 0052).
 - Reponer desde una tarima; reposición por demanda (ADR 0051).
-- Trasladar una tarima entera entre almacenes; PDF del traslado (ADR 0048).
+- Trasladar una tarima entera entre almacenes (ADR 0048).
 - Operar sin conexión (ADR 0049).
 - Impresión directa a impresoras de etiquetas (ADR 0047).
 - Devolver al proveedor lo que un cliente regresó y se rechazó (ADR 0046).
