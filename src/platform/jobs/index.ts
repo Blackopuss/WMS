@@ -2,6 +2,7 @@
 export {
   STALE_AFTER_MS,
   enqueueJob,
+  enqueueJobs,
   getJob,
   runNextJob,
   runWorker,

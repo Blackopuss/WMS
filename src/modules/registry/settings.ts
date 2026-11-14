@@ -1,5 +1,6 @@
 import { INVENTORY_SETTINGS } from "@/modules/inventory";
 import { PURCHASING_SETTINGS } from "@/modules/purchasing";
+import { NOTIFICATION_SETTINGS } from "@/platform/notifications";
 import {
   assertValidRegistry,
   type SettingDefinition,
@@ -13,6 +14,8 @@ import {
 export const operationSettings: readonly SettingDefinition[] = [
   ...INVENTORY_SETTINGS,
   ...PURCHASING_SETTINGS,
+  // WMS-39B (ADR 0060): whether the company sends notices by mail.
+  ...NOTIFICATION_SETTINGS,
 ];
 
 assertValidRegistry(operationSettings);

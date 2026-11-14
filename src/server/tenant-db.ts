@@ -106,6 +106,8 @@ export const TENANT_MODELS = [
   "PurchaseRequestLine",
   "Notification",
   "NotificationPreference",
+  "NotificationEmail",
+  "DailyDigest",
   "Incident",
   "IncidentNote",
   "CustomField",

@@ -126,8 +126,13 @@ export const AREAS = [
     title: "Plataforma › Avisos",
     doc: "notifications",
     summary:
-      "Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído») y los tipos que cada persona apagó; los tipos los declara cada módulo.",
-    models: ["Notification", "NotificationPreference"],
+      "Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído»), los tipos que cada persona apagó o pidió por correo, los avisos que salen por correo y el resumen diario por correo de cada persona; los tipos los declara cada módulo.",
+    models: [
+      "Notification",
+      "NotificationPreference",
+      "NotificationEmail",
+      "DailyDigest",
+    ],
   },
   {
     id: "custom-fields",

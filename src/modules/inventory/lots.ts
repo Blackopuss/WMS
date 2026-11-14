@@ -9,6 +9,7 @@ import {
   LOCATION_PARENTS,
   activeFacilityOf,
   compareLocationNames,
+  isFacilityInScope,
   isLimited,
   locationPath,
   locationScopeWhere,
@@ -420,9 +421,12 @@ export type ExpiringPage = {
  * person works in and inside their zones, expired or expiring within the
  * days the company chose. The same condition counts and lists.
  */
-async function expiringWhere(client: Client, userId: string) {
-  const [facility, scoped, day, notice] = await Promise.all([
-    activeFacilityOf(client, userId),
+async function expiringWhere(
+  client: Client,
+  userId: string,
+  facility: { id: string; name: string },
+) {
+  const [scoped, day, notice] = await Promise.all([
     locationScopeWhere(client, userId),
     today(client),
     readSetting(client, EXPIRY_NOTICE),
@@ -454,10 +458,31 @@ async function expiringWhere(client: Client, userId: string) {
   };
 }
 
+/**
+ * The warehouse a list of lots about to expire is about: the one the
+ * person works in or, when one is named (the daily summary, WMS-39B), that
+ * one if it is active and the person reaches it. Null otherwise.
+ */
+async function expiringFacility(
+  client: Client,
+  userId: string,
+  facilityId?: string,
+): Promise<{ id: string; name: string } | null> {
+  if (facilityId === undefined) return activeFacilityOf(client, userId);
+  const facility = await client.facility.findFirst({
+    where: { id: String(facilityId).slice(0, 36), archivedAt: null },
+    select: { id: true, name: true },
+  });
+  if (!facility || !(await isFacilityInScope(client, userId, facility.id))) {
+    return null;
+  }
+  return facility;
+}
+
 /** Lots with stock that expired or are about to, what expires first on top. */
 export async function listExpiringLots(
   actor: InventoryActor,
-  options: { page?: number } = {},
+  options: { page?: number; facilityId?: string } = {},
 ): Promise<ExpiringPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -465,9 +490,25 @@ export async function listExpiringLots(
     "inventory.stock.read",
   );
   const client = forOrganization(actor.organizationId);
+  const chosen = await expiringFacility(
+    client,
+    actor.userId,
+    options.facilityId,
+  );
+  if (!chosen) {
+    return {
+      items: [],
+      total: 0,
+      page: 1,
+      pageCount: 1,
+      noticeDays: Number(await readSetting(client, EXPIRY_NOTICE)) || 30,
+      facilityName: "",
+    };
+  }
   const { facility, day, noticeDays, where, inPlace } = await expiringWhere(
     client,
     actor.userId,
+    chosen,
   );
   const total = await client.lot.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / EXPIRING_PAGE_SIZE));
@@ -538,7 +579,8 @@ export async function countExpiringLots(
     "inventory.stock.read",
   );
   const client = forOrganization(actor.organizationId);
-  const { where } = await expiringWhere(client, actor.userId);
+  const facility = await activeFacilityOf(client, actor.userId);
+  const { where } = await expiringWhere(client, actor.userId, facility);
   return client.lot.count({ where });
 }
 

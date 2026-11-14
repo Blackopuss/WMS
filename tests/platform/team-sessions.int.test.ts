@@ -492,6 +492,45 @@ describe("sessions older than the cut", () => {
     ).toBe(0);
   });
 
+  it("by mail too, queued in this company only (WMS-39B)", async () => {
+    const person = await personInBoth();
+    // The person asked for it by mail in both companies.
+    for (const organizationId of [org, otherOrg]) {
+      await db.notificationPreference.create({
+        data: {
+          id: newId(),
+          organizationId,
+          userId: person,
+          typeKey: "team.sessions_closed",
+          enabled: true,
+          email: true,
+        },
+      });
+    }
+    await newSession(person, org);
+    await revokeAllMemberSessions(org, admin, { userId: person });
+    const mails = await db.notificationEmail.findMany({
+      where: { recipientUserId: person },
+    });
+    expect(mails.map((mail) => mail.organizationId)).toEqual([org]);
+    expect(mails[0]).toMatchObject({
+      typeKey: "team.sessions_closed",
+      href: "/configuracion",
+      status: "QUEUED",
+    });
+    const notice = await db.notification.findFirstOrThrow({
+      where: { id: mails[0]!.notificationId },
+    });
+    expect(notice.organizationId).toBe(org);
+    const jobs = await db.job.findMany({
+      where: {
+        type: "notifications.send_email",
+        payload: { equals: { emailId: mails[0]!.id } },
+      },
+    });
+    expect(jobs.map((job) => job.organizationId)).toEqual([org]);
+  });
+
   it("a person who turned the notice off does not get it", async () => {
     const person = await addMember(org, ["operator"]);
     await db.notificationPreference.create({
