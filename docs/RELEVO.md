@@ -50,11 +50,11 @@ para arrancar sin releer la conversación anterior.
 
 ## Esperan al fundador
 
-- Producción y calidad: el fundador ya contestó D1 a D11 (2026-11-14; están en
-  `MEMORY.md` y en la sección 1 de `docs/flujos/PRODUCCION_CALIDAD.md`).
-  Faltan sus respuestas a las preguntas P1 a P13 de la sección 10 de ese
-  documento (segunda versión, con el motor de procesos WMS-74) antes de
-  programar.
+- Producción y calidad: el fundador contestó D1 a D11 y P1 a P13 (2026-11-14;
+  están en `MEMORY.md` y en la sección 1 de `docs/flujos/PRODUCCION_CALIDAD.md`,
+  tercera versión). Siguen abiertas P3, P6 y P7 (pidió que se le explicaran los
+  roles; ya se le explicaron) y las confirmaciones P1b, P8b y P10b. Nada de
+  producción y calidad se programa hasta que las conteste.
 - Si `taste-skill` entra a `pruebas` (hoy solo está en la rama
   `claude/elegant-pascal-tgwgmu`; pesa 40 MB).
 - Servidor y dominio, nombre comercial, precios, razón social y revisión legal.

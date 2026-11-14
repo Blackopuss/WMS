@@ -629,8 +629,10 @@ segunda versión con las respuestas del fundador a D1–D11 (sección 1). Agrega
 tres pasos que este plan no tenía: **WMS-74** (motor de procesos y subprocesos
 configurables por empresa, de plataforma), **WMS-74B** (procesos en embarques)
 y **WMS-28B** (solicitud de producción desde el piso); hace de las fotos
-(WMS-37) un requisito y pone WMS-59 primero. Faltan las respuestas del
-fundador a las preguntas P1–P13 de su sección 10 antes de programar.
+(WMS-37) un requisito y pone WMS-59 primero. La tercera versión (2026-11-14) trae además sus
+respuestas a P1–P13, la sección de roles y el motor de procesos con candado
+entre etapas y relevo automático entre áreas. Siguen abiertas P3, P6 y P7 y
+las confirmaciones P1b, P8b y P10b; nada se programa hasta que las conteste.
 
 ### WMS-60 · API y webhooks
 
