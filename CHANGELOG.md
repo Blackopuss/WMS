@@ -6,6 +6,18 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-14
+
+- **WMS-57B** · El mensaje al archivar un producto solo nombra y cuenta las
+  órdenes de compra y las existencias que la persona alcanza (ADR 0055); el
+  producto sigue sin archivarse.
+- **WMS-19B** · Hoja de traslado entre almacenes en PDF (ADR 0048): lo enviado
+  por renglón con lote y series, lo recibido y las firmas; permiso
+  `inventory.facility_transfer.export`.
+- Propuesta de flujo de producción y calidad
+  (`docs/flujos/PRODUCCION_CALIDAD.md`), para decidir con el fundador antes de
+  programar WMS-27..31 y WMS-59.
+
 ## 2026-11-13
 
 - **WMS-58** · Campos personalizados (ADR 0056): definiciones y valores sin

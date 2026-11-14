@@ -49,6 +49,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
     "Resolvió lo que no llegó de un traslado entre almacenes",
   "inventory.facility_transfer_cancelled":
     "Canceló un traslado entre almacenes",
+  "inventory.facility_transfer_exported":
+    "Descargó el PDF de un traslado entre almacenes",
   "inventory.outbound_imported": "Importó pedidos de salida desde un archivo",
   "inventory.replenishment_rule_saved":
     "Guardó una regla de reposición de surtido",

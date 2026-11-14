@@ -90,7 +90,9 @@ código»):
   (nunca más de lo enviado). El total de la empresa y el valor no cambian en
   tránsito (solo «se perdió» baja el valor); los disparadores obligan a que
   `IN_TRANSIT` viva solo en la ubicación de tránsito y que solo un traslado
-  escriba ahí. No se reversa desde Inventario.
+  escriba ahí. No se reversa desde Inventario. La hoja de traslado en PDF
+  (WMS-19B) se lee con la misma ficha (`getFacilityTransfer`), sin costos,
+  con lo recibido y espacio para firmas.
 - Cross-docking (WMS-54, ADR 0052): con `inventory.crossdock.mode = on`, lo
   sano y suelto que entra a un lugar «de paso» (recepción de una orden de
   compra o entrada manual) para un pedido `RELEASED`/`PICKING` del mismo
@@ -153,7 +155,7 @@ código»):
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS`; `releaseUnderLock` y `lockedOutboundOrder` (internas, para las olas) |
 | Olas de surtido (WMS-25) | `waves.ts`, `wave-states.ts`, `wave-settle.ts`, `pick-route.ts` | `createWave` (libera los borradores; todo o nada), `cancelWave` (solo desagrupa), `listWaves`, `listWaveCandidates`, `listOpenWaves`, `getWave` (lo que sigue, recorrido agrupado por producto + origen + lote, zonas, pedidos), `confirmWavePick`, `deliverWavePicks`, `takeWaveTasks`, `assignWaveTasks`, `waveOfOrder`, `wavesEnabled`; transiciones `PICK_WAVE_TRANSITIONS`; orden de recorrido `inRouteOrder`/`compareRoute` (puro); en `tasks.ts`, `confirmPickGroup`, `deliverPickGroup`, `takeTasks`, `assignTasks` y `nextTaskFor` («Siguiente tarea»); «Mis tareas» va en orden de recorrido |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
-| Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; transiciones `FACILITY_TRANSFER_TRANSITIONS` |
+| Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts`, `facility-transfer-pdf.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; `buildFacilityTransferPdf` (hoja de traslado, sin costos); transiciones `FACILITY_TRANSFER_TRANSITIONS` |
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
 | Incidencias (WMS-39) | `incidents.ts`, `incident-states.ts` | `reportIncident` (del almacén activo; ubicación y producto escaneados; tarea o pedido opcionales; clave de confirmación), `startIncident` («Atender»), `resolveIncident` (qué se hizo), `dismissIncident` (motivo), `addIncidentNote`, `listIncidents` (`open`, `closed`, `mine`), `getIncident`, `countOpenIncidents` (Inicio, para quien atiende); transiciones `INCIDENT_TRANSITIONS`, tipos `INCIDENT_KINDS`, número `INC-0001`. No tocan existencias |
@@ -197,9 +199,9 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Devoluciones de clientes: `customer_return.read|create` (WMS-17: ver y
   registrar; decidir usa `status.release` para disponible y `status.change`
   para dañado o rechazado).
-- Traslados entre almacenes: `facility_transfer.read|create|send|receive|resolve`
+- Traslados entre almacenes: `facility_transfer.read|create|send|receive|resolve|export`
   (WMS-19: ver, armar y cancelar el borrador, enviar, recibir y resolver lo
-  que no llegó).
+  que no llegó; WMS-19B: PDF).
 - Incidencias (WMS-39): `incident.read|create|manage` (ver las del almacén,
   reportar y comentar, atender y cerrar).
 - Archivos: `import.create|read|confirm|cancel`, `export.create`.

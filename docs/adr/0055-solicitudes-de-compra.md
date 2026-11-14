@@ -168,6 +168,36 @@ sugerencia; al convertirla, su borrador sí cuenta (como todo borrador).
   de ese almacén (además del alcance de siempre); si no, «Esta orden es del
   almacén X».
 
+## Mensaje al archivar un producto (WMS-57B, 2026-11-14)
+
+Cierra el pendiente «el mensaje al archivar un producto puede nombrar
+órdenes de un almacén fuera del alcance».
+
+- **La regla de negocio no cambia:** un producto con una orden `SENT` o
+  `PARTIAL` que todavía espera algo de él no se archiva, sea del almacén
+  que sea.
+- **El mensaje solo nombra y cuenta lo que la persona alcanza:**
+  `archiveProduct` (`platform/catalog/products.ts`) lee ahora el almacén de
+  cada orden abierta y nombra solo las que no tienen almacén o son de un
+  almacén de su alcance (`isFacilityInScope`, la misma regla que
+  `orderInScope` de Compras; la plataforma no importa módulos). Si todas
+  las que lo impiden están fuera, el mensaje es genérico («…en órdenes de
+  compra de almacenes que no tienes asignados…»): no dice cuáles, cuántas
+  ni en qué almacén.
+- **Lo mismo con las existencias** (defecto del mismo tipo en el mismo
+  archivado): «Todavía hay N piezas… en M ubicaciones» cuenta solo lo que
+  está en ubicaciones del alcance (`locationScopeWhere`); si todo está
+  fuera, el mensaje es genérico y no lleva cantidades.
+- Se revisaron los demás avisos de archivado: el conteo abierto del
+  producto, y archivar una ubicación o un almacén (existencias, conteos,
+  tarimas, ubicaciones dentro, pedidos, tareas, traslados) no nombran ni
+  cuentan nada de fuera del alcance: una ubicación solo se archiva dentro
+  del alcance y lo que contiene también lo está, y los avisos del almacén
+  no nombran documentos. `moduleOpenWork` es de la consola interna
+  (personal de plataforma, sin alcance).
+- Pruebas en `tests/inventory/scope.int.test.ts` («PC-12: archiving a
+  product (WMS-57B)»).
+
 ## Pendientes
 
 - Aviso por correo a Compras de una solicitud nueva (como en ADR 0053).

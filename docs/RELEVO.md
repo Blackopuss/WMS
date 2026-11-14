@@ -1,6 +1,6 @@
 # Relevo entre sesiones
 
-Actualizado: 2026-11-13. Para quien abre un chat nuevo sobre este repositorio:
+Actualizado: 2026-11-14. Para quien abre un chat nuevo sobre este repositorio:
 dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando. El
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
@@ -10,9 +10,11 @@ para arrancar sin releer la conversación anterior.
 - **Rama con todo el trabajo: `pruebas`.** Último commit con código verificado:
   `5cf4d35` (205 archivos de prueba, 2,267 pruebas, `npm run build` y CI en
   verde). Encima solo hay commits de documentación.
-- **El fundador pidió detenerse (2026-11-13): no se empieza ningún paso nuevo
-  hasta que lo indique.** Un chat nuevo pregunta qué sigue; no retoma el plan
-  por su cuenta.
+- **El fundador retomó el trabajo el 2026-11-14** con pasos concretos (WMS-60,
+  WMS-40 y después WMS-38, avisos por correo, pendientes de pasos cerrados y la
+  propuesta de flujo de producción y calidad). Fuera de esos, un chat nuevo
+  pregunta qué sigue; no retoma el plan por su cuenta. El avance de cada uno
+  está en «Estado actual» de `AGENTS.md` y al inicio de «Pendientes» del plan.
 - Hecho: Fases 1 y 2 completas (el recorrido recibir → acomodar → pedido →
   surtir → empacar → despachar, con lotes, series, tarimas, devoluciones,
   etiquetas, traslados, reposición, conteos cíclicos, cross-docking y olas). De
@@ -48,7 +50,9 @@ para arrancar sin releer la conversación anterior.
 
 ## Esperan al fundador
 
-- Definir el flujo de producción y calidad.
+- Decidir el flujo de producción y calidad: la propuesta está en
+  `docs/flujos/PRODUCCION_CALIDAD.md` (2026-11-14), con once decisiones (D1 a
+  D11) que hay que tomar antes de programar.
 - Si `taste-skill` entra a `pruebas` (hoy solo está en la rama
   `claude/elegant-pascal-tgwgmu`; pesa 40 MB).
 - Servidor y dominio, nombre comercial, precios, razón social y revisión legal.
@@ -105,8 +109,12 @@ Quien coordina no implementa: reparte, revisa e integra.
    `DATABASE_TEST_NAME=wms_test_<letras>`, `DATABASE_SHADOW_NAME=wms_shadow_<letras>`
    (solo letras). Ahí: `npm ci`, `node scripts/db-setup.mjs`, `npm run db:generate`,
    `npm run db:deploy` (dev y test).
-2. Un subagente con el modelo Opus en esfuerzo medio implementa el paso en su
-   worktree. Sus instrucciones llevan el flujo, lo que debe leer, y las
+2. Un subagente con el modelo Opus en esfuerzo medio implementa el paso. Desde
+   el 2026-11-14 el fundador pide que cada subagente sea **un chat nuevo en su
+   propia rama** (se crea desde `pruebas`; levanta su entorno con la sección
+   de arriba, sube **solo** a su rama y manda su reporte y sus hallazgos a
+   quien coordina, que revisa y confirma antes de unir). El worktree local
+   sigue sirviendo para un paso que se haga en el mismo contenedor. Sus instrucciones llevan el flujo, lo que debe leer, y las
    prohibiciones: no editar `AGENTS.md`, `MEMORY.md`, los planes, `CHANGELOG.md`
    ni `package.json`; no subir nada; escribir su ADR con el flujo antes de
    programar; dejar `npm run check` y `npm run build` pasando; reportar qué

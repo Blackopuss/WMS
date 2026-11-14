@@ -2425,6 +2425,8 @@ export type FacilityTransferReceiptView = {
   locationPath: string | null;
   reason: string | null;
   createdAt: Date;
+  /** Who wrote it down. */
+  byName: string | null;
   lines: { productName: string; text: string }[];
 };
 
@@ -2442,7 +2444,9 @@ export type FacilityTransferDetail = {
   note: string | null;
   carrier: string | null;
   createdAt: Date;
+  createdByName: string | null;
   sentAt: Date | null;
+  sentByName: string | null;
   closedAt: Date | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
@@ -2483,7 +2487,9 @@ export async function getFacilityTransfer(
       note: true,
       carrier: true,
       createdAt: true,
+      createdByUserId: true,
       sentAt: true,
+      sentByUserId: true,
       closedAt: true,
       cancelledAt: true,
       cancelReason: true,
@@ -2514,6 +2520,7 @@ export async function getFacilityTransfer(
           kind: true,
           reason: true,
           createdAt: true,
+          createdByUserId: true,
           locationId: true,
           location: {
             select: { name: true, facilityId: true, parent: LOCATION_PARENTS },
@@ -2586,6 +2593,24 @@ export async function getFacilityTransfer(
         ).map((row) => row.id),
       )
     : null;
+  // Who created, sent and wrote down each receipt: people of the company.
+  const people = await client.membership.findMany({
+    where: {
+      userId: {
+        in: [
+          ...new Set(
+            [
+              transfer.createdByUserId,
+              transfer.sentByUserId,
+              ...transfer.receipts.map((receipt) => receipt.createdByUserId),
+            ].filter((userId): userId is string => Boolean(userId)),
+          ),
+        ],
+      },
+    },
+    select: { userId: true, user: { select: { name: true } } },
+  });
+  const nameOf = new Map(people.map((p) => [p.userId, p.user.name]));
   const productName = new Map(
     transfer.lines.map((line) => [line.id, line.product.name]),
   );
@@ -2643,6 +2668,7 @@ export async function getFacilityTransfer(
         locationPath: visible ? locationPath(receipt.location) : null,
         reason: receipt.reason,
         createdAt: receipt.createdAt,
+        byName: nameOf.get(receipt.createdByUserId) ?? null,
         lines: receipt.lines.map((line) => ({
           productName: productName.get(line.lineId) ?? "",
           text:
@@ -2679,7 +2705,11 @@ export async function getFacilityTransfer(
     note: transfer.note,
     carrier: transfer.carrier,
     createdAt: transfer.createdAt,
+    createdByName: nameOf.get(transfer.createdByUserId) ?? null,
     sentAt: transfer.sentAt,
+    sentByName: transfer.sentByUserId
+      ? (nameOf.get(transfer.sentByUserId) ?? null)
+      : null,
     closedAt: transfer.closedAt,
     cancelledAt: transfer.cancelledAt,
     cancelReason: transfer.cancelReason,
