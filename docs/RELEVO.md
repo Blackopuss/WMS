@@ -50,9 +50,11 @@ para arrancar sin releer la conversación anterior.
 
 ## Esperan al fundador
 
-- Decidir el flujo de producción y calidad: la propuesta está en
-  `docs/flujos/PRODUCCION_CALIDAD.md` (2026-11-14), con once decisiones (D1 a
-  D11) que hay que tomar antes de programar.
+- Producción y calidad: el fundador ya contestó D1 a D11 (2026-11-14; están en
+  `MEMORY.md` y en la sección 1 de `docs/flujos/PRODUCCION_CALIDAD.md`).
+  Faltan sus respuestas a las preguntas P1 a P13 de la sección 10 de ese
+  documento (segunda versión, con el motor de procesos WMS-74) antes de
+  programar.
 - Si `taste-skill` entra a `pruebas` (hoy solo está en la rama
   `claude/elegant-pascal-tgwgmu`; pesa 40 MB).
 - Servidor y dominio, nombre comercial, precios, razón social y revisión legal.

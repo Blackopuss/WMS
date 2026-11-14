@@ -625,8 +625,12 @@ también la inspección en recepción) y producto terminado a su ubicación
 (WMS-31). Módulos `production` y `quality`, contratables por separado.
 
 **Propuesta de flujo (2026-11-14):** [`docs/flujos/PRODUCCION_CALIDAD.md`](flujos/PRODUCCION_CALIDAD.md),
-con el flujo por paso, los sub-pasos y su orden, y las decisiones D1 a D11 que
-el fundador debe tomar antes de programar. Nada de esto está decidido todavía.
+segunda versión con las respuestas del fundador a D1–D11 (sección 1). Agrega
+tres pasos que este plan no tenía: **WMS-74** (motor de procesos y subprocesos
+configurables por empresa, de plataforma), **WMS-74B** (procesos en embarques)
+y **WMS-28B** (solicitud de producción desde el piso); hace de las fotos
+(WMS-37) un requisito y pone WMS-59 primero. Faltan las respuestas del
+fundador a las preguntas P1–P13 de su sección 10 antes de programar.
 
 ### WMS-60 · API y webhooks
 
