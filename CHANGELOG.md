@@ -8,6 +8,11 @@ cerrar cada paso.
 
 ## 2026-11-14
 
+- **WMS-60** · API y webhooks (ADR 0058): API REST por llave (`/api/v1`) con
+  permisos por llave que nunca pasan de los de quien la creó, límites de uso,
+  documento OpenAPI generado, lecturas de inventario y compras, alta de
+  pedidos en borrador idempotente, y webhooks firmados con reintentos, pausa
+  automática y protección contra destinos internos.
 - **WMS-39B** · Avisos por correo y resumen diario (ADR 0060): cada persona
   elige qué avisos recibe también por correo (apagado por omisión), agrupados
   y espaciados; resumen diario de lotes por caducar y existencias bajas a la
