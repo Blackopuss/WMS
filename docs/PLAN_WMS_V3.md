@@ -623,6 +623,10 @@ aceptación), inspección y liberación por lote (WMS-30, **PC-4**, **PC-5**;
 también la inspección en recepción) y producto terminado a su ubicación
 (WMS-31). Módulos `production` y `quality`, contratables por separado.
 
+**Propuesta de flujo (2026-11-14):** [`docs/flujos/PRODUCCION_CALIDAD.md`](flujos/PRODUCCION_CALIDAD.md),
+con el flujo por paso, los sub-pasos y su orden, y las decisiones D1 a D11 que
+el fundador debe tomar antes de programar. Nada de esto está decidido todavía.
+
 ### WMS-60 · API y webhooks
 
 - **Qué:** API REST por empresa con llaves propias y permisos por llave,
