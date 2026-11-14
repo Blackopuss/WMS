@@ -1835,8 +1835,9 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `facilityId` | `String · Char(36)` |  | The warehouse it leaves from (WMS-18): it is picked there. |
 | `importId` | `String? · Char(36)` |  | The file it came from (WMS-13B); null when written by hand. |
 | `sourceKey` | `String? · VarChar(80)` |  | Imported orders only: its «Pedido» of the file, folded. Unique in the company, so the same order of a file never becomes two (WMS-13B). |
+| `apiRequestKey` | `String? · Char(64)` |  | WMS-60: sha256 (hex) of the API key and its Idempotency-Key: an order created by the API is not created twice. Apart from sourceKey, so a file can never take it nor the other way round. |
 
-- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `sourceKey`).
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `sourceKey`); (`organizationId`, `apiRequestKey`).
 - Índices: (`organizationId`, `status`, `number`).
 - Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `import` → `OutboundImport` por (`organizationId`, `importId`) (al borrar: Restrict).
 

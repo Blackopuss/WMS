@@ -36,9 +36,15 @@ eventos principales.
    compara en tiempo constante, revisa revocación, caducidad y que la
    persona que la creó siga activa; aplica los límites de uso y llama al
    **mismo servicio** que usa la pantalla.
-5. **Revocar.** Un botón; efecto inmediato (la siguiente llamada ya
-   responde 401). No se borra: queda con quién y cuándo la revocó.
-6. **Rastro.** Bitácora al crear (`api_key.created`), cambiar
+5. **Revocar.** Un botón con confirmación; efecto inmediato (la siguiente
+   llamada ya responde 401). No se borra: queda con quién y cuándo la
+   revocó.
+6. **Alcance (WMS-20).** Quien está limitado a almacenes o zonas solo ve,
+   cambia y revoca **sus** llaves (las de otros «no existen» para él); crear
+   sigue igual y la llave queda recortada a su alcance. Una persona
+   desactivada pierde sus llaves en la siguiente llamada: la llave exige
+   una membresía `ACTIVE` de quien la creó (prueba en `api.int.test.ts`).
+7. **Rastro.** Bitácora al crear (`api_key.created`), cambiar
    (`api_key.changed`) y revocar (`api_key.revoked`); `lastUsedAt` se
    actualiza como mucho una vez por minuto. Lo que la llave escribe queda a
    nombre de quien la creó y su bitácora lleva la llave (`metadata.apiKeyId`).
@@ -61,6 +67,11 @@ configuración ni nada que la API no use.
 | `purchase_orders.read` | `purchasing.order.read` | `GET /purchase-orders`, `GET /purchase-orders/{id}` |
 | `receipts.read` | `purchasing.order.read`, `purchasing.receipt.read` | `GET /purchase-orders/{id}/receipts` |
 | `costs.read` | `inventory.cost.read`, `purchasing.cost.read` | Agrega costos donde la pantalla los muestra |
+
+Las llaves guardan sus capacidades, no sus permisos: si una capacidad gana
+un permiso, todas las llaves que la tienen lo ganan. Por eso
+`capabilities.test.ts` fija esta tabla; cambiarla es a propósito y se
+anota aquí.
 
 ### La API
 
@@ -97,10 +108,19 @@ configuración ni nada que la API no use.
   autocommit; si no cambió nada, reinicia la ventana vencida o crea la fila.
   Ninguna transacción abarca dos filas, así que no hay interbloqueos
   (IMP-S13) y no hay que leer antes de escribir.
-- Llaves inválidas: cada intento con una llave que no existe cuenta en el
-  límite por IP (`reserveAttempt`/`settleFailure` de `throttle.ts`,
-  `clientIp`): 30 intentos en 15 minutos. Una llave válida no consume ese
-  límite (`refundAttempt`).
+- Primero la ventana de la llave y después la de la empresa: una llave
+  pasada de su límite que sigue llamando no gasta el minuto de la empresa
+  ni deja sin servicio a las demás.
+- **Llaves inválidas (excepción razonada a `throttle.ts`).** La regla de
+  «apartar el intento antes de verificar» existe para secretos que se
+  pueden adivinar (contraseñas, códigos). Una llave tiene 256 bits de azar:
+  se verifica **primero** y en la IP solo cuentan los **fallos**
+  (`blockedFor` y luego `recordAttempt`; 30 en 15 minutos). Una llave
+  válida nunca consulta ni gasta ese contador ni abre su transacción, así
+  que quien comparte la IP de salida (otra empresa, o todos los que llegan
+  sin `X-Forwarded-For`) no puede dejarla sin API mandando tokens malos.
+- El cuerpo se lee por partes y se corta al pasar 256 KB (también sin
+  `content-length`).
 
 ### Webhooks
 
@@ -113,12 +133,18 @@ configuración ni nada que la API no use.
    `inventory.adjustment.applied` (ajuste a mano, ajuste autorizado y
    conteo aplicado), `inventory.stock_status.changed` (cambio de estado y
    decisiones de devoluciones de clientes).
-3. **Emisión.** El servicio del hecho llama `emitWebhookEvent(tx, tipo,
-   …)` dentro de su transacción, después de sus escrituras: si no hay
-   destinos suscritos no escribe nada; si hay, escribe el evento
-   (`webhook_event`, id estable), una entrega por destino
-   (`webhook_delivery`) y un trabajo `platform.webhook_delivery` por
-   entrega. Si la operación se revierte, no hay evento.
+3. **Emisión, en dos pasos.** El servicio del hecho llama
+   `emitWebhookEvent(tx, tipo, …)` dentro de su transacción, después de sus
+   escrituras. Ahí solo lee sin candados si algún destino escucha (si
+   ninguno, no escribe nada), escribe el evento (`webhook_event`, id
+   estable) y encola **un** trabajo `platform.webhook_fanout`. Así no se
+   agregan candados a las transacciones de existencias (una entrega con
+   llave foránea al destino tomaría candado compartido sobre su fila,
+   mientras pausar, rotar o `onFailed` la bloquean en exclusiva). El
+   reparto corre después en el worker: si el módulo del evento sigue
+   contratado, crea una entrega (`webhook_delivery`, única por destino y
+   evento) y un trabajo `platform.webhook_delivery` por cada destino que
+   escucha **en ese momento**. Si la operación se revierte, no hay evento.
 4. **Entrega** (worker). `POST` con el cuerpo JSON del evento y cabeceras
    `WMS-Event-Id`, `WMS-Event-Type` y `WMS-Signature: t=<unix>,v1=<hex>`
    (HMAC-SHA256 de `"<t>.<cuerpo>"`). Respuesta 2xx = entregado. Si no,
@@ -138,7 +164,13 @@ configuración ni nada que la API no use.
    y entregas de más de 30 días los borra la ronda
    `platform.webhooks_cleanup`.
 7. **Pausar o reanudar** a mano; reanudar no reenvía lo que se perdió
-   mientras estuvo pausado (pendiente).
+   mientras estuvo pausado (pendiente). Quitar pide confirmación.
+8. **Alcance (WMS-20).** Los webhooks mandan hechos de todos los almacenes:
+   crear, cambiar, pausar, rotar, quitar y ver destinos y entregas exige no
+   tener límite (`seesWholeCompany`); a quien está limitado la pantalla le
+   dice por qué no la ve.
+9. Los topes (20 llaves activas, 10 destinos) se cuentan bajo el candado de
+   la fila de la empresa (`lockOrganization`, como los cambios de equipo).
 
 **Secreto de firma.** Hay que poder firmar con él, así que no basta un
 hash: se guarda cifrado con AES-256-GCM. La clave se deriva con HKDF de
@@ -150,10 +182,12 @@ anterior 24 horas; mientras tanto la firma lleva dos `v1=` para que el
 receptor cambie sin perder eventos.
 
 **SSRF.** Solo `https` y puerto 443 (o el de la URL si es otro, nunca
-menor que 1024 salvo 443). Al entregar se resuelve el nombre y se rechaza
+menor que 1024 salvo 443); el nombre se compara sin el punto final
+(`localhost.`), nunca el propio dominio del WMS (`BETTER_AUTH_URL`). Al
+entregar se resuelve el nombre (5 segundos como máximo) y se rechaza
 si **alguna** dirección es privada, de bucle local, de enlace local,
 compartida (CGNAT), de documentación, multicast, reservada o de metadatos
-de nube, en IPv4 e IPv6 (incluidas las IPv4 mapeadas y NAT64); se conecta
+de nube, en IPv4 e IPv6 (toda `::ffff:0:0/96` mapeada, y NAT64); se conecta
 a la dirección ya validada (`lookup` fijo), con el nombre original para
 TLS. Sin seguir redirecciones (una 3xx es fallo), 10 segundos de tiempo
 máximo, se leen como mucho 64 KB de respuesta y se descartan.
@@ -169,15 +203,14 @@ día de salida, prioridad, notas y líneas (producto por id o clave, y
 cantidad en su unidad). Crea el borrador y sus líneas **en una
 transacción** con las mismas reglas que la pantalla (`readHeader`,
 `parseQuantity`, producto activo, una línea por producto, tope de líneas)
-en el almacén de la llave. `Idempotency-Key` obligatoria: se guarda en
-`outbound_order.sourceKey` como `API:` + sha256(id de llave + clave), el
-mismo mecanismo único por empresa de la importación (WMS-13B). Repetir la
-misma clave con el mismo contenido devuelve el mismo pedido (`200`,
-`repeated: true`); con otro contenido, `409`. La migración relaja el
-`CHECK` `outbound_order_source`: un pedido importado sigue exigiendo
-`sourceKey`, y un `sourceKey` sin importación solo puede empezar con
-`API:` (las claves de un archivo pasan por `foldName`, que no deja
-mayúsculas, así que no chocan).
+en el almacén de la llave. `Idempotency-Key` obligatoria: se guarda en una
+columna propia, `outbound_order.apiRequestKey` = sha256 hex (id de llave +
+clave), única por empresa e inmutable (disparador). Se descartó reutilizar
+`sourceKey` de la importación: su intercalación no distingue mayúsculas y
+un archivo podía ocupar la clave de la API o al revés. Repetir la misma
+clave con el mismo contenido (destinatario, dirección, referencia, nota,
+día, prioridad y cada línea) devuelve el mismo pedido (`200`,
+`repeated: true`); con cualquier diferencia, `409`.
 
 ## Decisión central: cómo actúa una llave
 
@@ -224,7 +257,7 @@ Consecuencias:
   contexto se preguntara por esa persona en otra empresa, no tiene ningún
   permiso.
 - La escritura queda a nombre de quien creó la llave; la bitácora agrega
-  `apiKeyId` y el pedido se reconoce por su `sourceKey` `API:`.
+  `llaveApi` y el pedido se reconoce por su `apiRequestKey`.
 
 ## Ajustes por empresa
 
@@ -262,3 +295,7 @@ Consecuencias:
 - Varias llaves con un mismo secreto rotado (hoy se crea otra y se revoca
   la anterior).
 - Elegir almacén por llamada en vez de por llave.
+- La pantalla de Movimientos y la de recepciones de una orden de toda la
+  empresa siguen mostrando todas las líneas de un documento aunque una sea
+  de fuera del alcance (pendiente de ADR 0038). La API ya no: pide
+  `onlyLinesInScope` a `listMovements` y `getOrderReceipts`.

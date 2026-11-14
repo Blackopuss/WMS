@@ -4,6 +4,7 @@ import { apiRoutes } from "@/app/api/v1/_routes";
 import { newId } from "@/lib";
 import {
   createOutboundOrder,
+  getStockTotals,
   registerEntry,
   setOutboundLine,
 } from "@/modules/inventory";
@@ -18,10 +19,14 @@ import {
 } from "@/platform/api";
 import { type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
-import { createProduct } from "@/platform/catalog";
-import { createFacility } from "@/platform/locations";
+import { createProduct, listProducts } from "@/platform/catalog";
+import {
+  createFacility,
+  createLocation,
+  switchFacility,
+} from "@/platform/locations";
 import { createOrganization } from "@/platform/tenancy";
-import { db } from "@/server";
+import { db, runDelegated } from "@/server";
 
 // WMS-60 (ADR 0058): an API key acts for who created it, cut down to its
 // capabilities; it never reaches another company (PC-1), never reads the
@@ -380,14 +385,236 @@ describe("autenticación", () => {
   });
 
   it("una llave válida no gasta el límite por IP", async () => {
-    const created = await keyFor(a, ["products.read"]);
+    const created = await keyFor(a, ["products.read"], {
+      requestsPerMinute: "100",
+    });
     const ip = "203.0.113.88";
-    for (let i = 0; i < 35; i++) {
-      expect(
-        (await call("/products", { token: created.token, ip })).status,
-      ).toBe(200);
-    }
+    // 40 at once from one IP: none is blocked.
+    const statuses = await Promise.all(
+      Array.from({ length: 40 }, () =>
+        call("/products", { token: created.token, ip }).then((r) => r.status),
+      ),
+    );
+    expect(statuses.every((status) => status === 200)).toBe(true);
+    const row = await db.authThrottle.findUnique({
+      where: { key: `api:key:ip:${ip}` },
+    });
+    expect(row).toBeNull();
   }, 60_000);
+
+  it("los tokens malos de una IP no dejan fuera a una llave válida de esa IP", async () => {
+    const created = await keyFor(a, ["products.read"], {
+      requestsPerMinute: "100",
+    });
+    const ip = "203.0.113.99";
+    for (let i = 0; i < 40; i++) {
+      await call("/products", { token: `wms_qqqqqqqq_${"w".repeat(43)}`, ip });
+    }
+    expect(
+      (await call("/products", { token: `wms_qqqqqqqq_${"w".repeat(43)}`, ip }))
+        .status,
+    ).toBe(429);
+    expect((await call("/products", { token: created.token, ip })).status).toBe(
+      200,
+    );
+  }, 60_000);
+});
+
+describe("alcance de llaves y personas limitadas (WMS-20)", () => {
+  it("quien está limitado solo ve, cambia y revoca sus propias llaves", async () => {
+    const other = await keyFor(a, ["products.read"]);
+    const admin = await member(a.organizationId, "administrator");
+    const membership = await db.membership.findFirstOrThrow({
+      where: { organizationId: a.organizationId, userId: admin.userId },
+    });
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: a.organizationId, isDefault: true },
+    });
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId: a.organizationId,
+        membershipId: membership.id,
+        facilityId: main.id,
+      },
+    });
+    const mine = await keyFor(admin, ["products.read"]);
+    const listed = (await listApiKeys(admin)).map((each) => each.id);
+    expect(listed).toEqual([mine.keyId]);
+    expect(await revokeApiKey(admin, other.keyId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(
+      await updateApiKey(admin, other.keyId, { name: "Ajena" }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await revokeApiKey(admin, mine.keyId)).toEqual({ ok: true });
+    // Who is not limited sees all of them.
+    expect((await listApiKeys(a)).map((each) => each.id)).toEqual(
+      expect.arrayContaining([other.keyId, mine.keyId]),
+    );
+  });
+
+  it("una llave limitada a un almacén no lee lo de otro, por id ni en listas", async () => {
+    const c = await company();
+    const product = await createProduct(c, {
+      sku: "ALC-1",
+      name: "Producto alcance",
+    });
+    if (!product.ok) throw new Error("product");
+    const generalA = await generalOf(c.organizationId);
+    const north = await createFacility(c, {
+      name: "Norte",
+      code: `NO${counter}`,
+    });
+    if (!north.ok) throw new Error(JSON.stringify(north));
+    const generalB = (
+      await db.location.findFirstOrThrow({
+        where: {
+          organizationId: c.organizationId,
+          facilityId: north.facilityId,
+          isDefault: true,
+        },
+      })
+    ).id;
+    for (const locationId of [generalA, generalB]) {
+      const entry = await registerEntry(c, {
+        productId: product.productId,
+        locationId,
+        quantity: "5",
+        acceptRepeat: true,
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+    }
+    // An order of the north warehouse.
+    await switchFacility(c, north.facilityId);
+    const order = await createOutboundOrder(c, { recipient: "Norte" });
+    if (!order.ok) throw new Error("order");
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: c.organizationId, isDefault: true },
+    });
+    await switchFacility(c, main.id);
+    const key = await keyFor(
+      c,
+      ["stock.read", "movements.read", "outbound.read", "shipments.read"],
+      {
+        facilityId: main.id,
+        facilityOnly: true,
+      },
+    );
+    const stockList = await (await call("/stock", { token: key.token })).json();
+    expect(stockList.items[0]).toMatchObject({ onHand: "5" });
+    const detail = await (
+      await call(`/products/${product.productId}/stock`, { token: key.token })
+    ).json();
+    expect(detail.total).toBe("5");
+    expect(
+      detail.locations.map((each: { locationId: string }) => each.locationId),
+    ).toEqual([generalA]);
+    const moves = await (await call("/movements", { token: key.token })).json();
+    const places = moves.items.flatMap(
+      (movement: { lines: { locationId: string }[] }) =>
+        movement.lines.map((line) => line.locationId),
+    );
+    expect(places).not.toContain(generalB);
+    expect(
+      (await call(`/outbound-orders/${order.orderId}`, { token: key.token }))
+        .status,
+    ).toBe(404);
+    const orders = await (
+      await call("/outbound-orders", { token: key.token })
+    ).json();
+    expect(orders.items.map((each: { id: string }) => each.id)).not.toContain(
+      order.orderId,
+    );
+    // The same company without the limit sees both warehouses.
+    const wide = await keyFor(c, ["stock.read"]);
+    expect(
+      (
+        await (
+          await call(`/products/${product.productId}/stock`, {
+            token: wide.token,
+          })
+        ).json()
+      ).total,
+    ).toBe("10");
+  }, 60_000);
+
+  it("una llave de alguien limitado a una zona lee solo esa zona", async () => {
+    const c = await company();
+    const product = await createProduct(c, {
+      sku: "ZON-1",
+      name: "Producto zona",
+    });
+    if (!product.ok) throw new Error("product");
+    const zone = await createLocation(c, { level: 1, name: "Zona A" });
+    const other = await createLocation(c, { level: 1, name: "Zona B" });
+    if (!zone.ok || !other.ok) throw new Error("zones");
+    for (const locationId of [zone.locationId, other.locationId]) {
+      const entry = await registerEntry(c, {
+        productId: product.productId,
+        locationId,
+        quantity: "3",
+        acceptRepeat: true,
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+    }
+    const admin = await member(c.organizationId, "administrator");
+    const membership = await db.membership.findFirstOrThrow({
+      where: { organizationId: c.organizationId, userId: admin.userId },
+    });
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: c.organizationId, isDefault: true },
+    });
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId: c.organizationId,
+        membershipId: membership.id,
+        facilityId: main.id,
+        locationId: zone.locationId,
+      },
+    });
+    const key = await keyFor(admin, ["stock.read"]);
+    const detail = await (
+      await call(`/products/${product.productId}/stock`, { token: key.token })
+    ).json();
+    expect(detail.total).toBe("3");
+    expect(
+      detail.locations.map((each: { locationId: string }) => each.locationId),
+    ).toEqual([zone.locationId]);
+  }, 60_000);
+
+  it("el recorte de la política detiene lo que la llave no tiene, también dentro de un servicio", async () => {
+    const created = await keyFor(a, ["products.read"]);
+    const row = await db.apiKey.findUniqueOrThrow({
+      where: { id: created.keyId },
+    });
+    const delegation = {
+      organizationId: a.organizationId,
+      userId: a.userId,
+      apiKeyId: row.id,
+      permissions: ["inventory.product.read"],
+      facilityId: row.facilityId,
+      facilityOnly: false,
+    };
+    // The titular holds everything; acting for the key only reads products.
+    await expect(
+      runDelegated(delegation, () => getStockTotals(a, [productA])),
+    ).rejects.toMatchObject({ kind: "forbidden" });
+    await expect(
+      runDelegated(delegation, () => listProducts(a, {})),
+    ).resolves.toMatchObject({ total: expect.any(Number) });
+    // In another company the person has nothing while acting for the key.
+    await expect(
+      runDelegated(delegation, () =>
+        listProducts(
+          { organizationId: b.organizationId, userId: a.userId },
+          {},
+        ),
+      ),
+    ).rejects.toMatchObject({ kind: "forbidden" });
+  });
 });
 
 describe("lecturas", () => {
@@ -620,10 +847,26 @@ describe("crear pedidos de salida", () => {
       headers: { "idempotency-key": "pedido-1" },
     });
     expect(other.status).toBe(409);
+    // Any other field counts: the address, the day, the priority.
+    for (const change of [
+      { address: "Otra dirección" },
+      { dueOn: "2026-12-02" },
+      { priority: "NORMAL" },
+      { reference: "ERP-78" },
+    ]) {
+      const changed = await call("/outbound-orders", {
+        token: created.token,
+        method: "POST",
+        body: { ...body, ...change },
+        headers: { "idempotency-key": "pedido-1" },
+      });
+      expect(changed.status).toBe(409);
+    }
     const stored = await db.outboundOrder.findUniqueOrThrow({
       where: { id: order.id },
     });
-    expect(stored.sourceKey).toMatch(/^API:[0-9a-f]{64}$/);
+    expect(stored.apiRequestKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.sourceKey).toBeNull();
     expect(stored.importId).toBeNull();
     // At once with the same key: one order.
     const results = await Promise.all(
@@ -691,6 +934,39 @@ describe("límites de uso", () => {
     const limited = await call("/products", { token: created.token });
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
     expect((await limited.json()).error.code).toBe("rate_limited");
+  });
+
+  it("una llave pasada de su límite no gasta el de la empresa", async () => {
+    const small = await company(["inventory"]);
+    await db.entitlement.create({
+      data: {
+        id: newId(),
+        organizationId: small.organizationId,
+        kind: "LIMIT",
+        key: "api_requests_per_minute",
+        value: 4,
+        validFrom: new Date(Date.now() - 1000),
+      },
+    });
+    const { invalidateEntitlements } = await import("@/platform/entitlements");
+    invalidateEntitlements(small.organizationId);
+    const noisy = await keyFor(small, ["products.read"], {
+      requestsPerMinute: "1",
+    });
+    const quiet = await keyFor(small, ["products.read"], {
+      requestsPerMinute: "4",
+    });
+    const statuses = [];
+    for (const token of [noisy.token, noisy.token, noisy.token, noisy.token]) {
+      statuses.push((await call("/products", { token })).status);
+    }
+    expect(statuses).toEqual([200, 429, 429, 429]);
+    const others = [];
+    for (let i = 0; i < 4; i++) {
+      others.push((await call("/products", { token: quiet.token })).status);
+    }
+    // The company had 4: one went to the noisy key, three are left.
+    expect(others).toEqual([200, 200, 200, 429]);
   });
 
   it("el límite de la empresa sale del plan y cubre todas sus llaves", async () => {

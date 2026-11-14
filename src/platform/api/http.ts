@@ -4,10 +4,9 @@ import { z } from "zod";
 
 import { isAppError, log } from "@/lib";
 import {
+  blockedFor,
   clientIp,
-  refundAttempt,
-  reserveAttempt,
-  settleFailure,
+  recordAttempt,
   throttleKeys,
 } from "@/platform/auth";
 import { runDelegated } from "@/server";
@@ -184,10 +183,23 @@ async function readBody(request: Request): Promise<unknown> {
       "Manda el cuerpo como application/json.",
     );
   }
-  const text = await request.text();
-  if (Buffer.byteLength(text) > MAX_BODY_BYTES) {
-    throw new ApiError(413, "too_large", "El cuerpo es demasiado grande.");
+  // Read in parts and stop past the limit: a chunked body says no length.
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new ApiError(413, "too_large", "El cuerpo es demasiado grande.");
+      }
+      chunks.push(value);
+    }
   }
+  const text = Buffer.concat(chunks).toString("utf8");
   try {
     return JSON.parse(text);
   } catch {
@@ -272,48 +284,50 @@ export async function handleApiRequest(
       { "www-authenticate": "Bearer" },
     );
   }
-  const ipKey = [throttleKeys.apiKeyIp(clientIp(request.headers))];
-  const wait = await reserveAttempt(ipKey);
-  if (wait > 0) {
-    return errorResponse(
-      new ApiError(
-        429,
-        "too_many_attempts",
-        "Demasiados intentos con llaves que no sirven.",
-      ),
-      { "retry-after": String(wait) },
-    );
-  }
+  // A key has 256 bits of chance: it cannot be guessed like a password,
+  // so it is checked first and only failures count against the IP
+  // (ADR 0058, an exception to «take the attempt before checking» of
+  // throttle.ts). A valid key never touches the IP counter: callers that
+  // share an IP cannot lock each other out with bad tokens.
   const auth = await authenticateApiKey(token);
   if (!auth) {
-    await settleFailure(ipKey);
+    const ipKey = [throttleKeys.apiKeyIp(clientIp(request.headers))];
+    const wait = await blockedFor(ipKey);
+    if (wait > 0) {
+      return errorResponse(
+        new ApiError(
+          429,
+          "too_many_attempts",
+          "Demasiados intentos con llaves que no sirven.",
+        ),
+        { "retry-after": String(wait) },
+      );
+    }
+    await recordAttempt(ipKey);
     return errorResponse(
       new ApiError(401, "unauthorized", "La llave no es válida."),
       { "www-authenticate": "Bearer" },
     );
   }
-  await refundAttempt(ipKey);
 
-  // Limits: the company first, then the key.
+  // Limits: the key first, so a key over its own limit that keeps calling
+  // does not use up the company's minute; then the company.
   const companyMax = await companyRequestsPerMinute(auth.organizationId);
-  const company = await takeRateWindow(
-    rateKeys.company(auth.organizationId),
-    companyMax,
+  const own = await takeRateWindow(
+    rateKeys.key(auth.keyId),
+    Math.min(auth.requestsPerMinute, companyMax),
   );
-  const own = company.ok
-    ? await takeRateWindow(
-        rateKeys.key(auth.keyId),
-        Math.min(auth.requestsPerMinute, companyMax),
-      )
-    : company;
-  if (!own.ok) {
+  const decision = own.ok
+    ? await takeRateWindow(rateKeys.company(auth.organizationId), companyMax)
+    : own;
+  if (!decision.ok) {
     return errorResponse(
       new ApiError(
         429,
         "rate_limited",
         "Llegaste al límite de llamadas por minuto.",
       ),
-      { "retry-after": String(own.retryAfter) },
+      { "retry-after": String(decision.retryAfter) },
     );
   }
 

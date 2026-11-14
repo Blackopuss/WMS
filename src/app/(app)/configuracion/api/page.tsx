@@ -10,6 +10,7 @@ import {
   API_CAPABILITIES,
   API_KEY_LIFETIMES,
   DEFAULT_KEY_REQUESTS_PER_MINUTE,
+  WEBHOOKS_LIMITED_MESSAGE,
   companyRequestsPerMinute,
   listApiKeys,
   listWebhookEndpoints,
@@ -71,7 +72,7 @@ export default async function ApiPage() {
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const [keys, endpoints, facilities, active, subject, companyRate] =
+  const [keys, hooks, facilities, active, subject, companyRate] =
     await Promise.all([
       listApiKeys(actor),
       listWebhookEndpoints(actor),
@@ -95,6 +96,7 @@ export default async function ApiPage() {
       label: type.label,
       description: type.description,
     }));
+  const endpoints = hooks.endpoints;
   const labelOf = new Map(
     webhookEventTypes.map((type) => [type.key, type.label]),
   );
@@ -211,9 +213,15 @@ export default async function ApiPage() {
           <h2 id="webhooks" className="text-lg font-semibold">
             Webhooks
           </h2>
-          {events.length > 0 && <EndpointForm events={events} />}
+          {!hooks.limited && events.length > 0 && (
+            <EndpointForm events={events} />
+          )}
         </div>
-        {endpoints.length === 0 ? (
+        {hooks.limited ? (
+          <p className="text-sm text-muted-foreground">
+            {WEBHOOKS_LIMITED_MESSAGE}
+          </p>
+        ) : endpoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Todavía no hay destinos.
           </p>

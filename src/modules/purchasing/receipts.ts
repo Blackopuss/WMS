@@ -22,7 +22,11 @@ import {
   pluralizeName,
   type Capture,
 } from "@/platform/catalog";
-import { LOCATION_PARENTS, locationPath } from "@/platform/locations";
+import {
+  LOCATION_PARENTS,
+  locationPath,
+  locationsOutOfScope,
+} from "@/platform/locations";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -1262,6 +1266,12 @@ export function inTermsOf(
 export async function getOrderReceipts(
   actor: PurchasingActor,
   orderId: string,
+  /**
+   * WMS-60: the API keeps only the receipt lines of locations inside the
+   * person's scope (an order of the whole company can be received in any
+   * warehouse). The screen is unchanged (pending of ADR 0038).
+   */
+  options: { onlyLinesInScope?: boolean } = {},
 ): Promise<OrderReceipts | null> {
   await assertModulePermission(
     actor.organizationId,
@@ -1492,6 +1502,23 @@ export async function getOrderReceipts(
         }
       : {}),
   }));
+  const outside = options.onlyLinesInScope
+    ? new Set(
+        await locationsOutOfScope(
+          client,
+          actor.userId,
+          receipts.flatMap((receipt) => receipt.lines.map((l) => l.locationId)),
+        ),
+      )
+    : null;
+  const shown = outside
+    ? receipts
+        .map((receipt) => ({
+          ...receipt,
+          lines: receipt.lines.filter((l) => !outside.has(l.locationId)),
+        }))
+        .filter((receipt) => receipt.lines.length > 0)
+    : receipts;
 
   return {
     canReceive:
@@ -1501,6 +1528,6 @@ export async function getOrderReceipts(
       receipt.lines.some((line) => line.returnableText !== null),
     ),
     lines,
-    receipts,
+    receipts: shown,
   };
 }

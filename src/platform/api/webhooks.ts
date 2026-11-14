@@ -4,12 +4,18 @@ import { z } from "zod";
 
 import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
-import { assertAllowed } from "@/platform/authorization";
+import {
+  assertAllowed,
+  lockOrganization,
+  seesWholeCompany,
+} from "@/platform/authorization";
+import { getEntitlements } from "@/platform/entitlements";
 import type { JobHandler } from "@/platform/jobs";
 import { enqueueJob } from "@/platform/jobs";
 import { notify, type NotificationType } from "@/platform/notifications";
 import {
   LOCKING_TRANSACTION,
+  db,
   forOrganization,
   lockRows,
   type TenantDb,
@@ -48,6 +54,25 @@ export const WEBHOOK_HISTORY_DAYS = 30;
 
 const MANAGE = "platform.api.manage" as const;
 const NOT_FOUND = "Este destino no existe.";
+export const WEBHOOK_FANOUT_JOB = "platform.webhook_fanout";
+/** Why someone limited to warehouses or zones (WMS-20) cannot see webhooks. */
+export const WEBHOOKS_LIMITED_MESSAGE =
+  "Los webhooks mandan datos de toda la empresa: solo los configura quien no está limitado a almacenes o zonas.";
+
+/**
+ * Webhooks carry facts of every warehouse, so they are only for who sees
+ * the whole company (WMS-20): checks the permission and that.
+ */
+async function assertWholeCompany(actor: Actor): Promise<boolean> {
+  await assertAllowed(actor.organizationId, actor.userId, MANAGE);
+  return seesWholeCompany(forOrganization(actor.organizationId), actor.userId);
+}
+
+const LIMITED: WebhookResult = {
+  ok: false,
+  reason: "not_allowed",
+  error: WEBHOOKS_LIMITED_MESSAGE,
+};
 
 /** Notice for who manages the API when a destination paused by itself. */
 export const WEBHOOK_PAUSED_NOTICE: NotificationType = {
@@ -139,24 +164,19 @@ export async function createWebhookEndpoint(
   types: readonly Pick<WebhookEventType, "key">[],
 ): Promise<WebhookResult> {
   const { organizationId, userId } = actor;
-  await assertAllowed(organizationId, userId, MANAGE);
+  if (!(await assertWholeCompany(actor))) return LIMITED;
   const read = readEndpoint(input, types);
   if (!read.ok)
     return { ok: false, reason: "invalid", fieldErrors: read.fieldErrors };
-  const client = forOrganization(organizationId);
-  const active = await client.webhookEndpoint.count({
-    where: { removedAt: null },
-  });
-  if (active >= WEBHOOK_ENDPOINTS_MAX) {
-    return {
-      ok: false,
-      reason: "not_allowed",
-      error: `Tu empresa ya tiene ${WEBHOOK_ENDPOINTS_MAX} destinos. Quita uno que ya no uses.`,
-    };
-  }
   const secret = newSigningSecret();
   const endpointId = newId();
-  await client.$transaction(async (tx) => {
+  // The cap is counted under the lock of the company (like the team).
+  const full = await db.$transaction(async (tx) => {
+    await lockOrganization(tx, organizationId);
+    const active = await tx.webhookEndpoint.count({
+      where: { organizationId, removedAt: null },
+    });
+    if (active >= WEBHOOK_ENDPOINTS_MAX) return true;
     await tx.webhookEndpoint.create({
       data: {
         id: endpointId,
@@ -175,7 +195,15 @@ export async function createWebhookEndpoint(
       target: { type: "webhook_endpoint", id: endpointId },
       metadata: { url: read.data.url, eventos: read.data.events },
     });
+    return false;
   });
+  if (full) {
+    return {
+      ok: false,
+      reason: "not_allowed",
+      error: `Tu empresa ya tiene ${WEBHOOK_ENDPOINTS_MAX} destinos. Quita uno que ya no uses.`,
+    };
+  }
   return { ok: true, endpointId, secret };
 }
 
@@ -187,8 +215,8 @@ async function inEndpoint(
     endpoint: { id: string; status: "ACTIVE" | "PAUSED"; url: string },
   ) => Promise<WebhookResult>,
 ): Promise<WebhookResult> {
-  const { organizationId, userId } = actor;
-  await assertAllowed(organizationId, userId, MANAGE);
+  const { organizationId } = actor;
+  if (!(await assertWholeCompany(actor))) return LIMITED;
   return forOrganization(organizationId).$transaction(async (tx) => {
     const [id] = await lockRows(tx, "webhookEndpoint", [String(endpointId)]);
     const endpoint = id
@@ -214,7 +242,7 @@ export async function updateWebhookEndpoint(
 ): Promise<WebhookResult> {
   const read = readEndpoint(input, types);
   if (!read.ok) {
-    await assertAllowed(actor.organizationId, actor.userId, MANAGE);
+    if (!(await assertWholeCompany(actor))) return LIMITED;
     return { ok: false, reason: "invalid", fieldErrors: read.fieldErrors };
   }
   return inEndpoint(actor, endpointId, async (tx, endpoint) => {
@@ -340,8 +368,13 @@ export type WebhookEndpointView = {
 export async function listWebhookEndpoints(
   actor: Actor,
   options: { deliveries?: number } = {},
-): Promise<WebhookEndpointView[]> {
-  await assertAllowed(actor.organizationId, actor.userId, MANAGE);
+): Promise<
+  | { limited: true; endpoints: [] }
+  | { limited: false; endpoints: WebhookEndpointView[] }
+> {
+  if (!(await assertWholeCompany(actor))) {
+    return { limited: true, endpoints: [] };
+  }
   const take = Math.min(Math.max(options.deliveries ?? 10, 0), 50);
   const rows = await forOrganization(
     actor.organizationId,
@@ -375,7 +408,7 @@ export async function listWebhookEndpoints(
       },
     },
   });
-  return rows.map((row) => ({
+  const endpoints = rows.map((row) => ({
     id: row.id,
     url: row.url,
     description: row.description,
@@ -396,36 +429,40 @@ export async function listWebhookEndpoints(
       lastAttemptAt: delivery.lastAttemptAt,
     })),
   }));
+  return { limited: false, endpoints };
 }
 
 // ── Emitting ─────────────────────────────────────────────────────────────
 
 export type WebhookEmitTx = Pick<
   Tx,
-  "webhookEndpoint" | "webhookEvent" | "webhookDelivery" | "job"
+  "webhookEndpoint" | "webhookEvent" | "job"
 >;
 
 /**
  * Emits an event of a fact. Call it with the transaction that writes the
- * fact, after its writes: if it is rolled back, there is no event. With
- * no destination listening, nothing is written. `data` carries ids,
- * numbers of documents and quantities as text; never costs.
+ * fact, after its writes: if it is rolled back, there is no event. Inside
+ * that transaction it only reads (without locks) whether some destination
+ * listens, writes the event and queues ONE job that hands it out to the
+ * destinations later, outside the locks of the fact; with no destination
+ * listening, nothing is written. `data` carries ids, numbers of documents
+ * and quantities as text; never costs.
  */
 export async function emitWebhookEvent(
   tx: WebhookEmitTx,
-  type: Pick<WebhookEventType, "key">,
+  type: Pick<WebhookEventType, "key" | "module">,
   input: { organizationId: string; data: Record<string, unknown> },
-): Promise<{ eventId: string; deliveries: number } | null> {
+): Promise<{ eventId: string } | null> {
   const endpoints = await tx.webhookEndpoint.findMany({
     where: { status: "ACTIVE", removedAt: null },
-    select: { id: true, events: true },
+    select: { events: true },
     take: WEBHOOK_ENDPOINTS_MAX,
   });
-  const listening = endpoints.filter(
+  const listening = endpoints.some(
     (endpoint) =>
       Array.isArray(endpoint.events) && endpoint.events.includes(type.key),
   );
-  if (listening.length === 0) return null;
+  if (!listening) return null;
   const eventId = newId();
   const createdAt = new Date();
   const payload = JSON.parse(
@@ -446,23 +483,83 @@ export async function emitWebhookEvent(
       createdAt,
     },
   });
-  for (const endpoint of listening) {
-    const deliveryId = newId();
-    await tx.webhookDelivery.create({
-      data: {
-        id: deliveryId,
-        organizationId: input.organizationId,
-        endpointId: endpoint.id,
-        eventId,
-      },
-    });
-    await enqueueJob(tx, input.organizationId, {
-      type: WEBHOOK_DELIVERY_JOB,
-      payload: { deliveryId },
-      maxAttempts: WEBHOOK_MAX_ATTEMPTS,
-    });
-  }
-  return { eventId, deliveries: listening.length };
+  await enqueueJob(tx, input.organizationId, {
+    type: WEBHOOK_FANOUT_JOB,
+    payload: { eventId, module: type.module },
+  });
+  return { eventId };
+}
+
+/**
+ * The handler of `platform.webhook_fanout`: one delivery (and its job) per
+ * destination that listens now, if the module of the event is contracted.
+ * Idempotent: the unique destination + event keeps a delivery from being
+ * created twice when it runs again.
+ */
+export function webhookFanoutHandler(): JobHandler {
+  return {
+    async handle({ organizationId, payload }) {
+      const { eventId, module } = (payload ?? {}) as {
+        eventId?: unknown;
+        module?: unknown;
+      };
+      const client = forOrganization(organizationId);
+      const event = await client.webhookEvent.findFirst({
+        where: { id: String(eventId ?? "") },
+        select: { id: true, type: true },
+      });
+      if (!event) return { deliveries: 0 };
+      const entitlements = await getEntitlements(organizationId);
+      if (
+        typeof module !== "string" ||
+        entitlements.moduleState(module) === "none"
+      ) {
+        return { deliveries: 0, skipped: "module" };
+      }
+      const endpoints = await client.webhookEndpoint.findMany({
+        where: { status: "ACTIVE", removedAt: null },
+        select: { id: true, events: true },
+        take: WEBHOOK_ENDPOINTS_MAX,
+      });
+      let created = 0;
+      for (const endpoint of endpoints) {
+        if (
+          !Array.isArray(endpoint.events) ||
+          !endpoint.events.includes(event.type)
+        ) {
+          continue;
+        }
+        const exists = await client.webhookDelivery.findFirst({
+          where: { endpointId: endpoint.id, eventId: event.id },
+          select: { id: true },
+        });
+        if (exists) continue;
+        try {
+          await client.$transaction(async (tx) => {
+            const deliveryId = newId();
+            await tx.webhookDelivery.create({
+              data: {
+                id: deliveryId,
+                organizationId,
+                endpointId: endpoint.id,
+                eventId: event.id,
+              },
+            });
+            await enqueueJob(tx, organizationId, {
+              type: WEBHOOK_DELIVERY_JOB,
+              payload: { deliveryId },
+              maxAttempts: WEBHOOK_MAX_ATTEMPTS,
+            });
+          });
+          created++;
+        } catch (error) {
+          // Created at the same time by another run: already handed out.
+          if ((error as { code?: string }).code !== "P2002") throw error;
+        }
+      }
+      return { deliveries: created };
+    },
+  };
 }
 
 // ── Delivering (worker) ──────────────────────────────────────────────────
@@ -647,4 +744,13 @@ export async function purgeWebhookHistory(
     where: { createdAt: { lt: before }, deliveries: { none: {} } },
   });
   return { events: events.count, deliveries: deliveries.count };
+}
+
+/** Companies with webhook history: who the cleanup round goes through. */
+export async function organizationsWithWebhookHistory(): Promise<string[]> {
+  const rows = await db.webhookEvent.groupBy({
+    by: ["organizationId"],
+    orderBy: { organizationId: "asc" },
+  });
+  return rows.map((row) => row.organizationId);
 }

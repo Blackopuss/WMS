@@ -2715,10 +2715,15 @@ model OutboundOrder {
   /// Imported orders only: its «Pedido» of the file, folded. Unique in the
   /// company, so the same order of a file never becomes two (WMS-13B).
   sourceKey         String?                @db.VarChar(80)
+  /// WMS-60: sha256 (hex) of the API key and its Idempotency-Key: an order
+  /// created by the API is not created twice. Apart from sourceKey, so a
+  /// file can never take it nor the other way round.
+  apiRequestKey     String?                @db.Char(64)
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
   @@unique([organizationId, sourceKey])
+  @@unique([organizationId, apiRequestKey])
   @@index([organizationId, status, number])
   @@map("outbound_order")
 }

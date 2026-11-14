@@ -15,6 +15,8 @@ import { checkWebhookUrl, isBlockedAddress } from "./webhook-target";
  */
 
 export const DELIVERY_TIMEOUT_MS = 10_000;
+/** Time to resolve the name of a destination. */
+export const DNS_TIMEOUT_MS = 5_000;
 export const RESPONSE_MAX_BYTES = 64 * 1024;
 
 export type DeliveryAttempt =
@@ -47,10 +49,22 @@ export async function resolveTarget(
   if (kind !== 0) {
     addresses = [{ address: literal, family: kind }];
   } else {
+    let timer: NodeJS.Timeout | undefined;
     try {
-      addresses = await resolver(literal);
+      addresses = await Promise.race([
+        resolver(literal.replace(/\.+$/, "")),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("dns timeout")),
+            DNS_TIMEOUT_MS,
+          );
+          timer.unref?.();
+        }),
+      ]);
     } catch {
       return { ok: false, reason: "No se encontró la dirección del destino." };
+    } finally {
+      clearTimeout(timer);
     }
   }
   if (addresses.length === 0) {

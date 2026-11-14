@@ -3377,6 +3377,8 @@ export type MovementFilters = {
    */
   serialUnitId?: string;
   page?: number;
+  /** WMS-60: drop the lines of locations outside the person's scope. */
+  onlyLinesInScope?: boolean;
 };
 
 export type MovementPage = {
@@ -3533,12 +3535,31 @@ export async function listMovements(
   const pageCount = Math.max(1, Math.ceil(total / MOVEMENT_PAGE_SIZE));
   const requested = Number.isInteger(filters.page) ? Number(filters.page) : 1;
   const page = Math.min(Math.max(requested, 1), pageCount);
-  const items = await fetchMovements(
+  const fetched = await fetchMovements(
     actor.organizationId,
     where,
     MOVEMENT_PAGE_SIZE,
     (page - 1) * MOVEMENT_PAGE_SIZE,
   );
+  // WMS-60: the API keeps only the lines inside the scope (a transfer
+  // between two zones shows only its side). The screen is unchanged: a
+  // known pending item of ADR 0038.
+  let items = fetched;
+  if (filters.onlyLinesInScope) {
+    const outside = new Set(
+      await locationsOutOfScope(
+        client,
+        actor.userId,
+        fetched.flatMap((movement) =>
+          movement.lines.map((line) => line.locationId),
+        ),
+      ),
+    );
+    items = fetched.map((movement) => ({
+      ...movement,
+      lines: movement.lines.filter((line) => !outside.has(line.locationId)),
+    }));
+  }
   return {
     items,
     total,

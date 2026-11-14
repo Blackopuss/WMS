@@ -11,6 +11,7 @@ import {
 import { moduleRegistry, webhookEventTypes } from "@/modules/registry";
 import {
   WEBHOOK_DELIVERY_JOB,
+  WEBHOOK_FANOUT_JOB,
   WEBHOOK_PAUSE_AFTER,
   createTransport,
   createWebhookEndpoint,
@@ -23,6 +24,7 @@ import {
   setWebhookEndpointPaused,
   updateWebhookEndpoint,
   webhookDeliveryHandler,
+  webhookFanoutHandler,
   type DeliveryAttempt,
   type WebhookTransport,
 } from "@/platform/api";
@@ -81,6 +83,8 @@ async function company(): Promise<Actor> {
 }
 
 const ALL = webhookEventTypes.map((type) => type.key);
+const typeOf = (key: string) =>
+  webhookEventTypes.find((type) => type.key === key)!;
 
 type Sent = { url: string; body: string; headers: Record<string, string> };
 
@@ -96,11 +100,15 @@ function fakeTransport(answers: DeliveryAttempt[]) {
 /** Runs the due webhook jobs of the queue with the given transport. */
 async function runDeliveries(transport: WebhookTransport, at = new Date()) {
   const handlers = {
+    [WEBHOOK_FANOUT_JOB]: webhookFanoutHandler(),
     [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler({ transport }),
   };
   let ran = 0;
   for (;;) {
-    const outcome = await runNextJob(handlers, { now: () => at });
+    // Jobs queued while running (deliveries of a hand-out) are due at once.
+    const outcome = await runNextJob(handlers, {
+      now: () => new Date(Math.max(at.getTime(), Date.now())),
+    });
     if (outcome.kind === "idle") break;
     ran++;
   }
@@ -187,7 +195,7 @@ describe("destinos", () => {
     });
     expect(row.secretCiphertext).not.toContain(created.secret!.slice(6));
     expect(row.events).toEqual(ALL);
-    const listed = await listWebhookEndpoints(a);
+    const listed = (await listWebhookEndpoints(a)).endpoints;
     expect(JSON.stringify(listed)).not.toContain(created.secret!.slice(6));
     await removeWebhookEndpoint(a, created.endpointId);
   });
@@ -200,7 +208,7 @@ describe("destinos", () => {
     );
     if (!created.ok) throw new Error("endpoint");
     expect(
-      (await listWebhookEndpoints(b)).map((each) => each.id),
+      (await listWebhookEndpoints(b)).endpoints.map((each) => each.id),
     ).not.toContain(created.endpointId);
     expect(
       await setWebhookEndpointPaused(b, created.endpointId, true),
@@ -235,6 +243,66 @@ describe("destinos", () => {
       }),
     ).rejects.toMatchObject({ kind: "forbidden" });
     await removeWebhookEndpoint(a, created.endpointId);
+  });
+});
+
+describe("alcance por almacén (WMS-20)", () => {
+  it("quien está limitado a almacenes no ve ni toca los webhooks", async () => {
+    const adminId = await newUser("Admin limitado");
+    const membership = await db.membership.create({
+      data: { id: newId(), organizationId: a.organizationId, userId: adminId },
+    });
+    await db.membershipRole.create({
+      data: {
+        id: newId(),
+        organizationId: a.organizationId,
+        membershipId: membership.id,
+        role: "administrator",
+      },
+    });
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: a.organizationId, isDefault: true },
+    });
+    await db.membershipScope.create({
+      data: {
+        id: newId(),
+        organizationId: a.organizationId,
+        membershipId: membership.id,
+        facilityId: main.id,
+      },
+    });
+    const limited = { organizationId: a.organizationId, userId: adminId };
+    const own = await createWebhookEndpoint(
+      a,
+      { url: "https://hooks.ejemplo.com/todo", events: ALL },
+      webhookEventTypes,
+    );
+    if (!own.ok) throw new Error("endpoint");
+    expect(await listWebhookEndpoints(limited)).toEqual({
+      limited: true,
+      endpoints: [],
+    });
+    expect(
+      await createWebhookEndpoint(
+        limited,
+        { url: "https://hooks.ejemplo.com/mio", events: ALL },
+        webhookEventTypes,
+      ),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+    for (const result of [
+      await setWebhookEndpointPaused(limited, own.endpointId, true),
+      await rotateWebhookSecret(limited, own.endpointId),
+      await removeWebhookEndpoint(limited, own.endpointId),
+      await updateWebhookEndpoint(
+        limited,
+        own.endpointId,
+        { url: "https://hooks.ejemplo.com/x", events: ALL },
+        webhookEventTypes,
+      ),
+    ]) {
+      expect(result).toMatchObject({ ok: false, reason: "not_allowed" });
+    }
+    await removeWebhookEndpoint(a, own.endpointId);
   });
 });
 
@@ -407,6 +475,117 @@ describe("emisión", () => {
     await drain();
   });
 
+  it("emite el despacho desde un embarque real", async () => {
+    const {
+      acceptTask,
+      confirmPick,
+      createOutboundOrder,
+      createShipment,
+      deliverTask,
+      dispatchShipment,
+      releaseOutboundOrder,
+      setOutboundLine,
+    } = await import("@/modules/inventory");
+    const { createLocation } = await import("@/platform/locations");
+    const created = await createWebhookEndpoint(
+      a,
+      {
+        url: "https://hooks.ejemplo.com/despachos",
+        events: ["inventory.shipment.dispatched"],
+      },
+      webhookEventTypes,
+    );
+    if (!created.ok) throw new Error("endpoint");
+    const shelf = await createLocation(a, {
+      level: 3,
+      name: "Estante despacho",
+    });
+    if (!shelf.ok) throw new Error(JSON.stringify(shelf));
+    const entered = await registerEntry(a, {
+      productId,
+      locationId: shelf.locationId,
+      quantity: "4",
+      acceptRepeat: true,
+    });
+    if (!entered.ok) throw new Error(JSON.stringify(entered));
+    const order = await createOutboundOrder(a, {
+      recipient: "Cliente despacho",
+    });
+    if (!order.ok) throw new Error(JSON.stringify(order));
+    await setOutboundLine(a, order.orderId, { productId, quantity: "3" });
+    const released = await releaseOutboundOrder(a, order.orderId);
+    if (!released.ok) throw new Error(JSON.stringify(released));
+    const tasks = await db.warehouseTask.findMany({
+      where: { kind: "PICK", outboundLine: { orderId: order.orderId } },
+      include: { product: true, fromLocation: true },
+    });
+    for (const task of tasks) {
+      await acceptTask(a, task.id);
+      const picked = await confirmPick(a, task.id, {
+        productCode: task.product!.sku,
+        locationCode: task.fromLocation.name,
+        quantity: task.quantity!.toString(),
+      });
+      if (!picked.ok) throw new Error(JSON.stringify(picked));
+      const delivered = await deliverTask(a, task.id);
+      if (!delivered.ok) throw new Error(JSON.stringify(delivered));
+    }
+    const shipment = await createShipment(a, { orderIds: [order.orderId] });
+    if (!shipment.ok) throw new Error(JSON.stringify(shipment));
+    const dispatched = await dispatchShipment(a, shipment.shipmentId);
+    if (!dispatched.ok) throw new Error(JSON.stringify(dispatched));
+    const event = await db.webhookEvent.findFirstOrThrow({
+      where: {
+        organizationId: a.organizationId,
+        type: "inventory.shipment.dispatched",
+      },
+    });
+    expect(event.payload).toMatchObject({
+      data: {
+        shipmentId: shipment.shipmentId,
+        orders: [{ id: order.orderId, lines: [{ productId, quantity: "3" }] }],
+      },
+    });
+    // The fact only queued the hand-out; the worker makes the delivery.
+    expect(
+      await db.webhookDelivery.count({
+        where: { endpointId: created.endpointId },
+      }),
+    ).toBe(0);
+    const { sent, transport } = fakeTransport([]);
+    await runDeliveries(transport);
+    expect(sent.map((each) => each.headers["wms-event-id"])).toEqual([
+      event.id,
+    ]);
+    await removeWebhookEndpoint(a, created.endpointId);
+  });
+
+  it("no reparte un evento de un módulo que la empresa ya no tiene", async () => {
+    await drain();
+    const created = await createWebhookEndpoint(
+      a,
+      { url: "https://hooks.ejemplo.com/modulo", events: ALL },
+      webhookEventTypes,
+    );
+    if (!created.ok) throw new Error("endpoint");
+    await forOrganization(a.organizationId).$transaction((tx) =>
+      emitWebhookEvent(
+        tx,
+        { key: "inventory.adjustment.applied", module: "crm" },
+        { organizationId: a.organizationId, data: {} },
+      ),
+    );
+    const { sent, transport } = fakeTransport([]);
+    await runDeliveries(transport);
+    expect(sent).toHaveLength(0);
+    expect(
+      await db.webhookDelivery.count({
+        where: { endpointId: created.endpointId },
+      }),
+    ).toBe(0);
+    await removeWebhookEndpoint(a, created.endpointId);
+  });
+
   it("si la operación se revierte no hay evento", async () => {
     const created = await createWebhookEndpoint(
       a,
@@ -419,14 +598,10 @@ describe("emisión", () => {
     });
     await expect(
       forOrganization(a.organizationId).$transaction(async (tx) => {
-        await emitWebhookEvent(
-          tx,
-          { key: "inventory.adjustment.applied" },
-          {
-            organizationId: a.organizationId,
-            data: { x: 1 },
-          },
-        );
+        await emitWebhookEvent(tx, typeOf("inventory.adjustment.applied"), {
+          organizationId: a.organizationId,
+          data: { x: 1 },
+        });
         throw new Error("se revierte");
       }),
     ).rejects.toThrow("se revierte");
@@ -449,14 +624,10 @@ describe("entrega", () => {
     );
     if (!created.ok) throw new Error("endpoint");
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(
-        tx,
-        { key: "inventory.shipment.dispatched" },
-        {
-          organizationId: a.organizationId,
-          data: { shipmentId: "x", lines: [{ quantity: "2.5" }] },
-        },
-      ),
+      emitWebhookEvent(tx, typeOf("inventory.shipment.dispatched"), {
+        organizationId: a.organizationId,
+        data: { shipmentId: "x", lines: [{ quantity: "2.5" }] },
+      }),
     );
     const { sent, transport } = fakeTransport([
       { kind: "failed", status: 500, reason: "El destino respondió 500." },
@@ -532,14 +703,10 @@ describe("entrega", () => {
     const rotated = await rotateWebhookSecret(a, created.endpointId);
     if (!rotated.ok) throw new Error("rotate");
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(
-        tx,
-        { key: "purchasing.receipt.confirmed" },
-        {
-          organizationId: a.organizationId,
-          data: { receiptId: "r" },
-        },
-      ),
+      emitWebhookEvent(tx, typeOf("purchasing.receipt.confirmed"), {
+        organizationId: a.organizationId,
+        data: { receiptId: "r" },
+      }),
     );
     const { sent, transport } = fakeTransport([]);
     await runDeliveries(transport);
@@ -560,14 +727,10 @@ describe("entrega", () => {
     if (!created.ok) throw new Error("endpoint");
     for (let i = 0; i < WEBHOOK_PAUSE_AFTER; i++) {
       await forOrganization(a.organizationId).$transaction((tx) =>
-        emitWebhookEvent(
-          tx,
-          { key: "inventory.adjustment.applied" },
-          {
-            organizationId: a.organizationId,
-            data: { n: i },
-          },
-        ),
+        emitWebhookEvent(tx, typeOf("inventory.adjustment.applied"), {
+          organizationId: a.organizationId,
+          data: { n: i },
+        }),
       );
     }
     const failing: WebhookTransport = async () => ({
@@ -607,14 +770,10 @@ describe("entrega", () => {
       where: { endpointId: created.endpointId },
     });
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(
-        tx,
-        { key: "inventory.adjustment.applied" },
-        {
-          organizationId: a.organizationId,
-          data: {},
-        },
-      ),
+      emitWebhookEvent(tx, typeOf("inventory.adjustment.applied"), {
+        organizationId: a.organizationId,
+        data: {},
+      }),
     );
     expect(
       await db.webhookDelivery.count({
@@ -641,14 +800,15 @@ describe("entrega", () => {
     );
     if (!created.ok) throw new Error("endpoint");
     await forOrganization(a.organizationId).$transaction((tx) =>
-      emitWebhookEvent(
-        tx,
-        { key: "inventory.adjustment.applied" },
-        {
-          organizationId: a.organizationId,
-          data: {},
-        },
-      ),
+      emitWebhookEvent(tx, typeOf("inventory.adjustment.applied"), {
+        organizationId: a.organizationId,
+        data: {},
+      }),
+    );
+    // Handed out while active; paused before the delivery runs.
+    await runNextJob(
+      { [WEBHOOK_FANOUT_JOB]: webhookFanoutHandler() },
+      { now: () => new Date() },
     );
     await setWebhookEndpointPaused(a, created.endpointId, true);
     const { sent, transport } = fakeTransport([]);

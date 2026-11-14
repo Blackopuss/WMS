@@ -3,7 +3,12 @@ import {
   inventoryJobHandlers,
 } from "@/modules/inventory";
 import { purchasingJobHandlers } from "@/modules/purchasing";
-import { WEBHOOK_DELIVERY_JOB, webhookDeliveryHandler } from "@/platform/api";
+import {
+  WEBHOOK_DELIVERY_JOB,
+  WEBHOOK_FANOUT_JOB,
+  webhookDeliveryHandler,
+  webhookFanoutHandler,
+} from "@/platform/api";
 import type { JobHandlers } from "@/platform/jobs";
 
 /**
@@ -15,6 +20,8 @@ export const jobHandlers: JobHandlers = {
   ...inventoryJobHandlers,
   ...exitImportJobHandlers,
   ...purchasingJobHandlers,
-  // WMS-60 (ADR 0058): signed delivery of a webhook event, with retries.
+  // WMS-60 (ADR 0058): hand an event out to its destinations (outside the
+  // transaction of the fact), and the signed delivery, with retries.
+  [WEBHOOK_FANOUT_JOB]: webhookFanoutHandler(),
   [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler(),
 };

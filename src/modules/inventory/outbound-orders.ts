@@ -1303,7 +1303,7 @@ function sameQuantity(stored: string, sent: unknown): boolean {
 }
 
 /** Idempotency key of an order created by the API (ADR 0058). */
-const API_SOURCE_KEY = /^API:[0-9a-f]{64}$/;
+const API_REQUEST_KEY = /^[0-9a-f]{64}$/;
 
 export type OutboundDraftLineInput = {
   /** Id or code (SKU) of the product. */
@@ -1328,15 +1328,16 @@ export type OutboundDraftResult =
  * what the API sends at once. Same rules as the screen (header, active
  * product, quantity by the product's rule, one line per product, at most
  * OUTBOUND_MAX_LINES), in the warehouse the person (or key) works in.
- * `sourceKey` makes it idempotent with the unique key of the company used
- * by imports (WMS-13B): the same key with the same content gives back the
- * same order (`repeated`); with another content, `key_reused`.
+ * `apiRequestKey` (its own unique column, apart from the `sourceKey` of
+ * imports) makes it idempotent: the same key with the same content —
+ * every field of the header and every line — gives back the same order
+ * (`repeated`); with any other content, `key_reused`.
  */
 export async function createOutboundDraft(
   actor: InventoryActor,
   input: OutboundHeaderInput & {
     lines: readonly OutboundDraftLineInput[];
-    sourceKey: string;
+    apiRequestKey: string;
   },
 ): Promise<OutboundDraftResult> {
   const { organizationId, userId } = actor;
@@ -1345,8 +1346,8 @@ export async function createOutboundDraft(
     userId,
     "inventory.outbound.create",
   );
-  if (!API_SOURCE_KEY.test(String(input.sourceKey))) {
-    throw new Error("createOutboundDraft needs an API source key");
+  if (!API_REQUEST_KEY.test(String(input.apiRequestKey))) {
+    throw new Error("createOutboundDraft needs an API request key");
   }
   const header = readHeader(input);
   if (!header.ok) {
@@ -1382,10 +1383,15 @@ export async function createOutboundDraft(
     try {
       return await client.$transaction(async (tx) => {
         const existing = await tx.outboundOrder.findFirst({
-          where: { sourceKey: input.sourceKey },
+          where: { apiRequestKey: input.apiRequestKey },
           select: {
             id: true,
             recipient: true,
+            address: true,
+            reference: true,
+            note: true,
+            dueOn: true,
+            priority: true,
             lines: { select: { productId: true, quantity: true } },
           },
         });
@@ -1393,6 +1399,12 @@ export async function createOutboundDraft(
         if (existing) {
           const same =
             existing.recipient === data.recipient &&
+            existing.address === data.address &&
+            existing.reference === data.reference &&
+            existing.note === data.note &&
+            (existing.dueOn?.toISOString().slice(0, 10) ?? null) ===
+              data.dueOn &&
+            existing.priority === data.priority &&
             existing.lines.length === lines.length &&
             lines.every((line, index) =>
               existing.lines.some(
@@ -1484,7 +1496,7 @@ export async function createOutboundDraft(
             dueOn: dayOf(data.dueOn),
             priority: data.priority,
             createdByUserId: userId,
-            sourceKey: input.sourceKey,
+            apiRequestKey: input.apiRequestKey,
           },
         });
         await tx.outboundOrderLine.createMany({

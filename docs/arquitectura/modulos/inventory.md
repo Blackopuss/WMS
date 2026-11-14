@@ -305,7 +305,7 @@ ADR 0058). El cuerpo lleva ids y cantidades como texto, nunca costos.
 | `inventory.stock_status.changed` | `writeStatusChange` (`changeStockStatus` y las decisiones de devoluciones de clientes) |
 
 `createOutboundDraft` (`outbound-orders.ts`) crea un pedido en borrador con
-sus líneas en una transacción, idempotente por `sourceKey` `API:…`: lo usa
+sus líneas en una transacción, idempotente por su columna propia `apiRequestKey` (nunca el `sourceKey` de la importación): lo usa
 `POST /api/v1/outbound-orders`. `MovementSummary`, `ShipmentLineView`
 agregan los datos exactos (producto, cantidad base, unidad, estado) que la
 API necesita.

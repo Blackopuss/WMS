@@ -195,7 +195,7 @@ al menos una vez (el manejador debe ser idempotente; `context.jobId` sirve de
 clave), reintenta con espera creciente hasta `maxAttempts` y trabaja solo con
 `forOrganization(context.organizationId)`. Tipos actuales:
 `inventory.import_products`, `inventory.import_exits`,
-`purchasing.send_order` y `platform.webhook_delivery` (WMS-60).
+`purchasing.send_order`, `platform.webhook_fanout` y `platform.webhook_delivery` (WMS-60).
 
 ## Base de datos
 

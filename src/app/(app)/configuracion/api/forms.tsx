@@ -494,16 +494,42 @@ export function EndpointCommands({
         >
           Cambiar secreto
         </Button>
-        <Button
-          type="submit"
-          name="command"
-          value="remove"
-          variant="ghost"
-          disabled={pending}
-        >
-          Quitar destino
-        </Button>
       </form>
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button variant="ghost" disabled={pending}>
+            Quitar destino
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Quitar este destino?</DialogTitle>
+            <DialogDescription>
+              Deja de recibir eventos y no se puede deshacer. Su registro de
+              entregas se conserva.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={formAction}>
+            <input type="hidden" name="endpointId" value={endpointId} />
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancelar
+                </Button>
+              </DialogClose>
+              <Button
+                type="submit"
+                name="command"
+                value="remove"
+                variant="destructive"
+                disabled={pending}
+              >
+                Quitar destino
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

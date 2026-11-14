@@ -252,6 +252,7 @@ const movements: ApiRoute = {
       to: query.to as string | undefined,
       productId: query.productId as string | undefined,
       type: query.type as string | undefined,
+      onlyLinesInScope: true,
     });
     return {
       body: {
@@ -454,12 +455,12 @@ const createOutbound: ApiRoute = {
       lines: { product: string; quantity: string }[];
     };
     // Unique per company and per key: the key's id plus what the caller sent.
-    const sourceKey = `API:${createHash("sha256")
+    const apiRequestKey = createHash("sha256")
       .update(`${keyId}:${idempotencyKey ?? ""}`)
-      .digest("hex")}`;
+      .digest("hex");
     const created = await createOutboundDraft(actor as InventoryActor, {
       ...input,
-      sourceKey,
+      apiRequestKey,
     });
     if (!created.ok) {
       if (created.reason === "key_reused") {

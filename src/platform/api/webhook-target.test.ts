@@ -30,6 +30,7 @@ describe("isBlockedAddress", () => {
     "::ffff:7f00:1",
     "::ffff:10.0.0.1",
     "::ffff:169.254.169.254",
+    "::ffff:8.8.8.8",
     "64:ff9b::a9fe:a9fe",
     "64:ff9b:1::1",
     "100::1",
@@ -53,7 +54,6 @@ describe("isBlockedAddress", () => {
     "1.1.1.1",
     "172.32.0.1",
     "2606:4700:4700::1111",
-    "::ffff:8.8.8.8",
     "64:ff9b::808:808",
   ])("allows %s", (ip) => {
     expect(isBlockedAddress(ip)).toBe(false);
@@ -91,10 +91,28 @@ describe("checkWebhookUrl", () => {
     "https://[::1]/x",
     "https://[::ffff:169.254.169.254]/x",
     "https://169.254.169.254/latest/meta-data",
+    "https://localhost./x",
+    "https://metadata.google.internal./computeMetadata",
     "https://hooks.ejemplo.com:22/x",
     "no es una dirección",
     "",
   ])("rejects %s", (url) => {
     expect(checkWebhookUrl(url).ok).toBe(false);
+  });
+});
+
+describe("the WMS's own address", () => {
+  it("is never a destination", () => {
+    const before = process.env.BETTER_AUTH_URL;
+    process.env.BETTER_AUTH_URL = "https://wms.ejemplo.com";
+    try {
+      expect(checkWebhookUrl("https://wms.ejemplo.com/api/v1/x").ok).toBe(
+        false,
+      );
+      expect(checkWebhookUrl("https://WMS.ejemplo.com./x").ok).toBe(false);
+      expect(checkWebhookUrl("https://otro.ejemplo.com/x").ok).toBe(true);
+    } finally {
+      process.env.BETTER_AUTH_URL = before;
+    }
   });
 });

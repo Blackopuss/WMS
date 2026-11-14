@@ -11,6 +11,8 @@ import {
   can,
   inScope,
   loadSubject,
+  lockOrganization,
+  seesWholeCompany,
   type Permission,
 } from "@/platform/authorization";
 import { getEntitlements } from "@/platform/entitlements";
@@ -202,14 +204,6 @@ export async function createApiKey(
       },
     };
   }
-  const active = await client.apiKey.count({ where: { revokedAt: null } });
-  if (active >= API_KEYS_MAX) {
-    return {
-      ok: false,
-      reason: "not_allowed",
-      error: `Tu empresa ya tiene ${API_KEYS_MAX} llaves activas. Revoca una que ya no uses.`,
-    };
-  }
   const expiresAt =
     data.lifetimeDays === null
       ? null
@@ -220,7 +214,14 @@ export async function createApiKey(
     const token = `wms_${prefix}_${randomBytes(32).toString("base64url")}`;
     const keyId = newId();
     try {
-      await client.$transaction(async (tx) => {
+      // The cap is counted under the lock of the company, like the
+      // changes of the team: two keys created at once never pass it.
+      const full = await db.$transaction(async (tx) => {
+        await lockOrganization(tx, organizationId);
+        const active = await tx.apiKey.count({
+          where: { organizationId, revokedAt: null },
+        });
+        if (active >= API_KEYS_MAX) return true;
         await tx.apiKey.create({
           data: {
             id: keyId,
@@ -250,7 +251,15 @@ export async function createApiKey(
             caduca: expiresAt?.toISOString() ?? null,
           },
         });
+        return false;
       });
+      if (full) {
+        return {
+          ok: false,
+          reason: "not_allowed",
+          error: `Tu empresa ya tiene ${API_KEYS_MAX} llaves activas. Revoca una que ya no uses.`,
+        };
+      }
       return { ok: true, keyId, token, prefix: `wms_${prefix}` };
     } catch (error) {
       if ((error as { code?: string }).code === "P2002" && attempt < 4) {
@@ -271,6 +280,19 @@ export type ApiKeyActionResult =
     };
 
 const NOT_FOUND = "Esta llave no existe.";
+
+/**
+ * Who is limited to warehouses or zones (WMS-20) sees, changes and revokes
+ * only the keys they created: the others «do not exist» for them.
+ */
+async function ownKeysOnly(
+  client: ReturnType<typeof forOrganization>,
+  userId: string,
+): Promise<{ createdByUserId?: string }> {
+  return (await seesWholeCompany(client, userId))
+    ? {}
+    : { createdByUserId: userId };
+}
 
 /** Changes the name and the calls per minute of a key that is not revoked. */
 export async function updateApiKey(
@@ -304,9 +326,10 @@ export async function updateApiKey(
     };
   }
   const client = forOrganization(organizationId);
+  const mine = await ownKeysOnly(client, userId);
   return client.$transaction(async (tx) => {
     const key = await tx.apiKey.findFirst({
-      where: { id: String(keyId), revokedAt: null },
+      where: { id: String(keyId), revokedAt: null, ...mine },
       select: { id: true, name: true, requestsPerMinute: true },
     });
     if (!key)
@@ -344,9 +367,10 @@ export async function revokeApiKey(
   const { organizationId, userId } = actor;
   await assertAllowed(organizationId, userId, MANAGE);
   const client = forOrganization(organizationId);
+  const mine = await ownKeysOnly(client, userId);
   return client.$transaction(async (tx) => {
     const key = await tx.apiKey.findFirst({
-      where: { id: String(keyId) },
+      where: { id: String(keyId), ...mine },
       select: { id: true, revokedAt: true, prefix: true, name: true },
     });
     if (!key)
@@ -393,6 +417,7 @@ export async function listApiKeys(actor: ApiActor): Promise<ApiKeyView[]> {
   await assertAllowed(actor.organizationId, actor.userId, MANAGE);
   const client = forOrganization(actor.organizationId);
   const rows = await client.apiKey.findMany({
+    where: await ownKeysOnly(client, actor.userId),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 200,
     select: {

@@ -1,3 +1,6 @@
+-- AlterTable
+ALTER TABLE `outbound_order` ADD COLUMN `apiRequestKey` CHAR(64) NULL;
+
 -- CreateTable
 CREATE TABLE `api_key` (
     `id` CHAR(36) NOT NULL,
@@ -91,6 +94,9 @@ CREATE TABLE `webhook_delivery` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateIndex
+CREATE UNIQUE INDEX `outbound_order_organizationId_apiRequestKey_key` ON `outbound_order`(`organizationId`, `apiRequestKey`);
+
 -- AddForeignKey
 ALTER TABLE `api_key` ADD CONSTRAINT `api_key_organizationId_fkey` FOREIGN KEY (`organizationId`) REFERENCES `organization`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -113,18 +119,52 @@ ALTER TABLE `webhook_delivery` ADD CONSTRAINT `webhook_delivery_organizationId_e
 ALTER TABLE `webhook_delivery` ADD CONSTRAINT `webhook_delivery_organizationId_eventId_fkey` FOREIGN KEY (`organizationId`, `eventId`) REFERENCES `webhook_event`(`organizationId`, `id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 
--- WMS-60 (ADR 0058): an order created by the API keeps its idempotency key in
--- sourceKey without an import. An imported order still needs its key; a key
--- without an import must start with «API:» (keys of a file go through
--- foldName, which leaves no capital letters, so they never collide).
-ALTER TABLE `outbound_order` DROP CHECK `outbound_order_source`;
-ALTER TABLE `outbound_order`
-  ADD CONSTRAINT `outbound_order_source` CHECK (
-    (`importId` IS NOT NULL AND `sourceKey` IS NOT NULL)
-    OR (`importId` IS NULL AND (`sourceKey` IS NULL OR `sourceKey` LIKE BINARY 'API:%'))
-  );
-
--- The counters and events reject what does not make sense.
+-- WMS-60 (ADR 0058): what the database rejects of the new tables. Case-
+-- sensitive checks with REGEXP_LIKE ('c'), not the deprecated LIKE BINARY.
 ALTER TABLE `api_key` ADD CONSTRAINT `api_key_rate` CHECK (`requestsPerMinute` BETWEEN 1 AND 100000);
 ALTER TABLE `api_rate_window` ADD CONSTRAINT `api_rate_window_count` CHECK (`count` >= 0);
-ALTER TABLE `webhook_endpoint` ADD CONSTRAINT `webhook_endpoint_https` CHECK (`url` LIKE BINARY 'https://%');
+ALTER TABLE `webhook_endpoint` ADD CONSTRAINT `webhook_endpoint_https` CHECK (REGEXP_LIKE(`url`, '^https://', 'c'));
+-- The API's idempotency key of an order: 64 lowercase hex characters.
+ALTER TABLE `outbound_order` ADD CONSTRAINT `outbound_order_api_request_key` CHECK (`apiRequestKey` IS NULL OR REGEXP_LIKE(`apiRequestKey`, '^[0-9a-f]{64}$', 'c'));
+
+-- The API's idempotency key is part of the identity of an order: it never
+-- changes (same trigger as WMS-16, with the new column).
+DROP TRIGGER `outbound_order_transition`;
+CREATE TRIGGER `outbound_order_transition` BEFORE UPDATE ON `outbound_order` FOR EACH ROW
+BEGIN
+  IF NOT (NEW.`organizationId` <=> OLD.`organizationId`
+      AND NEW.`number` <=> OLD.`number`
+      AND NEW.`createdByUserId` <=> OLD.`createdByUserId`
+      AND NEW.`createdAt` <=> OLD.`createdAt`
+      AND NEW.`importId` <=> OLD.`importId`
+      AND NEW.`sourceKey` <=> OLD.`sourceKey`
+      AND NEW.`apiRequestKey` <=> OLD.`apiRequestKey`) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'outbound_order identity is immutable';
+  END IF;
+  IF OLD.`status` <> 'DRAFT' AND NOT (NEW.`recipient` <=> OLD.`recipient`
+      AND NEW.`address` <=> OLD.`address`
+      AND NEW.`reference` <=> OLD.`reference`
+      AND NEW.`dueOn` <=> OLD.`dueOn`
+      AND NEW.`priority` <=> OLD.`priority`
+      AND NEW.`note` <=> OLD.`note`
+      AND NEW.`facilityId` <=> OLD.`facilityId`) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'outbound_order header only changes in draft';
+  END IF;
+  IF NEW.`status` <> OLD.`status` AND NOT (
+       (OLD.`status` = 'DRAFT' AND NEW.`status` IN ('RELEASED', 'CANCELLED'))
+    OR (OLD.`status` = 'RELEASED' AND NEW.`status` IN ('PICKING', 'CANCELLED'))
+    OR (OLD.`status` = 'PICKING' AND NEW.`status` = 'PICKED')
+    OR (OLD.`status` = 'PICKED' AND NEW.`status` IN ('PACKING', 'SHIPPED'))
+    OR (OLD.`status` = 'PACKING' AND NEW.`status` = 'PACKED')
+    OR (OLD.`status` = 'PACKED' AND NEW.`status` = 'SHIPPED')
+  ) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'outbound_order transition not allowed';
+  END IF;
+  IF OLD.`status` IN ('SHIPPED', 'CANCELLED') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'outbound_order is closed';
+  END IF;
+  IF NEW.`status` = 'SHIPPED' AND NOT EXISTS (SELECT 1 FROM `shipment_order`
+      WHERE `organizationId` = NEW.`organizationId` AND `openOrderId` = NEW.`id`) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'an order ships only within a shipment';
+  END IF;
+END;

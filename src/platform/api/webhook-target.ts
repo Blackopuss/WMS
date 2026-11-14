@@ -88,9 +88,10 @@ function v6Blocked(ip: string): boolean {
   // :: and ::1, and the deprecated IPv4-compatible ::a.b.c.d.
   if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0)
     return true;
-  // ::ffff:a.b.c.d (mapped): the IPv4 decides.
+  // ::ffff:0:0/96 (IPv4 mapped): never a destination, whatever the IPv4
+  // (a public name has a plain IPv4 for that); defense in depth.
   if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0xffff) {
-    return v4Blocked(embeddedV4);
+    return true;
   }
   // 64:ff9b::/96 (NAT64): the IPv4 decides; 64:ff9b:1::/48 (local NAT64).
   if (a === 0x64 && b === 0xff9b) {
@@ -117,6 +118,16 @@ export function isBlockedAddress(ip: string): boolean {
 }
 
 export type UrlCheck = { ok: true; url: URL } | { ok: false; reason: string };
+
+/** The WMS's own host (BETTER_AUTH_URL): never a destination. */
+function ownHost(): string | null {
+  try {
+    const own = process.env.BETTER_AUTH_URL;
+    return own ? new URL(own).hostname.replace(/\.+$/, "").toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
 
 const NAMES_BLOCKED =
   /(^|\.)(localhost|local|internal|localdomain|home\.arpa)$/i;
@@ -153,13 +164,17 @@ export function checkWebhookUrl(value: string): UrlCheck {
       reason: "La dirección no puede llevar usuario ni contraseña.",
     };
   }
-  const host = url.hostname.replace(/^\[|\]$/g, "");
+  // «localhost.» and «metadata.google.internal.» are the same names.
+  const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (
     !host ||
     NAMES_BLOCKED.test(host) ||
     (!host.includes(".") && isIP(host) === 0)
   ) {
     return { ok: false, reason: "Usa una dirección pública de internet." };
+  }
+  if (host.toLowerCase() === ownHost()) {
+    return { ok: false, reason: "No uses la dirección del propio WMS." };
   }
   if (isIP(host) !== 0 && isBlockedAddress(host)) {
     return {

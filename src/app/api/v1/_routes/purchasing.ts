@@ -165,7 +165,9 @@ const receipts: ApiRoute = {
     ),
   }),
   async handle({ actor, params }) {
-    const found = await getOrderReceipts(actor, params.id as string);
+    const found = await getOrderReceipts(actor, params.id as string, {
+      onlyLinesInScope: true,
+    });
     if (!found) throw notFound();
     return {
       body: {

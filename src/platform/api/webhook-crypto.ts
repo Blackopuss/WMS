@@ -55,6 +55,7 @@ export function decryptSecret(stored: string): string {
     "aes-256-gcm",
     key(),
     Buffer.from(iv, "base64url"),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([

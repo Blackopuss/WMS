@@ -31,7 +31,7 @@ de servir.
 | Límites | `rate-limit.ts` | `takeRateWindow(clave, máximo)`: ventana fija de un minuto en `api_rate_window`, una sentencia por paso en autocommit, sin interbloqueos; `rateKeys` |
 | Motor | `http.ts` | `handleApiRequest(request, rutas)`, tipo `ApiRoute`, `ApiError`, `buildOpenApiDocument` (OpenAPI 3.1 desde Zod con `z.toJSONSchema`), ayudantes de rutas (`pageQuery`, `pageShape`, `decimalText`, `isoDate`, `iso`, `idParam`, `notFound`) |
 | Destinos | `webhooks.ts` | `createWebhookEndpoint` (secreto una vez), `updateWebhookEndpoint`, `setWebhookEndpointPaused`, `rotateWebhookSecret` (el anterior firma 24 h más), `removeWebhookEndpoint`, `listWebhookEndpoints` (con sus últimas entregas, nunca el cuerpo) |
-| Emitir | `webhooks.ts` | `emitWebhookEvent(tx, tipo, { organizationId, data })` dentro de la transacción del hecho, después de sus escrituras |
+| Emitir | `webhooks.ts` | `emitWebhookEvent(tx, tipo, { organizationId, data })` dentro de la transacción del hecho, después de sus escrituras: solo guarda el evento y encola `platform.webhook_fanout` (`webhookFanoutHandler` reparte fuera de los candados del hecho, si el módulo sigue contratado) |
 | Entregar | `webhooks.ts`, `webhook-transport.ts`, `webhook-crypto.ts` | `webhookDeliveryHandler` (trabajo `platform.webhook_delivery`), `createTransport`, `signatureHeader`, `purgeWebhookHistory` |
 | SSRF | `webhook-target.ts` | `checkWebhookUrl`, `isBlockedAddress` (puros, con prueba unitaria) |
 | Tipos | `webhook-events.ts` | `WebhookEventType`, `assertValidWebhookEventTypes` |
@@ -54,6 +54,8 @@ copia `docs/api/openapi.json` la compara `tests/docs/openapi.int.test.ts`
 
 `platform.api.manage` (titular y Administración): crear, cambiar y revocar
 llaves y destinos. Las llaves solo reciben permisos de `API_CAPABILITIES`.
+Alcance (WMS-20): quien está limitado solo ve, cambia y revoca sus llaves;
+los webhooks son solo para quien ve toda la empresa (`seesWholeCompany`).
 
 ## Tablas
 
@@ -62,10 +64,11 @@ llaves y destinos. Las llaves solo reciben permisos de `API_CAPABILITIES`.
 
 ## Ajustes, trabajos, rondas y avisos
 
+- Trabajo `platform.webhook_fanout` (una entrega por destino que escucha).
 - Trabajo `platform.webhook_delivery` (6 intentos: 30 s, 2 min, 10 min,
   30 min, 2 h; `onFailed` cierra la entrega y, tras 5 fallas seguidas,
   pausa el destino).
-- Ronda `platform.webhooks_cleanup`: eventos y entregas de más de 30 días.
+- Ronda `platform.webhooks_cleanup`: eventos y entregas de más de 30 días, para las empresas con historial (`organizationsWithWebhookHistory`; no depende de un módulo: `ScheduledRound.organizations`).
 - Aviso `platform.webhook_paused` a quien tiene `platform.api.manage`.
 - Límite de la empresa por el derecho `api_requests_per_minute` del plan.
 
