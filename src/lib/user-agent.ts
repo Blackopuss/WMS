@@ -11,7 +11,7 @@ export type DeviceInfo = {
   /** «Android», or «Otro» when not recognized. */
   os: string;
   kind: DeviceKind;
-  /** Kept for the own sessions panel: phone or tablet. */
+  /** A phone (the own sessions panel draws a phone; tablets, a screen). */
   mobile: boolean;
   /** «Chrome en Android», «Otro navegador». */
   label: string;
@@ -71,7 +71,7 @@ export function describeUserAgent(ua: string | null | undefined): DeviceInfo {
     browser,
     os,
     kind,
-    mobile: kind === "phone" || kind === "tablet",
+    mobile: kind === "phone",
     label,
   };
 }

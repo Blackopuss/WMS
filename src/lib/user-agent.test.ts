@@ -81,5 +81,6 @@ describe("describeUserAgent", () => {
     ["Mozilla/5.0 (PlayStation 5) AppleWebKit/605.1.15", "other"],
   ])("%s is a %s", (ua, kind) => {
     expect(describeUserAgent(ua).kind).toBe(kind);
+    expect(describeUserAgent(ua).mobile).toBe(kind === "phone");
   });
 });
