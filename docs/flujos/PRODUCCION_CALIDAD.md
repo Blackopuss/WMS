@@ -1,11 +1,13 @@
 # Propuesta de flujo: producción, calidad y procesos de la empresa (WMS-27..31, WMS-59, WMS-74)
 
-Versión 4, 2026-11-14. Las versiones 1, 2 y 3 se unieron a `pruebas` en
-`48f6ca8`, `2c5ccc1` y `8909f91`; el fundador contestó las decisiones D1–D11,
-las preguntas P1–P13 y la tercera ronda (roles, P1, P3, P6, P7, P8), y esta
-versión las incorpora. Con ella la propuesta queda cerrada salvo lo que lista
-la sección 11. **Todavía no se programa nada.** Los ADR se escriben antes de
-cada paso.
+Versión 5, 2026-11-14. Las versiones 1, 2 y 3 se unieron a `pruebas` en
+`48f6ca8`, `2c5ccc1` y `8909f91`; la 4 quedó en `c4c721f` (rama
+`flujo-produccion-calidad`). El fundador contestó las decisiones D1–D11, las
+preguntas P1–P13, la tercera ronda (roles, P1, P3, P6, P7, P8) y dos
+respuestas posteriores (quién decide las solicitudes de producción y P10b), y
+esta versión las incorpora. Con ella la propuesta queda cerrada salvo lo que
+lista la sección 11. **Todavía no se programa nada.** Los ADR se escriben
+antes de cada paso.
 
 Cómo leer este documento:
 
@@ -48,7 +50,7 @@ Cómo leer este documento:
 | P4 | ¿Qué pasa si Calidad cuenta 97 de 100? | «asi es, calidad debe de reportar porque solo hay 97 con foto y motivo por escrito para que quede el reporte, ya sea que fue merma, no cumplio o eran 97 desde el inicio» | **Decidido:** Calidad reporta la diferencia con foto y motivo escrito obligatorios, eligiendo la causa. Cada causa se trata distinto (sección 5.5). |
 | P5 | Producción sin Calidad, ¿quién verifica? | «los dos pueden autorizar» | **Decidido:** el encargado de producción y el jefe de almacén. |
 | P6 | ¿Inspeccionar al recibir sin Calidad? | «esta no la entiendo, detallala mas para poder dar una respuesta» | Cerrada en la tercera ronda (1.3). |
-| P7 | ¿Quién acepta las solicitudes y manda las órdenes? | «lo mismo aqui, explicame como funciona cada rol para poder tener a la mano como responderte y que acceso y alcance tiene cada uno» | Cerrada en la tercera ronda (1.3). |
+| P7 | ¿Quién acepta las solicitudes y manda las órdenes? | «lo mismo aqui, explicame como funciona cada rol para poder tener a la mano como responderte y que acceso y alcance tiene cada uno» | Cerrada en la tercera ronda y en una respuesta posterior (1.3): decide el Encargado de producción del área. |
 | P8 | ¿Las solicitudes necesitan otra autorización? | «no, solo los encargados de area pueden generarlas y ellos seran los responsable» | **Decidido:** no hay autorización adicional (se quita la regla `production.request`). Las órdenes de producción las genera el encargado del área, que responde por ellas. Quién pide: cerrada en la tercera ronda (1.3). |
 | P9 | ¿Un proceso por documento o una cadena? | «me gusta esa propuesta» | **Decidido:** un proceso por documento; después, una vista de toda la cadena. |
 | P10 | ¿Una etapa impide el siguiente paso? | «asi es, no puede avanzar si tienes la tarea, digamos que ya hay 100 tablas que revisar entonces se va la tarea automatica a calidad no, pero otra tarea es de creacion de 50 tablas, entonces calidad no puede liberar esa tarea hasta que todos los anteriores las terminen» | **Decidido y en la primera entrega del motor:** una etapa no avanza si la anterior no está hecha, y el trabajo pasa solo a la siguiente área (relevo automático). Calidad no libera algo cuyas etapas anteriores no están terminadas. Sección 6. |
@@ -56,16 +58,18 @@ Cómo leer este documento:
 | P12 | ¿Un lote por reporte o por orden? | «uno por reporte» | **Decidido:** un lote por reporte. |
 | P13 | ¿Varias recetas por producto? | «en teoria no, ya que contaria como otro producto» | **Decidido:** una receta por producto, con versiones; otra receta es otro producto. |
 
-### 1.3 Tercera ronda (roles, P1, P3, P6, P7, P8)
+### 1.3 Tercera ronda (roles, P1, P3, P6, P7, P8) y respuestas posteriores
 
 | # | Pregunta | Respuesta del fundador (textual) | Cómo queda |
 | --- | --- | --- | --- |
 | Roles | ¿Los tres roles nuevos están bien? | «ya me quedaron claro los roles, ahora respondo a tus preguntas. esos 3 roles nuevos para el area estan bien- produccion, encargado de produccion, inspector de calidad» | **Decidido:** Operario de producción, **Encargado de producción** (antes «Encargado de producción» en este documento) e Inspector de calidad. Sección 2.3. |
 | P3 | ¿Quién es «el jefe de almacén» que libera a mano? (Administrador, Almacén y Supervisor de almacén) | «son esos 3» | **Decidido:** Administrador, Almacén y Supervisor de almacén, como hoy. |
-| P7 | ¿Quién acepta las solicitudes de producción? | «seria almacen y supervisor de almacen, porque ellos tienen acceso al inventario para saber si se ncesita aceptar o no» | **Decidido:** las aceptan o rechazan **Almacén y Supervisor de almacén** (y Administrador). Qué pasa después de aceptar, con la regla de P8 de la segunda ronda («solo los encargados de area pueden generarlas»): **por confirmar** (P7b). Sección 5.3. |
+| P7 | ¿Quién acepta las solicitudes de producción? | «seria almacen y supervisor de almacen, porque ellos tienen acceso al inventario para saber si se ncesita aceptar o no» | **Reemplazada en quién decide** por la respuesta posterior de la fila «P7 (posterior)»: ya no deciden Almacén y Supervisor de almacén, sino el Encargado de producción del área. Lo que se conserva de esta respuesta es la razón: quien decide debe ver el inventario; por eso el Encargado ve las existencias al decidir (5.3). Si Almacén y Supervisor de almacén también pueden decidir: por confirmar (P7c). |
 | P6 | ¿Inspeccionar al recibir sin Calidad? | «me gusta como esta hoy, porque por ejemplo una empresa puede tener devoluciones por falta de calidad o que se dañaron y hay empresas que se dediquen a restaurar, entonces necesitan la etiqueta restauracion. aqui tu decide si cualquier o solo con calidad, yo me inclinaria mas a que cualquiera» | **Decidido:** «Inspeccionar al recibir» para **cualquier empresa**, con o sin Calidad. **Nuevo requisito:** existencias «en restauración» para empresas que reparan, reacondicionan o reempacan. Secciones 5.7 y 5.10. |
 | P1 | (cierra P1b) ¿Excepción opcional de consumo? | «el sistema debe de ser automatico y descontar lo que dice la receta» | **Decidido:** consumo automático según la receta, sin captura ni excepción en el reporte; la merma extra es una operación aparte. Sección 5.4. |
 | P8 | (cierra P8b) ¿El operario puede pedir producción? | «el operario puede mandar la solicitud si no tiene mas tareas asignadas y el sistema solo debe de darle opciones de productos que esten cerca de existencias bajas y de su area» | **Decidido:** el operario pide solo si no tiene más tareas asignadas, y solo ve productos de su área que están cerca de su mínimo. Sección 5.3. |
+| P7 (posterior) | (cierra P7b) ¿Qué pasa con la orden cuando se acepta una solicitud? | «el encargado de area crea ordenes para que las personas trabajen, pero si se quedan sin tareas, los mismo trabajadores pueden mandar una alerta de que quieren hacer algo que el sistema les recomienda y ya el encargado de area lo decide» | **Decidido:** el **Encargado de producción del área** (y Administrador) acepta o rechaza las solicitudes; al aceptar nace la orden a su nombre y él es el responsable. Manda sobre P7 de esta misma ronda en quién decide (sección 13). Sección 5.3. |
+| P10b | ¿El candado de etapas es dentro del mismo lote o en orden de llegada? | «p10b etapas del mismo lote/ product order» | **Decidido:** el candado va entre las etapas **del mismo lote u orden de producción**; un lote u orden no espera a otro. Sección 6.1. |
 
 ---
 
@@ -113,17 +117,19 @@ Titular
 | Rol | Para quién | Qué ve | Qué puede hacer | Qué no puede |
 | --- | --- | --- | --- | --- |
 | **Operario de producción** | Quien produce (teléfono o tableta compartida) | Sus órdenes y las de su área, recetas, existencias, sus pendientes de proceso | Reportar lo que hizo con foto, avanzar las etapas de su área, pedir producción cuando no tiene tareas (5.3), reportar merma de material, reportar incidencias, llevar materiales a la línea si se lo asignan | Crear órdenes, cambiar recetas, verificar o liberar, corregir existencias, ver costos |
-| **Encargado de producción** («encargado de área») | Quien manda las órdenes de su área | Todo lo de producción de su área; costos solo si además tiene un rol que los vea | Recetas, crear, liberar, cancelar y cerrar órdenes (es el responsable de las órdenes de su área), corregir reportes, verificar lo producido cuando no hay Calidad (P5) | Aceptar o rechazar solicitudes de producción (lo hace Almacén, P7), cambiar el equipo, verificar si hay Calidad contratada (lo hace Calidad) |
+| **Encargado de producción** («encargado de área») | Quien manda las órdenes de su área | Todo lo de producción de su área; costos solo si además tiene un rol que los vea | Recetas, crear, liberar, cancelar y cerrar órdenes (es el responsable de las órdenes de su área), aceptar o rechazar las solicitudes de producción de su área (decidido, P7 posterior) viendo las existencias del producto y de sus materiales, corregir reportes, verificar lo producido cuando no hay Calidad (P5) | Corregir existencias, cambiar el equipo, verificar si hay Calidad contratada (lo hace Calidad) |
 | **Inspector de calidad** | Calidad (tableta) | Lo que espera verificación, planes de inspección, historial | Contar, inspeccionar, aprobar, rechazar, poner en cuarentena, reportar faltantes con foto, mover lo decidido a su lugar | Producir, crear órdenes, corregir existencias |
 
 Los tres solo funcionan con su módulo contratado (Producción para los dos
 primeros, Calidad para el tercero); sin él, el rol no da nada.
 
 **Lo que ganan los roles de almacén con Producción contratada (decidido, P3
-y P7):** Administrador, Almacén y Supervisor de almacén aceptan o rechazan las
-solicitudes de producción (`production.request.decide`), siguen liberando a
+y P5):** Administrador, Almacén y Supervisor de almacén siguen liberando a
 mano lo que espera en inspección (`inventory.status.release`) y, sin Calidad,
-verifican lo producido (P5).
+verifican lo producido (P5). Las solicitudes de producción las decide el
+Encargado de producción del área (y Administrador); si Almacén y Supervisor de
+almacén también pueden decidirlas o solo reciben el aviso está por confirmar
+(P7c; la propuesta es que solo lean y reciban el aviso).
 
 ### 2.4 Cómo se combinan y se limitan
 
@@ -149,8 +155,9 @@ verifican lo producido (P5).
   producto y la define quien manda. El encargado del área crea las **órdenes
   de producción**, que apartan los materiales. El operario solo dice **cuánto
   hizo, con foto**; el sistema descuenta la receta. Nunca más de lo que pide
-  la orden. Si no hay órdenes y algo se acaba, se manda una **solicitud de
-  producción** que Almacén o el Supervisor de almacén aceptan o rechazan.
+  la orden. Si el operario se queda sin tareas y algo de su área se acaba,
+  manda una **solicitud de producción** que el Encargado de producción del
+  área acepta o rechaza; al aceptar nace la orden a su nombre.
 - **Restauración** (base de Inventario, para cualquier empresa): un estado
   «En restauración» para lo que se repara, reacondiciona o reempaca, que no está
   disponible hasta que alguien lo libera (sección 5.10).
@@ -174,9 +181,11 @@ inspección en Inventario y Compras → recetas, motor de procesos y criterios
 de inspección → órdenes → solicitudes y reporte de producción → verificación
 de Calidad → cierre y producto a su lugar → procesos en embarques.
 
-**Lo que falta decidir** (sección 11): qué pasa con la orden cuando Almacén
-acepta una solicitud (P7b); cómo se maneja la restauración (R1–R3); qué
-cuenta como «tareas asignadas» (P8c); y P10b, que sigue sin contestar.
+**Lo que falta decidir** (sección 11): si Almacén y el Supervisor de almacén
+también pueden aceptar solicitudes o solo se enteran (P7c); qué cuenta como
+«tareas asignadas» (P8c); y cómo se maneja la restauración (R1–R3). Ya quedó
+decidido que el candado de etapas es dentro del mismo lote u orden (P10b) y
+que las solicitudes las decide el Encargado del área.
 
 ---
 
@@ -266,8 +275,8 @@ inmutable; «0.25 kg por 100 piezas» exacto; sin ciclos; entre empresas.
 
 **Decidido (P8):** las genera el encargado del área, que responde por ellas.
 
-**Quién y dónde.** Encargado de producción, en escritorio o tableta (y las
-órdenes que nacen de una solicitud aceptada por Almacén, 5.3).
+**Quién y dónde.** Encargado de producción, en escritorio o tableta (también
+las que nacen cuando él acepta una solicitud, 5.3).
 
 **Flujo (propuesta).**
 
@@ -309,11 +318,12 @@ de lo disponible); cancelar libera; `issue`; alcance; `reconcileStock` vacío.
 
 ### 5.3 WMS-28B · Solicitud de producción
 
-**Decidido (D11, P7, P8):** si el operario no tiene más tareas asignadas,
-puede pedir que se produzca algo de su área que esté cerca de existencias
-bajas; **Almacén o el Supervisor de almacén** (y Administración) aceptan o
-rechazan, porque ven el inventario; no hay otra autorización; las órdenes son
-responsabilidad del Encargado de producción del área.
+**Decidido (D11, P8, P7 posterior):** si el operario no tiene más tareas
+asignadas, puede pedir que se produzca algo de su área que esté cerca de
+existencias bajas; el **Encargado de producción del área** (y Administración)
+acepta o rechaza; al aceptar nace la orden a su nombre y él responde por ella;
+no hay otra autorización. Si Almacén y el Supervisor de almacén también
+pueden decidir: por confirmar (P7c).
 
 **Las tres condiciones para pedir (propuesta, con lo que ya existe).**
 
@@ -341,7 +351,7 @@ zonas que no alcanza. Aquí el operario **no ve cifras**: ve una lista corta con
 el **nombre** de cada producto de su área y la frase «queda poco». La cuenta
 contra el mínimo la hace el servidor (con el mismo total que usa el mínimo) y
 no se le devuelve ninguna cantidad, ubicación ni almacén. Las cantidades las ve
-quien decide (Almacén), que ya puede verlas. La lista no es `listLowStock`
+quien decide (el Encargado, dentro de su alcance; ver abajo). La lista no es `listLowStock`
 sino una lectura nueva de Producción (`listRequestableProducts`, nuevo) que
 solo devuelve id y nombre.
 
@@ -351,34 +361,64 @@ solo devuelve id y nombre.
    productos (si no hay ninguno, no aparece nada).
 2. «Pedir producción»: elige el producto y la cantidad, con motivo opcional.
    `SP-0001` (nuevo). No aparta nada.
-3. Queda **«Por atender»** y avisa a quien la decide en ese almacén
-   (`production.request.decide`: Administración, Almacén, Supervisor de
-   almacén, dentro de su alcance): «Juan Pérez (Producción) quiere hacer 20
-   Tablas 60×40. Hay 4; el mínimo es 24.» Ese aviso sí trae cifras porque va a
-   quien puede verlas.
-4. Quien decide **acepta** (puede cambiar la cantidad) o **rechaza** con
-   motivo. Quien pidió recibe el aviso.
-5. **Al aceptar (por confirmar, P7b)**, propuesta: en la misma transacción
-   nace la **orden de producción en borrador** a nombre del **Encargado de
-   producción** del área (los que tengan ese rol y alcancen el área; si hay
-   varios, la ven todos y cualquiera la toma; si no hay ninguno, la ve
-   Administración), con la persona que pidió como asignada. El Encargado la
-   revisa y la **libera**: él es el responsable y quien la «genera» de verdad
-   (liberar es lo que aparta materiales y la pone a trabajar). Aceptar dos
-   veces responde `repeated`.
+3. Queda **«Por atender»** y avisa a quien la decide (`production.request.decide`):
+   los **Encargados de producción** que alcanzan el área del producto (si hay
+   varios, a todos, y el primero que decide la cierra) y, **si el área no tiene
+   ningún Encargado activo que la alcance, a Administración** (propuesta,
+   P7c). «Juan Pérez (Producción) quiere hacer 20 Tablas 60×40. Hay 4; el
+   mínimo es 24.» Ese aviso sí trae cifras porque va a quien puede verlas
+   (calculadas dentro del alcance del destinatario).
+4. **Qué ve el Encargado al decidir (propuesta).** El fundador dio como razón
+   de P7 que quien decide «tiene acceso al inventario»; para que el Encargado
+   decida bien sin depender de Almacén, la pantalla de la solicitud muestra,
+   **dentro de su alcance** (WMS-20) y en el almacén de la solicitud:
+   - del **producto pedido**: disponible, apartado, mínimo, lo que ya está en
+     órdenes de producción abiertas por producir y lo que espera verificación
+     (en inspección);
+   - de **cada material** de la receta activa para la cantidad pedida: lo que
+     hace falta, lo libre para tomar (`freeToTake`) y si alcanza; arriba, «Con
+     el material libre alcanza para 16 de 20»;
+   - otras solicitudes abiertas del mismo producto.
+   Lo que está en zonas que no alcanza no se cuenta ni se nombra (regla de
+   WMS-20); si su alcance está limitado, la pantalla dice «Solo cuenta lo de
+   tus zonas». Por eso se recomienda limitar al Encargado al almacén, o a su
+   zona de producción **más** las zonas donde se guardan sus materiales y su
+   producto. El rol trae las lecturas que hacen falta
+   (`inventory.stock.read`, `inventory.minimum.read`; nunca costos).
+5. El Encargado **acepta** (puede cambiar la cantidad, el día compromiso y a
+   quién se asigna) o **rechaza** con motivo. Quien pidió recibe el aviso.
+6. **Al aceptar (decidido que nace a su nombre; la forma es propuesta):** en
+   la misma transacción nace la **orden de producción a nombre del Encargado
+   que aceptó**, responsable de ella, con la persona que pidió como asignada,
+   y **queda liberada** (aparta materiales) sin un paso más. Se eligió que
+   nazca liberada y no en borrador porque quien acepta es el mismo que la
+   liberaría y ya revisó existencias y materiales en esa pantalla: un borrador
+   solo agregaría un clic sin información nueva. Si el material no alcanza,
+   manda el ajuste `production.release.short`: con `ask` (por omisión) la
+   pantalla dice qué falta y deja elegir «Aceptar y apartar lo que hay» o
+   «Aceptar como borrador» (para liberarla después); con `block` nace en
+   borrador. Aceptar dos veces responde `repeated`. Avisa a quien pidió y,
+   para que preparen los materiales, a Almacén y al Supervisor de almacén que
+   alcanzan el área (propuesta, opción a de P7c).
 
 **Estados:** `SUBMITTED → ACCEPTED | REJECTED | CANCELLED` (tabla pura y
 disparador; quien pidió puede cancelar mientras esté por atender).
 **Permisos (propuesta):** `production.request.read`,
 `production.request.create` (Operario de producción y Encargado de
-producción), `production.request.decide` (Administrador, Almacén, Supervisor
-de almacén; Gerencia solo lee).
+producción), `production.request.decide` (Encargado de producción y
+Administrador; Gerencia solo lee; Almacén y Supervisor de almacén, solo
+`production.request.read` mientras P7c no diga otra cosa). Aceptar exige
+además `production.order.create` y `production.order.release` (aceptar nunca
+da más poder que el que ya se tiene).
 
 **Listo cuando:** no se pide con tareas asignadas (comprobado en el
 servidor); solo se ofrecen productos del área y cerca del mínimo; la lista no
-trae cantidades; una solicitud, una orden en borrador para el Encargado;
-avisos a quien debe y a nadie más; rechazo con motivo; alcance; entre
-empresas.
+trae cantidades; decide el Encargado que alcanza el área (y Administración si
+no hay); al decidir ve existencias del producto y de sus materiales sin nada
+de fuera de su alcance; una solicitud, una orden liberada a nombre de quien
+aceptó (o en borrador si falta material y así se elige); dos Encargados a la
+vez: uno gana; avisos a quien debe y a nadie más; rechazo con motivo; alcance;
+entre empresas.
 
 ---
 
@@ -471,10 +511,11 @@ producción y el jefe de almacén.
 de producción o jefe de almacén (Administrador, Almacén o Supervisor de almacén, P3). Tableta junto al producto.
 
 **Qué espera verificación.** El trabajo le cae solo (relevo, sección 6) cuando
-las etapas anteriores del lote están hechas; aparece en «Mis tareas» y en la
-bandeja «Por verificar» con aviso. Un lote cuyas etapas anteriores no están
-hechas aparece como **«Esperando: Secado (Producción)»** y no se puede
-verificar (P10).
+las etapas anteriores **de ese mismo lote u orden de producción** están hechas
+(decidido, P10b); aparece en «Mis tareas» y en la bandeja «Por verificar» con
+aviso. Un lote cuyas etapas anteriores no están hechas aparece como
+**«Esperando: Secado (Producción)»** y no se puede verificar (P10). Un lote
+listo no espera a otro lote ni a otra orden que vayan más atrás.
 
 **Flujo (propuesta).**
 
@@ -611,9 +652,11 @@ Cerrar con faltante pide motivo; libera lo apartado; la orden queda inmutable.
    cae a Calidad. Juan reporta otras 20: ese lote sigue en «Lijado» y Calidad
    **no** puede verificarlo todavía.
 4. Juan ya no tiene tareas asignadas; en «Queda poco» aparece «Tabla 60×40»
-   (sin cantidades). Pide 20 (`SP-0001`); el Supervisor de almacén ve que hay
-   4 contra un mínimo de 24 y acepta: nace OP-0002 en borrador para el
-   Encargado, que la libera. Ana, con una orden asignada, no ve «Queda poco».
+   (sin cantidades). Pide 20 (`SP-0001`); el Encargado de producción del área
+   ve que hay 4 contra un mínimo de 24 y que el triplay alcanza, y acepta:
+   nace OP-0002 liberada a su nombre, con Juan asignado. El Supervisor de
+   almacén no puede aceptarla (mientras P7c no diga otra cosa). Ana, con una
+   orden asignada, no ve «Queda poco».
    Una hoja se rompe al cortar: Juan la reporta como merma de material, fuera
    del costo de las tablas.
 5. OP-0003 de 30 crates: Ana reporta 18 y 1 mala; Luis, 10.
@@ -635,15 +678,20 @@ Los tres roles de la sección 2.3, con claves `production_operator`,
 `production_supervisor` (en pantalla «Encargado de producción») y
 `quality_inspector`, ligados a su módulo en
 `ROLE_MODULE`. Titular y Administrador reciben todo lo nuevo; Gerencia todos
-los `*.read`. Almacén y Supervisor de almacén reciben, con Producción
-contratada, `production.request.read` y `production.request.decide` (P7).
+los `*.read`. El Encargado de producción recibe `production.request.decide`
+(decidido, P7 posterior) y las lecturas de inventario que necesita para
+decidir (`inventory.stock.read`, `inventory.minimum.read`; sin costos).
+Almacén y Supervisor de almacén reciben, con Producción contratada, solo
+`production.request.read` (ven las solicitudes y reciben el aviso «aceptada»);
+si P7c dice que también deciden, se les agrega `production.request.decide`.
 Cambio de roles: matriz + catálogo + migración del `CHECK` de
 `membership_role` + `team-rules.test.ts` y `navigation.int.test.ts`.
 
 **Listo cuando:** matriz y catálogo coinciden; cada rol ve su menú; casos
 negativos (el operario no crea órdenes, no ve costos, no verifica ni decide
-solicitudes; el Encargado no decide solicitudes; el inspector no reporta; un
-rol sin su módulo no hace nada).
+solicitudes; el Encargado no decide solicitudes de un área que no alcanza;
+Almacén y Supervisor de almacén no deciden solicitudes, salvo que P7c lo
+cambie; el inspector no reporta; un rol sin su módulo no hace nada).
 
 ### 5.10 Restauración (WMS-75, nuevo; requisito de P6)
 
@@ -737,10 +785,13 @@ encima:
     declara (reporte registrado, Calidad decidió, acomodo entregado,
     embarque despachado). Así las operaciones de siempre forman parte de la
     cadena sin duplicarse.
-- **Candado (P10):** una etapa no se completa si la anterior no está hecha, y
-  una operación ligada a una etapa (por ejemplo, la verificación de Calidad)
-  se rechaza mientras las etapas anteriores de ese documento no estén hechas.
-  El módulo lo comprueba dentro de su transacción (`assertStagesDone`).
+- **Candado (P10, P10b):** una etapa no se completa si la anterior no está
+  hecha, y una operación ligada a una etapa (por ejemplo, la verificación de
+  Calidad) se rechaza mientras las etapas anteriores **del mismo lote u orden
+  de producción** (el mismo documento) no estén hechas. El candado nunca
+  compara documentos entre sí: un lote listo no espera a otro producido antes
+  (decidido, P10b). El módulo lo comprueba dentro de su transacción
+  (`assertStagesDone`).
 
 ### 6.2 Ejemplos
 
@@ -963,30 +1014,22 @@ Quitados: `production.consumption.mode` y `production.consumption.exceptions`
 
 Todo lo demás quedó decidido (sección 1). Sigue abierto:
 
-**P10b. ¿«Calidad no puede liberar hasta que todos los anteriores las
-terminen» se refiere a las etapas de ese mismo lote, o a que Calidad libere
-los lotes en el orden en que se produjeron?** (Sin contestar.)
-- a) Las etapas anteriores **de ese mismo lote**: si las 100 tablas ya pasaron
-  por «Lijado» y «Secado», Calidad las verifica aunque haya otro lote de 50
-  más atrás.
-- b) **En orden de llegada**: Calidad no puede verificar un lote mientras haya
-  uno producido antes que siga sin verificar.
-- **Recomendación: a)**. b) detendría a Calidad por un lote atorado en otra
-  etapa sin que nada lo justifique.
-
-**P7b. Cuando Almacén acepta una solicitud de producción, ¿qué pasa con la
-orden?** El fundador dijo que las solicitudes las aceptan Almacén y el
-Supervisor de almacén (P7) y, antes, que las órdenes las generan los
-encargados de área, que responden por ellas (P8 de la segunda ronda).
-- a) Al aceptar, **nace la orden en borrador** a nombre del Encargado de
-  producción del área, con la persona que pidió asignada; el Encargado la
-  revisa y la libera (es el responsable).
-- b) Al aceptar, **le cae una tarea al Encargado** para crear la orden; si no
-  la crea, la solicitud se queda aceptada sin orden.
-- c) Al aceptar, **la orden nace liberada** y aparta materiales enseguida; el
-  Encargado solo la ve.
-- **Recomendación: a)**: un paso menos que b), y quien responde por la orden
-  es quien la pone a trabajar.
+**P7c. ¿Almacén y el Supervisor de almacén también pueden aceptar o rechazar
+solicitudes de producción, o solo se enteran?** Ya quedó decidido que las
+decide el Encargado de producción del área. La duda es qué pasa cuando el
+área no tiene Encargado en turno, o si el almacén debe poder decidir también.
+- a) **Solo se enteran**: ven las solicitudes y reciben el aviso cuando se
+  aceptan (para preparar materiales). Si el área no tiene ningún Encargado
+  activo, la solicitud le llega a Administración, que decide.
+- b) **También deciden**: Almacén y Supervisor de almacén pueden aceptar o
+  rechazar cualquier solicitud de su almacén, y la orden nace a nombre de
+  quien aceptó.
+- c) **Deciden solo si no hay Encargado**: como b), pero únicamente cuando el
+  área no tiene un Encargado activo.
+- **Recomendación: a)**: así hay un solo responsable de las órdenes del área,
+  como dijo el fundador («ya el encargado de area lo decide»). La razón de
+  antes («tienen acceso al inventario») se cubre mostrando al Encargado las
+  existencias del producto y de sus materiales al decidir (5.3, paso 4).
 
 **P8c. ¿Qué cuenta como «tareas asignadas» para que el operario pueda
 pedir?**
@@ -1032,7 +1075,7 @@ quién libera de cuarentena, tiempos por etapa, sugerir órdenes sin solicitud
 
 | Orden | Paso | Qué | Depende de | Corazón | En paralelo con |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **WMS-59** | Contratos (`quality` depende de `production`), permisos, roles (Operario, Encargado de producción, Inspector), `production.request.decide` para Almacén y Supervisor de almacén, matriz, `ROLE_MODULE` | — (decidido) | No | — |
+| 1 | **WMS-59** | Contratos (`quality` depende de `production`), permisos, roles (Operario, Encargado de producción, Inspector), `production.request.decide` para el Encargado de producción (y Administrador), lectura de solicitudes para Almacén y Supervisor de almacén, matriz, `ROLE_MODULE` | P7c (solo cambia a quién se da `production.request.decide`) | No | — |
 | 2 | **WMS-37** | Fotos privadas | — | No | WMS-27, WMS-74, WMS-30A |
 | 3 | **WMS-30-0** | Recibir en inspección (cualquier empresa), devolver y desechar lo rechazado (`DISPOSAL`), retención genérica | WMS-59 | **Sí** | WMS-27, WMS-74, WMS-30A |
 | 3b | **WMS-75** | Estado «En restauración», decisión «A restauración» en devoluciones, lista derivada | WMS-30-0, R1–R3 | **Sí** | WMS-27, WMS-74, WMS-30A |
@@ -1041,8 +1084,8 @@ quién libera de cuarentena, tiempos por etapa, sugerir órdenes sin solicitud
 | 3 | **WMS-30A** | Planes de inspección y defectos | WMS-59 | No | WMS-27, WMS-74 |
 | 4 | **WMS-28** | Órdenes, materiales apartados, `ISSUE`, uso «Producción», área de la receta, proceso de la orden | WMS-27, WMS-75, WMS-74 | **Sí** | — |
 | 5 | **WMS-29** | Reporte con foto, descuento automático de la receta, merma extra (`DISPOSAL`), `PRODUCTION`, costo, nomenclatura, lote con su proceso, turnos, rastreo | WMS-28 | **Sí** | WMS-28B |
-| 5 | **WMS-28B** | Solicitudes de producción (tres condiciones, decisión de Almacén, orden en borrador para el Encargado) | WMS-28, P7b, P8c | No | WMS-29 |
-| 6 | **WMS-30B** | Verificación e inspección, diferencias por causa, «A restauración», candado de etapas, devoluciones por `decideCustomerReturn` | WMS-29, WMS-30A, P10b | **Sí** | WMS-74B |
+| 5 | **WMS-28B** | Solicitudes de producción (tres condiciones, decide el Encargado del área viendo existencias y materiales, orden liberada a su nombre) | WMS-28, P7c, P8c | No | WMS-29 |
+| 6 | **WMS-30B** | Verificación e inspección, diferencias por causa, «A restauración», candado de etapas del mismo lote u orden, devoluciones por `decideCustomerReturn` | WMS-29, WMS-30A | **Sí** | WMS-74B |
 | 7 | **WMS-31** | Producto a su lugar, «Se guardó» automático, cierre | WMS-30B | **Sí** | WMS-74B |
 | 6–7 | **WMS-74B** | Procesos en embarques | WMS-74 | No | WMS-30B, WMS-31 |
 | Después | **WMS-29B** | Orden de reproceso: consume desde «En restauración», rechazado o dañado y produce disponible | WMS-29, WMS-75 | **Sí** | — |
@@ -1073,10 +1116,14 @@ y ADR):
   rechazo cuando no alcanza el material; merma extra fuera del costo;
   consecutivo sin repetir con reportes simultáneos; rastreo; reconciliación.
 - **WMS-28B:** no pide con tareas asignadas; solo productos del área cerca
-  del mínimo, sin cantidades; decide Almacén; orden en borrador para el
-  Encargado; avisos; rechazo con motivo.
+  del mínimo, sin cantidades; decide el Encargado que alcanza el área (y
+  Administración si no hay); Almacén y Supervisor de almacén no deciden
+  (salvo P7c); la pantalla de decisión no cuenta nada de fuera del alcance;
+  orden liberada a nombre de quien aceptó, o en borrador si falta material;
+  dos Encargados a la vez; avisos; rechazo con motivo.
 - **WMS-30B:** **PC-4**, **PC-5**; las cuatro causas; foto y motivo
-  obligatorios; lote con etapas pendientes no se verifica; dos inspectores.
+  obligatorios; lote con etapas pendientes no se verifica, pero un lote listo
+  sí aunque otro anterior siga atrás (P10b); dos inspectores.
 - **WMS-31:** conciliación; «Se guardó» automático; cierre libera.
 - **WMS-74B:** etapas después del despacho sin tocar existencias.
 
@@ -1086,8 +1133,8 @@ y ADR):
 
 1. **Resuelto (D9):** jerarquía de módulos.
 2. **Resuelto (D6, P4):** PC-4 con muestreo y diferencias por causa.
-3. **Resuelto (P7):** «el gerente» de D11 quedó como Almacén y Supervisor de
-   almacén para decidir solicitudes; Gerencia sigue solo lectura.
+3. **Resuelto (P7 posterior):** «el gerente» de D11 quedó como el Encargado de
+   producción del área para decidir solicitudes; Gerencia sigue solo lectura.
 4. **«En producción / trabajo en proceso» (especificación 6.2):** sin estado
    nuevo; lo cubren las etapas del lote y de la orden.
 5. **Plan v3:** WMS-59 va después de WMS-27 y WMS-37 depende de WMS-67; se
@@ -1103,6 +1150,14 @@ y ADR):
 10. **Existencias bajas solo para quien ve toda la empresa (WMS-20) frente a
     «Queda poco» del operario:** se resuelve mostrando solo nombres de
     productos de su área, sin cantidades (5.3).
+11. **P7 de la tercera ronda frente a la respuesta posterior:** en la tercera
+    ronda el fundador dijo que las solicitudes las aceptan Almacén y el
+    Supervisor de almacén «porque ellos tienen acceso al inventario»; después
+    dijo «ya el encargado de area lo decide». Chocan en quién decide; **manda
+    la posterior**. De la primera se conserva la razón: el Encargado ve las
+    existencias al decidir (5.3). Si Almacén conserva algún papel: P7c.
+12. **Resuelto (P10b):** el candado de etapas es dentro del mismo lote u orden
+    de producción, no entre lotes en orden de llegada.
 
 ---
 
