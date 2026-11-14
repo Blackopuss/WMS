@@ -1,7 +1,7 @@
 import "server-only";
 
 import { newId } from "@/lib";
-import { db, type TenantDb } from "@/server";
+import { currentDelegation, db, type TenantDb } from "@/server";
 
 import {
   sanitizeMetadata,
@@ -64,7 +64,18 @@ export async function recordAuditEvent(
   event: AuditEventInput,
 ): Promise<void> {
   checkAction(event.action);
-  const metadata = sanitizeMetadata(event.metadata);
+  // WMS-60: what an API key does is written for its creator; the record
+  // says which key (its id, never the secret).
+  const delegation = currentDelegation();
+  const viaKey =
+    delegation &&
+    delegation.organizationId === event.organizationId &&
+    delegation.userId === event.actorUserId
+      ? { llaveApi: delegation.apiKeyId }
+      : null;
+  const metadata = sanitizeMetadata(
+    viaKey ? { ...(event.metadata ?? {}), ...viaKey } : event.metadata,
+  );
   await client.auditEvent.create({
     data: {
       id: newId(),

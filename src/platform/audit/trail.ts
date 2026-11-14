@@ -151,6 +151,15 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "custom_field.changed": "Cambió un campo personalizado",
   "custom_field.archived": "Archivó un campo personalizado",
   "custom_field.restored": "Reactivó un campo personalizado",
+  "api_key.created": "Creó una llave de la API",
+  "api_key.changed": "Cambió una llave de la API",
+  "api_key.revoked": "Revocó una llave de la API",
+  "webhook.created": "Agregó un destino de webhooks",
+  "webhook.changed": "Cambió un destino de webhooks",
+  "webhook.paused": "Pausó un destino de webhooks",
+  "webhook.resumed": "Reanudó un destino de webhooks",
+  "webhook.secret_rotated": "Cambió el secreto de un destino de webhooks",
+  "webhook.removed": "Quitó un destino de webhooks",
 };
 
 export function describeAuditAction(action: string): string {

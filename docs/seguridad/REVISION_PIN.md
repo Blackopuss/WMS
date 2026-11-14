@@ -41,6 +41,7 @@ independiente antes de producción.
 | Copia de la base de datos | El secreto de la terminal se guarda como SHA-256; el PIN como scrypt sobre un HMAC con `BETTER_AUTH_SECRET`, la empresa y la persona: sin el secreto del servidor no se pueden probar PINs fuera de línea, y un hash no sirve en otra fila | `terminals.int.test.ts` («That hash is bound to the other person») |
 | PIN en registros | El PIN nunca se escribe en bitácora, eventos ni logs; las acciones de bitácora no llevan metadatos del PIN | `terminals.int.test.ts` («never in the trail») |
 | Usar la terminal de otra empresa o quitarla | Todo se busca con la empresa de la sesión; una terminal de otra empresa no existe | `terminals.int.test.ts`, `two-companies.int.test.ts` |
+| Una sesión de PIN que administra la API, o una llamada de la API tomada como terminal (WMS-60) | `platform.api.manage` queda fuera del recorte de terminal; el recorte de terminal se aplica encima del de la llave en `permissionsOf`; dentro de `runDelegated`, `terminalUserOfRequest` responde «sin terminal» antes de leer cookies, así que una llamada con cookies de terminal y de PIN no se recorta como terminal ni dispara la detección de copia | `policy.test.ts` («applies on top of an API key's cut», «never manages API keys»), `terminals.int.test.ts` («never manages API keys nor webhooks», «is never the API…») |
 | Fijación de sesión al registrar | Registrar cierra la sesión del administrador en ese dispositivo; la sesión de PIN es nueva (token aleatorio) en cada entrada | — (lo hace la acción `registerTerminalAction`) |
 
 ## Tiempo para adivinar un PIN al azar
@@ -68,7 +69,7 @@ por eso las reglas rechazan años de 1930 a 2039 y fechas de seis dígitos.
 | PIN-S03 | Baja | La lista «¿Quién eres?» muestra los nombres del personal de piso del almacén a quien esté frente a una terminal registrada. | Aceptado: está dentro del almacén y no dice roles, correos ni quién tiene PIN. |
 | PIN-S04 | Baja | El almacén activo de la persona pasa al de la terminal al entrar; afecta también lo que ve en su teléfono. | Aceptado (ADR 0061 §4); puede cambiarlo. |
 | PIN-S05 | Informativa | Una sesión de PIN puede cambiar de almacén con el selector si su alcance lo permite. | Correcto por diseño: el selector ya respeta el alcance; si se quiere fijar al de la terminal, es un cambio de `switchFacility`. |
-| PIN-S06 | Informativa | Un trabajo del worker pedido desde una sesión de PIN se revisa con los permisos completos de la persona (fuera de una petición no hay terminal). | Aceptado: el piso no tiene trabajos de plataforma; ver WMS-60 si llegan tokens de API. |
+| PIN-S06 | Informativa | Un trabajo del worker pedido desde una sesión de PIN se revisa con los permisos completos de la persona (fuera de una petición no hay terminal). | Aceptado: el piso no tiene trabajos de plataforma. Las llaves de la API (WMS-60) no se crean desde una sesión de PIN y sus llamadas llevan su propio recorte (`Subject.limit`). |
 
 ## Siguiente revisión
 

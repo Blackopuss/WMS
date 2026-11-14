@@ -69,6 +69,7 @@ Los prefijos describen la capacidad funcional, no la ubicación física del serv
 | `platform.terminal.manage` | Registrar el dispositivo propio como terminal compartida de un almacén y quitar terminales (invalida su secreto y cierra sus sesiones); WMS-38, ADR 0061. | Sí | Sí | No | No | No | No | No | No | No |
 | `platform.ownership.transfer` | Transferir titularidad mediante flujo exclusivo y atómico; USR-03B. | Sí | No | No | No | No | No | No | No | No |
 | `platform.audit.read` | Consultar bitácora de empresa, equipo y operaciones sensibles, sin secretos; USR-11, PLT-14 y sección 5; pregunta 7. | Sí | Sí | No | No | No | No | No | No | Sí |
+| `platform.api.manage` | Crear, cambiar y revocar llaves de la API y destinos de webhooks de la empresa, sin ver nunca un secreto ya creado; las llaves nunca tienen más que quien las crea; WMS-60, ADR 0058. | Sí | Sí | No | No | No | No | No | No | No |
 
 Aceptar una invitación (USR-05) no exige un rol previo en esa empresa ni concede `platform.team.invite`: exige cuenta autenticada correspondiente al correo invitado, token vigente de un solo uso, empresa y roles válidos y cupo reservado. Al aceptar se revalida que la invitación no se haya cancelado ni convertido en una vía de escalamiento. Perfil, contraseña, MFA y sesiones propias siguen los controles de identidad de PLT; no otorgan acceso al equipo ni a sesiones ajenas.
 

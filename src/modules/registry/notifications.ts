@@ -1,5 +1,6 @@
 import { INVENTORY_NOTIFICATION_TYPES } from "@/modules/inventory";
 import { PURCHASING_NOTIFICATION_TYPES } from "@/modules/purchasing";
+import { API_NOTIFICATION_TYPES } from "@/platform/api";
 import { APPROVAL_NOTIFICATION_TYPES } from "@/platform/approvals";
 import { TEAM_NOTIFICATION_TYPES } from "@/platform/authorization";
 import { TERMINAL_NOTIFICATION_TYPES } from "@/platform/terminals";
@@ -17,6 +18,7 @@ import {
  */
 export const notificationTypes: readonly NotificationType[] = [
   ...APPROVAL_NOTIFICATION_TYPES,
+  ...API_NOTIFICATION_TYPES,
   ...TEAM_NOTIFICATION_TYPES,
   ...TERMINAL_NOTIFICATION_TYPES,
   ...INVENTORY_NOTIFICATION_TYPES,

@@ -104,6 +104,8 @@ const SCREENS = [
   // WMS-38: shared terminals and the person's PIN.
   "/configuracion/terminales",
   "/configuracion/pin",
+  // WMS-60: API keys and webhook destinations.
+  "/configuracion/api",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.

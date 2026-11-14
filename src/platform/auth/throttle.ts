@@ -46,6 +46,8 @@ export const RULES = {
   },
   // Invitation links opened or answered from one IP (USR-05).
   inviteTokenIp: { max: 30, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  // Calls of the API with a key that does not work, per IP (WMS-60).
+  apiKeyIp: { max: 30, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   // Passwords typed at the counter to allow a discount (VEN-14), per
   // supervisor and per connection.
   discountAuthorizer: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
@@ -117,6 +119,10 @@ export const throttleKeys = {
   inviteOrganization: (organizationId: string): ThrottleKey => ({
     key: `invite:org:${organizationId}`,
     rule: RULES.inviteOrganization,
+  }),
+  apiKeyIp: (ip: string): ThrottleKey => ({
+    key: `api:key:ip:${ip}`,
+    rule: RULES.apiKeyIp,
   }),
   inviteTokenIp: (ip: string): ThrottleKey => ({
     key: `invite:token:ip:${ip}`,

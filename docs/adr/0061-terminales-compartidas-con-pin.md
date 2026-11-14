@@ -299,11 +299,20 @@ La decisión vive en el servidor, en dos lugares de una sola regla
   «Desde una terminal compartida no se cambia la seguridad de tu cuenta.»
   Hoy no hay cambio de contraseña ni de correo con sesión (se hace por
   recuperación, sin sesión).
-- **API (WMS-60):** cuando exista, sus tokens se crean desde la
-  configuración, que una sesión de terminal no alcanza (permisos de
-  plataforma recortados). Si WMS-60 agrega a `Subject` un recorte propio
-  (`limit`), el de terminal se combina con él en `permissionsOf` (la
-  intersección), no en otro lugar.
+- **API (WMS-60, ADR 0058):** las llaves y los webhooks se administran con
+  `platform.api.manage`, que una sesión de PIN no tiene (permisos de
+  plataforma recortados). WMS-60 agregó a `Subject` su propio recorte
+  (`limit`: lo que la llave permite y, si es de un almacén, ese almacén);
+  `permissionsOf` aplica el de terminal **encima** del de la llave (la
+  intersección), y el alcance sigue saliendo solo de `scopeOf`. Además, una
+  llamada de la API **nunca es una sesión de terminal**: dentro de
+  `runDelegated`, `terminalUserOfRequest` responde «sin terminal» antes de
+  mirar cookies, así que una llamada que llegue con la cookie de una
+  terminal y la de una sesión de PIN (alguien que prueba la API desde el
+  navegador de la tableta) no se recorta como terminal, no falla y no
+  dispara la detección de copia. Nada de `/api/v1` ni de `platform/api` lee
+  la sesión (`requireSession`, `getCurrentSession`) ni la terminal del
+  dispositivo.
 
 ### 9. Con WMS-40 (sesiones del equipo)
 

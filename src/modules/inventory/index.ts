@@ -293,6 +293,7 @@ export {
   OUTBOUND_PAGE_SIZE,
   TO_PACK,
   cancelOutboundOrder,
+  createOutboundDraft,
   createOutboundOrder,
   getOutboundOrder,
   listOutboundOrders,
@@ -302,6 +303,8 @@ export {
   updateOutboundOrder,
 } from "./outbound-orders";
 export type {
+  OutboundDraftLineInput,
+  OutboundDraftResult,
   OutboundField,
   OutboundHeaderInput,
   OutboundPage,
@@ -738,6 +741,7 @@ export type {
   DigestRoundResult,
   DigestSection,
 } from "./daily-digest";
+export { INVENTORY_WEBHOOK_EVENTS } from "./webhooks";
 export {
   INCIDENT_PAGE_SIZE,
   addIncidentNote,

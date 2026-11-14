@@ -13,6 +13,7 @@ import {
   postReceiptEntry,
   type CrossDockSent,
 } from "@/modules/inventory";
+import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -21,7 +22,11 @@ import {
   pluralizeName,
   type Capture,
 } from "@/platform/catalog";
-import { LOCATION_PARENTS, locationPath } from "@/platform/locations";
+import {
+  LOCATION_PARENTS,
+  locationPath,
+  locationsOutOfScope,
+} from "@/platform/locations";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -40,6 +45,7 @@ import {
   transitionProblem,
   type PurchaseOrderStatus,
 } from "./order-states";
+import { RECEIPT_CONFIRMED_EVENT } from "./webhooks";
 import { recordLastCost, type PurchasingActor } from "./product-suppliers";
 
 /**
@@ -610,6 +616,26 @@ async function receiveOnce(
         places.length === 1
           ? places[0]!
           : `${places.slice(0, -1).join(", ")} y ${places.at(-1)}`;
+      // WMS-60: who listens by webhook hears of it, inside this transaction.
+      await emitWebhookEvent(tx, RECEIPT_CONFIRMED_EVENT, {
+        organizationId,
+        data: {
+          receiptId,
+          purchaseOrderId: current.id,
+          purchaseOrderNumber: numberText,
+          orderStatus: status,
+          movementId: entry.movementId,
+          reference: data.reference ?? null,
+          lines: entry.lines.map((line) => ({
+            productId: line.productId,
+            locationId: line.locationId,
+            lotId: line.lotId ?? null,
+            quantity: line.baseQuantity.toString(),
+            unitCode: line.unitCode,
+            damaged: line.status === "DAMAGED",
+          })),
+        },
+      });
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId: userId,
@@ -1074,6 +1100,11 @@ export type ReceiptSummary = {
     locationPath: string;
     /** Where it was put: where a return takes it from by default. */
     locationId: string;
+    /** WMS-60: exact data for the API: product, base quantity and unit, lot. */
+    productId: string;
+    baseQuantity: string;
+    unitCode: string;
+    lotCode: string | null;
     /** What may still go back to the supplier ("2"), or "0" (CMP-12). */
     returnableQuantity: string;
     /** «2 cajas»; null when everything already went back. */
@@ -1235,6 +1266,12 @@ export function inTermsOf(
 export async function getOrderReceipts(
   actor: PurchasingActor,
   orderId: string,
+  /**
+   * WMS-60: the API keeps only the receipt lines of locations inside the
+   * person's scope (an order of the whole company can be received in any
+   * warehouse). The screen is unchanged (pending of ADR 0038).
+   */
+  options: { onlyLinesInScope?: boolean } = {},
 ): Promise<OrderReceipts | null> {
   await assertModulePermission(
     actor.organizationId,
@@ -1289,6 +1326,7 @@ export async function getOrderReceipts(
               baseQuantity: true,
               unitCode: true,
               locationId: true,
+              productId: true,
               product: { select: { name: true, sku: true, tracking: true } },
               presentation: { select: { name: true } },
               location: { select: placeSelect },
@@ -1413,6 +1451,10 @@ export async function getOrderReceipts(
           : base,
         locationPath: pathOf(line.location),
         locationId: line.locationId,
+        productId: line.productId,
+        baseQuantity: line.baseQuantity.toString(),
+        unitCode: line.unitCode,
+        lotCode: line.lot?.code ?? null,
         returnableQuantity: left.greaterThan(0) ? left.toFixed() : "0",
         returnableText: left.greaterThan(0)
           ? inTermsOf(left, line.presentation, line.unitCode)
@@ -1460,6 +1502,23 @@ export async function getOrderReceipts(
         }
       : {}),
   }));
+  const outside = options.onlyLinesInScope
+    ? new Set(
+        await locationsOutOfScope(
+          client,
+          actor.userId,
+          receipts.flatMap((receipt) => receipt.lines.map((l) => l.locationId)),
+        ),
+      )
+    : null;
+  const shown = outside
+    ? receipts
+        .map((receipt) => ({
+          ...receipt,
+          lines: receipt.lines.filter((l) => !outside.has(l.locationId)),
+        }))
+        .filter((receipt) => receipt.lines.length > 0)
+    : receipts;
 
   return {
     canReceive:
@@ -1469,6 +1528,6 @@ export async function getOrderReceipts(
       receipt.lines.some((line) => line.returnableText !== null),
     ),
     lines,
-    receipts,
+    receipts: shown,
   };
 }

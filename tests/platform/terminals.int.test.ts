@@ -15,6 +15,7 @@ import {
   requireSession,
   signIn,
   terminalSessionExpiry,
+  terminalUserOfRequest,
 } from "@/platform/auth";
 import { hashPassword } from "@/platform/auth/password";
 import {
@@ -22,6 +23,7 @@ import {
   assertAllowed,
   disableMember,
   getAccess,
+  isAllowed,
   listMemberSessions,
   type Role,
 } from "@/platform/authorization";
@@ -52,8 +54,10 @@ import { keepTerminalSessionAction } from "@/app/(app)/actions";
 import { moduleRegistry } from "@/modules/registry";
 import { buildExport } from "@/modules/inventory";
 import { can } from "@/platform/authorization";
+import { createApiKey, handleApiRequest, listApiKeys } from "@/platform/api";
+import { apiRoutes } from "@/app/api/v1/_routes";
 import { provisionCompany } from "@/platform/billing";
-import { db, forOrganization } from "@/server";
+import { db, forOrganization, runDelegated } from "@/server";
 
 import { grantSeats } from "../setup/plan";
 
@@ -946,6 +950,120 @@ describe("the PIN session", () => {
       await expect(
         db.sharedTerminal.delete({ where: { id: registered.terminalId } }),
       ).rejects.toThrow();
+    },
+    SLOW,
+  );
+
+  it("never manages API keys nor webhooks (WMS-60)", async () => {
+    await signInAs(olivia, "482915");
+    const actor = { organizationId: A.org, userId: olivia };
+    await expect(listApiKeys(actor)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(
+      createApiKey(actor, { name: "Desde la tableta", capabilities: [] }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it(
+    "is never the API: a delegated call with terminal and PIN cookies is not cut, refused nor taken as a clone",
+    async () => {
+      await setSetting(
+        A.org,
+        "platform.terminal.pin_roles",
+        "floor_supervision",
+      );
+      await setPin(A.org, supervisor, "395182");
+      // A terminal of its own, so a failure never takes the main one.
+      onDevice(null);
+      const registered = await registerTerminal(
+        { organizationId: A.org, userId: admin },
+        { name: "Pruebas API", facilityId: A.facility },
+      );
+      if (!registered.ok) throw new Error("terminal setup failed");
+      const firstSecret = registered.cookieValue;
+      onDevice(firstSecret);
+      expect(
+        await pinSignIn({ userId: supervisor, pin: "395182" }, from()),
+      ).toEqual({ ok: true });
+      const session = await db.session.findFirstOrThrow({
+        where: { userId: supervisor, terminalId: registered.terminalId },
+      });
+      // Sanity: without a key, this browser is a PIN session.
+      expect(await terminalUserOfRequest()).toBe(supervisor);
+      const delegation = {
+        organizationId: A.org,
+        userId: supervisor,
+        apiKeyId: newId(),
+        permissions: ["platform.team.read", "inventory.stock.read"],
+        facilityId: A.facility,
+        facilityOnly: false,
+      };
+      // Inside a call of a key the person is cut only by the key.
+      await runDelegated(delegation, async () => {
+        expect(await terminalUserOfRequest()).toBeNull();
+        expect(await isAllowed(A.org, supervisor, "platform.team.read")).toBe(
+          true,
+        );
+        expect(
+          await isAllowed(A.org, supervisor, "inventory.task.execute"),
+        ).toBe(false);
+      });
+      // The secret rotated at sign-in; the old one is now long past grace,
+      // which for a session would be a copied cookie.
+      await db.sharedTerminal.update({
+        where: { id: registered.terminalId },
+        data: { secretRotatedAt: new Date(Date.now() - 60 * 60_000) },
+      });
+      jar.set(TERMINAL_COOKIE, firstSecret);
+      const key = await createApiKey(
+        { organizationId: A.org, userId: A.owner },
+        { name: "ERP de prueba", capabilities: ["stock.read"] },
+      );
+      if (!key.ok) throw new Error(JSON.stringify(key));
+      const response = await handleApiRequest(
+        new Request("http://localhost/api/v1/stock", {
+          headers: {
+            authorization: `Bearer ${key.token}`,
+            "x-forwarded-for": "198.51.100.231",
+            cookie: [...jar]
+              .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+              .join("; "),
+          },
+        }),
+        apiRoutes,
+      );
+      expect(response.status).toBe(200);
+      await runDelegated(delegation, async () => {
+        expect(await terminalUserOfRequest()).toBeNull();
+      });
+      const terminal = await db.sharedTerminal.findUniqueOrThrow({
+        where: { id: registered.terminalId },
+      });
+      expect(terminal.removedAt).toBeNull();
+      expect(await db.session.count({ where: { id: session.id } })).toBe(1);
+      // And a delegated call without any cookie.
+      onDevice(null);
+      const bare = await handleApiRequest(
+        new Request("http://localhost/api/v1/stock", {
+          headers: {
+            authorization: `Bearer ${key.token}`,
+            "x-forwarded-for": "198.51.100.232",
+          },
+        }),
+        apiRoutes,
+      );
+      expect(bare.status).toBe(200);
+      await runDelegated(delegation, async () => {
+        expect(await terminalUserOfRequest()).toBeNull();
+        expect(await isAllowed(A.org, supervisor, "platform.team.read")).toBe(
+          true,
+        );
+      });
+      await removeTerminal(
+        { organizationId: A.org, userId: admin },
+        registered.terminalId,
+        "Fin de la prueba",
+      );
+      await setSetting(A.org, "platform.terminal.pin_roles", "floor");
     },
     SLOW,
   );

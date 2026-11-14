@@ -115,6 +115,10 @@ export const TENANT_MODELS = [
   "CustomFieldValue",
   "SharedTerminal",
   "MemberPin",
+  "ApiKey",
+  "WebhookEndpoint",
+  "WebhookEvent",
+  "WebhookDelivery",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -328,6 +332,7 @@ const LOCKABLE = {
   pickWave: "pick_wave",
   purchaseRequest: "purchase_request",
   incident: "incident",
+  webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
 } as const;

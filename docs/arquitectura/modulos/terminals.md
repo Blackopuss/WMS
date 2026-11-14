@@ -49,6 +49,11 @@ módulos y capacidad), toda exportación y todo costo
 decidir. Aceptar una invitación también la rechaza. La seguridad de la cuenta (dos pasos, sesiones, PIN) la rechaza
 cada servicio con `assertNotTerminalSession`.
 
+Con la API (WMS-60): el recorte de terminal se aplica encima del de la
+llave (`Subject.limit`) en `permissionsOf`, y dentro de `runDelegated`
+`terminalUserOfRequest` responde `null` antes de mirar cookies: una llamada
+de la API nunca es una sesión de terminal.
+
 ## Tablas
 
 `shared_terminal` (almacén, nombre, SHA-256 del secreto, quién la registró,

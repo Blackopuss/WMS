@@ -62,6 +62,7 @@ export default async function ConfiguracionPage() {
         access.can("platform.terminal.read") ||
         access.can("platform.plan.read") ||
         access.can("platform.audit.read") ||
+        access.can("platform.api.manage") ||
         access.can("platform.organization.update")) && (
         <section aria-labelledby="empresa" className="space-y-3">
           <h2 id="empresa" className="text-lg font-semibold">
@@ -121,6 +122,14 @@ export default async function ConfiguracionPage() {
               icon={Gauge}
               title="Mi plan"
               description="Cupos, módulos y vigencia."
+            />
+          )}
+          {access.can("platform.api.manage") && (
+            <SettingsLink
+              href="/configuracion/api"
+              icon={KeyRound}
+              title="API y webhooks"
+              description="Llaves para otros sistemas y avisos a sus direcciones."
             />
           )}
           {access.can("platform.audit.read") && (
@@ -271,6 +280,7 @@ function SettingsLink({
     | "/configuracion/plan"
     | "/configuracion/terminales"
     | "/configuracion/pin"
+    | "/configuracion/api"
     | "/configuracion/bitacora"
     | "/aprobaciones"
     | "/configuracion/aprobaciones";

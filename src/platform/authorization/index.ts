@@ -22,10 +22,11 @@ export {
   isOwnerOnly,
   knownRoles,
   inScope,
+  intersectScopes,
   permissionsOf,
   scopeOf,
 } from "./policy";
-export type { Place, Scope, Subject } from "./policy";
+export type { Place, Scope, Subject, SubjectLimit } from "./policy";
 export { loadScope, seesWholeCompany } from "./scope";
 export type { ScopeReader } from "./scope";
 export {
@@ -35,6 +36,7 @@ export {
   assertOwnerAction,
   getAccess,
   isAllowed,
+  limitOf,
   loadSubject,
   requireOwnerAction,
   requirePermission,

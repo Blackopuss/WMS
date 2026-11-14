@@ -7,7 +7,7 @@ import { cache } from "react";
 import { ForbiddenError, log, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { pendingLegalDocuments } from "@/platform/legal";
-import { db } from "@/server";
+import { currentDelegation, db } from "@/server";
 
 import { auth } from "./auth";
 import { isMfaRequired, usersWhoMustUseMfa } from "./mfa-policy";
@@ -522,6 +522,11 @@ async function stillMayUsePin(
  * the session already loaded for the request: no extra query.
  */
 export const terminalUserOfRequest = cache(async (): Promise<string | null> => {
+  // A call of the API (WMS-60) acts for its key, never for a device: it is
+  // not a terminal even if the request happens to carry terminal and PIN
+  // cookies (someone trying the API from the tablet's browser). Decided
+  // before looking at any cookie, so nothing of the terminal runs.
+  if (currentDelegation() !== null) return null;
   try {
     await headers();
   } catch {

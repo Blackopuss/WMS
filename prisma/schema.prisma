@@ -210,6 +210,11 @@ model Organization {
   notificationEmails           NotificationEmail[]
   dailyDigests                 DailyDigest[]
   incidents                    Incident[]
+  /// API keys and webhook destinations (WMS-60).
+  apiKeys                      ApiKey[]
+  webhookEndpoints             WebhookEndpoint[]
+  webhookEvents                WebhookEvent[]
+  webhookDeliveries            WebhookDelivery[]
   incidentNotes                IncidentNote[]
   /// Shared terminals and PINs (WMS-38).
   sharedTerminals              SharedTerminal[]
@@ -269,6 +274,8 @@ model Facility {
   /// Purchase requests and orders of this warehouse (WMS-57).
   purchaseRequests PurchaseRequest[]
   purchaseOrders   PurchaseOrder[]
+  /// API keys that work in this warehouse (WMS-60).
+  apiKeys          ApiKey[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -452,25 +459,25 @@ enum MembershipStatus {
 }
 
 model Membership {
-  id               String              @id @db.Char(36)
-  organizationId   String              @db.Char(36)
-  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  userId           String              @db.Char(36)
-  user             User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status           MembershipStatus    @default(ACTIVE)
-  createdAt        DateTime            @default(now()) @db.DateTime(3)
-  updatedAt        DateTime            @updatedAt @db.DateTime(3)
-  roles            MembershipRole[]
-  ownershipOffers  OwnershipTransfer[]
+  id                String              @id @db.Char(36)
+  organizationId    String              @db.Char(36)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId            String              @db.Char(36)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status            MembershipStatus    @default(ACTIVE)
+  createdAt         DateTime            @default(now()) @db.DateTime(3)
+  updatedAt         DateTime            @updatedAt @db.DateTime(3)
+  roles             MembershipRole[]
+  ownershipOffers   OwnershipTransfer[]
   /// The warehouse this person works in (WMS-18); null = the main one.
-  activeFacilityId String?             @db.Char(36)
-  activeFacility   Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  activeFacilityId  String?             @db.Char(36)
+  activeFacility    Facility?           @relation(fields: [organizationId, activeFacilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Where this person may work (WMS-20); no rows = every warehouse.
-  scopes           MembershipScope[]
+  scopes            MembershipScope[]
   /// «Cerrar todas sus sesiones» or disabling (WMS-40, ADR 0059): a session
   /// created before this moment never works in this company again (it may
   /// keep working in others); signing in again is needed.
-  sessionsRevokedAt DateTime?         @db.DateTime(3)
+  sessionsRevokedAt DateTime?           @db.DateTime(3)
 
   @@unique([organizationId, userId])
   /// Target of company-scoped foreign keys (PLT-13).
@@ -2732,10 +2739,15 @@ model OutboundOrder {
   /// Imported orders only: its «Pedido» of the file, folded. Unique in the
   /// company, so the same order of a file never becomes two (WMS-13B).
   sourceKey         String?                @db.VarChar(80)
+  /// WMS-60: sha256 (hex) of the API key and its Idempotency-Key: an order
+  /// created by the API is not created twice. Apart from sourceKey, so a
+  /// file can never take it nor the other way round.
+  apiRequestKey     String?                @db.Char(64)
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
   @@unique([organizationId, sourceKey])
+  @@unique([organizationId, apiRequestKey])
   @@index([organizationId, status, number])
   @@map("outbound_order")
 }
@@ -3869,24 +3881,24 @@ model IncidentNote {
 /// its SHA-256 is stored. Never deleted: removing it marks `removedAt`,
 /// which makes the secret useless and closes its sessions.
 model SharedTerminal {
-  id              String       @id @db.Char(36)
-  organizationId  String       @db.Char(36)
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  facilityId      String       @db.Char(36)
-  facility        Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  name            String       @db.VarChar(60)
+  id                 String       @id @db.Char(36)
+  organizationId     String       @db.Char(36)
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId         String       @db.Char(36)
+  facility           Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  name               String       @db.VarChar(60)
   /// SHA-256 (hex) of the device's secret. It changes on every PIN
   /// sign-in (rotation); the one before stays to recognize a copied cookie.
-  secretHash         String    @unique @db.Char(64)
-  previousSecretHash String?   @db.Char(64)
-  secretRotatedAt    DateTime? @db.DateTime(3)
-  createdByUserId String       @db.Char(36)
-  createdAt       DateTime     @default(now()) @db.DateTime(3)
-  lastUsedAt      DateTime?    @db.DateTime(3)
-  removedAt       DateTime?    @db.DateTime(3)
+  secretHash         String       @unique @db.Char(64)
+  previousSecretHash String?      @db.Char(64)
+  secretRotatedAt    DateTime?    @db.DateTime(3)
+  createdByUserId    String       @db.Char(36)
+  createdAt          DateTime     @default(now()) @db.DateTime(3)
+  lastUsedAt         DateTime?    @db.DateTime(3)
+  removedAt          DateTime?    @db.DateTime(3)
   /// Null when the system removed it (a copied cookie was used).
-  removedByUserId String?      @db.Char(36)
-  updatedAt       DateTime     @updatedAt @db.DateTime(3)
+  removedByUserId    String?      @db.Char(36)
+  updatedAt          DateTime     @updatedAt @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@index([organizationId, removedAt, name])
@@ -3911,4 +3923,136 @@ model MemberPin {
   @@unique([organizationId, id])
   @@unique([organizationId, userId])
   @@map("member_pin")
+}
+
+/// A key of the API of a company (WMS-60, ADR 0058). It acts for the
+/// person who created it, cut down to its capabilities and, if limited, to
+/// its warehouse. Only the hash of the secret is kept. Never deleted:
+/// revoked.
+model ApiKey {
+  id                String       @id @db.Char(36)
+  organizationId    String       @db.Char(36)
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// «ERP», «Tienda»: how people recognize it.
+  name              String       @db.VarChar(80)
+  /// Visible part of the key («wms_ab12cd34»).
+  prefix            String       @db.VarChar(16)
+  /// sha256 of the whole key, hex: how a call finds it.
+  secretHash        String       @unique @db.Char(64)
+  /// Capabilities of version 1 («stock.read»).
+  capabilities      Json
+  /// Warehouse it works in (lists and new documents).
+  facilityId        String       @db.Char(36)
+  facility          Facility     @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// True: it reaches only that warehouse.
+  facilityOnly      Boolean      @default(false)
+  /// Calls per minute of this key; never more than the company.
+  requestsPerMinute Int
+  expiresAt         DateTime?    @db.DateTime(3)
+  lastUsedAt        DateTime?    @db.DateTime(3)
+  createdByUserId   String       @db.Char(36)
+  createdAt         DateTime     @default(now()) @db.DateTime(3)
+  revokedAt         DateTime?    @db.DateTime(3)
+  revokedByUserId   String?      @db.Char(36)
+  updatedAt         DateTime     @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, prefix])
+  @@index([organizationId, revokedAt, createdAt])
+  @@index([organizationId, facilityId])
+  @@map("api_key")
+}
+
+/// Fixed one-minute window of calls of a key or of a company (WMS-60).
+/// One row per counter, reused in each window; not a company table: the
+/// key says whose it is («api:key:<id>», «api:org:<id>»).
+model ApiRateWindow {
+  key         String   @id @db.VarChar(80)
+  windowStart DateTime @db.DateTime(3)
+  count       Int
+
+  @@map("api_rate_window")
+}
+
+enum WebhookEndpointStatus {
+  ACTIVE
+  PAUSED
+}
+
+/// Where a company wants its events (WMS-60). The signing secret is kept
+/// encrypted (it must be usable to sign); the previous one lives 24 hours
+/// after a change.
+model WebhookEndpoint {
+  id                       String                @id @db.Char(36)
+  organizationId           String                @db.Char(36)
+  organization             Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  url                      String                @db.VarChar(500)
+  description              String?               @db.VarChar(120)
+  /// Keys of the event types it receives.
+  events                   Json
+  status                   WebhookEndpointStatus @default(ACTIVE)
+  /// True when it paused itself after repeated failures.
+  pausedByFailures         Boolean               @default(false)
+  consecutiveFailures      Int                   @default(0)
+  secretCiphertext         String                @db.VarChar(255)
+  previousSecretCiphertext String?               @db.VarChar(255)
+  previousSecretExpiresAt  DateTime?             @db.DateTime(3)
+  createdByUserId          String                @db.Char(36)
+  createdAt                DateTime              @default(now()) @db.DateTime(3)
+  updatedAt                DateTime              @updatedAt @db.DateTime(3)
+  /// Removed: kept for its deliveries, receives nothing.
+  removedAt                DateTime?             @db.DateTime(3)
+  deliveries               WebhookDelivery[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, removedAt, createdAt])
+  @@map("webhook_endpoint")
+}
+
+/// A fact sent to webhooks (WMS-60); its id is the same in every attempt.
+model WebhookEvent {
+  id             String            @id @db.Char(36)
+  organizationId String            @db.Char(36)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  type           String            @db.VarChar(80)
+  /// The whole body sent, already without costs.
+  payload        Json
+  createdAt      DateTime          @default(now()) @db.DateTime(3)
+  deliveries     WebhookDelivery[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, createdAt])
+  @@map("webhook_event")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
+}
+
+/// One event to one destination (WMS-60): what people see of each attempt.
+model WebhookDelivery {
+  id             String                @id @db.Char(36)
+  organizationId String                @db.Char(36)
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  endpointId     String                @db.Char(36)
+  endpoint       WebhookEndpoint       @relation(fields: [organizationId, endpointId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  eventId        String                @db.Char(36)
+  event          WebhookEvent          @relation(fields: [organizationId, eventId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  lastAttemptAt  DateTime?             @db.DateTime(3)
+  lastStatusCode Int?
+  /// Own reason, for people; never the body nor the raw error.
+  reason         String?               @db.VarChar(200)
+  deliveredAt    DateTime?             @db.DateTime(3)
+  createdAt      DateTime              @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, endpointId, eventId])
+  @@index([organizationId, endpointId, createdAt])
+  @@index([organizationId, eventId])
+  @@map("webhook_delivery")
 }

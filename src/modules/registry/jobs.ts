@@ -4,6 +4,12 @@ import {
   inventoryJobHandlers,
 } from "@/modules/inventory";
 import { purchasingJobHandlers } from "@/modules/purchasing";
+import {
+  WEBHOOK_DELIVERY_JOB,
+  WEBHOOK_FANOUT_JOB,
+  webhookDeliveryHandler,
+  webhookFanoutHandler,
+} from "@/platform/api";
 import type { JobHandlers } from "@/platform/jobs";
 import { noticeEmailJobHandlers } from "@/platform/notifications";
 
@@ -22,4 +28,8 @@ export const jobHandlers: JobHandlers = {
   ...purchasingJobHandlers,
   // WMS-39B (ADR 0060): notices that a person asked to get by mail.
   ...noticeEmailJobHandlers(notificationTypes),
+  // WMS-60 (ADR 0058): hand an event out to its destinations (outside the
+  // transaction of the fact), and the signed delivery, with retries.
+  [WEBHOOK_FANOUT_JOB]: webhookFanoutHandler(),
+  [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler(),
 };

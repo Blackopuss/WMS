@@ -1255,6 +1255,48 @@ beforeAll(async () => {
         createdByUserId: who,
       },
     });
+    // An API key, a webhook destination, an event and its delivery (WMS-60).
+    await db.apiKey.create({
+      data: {
+        id: newId(),
+        organizationId,
+        name: "ERP",
+        prefix: `wms_iso${organizationId === orgA ? "a" : "b"}`,
+        secretHash: newId().replace(/-/g, "").padEnd(64, "0"),
+        capabilities: ["stock.read"],
+        facilityId: location.facilityId,
+        requestsPerMinute: 60,
+        createdByUserId: who,
+      },
+    });
+    const endpointId = newId();
+    await db.webhookEndpoint.create({
+      data: {
+        id: endpointId,
+        organizationId,
+        url: "https://hooks.ejemplo.com/iso",
+        events: ["inventory.adjustment.applied"],
+        secretCiphertext: "v1.x.y.z",
+        createdByUserId: who,
+      },
+    });
+    const webhookEventId = newId();
+    await db.webhookEvent.create({
+      data: {
+        id: webhookEventId,
+        organizationId,
+        type: "inventory.adjustment.applied",
+        payload: {},
+      },
+    });
+    await db.webhookDelivery.create({
+      data: {
+        id: newId(),
+        organizationId,
+        endpointId,
+        eventId: webhookEventId,
+      },
+    });
     // A custom field of products, a list option and a value (WMS-58).
     const customFieldId = newId();
     await db.customField.create({
