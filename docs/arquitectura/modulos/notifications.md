@@ -36,6 +36,11 @@ tipo (o, si el tipo viene apagado, solo quien lo encendió), como mucho
 destinatarios no es error. Un `href` que no sea ruta interna (`isInternalHref`
 de `@/lib`) lanza: es un error de programación; la base lo rechaza también.
 
+`notify` nombra la empresa en cada filtro además del cliente de empresa:
+así lo puede llamar un cambio de equipo con el cliente normal de su
+transacción (sesiones del equipo, WMS-40), siempre sin `facilityId` ni
+`locationId`.
+
 ## Permisos
 
 Ninguno propio: cada persona ve, abre y marca solo sus avisos, y elige solo
