@@ -463,6 +463,8 @@ export type {
   TransferDestination,
   TransferPlace,
 } from "./facility-transfers";
+export { buildFacilityTransferPdf } from "./facility-transfer-pdf";
+export type { FacilityTransferPdf } from "./facility-transfer-pdf";
 export {
   FACILITY_TRANSFER_STATUS_LABELS,
   formatFacilityTransferNumber,
