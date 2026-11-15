@@ -1,6 +1,6 @@
 # Relevo entre sesiones
 
-Actualizado: 2026-11-14. Para quien abre un chat nuevo sobre este repositorio:
+Actualizado: 2026-11-15. Para quien abre un chat nuevo sobre este repositorio:
 dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando. El
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
@@ -16,15 +16,16 @@ para arrancar sin releer la conversación anterior.
   retoma el plan por su cuenta.
 - **Nada en curso:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
   unido el 2026-11-14 tras tres vueltas de revisión de seguridad, y la
-  propuesta de producción y calidad está unida en su quinta versión. No hay
-  chats ni ramas con trabajo pendiente.
+  propuesta de producción y calidad está unida en su sexta versión
+  (2026-11-15), ya con todas las respuestas del fundador. No hay chats ni
+  ramas con trabajo pendiente.
 - Las ramas ya unidas (`pend-traslado-pdf-archivar`, `wms-40-sesiones-equipo`,
   `pend-avisos-correo`, `wms-60-api-webhooks`, `wms-38-terminales-pin`,
   `flujo-produccion-calidad`) siguen en GitHub: desde un chat
   de la nube no se pueden borrar (el `git push --delete` no tiene efecto); las
   borra el fundador si quiere.
-- `main` se avanzó hasta `pruebas` el 2026-11-13. Si al abrir un chat `main` va
-  atrás otra vez, trabajar sobre `origin/pruebas`.
+- `main` se avanzó hasta `pruebas` el 2026-11-15, a pedido del fundador. Si al
+  abrir un chat `main` va atrás otra vez, trabajar sobre `origin/pruebas`.
 - Cosas sueltas por atender: `/ubicaciones/etiquetas` falla «objetivos táctiles
   ≥ 44 px» en teléfono en `verify:a11y` (sin comprobar desde cuándo), y
   `/inventario/nuevo` tiene un aviso de React por `key` faltante en un
@@ -46,8 +47,9 @@ para arrancar sin releer la conversación anterior.
 
 - Producción y calidad: el orden de pasos está en la propuesta (WMS-59 roles,
   WMS-37 fotos, base de inspección, recetas, motor de procesos WMS-74, órdenes,
-  solicitudes, reporte, inspección, cierre). **No se programa hasta que el
-  fundador apruebe la versión final de la propuesta.**
+  solicitudes, reporte, inspección, cierre). El flujo ya está decidido (sexta
+  versión). **No se programa hasta que el fundador indique empezar;** el
+  primer paso es WMS-59 (roles), con su ADR antes del código.
 - WMS-61/62 y WMS-63 esperan decisión del fundador.
 - Transversales: WMS-37 (fotos; pasa a ser requisito de producción), WMS-67,
   WMS-42, WMS-68, WMS-47. Después, Fases 4 y 5.
@@ -58,14 +60,13 @@ para arrancar sin releer la conversación anterior.
 
 ## Esperan al fundador
 
-- Producción y calidad: el fundador contestó D1 a D11, P1 a P13 y P10b
-  (2026-11-14; todo está en `MEMORY.md` y en la sección 1 de la propuesta).
-  Le faltan cinco preguntas de la sección 11 de la quinta versión: P7c (si
-  Almacén y Supervisor de almacén también deciden las solicitudes de producción
-  o solo se enteran), P8c (qué cuenta como «tareas asignadas»), R1 (estado
-  nuevo «En restauración» y orden de reproceso), R2 (lo restaurado, directo a
-  disponible o por inspección) y R3 (si el Almacenista manda a restauración).
-  Cuando las conteste y apruebe la propuesta, el primer paso es WMS-59.
+- Producción y calidad: el fundador contestó todo (D1 a D11, P1 a P13 y P10b
+  el 2026-11-14; P7c, P8c, R1, R2 y R3 el 2026-11-15; está en `MEMORY.md` y en
+  la sección 1 de la propuesta). Solo falta que diga cuándo empezar. Dos cosas
+  que la propuesta supone y él puede cambiar: lo restaurado vuelve directo al
+  inventario por omisión (el ajuste deja mandarlo a Calidad), y Almacén y el
+  Supervisor de almacén aceptan solicitudes sin poder crear órdenes por su
+  cuenta.
 - WMS-38: decisiones de quien coordina que puede cambiar (en una terminal no se
   entra con contraseña; PIN de 6 dígitos por omisión y 5 como opción; una
   sesión de PIN no hace exportaciones masivas, no autoriza ni ve costos) y qué
@@ -87,6 +88,11 @@ para arrancar sin releer la conversación anterior.
   no es requisito y no se agrega librería de decodificación.
 - El Montacarguista sí reporta incidencias.
 - Sin Ventas y sin cobro en línea (ADR 0032 y 0037).
+- Producción y calidad (2026-11-15): las solicitudes de producción las deciden
+  el Encargado de producción del área, Almacén y el Supervisor de almacén;
+  «tareas asignadas» incluye las tareas de almacén; estado «En restauración»
+  y orden de reproceso; lo restaurado va directo o por Calidad según un ajuste;
+  el Almacenista de piso no manda a restauración.
 
 ## Levantar el entorno en un contenedor nuevo (nube de Claude)
 

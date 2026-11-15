@@ -634,9 +634,17 @@ respuestas a P1–P13, la sección de roles y el motor de procesos con candado
 entre etapas y relevo automático entre áreas. El fundador ya contestó también P3, P6, P7, P1b,
 P8b y P10b (están en `MEMORY.md`); la quinta versión (unida el 2026-11-14) las
 incorpora, agrega **WMS-75** (estado «En restauración») y **WMS-29B** (orden de
-reproceso), y deja abiertas cinco preguntas: P7c, P8c, R1, R2 y R3 (su sección
-11). Nada se programa hasta que el fundador las conteste y apruebe la
-propuesta.
+reproceso), y dejó abiertas cinco preguntas: P7c, P8c, R1, R2 y R3. **El
+fundador las contestó el 2026-11-15** (sexta versión, sección 1.4): Almacén y
+el Supervisor de almacén también deciden las solicitudes de producción (P7c);
+«tareas asignadas» es toda actividad asignada a la persona, incluidas las
+tareas de almacén (P8c); estado «En restauración» para cualquier empresa y
+orden de reproceso con Producción (R1); lo restaurado vuelve directo al
+inventario o pasa por Calidad según un ajuste de la empresa (R2); y el
+Almacenista de piso no manda a restauración (R3). Ya no hay preguntas abiertas
+que detengan el trabajo. **Nada se programa hasta que el fundador indique
+empezar;** el orden de pasos es el de la sección 12 de la propuesta, con
+WMS-59 primero.
 
 ### WMS-60 · API y webhooks
 

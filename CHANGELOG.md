@@ -6,6 +6,12 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-15
+
+- Propuesta de flujo de producción y calidad, sexta versión
+  (`docs/flujos/PRODUCCION_CALIDAD.md`): incorpora las últimas respuestas del
+  fundador (P7c, P8c, R1, R2 y R3); ya no tiene preguntas abiertas.
+
 ## 2026-11-14
 
 - **WMS-38** · Terminales compartidas con PIN (ADR 0061): un dispositivo del
