@@ -1,7 +1,7 @@
 # Estado del WMS: lo que hay y lo que falta
 
-Actualizado: 2026-11-13. Rama `pruebas` de `Blackopuss/WMS`, Fases 1 y 2 cerradas y parte de la
-Fase 3 (el detalle por paso está en `CHANGELOG.md`; el fundador pidió detenerse aquí el 2026-11-13). Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
+Actualizado: 2026-11-15. Rama `pruebas` de `Blackopuss/WMS`, Fases 1 y 2 cerradas y parte de la
+Fase 3 (el detalle por paso está en `CHANGELOG.md`; el fundador retomó el trabajo el 2026-11-14 y esa tanda quedó cerrada y unida). Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
 
@@ -20,7 +20,12 @@ abajo son de ese documento).
 | Traslados entre almacenes, cross-docking y daños al recibir, conteos cíclicos, etiquetas, reposición de surtido, surtido por olas | Hecho (WMS-19, 54, 55, 26, 23/24, 25; ADR 0047, 0048, 0050, 0051, 0052, 0054) |
 | Aprobaciones y ajustes con autorización, solicitudes de compra, campos personalizados | Hecho (WMS-56/41, 57, 58; ADR 0053, 0055, 0056) |
 | Avisos dentro de la app e incidencias | Hecho (WMS-39, ADR 0057) |
-| Producción y calidad | Falta (WMS-27..31, WMS-59) |
+| Avisos por correo y resumen diario | Hecho (WMS-39B, ADR 0060, 2026-11-14) |
+| Sesiones del equipo para la administración | Hecho (WMS-40, ADR 0059, 2026-11-14) |
+| Terminales compartidas con PIN | Hecho (WMS-38, ADR 0061, 2026-11-14) |
+| API y webhooks | Hecho (WMS-60, ADR 0058, 2026-11-14) |
+| Hoja de traslado en PDF y mensaje al archivar un producto según el alcance | Hecho (WMS-19B, WMS-57B; ADR 0048, 0055; 2026-11-14) |
+| Producción y calidad | Falta (WMS-27..31, WMS-59); el flujo ya está decidido (`docs/flujos/PRODUCCION_CALIDAD.md`) y espera que el fundador indique empezar, con WMS-59 primero |
 | Analítica | Falta (WMS-32..34) |
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
 | Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |
@@ -29,7 +34,7 @@ abajo son de ese documento).
 | Lotes y caducidad | Hecho (WMS-21A, ADR 0040, 2026-11-13) |
 | Números de serie y trazabilidad por lote, serie o pedido | Hecho (WMS-21B, ADR 0041, 2026-11-13) |
 | App instalable y escaneo con cámara | Hecho (WMS-35/36, ADR 0049); se escanea con lector USB y con la cámara en Android desde Chrome (decisión del fundador) |
-| Fotos de evidencia, PIN en terminales compartidas, API y webhooks | Falta (WMS-37, 38, 60) |
+| Fotos de evidencia | Falta (WMS-37) |
 | Servidor propio del WMS, dominio, textos legales finales | Falta (decisiones del fundador) |
 
 Ventas (punto de venta, caja, cotizaciones, ventas a plazos) se quitó del
@@ -45,7 +50,21 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
   bloqueo progresivo por intentos fallidos, avisos por correo.
 - **MFA** obligatoria para titulares, administradores y personal de plataforma;
   opcional para los demás. Códigos de recuperación.
-- **Sesiones**: cada persona ve y cierra sus propias sesiones.
+- **Sesiones**: cada persona ve y cierra sus propias sesiones. El titular y la
+  administración ven además las sesiones abiertas de cada persona de la empresa
+  (dispositivo, navegador, IP, última actividad) y las cierran a distancia
+  (WMS-40, ADR 0059); desactivar a alguien solo le cierra las de esa empresa.
+- **Terminales compartidas con PIN** (WMS-38, ADR 0061): un dispositivo del piso
+  se registra como terminal de un almacén y cada persona entra ahí con su PIN a
+  su propia sesión, con permisos recortados y cierre por inactividad; en una
+  terminal no se entra con contraseña, y quien usa dos pasos no usa PIN.
+- **API y webhooks** (WMS-60, ADR 0058): API REST por llave (`/api/v1`) con
+  permisos que nunca pasan de los de quien la creó, límites de uso y documento
+  OpenAPI; lecturas de inventario y compras y alta de pedidos en borrador;
+  webhooks firmados con reintentos. Se administra en Configuración › API y webhooks.
+- **Avisos**: dentro de la app (campana, WMS-39) y, si cada persona lo elige,
+  también por correo agrupado, más un resumen diario de lotes por caducar y
+  existencias bajas (WMS-39B, ADR 0060).
 - **Roles y permisos (RBAC)** verificados en el servidor en cada operación. Roles:
   Titular (no es rol), Administrador, Almacén, Comprador, Consulta, Supervisor de
   almacén, Almacenista, Montacarguista y Gerencia (WMS-50). Matriz aprobada en
@@ -59,7 +78,7 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
 - **Consola interna** del personal de plataforma y **acceso de soporte** temporal,
   autorizado por el titular y auditado.
 - **Sitio público**: inicio, funciones, precios, nosotros, términos y privacidad
-  (versión 2026-11-09, sin Ventas), con la marca «WMS».
+  (versión 2026-11-11, sin Ventas ni cobro en línea), con la marca «WMS».
 
 ### Inventario (especificación 6.1, 6.3, 6.4, 6.5 en parte)
 
@@ -85,8 +104,9 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
   producto; las filas con el mismo «Pedido» forman un pedido) se revisa sin
   escribir, dice qué fila está mal y por qué, y al confirmarlo crea todos sus
   borradores o ninguno. Un pedido que ya se importó no se crea otra vez.
-- **Surtido** (WMS-14): liberar un pedido crea sus tareas de surtido (la
-  ubicación más llena primero) y aparta esa mercancía donde está. Desde el
+- **Surtido** (WMS-14): liberar un pedido crea sus tareas de surtido (lo
+  que caduca antes sale antes, siempre; entre lo demás decide la estrategia que
+  eligió la empresa) y aparta esa mercancía donde está. Desde el
   teléfono, quien surte confirma producto, ubicación y cantidad; si junta
   menos, dice por qué. Lo surtido queda en «Preparación», apartado para el
   pedido, y lo que faltó se libera. El pedido muestra sus tareas y cuánto se
@@ -122,13 +142,16 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
   `/tareas`, `/tareas/[id]` y `/tareas/nueva`, pensadas para el teléfono.
 - **Inicio por rol** (WMS-08): bloque «Para hoy» con mis tareas, tareas
   disponibles, tareas con problema (supervisión) y órdenes por recibir.
-- **Menú por tarea**: Inicio, Tareas, Recepción, Inventario, Movimientos,
-  Conteos, Compras y Configuración; cada quien ve solo lo que su rol permite. En
-  el teléfono, barra inferior con las cuatro primeras secciones.
+- **Menú por tarea**: Inicio, Tareas, Recepción, Pedidos, Inventario, Movimientos,
+  Conteos, Compras, Incidencias y Configuración; cada quien ve solo lo que su rol
+  permite. En el teléfono, barra inferior con cuatro secciones y «Más».
+- **Traslados entre almacenes** (WMS-19): además de la pantalla, la hoja de
+  traslado en PDF (WMS-19B) con lo enviado por renglón, lote y series, lo
+  recibido y las firmas.
 
 ### Calidad del código y operación
 
-- 1,755 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
+- 2,511 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
   de tipos, lint, límites de arquitectura y formato en cada push (CI en GitHub).
 - Accesibilidad WCAG 2.1 AA revisada con axe en las pantallas principales; las
   nuevas (`/tareas`, `/tareas/nueva`, `/recepcion`) ya están en la lista.
@@ -141,37 +164,34 @@ El orden, las dependencias y los criterios de cada paso están en
 `docs/PLAN_WMS_V3.md`, ordenado por las fases de `docs/INSTRUCCIONES_WMS.md`.
 En resumen:
 
-- **Fase 1 (cerrar fundamentos):** parámetros de operación por empresa
-  (WMS-49; incluye volver configurables la estrategia de surtido y la ubicación
-  de preparación de WMS-14), rol de Gerencia (WMS-50), varios almacenes
-  (WMS-18), niveles de ubicación, código y uso (WMS-22A, hecho), capacidad y
-  restricciones (WMS-22B, hecho), lotes,
-  caducidad, series y trazabilidad (WMS-21) y documentación técnica base
-  (WMS-51).
-- **Fase 2 (operación logística):** acomodo con recomendación (WMS-52, hecho), tarimas (WMS-53, hecho; ver `CHANGELOG.md`),
-  (WMS-53), empaque (WMS-15), despacho y embarques (WMS-16), devoluciones de
-  clientes (WMS-17), traslados entre almacenes (WMS-19), cross-docking (WMS-54),
-  conteos cíclicos (WMS-55), etiquetas (WMS-26), cámara (WMS-36), reposición
-  (WMS-23/24) y picking por olas, lotes y zona (WMS-25).
-- **Fase 3 (gestión empresarial):** flujos de aprobación (WMS-56) y ajustes
-  autorizados (WMS-41), solicitudes de compra y comparación de proveedores
-  (WMS-57), campos personalizados (WMS-58), producción y calidad con sus roles
-  (WMS-27..31, WMS-59), API y webhooks (WMS-60), facturación fiscal como módulo
-  independiente (WMS-61), integraciones (WMS-62) y Ventas, pendiente de decisión
-  (WMS-63).
+- **Fase 1 (cerrar fundamentos):** cerrada (WMS-49, 50, 18, 22A, 22B, 21 y 51).
+- **Fase 2 (operación logística):** cerrada (ver `CHANGELOG.md`).
+- **Fase 3 (gestión empresarial):** hechos los flujos de aprobación y ajustes
+  autorizados (WMS-56/41), solicitudes de compra y comparación de proveedores
+  (WMS-57), campos personalizados (WMS-58) y API y webhooks (WMS-60). Falta
+  producción y calidad con sus roles (WMS-27..31, WMS-59, WMS-74, WMS-75 y los
+  demás pasos de la propuesta; el flujo ya está decidido en
+  `docs/flujos/PRODUCCION_CALIDAD.md` y espera que el fundador indique empezar,
+  con WMS-59 primero), facturación fiscal como módulo independiente (WMS-61) e
+  integraciones (WMS-62), con decisión del fundador, y Ventas, pendiente de
+  decisión (WMS-63).
 - **Fase 4 (inteligencia operativa):** indicadores y tableros (WMS-32..34),
   automatizaciones (WMS-64), slotting (WMS-65) y búsqueda global (WMS-66).
-- **Transversal:** PWA, fotos, PIN, incidencias, sesiones del equipo, historial
-  de accesos y alertas, equipos, almacenamiento externo de archivos y ambientes
-  (WMS-35..42, 47, 67, 68).
+- **Transversal:** hechos PWA y cámara (WMS-35/36), incidencias y avisos
+  (WMS-39), PIN en terminales compartidas (WMS-38) y sesiones del equipo
+  (WMS-40). Faltan fotos de evidencia (WMS-37), equipos (WMS-42), historial de
+  accesos y alertas (WMS-68), almacenamiento externo de archivos (WMS-67) y
+  ambientes (WMS-47).
 - **Fase 5 (escalabilidad comercial):** licencias y usuarios adicionales
   (WMS-69), configuración inicial, demo, plantillas por giro, manuales, portal de
   clientes y lo comercial (WMS-43..46, 48, 70).
 
 Ajustes de operación por empresa (WMS-49, hecho): Configuración › Operación
-permite elegir de dónde se surte primero (la ubicación más llena o la menos
-llena) y cuál es la ubicación de preparación. Lo siguiente que variará por
-empresa se agrega ahí.
+permite elegir, entre otras cosas, de dónde se surte primero (la ubicación más
+llena, la menos llena o lo que entró primero), cuál es la ubicación de
+preparación y si se trabaja con tareas de acomodo, tarimas, empaque,
+cross-docking, olas o reposición automática. Lo que varía por empresa se
+agrega ahí; la lista completa está en `docs/arquitectura/modulos/`.
 
 ### Decisiones y tareas del fundador
 
@@ -181,7 +201,7 @@ empresa se agrega ahí.
 - **Precios del WMS.** Siguen los niveles por número de productos que ya
   había; la especificación (13) habla de implementación más suscripción y
   soporte por horas.
-- **Textos legales.** Términos y privacidad versión 2026-11-09 necesitan razón
+- **Textos legales.** Términos y privacidad versión 2026-11-11 necesitan razón
   social y revisión de un abogado.
 - **Decisiones abiertas de la sección 16**: alcance del primer cliente, lectores
   e impresoras a usar, almacenamiento de objetos, proveedor de correo y SLA
