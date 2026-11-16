@@ -16,6 +16,7 @@ import {
   NOTICE_EMAIL_JOB_TYPE,
   NOTICE_EMAIL_MAX_ATTEMPTS,
   memberReaches,
+  modulesFor,
   nextMailAt,
   type NoticeRequirement,
 } from "./notify";
@@ -283,6 +284,7 @@ export async function sendNoticeEmails(
     select: MEMBER_SELECT,
   });
   if (!member) return stop("La persona ya no está en la empresa.");
+  const modules = await modulesFor(client, organizationId, [member]);
 
   const byKey = new Map(options.types.map((type) => [type.key, type]));
   const keep: typeof rows = [];
@@ -329,7 +331,7 @@ export async function sendNoticeEmails(
     } else if (requirement.facilityId) {
       place = { facilityId: requirement.facilityId };
     }
-    if (!memberReaches(member, requirement, place)) {
+    if (!memberReaches(member, requirement, place, modules)) {
       dropped.push({
         id: row.id,
         reason: "La persona ya no tiene permiso o alcance para este aviso.",

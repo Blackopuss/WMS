@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   OWNER_PERMISSIONS,
   PERMISSIONS,
+  ROLE_MODULE,
   ROLE_PERMISSIONS,
   ROLES,
   isPermission,
@@ -30,10 +31,13 @@ const COLUMNS = [
   "operator",
   "forklift",
   "manager",
+  "production_operator",
+  "production_supervisor",
+  "quality_inspector",
 ];
 const rows = [
   ...doc.matchAll(
-    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
+    /^\| `([a-z_.]+)` \|[^\n]*?\| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \| (Sí|No) \|$/gm,
   ),
 ].map(([, id, ...cells]) => ({ id: id!, cells: cells as string[] }));
 
@@ -66,7 +70,7 @@ describe("catalog = approved matrix", () => {
   it("uses stable module.resource.action identifiers", () => {
     for (const permission of PERMISSIONS) {
       expect(permission).toMatch(
-        /^(platform|inventory|purchasing)\.[a-z_]+\.[a-z_]+$/,
+        /^(platform|inventory|purchasing|production|quality)\.[a-z_]+\.[a-z_]+$/,
       );
     }
   });
@@ -216,7 +220,11 @@ describe("Gerencia (WMS-50)", () => {
       );
     }
     for (const permission of PERMISSIONS) {
-      if (/^(inventory|purchasing)\.[a-z_]+\.(read|export)$/.test(permission)) {
+      if (
+        /^(inventory|purchasing|production|quality)\.[a-z_]+\.(read|export)$/.test(
+          permission,
+        )
+      ) {
         expect(of("manager").has(permission)).toBe(true);
       }
     }
@@ -224,6 +232,133 @@ describe("Gerencia (WMS-50)", () => {
     expect(of("manager").has("platform.audit.read")).toBe(true);
     expect(of("manager").has("platform.billing.read")).toBe(false);
     expect(of("manager").has("platform.organization.update")).toBe(false);
+  });
+});
+
+describe("production and quality roles (WMS-59, ADR 0062)", () => {
+  const ofModule = (prefix: string) =>
+    PERMISSIONS.filter((p) => p.startsWith(prefix));
+  const production = ofModule("production.");
+  const quality = ofModule("quality.");
+
+  it("each new role is tied to its module", () => {
+    expect(ROLE_MODULE).toEqual({
+      production_operator: "production",
+      production_supervisor: "production",
+      quality_inspector: "quality",
+    });
+  });
+
+  it("titular and Administrador get every permission of both modules", () => {
+    for (const p of [...production, ...quality]) {
+      expect(OWNER_PERMISSIONS).toContain(p);
+      expect(of("administrator").has(p)).toBe(true);
+    }
+  });
+
+  it("no new role reads costs, writes the catalog, corrects stock or manages the team", () => {
+    for (const role of [
+      "production_operator",
+      "production_supervisor",
+      "quality_inspector",
+    ] as const) {
+      for (const p of of(role)) {
+        expect(p, role).not.toMatch(/\.cost\./);
+        expect(p, role).toMatch(
+          /^(platform\.(organization|module)\.read|inventory\.[a-z_]+\.read|inventory\.(task\.execute|incident\.create)|production\.|quality\.)/,
+        );
+      }
+      expect(of(role).has("inventory.adjustment.create")).toBe(false);
+      expect(of(role).has("inventory.movement.reverse")).toBe(false);
+    }
+  });
+
+  it("Operario reports and asks; it never runs orders, verifies or decides", () => {
+    for (const p of [
+      "production.report.create",
+      "production.request.create",
+      "production.scrap.create",
+      "inventory.task.execute",
+    ] as Permission[]) {
+      expect(of("production_operator").has(p)).toBe(true);
+    }
+    for (const p of [
+      "production.order.create",
+      "production.order.release",
+      "production.order.cancel",
+      "production.order.close",
+      "production.recipe.manage",
+      "production.request.decide",
+      "production.output.verify",
+      "production.report.reverse",
+      "inventory.status.release",
+    ] as Permission[]) {
+      expect(of("production_operator").has(p)).toBe(false);
+    }
+    for (const p of quality) {
+      expect(of("production_operator").has(p)).toBe(false);
+    }
+  });
+
+  it("Encargado runs production and decides with the stock in sight (P7)", () => {
+    for (const p of production) {
+      expect(of("production_supervisor").has(p)).toBe(true);
+    }
+    expect(of("production_supervisor").has("inventory.stock.read")).toBe(true);
+    expect(of("production_supervisor").has("inventory.minimum.read")).toBe(
+      true,
+    );
+    expect(of("production_supervisor").has("inventory.task.execute")).toBe(
+      false,
+    );
+  });
+
+  it("Inspector inspects and releases; it never reports or runs orders", () => {
+    for (const p of [
+      "quality.inspection.read",
+      "quality.inspection.create",
+      "quality.inspection.decide",
+      "quality.lot.release",
+      "quality.plan.read",
+    ] as Permission[]) {
+      expect(of("quality_inspector").has(p)).toBe(true);
+    }
+    expect(of("quality_inspector").has("quality.plan.manage")).toBe(false);
+    for (const p of production) {
+      expect(of("quality_inspector").has(p)).toBe(
+        p === "production.order.read",
+      );
+    }
+  });
+
+  it("Almacén and Supervisor de almacén decide requests but get no power over orders (P7c, P7d)", () => {
+    for (const role of ["warehouse", "supervisor"] as const) {
+      expect(
+        [...of(role)].filter((p) => p.startsWith("production.")).sort(),
+      ).toEqual([
+        "production.order.read",
+        "production.recipe.read",
+        "production.request.decide",
+        "production.request.read",
+      ]);
+      for (const p of quality) expect(of(role).has(p)).toBe(false);
+    }
+  });
+
+  it("Almacenista, Montacarguista and Comprador get nothing of either module", () => {
+    for (const role of ["operator", "forklift", "buyer"] as const) {
+      for (const p of [...production, ...quality]) {
+        expect(of(role).has(p), `${role} ${p}`).toBe(false);
+      }
+    }
+  });
+
+  it("Consulta and Gerencia only read both modules", () => {
+    for (const role of ["viewer", "manager"] as const) {
+      for (const p of [...production, ...quality]) {
+        expect(of(role).has(p), `${role} ${p}`).toBe(p.endsWith(".read"));
+      }
+    }
   });
 });
 

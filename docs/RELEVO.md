@@ -14,13 +14,12 @@ para arrancar sin releer la conversación anterior.
   del equipo), WMS-39B (avisos por correo y resumen diario) y WMS-60 (API y
   webhooks). Fuera de lo que él pidió, un chat nuevo pregunta qué sigue; no
   retoma el plan por su cuenta.
-- **En curso (2026-11-16): WMS-59 (roles de producción y calidad).** El
-  fundador indicó empezar producción y calidad ese día, en el orden de la
-  sección 12 de la propuesta, un paso a la vez y sin empezar el siguiente sin
-  avisarle. Lo implementa un chat nuevo de Opus en la rama
-  `wms-59-roles-produccion-calidad`; quien coordina revisa, manda a un revisor
-  independiente y une.
+- **Cerrado el 2026-11-16: WMS-59 (roles de producción y calidad, ADR 0062).**
+  El fundador indicó empezar producción y calidad ese día, en el orden de la
+  sección 12 de la propuesta. Los módulos quedan anunciados hasta WMS-27
+  (Producción) y WMS-30A (Calidad).
 - **También en curso: WMS-37 (fotos)**, rama `wms-37-fotos-evidencia`. **Pasos en paralelo (fundador, 2026-11-16, más tarde):** con la misma forma de trabajo, se abren a la vez los pasos cuyas dependencias ya están implementadas, cada uno en su chat y su rama independiente, y se unen a `pruebas` de uno en uno; esto reemplaza «un paso a la vez» (quien coordina avisa al abrir cada uno). Abierto por eso WMS-37 (fotos, rama `wms-37-fotos-evidencia`), que no depende de nada; al unirse WMS-59 se abren WMS-27, WMS-30A y WMS-30-0, y al unirse WMS-37, WMS-74. Los pasos «corazón» siguen yendo uno tras otro.
+- **También en curso: WMS-68 y WMS-42.** **Transversales (fundador, 2026-11-16):** (WMS-68) un acceso es sospechoso por dispositivo o navegador nuevo y por muchos intentos fallidos; **sin país por IP por ahora** (sin base de países ni servicio externo): el país se agrega cuando haya servidor detrás de Cloudflare, que lo manda en una cabecera. (WMS-42) primera entrega con **registro y tareas**: registro de equipos (el tipo lo pone cada empresa), mantenimiento e incidencias, y además la tarea puede pedir un tipo de equipo y quien la toma dice cuál usa; como toca tareas, cuenta como paso «corazón». (WMS-67) **el almacenamiento externo será Cloudflare R2** («se piensa utilizar el R2 de Cloudflare»); se construye compatible con S3 pensando en R2, después de unir WMS-37 porque toca la misma área de archivos. Abiertos ese día, cada uno en su chat y su rama: WMS-68 (`wms-68-historial-accesos`) y WMS-42 (`wms-42-equipos`); mientras WMS-42 no se una, WMS-30-0 espera y WMS-27 y WMS-30A sí avanzan.
 - **Cerrado antes:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
   unido el 2026-11-14 tras tres vueltas de revisión de seguridad, y la
   propuesta de producción y calidad está unida en su sexta versión
@@ -36,7 +35,8 @@ para arrancar sin releer la conversación anterior.
   ≥ 44 px» en teléfono en `verify:a11y` (sin comprobar desde cuándo), y
   `/inventario/nuevo` tiene un aviso de React por `key` faltante en un
   `NativeSelect` de `product-form.tsx` que hace fallar «foco visible» en modo
-  desarrollo. Ninguna es de los pasos de hoy. Además, **CI roza su límite de
+  desarrollo. Ninguna es de los pasos de hoy. CI ya tiene límite de 30 minutos
+  (WMS-59); antes **rozaba su límite de
   20 minutos**: el 2026-11-15 una corrida de `main` se canceló con todos sus
   pasos en verde y otra tardó 17 minutos y medio. Si una corrida aparece
   «cancelled» con sus pasos en verde, es eso (se repite con
