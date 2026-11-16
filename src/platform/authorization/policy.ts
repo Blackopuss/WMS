@@ -228,11 +228,12 @@ export const TERMINAL_COST_PERMISSIONS: readonly Permission[] = [
 
 /**
  * Work that belongs at a desk, not at a shared device of the floor: the
- * standard recipe of a product (WMS-27, ADR 0066) is read there, never
- * changed.
+ * standard recipe of a product (WMS-27, ADR 0066) and the inspection plans
+ * and defects of Calidad (WMS-30A, ADR 0067) are read there, never changed.
  */
 export const TERMINAL_DESK_ONLY: readonly Permission[] = [
   "production.recipe.manage",
+  "quality.plan.manage",
 ];
 
 /** True when a PIN session keeps this permission of its roles. */

@@ -5,9 +5,9 @@ import { PERMISSIONS } from "@/platform/authorization";
 
 import { moduleRegistry } from "./index";
 
-// MOD-02: the real registry starts, with Inventario, Compras and
-// Producción (since WMS-27) available, and Calidad (WMS-59) and CRM
-// announced but not contractable (Ventas was removed, WMS-02).
+// MOD-02: the real registry starts, with Inventario, Compras, Producción
+// and Calidad (WMS-30A) available and CRM announced but not contractable
+// (Ventas was removed, WMS-02).
 
 describe("installed modules", () => {
   it("starts with the five modules installed today", () => {
@@ -28,21 +28,20 @@ describe("installed modules", () => {
     expect(moduleRegistry.dependentsOf("production").map((m) => m.id)).toEqual([
       "quality",
     ]);
-    // Producción is available since WMS-27 (recipes, ADR 0066); Calidad
-    // stays announced until WMS-30A leaves something to use.
-    expect(moduleRegistry.get("production").availability).toBe("available");
-    expect(moduleRegistry.get("quality").availability).toBe("unavailable");
+    // Available since their first steps (WMS-27, WMS-30A).
     for (const id of ["production", "quality"]) {
+      expect(moduleRegistry.get(id).availability, id).toBe("available");
       expect(moduleRegistry.get(id).permissions.length, id).toBeGreaterThan(0);
     }
   });
 
-  it("Inventario is the base; Inventario, Compras and Producción can be contracted", () => {
+  it("Inventario is the base; Inventario, Compras, Producción and Calidad can be contracted", () => {
     expect(moduleRegistry.base.id).toBe("inventory");
     expect(moduleRegistry.available.map((m) => m.id).sort()).toEqual([
       "inventory",
       "production",
       "purchasing",
+      "quality",
     ]);
   });
 
@@ -63,7 +62,7 @@ describe("installed modules", () => {
         .filter((m) => m.availability === "available")
         .map((m) => m.id)
         .sort(),
-    ).toEqual(["production", "purchasing"]);
+    ).toEqual(["production", "purchasing", "quality"]);
   });
 
   it("every business permission of the catalog belongs to exactly one module", () => {

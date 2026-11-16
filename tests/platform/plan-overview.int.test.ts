@@ -75,7 +75,7 @@ describe("getPlanOverview", () => {
       ["inventory", "available"],
       ["purchasing", "available"],
       ["production", "available"],
-      ["quality", "unavailable"],
+      ["quality", "available"],
       ["crm", "unavailable"],
     ]);
   });
@@ -115,7 +115,7 @@ describe("getPlanOverview", () => {
         { name: "Inventario", state: "active" },
         { name: "Compras", state: "available" },
         { name: "Producción", state: "available" },
-        { name: "Calidad", state: "unavailable" },
+        { name: "Calidad", state: "available" },
         { name: "CRM", state: "unavailable" },
       ],
     );

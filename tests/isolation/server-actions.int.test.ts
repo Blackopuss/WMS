@@ -1275,6 +1275,62 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create; solo se ligan fotos de esa empresa subidas por la misma persona y sin ligar",
     coveredBy: "tests/inventory/incidents.int.test.ts",
   },
+  startDraftAction: {
+    input: "producto (fijado por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage con Calidad activa y bloquea el producto y su plan solo en esa empresa",
+    coveredBy: "tests/quality/plans.int.test.ts",
+  },
+  updateDraftAction: {
+    input:
+      "producto y borrador (fijados por la página), revisión de calidad, regla y tamaño de la muestra y a qué aplica",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y busca y bloquea el plan del borrador solo en esa empresa",
+    coveredBy: "tests/quality/plans.int.test.ts",
+  },
+  addPointAction: {
+    input:
+      "producto y borrador (fijados por la página), nombre, tipo, obligatorio, foto, rango, unidad y opciones del punto",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea el plan del borrador solo en esa empresa",
+    coveredBy: "tests/quality/plans.int.test.ts",
+  },
+  removePointAction: {
+    input: "producto y punto (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y busca el punto y bloquea su plan solo en esa empresa",
+    coveredBy: "tests/quality/plans.int.test.ts",
+  },
+  publishDraftAction: {
+    input: "producto y borrador (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea producto y plan solo en esa empresa",
+    coveredBy: "tests/quality/plans.int.test.ts",
+  },
+  discardDraftAction: {
+    input: "producto y borrador (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea el plan solo en esa empresa",
+    coveredBy: "tests/quality/plans.int.test.ts",
+  },
+  createDefectAction: {
+    input: "nombre y gravedad del defecto",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage con Calidad activa y escribe solo en esa empresa",
+    coveredBy: "tests/quality/defects.int.test.ts",
+  },
+  updateDefectAction: {
+    input: "defecto (fijado por la página), nombre y gravedad",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea el defecto solo en esa empresa",
+    coveredBy: "tests/quality/defects.int.test.ts",
+  },
+  setDefectArchivedAction: {
+    input: "defecto y archivar o volver a usar (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea el defecto solo en esa empresa",
+    coveredBy: "tests/quality/defects.int.test.ts",
+  },
   uploadIncidentPhotoAction: {
     input:
       "una foto (FormData «photo»); nombre y bytes, el tipo lo decide el servidor por el contenido",

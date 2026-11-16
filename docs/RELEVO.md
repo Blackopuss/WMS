@@ -24,7 +24,7 @@ id de sesión para que reporten ahí**):
 | Paso | Sesión | Rama | Estado |
 | --- | --- | --- | --- |
 | WMS-27 recetas (ADR 0066) | — | `wms-27-recetas` | **Cerrado y unido el 2026-11-16.** |
-| WMS-30A planes de inspección (ADR 0067) | `session_01QMjUPVDkmoZpfPpp2x5Q7B` | `wms-30a-planes-inspeccion` | Corrigiendo la primera vuelta (vigente fuera de las 50 versiones leídas, tope de defectos sin candado, muestra y paso del producto, `inspectionPlanFor` con empresa, migración a `20261116233000`). Cuando WMS-27 se una, avisarle que traiga `pruebas` otra vez (chocan el contrato de Producción y tres pruebas). |
+| WMS-30A planes de inspección (ADR 0067) | — | `wms-30a-planes-inspeccion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-30-0 recibir en inspección, desechar, retención (ADR 0068) | `session_01QMjUPXSxZtmZAnShDUjdgp` | `wms-30-0-inspeccion-al-recibir` | Implementando. **Corazón:** revisor independiente con ejecución de pruebas y `stock:reconcile`. Partió de `7c265a9`: tendrá que traer `pruebas`. |
 | WMS-74 motor de procesos (ADR 0069) | `session_01QMjUPWrrjBJrhqeh1iMJQh` | `wms-74-motor-procesos` | Implementando (se prueba con un documento de prueba; ningún módulo declara documentos todavía). |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | `session_01QMjUPVpy6QspY4w8vU81g8` | `wms-67-almacenamiento-externo` | Implementando. Si pide un script nuevo en `package.json`, lo agrega quien coordina al integrar. |

@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-121 tablas en 30 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+127 tablas en 31 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -35,6 +35,7 @@
 | Inventario › Equipos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
+| Calidad | 6 | [quality](modulos/quality.md) |
 | Producción | 5 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
@@ -2988,6 +2989,148 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `PurchaseOrderStatus`: `DRAFT`, `SENT`, `PARTIAL`, `RECEIVED`, `CANCELLED`, `CLOSED`.
 - `PurchaseRequestStatus`: `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, `CONVERTED`, `CANCELLED`.
 - `PurchaseOrderDeliveryStatus`: `QUEUED`, `SENT`, `FAILED`.
+
+## Calidad
+
+Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A).
+
+Documento: [modulos/quality.md](modulos/quality.md).
+
+### QualityPlan · `quality_plan`
+
+The inspection plan of a product: one per product, with its versions. Never deleted; the product never changes (trigger).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `productId`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### QualityPlanVersion · `quality_plan_version`
+
+A version of an inspection plan. Only a draft changes; publishing retires the one in force (triggers). `draftPlanId` and `activePlanId` hold the plan only while the version is a draft or in force, so a plan has at most one of each.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `planId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `status` | `QualityPlanStatus` | `DRAFT` |  |
+| `draftPlanId` | `String? · Char(36)` |  |  |
+| `activePlanId` | `String? · Char(36)` |  |  |
+| `sampling` | `QualitySampling` | `DEFAULT` |  |
+| `sampleRule` | `QualitySampleRule?` |  |  |
+| `sampleQuantity` | `Decimal? · Decimal(15, 3)` |  | FIXED: how much is checked, in the unit of the product. |
+| `samplePercent` | `Int?` |  | PERCENT: share of what is verified (1 to 100), at least `sampleMin` and at most `sampleMax` (optional). |
+| `sampleMin` | `Decimal? · Decimal(15, 3)` |  |  |
+| `sampleMax` | `Decimal? · Decimal(15, 3)` |  |  |
+| `forProduced` | `Boolean` | `true` |  |
+| `forReceived` | `Boolean` | `true` |  |
+| `forReturned` | `Boolean` | `true` |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `publishedByUserId` | `String? · Char(36)` |  |  |
+| `publishedAt` | `DateTime? · DateTime(3)` |  |  |
+| `closedByUserId` | `String? · Char(36)` |  | When it was retired or discarded, and by whom. |
+| `closedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `planId`, `number`); (`organizationId`, `draftPlanId`); (`organizationId`, `activePlanId`).
+- Relaciones: `plan` → `QualityPlan` por (`organizationId`, `planId`) (al borrar: Restrict).
+
+### QualityPlanPoint · `quality_plan_point`
+
+A check point of a version. Written or removed only while its version is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `position` | `Int` |  |  |
+| `label` | `String · VarChar(80)` |  |  |
+| `kind` | `QualityPointKind` |  |  |
+| `required` | `Boolean` | `true` |  |
+| `photo` | `Boolean` | `false` | The inspector attaches a photo for it (WMS-30B, with WMS-37). |
+| `minValue` | `Decimal? · Decimal(19, 4)` |  | NUMBER: acceptable range (either end optional, at least one). |
+| `maxValue` | `Decimal? · Decimal(19, 4)` |  |  |
+| `unitLabel` | `String? · VarChar(20)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `versionId`, `label`).
+- Índices: (`organizationId`, `versionId`, `position`).
+- Relaciones: `version` → `QualityPlanVersion` por (`organizationId`, `versionId`) (al borrar: Restrict).
+
+### QualityPlanPointOption · `quality_plan_point_option`
+
+An option of a «one of a list» point, and whether choosing it passes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `pointId` | `String · Char(36)` |  |  |
+| `position` | `Int` |  |  |
+| `label` | `String · VarChar(60)` |  |  |
+| `acceptable` | `Boolean` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `pointId`, `label`).
+- Relaciones: `point` → `QualityPlanPoint` por (`organizationId`, `pointId`) (al borrar: Restrict).
+
+### QualityDefect · `quality_defect`
+
+A defect the company recognizes (WMS-30A), named freely. Renamed or archived, never deleted (trigger): an inspection that named it keeps naming it.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(60)` |  | Unique in the company without capitals or accents (the collation). |
+| `severity` | `QualityDefectSeverity` | `MAJOR` |  |
+| `archivedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `name`).
+- Índices: (`organizationId`, `archivedAt`, `name`).
+
+### QualityDefectCatalog · `quality_defect_catalog`
+
+One row per company, locked by whoever changes how many defects are in use (adding or bringing one back), so the cap holds with requests at once (WMS-30A). Created the first time it is needed; never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); `organizationId`.
+
+#### Enumeraciones de Calidad
+
+- `QualityPlanStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.
+- `QualitySampling`: `DEFAULT`, `FULL`, `SAMPLE`.
+- `QualitySampleRule`: `FIXED`, `PERCENT`.
+- `QualityPointKind`: `CHECK`, `NUMBER`, `CHOICE`, `TEXT`.
+- `QualityDefectSeverity`: `MINOR`, `MAJOR`, `CRITICAL`.
 
 ## Producción
 

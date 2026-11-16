@@ -201,6 +201,22 @@ describe("shared terminal (WMS-38)", () => {
     expect(can(titular, "production.recipe.read")).toBe(true);
   });
 
+  it("reads inspection plans and defects and never changes them (WMS-30A)", () => {
+    const admin = member("administrator");
+    const atTerminal: Subject = { ...admin, terminal: true };
+    expect(can(admin, "quality.plan.manage")).toBe(true);
+    expect(can(atTerminal, "quality.plan.manage")).toBe(false);
+    expect(can(atTerminal, "quality.plan.read")).toBe(true);
+    const titular: Subject = { ...owner(), terminal: true };
+    expect(can(titular, "quality.plan.manage")).toBe(false);
+    expect(can(titular, "quality.plan.read")).toBe(true);
+    const inspector: Subject = {
+      ...member("quality_inspector"),
+      terminal: true,
+    };
+    expect(can(inspector, "quality.plan.read")).toBe(true);
+  });
+
   it("applies on top of an API key's cut, never instead of it (WMS-60)", () => {
     const both: Subject = {
       isOwner: false,

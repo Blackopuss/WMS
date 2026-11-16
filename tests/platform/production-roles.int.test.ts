@@ -114,14 +114,17 @@ afterAll(async () => {
 });
 
 describe("Calidad depends on Producción (D9, NEG-31)", () => {
-  it("Calidad is announced: nothing activates it yet; Producción is available (WMS-27)", async () => {
-    const { org } = await newCompany("Empresa anunciada", []);
+  it("both modules can be contracted, Calidad only after Producción (WMS-30A)", async () => {
+    const { org } = await newCompany("Empresa con calidad", []);
     expect(
       await activateModule(moduleRegistry, change(org, "quality")),
-    ).toMatchObject({ ok: false, reason: "unavailable" });
-    expect(
-      await activateModule(moduleRegistry, change(org, "production")),
-    ).toMatchObject({ ok: true });
+    ).toMatchObject({ ok: false, reason: "missing_dependencies" });
+    for (const moduleId of ["production", "quality"]) {
+      expect(
+        await activateModule(moduleRegistry, change(org, moduleId)),
+        moduleId,
+      ).toEqual({ ok: true });
+    }
   });
 
   it("Calidad is refused without Producción, then works with it", async () => {
