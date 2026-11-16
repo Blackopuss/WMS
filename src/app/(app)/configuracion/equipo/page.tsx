@@ -5,7 +5,7 @@ import Link from "next/link";
 import { NoAccessState, PageContainer, PageHeader } from "@/components";
 import {
   ROLE_LABELS,
-  ROLE_MODULE,
+  companyModules,
   assignableRoles,
   checkTeamChange,
   getAccess,
@@ -61,17 +61,16 @@ export default async function EquipoPage() {
       : Promise.resolve([]),
   ]);
 
+  // Roles tied to a module only once the company has it (WMS-59): the
+  // team rules decide it from the company's modules, here and on save.
+  const modules = await getModuleAccess();
   const me = {
     userId: access.user.id,
     isOwner: access.organization.isOwner,
     roles: access.roles,
+    modules: companyModules(modules.entitlements),
   };
-  // Cajero and Encargado de caja only once Ventas is contracted (VEN-02).
-  const modules = await getModuleAccess();
-  const offered = assignableRoles(me).filter((role) => {
-    const needs = ROLE_MODULE[role];
-    return !needs || modules.moduleState(needs) !== "none";
-  });
+  const offered = assignableRoles(me);
   const roleOptions = offered.map((role) => ({
     id: role,
     label: ROLE_LABELS[role],

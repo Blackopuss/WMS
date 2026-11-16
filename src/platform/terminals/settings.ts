@@ -15,13 +15,13 @@ export const PIN_ROLES: SettingDefinition = {
   options: [
     {
       value: "floor",
-      label: "Almacenistas y montacarguistas",
-      help: "Solo el personal de piso.",
+      label: "Personal de piso",
+      help: "Almacenistas, montacarguistas, operarios de producción e inspectores de calidad.",
     },
     {
       value: "floor_supervision",
       label: "Piso y supervisión",
-      help: "Además Supervisor de almacén y Almacén.",
+      help: "Además Supervisor de almacén, Almacén y Encargado de producción.",
     },
     {
       value: "without_mfa",

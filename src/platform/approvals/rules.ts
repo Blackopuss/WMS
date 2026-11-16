@@ -5,6 +5,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import {
   ROLES,
   ROLE_LABELS,
+  ROLE_MODULE,
   ROLE_PERMISSIONS,
   isRole,
   type Role,
@@ -46,15 +47,24 @@ export function parseRoles(raw: string): Role[] {
   return ROLES.filter((role) => listed.has(role));
 }
 
-/** Roles that could decide a type: they hold what deciding takes. */
+/**
+ * Roles that could decide a type: they hold what deciding takes. A role
+ * tied to a module (WMS-59) only while the company has that module in
+ * full use (`activeModules`; absent = none).
+ */
 export function rolesThatMayDecide(
   type: Pick<ApprovalType, "decidePermissions">,
+  activeModules?: ReadonlySet<string>,
 ): Role[] {
-  return ROLES.filter((role) =>
-    type.decidePermissions.every((permission) =>
+  return ROLES.filter((role) => {
+    const needs = ROLE_MODULE[role];
+    if (needs !== undefined && activeModules?.has(needs) !== true) {
+      return false;
+    }
+    return type.decidePermissions.every((permission) =>
       ROLE_PERMISSIONS[role].includes(permission),
-    ),
-  );
+    );
+  });
 }
 
 /** The rule of a type for the company of `client`; read it where it decides. */
@@ -112,10 +122,12 @@ export async function getApprovalRules(
       label: type.label,
       description: type.description,
       ...(await readApprovalRule(client, type.key)),
-      roleOptions: rolesThatMayDecide(type).map((role) => ({
-        role,
-        label: ROLE_LABELS[role],
-      })),
+      roleOptions: rolesThatMayDecide(type, entitlements.modules).map(
+        (role) => ({
+          role,
+          label: ROLE_LABELS[role],
+        }),
+      ),
       settingKeys: (type.settings ?? []).map((setting) => setting.key),
     })),
   );
@@ -146,8 +158,8 @@ export async function updateApprovalRule(
   await assertModulePermission(actor.organizationId, actor.userId, PERMISSION);
   const type = types.find((each) => each.key === String(key));
   if (!type) return { ok: false, error: "Ese tipo de aprobación no existe." };
+  const entitlements = await getEntitlements(actor.organizationId);
   if (type.module) {
-    const entitlements = await getEntitlements(actor.organizationId);
     if (!entitlements.hasModule(type.module)) {
       return {
         ok: false,
@@ -161,7 +173,7 @@ export async function updateApprovalRule(
   if (listed.some((role) => !isRole(role))) {
     return { ok: false, error: "Elige roles de la lista." };
   }
-  const allowed = new Set(rolesThatMayDecide(type));
+  const allowed = new Set(rolesThatMayDecide(type, entitlements.modules));
   const cannot = listed.filter((role) => !allowed.has(role as Role));
   if (cannot.length > 0) {
     return {

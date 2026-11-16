@@ -13,6 +13,12 @@ const ROLE_HINTS: Record<string, string> = {
     "Recibe, guarda, surte y cuenta. No corrige existencias ni ve costos.",
   forklift: "Solo ve y hace las tareas de mover que le tocan.",
   manager: "Ve y descarga todo, incluidos costos. No cambia nada.",
+  production_operator:
+    "Reporta lo que produce y pide producción. No crea órdenes ni ve costos.",
+  production_supervisor:
+    "Manda las órdenes de su área y decide las solicitudes. No ve costos.",
+  quality_inspector:
+    "Cuenta, inspecciona y libera lo producido. No produce ni ve costos.",
 };
 
 /** Role choices as large checkboxes; several roles join their permissions. */

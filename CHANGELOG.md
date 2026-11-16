@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-59** Roles de producción y calidad: contratos de los módulos Producción
+  y Calidad (anunciados), sus permisos y los roles Operario de producción,
+  Encargado de producción e Inspector de calidad, ligados a su módulo. ADR 0062.
+  CI con límite de 30 minutos.
 - Revisión de la documentación: `docs/ESTADO_WMS.md`, el plan, la memoria y el
   relevo al día; el fundador contestó P7d y P8d y la propuesta de producción y
   calidad quedó sin preguntas abiertas.

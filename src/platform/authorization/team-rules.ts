@@ -12,8 +12,17 @@
  * - And for closing someone's sessions from the team screen (WMS-40): never
  *   the titular's, never one's own (that is «Sesiones activas» and «Cerrar
  *   sesión»), an administrator's only by the titular.
+ * - A role tied to a module (WMS-59, ADR 0062) is not handed out unless the
+ *   company has that module in full use (`actor.modules`); one the person
+ *   already has may stay when other roles change.
  */
-import { ROLES, isRole, type Permission, type Role } from "./catalog";
+import {
+  ROLES,
+  ROLE_MODULE,
+  isRole,
+  type Permission,
+  type Role,
+} from "./catalog";
 import { can, type Subject } from "./policy";
 
 export type TeamPerson = Subject & { userId: string };
@@ -31,7 +40,8 @@ export type TeamRuleReason =
   | "owner_protected"
   | "self"
   | "administrator_reserved"
-  | "invalid_roles";
+  | "invalid_roles"
+  | "module_missing";
 
 export type TeamRuleResult =
   { ok: true } | { ok: false; reason: TeamRuleReason };
@@ -44,6 +54,8 @@ export const TEAM_RULE_MESSAGES: Record<TeamRuleReason, string> = {
   administrator_reserved:
     "Solo el titular puede nombrar, cambiar o quitar administradores.",
   invalid_roles: "Elige al menos un rol válido.",
+  module_missing:
+    "Ese rol necesita un módulo que tu empresa no tiene contratado.",
 };
 
 const PERMISSION_OF: Record<TeamChange["kind"], Permission> = {
@@ -59,13 +71,27 @@ const deny = (reason: TeamRuleReason): TeamRuleResult => ({
   reason,
 });
 
-/** Roles a person may hand out: the titular all, an administrator all but administrator. */
+/**
+ * True when the company has the module a role needs in full use (or it
+ * needs none): a module removed or with the plan ended (read-only) does
+ * not hand out new roles.
+ */
+function moduleOfRoleIsThere(actor: Subject, role: string): boolean {
+  const needs = isRole(role) ? ROLE_MODULE[role] : undefined;
+  return needs === undefined || actor.modules?.get(needs) === "active";
+}
+
+/**
+ * Roles a person may hand out: the titular all, an administrator all but
+ * administrator; neither a role whose module the company lacks (WMS-59).
+ */
 export function assignableRoles(actor: Subject): Role[] {
   if (!can(actor, "platform.team.assign_roles")) return [];
-  const all: Role[] = [...ROLES];
-  return actor.isOwner === true
-    ? all
-    : all.filter((r) => r !== "administrator");
+  return ROLES.filter(
+    (role) =>
+      (actor.isOwner === true || role !== "administrator") &&
+      moduleOfRoleIsThere(actor, role),
+  );
 }
 
 export function checkTeamChange(
@@ -92,11 +118,17 @@ export function checkTeamChange(
     if (target.roles.includes("administrator")) {
       return deny("administrator_reserved");
     }
-    if (change.kind === "assign_roles") {
-      const allowed = new Set<string>(assignableRoles(actor));
-      if (!change.roles.every((role) => allowed.has(role))) {
-        return deny("administrator_reserved");
-      }
+    if (
+      change.kind === "assign_roles" &&
+      change.roles.includes("administrator")
+    ) {
+      return deny("administrator_reserved");
+    }
+  }
+  if (change.kind === "assign_roles") {
+    const added = change.roles.filter((role) => !target.roles.includes(role));
+    if (!added.every((role) => moduleOfRoleIsThere(actor, role))) {
+      return deny("module_missing");
     }
   }
   return { ok: true };
@@ -117,6 +149,9 @@ export function checkInvitationRoles(
   }
   if (actor.isOwner !== true && roles.includes("administrator")) {
     return deny("administrator_reserved");
+  }
+  if (!roles.every((role) => moduleOfRoleIsThere(actor, role))) {
+    return deny("module_missing");
   }
   return { ok: true };
 }

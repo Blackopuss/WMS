@@ -17,6 +17,9 @@ export const ROLES = [
   "operator",
   "forklift",
   "manager",
+  "production_operator",
+  "production_supervisor",
+  "quality_inspector",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -30,15 +33,23 @@ export const ROLE_LABELS: Record<Role, string> = {
   operator: "Almacenista",
   forklift: "Montacarguista",
   manager: "Gerencia",
+  production_operator: "Operario de producción",
+  production_supervisor: "Encargado de producción",
+  quality_inspector: "Inspector de calidad",
 };
 
 /**
- * Roles that only make sense with a module contracted (VEN-02; none since
- * Ventas was removed, WMS-02): the team
- * screen offers them only then. Without the module they grant nothing of
- * it — only reading products — so assigning one is never a way in.
+ * Roles that only make sense with a module contracted (WMS-59, ADR 0062):
+ * the team screen offers them only then, the team rules refuse handing
+ * them out without it, and the policy gives them nothing without it — not
+ * even the Inventario reads they carry (`Subject.modules`). With the module
+ * in read-only they keep only their reads and exports.
  */
-export const ROLE_MODULE: Partial<Record<Role, string>> = {};
+export const ROLE_MODULE: Partial<Record<Role, string>> = {
+  production_operator: "production",
+  production_supervisor: "production",
+  quality_inspector: "quality",
+};
 
 export const PERMISSIONS = [
   "platform.organization.read",
@@ -162,6 +173,27 @@ export const PERMISSIONS = [
   "inventory.incident.manage",
   "inventory.equipment.read",
   "inventory.equipment.manage",
+  "production.recipe.read",
+  "production.recipe.manage",
+  "production.order.read",
+  "production.order.create",
+  "production.order.release",
+  "production.order.cancel",
+  "production.order.close",
+  "production.request.read",
+  "production.request.create",
+  "production.request.decide",
+  "production.report.create",
+  "production.report.reverse",
+  "production.scrap.create",
+  "production.shift.manage",
+  "production.output.verify",
+  "quality.inspection.read",
+  "quality.inspection.create",
+  "quality.inspection.decide",
+  "quality.lot.release",
+  "quality.plan.read",
+  "quality.plan.manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -287,6 +319,27 @@ export const OWNER_PERMISSIONS: readonly Permission[] = [
   "inventory.incident.manage",
   "inventory.equipment.read",
   "inventory.equipment.manage",
+  "production.recipe.read",
+  "production.recipe.manage",
+  "production.order.read",
+  "production.order.create",
+  "production.order.release",
+  "production.order.cancel",
+  "production.order.close",
+  "production.request.read",
+  "production.request.create",
+  "production.request.decide",
+  "production.report.create",
+  "production.report.reverse",
+  "production.scrap.create",
+  "production.shift.manage",
+  "production.output.verify",
+  "quality.inspection.read",
+  "quality.inspection.create",
+  "quality.inspection.decide",
+  "quality.lot.release",
+  "quality.plan.read",
+  "quality.plan.manage",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
@@ -402,6 +455,27 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.incident.manage",
     "inventory.equipment.read",
     "inventory.equipment.manage",
+    "production.recipe.read",
+    "production.recipe.manage",
+    "production.order.read",
+    "production.order.create",
+    "production.order.release",
+    "production.order.cancel",
+    "production.order.close",
+    "production.request.read",
+    "production.request.create",
+    "production.request.decide",
+    "production.report.create",
+    "production.report.reverse",
+    "production.scrap.create",
+    "production.shift.manage",
+    "production.output.verify",
+    "quality.inspection.read",
+    "quality.inspection.create",
+    "quality.inspection.decide",
+    "quality.lot.release",
+    "quality.plan.read",
+    "quality.plan.manage",
   ],
   warehouse: [
     "platform.organization.read",
@@ -473,6 +547,10 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.incident.manage",
     "inventory.equipment.read",
     "inventory.equipment.manage",
+    "production.recipe.read",
+    "production.order.read",
+    "production.request.read",
+    "production.request.decide",
   ],
   buyer: [
     "platform.organization.read",
@@ -548,6 +626,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.request.read",
     "inventory.incident.read",
     "inventory.equipment.read",
+    "production.recipe.read",
+    "production.order.read",
+    "production.request.read",
+    "quality.inspection.read",
+    "quality.plan.read",
   ],
   supervisor: [
     "platform.organization.read",
@@ -626,6 +709,10 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.incident.manage",
     "inventory.equipment.read",
     "inventory.equipment.manage",
+    "production.recipe.read",
+    "production.order.read",
+    "production.request.read",
+    "production.request.decide",
   ],
   operator: [
     "platform.organization.read",
@@ -722,6 +809,76 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.request.read",
     "inventory.incident.read",
     "inventory.equipment.read",
+    "production.recipe.read",
+    "production.order.read",
+    "production.request.read",
+    "quality.inspection.read",
+    "quality.plan.read",
+  ],
+  // WMS-59 (ADR 0062): tied to their module (ROLE_MODULE); without it they
+  // give nothing. None of them reads costs.
+  production_operator: [
+    "platform.organization.read",
+    "platform.module.read",
+    "inventory.product.read",
+    "inventory.unit.read",
+    "inventory.presentation.read",
+    "inventory.location.read",
+    "inventory.stock.read",
+    "inventory.task.read",
+    "inventory.task.execute",
+    "inventory.incident.read",
+    "inventory.incident.create",
+    "production.recipe.read",
+    "production.order.read",
+    "production.request.read",
+    "production.request.create",
+    "production.report.create",
+    "production.scrap.create",
+  ],
+  production_supervisor: [
+    "platform.organization.read",
+    "platform.module.read",
+    "inventory.product.read",
+    "inventory.unit.read",
+    "inventory.presentation.read",
+    "inventory.location.read",
+    "inventory.stock.read",
+    "inventory.minimum.read",
+    "inventory.incident.read",
+    "inventory.incident.create",
+    "production.recipe.read",
+    "production.recipe.manage",
+    "production.order.read",
+    "production.order.create",
+    "production.order.release",
+    "production.order.cancel",
+    "production.order.close",
+    "production.request.read",
+    "production.request.create",
+    "production.request.decide",
+    "production.report.create",
+    "production.report.reverse",
+    "production.scrap.create",
+    "production.shift.manage",
+    "production.output.verify",
+  ],
+  quality_inspector: [
+    "platform.organization.read",
+    "platform.module.read",
+    "inventory.product.read",
+    "inventory.unit.read",
+    "inventory.presentation.read",
+    "inventory.location.read",
+    "inventory.stock.read",
+    "inventory.incident.read",
+    "inventory.incident.create",
+    "production.order.read",
+    "quality.inspection.read",
+    "quality.inspection.create",
+    "quality.inspection.decide",
+    "quality.lot.release",
+    "quality.plan.read",
   ],
 };
 

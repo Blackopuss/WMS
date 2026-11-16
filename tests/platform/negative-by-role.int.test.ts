@@ -476,6 +476,33 @@ const NEGATIVE_CASES: Record<string, { tests?: string[]; waitsFor?: string }> =
       ],
     },
     "NEG-26": { tests: ["tests/platform/ownership.int.test.ts"] },
+    // WMS-59 (ADR 0062): production and quality roles.
+    "NEG-27": {
+      tests: [
+        "tests/platform/production-roles.int.test.ts",
+        "src/platform/authorization/catalog.test.ts",
+      ],
+    },
+    "NEG-28": {
+      tests: [
+        "tests/platform/production-roles.int.test.ts",
+        "src/platform/authorization/catalog.test.ts",
+      ],
+      // The order born from a request this person approved: its service.
+      waitsFor: "WMS-28B",
+    },
+    "NEG-29": { tests: ["tests/platform/production-roles.int.test.ts"] },
+    "NEG-30": { tests: ["tests/platform/production-roles.int.test.ts"] },
+    "NEG-31": {
+      tests: [
+        "tests/platform/production-roles.int.test.ts",
+        "src/platform/authorization/policy.test.ts",
+        "src/platform/authorization/team-rules.test.ts",
+        "src/app/(app)/navigation.int.test.ts",
+      ],
+    },
+    "NEG-32": { waitsFor: "WMS-28B" },
+    "NEG-33": { tests: ["tests/platform/production-roles.int.test.ts"] },
   };
 
 describe("negative cases of the matrix", () => {
