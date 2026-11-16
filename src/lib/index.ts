@@ -18,6 +18,7 @@ export {
   isAppError,
 } from "./errors";
 export type { ErrorKind } from "./errors";
+export { formatStorageSize } from "./storage-size";
 export { fingerprint } from "./fingerprint";
 export { isId, newId } from "./ids";
 export { isInternalHref } from "./internal-href";

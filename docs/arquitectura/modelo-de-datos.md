@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-127 tablas en 31 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+128 tablas en 31 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -19,7 +19,7 @@
 | Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
-| Plataforma › Archivos | 2 | [files](modulos/files.md) |
+| Plataforma › Archivos | 3 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
 | Plataforma › Almacenes y ubicaciones | 5 | [locations](modulos/locations.md) |
 | Plataforma › Catálogo de productos | 6 | [catalog](modulos/catalog.md) |
@@ -1116,7 +1116,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Plataforma › Archivos
 
-Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar) y fotos de evidencia ligadas a un registro (WMS-37).
+Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar) y fotos de evidencia ligadas a un registro (WMS-37); llaves del almacenamiento pendientes de limpiar (WMS-67).
 
 Documento: [modulos/files.md](modulos/files.md).
 
@@ -1166,6 +1166,32 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
 - Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`).
 - Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict).
+
+### StorageCleanup · `storage_cleanup`
+
+Keys of the storage whose bytes may be left without a live file (WMS-67, ADR 0070): an upload that failed or did not end, or a file removed whose bytes could not be removed yet. The round `platform.storage_cleanup` removes the bytes when no live row of `stored_file` has the key, and then the row.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `storageKey` | `String · VarChar(100)` |  | "<organizationId>/<fileId>", the same as `stored_file.storageKey`. |
+| `reason` | `StorageCleanupReason` |  |  |
+| `attempts` | `Int` | `0` | Rounds that tried and failed. |
+| `lastError` | `String? · VarChar(200)` |  | Why the last one failed, without secrets: «delete (503)». |
+| `claimedAt` | `DateTime? · DateTime(3)` |  | Set once by the round before it touches the bytes: from then on the upload of this key can no longer end in a row (its transaction removes the note only while unclaimed). |
+| `nextAttemptAt` | `DateTime? · DateTime(3)` |  | After a failure, not before this (growing wait, at most a day). |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `createdAt`).
+
+#### Enumeraciones de Plataforma › Archivos
+
+- `StorageCleanupReason`: `UPLOAD`, `DELETE`.
 
 ## Plataforma › Cola de trabajos
 

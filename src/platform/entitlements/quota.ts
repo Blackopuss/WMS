@@ -21,9 +21,66 @@ import { getFreshEntitlements, readLimit } from "./entitlements";
  * `releaseReservation` for what was not used.
  */
 
-/** Limit keys counted here. The entitlement of the same key sets the limit. */
-export const QUOTA_KEYS = ["active_products", "users"] as const;
+/**
+ * Limit keys counted here. The entitlement of the same key sets the limit,
+ * except the storage of files (WMS-67, ADR 0070): counted in KiB, limited
+ * by the entitlement `file_storage_gb` and, without one, by
+ * `FILE_STORAGE_DEFAULT_GB`.
+ */
+export const QUOTA_KEYS = [
+  "active_products",
+  "users",
+  "file_storage_kib",
+] as const;
 export type QuotaKey = (typeof QUOTA_KEYS)[number];
+
+/** Entitlement of the storage limit, in GB. */
+export const FILE_STORAGE_LIMIT_KEY = "file_storage_gb";
+/** What a company may keep in files when its plan does not say. */
+export const FILE_STORAGE_DEFAULT_GB = 5;
+/** Largest storage limit; its KiB still fit the INT of the counter. */
+export const FILE_STORAGE_MAX_GB = 2000;
+const KIB_PER_GB = 1024 * 1024;
+
+/** KiB a file takes in the storage quota (rounded up, at least 1). */
+export const storageKib = (bytes: number): number =>
+  Math.max(1, Math.ceil(bytes / 1024));
+
+/** Storage limit in GB from what the entitlement says (null = not said). */
+export const storageLimitGb = (value: number | null): number =>
+  Math.min(FILE_STORAGE_MAX_GB, value ?? FILE_STORAGE_DEFAULT_GB);
+
+/** The limit a counter is compared with; null = the company has none. */
+async function limitOf(
+  client: QuotaClient,
+  organizationId: string,
+  key: QuotaKey,
+): Promise<number | null> {
+  if (key !== "file_storage_kib") {
+    return readLimit(client, organizationId, key);
+  }
+  return (await storageGbOf(client, organizationId)) * KIB_PER_GB;
+}
+
+/**
+ * GB of files of a company: what its plan says now; when nothing is in
+ * force (a plan that ended), the last value it had, so a renewal or «Mi
+ * plan» never shows less in silence; the default only for a company that
+ * never had one (ADR 0070, review B2).
+ */
+export async function storageGbOf(
+  client: Pick<TenantDb, "entitlement">,
+  organizationId: string,
+): Promise<number> {
+  const now = await readLimit(client, organizationId, FILE_STORAGE_LIMIT_KEY);
+  if (now !== null) return storageLimitGb(now);
+  const last = await client.entitlement.findFirst({
+    where: { organizationId, kind: "LIMIT", key: FILE_STORAGE_LIMIT_KEY },
+    orderBy: [{ validFrom: "desc" }, { id: "desc" }],
+    select: { value: true },
+  });
+  return storageLimitGb(last?.value ?? null);
+}
 
 /** A company client or one of its transactions. */
 export type QuotaClient = Pick<TenantDb, "quotaUsage" | "entitlement">;
@@ -143,7 +200,7 @@ async function take(
   checkAmount(amount);
   // Read with the client of the caller: inside a transaction, no second
   // connection is needed.
-  const limit = await readLimit(client, organizationId, key);
+  const limit = await limitOf(client, organizationId, key);
   if (limit === null) {
     return { ok: false, reason: "limit_reached", limit, taken: 0 };
   }
@@ -263,7 +320,11 @@ export async function getQuotaUsage(
       select: { taken: true, reserved: true },
     }),
   ]);
-  const limit = entitlements.limit(key);
+  const limit =
+    key === "file_storage_kib"
+      ? (await storageGbOf(forOrganization(organizationId), organizationId)) *
+        KIB_PER_GB
+      : entitlements.limit(key);
   const taken = row?.taken ?? 0;
   const reserved = row?.reserved ?? 0;
   return {

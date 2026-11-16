@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib";
+import { formatDate, formatStorageSize } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import { getAccess } from "@/platform/authorization";
 import {
@@ -40,12 +40,15 @@ function Quota({
   used,
   limit,
   detail,
+  format = (value) => value.toLocaleString("es-MX"),
 }: {
   id: string;
   title: string;
   used: number;
   limit: number | null;
   detail?: string;
+  /** How an amount is said (the storage, in KB, MB or GB). */
+  format?: (value: number) => string;
 }) {
   const level = usageLevel(used, limit);
   const warning = LEVEL_TEXT[level];
@@ -59,9 +62,9 @@ function Quota({
       ) : (
         <>
           <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
-            {used.toLocaleString("es-MX")}{" "}
+            {format(used)}{" "}
             <span className="text-base font-normal text-muted-foreground">
-              de {limit.toLocaleString("es-MX")}
+              de {format(limit)}
             </span>
           </p>
           <div
@@ -70,7 +73,7 @@ function Quota({
             aria-valuemin={0}
             aria-valuemax={limit}
             aria-valuenow={Math.min(used, limit)}
-            aria-valuetext={`${used} de ${limit}`}
+            aria-valuetext={`${format(used)} de ${format(limit)}`}
             className="mt-3 h-2 overflow-hidden rounded-full bg-muted"
           >
             <div
@@ -137,7 +140,7 @@ export default async function PlanPage() {
   const renewHint = owner
     ? `Para renovarlo escríbenos a ${CONTACT_EMAIL}: lo activamos al confirmar el pago.`
     : "El titular puede pedir la renovación.";
-  const { products, seats } = plan;
+  const { products, seats, storage } = plan;
   const daysLeft =
     plan.status === "active" ? renewalDaysLeft(plan.validUntil) : null;
   const pending =
@@ -265,6 +268,14 @@ export default async function PlanPage() {
             detail={
               pending ?? "Una persona ocupa un lugar aunque tenga varios roles."
             }
+          />
+          <Quota
+            id="cupo-archivos"
+            title="Archivos"
+            used={storage.used + storage.reserved}
+            limit={storage.limit}
+            format={formatStorageSize}
+            detail="Fotos de evidencia y archivos que se suben para importar."
           />
         </div>
       </section>

@@ -41,6 +41,8 @@ export default defineConfig({
           name: "integration",
           include: ["src/**/*.int.test.ts", "tests/**/*.int.test.ts"],
           globalSetup: ["./tests/setup/global-db.ts"],
+          // WMS-67: TEST_FILE_STORAGE=s3 runs the files against a fake S3.
+          setupFiles: ["./tests/setup/storage-driver.ts"],
           // Tests share one database: run files one at a time.
           fileParallelism: false,
           // One file at a time, each in its own worker. On Windows, worker

@@ -30,6 +30,7 @@ const healthy = {
   queue: "ok",
   backup: "sin_configurar",
   errors: "ok",
+  storage: "sin_configurar",
 };
 
 beforeAll(async () => {

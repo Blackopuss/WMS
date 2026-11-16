@@ -169,8 +169,8 @@ export const AREAS = [
     title: "Plataforma › Archivos",
     doc: "files",
     summary:
-      "Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar) y fotos de evidencia ligadas a un registro (WMS-37).",
-    models: ["StoredFile", "EvidencePhoto"],
+      "Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar) y fotos de evidencia ligadas a un registro (WMS-37); llaves del almacenamiento pendientes de limpiar (WMS-67).",
+    models: ["StoredFile", "EvidencePhoto", "StorageCleanup"],
   },
   {
     id: "jobs",

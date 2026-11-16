@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-67** Almacenamiento externo de archivos compatible con S3, pensado
+  para Cloudflare R2: cliente propio, cupo por empresa, copiador para migrar,
+  respaldar y restaurar, y prueba de salud. ADR 0070.
 - **WMS-30A** Planes de inspección por producto, con versiones, regla de
   muestra y puntos de revisión, y catálogo de defectos de la empresa; Calidad
   queda disponible para contratar. ADR 0067.
