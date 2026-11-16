@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PageContainer, PageHeader } from "@/components";
-import { formatDate, formatDecimal } from "@/lib";
+import { formatDate, formatDecimal, formatStorageSize } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import {
   PROPOSED_TIERS,
@@ -50,6 +50,10 @@ export default async function EmpresaInternaPage({
       company.users === null
         ? `${company.activeMembers} activos, sin cupo asignado`
         : `${company.activeMembers} de ${company.users}`,
+    ],
+    [
+      "Archivos",
+      `${formatStorageSize(company.storageUsedKib)} de ${company.storageGb.toLocaleString("es-MX")} GB`,
     ],
     [
       "Vigencia",
@@ -161,6 +165,7 @@ export default async function EmpresaInternaPage({
           productLimit: company.productLimit,
           users: company.users,
           facilities: company.facilities,
+          storageGb: company.storageGb,
           modules: company.modules,
           validUntil: company.validUntil
             ? company.validUntil.toISOString()

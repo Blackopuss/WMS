@@ -1336,6 +1336,15 @@ beforeAll(async () => {
         createdByUserId: who,
       },
     });
+    // A key of the storage waiting for cleanup (WMS-67).
+    await db.storageCleanup.create({
+      data: {
+        id: newId(),
+        organizationId,
+        storageKey: `${organizationId}/${newId()}`,
+        reason: "UPLOAD",
+      },
+    });
     // A type of equipment, a piece of equipment and its maintenance (WMS-42).
     const equipmentTypeId = newId();
     await db.equipmentType.create({

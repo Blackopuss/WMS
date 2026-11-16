@@ -9,7 +9,12 @@ import {
   type TenantDb,
 } from "@/server";
 
-import { PENDING_PHOTOS_HOURS, signedFileLink } from "./files";
+import {
+  PENDING_PHOTOS_HOURS,
+  noteRemoval,
+  removeNoted,
+  signedFileLink,
+} from "./files";
 import {
   EVIDENCE_OWNER_KINDS,
   EVIDENCE_PURPOSES,
@@ -22,7 +27,6 @@ import {
   type FileActor,
   type FilePurpose,
 } from "./purposes";
-import { removeBytes } from "./storage";
 
 /**
  * Photos as evidence of a record (WMS-37, ADR 0063). A photo is uploaded
@@ -270,22 +274,25 @@ export async function purgeOrphanPhotos(
   });
   let removed = 0;
   for (const candidate of candidates) {
-    const storageKey = await client.$transaction(async (tx) => {
+    const done = await client.$transaction(async (tx) => {
       const [id] = await lockRows(tx, "storedFile", [candidate.id]);
       if (!id) return null;
       const file = await tx.storedFile.findFirst({
         where: { id, deletedAt: null, evidencePhoto: { is: null } },
-        select: { storageKey: true },
+        select: { storageKey: true, size: true },
       });
       if (!file) return null;
       await tx.storedFile.update({
         where: { id },
         data: { deletedAt: now },
       });
-      return file.storageKey;
+      // WMS-67: its place in the storage of the plan comes back, and its
+      // key is written down in case the bytes cannot go now.
+      const noteId = await noteRemoval(tx, organizationId, file);
+      return { storageKey: file.storageKey, noteId };
     }, LOCKING_TRANSACTION);
-    if (storageKey) {
-      await removeBytes(storageKey);
+    if (done) {
+      await removeNoted(organizationId, done.storageKey, done.noteId);
       removed++;
     }
   }

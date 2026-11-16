@@ -2,9 +2,19 @@ import "server-only";
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
-import { newId } from "@/lib";
-import { assertModulePermission } from "@/platform/billing";
-import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
+import { formatStorageSize, log, newId } from "@/lib";
+import { CONTACT_EMAIL, assertModulePermission } from "@/platform/billing";
+import {
+  consumeQuota,
+  releaseQuota,
+  storageKib,
+} from "@/platform/entitlements";
+import {
+  LOCKING_TRANSACTION,
+  forOrganization,
+  lockRows,
+  type TenantDb,
+} from "@/server";
 
 import { IMAGE_EXTENSIONS, isImageExtension, sanitizeImage } from "./images";
 import {
@@ -21,6 +31,8 @@ import {
 } from "./purposes";
 import { getBytes, putBytes, removeBytes } from "./storage";
 
+type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
+
 /**
  * Private files of a company (IMP-02, ADR 0014). A file is a row of the
  * company plus its bytes in the storage. Nobody reaches the bytes by a
@@ -34,6 +46,16 @@ export { FILE_PURPOSES } from "./purposes";
 
 /** A photo over the limit of photos waiting: its transaction goes back. */
 class TooManyPending extends Error {}
+
+/** The cleanup round took this upload for dead: its transaction goes back. */
+class UploadClaimed extends Error {}
+
+/** Over the storage of the plan (WMS-67): its transaction goes back. */
+class OverStorage extends Error {
+  constructor(readonly limitKib: number | null) {
+    super("over storage quota");
+  }
+}
 
 /** Photos uploaded and not yet linked, per person in 24 hours. */
 export const PENDING_PHOTOS_MAX = 30;
@@ -52,11 +74,153 @@ function cleanName(name: string): string {
 const megabytes = (bytes: number) =>
   `${(bytes / MB).toLocaleString("es-MX", { maximumFractionDigits: 1 })} MB`;
 
+/** A key of the storage always starts with its own company. */
+function assertOwnKey(organizationId: string, storageKey: string): void {
+  if (!storageKey.startsWith(`${organizationId}/`)) {
+    log.error("file_storage_key_mismatch", undefined, { organizationId });
+    throw new Error("Storage key of another company");
+  }
+}
+
+/**
+ * An upload that did not end in a row: its bytes are taken back and its
+ * note removed. If the storage does not answer, the note stays for the
+ * round (`processStorageCleanup`); nothing here throws.
+ */
+async function abandonUpload(
+  organizationId: string,
+  storageKey: string,
+  noteId: string,
+): Promise<void> {
+  const notes = forOrganization(organizationId).storageCleanup;
+  try {
+    await removeBytes(storageKey);
+    await notes.deleteMany({ where: { id: noteId } });
+  } catch (error) {
+    log.warn("file_storage_abandon_failed", {
+      organizationId,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+    // The round may have taken the note already (an upload that took too
+    // long) while these bytes were still on their way: a key with bytes
+    // always keeps a note.
+    try {
+      const kept = await notes.findFirst({
+        where: { storageKey },
+        select: { id: true },
+      });
+      if (!kept) {
+        await notes.create({
+          data: { id: newId(), organizationId, storageKey, reason: "UPLOAD" },
+        });
+      }
+    } catch {
+      // Nothing else to do here; `storage:copy --audit` lists it.
+    }
+  }
+}
+
+/**
+ * Inside the transaction that marks a file removed: gives back its place
+ * in the storage of the plan and writes down its key, so the bytes go even
+ * if removing them fails after the commit. Returns the id of the note.
+ */
+export async function noteRemoval(
+  tx: Tx,
+  organizationId: string,
+  file: { storageKey: string; size: number },
+): Promise<string> {
+  // The row was read for this company; a key of another one is a defect
+  // and nothing of it is removed (the whole transaction goes back).
+  assertOwnKey(organizationId, file.storageKey);
+  if (!(await releaseQuota(tx, "file_storage_kib", storageKib(file.size)))) {
+    // A counter below what it should be (it should not happen): the file
+    // is removed all the same and the drift is said.
+    log.warn("file_storage_quota_drift", { organizationId });
+  }
+  const id = newId();
+  await tx.storageCleanup.create({
+    data: {
+      id,
+      organizationId,
+      storageKey: file.storageKey,
+      reason: "DELETE",
+    },
+  });
+  return id;
+}
+
+/**
+ * After the commit of a removal: the bytes go and then the note. If the
+ * storage does not answer, the note stays for the round.
+ */
+export async function removeNoted(
+  organizationId: string,
+  storageKey: string,
+  noteId: string,
+): Promise<boolean> {
+  assertOwnKey(organizationId, storageKey);
+  try {
+    await removeBytes(storageKey);
+  } catch (error) {
+    log.warn("file_storage_remove_failed", {
+      organizationId,
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+    return false;
+  }
+  await forOrganization(organizationId).storageCleanup.deleteMany({
+    where: { id: noteId },
+  });
+  return true;
+}
+
+/**
+ * The bytes of a file of this company, checked against the hash of its
+ * row. Null when they are not there or are not the ones that were kept
+ * (both logged: a row without its bytes is a defect). An error of the
+ * storage goes up as it is: «not answering» is not «not there».
+ */
+async function loadBytes(
+  organizationId: string,
+  file: { id: string; storageKey: string; sha256: string },
+): Promise<Buffer | null> {
+  // The row was read for this company; its key must say the same.
+  if (!file.storageKey.startsWith(`${organizationId}/`)) {
+    log.error("file_storage_key_mismatch", undefined, { fileId: file.id });
+    return null;
+  }
+  const bytes = await getBytes(file.storageKey);
+  if (!bytes) {
+    log.error("file_bytes_missing", undefined, {
+      organizationId,
+      fileId: file.id,
+    });
+    return null;
+  }
+  if (createHash("sha256").update(bytes).digest("hex") !== file.sha256) {
+    log.error("file_integrity_mismatch", undefined, {
+      organizationId,
+      fileId: file.id,
+    });
+    return null;
+  }
+  return bytes;
+}
+
 export type StoreFileResult =
   | { ok: true; fileId: string }
   | {
       ok: false;
-      reason: "empty" | "too_large" | "type" | "name" | "content" | "too_many";
+      reason:
+        | "empty"
+        | "too_large"
+        | "type"
+        | "name"
+        | "content"
+        | "too_many"
+        | "storage_full"
+        | "unavailable";
       error: string;
     };
 
@@ -133,6 +297,7 @@ export async function storeFile(
   const client = forOrganization(organizationId);
   const fileId = newId();
   const storageKey = `${organizationId}/${fileId}`;
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
   const row = {
     id: fileId,
     organizationId,
@@ -140,29 +305,44 @@ export async function storeFile(
     name,
     contentType,
     size: bytes.byteLength,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
+    sha256,
     storageKey,
     createdByUserId: userId,
     width: dimensions?.width ?? null,
     height: dimensions?.height ?? null,
   };
-  // Bytes first: a row always has its file. If the row is not written,
-  // the bytes are taken back.
-  await putBytes(storageKey, bytes);
+  // WMS-67 (ADR 0070): the key is written down before the bytes go to the
+  // storage, which may be remote and fail or take long. The row of the file
+  // is born after the bytes (a row always has its file) and, in the same
+  // transaction, the note goes away: any object without a row keeps its
+  // note, and the round `platform.storage_cleanup` removes it.
+  const noteId = newId();
+  await client.storageCleanup.create({
+    data: { id: noteId, organizationId, storageKey, reason: "UPLOAD" },
+  });
   try {
-    if (!purpose.evidence) {
-      await client.storedFile.create({ data: row });
-    } else {
-      // Whoever uploads without saving does not fill the disk. The row is
-      // written first (its key to the company takes a shared lock on the
-      // company, as every insert does) and then the person's membership is
-      // locked to count, the photo itself included: uploads of the same
-      // person at the same time count one after another. The order is
-      // company → membership, the same as a change of the team
-      // (`withTeamChange`), so the two never wait for each other in a
-      // circle.
-      await client.$transaction(async (tx) => {
-        await tx.storedFile.create({ data: row });
+    await putBytes(storageKey, bytes, sha256);
+  } catch (error) {
+    log.error("file_storage_put_failed", error, { organizationId });
+    await abandonUpload(organizationId, storageKey, noteId);
+    return {
+      ok: false,
+      reason: "unavailable",
+      error: `No se pudo guardar ${purpose.evidence ? "la foto" : "el archivo"}. Intenta de nuevo en un momento.`,
+    };
+  }
+  try {
+    await client.$transaction(async (tx) => {
+      await tx.storedFile.create({ data: row });
+      if (purpose.evidence) {
+        // Whoever uploads without saving does not fill the disk. The row
+        // is written first (its key to the company takes a shared lock on
+        // the company, as every insert does) and then the person's
+        // membership is locked to count, the photo itself included: uploads
+        // of the same person at the same time count one after another. The
+        // order is company → membership, the same as a change of the team
+        // (`withTeamChange`), so the two never wait for each other in a
+        // circle.
         const membership = await tx.membership.findFirst({
           where: { userId },
           select: { id: true },
@@ -180,15 +360,48 @@ export async function storeFile(
         });
         // Over the limit: everything goes back, this row included.
         if (pending > PENDING_PHOTOS_MAX) throw new TooManyPending();
-      }, LOCKING_TRANSACTION);
-    }
+      }
+      // The storage of the plan (WMS-67), taken last: its counter is one
+      // row per company, held only for the end of this transaction.
+      const quota = await consumeQuota(
+        tx,
+        organizationId,
+        "file_storage_kib",
+        storageKib(row.size),
+      );
+      if (!quota.ok) throw new OverStorage(quota.limit);
+      // The note goes only while the cleanup round has not claimed it
+      // (an upload that took too long): then the round owns those bytes
+      // and this file is not born (ADR 0070, review M1).
+      const note = await tx.storageCleanup.deleteMany({
+        where: { id: noteId, claimedAt: null },
+      });
+      if (note.count !== 1) throw new UploadClaimed();
+    }, LOCKING_TRANSACTION);
   } catch (error) {
-    await removeBytes(storageKey).catch(() => {});
+    await abandonUpload(organizationId, storageKey, noteId);
     if (error instanceof TooManyPending) {
       return {
         ok: false,
         reason: "too_many",
         error: `Tienes ${PENDING_PHOTOS_MAX} fotos tomadas sin guardar. Quita las que no vayas a usar o termina lo que estabas reportando; las que no se usen se borran solas al día siguiente.`,
+      };
+    }
+    if (error instanceof OverStorage) {
+      return {
+        ok: false,
+        reason: "storage_full",
+        error:
+          error.limitKib === null
+            ? "Tu plan no incluye espacio para archivos."
+            : `Tu plan incluye ${formatStorageSize(error.limitKib)} para archivos y ya están en uso. Para subir más, pide más espacio escribiéndonos a ${CONTACT_EMAIL}.`,
+      };
+    }
+    if (error instanceof UploadClaimed) {
+      return {
+        ok: false,
+        reason: "unavailable",
+        error: `No se pudo guardar ${purpose.evidence ? "la foto" : "el archivo"}. Intenta de nuevo en un momento.`,
       };
     }
     throw error;
@@ -210,6 +423,7 @@ const FILE_SELECT = {
   name: true,
   contentType: true,
   size: true,
+  sha256: true,
   storageKey: true,
   createdByUserId: true,
   evidencePhoto: { select: { incidentId: true, processStepId: true } },
@@ -221,6 +435,7 @@ type FileRow = {
   name: string;
   contentType: string;
   size: number;
+  sha256: string;
   storageKey: string;
   createdByUserId: string;
   evidencePhoto: {
@@ -273,7 +488,7 @@ export async function readStoredFile(
 ): Promise<StoredFileContent | null> {
   const file = await findFile(organizationId, fileId);
   if (!file) return null;
-  const bytes = await getBytes(file.storageKey);
+  const bytes = await loadBytes(organizationId, file);
   if (!bytes) return null;
   return {
     fileId: file.id,
@@ -304,13 +519,13 @@ export async function deleteFile(
   );
   // Under the lock of the file and read again: a photo being linked right
   // now is not removed, and the bytes go only if this call marked it.
-  const storageKey = await forOrganization(actor.organizationId).$transaction(
+  const removed = await forOrganization(actor.organizationId).$transaction(
     async (tx) => {
       const [id] = await lockRows(tx, "storedFile", [file.id]);
       if (!id) return null;
       const current = await tx.storedFile.findFirst({
         where: { id, deletedAt: null, evidencePhoto: { is: null } },
-        select: { storageKey: true, createdByUserId: true },
+        select: { storageKey: true, size: true, createdByUserId: true },
       });
       if (!current) return null;
       // A photo not linked yet: only who took it removes it.
@@ -321,12 +536,16 @@ export async function deleteFile(
         where: { id, deletedAt: null },
         data: { deletedAt: new Date() },
       });
-      return marked.count === 1 ? current.storageKey : null;
+      if (marked.count !== 1) return null;
+      const noteId = await noteRemoval(tx, actor.organizationId, current);
+      return { storageKey: current.storageKey, noteId };
     },
     LOCKING_TRANSACTION,
   );
-  if (!storageKey) return { ok: false };
-  await removeBytes(storageKey);
+  if (!removed) return { ok: false };
+  // The row is already marked: if the storage does not answer now, the
+  // round removes the bytes later. For the person it is removed.
+  await removeNoted(actor.organizationId, removed.storageKey, removed.noteId);
   return { ok: true };
 }
 
@@ -470,7 +689,7 @@ export async function openFileLink(
   if (!(await reachesFile(actor, file, options.owners))) {
     return { ok: false, reason: "not_found" };
   }
-  const bytes = await getBytes(file.storageKey);
+  const bytes = await loadBytes(actor.organizationId, file);
   if (!bytes) return { ok: false, reason: "not_found" };
   return {
     ok: true,

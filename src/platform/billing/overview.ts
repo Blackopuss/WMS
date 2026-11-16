@@ -40,6 +40,8 @@ export type PlanOverview = {
   /** The subscription needs payment but still works. */
   paymentNotice: boolean;
   products: QuotaUsageSummary;
+  /** Files kept, in KiB (WMS-67). */
+  storage: QuotaUsageSummary;
   seats: SeatUsage;
   modules: PlanModule[];
   /** Earliest end among what is in force; null = no end date. */
@@ -70,9 +72,10 @@ export async function getPlanOverview(
   organizationId: string,
 ): Promise<PlanOverview> {
   const now = new Date();
-  const [entitlements, products, seats, rows] = await Promise.all([
+  const [entitlements, products, storage, seats, rows] = await Promise.all([
     getFreshEntitlements(organizationId),
     getQuotaUsage(organizationId, "active_products"),
+    getQuotaUsage(organizationId, "file_storage_kib"),
     getSeatUsage(organizationId),
     forOrganization(organizationId).entitlement.findMany({
       where: {
@@ -101,6 +104,7 @@ export async function getPlanOverview(
     status,
     paymentNotice: entitlements.paymentNotice,
     products,
+    storage,
     seats,
     modules: registry.all.map((contract) => {
       const state = entitlements.moduleState(contract.id);

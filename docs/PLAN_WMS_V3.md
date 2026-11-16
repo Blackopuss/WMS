@@ -148,7 +148,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | 2. Operación logística | ~~WMS-13, 13B, 14~~, ~~WMS-52~~, ~~WMS-53~~, ~~WMS-15~~, ~~WMS-16~~, ~~WMS-17~~, ~~WMS-19~~, ~~WMS-54~~, ~~WMS-55~~, ~~WMS-26~~, ~~WMS-36~~, ~~WMS-23~~, ~~WMS-24~~, ~~WMS-25~~ | Acomodo, tarimas, empaque, despacho, devoluciones, traslados, cross-docking, conteos cíclicos, etiquetas, cámara, reabastecimiento, olas |
 | 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, ~~WMS-58~~, ~~WMS-41~~, ~~WMS-59~~, WMS-27..31, ~~WMS-60~~, WMS-61, WMS-62, WMS-63 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
-| Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, ~~WMS-37~~, ~~WMS-38~~, ~~WMS-39~~, ~~WMS-40~~, WMS-67, WMS-42, ~~WMS-68~~, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
+| Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, ~~WMS-37~~, ~~WMS-38~~, ~~WMS-39~~, ~~WMS-40~~, ~~WMS-67~~, WMS-42, ~~WMS-68~~, WMS-47 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
 | 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, WMS-46, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
 
 Los pasos transversales se intercalan cuando su dependencia está lista (por
@@ -711,7 +711,7 @@ costos solo para quien puede verlos; carga con p95 < 500 ms.
 | ~~WMS-40~~ | Sesiones del equipo para el administrador: dispositivo, navegador, IP, última actividad; cerrarlas a distancia. **Hecho (ADR 0059).** Pendiente: ubicación aproximada por IP (WMS-68) | — |
 | ~~WMS-68~~ | Historial de accesos por persona y alertas de accesos sospechosos (dispositivo nuevo, muchos fallos). **Hecho (ADR 0064).** Pendiente: país por IP con la cabecera de Cloudflare cuando haya servidor, retención de los eventos, reintento del correo de alerta | — |
 | ~~WMS-42~~ | Equipos del almacén: registro, mantenimiento e incidencias; la tarea puede pedir un tipo de equipo. **Hecho (ADR 0065).** Pendiente: mantenimiento por horas, pedir equipo por regla o en tareas del sistema, trasladar un equipo a otro almacén, capacidad de carga, fotos | — |
-| WMS-67 | Almacenamiento externo de archivos (compatible con S3) detrás de la interfaz actual de archivos, con respaldo independiente | — |
+| ~~WMS-67~~ | Almacenamiento externo de archivos (compatible con S3, pensado para Cloudflare R2) detrás de la interfaz actual, con cupo por empresa y respaldo independiente. **Hecho (ADR 0070).** Pendiente: probar contra una cuenta real de R2 cuando haya servidor, purgar del respaldo lo borrado en la app | — |
 | WMS-47 | Ambientes de desarrollo, pruebas y producción; VPS, dominio, Cloudflare, contenedores, respaldos fuera del servidor, monitoreo, logs centralizados, alertas, restauración periódica (**PC-8**) | Fundador elige proveedor |
 
 Operar sin conexión (cola local con idempotencia) solo después de WMS-35 y

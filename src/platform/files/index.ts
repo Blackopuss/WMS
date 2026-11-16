@@ -33,6 +33,11 @@ export type {
   EvidenceOwnerKind,
   EvidenceOwners,
 } from "./purposes";
+// WMS-67 (ADR 0070): where the bytes live (disk or S3/R2) and what is left.
+export { STORAGE_CLEANUP_AFTER_MS, processStorageCleanup } from "./cleanup";
+export type { StorageCleanupRound } from "./cleanup";
+export { configuredDriver, pingStorage } from "./storage";
+export type { StorageProbe } from "./storage";
 export { IMAGE_LIMITS, sanitizeImage } from "./images";
 export type { SanitizedImage } from "./images";
 export { buildCsv, buildXlsx, neutralizeFormula } from "./spreadsheet";

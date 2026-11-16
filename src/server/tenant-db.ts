@@ -123,6 +123,7 @@ export const TENANT_MODELS = [
   "ProcessProgress",
   "ProcessStageState",
   "ProcessStep",
+  "StorageCleanup",
   "EquipmentType",
   "Equipment",
   "EquipmentMaintenance",
