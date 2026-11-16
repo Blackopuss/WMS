@@ -70,6 +70,19 @@ código»):
   de escribir **una** salida `SHIPMENT` (clave `ship:<id>`) con exactamente
   lo apartado en preparación, consume esas reservas y deja `shipment_line`
   por línea. Un movimiento `SHIPMENT` no se reversa.
+- Procesos en embarques (WMS-74B, ADR 0071): el embarque es un documento
+  del motor de procesos (`SHIPMENT_PROCESS`, `shipment-process.ts`, clave
+  `inventory.shipment`; hitos «Por confirmar», «Despachado» y «Cancelado»,
+  que cierra; operación `inventory.shipment.dispatched` «Salida confirmada»
+  en «Por confirmar»). `createShipment` llama `startProcess`;
+  `dispatchShipment` llama `assertStagesDone` después de su último candado
+  (bultos) y, tras escribir `SHIPPED`, `reachMilestone` y
+  `completeOperationStage`; `cancelShipment` llama `reachMilestone`
+  («Cancelado»). Candados: productos → ubicaciones → embarque → pedidos →
+  bultos → progreso. «Despachado» no cierra el proceso: las etapas
+  posteriores no tocan existencias ni el estado del embarque. `getShipment`
+  trae `dispatchWaits` («Esperando: …», lectura sin candado con
+  `operationWaits`). Sin proceso publicado, nada cambia.
 - Devoluciones de clientes (WMS-17, ADR 0046): lo que regresa entra con un
   movimiento propio `CUSTOMER_RETURN`, **siempre en `INSPECTION`** (también
   disparador), con o sin pedido despachado; con pedido nunca más de lo que
@@ -157,7 +170,7 @@ código»):
 | Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY` y `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS`; `releaseUnderLock` y `lockedOutboundOrder` (internas, para las olas) |
 | Olas de surtido (WMS-25) | `waves.ts`, `wave-states.ts`, `wave-settle.ts`, `pick-route.ts` | `createWave` (libera los borradores; todo o nada), `cancelWave` (solo desagrupa), `listWaves`, `listWaveCandidates`, `listOpenWaves`, `getWave` (lo que sigue, recorrido agrupado por producto + origen + lote, zonas, pedidos), `confirmWavePick`, `deliverWavePicks`, `takeWaveTasks`, `assignWaveTasks`, `waveOfOrder`, `wavesEnabled`; transiciones `PICK_WAVE_TRANSITIONS`; orden de recorrido `inRouteOrder`/`compareRoute` (puro); en `tasks.ts`, `confirmPickGroup`, `deliverPickGroup`, `takeTasks`, `assignTasks` y `nextTaskFor` («Siguiente tarea»); «Mis tareas» va en orden de recorrido |
-| Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
+| Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); `SHIPMENT_PROCESS` y `SHIPMENT_DISPATCHED_OPERATION` (documento del motor de procesos, WMS-74B); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
 | Traslados entre almacenes | `facility-transfers.ts`, `facility-transfer-states.ts`, `facility-transfer-pdf.ts` | `createFacilityTransfer`, `addFacilityTransferLine`, `removeFacilityTransferLine`, `cancelFacilityTransfer` (borrador), `sendFacilityTransfer`, `receiveFacilityTransfer` (bien y dañado, en varias veces), `resolveFacilityTransfer` (`LOST`/`RETURNED`), `listFacilityTransfers` (`sent`, `incoming`, `received`), `getFacilityTransfer`, `countTransfersToReceive`, `listTransferDestinations`, `listTransferReceivePlaces`, `hasSeveralFacilities`, `findFacilityTransferByKey`, `findFacilityTransferByNumber`; `buildFacilityTransferPdf` (hoja de traslado, sin costos); transiciones `FACILITY_TRANSFER_TRANSITIONS` |
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
@@ -371,7 +384,7 @@ contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
-(inspección al recibir, desechar y retención genérica).
+(inspección al recibir, desechar y retención genérica), 0071 (procesos en embarques).
 
 ## Pruebas
 
@@ -381,7 +394,7 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `replenishment-rules.test.ts`). Reposición de surtido en
 `replenishment.int.test.ts`.
 Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
-vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; devoluciones de clientes (PC-5) en
+vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; procesos en embarques en `shipment-process.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en
 `facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;
 inspección al recibir, desechar, PC-5 y retención genérica en

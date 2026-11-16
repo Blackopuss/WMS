@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-74B** Procesos en embarques: el embarque es el primer documento del
+  motor de procesos, con etapas antes y después del despacho que no mueven
+  existencias. ADR 0071.
 - **WMS-30-0** Inspección al recibir por producto, lista «Por inspeccionar»,
   devolución al proveedor por estado, movimiento «Desechar» y retención
   genérica de existencias no disponibles. ADR 0068.

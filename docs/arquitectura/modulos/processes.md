@@ -8,16 +8,17 @@ documento que declara un módulo, la empresa define etapas y subetapas
 mismo documento (P10, P10b) y relevo automático entre áreas. Avanzar una etapa
 **nunca mueve existencias ni cambia el estado fijo del documento**. La
 plataforma recibe los documentos como lista (`processDocuments` de
-`src/modules/registry/processes.ts`, hoy vacía) y no conoce a los módulos.
+`src/modules/registry/processes.ts`; hoy el embarque de Inventario,
+WMS-74B, ADR 0071) y no conoce a los módulos.
 
 ## Servicios públicos (`index.ts`)
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Definiciones | `definitions.ts` | tipo `ProcessDocument` (`key` `modulo.cosa`, `module`, `label`, `milestones` en orden con `closes`, `operations` con su hito, `readPermission`, `href`), `PROCESS_LIMITS`, `assertValidProcessDocuments`, `milestoneIndex` |
+| Definiciones | `definitions.ts` | tipo `ProcessDocument` (`key` `modulo.cosa`, `module`, `label`, `milestones` en orden con `closes`, `operations` con su hito, `readPermission`, `href`), `PROCESS_LIMITS`, `assertValidProcessDocuments`, `milestoneIndex`, `worksProcessStages` (si «Tareas» e Inicio muestran etapas: trabaja etapas y lee algún documento de un módulo activo; WMS-74B) |
 | Reglas (puras) | `rules.ts` | `settleStates` (qué etapa se puede hacer: candado, hito y subetapas en orden o en cualquier orden), `waitingFor` («Esperando: …»), `previousStage` (a dónde regresa «Regresar»), `checkDraft` y `draftSchema` (forma de un borrador); prueba unitaria `rules.test.ts` |
 | Estados | `states.ts` | `PROCESS_VERSION_TRANSITIONS` (`DRAFT → PUBLISHED → RETIRED`; la repite el disparador `process_version_transition`), etiquetas de estados y acciones |
-| Para los módulos | `engine.ts` | `startProcess`, `reachMilestone`, `setProcessPlace`, `assertStagesDone`, `completeOperationStage` (con el `tx` del módulo), `ProcessStagesPending` |
+| Para los módulos | `engine.ts` | `startProcess` (lee la versión vigente con candado compartido de la definición), `reachMilestone`, `setProcessPlace`, `assertStagesDone`, `completeOperationStage` (con el `tx` del módulo), `ProcessStagesPending`; `doneStagesAt` (etapas manuales del hito actual ya hechas, con candado o sin él; WMS-74B); `operationWaits` (lo mismo que `assertStagesDone` sin candado, para que una pantalla diga por qué no ofrece la operación; WMS-74B) |
 | Para las personas | `work.ts` | `takeStage`, `releaseStage`, `assignStage`, `completeStage` (nota, cantidad y fotos), `skipStage`, `backStage` (motivo); `uploadProcessPhoto`, `discardProcessPhoto`; `processStepReach` (dueño de las fotos) |
 | Leer | `work.ts` | `getProcessView` (línea de etapas, siguiente paso, a quién asignar, rastro con fotos), `listProcessWork` y `countProcessWork` («Mis tareas» y «Disponibles») |
 | Configurar | `config.ts` | `getProcessSettings`, `getProcessDefinition`, `saveProcessDraft` (bitácora `process.draft_saved`), `publishProcess` (`process.published`), `hasProcessDocuments` (para el menú de Configuración) |
@@ -43,6 +44,24 @@ con `LOCKING_TRANSACTION`:
 
 Orden de candados: documento del módulo → progreso → archivos de las fotos.
 Las acciones de las personas bloquean solo el progreso.
+
+Cada operación declara `leadsTo` (obligatorio, validado al arrancar): el
+hito al que lleva el documento, después de `milestone`, o `null` si no cambia
+su estado; `milestone` nunca es un hito `closes`. Una acción de etapa
+devuelve `documentHref` (lo calcula el motor) para que la pantalla del
+documento se refresque.
+
+Un hito con `closes` borra los pendientes: el estado final «bueno» de un
+documento que tiene etapas después (el embarque despachado) **no** lleva
+`closes`; solo la cancelación. Una operación que cambia el estado fijo se
+declara en el hito **anterior** al cambio (la salida del embarque es de «Por
+confirmar»), porque `assertStagesDone` se pregunta antes de escribirla.
+
+### Documentos de hoy
+
+| Documento | Módulo | Hitos | Operaciones | ADR |
+| --- | --- | --- | --- | --- |
+| `inventory.shipment` «Embarque» | Inventario | `DRAFT`, `SHIPPED`, `CANCELLED` (cierra) | `inventory.shipment.dispatched` «Salida confirmada» (en `DRAFT`, `leadsTo` `SHIPPED`) | 0071 |
 
 ## Quién hace qué
 
@@ -90,7 +109,7 @@ documento puede poner en su ficha) y el bloque de etapas en `/tareas`.
 
 Autorización por etapa, avisos a otros roles además del área, tiempos por
 etapa (WMS-33), vista de toda la cadena, «Seguimiento» con filtro por etapa,
-embarques (WMS-74B), órdenes de compra, pedidos y traslados.
+órdenes de compra, pedidos y traslados.
 
 De la segunda revisión (2026-11-16): la vista lee el equipo en cada visita
 con etapas pendientes (costo); quien solo hace etapas ve en `/tareas` los
@@ -105,5 +124,5 @@ en etapas manuales), cada una con su disparador.
 
 ## ADR
 
-0069 (motor de procesos), 0057 (avisos), 0062 (roles ligados a módulos),
+0069 (motor de procesos), 0071 (procesos en embarques), 0057 (avisos), 0062 (roles ligados a módulos),
 0063 (fotos de evidencia).

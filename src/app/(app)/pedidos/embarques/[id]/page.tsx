@@ -12,9 +12,17 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib";
-import { getShipment, listReadyOrders } from "@/modules/inventory";
+import { formatDateTime, newId } from "@/lib";
+import {
+  SHIPMENT_PROCESS,
+  getShipment,
+  listReadyOrders,
+} from "@/modules/inventory";
+import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
+import { getProcessView } from "@/platform/processes";
+
+import { ProcessPanel } from "../../../procesos/process-panel";
 
 import { TransportForm } from "../shipment-form";
 import {
@@ -44,7 +52,8 @@ const idPath = (value: string) =>
 /**
  * One shipment (WMS-16): while a draft, what each order would take out,
  * who takes it, and «Confirmar salida»; once it left, what left and its
- * PDF to sign.
+ * PDF to sign. With a process of the company (WMS-74B), its stages before
+ * and after the exit; the exit waits for the earlier ones.
  */
 export default async function EmbarquePage({
   params,
@@ -96,7 +105,19 @@ export default async function EmbarquePage({
   const canEdit = active && draft && access.allows("inventory.shipment.create");
   const canDispatch =
     active && draft && access.allows("inventory.shipment.dispatch");
-  const ready = canEdit ? await listReadyOrders(actor) : null;
+  // WMS-74B: after a stage of «Por confirmar» was done, the orders stay.
+  const canChangeOrders = canEdit && !shipment.ordersFixed;
+  const [ready, process] = await Promise.all([
+    canChangeOrders ? listReadyOrders(actor) : null,
+    getProcessView(actor, processDocuments, {
+      documentKey: SHIPMENT_PROCESS.key,
+      documentId: shipment.id,
+    }),
+  ]);
+  const canReturn =
+    active &&
+    shipment.status === "SHIPPED" &&
+    access.allows("inventory.customer_return.create");
   const timeZone = access.organization.timeZone;
   const packagesText =
     shipment.packageCount === 0
@@ -134,7 +155,12 @@ export default async function EmbarquePage({
       )}
 
       {canDispatch &&
-        (shipment.ready ? (
+        (shipment.dispatchWaits ? (
+          <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+            Para confirmar la salida falta una etapa del proceso.{" "}
+            {shipment.dispatchWaits}
+          </p>
+        ) : shipment.ready ? (
           <div className="max-w-3xl">
             <DispatchShipment
               shipmentId={shipment.id}
@@ -192,7 +218,7 @@ export default async function EmbarquePage({
                         .join(" · ")}
                     </p>
                   </div>
-                  {canEdit && (
+                  {canChangeOrders && (
                     <RemoveOrder
                       shipmentId={shipment.id}
                       orderId={order.id}
@@ -202,6 +228,14 @@ export default async function EmbarquePage({
                 </div>
                 {order.problem && (
                   <p className="text-sm text-warning">{order.problem}</p>
+                )}
+                {canReturn && (
+                  <Link
+                    href={`/pedidos/devoluciones/nueva?pedido=${idPath(order.id)}`}
+                    className={linkClass}
+                  >
+                    Registrar devolución
+                  </Link>
                 )}
                 {order.lines.length > 0 ? (
                   <ul className="space-y-1 text-sm">
@@ -258,7 +292,30 @@ export default async function EmbarquePage({
         )}
       </section>
 
-      {canEdit && ready && ready.items.length > 0 && (
+      {process && (
+        <section aria-labelledby="proceso" className="space-y-3">
+          <h2 id="proceso" className="font-medium">
+            Proceso
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {process.statusText}
+            </span>
+          </h2>
+          <ProcessPanel
+            view={process}
+            selected={null}
+            idempotencyKey={newId()}
+            timeZone={access.organization.timeZone}
+          />
+        </section>
+      )}
+
+      {canEdit && shipment.ordersFixed && (
+        <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+          {shipment.ordersFixed}
+        </p>
+      )}
+
+      {canChangeOrders && ready && ready.items.length > 0 && (
         <section
           aria-labelledby="agregar"
           className="max-w-3xl space-y-3 rounded-xl border bg-card p-4 sm:px-5"

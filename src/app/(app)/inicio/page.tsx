@@ -58,7 +58,7 @@ import {
   renewalText,
   usageLevel,
 } from "@/platform/billing";
-import { countProcessWork } from "@/platform/processes";
+import { countProcessWork, worksProcessStages } from "@/platform/processes";
 
 import { DaySummaryBlock } from "./day-summary";
 import { FirstStepsGuide } from "./first-steps-guide";
@@ -109,8 +109,14 @@ export default async function InicioPage() {
   const summary = showSummary ? await getDaySummary(actor) : null;
 
   // WMS-74: stages of processes count with the tasks (the same rule as
-  // Tareas; without documents with processes nothing is queried).
-  const stages = await countProcessWork(actor, processDocuments);
+  // Tareas; who works no stage of a document it reads queries nothing).
+  const stages = worksProcessStages(
+    (permission) => access.can(permission),
+    (module) => access.moduleState(module),
+    processDocuments,
+  )
+    ? await countProcessWork(actor, processDocuments)
+    : { mine: 0, available: 0 };
   const [low, movements, plan, firstSteps, tasks, incoming] = await Promise.all(
     [
       showLow ? listLowStock(actor) : null,
