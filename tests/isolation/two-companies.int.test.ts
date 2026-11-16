@@ -1255,6 +1255,34 @@ beforeAll(async () => {
         createdByUserId: who,
       },
     });
+    // A photo linked as evidence of the incident (WMS-37).
+    const photoFileId = newId();
+    await db.storedFile.create({
+      data: {
+        id: photoFileId,
+        organizationId,
+        purpose: "incident_photo",
+        name: "foto.jpg",
+        contentType: "image/jpeg",
+        size: 3,
+        sha256: "0".repeat(64),
+        storageKey: `${organizationId}/${photoFileId}`,
+        createdByUserId: who,
+        width: 24,
+        height: 16,
+      },
+    });
+    await db.evidencePhoto.create({
+      data: {
+        id: newId(),
+        organizationId,
+        fileId: photoFileId,
+        purpose: "incident_photo",
+        incidentId,
+        position: 0,
+        createdByUserId: who,
+      },
+    });
     // An API key, a webhook destination, an event and its delivery (WMS-60).
     await db.apiKey.create({
       data: {

@@ -11,6 +11,7 @@ import {
   PACKING_MODE,
   SHIPMENT_DETAILS,
   CUSTOMER_RETURN_WITHOUT_ORDER,
+  INCIDENT_PHOTO,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
   ABC_BASIS,
@@ -214,6 +215,12 @@ describe("operation settings", () => {
         value: "allow",
         defaultValue: "allow",
       },
+      // WMS-37: a photo is optional when reporting an incident.
+      {
+        key: INCIDENT_PHOTO.key,
+        value: "optional",
+        defaultValue: "optional",
+      },
       // WMS-26: letter sheets with barcode and QR unless the company says.
       {
         key: LABEL_FORMAT.key,
@@ -258,6 +265,7 @@ describe("operation settings", () => {
       { key: PACKING_MODE.key, value: "off" },
       { key: SHIPMENT_DETAILS.key, value: "optional" },
       { key: CUSTOMER_RETURN_WITHOUT_ORDER.key, value: "allow" },
+      { key: INCIDENT_PHOTO.key, value: "optional" },
       { key: LABEL_FORMAT.key, value: "letter_10" },
       { key: LABEL_CODES_SETTING.key, value: "both" },
       { key: REPLENISHMENT_MODE.key, value: "off" },

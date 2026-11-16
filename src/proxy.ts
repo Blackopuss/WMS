@@ -36,6 +36,10 @@ const PROTECTED = [
   "/api/etiquetas",
 ];
 
+/** Policy of the responses of private files: nothing runs, nothing loads. */
+const FILE_POLICY =
+  "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox";
+
 /** The site people open: BETTER_AUTH_URL (required in production). */
 function publicBase(request: NextRequest): string {
   return process.env.BETTER_AUTH_URL || request.url;
@@ -58,12 +62,16 @@ export default function proxy(request: NextRequest) {
   // from the request's CSP header and puts it on its own scripts; the root
   // layout passes it to the theme script.
   const nonce = newNonce();
-  const policy = contentSecurityPolicy(nonce, {
-    development: process.env.NODE_ENV === "development",
-    https:
-      request.nextUrl.protocol === "https:" ||
-      process.env.BETTER_AUTH_URL?.startsWith("https://") === true,
-  });
+  // WMS-37 (ADR 0063): a private file (a photo shown inside the page, or a
+  // download) runs nothing, whatever it pretends to be.
+  const policy = pathname.startsWith("/api/archivos/")
+    ? FILE_POLICY
+    : contentSecurityPolicy(nonce, {
+        development: process.env.NODE_ENV === "development",
+        https:
+          request.nextUrl.protocol === "https:" ||
+          process.env.BETTER_AUTH_URL?.startsWith("https://") === true,
+      });
   const headers = new Headers(request.headers);
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", policy);

@@ -6,6 +6,13 @@ import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
+  attachEvidencePhotos,
+  evidencePhotoLinks,
+  storeFile,
+  type EvidenceOwners,
+  type StoreFileResult,
+} from "@/platform/files";
+import {
   LOCATION_PARENTS,
   activeFacilityOf,
   assertLocationsInScope,
@@ -16,6 +23,7 @@ import {
   locationsOutOfScope,
 } from "@/platform/locations";
 import { memberName, notify } from "@/platform/notifications";
+import { readSetting } from "@/platform/settings";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -37,6 +45,7 @@ import { IDEMPOTENCY_KEY, type InventoryActor } from "./movements";
 import { INCIDENT_CHANGED_NOTICE, INCIDENT_REPORTED_NOTICE } from "./notices";
 import { formatOutboundNumber } from "./outbound-states";
 import { PLACE_NOT_FOUND, scannedPlace } from "./scanned-place";
+import { INCIDENT_PHOTO } from "./settings";
 import { formatTaskNumber } from "./task-states";
 
 /**
@@ -51,7 +60,11 @@ import { formatTaskNumber } from "./task-states";
  * that location (WMS-20). Reporting notifies who attends; every change
  * notifies who reported it.
  *
- * Locks: the incident only (nothing else is locked or written).
+ * Photos (WMS-37, ADR 0063): uploaded one by one while the form is open
+ * (`uploadIncidentPhoto`) and linked when the incident or a note is saved;
+ * once linked they never change. Who sees the incident sees its photos.
+ *
+ * Locks: the incident, then the photos it links (files).
  */
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
@@ -60,7 +73,13 @@ type Client = ReturnType<typeof forOrganization>;
 export const INCIDENT_PAGE_SIZE = 25;
 
 export type IncidentField =
-  "kind" | "description" | "location" | "product" | "resolution" | "note";
+  | "kind"
+  | "description"
+  | "location"
+  | "product"
+  | "resolution"
+  | "note"
+  | "photos";
 
 type Failure = {
   ok: false;
@@ -93,6 +112,7 @@ const stop = (
 const NOT_FOUND = "Esta incidencia no existe.";
 const KEY_REUSED =
   "Esta confirmación ya se usó para otra incidencia. Recarga la página para reportar otra.";
+const PHOTO_REQUIRED = "Agrega al menos una foto de lo que pasó.";
 const PRODUCT_NOT_FOUND =
   "No encontramos ese producto. Escanea su código o escribe su clave.";
 
@@ -156,6 +176,8 @@ export type ReportIncidentInput = {
   /** A task or an outbound order it is about (ids, optional). */
   taskId?: string | null;
   orderId?: string | null;
+  /** Photos uploaded with `uploadIncidentPhoto` while reporting. */
+  photoIds?: readonly string[];
   idempotencyKey: string;
 };
 
@@ -291,6 +313,13 @@ export async function reportIncident(
           };
         }
         if (locationId) await assertLocationsInScope(tx, userId, [locationId]);
+        const photoIds = input.photoIds ?? [];
+        if (
+          photoIds.length === 0 &&
+          (await readSetting(tx, INCIDENT_PHOTO)) === "required"
+        ) {
+          return stop("invalid", PHOTO_REQUIRED, "photos");
+        }
         const last = await tx.incident.findFirst({
           orderBy: { number: "desc" },
           select: { number: true },
@@ -314,6 +343,12 @@ export async function reportIncident(
             reportedByUserId: userId,
           },
         });
+        const photos = await attachEvidencePhotos(tx, actor, {
+          purpose: "incident_photo",
+          owner: { kind: "incident", id },
+          fileIds: photoIds,
+        });
+        if (!photos.ok) return stop("invalid", photos.error, "photos");
         const place = locationId
           ? await tx.location.findFirst({
               where: { id: locationId },
@@ -330,6 +365,7 @@ export async function reportIncident(
             incidencia: numberText,
             tipo: INCIDENT_KIND_LABELS[kind!],
             almacen: facility.name,
+            ...(photos.count > 0 ? { fotos: photos.count } : {}),
           },
         });
         // Who attends incidents where it happened hears it now.
@@ -349,7 +385,7 @@ export async function reportIncident(
           incidentId: id,
           summary: `Reportaste ${numberText}. Quien atiende las incidencias ya recibió el aviso.`,
         };
-      });
+      }, LOCKING_TRANSACTION);
     } catch (error) {
       if (error instanceof Rejected) return error.result;
       if (isClash(error, "number") && attempt < 4) continue;
@@ -588,15 +624,21 @@ export function dismissIncident(
 }
 
 /**
- * A follow-up note, while it is open or being attended. Who reported it
- * hears it (unless they wrote it).
+ * A follow-up note, while it is open or being attended, with photos if
+ * they help (a note can be only photos). Who reported it hears it (unless
+ * they wrote it).
  */
 export function addIncidentNote(
   actor: InventoryActor,
   incidentId: string,
-  input: { text?: unknown },
+  input: { text?: unknown; photoIds?: readonly string[] },
 ): Promise<IncidentResult> {
-  const parsed = noteSchema.safeParse(String(input?.text ?? "").slice(0, 2000));
+  const photoIds = input?.photoIds ?? [];
+  const typed = String(input?.text ?? "").slice(0, 2000);
+  const parsed =
+    photoIds.length > 0 && typed.trim() === ""
+      ? ({ success: true, data: "" } as const)
+      : noteSchema.safeParse(typed);
   if (!parsed.success) {
     return Promise.resolve({
       ok: false,
@@ -627,20 +669,101 @@ export function addIncidentNote(
           createdByUserId: actor.userId,
         },
       });
+      const photos = await attachEvidencePhotos(tx, actor, {
+        purpose: "incident_photo",
+        owner: { kind: "incident", id: incident.id },
+        noteId,
+        fileIds: photoIds,
+      });
+      if (!photos.ok) return stop("invalid", photos.error, "photos");
+      const said = parsed.data
+        ? `: ${gist(parsed.data)}`
+        : ` (${photos.count === 1 ? "una foto" : `${photos.count} fotos`})`;
       await notify(tx, INCIDENT_CHANGED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
         to: { userIds: [incident.reportedByUserId] },
-        text: `${await memberName(tx, actor.userId)} agregó una nota a tu incidencia ${numberText}: ${gist(parsed.data)}`,
+        text: `${await memberName(tx, actor.userId)} agregó una nota a tu incidencia ${numberText}${said}`,
         href: `/incidencias/${incident.id}`,
         key: `incident:${incident.id}:note:${noteId}`,
       });
       return {
         ok: true,
         incidentId: incident.id,
-        summary: "Se agregó la nota.",
+        summary:
+          photos.count > 0 && !parsed.data
+            ? photos.count === 1
+              ? "Se agregó la foto."
+              : `Se agregaron ${photos.count} fotos.`
+            : "Se agregó la nota.",
       };
     },
+  );
+}
+
+// ── Photos ───────────────────────────────────────────────────────────────
+
+export type IncidentPhotoResult =
+  { ok: true; fileId: string } | { ok: false; error: string };
+
+/**
+ * Keeps a photo taken while reporting an incident or writing a note
+ * (WMS-37). It is checked by its content and stored without metadata; it
+ * stays unlinked (seen only by who took it) until the incident or the
+ * note is saved, and goes away after a day if it never is.
+ */
+export async function uploadIncidentPhoto(
+  actor: InventoryActor,
+  input: { name: string; bytes: Uint8Array },
+): Promise<IncidentPhotoResult> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.incident.create",
+  );
+  const stored: StoreFileResult = await storeFile(actor, {
+    purpose: "incident_photo",
+    name: input.name,
+    bytes: input.bytes,
+  });
+  return stored.ok
+    ? { ok: true, fileId: stored.fileId }
+    : { ok: false, error: stored.error };
+}
+
+/**
+ * Whether the person reaches an incident (its warehouse or its location):
+ * who decides if its photos exist for them (`evidenceOwners`, ADR 0063).
+ */
+export async function reachesIncident(
+  actor: InventoryActor,
+  incidentId: string,
+): Promise<boolean> {
+  const client = forOrganization(actor.organizationId);
+  const incident = await client.incident.findFirst({
+    where: { id: String(incidentId ?? "").slice(0, 36) },
+    select: { facilityId: true, locationId: true },
+  });
+  return incident ? reaches(client, actor.userId, incident) : false;
+}
+
+/** The owner function of incidents, for links made here. */
+const INCIDENT_OWNERS: EvidenceOwners = { incident: reachesIncident };
+
+/** Whether this company demands a photo to report (for the form). */
+export async function incidentPhotoRequired(
+  actor: InventoryActor,
+): Promise<boolean> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.incident.create",
+  );
+  return (
+    (await readSetting(
+      forOrganization(actor.organizationId),
+      INCIDENT_PHOTO,
+    )) === "required"
   );
 }
 
@@ -806,12 +929,22 @@ export type IncidentDetail = IncidentSummary & {
   closedByName: string | null;
   closedAt: Date | null;
   resolution: string | null;
+  /** Photos of the report (WMS-37), each with its link for this person. */
+  photos: IncidentPhoto[];
   notes: {
     id: string;
     text: string;
     authorName: string | null;
     createdAt: Date;
+    photos: IncidentPhoto[];
   }[];
+};
+
+export type IncidentPhoto = {
+  fileId: string;
+  url: string;
+  width: number | null;
+  height: number | null;
 };
 
 /**
@@ -857,6 +990,17 @@ export async function getIncident(
     },
   });
   if (!row || !(await reaches(client, actor.userId, row))) return null;
+  const photos = await evidencePhotoLinks(
+    actor,
+    { kind: "incident", id: row.id },
+    INCIDENT_OWNERS,
+  );
+  const photo = (each: (typeof photos)[number]): IncidentPhoto => ({
+    fileId: each.fileId,
+    url: each.url,
+    width: each.width,
+    height: each.height,
+  });
   const names = await namesOf(client, [
     row.reportedByUserId,
     row.attendedByUserId,
@@ -898,11 +1042,13 @@ export async function getIncident(
       : null,
     closedAt: row.closedAt,
     resolution: row.resolution,
+    photos: photos.filter((each) => !each.noteId).map(photo),
     notes: row.notes.map((note) => ({
       id: note.id,
       text: note.text,
       authorName: names.get(note.createdByUserId) ?? null,
       createdAt: note.createdAt,
+      photos: photos.filter((each) => each.noteId === note.id).map(photo),
     })),
   };
 }

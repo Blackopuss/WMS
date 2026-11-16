@@ -8,6 +8,7 @@ import { crmModule } from "./announced";
 
 export { approvalTypes } from "./approvals";
 export { customFieldReservedLabels } from "./custom-fields";
+export { evidenceOwners } from "./evidence";
 export { moduleOpenWork } from "./open-work";
 export { notificationTypes } from "./notifications";
 export { operationSettings } from "./settings";

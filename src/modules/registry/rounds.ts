@@ -8,6 +8,7 @@ import {
   organizationsWithWebhookHistory,
   purgeWebhookHistory,
 } from "@/platform/api";
+import { purgeOrphanPhotos } from "@/platform/files";
 import {
   purgeFinishedNoticeEmails,
   purgeReadNotifications,
@@ -39,6 +40,16 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     run: async (organizationId) => ({
       notices: await purgeReadNotifications(organizationId),
       mails: await purgeFinishedNoticeEmails(organizationId),
+    }),
+  },
+  // WMS-37 (ADR 0063): photos taken and never linked to a record, a day
+  // after. Photos are a platform table; every company of the WMS has
+  // Inventario, whose incidents carry them today.
+  {
+    name: "platform.photo_orphans_cleanup",
+    module: "inventory",
+    run: async (organizationId) => ({
+      photos: await purgeOrphanPhotos(organizationId),
     }),
   },
   // WMS-39B (ADR 0060): the daily summary by mail of who asked for it.

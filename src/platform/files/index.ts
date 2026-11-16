@@ -3,6 +3,8 @@
 export {
   FILE_LINK_SECONDS,
   FILE_PURPOSES,
+  PENDING_PHOTOS_HOURS,
+  PENDING_PHOTOS_MAX,
   createFileLink,
   deleteFile,
   openFileLink,
@@ -17,6 +19,21 @@ export type {
   StoreFileResult,
   StoredFileContent,
 } from "./files";
+// WMS-37 (ADR 0063): photos as evidence of a record.
+export {
+  attachEvidencePhotos,
+  evidencePhotoLinks,
+  purgeOrphanPhotos,
+} from "./evidence";
+export type { AttachPhotosResult, EvidencePhotoLink } from "./evidence";
+export { EVIDENCE_OWNER_KINDS } from "./purposes";
+export type {
+  EvidenceOwner,
+  EvidenceOwnerKind,
+  EvidenceOwners,
+} from "./purposes";
+export { IMAGE_LIMITS, sanitizeImage } from "./images";
+export type { SanitizedImage } from "./images";
 export { buildCsv, buildXlsx, neutralizeFormula } from "./spreadsheet";
 export type { Cell, Sheet } from "./spreadsheet";
 export { READ_LIMITS, readSpreadsheet } from "./spreadsheet-reader";

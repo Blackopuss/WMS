@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-112 tablas en 28 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+113 tablas en 28 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -19,7 +19,7 @@
 | Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
-| Plataforma › Archivos | 1 | [files](modulos/files.md) |
+| Plataforma › Archivos | 2 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
 | Plataforma › Almacenes y ubicaciones | 5 | [locations](modulos/locations.md) |
 | Plataforma › Catálogo de productos | 6 | [catalog](modulos/catalog.md) |
@@ -1109,7 +1109,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Plataforma › Archivos
 
-Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar).
+Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar) y fotos de evidencia ligadas a un registro (WMS-37).
 
 Documento: [modulos/files.md](modulos/files.md).
 
@@ -1132,9 +1132,33 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `deletedAt` | `DateTime? · DateTime(3)` |  | Set when it was removed; the bytes are gone, the row stays as a trace. |
+| `width` | `Int?` |  | Pixels of an image (WMS-37), read from its header; null otherwise. |
+| `height` | `Int?` |  |  |
 
 - Únicas: (`organizationId`, `id`).
-- Índices: (`organizationId`, `purpose`, `createdAt`).
+- Índices: (`organizationId`, `purpose`, `createdAt`); (`organizationId`, `createdByUserId`, `purpose`, `createdAt`).
+
+### EvidencePhoto · `evidence_photo`
+
+A photo linked as evidence to a record (WMS-37, ADR 0063). One reference column per kind of record, with composite keys; a CHECK demands exactly one owner (a step that adds a kind adds its column and widens the CHECK). Never changes nor is deleted, and its file can no longer be removed (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `fileId` | `String · Char(36)` |  |  |
+| `purpose` | `String · VarChar(40)` |  | The purpose of its file (FILE_PURPOSES); a trigger checks they match. |
+| `incidentId` | `String? · Char(36)` |  |  |
+| `incidentNoteId` | `String? · Char(36)` |  | The follow-up note it came with, if any (of the same incident). |
+| `position` | `Int` |  | Order inside its owner (0, 1, 2…). |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
+- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`).
+- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict).
 
 ## Plataforma › Cola de trabajos
 

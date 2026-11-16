@@ -8,12 +8,14 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PhotoGallery,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
 import { getIncident } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
+import { FILE_PURPOSES } from "@/platform/files";
 
 import { IncidentSteps } from "./incident-steps";
 
@@ -224,7 +226,7 @@ export default async function IncidenciaPage({
             </p>
           </div>
         )}
-        {/* WMS-37: photos of the evidence will go here. */}
+        <PhotoGallery photos={incident.photos} label={incident.numberText} />
       </section>
 
       {open && productActions.length > 0 && (
@@ -243,6 +245,7 @@ export default async function IncidenciaPage({
           status={incident.status}
           manages={manages && open}
           writesNotes={writesNotes}
+          maxPhotos={FILE_PURPOSES.incident_photo.evidence.perRecord}
         />
       ) : null}
 
@@ -257,9 +260,15 @@ export default async function IncidenciaPage({
           <ul className="space-y-3">
             {incident.notes.map((note) => (
               <li key={note.id} className="space-y-1">
-                <p className="[overflow-wrap:anywhere] whitespace-pre-line">
-                  {note.text}
-                </p>
+                {note.text && (
+                  <p className="[overflow-wrap:anywhere] whitespace-pre-line">
+                    {note.text}
+                  </p>
+                )}
+                <PhotoGallery
+                  photos={note.photos}
+                  label={`una nota de ${incident.numberText}`}
+                />
                 <p className="text-sm text-muted-foreground">
                   {note.authorName ?? "Alguien que ya no está en el equipo"} ·{" "}
                   <time dateTime={note.createdAt.toISOString()}>

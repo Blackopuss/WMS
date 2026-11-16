@@ -216,6 +216,7 @@ model Organization {
   webhookEvents                WebhookEvent[]
   webhookDeliveries            WebhookDelivery[]
   incidentNotes                IncidentNote[]
+  evidencePhotos               EvidencePhoto[]
   /// Shared terminals and PINs (WMS-38).
   sharedTerminals              SharedTerminal[]
   sharedTerminalSecrets        SharedTerminalSecret[]
@@ -1675,12 +1676,17 @@ model StoredFile {
   createdAt       DateTime         @default(now()) @db.DateTime(3)
   /// Set when it was removed; the bytes are gone, the row stays as a trace.
   deletedAt       DateTime?        @db.DateTime(3)
+  /// Pixels of an image (WMS-37), read from its header; null otherwise.
+  width           Int?
+  height          Int?
   productImports  ProductImport[]
   exitImports     ExitImport[]
   outboundImports OutboundImport[]
+  evidencePhoto   EvidencePhoto?
 
   @@unique([organizationId, id])
   @@index([organizationId, purpose, createdAt])
+  @@index([organizationId, createdByUserId, purpose, createdAt])
   @@map("stored_file")
 }
 
@@ -3816,38 +3822,39 @@ enum IncidentStatus {
 /// states with INCIDENT_TRANSITIONS and the trigger `incident_transition`.
 /// Never deleted.
 model Incident {
-  id               String         @id @db.Char(36)
-  organizationId   String         @db.Char(36)
-  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id               String          @id @db.Char(36)
+  organizationId   String          @db.Char(36)
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Consecutive per company («INC-0001»).
   number           Int
-  facilityId       String         @db.Char(36)
-  facility         Facility       @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  facilityId       String          @db.Char(36)
+  facility         Facility        @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   kind             IncidentKind
-  status           IncidentStatus @default(OPEN)
-  description      String         @db.VarChar(1000)
+  status           IncidentStatus  @default(OPEN)
+  description      String          @db.VarChar(1000)
   /// What it is about, all optional; the location is of its warehouse.
-  locationId       String?        @db.Char(36)
-  location         Location?      @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
-  productId        String?        @db.Char(36)
-  product          Product?       @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  taskId           String?        @db.Char(36)
-  task             WarehouseTask? @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  outboundOrderId  String?        @db.Char(36)
-  outboundOrder    OutboundOrder? @relation(fields: [organizationId, outboundOrderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  locationId       String?         @db.Char(36)
+  location         Location?       @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId        String?         @db.Char(36)
+  product          Product?        @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  taskId           String?         @db.Char(36)
+  task             WarehouseTask?  @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  outboundOrderId  String?         @db.Char(36)
+  outboundOrder    OutboundOrder?  @relation(fields: [organizationId, outboundOrderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The confirmation of the form: a retry finds the same incident.
-  idempotencyKey   String         @db.VarChar(64)
-  reportedByUserId String         @db.Char(36)
-  createdAt        DateTime       @default(now()) @db.DateTime(3)
+  idempotencyKey   String          @db.VarChar(64)
+  reportedByUserId String          @db.Char(36)
+  createdAt        DateTime        @default(now()) @db.DateTime(3)
   /// Who took it («en atención») and when.
-  attendedByUserId String?        @db.Char(36)
-  attendedAt       DateTime?      @db.DateTime(3)
+  attendedByUserId String?         @db.Char(36)
+  attendedAt       DateTime?       @db.DateTime(3)
   /// Resolved (what was done) or dismissed (why).
-  closedByUserId   String?        @db.Char(36)
-  closedAt         DateTime?      @db.DateTime(3)
-  resolution       String?        @db.VarChar(500)
-  updatedAt        DateTime       @updatedAt @db.DateTime(3)
+  closedByUserId   String?         @db.Char(36)
+  closedAt         DateTime?       @db.DateTime(3)
+  resolution       String?         @db.VarChar(500)
+  updatedAt        DateTime        @updatedAt @db.DateTime(3)
   notes            IncidentNote[]
+  evidencePhotos   EvidencePhoto[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
@@ -3863,18 +3870,49 @@ model Incident {
 
 /// A follow-up note of an incident (WMS-39): never changed or deleted.
 model IncidentNote {
-  id              String       @id @db.Char(36)
-  organizationId  String       @db.Char(36)
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  incidentId      String       @db.Char(36)
-  incident        Incident     @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  text            String       @db.VarChar(1000)
-  createdByUserId String       @db.Char(36)
-  createdAt       DateTime     @default(now()) @db.DateTime(3)
+  id              String          @id @db.Char(36)
+  organizationId  String          @db.Char(36)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  incidentId      String          @db.Char(36)
+  incident        Incident        @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  text            String          @db.VarChar(1000)
+  createdByUserId String          @db.Char(36)
+  createdAt       DateTime        @default(now()) @db.DateTime(3)
+  evidencePhotos  EvidencePhoto[]
 
   @@unique([organizationId, id])
   @@index([organizationId, incidentId, createdAt, id])
   @@map("incident_note")
+}
+
+/// A photo linked as evidence to a record (WMS-37, ADR 0063). One reference
+/// column per kind of record, with composite keys; a CHECK demands exactly
+/// one owner (a step that adds a kind adds its column and widens the
+/// CHECK). Never changes nor is deleted, and its file can no longer be
+/// removed (triggers).
+model EvidencePhoto {
+  id              String        @id @db.Char(36)
+  organizationId  String        @db.Char(36)
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fileId          String        @db.Char(36)
+  file            StoredFile    @relation(fields: [organizationId, fileId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The purpose of its file (FILE_PURPOSES); a trigger checks they match.
+  purpose         String        @db.VarChar(40)
+  incidentId      String?       @db.Char(36)
+  incident        Incident?     @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The follow-up note it came with, if any (of the same incident).
+  incidentNoteId  String?       @db.Char(36)
+  incidentNote    IncidentNote? @relation(fields: [organizationId, incidentNoteId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Order inside its owner (0, 1, 2…).
+  position        Int
+  createdByUserId String        @db.Char(36)
+  createdAt       DateTime      @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, fileId])
+  @@index([organizationId, incidentId, position])
+  @@index([organizationId, incidentNoteId])
+  @@map("evidence_photo")
 }
 
 /// A device registered as a shared terminal of a warehouse (WMS-38,

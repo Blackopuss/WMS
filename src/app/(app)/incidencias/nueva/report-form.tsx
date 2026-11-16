@@ -1,15 +1,25 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
-import { FormField } from "@/components";
+import { FormField, PhotoCapture, type CapturedPhoto } from "@/components";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { reportIncidentAction, type ReportState } from "../actions";
+import {
+  reportIncidentAction,
+  uploadIncidentPhotoAction,
+  type ReportState,
+} from "../actions";
 
-const FIELDS = ["kind", "description", "location", "product"] as const;
+const FIELDS = [
+  "kind",
+  "description",
+  "location",
+  "product",
+  "photos",
+] as const;
 
 const areaClass =
   "w-full min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30";
@@ -24,12 +34,18 @@ export function ReportForm({
   taskId,
   orderId,
   kinds,
+  photoRequired,
+  maxPhotos,
 }: {
   idempotencyKey: string;
   taskId: string | null;
   orderId: string | null;
   kinds: { value: string; label: string }[];
+  photoRequired: boolean;
+  maxPhotos: number;
 }) {
+  // Outside the form, which is rebuilt on each answer: what was taken stays.
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [state, formAction, pending] = useActionState(
     reportIncidentAction.bind(null, { taskId, orderId }),
     {
@@ -45,6 +61,8 @@ export function ReportForm({
     const first = FIELDS.find((field) => errors[field]);
     if (first === "kind") {
       root.current?.querySelector<HTMLElement>('input[name="kind"]')?.focus();
+    } else if (first === "photos") {
+      root.current?.querySelector<HTMLElement>("#photos-group button")?.focus();
     } else if (first) {
       root.current?.querySelector<HTMLElement>(`#${first}`)?.focus();
     }
@@ -166,7 +184,17 @@ export function ReportForm({
           </div>
         )}
       </FormField>
-      {/* WMS-37 will add photos here. */}
+      <div id="photos-group">
+        <PhotoCapture
+          id="photos"
+          label={photoRequired ? "Fotos" : "Fotos (opcional)"}
+          error={errors.photos}
+          photos={photos}
+          onPhotosChange={setPhotos}
+          upload={uploadIncidentPhotoAction}
+          max={maxPhotos}
+        />
+      </div>
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "Enviando…" : "Reportar"}
       </Button>

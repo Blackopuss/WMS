@@ -10,7 +10,9 @@ import {
   reportIncident,
   resolveIncident,
   startIncident,
+  uploadIncidentPhoto,
   type IncidentField,
+  type IncidentPhotoResult,
   type IncidentResult,
 } from "@/modules/inventory";
 import { requireOrganizationContext } from "@/platform/tenancy";
@@ -35,6 +37,13 @@ async function actor() {
   const { user, organization } = await requireOrganizationContext();
   return { organizationId: organization.id, userId: user.id };
 }
+
+/** The ids of the photos the form carries (uploaded before, WMS-37). */
+const photoIds = (formData: FormData) =>
+  formData
+    .getAll("photoIds")
+    .slice(0, 20)
+    .map((value) => idPath(value));
 
 const forbidden = (error: unknown) =>
   isAppError(error) && error.kind === "forbidden" ? error.message : null;
@@ -74,6 +83,7 @@ export async function reportIncidentAction(
       ...values,
       taskId: bound.taskId ? idPath(bound.taskId) : null,
       orderId: bound.orderId ? idPath(bound.orderId) : null,
+      photoIds: photoIds(formData),
       idempotencyKey: text(formData, "idempotencyKey", 64),
     });
   } catch (error) {
@@ -125,7 +135,10 @@ export async function incidentStepAction(
           ? await resolveIncident(who, id, { resolution: typed })
           : bound.step === "dismiss"
             ? await dismissIncident(who, id, { reason: typed })
-            : await addIncidentNote(who, id, { text: typed });
+            : await addIncidentNote(who, id, {
+                text: typed,
+                photoIds: photoIds(formData),
+              });
   } catch (error) {
     const message = forbidden(error);
     if (!message) throw error;
@@ -138,6 +151,7 @@ export async function incidentStepAction(
       error:
         result.fieldErrors?.resolution ??
         result.fieldErrors?.note ??
+        result.fieldErrors?.photos ??
         result.formError ??
         "No se pudo. Inténtalo de nuevo.",
       text: typed,
@@ -145,4 +159,28 @@ export async function incidentStepAction(
     };
   }
   return { ok: true, message: result.summary, answers: previous.answers + 1 };
+}
+
+/**
+ * A photo taken while reporting or writing a note (WMS-37). It is checked
+ * and kept unlinked, for the person only, until the form is saved; the
+ * company and the person come from the session.
+ */
+export async function uploadIncidentPhotoAction(
+  formData: FormData,
+): Promise<IncidentPhotoResult> {
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "No llegó la foto. Tómala otra vez." };
+  }
+  try {
+    return await uploadIncidentPhoto(await actor(), {
+      name: file.name,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+    });
+  } catch (error) {
+    const message = forbidden(error);
+    if (!message) throw error;
+    return { ok: false, error: message };
+  }
 }

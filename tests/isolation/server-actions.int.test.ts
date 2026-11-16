@@ -1155,17 +1155,24 @@ const REVIEWED: Record<string, Review> = {
   },
   reportIncidentAction: {
     input:
-      "tipo, descripción, ubicación y producto escaneados o escritos, tarea o pedido (fijados por la página) y clave de confirmación",
+      "tipo, descripción, ubicación y producto escaneados o escritos, tarea o pedido (fijados por la página), ids de fotos ya subidas y clave de confirmación",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el almacén es el activo de la persona; ubicación, producto, tarea y pedido se buscan solo en esa empresa, en ese almacén y dentro de su alcance; exige inventory.incident.create",
     coveredBy: "tests/inventory/incidents.int.test.ts",
   },
   incidentStepAction: {
     input:
-      "id de la incidencia y el paso (fijados por la página) y el texto de la resolución, el motivo o la nota",
+      "id de la incidencia y el paso (fijados por la página) y el texto de la resolución, el motivo o la nota, con ids de fotos ya subidas",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create",
+      "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create; solo se ligan fotos de esa empresa subidas por la misma persona y sin ligar",
     coveredBy: "tests/inventory/incidents.int.test.ts",
+  },
+  uploadIncidentPhotoAction: {
+    input:
+      "una foto (FormData «photo»); nombre y bytes, el tipo lo decide el servidor por el contenido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige inventory.incident.create; la foto queda en esa empresa a nombre de la persona y sin ligar, visible solo para ella",
+    coveredBy: "tests/inventory/incident-photos.int.test.ts",
   },
   createFieldAction: {
     input:
