@@ -30,6 +30,7 @@ import { getModuleAccess } from "@/platform/billing";
 import {
   countProcessWork,
   listProcessWork,
+  worksProcessStages,
   type ProcessWorkPage,
 } from "@/platform/processes";
 
@@ -61,8 +62,10 @@ export default async function TareasPage({
   const readsTasks = access.can("inventory.task.read");
   const worksStages =
     access.can("platform.process.work") &&
-    processDocuments.some(
-      (document) => access.moduleState(document.module) === "active",
+    worksProcessStages(
+      (permission) => access.can(permission),
+      (module) => access.moduleState(module),
+      processDocuments,
     );
   if (!readsTasks && !worksStages) {
     return (

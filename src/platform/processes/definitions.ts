@@ -100,3 +100,24 @@ export function milestoneIndex(
 ): number {
   return document.milestones.findIndex((milestone) => milestone.key === key);
 }
+
+/**
+ * Whether the person may work stages of some document now (WMS-74B, ADR
+ * 0071): works stages, reads that document and its module is active. What
+ * shows «Tareas» and the stages of «Para hoy» without a query; a module
+ * declaring a document does not make Tareas appear to who cannot read it.
+ */
+export function worksProcessStages(
+  can: (permission: Permission) => boolean,
+  moduleState: (module: string) => string,
+  documents: readonly Pick<ProcessDocument, "module" | "readPermission">[],
+): boolean {
+  return (
+    can("platform.process.work") &&
+    documents.some(
+      (document) =>
+        moduleState(document.module) === "active" &&
+        can(document.readPermission),
+    )
+  );
+}

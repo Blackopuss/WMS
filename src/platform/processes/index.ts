@@ -5,6 +5,7 @@ export {
   PROCESS_LIMITS,
   assertValidProcessDocuments,
   milestoneIndex,
+  worksProcessStages,
 } from "./definitions";
 export type {
   ProcessDocument,
@@ -27,6 +28,7 @@ export {
   ProcessStagesPending,
   assertStagesDone,
   completeOperationStage,
+  operationWaits,
   reachMilestone,
   setProcessPlace,
   startProcess,

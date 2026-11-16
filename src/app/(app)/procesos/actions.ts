@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
-import { isAppError } from "@/lib";
+import { isAppError, isInternalHref } from "@/lib";
 import { processDocuments } from "@/modules/registry";
 import {
   assignStage,
@@ -130,6 +130,12 @@ export async function stageAction(
   }
   revalidatePath(`/procesos/${progressId}`);
   revalidatePath("/tareas");
+  // WMS-74B: the panel also lives in the screen of its document (only a
+  // path of this application; it only refreshes, it decides nothing).
+  const documentHref = text(formData, "documentHref", 200);
+  if (documentHref && isInternalHref(documentHref)) {
+    revalidatePath(documentHref.split("?")[0]!);
+  }
   return { ok: true, message: result.message, answers };
 }
 

@@ -266,3 +266,32 @@ export async function completeOperationStage(
   await settle(tx, document, graph, actor);
   return { applied: true };
 }
+
+/**
+ * What the operation of a document waits for, read without a lock: for a
+ * screen that does not offer an operation whose earlier stages are not
+ * done (6.4, «la pantalla dice por qué»). Null when it may happen now or
+ * the document has no process. The module decides again under its locks
+ * with `assertStagesDone`.
+ */
+export async function operationWaits(
+  client: Pick<
+    ProcessTx,
+    "processProgress" | "processStage" | "processStageState"
+  >,
+  document: ProcessDocument,
+  documentId: string,
+  operationKey: string,
+): Promise<string | null> {
+  const found = await client.processProgress.findFirst({
+    where: {
+      documentKey: document.key,
+      documentId: String(documentId).slice(0, 36),
+    },
+    select: { id: true, status: true },
+  });
+  if (!found || found.status !== "ACTIVE") return null;
+  const graph = await readGraph(client, found.id);
+  if (!graph) return null;
+  return pendingMessage(document, graph, operationKey);
+}

@@ -8,6 +8,7 @@ import { isPermission } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getActiveFacility, listFacilities } from "@/platform/locations";
 import { countUnreadNotifications } from "@/platform/notifications";
+import { worksProcessStages } from "@/platform/processes";
 import { listMyOrganizations } from "@/platform/tenancy";
 
 import {
@@ -49,9 +50,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // The menu only offers what the roles of the person allow (USR-09) in
   // modules the company has (MOD-05).
   // WMS-74: working stages shows Tareas only while an active module
-  // declares documents with processes (no query: the list is in code).
-  const processesOn = processDocuments.some(
-    (document) => access.moduleState(document.module) === "active",
+  // declares a document the person reads (no query: the list is in code;
+  // WMS-74B).
+  const processesOn = worksProcessStages(
+    (permission) => access.can(permission),
+    (module) => access.moduleState(module),
+    processDocuments,
   );
   const allowedHrefs = visibleNavItems(
     (permission) =>

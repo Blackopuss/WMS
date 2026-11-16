@@ -58,6 +58,8 @@ type Leaf = {
 export type ProcessPanelView = {
   id: string;
   label: string;
+  /** The screen of the document, refreshed too after an action (WMS-74B). */
+  documentHref?: string;
   versionNumber: number;
   stages: {
     id: string;
@@ -119,6 +121,9 @@ function Hidden({
       <input type="hidden" name="intent" value={intent} />
       <input type="hidden" name="stateId" value={leaf.stateId} />
       <input type="hidden" name="progressId" value={view.id} />
+      {view.documentHref && (
+        <input type="hidden" name="documentHref" value={view.documentHref} />
+      )}
       <input
         type="hidden"
         name="idempotencyKey"
