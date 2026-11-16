@@ -2,7 +2,7 @@
 
 Fecha: 2026-11-16. Complementa el ADR 0069, `REVISION_FOTOS.md` (fotos de
 evidencia) y la revisión de aprobaciones (ADR 0053). Hecha por la misma IA
-que implementó el paso; falta la revisión independiente antes de unir.
+que implementó el paso y corregida tras la revisión independiente (ver abajo).
 
 ## Qué se agregó
 
@@ -38,6 +38,24 @@ que implementó el paso; falta la revisión independiente antes de unir.
 | Foto de un paso vista por quien no lee el documento | `process_step` en `EvidenceOwners` con `processStepReach` (permiso de lectura del documento + almacén); sin la función, la foto no existe | `processes.int.test.ts` («a photo of a step is evidence…») |
 | JSON enorme o malformado en el editor | Tope de 100 000 caracteres en la acción, Zod con topes (30 etapas, 10 subetapas, 60 caracteres) y `checkDraft` contra el documento | `processes.int.test.ts` («checks the draft…»), `rules.test.ts` |
 | Texto del navegador guardado tal cual (dispositivo) | Solo se guarda la descripción de `describeUserAgent`, nunca el texto crudo | `processes.int.test.ts` (dispositivo del rastro) |
+
+## Hallazgos de la revisión independiente (2026-11-16) y corrección
+
+| Hallazgo | Corrección | Prueba |
+| --- | --- | --- |
+| M1: un área con roles que no pueden hacer etapas detenía el documento | Solo roles con `platform.process.work` y la lectura del documento; publicar revalida; la pantalla avisa «Nadie de tu equipo puede hacer esta etapa» | `processes.int.test.ts` («an area takes only roles…») |
+| M2: Inspector y Encargado no veían sus etapas | «Tareas», su menú e Inicio con `platform.process.work` (solo mientras haya documentos con procesos), sin dar nada de tareas de almacén | `navigation.int.test.ts` |
+| B1: reasignar no dejaba rastro de quién la tenía | `process_step.previousUserId` y aviso a esa persona | «reassigning keeps who had it…» |
+| B2: misma clave en dos procesos a la vez terminaba en error | Choque de la llave única capturado como `key_reused` | «the same confirmation on two processes…» |
+| B3: quien asigna no respetaba la zona | `mayAssign` aplica la zona; fuera de ella la etapa no existe | «who assigns is limited by zone too» |
+| B4: guardar y publicar en dos transacciones | Una sola transacción | — (mismo servicio) |
+| B5: `mayDecide` de aprobaciones con roles conocidos y el aviso con roles vigentes | Las dos con `activeRoles` | `approvals.int.test.ts` («a tied role without its module…») |
+| B6: historial sin aviso de truncado y una consulta por foto | Cuenta de pasos anteriores; fotos en una consulta (`evidencePhotoLinksOf`) tras decidir el alcance una vez | «the trail says when it shows only the latest steps» |
+| B7: módulo ausente mostraba el proceso | `NoModuleState` (con el módulo quitado queda en solo lectura) | «without the module of the document…» |
+| N3: estados de etapa sin regla en la base | `STAGE_STATE_TRANSITIONS` y disparador; nada cambia con el proceso terminado | «the base keeps the states of a stage…» |
+| N4: cualquiera con el permiso subía fotos | Solo para una etapa por hacer que la persona puede hacer y que pide foto | «a photo of a step is evidence…» |
+| N5: terminal leída dentro de la transacción | Se lee antes de abrirla | — |
+| N6: un administrador limitado a un almacén configuraba procesos | Exige `seesWholeCompany` | «who is limited to a warehouse…» |
 
 ## Riesgos aceptados y pendientes
 

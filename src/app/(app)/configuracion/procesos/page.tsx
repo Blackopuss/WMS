@@ -9,7 +9,7 @@ import {
   PageHeader,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib";
+import { formatDateTime, isAppError } from "@/lib";
 import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { getProcessSettings } from "@/platform/processes";
@@ -40,10 +40,30 @@ export default async function ProcesosPage() {
       </PageContainer>
     );
   }
-  const documents = await getProcessSettings(
-    { organizationId: access.organization.id, userId: access.user.id },
-    processDocuments,
-  );
+  let documents: Awaited<ReturnType<typeof getProcessSettings>>;
+  try {
+    documents = await getProcessSettings(
+      { organizationId: access.organization.id, userId: access.user.id },
+      processDocuments,
+    );
+  } catch (error) {
+    // Processes are of the whole company (N6): who is limited is told why.
+    if (isAppError(error) && error.kind === "forbidden") {
+      return (
+        <PageContainer>
+          {back}
+          <PageHeader title="Procesos" />
+          <p
+            role="status"
+            className="max-w-3xl rounded-xl border bg-card p-4 text-sm sm:p-5"
+          >
+            {error.message}
+          </p>
+        </PageContainer>
+      );
+    }
+    throw error;
+  }
   const tz = access.organization.timeZone;
 
   return (

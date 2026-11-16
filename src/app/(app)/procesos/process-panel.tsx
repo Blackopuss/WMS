@@ -52,6 +52,7 @@ type Leaf = {
   canSkip: boolean;
   canBack: boolean;
   canAssign: boolean;
+  nobody: boolean;
 };
 
 export type ProcessPanelView = {
@@ -80,6 +81,7 @@ export type ProcessPanelView = {
     createdAt: Date;
     photos: GalleryPhoto[];
   }[];
+  olderSteps: number;
   photoLimit: number;
 };
 
@@ -251,7 +253,7 @@ export function ProcessPanel({
                   error={error("photos")}
                   photos={photos}
                   onPhotosChange={setPhotos}
-                  upload={uploadProcessPhotoAction}
+                  upload={uploadProcessPhotoAction.bind(null, chosen.stateId)}
                   discard={discardProcessPhotoAction}
                   max={view.photoLimit}
                 />
@@ -382,6 +384,17 @@ export function ProcessPanel({
                     {leaf.waitingText && (
                       <p className="text-sm">{leaf.waitingText}</p>
                     )}
+                    {leaf.nobody && (
+                      <p
+                        role="status"
+                        className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+                      >
+                        Nadie de tu equipo puede hacer esta etapa ({leaf.area}).
+                        Dale ese rol a alguien de este almacén en Configuración
+                        › Equipo, o cambia el área del proceso para los
+                        documentos nuevos.
+                      </p>
+                    )}
                     {leaf.stateId !== chosen?.stateId &&
                       (leaf.canComplete || leaf.canTake) && (
                         <Link
@@ -479,6 +492,12 @@ export function ProcessPanel({
               </li>
             ))}
           </ul>
+          {view.olderSteps > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Se muestran los {view.steps.length} pasos más recientes; hay{" "}
+              {view.olderSteps} anteriores.
+            </p>
+          )}
         </section>
       )}
     </div>

@@ -239,6 +239,17 @@ model Organization {
   customFields                 CustomField[]
   customFieldOptions           CustomFieldOption[]
   customFieldValues            CustomFieldValue[]
+  qualityPlans                 QualityPlan[]
+  qualityPlanVersions          QualityPlanVersion[]
+  qualityPlanPoints            QualityPlanPoint[]
+  qualityPlanPointOptions      QualityPlanPointOption[]
+  qualityDefects               QualityDefect[]
+  qualityDefectCatalogs        QualityDefectCatalog[]
+  recipes                      Recipe[]
+  recipeVersions               RecipeVersion[]
+  recipeInputs                 RecipeInput[]
+  recipeOutputs                RecipeOutput[]
+  recipeLock                   RecipeLock?
 
   @@index([ownerUserId])
   @@map("organization")
@@ -1142,6 +1153,13 @@ model Product {
   purchaseRequestLines PurchaseRequestLine[]
   /// Values of the custom fields of the company (WMS-58).
   customValues         CustomFieldValue[]
+  /// What is checked when it waits for verification (WMS-30A).
+  qualityPlans         QualityPlan[]
+  /// Its recipe (WMS-27): one per product.
+  recipe               Recipe?
+  /// Recipe versions that use it as a material, or that make it.
+  recipeInputs         RecipeInput[]
+  recipeOutputs        RecipeOutput[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, sku])
@@ -1218,6 +1236,7 @@ model ProductPresentation {
   orderLines     PurchaseOrderLine[]
   receiptLines   PurchaseReceiptLine[]
   requestLines   PurchaseRequestLine[]
+  recipeInputs   RecipeInput[]
 
   @@unique([organizationId, id])
   /// Lets a movement line prove its presentation is of its product.
@@ -1246,6 +1265,7 @@ model PresentationVersion {
   orderLines      PurchaseOrderLine[]
   receiptLines    PurchaseReceiptLine[]
   requestLines    PurchaseRequestLine[]
+  recipeInputs    RecipeInput[]
 
   @@unique([organizationId, id])
   /// Lets a movement line prove its version is of its presentation.
@@ -4462,6 +4482,8 @@ model ProcessStep {
   actorUserId    String?           @db.Char(36)
   /// Who received it (ASSIGNED).
   assigneeUserId String?           @db.Char(36)
+  /// Who had it before (ASSIGNED, RELEASED), if somebody did.
+  previousUserId String?           @db.Char(36)
   note           String?           @db.VarChar(500)
   quantity       Decimal?          @db.Decimal(18, 3)
   /// «Chrome en Android» (describeUserAgent, never the raw text).
@@ -4474,4 +4496,329 @@ model ProcessStep {
   @@unique([organizationId, idempotencyKey])
   @@index([organizationId, progressId, createdAt, id])
   @@map("process_step")
+}
+
+// ---------------------------------------------------------------------------
+// Producción (WMS-27, ADR 0066)
+
+enum RecipeVersionStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+  DISCARDED
+}
+
+/// The recipe of a product (WMS-27, ADR 0066): one per product, standard,
+/// defined by who runs production. What it says lives in its versions.
+/// Never deleted, and its product never changes (triggers).
+model Recipe {
+  id              String          @id @db.Char(36)
+  organizationId  String          @db.Char(36)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  productId       String          @db.Char(36)
+  product         Product         @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  createdByUserId String          @db.Char(36)
+  createdAt       DateTime        @default(now()) @db.DateTime(3)
+  updatedAt       DateTime        @updatedAt @db.DateTime(3)
+  versions        RecipeVersion[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, productId])
+  @@map("recipe")
+}
+
+/// One version of a recipe: for how much (in the unit of the product of the
+/// card), its materials and what comes out. Draft → active → retired, or
+/// draft → discarded (RECIPE_VERSION_TRANSITIONS and trigger). One active
+/// and one draft per recipe at most (`activeRecipeId`/`draftRecipeId`,
+/// CHECK and unique index). Only a draft changes; nothing is deleted.
+model RecipeVersion {
+  id                String              @id @db.Char(36)
+  organizationId    String              @db.Char(36)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  recipeId          String              @db.Char(36)
+  recipe            Recipe              @relation(fields: [organizationId, recipeId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  number            Int
+  status            RecipeVersionStatus @default(DRAFT)
+  /// For how much of the product of the card, in `unitCode`.
+  baseQuantity      Decimal             @db.Decimal(12, 3)
+  unitCode          String              @db.VarChar(12)
+  /// The recipe id while ACTIVE, NULL otherwise: one active per recipe.
+  activeRecipeId    String?             @db.Char(36)
+  /// The recipe id while DRAFT, NULL otherwise: one draft per recipe.
+  draftRecipeId     String?             @db.Char(36)
+  createdByUserId   String              @db.Char(36)
+  activatedAt       DateTime?           @db.DateTime(3)
+  activatedByUserId String?             @db.Char(36)
+  retiredAt         DateTime?           @db.DateTime(3)
+  retiredByUserId   String?             @db.Char(36)
+  discardedAt       DateTime?           @db.DateTime(3)
+  discardedByUserId String?             @db.Char(36)
+  createdAt         DateTime            @default(now()) @db.DateTime(3)
+  updatedAt         DateTime            @updatedAt @db.DateTime(3)
+  inputs            RecipeInput[]
+  outputs           RecipeOutput[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, recipeId, number])
+  @@unique([organizationId, activeRecipeId])
+  @@unique([organizationId, draftRecipeId])
+  @@index([organizationId, status])
+  @@map("recipe_version")
+}
+
+/// One material of a recipe version, as an order line keeps it: what was
+/// written, the presentation and version of its content then, the factor
+/// and the result in the unit of the material (`unitCode` at that moment).
+/// Expected scrap is informative. One line per product; only while the
+/// version is a draft (triggers).
+model RecipeInput {
+  id                    String               @id @db.Char(36)
+  organizationId        String               @db.Char(36)
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versionId             String               @db.Char(36)
+  version               RecipeVersion        @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict)
+  lineNumber            Int
+  productId             String               @db.Char(36)
+  product               Product              @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  capturedQuantity      Decimal              @db.Decimal(12, 3)
+  presentationId        String?              @db.Char(36)
+  presentation          ProductPresentation? @relation(fields: [organizationId, productId, presentationId], references: [organizationId, productId, id], onDelete: Restrict, onUpdate: Restrict)
+  presentationVersionId String?              @db.Char(36)
+  presentationVersion   PresentationVersion? @relation(fields: [organizationId, presentationId, presentationVersionId], references: [organizationId, presentationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Unit of another measure it was captured in («g» for a product in kg).
+  capturedUnitCode      String?              @db.VarChar(12)
+  factor                Decimal              @db.Decimal(18, 6)
+  baseQuantity          Decimal              @db.Decimal(12, 3)
+  unitCode              String               @db.VarChar(12)
+  /// Expected scrap, percent (0 to less than 100), optional.
+  scrapPercent          Decimal?             @db.Decimal(5, 2)
+  createdAt             DateTime             @default(now()) @db.DateTime(3)
+  updatedAt             DateTime             @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, versionId, lineNumber])
+  @@unique([organizationId, versionId, productId])
+  @@index([organizationId, productId])
+  @@map("recipe_input")
+}
+
+/// What comes out of a recipe version: a product, how much for the base
+/// (in its unit) and its share of the cost (percent; the shares of a
+/// version add up to 100 to activate it). One line per product; only while
+/// the version is a draft (triggers).
+model RecipeOutput {
+  id             String        @id @db.Char(36)
+  organizationId String        @db.Char(36)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versionId      String        @db.Char(36)
+  version        RecipeVersion @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict)
+  lineNumber     Int
+  productId      String        @db.Char(36)
+  product        Product       @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  quantity       Decimal       @db.Decimal(12, 3)
+  unitCode       String        @db.VarChar(12)
+  costShare      Decimal       @db.Decimal(5, 2)
+  createdAt      DateTime      @default(now()) @db.DateTime(3)
+  updatedAt      DateTime      @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, versionId, lineNumber])
+  @@unique([organizationId, versionId, productId])
+  @@index([organizationId, productId])
+  @@map("recipe_output")
+}
+
+/// One row per company whose lock puts every recipe activation of the
+/// company one after the other, so two at once cannot close a cycle
+/// (ADR 0066). Its id is the company id. Holds nothing else.
+model RecipeLock {
+  id             String       @id @db.Char(36)
+  organizationId String       @unique @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@map("recipe_lock")
+}
+
+// ---------------------------------------------------------------------------
+// Calidad: inspection plans and defects (WMS-30A, ADR 0067)
+// ---------------------------------------------------------------------------
+
+/// State of a version of an inspection plan: drafted, in force, replaced by
+/// a newer one or dropped before being published. Never deleted.
+enum QualityPlanStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+  DISCARDED
+}
+
+/// How the quality is checked: as the company setting says, all of it, or
+/// a sample (D6). The quantity is always counted in full (D5).
+enum QualitySampling {
+  DEFAULT
+  FULL
+  SAMPLE
+}
+
+/// Size of a sample: a fixed quantity, or a percentage with a minimum and
+/// an optional cap.
+enum QualitySampleRule {
+  FIXED
+  PERCENT
+}
+
+/// What a check point records: yes or no, a number in a range, one option
+/// of a list, or a note.
+enum QualityPointKind {
+  CHECK
+  NUMBER
+  CHOICE
+  TEXT
+}
+
+/// How serious a defect is; information for the inspector and reports.
+enum QualityDefectSeverity {
+  MINOR
+  MAJOR
+  CRITICAL
+}
+
+/// The inspection plan of a product: one per product, with its versions.
+/// Never deleted; the product never changes (trigger).
+model QualityPlan {
+  id              String               @id @db.Char(36)
+  organizationId  String               @db.Char(36)
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  productId       String               @db.Char(36)
+  product         Product              @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdByUserId String               @db.Char(36)
+  createdAt       DateTime             @default(now()) @db.DateTime(3)
+  versions        QualityPlanVersion[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, productId])
+  @@map("quality_plan")
+}
+
+/// A version of an inspection plan. Only a draft changes; publishing
+/// retires the one in force (triggers). `draftPlanId` and `activePlanId`
+/// hold the plan only while the version is a draft or in force, so a plan
+/// has at most one of each.
+model QualityPlanVersion {
+  id                String             @id @db.Char(36)
+  organizationId    String             @db.Char(36)
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  planId            String             @db.Char(36)
+  plan              QualityPlan        @relation(fields: [organizationId, planId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  number            Int
+  status            QualityPlanStatus  @default(DRAFT)
+  draftPlanId       String?            @db.Char(36)
+  activePlanId      String?            @db.Char(36)
+  sampling          QualitySampling    @default(DEFAULT)
+  sampleRule        QualitySampleRule?
+  /// FIXED: how much is checked, in the unit of the product.
+  sampleQuantity    Decimal?           @db.Decimal(15, 3)
+  /// PERCENT: share of what is verified (1 to 100), at least `sampleMin`
+  /// and at most `sampleMax` (optional).
+  samplePercent     Int?
+  sampleMin         Decimal?           @db.Decimal(15, 3)
+  sampleMax         Decimal?           @db.Decimal(15, 3)
+  forProduced       Boolean            @default(true)
+  forReceived       Boolean            @default(true)
+  forReturned       Boolean            @default(true)
+  createdByUserId   String             @db.Char(36)
+  createdAt         DateTime           @default(now()) @db.DateTime(3)
+  publishedByUserId String?            @db.Char(36)
+  publishedAt       DateTime?          @db.DateTime(3)
+  /// When it was retired or discarded, and by whom.
+  closedByUserId    String?            @db.Char(36)
+  closedAt          DateTime?          @db.DateTime(3)
+  points            QualityPlanPoint[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, planId, number])
+  @@unique([organizationId, draftPlanId])
+  @@unique([organizationId, activePlanId])
+  @@map("quality_plan_version")
+}
+
+/// A check point of a version. Written or removed only while its version
+/// is a draft (triggers).
+model QualityPlanPoint {
+  id             String                   @id @db.Char(36)
+  organizationId String                   @db.Char(36)
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versionId      String                   @db.Char(36)
+  version        QualityPlanVersion       @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  position       Int
+  label          String                   @db.VarChar(80)
+  kind           QualityPointKind
+  required       Boolean                  @default(true)
+  /// The inspector attaches a photo for it (WMS-30B, with WMS-37).
+  photo          Boolean                  @default(false)
+  /// NUMBER: acceptable range (either end optional, at least one).
+  minValue       Decimal?                 @db.Decimal(19, 4)
+  maxValue       Decimal?                 @db.Decimal(19, 4)
+  unitLabel      String?                  @db.VarChar(20)
+  createdAt      DateTime                 @default(now()) @db.DateTime(3)
+  options        QualityPlanPointOption[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, versionId, label])
+  @@index([organizationId, versionId, position])
+  @@map("quality_plan_point")
+}
+
+/// An option of a «one of a list» point, and whether choosing it passes.
+model QualityPlanPointOption {
+  id             String           @id @db.Char(36)
+  organizationId String           @db.Char(36)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  pointId        String           @db.Char(36)
+  point          QualityPlanPoint @relation(fields: [organizationId, pointId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  position       Int
+  label          String           @db.VarChar(60)
+  acceptable     Boolean
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, pointId, label])
+  @@map("quality_plan_point_option")
+}
+
+/// A defect the company recognizes (WMS-30A), named freely. Renamed or
+/// archived, never deleted (trigger): an inspection that named it keeps
+/// naming it.
+model QualityDefect {
+  id              String                @id @db.Char(36)
+  organizationId  String                @db.Char(36)
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Unique in the company without capitals or accents (the collation).
+  name            String                @db.VarChar(60)
+  severity        QualityDefectSeverity @default(MAJOR)
+  archivedAt      DateTime?             @db.DateTime(3)
+  createdByUserId String                @db.Char(36)
+  createdAt       DateTime              @default(now()) @db.DateTime(3)
+  updatedAt       DateTime              @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
+  @@index([organizationId, archivedAt, name])
+  @@map("quality_defect")
+}
+
+/// One row per company, locked by whoever changes how many defects are in
+/// use (adding or bringing one back), so the cap holds with requests at
+/// once (WMS-30A). Created the first time it is needed; never deleted.
+model QualityDefectCatalog {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId])
+  @@map("quality_defect_catalog")
 }

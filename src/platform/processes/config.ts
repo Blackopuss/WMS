@@ -1,12 +1,14 @@
 import "server-only";
 
-import { newId } from "@/lib";
+import { ForbiddenError, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import {
   ROLES,
   ROLE_LABELS,
-  ROLE_MODULE,
   assertAllowed,
+  companyModules,
+  permissionsOf,
+  seesWholeCompany,
   type Role,
 } from "@/platform/authorization";
 import { getEntitlements, type Entitlements } from "@/platform/entitlements";
@@ -75,11 +77,7 @@ export async function getProcessSettings(
   actor: Actor,
   documents: readonly ProcessDocument[],
 ): Promise<ProcessSummary[]> {
-  await assertAllowed(
-    actor.organizationId,
-    actor.userId,
-    "platform.organization.update",
-  );
+  await assertConfigures(actor);
   const entitlements = await getEntitlements(actor.organizationId);
   const shown = visibleDocuments(documents, entitlements);
   if (shown.length === 0) return [];
@@ -166,14 +164,44 @@ export type ProcessDefinitionView = {
   inCourse: number;
 };
 
-/** The roles an area can have: tied roles only with their module active. */
+/**
+ * The roles an area of this document can have (M1 of the review): those
+ * that, in this company, may work stages and read the document — a tied
+ * role only with its module active. A role that could never do the stage
+ * would leave the document stuck behind it.
+ */
 function roleOptions(
+  document: ProcessDocument,
   entitlements: Entitlements,
 ): { value: Role; label: string }[] {
+  const modules = companyModules(entitlements);
   return ROLES.filter((role) => {
-    const needs = ROLE_MODULE[role];
-    return needs === undefined || entitlements.moduleState(needs) === "active";
+    const granted = permissionsOf({ isOwner: false, roles: [role], modules });
+    return (
+      granted.has("platform.process.work") &&
+      granted.has(document.readPermission)
+    );
   }).map((role) => ({ value: role, label: ROLE_LABELS[role] }));
+}
+
+const WHOLE_COMPANY =
+  "Los procesos son de toda la empresa: los configura quien no está limitado a un almacén.";
+
+/** Configuring processes takes the business settings and the whole company (N6). */
+async function assertConfigures(actor: Actor): Promise<void> {
+  await assertAllowed(
+    actor.organizationId,
+    actor.userId,
+    "platform.organization.update",
+  );
+  if (
+    !(await seesWholeCompany(
+      forOrganization(actor.organizationId),
+      actor.userId,
+    ))
+  ) {
+    throw new ForbiddenError("whole_company_required", WHOLE_COMPANY);
+  }
 }
 
 /** The process of one document: its version in force and its draft. */
@@ -182,11 +210,7 @@ export async function getProcessDefinition(
   documents: readonly ProcessDocument[],
   documentKey: string,
 ): Promise<ProcessDefinitionView | null> {
-  await assertAllowed(
-    actor.organizationId,
-    actor.userId,
-    "platform.organization.update",
-  );
+  await assertConfigures(actor);
   const entitlements = await getEntitlements(actor.organizationId);
   const document = visibleDocuments(documents, entitlements).find(
     (each) => each.key === documentKey,
@@ -221,7 +245,7 @@ export async function getProcessDefinition(
       label,
       milestone,
     })),
-    roleOptions: roleOptions(entitlements),
+    roleOptions: roleOptions(document, entitlements),
     published: published
       ? {
           number: published.number,
@@ -241,7 +265,7 @@ export async function getProcessDefinition(
 }
 
 export type SaveDraftResult =
-  | { ok: true; number: number }
+  | { ok: true; number: number; published?: true }
   | {
       ok: false;
       reason: "invalid" | "not_found" | "read_only";
@@ -369,12 +393,9 @@ export async function saveProcessDraft(
   documents: readonly ProcessDocument[],
   documentKey: string,
   input: DraftInput,
+  options: { publish?: boolean } = {},
 ): Promise<SaveDraftResult> {
-  await assertAllowed(
-    actor.organizationId,
-    actor.userId,
-    "platform.organization.update",
-  );
+  await assertConfigures(actor);
   const entitlements = await getEntitlements(actor.organizationId);
   const document = visibleDocuments(documents, entitlements).find(
     (each) => each.key === documentKey,
@@ -402,7 +423,7 @@ export async function saveProcessDraft(
     };
   }
   const allowed = new Set<string>(
-    roleOptions(entitlements).map((option) => option.value),
+    roleOptions(document, entitlements).map((option) => option.value),
   );
   const checked = checkDraft(document, parsed.data.stages, allowed);
   if (!checked.ok) {
@@ -413,7 +434,26 @@ export async function saveProcessDraft(
       index: checked.problem.index,
     };
   }
-  return withDefinition(actor, document.key, async (tx, definitionId) => {
+  const stages = checked.stages;
+  const target = document;
+  try {
+    return await withDefinition(actor, document.key, (tx, definitionId) =>
+      writeDraft(tx, definitionId),
+    );
+  } catch (error) {
+    if (error instanceof PublishRefused) {
+      const { error: message, index } = error.result;
+      return {
+        ok: false,
+        reason: "invalid",
+        error: message,
+        ...(index !== undefined ? { index } : {}),
+      };
+    }
+    throw error;
+  }
+
+  async function writeDraft(tx: ProcessTx, definitionId: string) {
     let draft = await tx.processVersion.findFirst({
       where: { definitionId, status: "DRAFT" },
       select: { id: true, number: true },
@@ -457,28 +497,49 @@ export async function saveProcessDraft(
         },
       });
     }
-    await writeStages(tx, actor.organizationId, draft.id, checked.stages);
+    await writeStages(tx, actor.organizationId, draft.id, stages);
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
       action: "process.draft_saved",
       target: { type: "process_version", id: draft.id },
       metadata: {
-        documento: document.label,
+        documento: target.label,
         version: draft.number,
-        etapas: checked.stages.length,
+        etapas: stages.length,
       },
     });
-    return { ok: true as const, number: draft.number };
-  });
+    if (!options.publish) return { ok: true as const, number: draft.number };
+    // B4: published in the same transaction, so it is exactly this draft.
+    const published = await publishDraft(
+      tx,
+      actor,
+      target,
+      definitionId,
+      allowed,
+    );
+    if (!published.ok) throw new PublishRefused(published);
+    return {
+      ok: true as const,
+      number: draft.number,
+      published: true as const,
+    };
+  }
+}
+
+class PublishRefused extends Error {
+  constructor(readonly result: Extract<PublishResult, { ok: false }>) {
+    super("publish refused");
+  }
 }
 
 export type PublishResult =
   | { ok: true; number: number; repeated?: true }
   | {
       ok: false;
-      reason: "not_found" | "read_only" | "no_draft";
+      reason: "not_found" | "read_only" | "no_draft" | "invalid";
       error: string;
+      index?: number;
     };
 
 /**
@@ -491,11 +552,7 @@ export async function publishProcess(
   documents: readonly ProcessDocument[],
   documentKey: string,
 ): Promise<PublishResult> {
-  await assertAllowed(
-    actor.organizationId,
-    actor.userId,
-    "platform.organization.update",
-  );
+  await assertConfigures(actor);
   const entitlements = await getEntitlements(actor.organizationId);
   const document = visibleDocuments(documents, entitlements).find(
     (each) => each.key === documentKey,
@@ -508,58 +565,92 @@ export async function publishProcess(
       error: "El módulo de este documento está en solo lectura.",
     };
   }
-  return withDefinition(actor, document.key, async (tx, definitionId) => {
-    const draft = await tx.processVersion.findFirst({
-      where: { definitionId, status: "DRAFT" },
-      select: { id: true, number: true },
+  const allowed = new Set<string>(
+    roleOptions(document, entitlements).map((option) => option.value),
+  );
+  return withDefinition(actor, document.key, (tx, definitionId) =>
+    publishDraft(tx, actor, document, definitionId, allowed),
+  );
+}
+
+/**
+ * Publishes the draft of a definition under its lock: the roles of every
+ * stage are checked again with the company as it is now (M1), then the
+ * version in force is retired and the draft takes its place.
+ */
+async function publishDraft(
+  tx: ProcessTx,
+  actor: Actor,
+  document: ProcessDocument,
+  definitionId: string,
+  allowed: ReadonlySet<string>,
+): Promise<PublishResult> {
+  const draft = await tx.processVersion.findFirst({
+    where: { definitionId, status: "DRAFT" },
+    select: { id: true, number: true },
+  });
+  if (!draft) {
+    const current = await tx.processVersion.findFirst({
+      where: { definitionId, status: "PUBLISHED" },
+      select: { number: true },
     });
-    if (!draft) {
-      const current = await tx.processVersion.findFirst({
-        where: { definitionId, status: "PUBLISHED" },
-        select: { number: true },
-      });
-      if (current) {
-        return {
-          ok: true as const,
-          number: current.number,
-          repeated: true as const,
-        };
-      }
+    if (current) {
       return {
-        ok: false as const,
-        reason: "no_draft" as const,
-        error: "Guarda un borrador antes de publicarlo.",
+        ok: true as const,
+        number: current.number,
+        repeated: true as const,
       };
     }
-    const now = new Date();
-    await tx.processVersion.updateMany({
-      where: { definitionId, status: "PUBLISHED" },
-      data: { status: "RETIRED", currentKey: null, retiredAt: now },
-    });
-    await tx.processVersion.update({
-      where: { id: draft.id },
-      data: {
-        status: "PUBLISHED",
-        draftKey: null,
-        currentKey: definitionId,
-        publishedAt: now,
-        publishedByUserId: actor.userId,
-      },
-    });
-    const stages = await tx.processStage.count({
-      where: { versionId: draft.id, parentStageId: null },
-    });
-    await recordAuditEvent(tx, {
-      organizationId: actor.organizationId,
-      actorUserId: actor.userId,
-      action: "process.published",
-      target: { type: "process_version", id: draft.id },
-      metadata: {
-        documento: document.label,
-        version: draft.number,
-        etapas: stages,
-      },
-    });
-    return { ok: true as const, number: draft.number };
+    return {
+      ok: false as const,
+      reason: "no_draft" as const,
+      error: "Guarda un borrador antes de publicarlo.",
+    };
+  }
+  const draftStages = stageTree(await versionStages(tx, draft.id));
+  for (const [index, { stage }] of draftStages.entries()) {
+    if (stage.kind !== "MANUAL") continue;
+    if (
+      stage.roles.length === 0 ||
+      stage.roles.some((role) => !allowed.has(role))
+    ) {
+      return {
+        ok: false as const,
+        reason: "invalid" as const,
+        index,
+        error:
+          "Su área tiene un rol que no puede hacer etapas de este documento. Elige otro y vuelve a publicar.",
+      };
+    }
+  }
+  const now = new Date();
+  await tx.processVersion.updateMany({
+    where: { definitionId, status: "PUBLISHED" },
+    data: { status: "RETIRED", currentKey: null, retiredAt: now },
   });
+  await tx.processVersion.update({
+    where: { id: draft.id },
+    data: {
+      status: "PUBLISHED",
+      draftKey: null,
+      currentKey: definitionId,
+      publishedAt: now,
+      publishedByUserId: actor.userId,
+    },
+  });
+  const stages = await tx.processStage.count({
+    where: { versionId: draft.id, parentStageId: null },
+  });
+  await recordAuditEvent(tx, {
+    organizationId: actor.organizationId,
+    actorUserId: actor.userId,
+    action: "process.published",
+    target: { type: "process_version", id: draft.id },
+    metadata: {
+      documento: document.label,
+      version: draft.number,
+      etapas: stages,
+    },
+  });
+  return { ok: true as const, number: draft.number };
 }

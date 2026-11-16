@@ -11,11 +11,13 @@ import {
 
 import { PENDING_PHOTOS_HOURS, signedFileLink } from "./files";
 import {
+  EVIDENCE_OWNER_KINDS,
   EVIDENCE_PURPOSES,
   isPurpose,
   ownerWhere,
   purposeOf,
   type EvidenceOwner,
+  type EvidenceOwnerKind,
   type EvidenceOwners,
   type FileActor,
   type FilePurpose,
@@ -178,6 +180,65 @@ export async function evidencePhotoLinks(
     noteId: row.incidentNoteId,
     createdAt: row.createdAt,
   }));
+}
+
+/**
+ * The photos of several records of one kind, in one query, each with its
+ * link for this person (WMS-74, B6 of the review). For the owner of those
+ * records, **after it decided that the person reaches every one of them**
+ * (the engine of processes, for the steps of one process it already
+ * checked); still asks the permission to read each purpose.
+ */
+export async function evidencePhotoLinksOf(
+  actor: FileActor,
+  kind: EvidenceOwnerKind,
+  ownerIds: readonly string[],
+  options: { now?: Date } = {},
+): Promise<Map<string, EvidencePhotoLink[]>> {
+  const result = new Map<string, EvidencePhotoLink[]>();
+  const ids = [...new Set(ownerIds.map((id) => String(id).slice(0, 36)))];
+  if (ids.length === 0) return result;
+  const column = EVIDENCE_OWNER_KINDS[kind];
+  const rows = await forOrganization(
+    actor.organizationId,
+  ).evidencePhoto.findMany({
+    where: { [column]: { in: ids }, file: { deletedAt: null } },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+    take: 1000,
+    select: {
+      fileId: true,
+      purpose: true,
+      incidentId: true,
+      processStepId: true,
+      incidentNoteId: true,
+      createdAt: true,
+      file: { select: { width: true, height: true } },
+    },
+  });
+  for (const purpose of new Set(rows.map((row) => row.purpose))) {
+    if (!isPurpose(purpose)) return result;
+    await assertModulePermission(
+      actor.organizationId,
+      actor.userId,
+      purposeOf(purpose).read,
+    );
+  }
+  const now = options.now ?? new Date();
+  for (const row of rows) {
+    const owner = row[column];
+    if (!owner) continue;
+    const list = result.get(owner) ?? [];
+    list.push({
+      fileId: row.fileId,
+      url: signedFileLink(actor, row.fileId, now).url,
+      width: row.file.width,
+      height: row.file.height,
+      noteId: row.incidentNoteId,
+      createdAt: row.createdAt,
+    });
+    result.set(owner, list);
+  }
+  return result;
 }
 
 /** How many photos to look at per round and company. */

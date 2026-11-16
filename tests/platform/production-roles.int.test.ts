@@ -32,8 +32,9 @@ import { grantSeats } from "../setup/plan";
 const stamp = Date.now();
 let counter = 0;
 
-// Both modules are announced today (unavailable). The same contracts,
-// marked available, prove their dependency rules.
+// Calidad is announced today (unavailable; Producción is available since
+// WMS-27). The same contracts, marked available, prove their dependency
+// rules.
 const registry = createModuleRegistry(
   moduleRegistry.all.map((contract) =>
     contract.id === "production" || contract.id === "quality"
@@ -113,12 +114,16 @@ afterAll(async () => {
 });
 
 describe("Calidad depends on Producción (D9, NEG-31)", () => {
-  it("both modules are announced: nothing activates them yet", async () => {
-    const { org } = await newCompany("Empresa anunciada", []);
+  it("both modules can be contracted, Calidad only after Producción (WMS-30A)", async () => {
+    const { org } = await newCompany("Empresa con calidad", []);
+    expect(
+      await activateModule(moduleRegistry, change(org, "quality")),
+    ).toMatchObject({ ok: false, reason: "missing_dependencies" });
     for (const moduleId of ["production", "quality"]) {
       expect(
         await activateModule(moduleRegistry, change(org, moduleId)),
-      ).toMatchObject({ ok: false, reason: "unavailable" });
+        moduleId,
+      ).toEqual({ ok: true });
     }
   });
 

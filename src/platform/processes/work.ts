@@ -6,6 +6,7 @@ import { describeUserAgent, formatDecimal, newId } from "@/lib";
 import {
   activeRoles,
   buildScope,
+  inScope,
   loadSubject,
   modulesOf,
   permissionsOf,
@@ -15,9 +16,8 @@ import {
   FILE_PURPOSES,
   attachEvidencePhotos,
   deleteFile,
-  evidencePhotoLinks,
+  evidencePhotoLinksOf,
   storeFile,
-  type EvidenceOwners,
   type EvidencePhotoLink,
   type StoreFileResult,
 } from "@/platform/files";
@@ -47,6 +47,7 @@ import {
   readGraph,
   readsDocument,
   settle,
+  terminalUser,
   type Actor,
   type Graph,
   type Member,
@@ -150,6 +151,8 @@ async function act(
     select: { progressId: true },
   });
   if (!found) return { ok: false, reason: "not_found", error: NOT_FOUND };
+  // Read before the transaction (N5): it looks at the request, not the base.
+  const atTerminal = await terminalUser();
   try {
     return await client.$transaction(async (tx) => {
       const [locked] = await lockRows(tx, "processProgress", [
@@ -160,7 +163,12 @@ async function act(
         ? documents.find((each) => each.key === graph.progress.documentKey)
         : undefined;
       if (!graph || !document) return refuse("not_found", NOT_FOUND);
-      const subject = await memberIn(tx, actor.organizationId, actor.userId);
+      const subject = await memberIn(
+        tx,
+        actor.organizationId,
+        actor.userId,
+        atTerminal,
+      );
       const places = await placesOf(tx, graph.progress);
       if (!subject || !readsDocument(subject, document, places.facility)) {
         return refuse("not_found", NOT_FOUND);
@@ -224,6 +232,15 @@ async function act(
     }, LOCKING_TRANSACTION);
   } catch (error) {
     if (error instanceof Refused) return error.result;
+    // The key is unique in the company: the same confirmation used at the
+    // same moment on another process meets it here (B2).
+    if (key && (error as { code?: string }).code === "P2002") {
+      return {
+        ok: false,
+        reason: "key_reused",
+        error: "Esta pantalla ya se usó para otra cosa. Vuelve a abrirla.",
+      };
+    }
     throw error;
   }
 }
@@ -285,6 +302,7 @@ async function writeStep(
     note?: string | null;
     quantity?: string | null;
     assigneeUserId?: string | null;
+    previousUserId?: string | null;
   },
 ): Promise<string> {
   const id = newId();
@@ -297,6 +315,7 @@ async function writeStep(
       action: data.action,
       actorUserId: actor.userId,
       assigneeUserId: data.assigneeUserId ?? null,
+      previousUserId: data.previousUserId ?? null,
       note: data.note ?? null,
       quantity: data.quantity ?? null,
       device: context.device,
@@ -335,6 +354,22 @@ export function takeStage(
   });
 }
 
+/**
+ * A stage of a zone the person does not reach «does not exist» for them
+ * (WMS-20), unless they hold it: who assigns is limited by zone too (B3).
+ */
+function refuseOutsideZone(context: Context, userId: string): void {
+  const { stage, places, subject, state } = context;
+  if (
+    stage.zoneOnly &&
+    places.location &&
+    !inScope(subject, places.location) &&
+    state.takenByUserId !== userId
+  ) {
+    refuse("not_found", NOT_FOUND);
+  }
+}
+
 /** Who has it (or who assigns) gives it back to «Disponibles». */
 export function releaseStage(
   actor: Actor,
@@ -342,12 +377,18 @@ export function releaseStage(
   input: StageActionInput,
 ): Promise<StageActionResult> {
   return act(actor, documents, input, "RELEASED", async (context) => {
+    refuseOutsideZone(context, actor.userId);
     const taken = context.state.takenByUserId;
     if (!taken) return "Ya estaba disponible.";
     const mine = taken === actor.userId;
     if (
       !mine &&
-      !mayAssign(context.subject, context.document, context.places)
+      !mayAssign(
+        context.subject,
+        context.document,
+        context.stage,
+        context.places,
+      )
     ) {
       refuse("taken", `La tiene ${await nameOf(context.tx, taken)}.`);
     }
@@ -355,7 +396,20 @@ export function releaseStage(
       where: { id: context.state.id },
       data: { takenByUserId: null, takenAt: null, assignedByUserId: null },
     });
-    await writeStep(context, actor, { action: "RELEASED" });
+    await writeStep(context, actor, {
+      action: "RELEASED",
+      previousUserId: taken,
+    });
+    if (!mine) {
+      await notify(context.tx, PROCESS_ASSIGNED_NOTICE, {
+        organizationId: actor.organizationId,
+        actorUserId: actor.userId,
+        to: { userIds: [taken] },
+        text: `${context.graph.progress.label}: «${context.stage.name}» ya no está a tu nombre.`,
+        href: `/procesos/${context.graph.progress.id}`,
+        key: `process:${context.state.id}:released:${newId()}`,
+      });
+    }
     return `«${context.stage.name}» quedó disponible para su área.`;
   });
 }
@@ -367,13 +421,21 @@ export function assignStage(
   input: StageActionInput & { assigneeUserId: string },
 ): Promise<StageActionResult> {
   return act(actor, documents, input, "ASSIGNED", async (context) => {
-    if (!mayAssign(context.subject, context.document, context.places)) {
+    refuseOutsideZone(context, actor.userId);
+    if (
+      !mayAssign(
+        context.subject,
+        context.document,
+        context.stage,
+        context.places,
+      )
+    ) {
       refuse("not_allowed", "No puedes asignar etapas de este proceso.");
     }
     assertReady(context);
     const assignee = String(input.assigneeUserId ?? "").slice(0, 36);
     const person = ID.test(assignee)
-      ? await memberIn(context.tx, actor.organizationId, assignee)
+      ? await memberIn(context.tx, actor.organizationId, assignee, null)
       : null;
     // Somebody at a terminal is somebody else: who receives it is read as
     // a person, never as the session that assigns.
@@ -388,7 +450,8 @@ export function assignStage(
         "assignee",
       );
     }
-    if (context.state.takenByUserId === assignee) {
+    const previous = context.state.takenByUserId;
+    if (previous === assignee) {
       return `Ya la tiene ${target!.name}.`;
     }
     await context.tx.processStageState.update({
@@ -399,10 +462,22 @@ export function assignStage(
         assignedByUserId: actor.userId,
       },
     });
+    // B1: who had it stays in the trail and hears it.
     await writeStep(context, actor, {
       action: "ASSIGNED",
       assigneeUserId: assignee,
+      previousUserId: previous,
     });
+    if (previous && previous !== actor.userId) {
+      await notify(context.tx, PROCESS_ASSIGNED_NOTICE, {
+        organizationId: actor.organizationId,
+        actorUserId: actor.userId,
+        to: { userIds: [previous] },
+        text: `${context.graph.progress.label}: «${context.stage.name}» ahora la tiene ${target!.name}.`,
+        href: `/procesos/${context.graph.progress.id}`,
+        key: `process:${context.state.id}:reassigned:${newId()}`,
+      });
+    }
     await notify(context.tx, PROCESS_ASSIGNED_NOTICE, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -640,11 +715,44 @@ export function backStage(
 export type ProcessPhotoResult =
   { ok: true; fileId: string } | { ok: false; error: string };
 
-/** Keeps a photo taken to complete a stage; linked when it is completed. */
+/**
+ * Keeps a photo taken to complete a stage; linked when it is completed.
+ * Only for a stage to do that the person may do now (N4 of the review):
+ * nobody stores photos for a process they cannot work.
+ */
 export async function uploadProcessPhoto(
   actor: Actor,
-  input: { name: string; bytes: Uint8Array },
+  documents: readonly ProcessDocument[],
+  input: { stateId: string; name: string; bytes: Uint8Array },
 ): Promise<ProcessPhotoResult> {
+  const refused = {
+    ok: false as const,
+    error: "Esta etapa ya no la puedes hacer: vuelve a abrir la pantalla.",
+  };
+  const stateId = String(input.stateId ?? "").slice(0, 36);
+  if (!ID.test(stateId)) return refused;
+  const client = forOrganization(actor.organizationId);
+  const found = await client.processStageState.findFirst({
+    where: { id: stateId, status: "READY", kind: "MANUAL" },
+    select: { progressId: true, stageId: true },
+  });
+  const graph = found ? await readGraph(client, found.progressId) : null;
+  const document = graph
+    ? documents.find((each) => each.key === graph.progress.documentKey)
+    : undefined;
+  const stage = graph?.stages.find((each) => each.id === found?.stageId);
+  if (!graph || !document || !stage || graph.progress.status !== "ACTIVE") {
+    return refused;
+  }
+  const subject = await loadSubject(actor.organizationId, actor.userId);
+  const places = await placesOf(client, graph.progress);
+  if (
+    !moduleActive(subject, document) ||
+    !mayWork(subject, document, stage, places) ||
+    stage.photoEvidence === "NONE"
+  ) {
+    return refused;
+  }
   const stored: StoreFileResult = await storeFile(actor, {
     purpose: "process_step_photo",
     name: input.name,
@@ -722,6 +830,8 @@ export type ProcessLeafView = {
   canSkip: boolean;
   canBack: boolean;
   canAssign: boolean;
+  /** Nobody of the team may do it now (M1): the screen says so. */
+  nobody: boolean;
 };
 
 export type ProcessStageView = {
@@ -764,8 +874,15 @@ export type ProcessView = {
   /** People the stages to do can be assigned to, by state. */
   assignees: Record<string, { userId: string; name: string }[]>;
   steps: ProcessStepView[];
+  /** Steps older than those shown (the trail shows the latest). */
+  olderSteps: number;
   photoLimit: number;
+  /** The module of the document is gone (B7): the screen says so. */
+  moduleMissing: boolean;
 };
+
+/** The latest steps the trail shows. */
+const STEPS_SHOWN = 100;
 
 const STATUS_TEXT = {
   ACTIVE: "En curso",
@@ -782,7 +899,6 @@ export async function getProcessView(
   actor: Actor,
   documents: readonly ProcessDocument[],
   ref: { progressId: string } | { documentKey: string; documentId: string },
-  options: { owners?: EvidenceOwners } = {},
 ): Promise<ProcessView | null> {
   const client = forOrganization(actor.organizationId);
   const where =
@@ -814,7 +930,8 @@ export async function getProcessView(
   );
   const active =
     graph.progress.status === "ACTIVE" && moduleActive(subject, document);
-  const assigns = active && mayAssign(subject, document, places);
+  const assigns = (stage: StageRow) =>
+    active && mayAssign(subject, document, stage, places);
   const version = await client.processVersion.findFirst({
     where: { id: graph.progress.versionId },
     select: { number: true },
@@ -824,10 +941,13 @@ export async function getProcessView(
     if (state.takenByUserId) ids.add(state.takenByUserId);
     if (state.doneByUserId) ids.add(state.doneByUserId);
   }
+  const stepCount = await client.processStep.count({
+    where: { progressId: graph.progress.id },
+  });
   const steps = await client.processStep.findMany({
     where: { progressId: graph.progress.id },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 100,
+    take: STEPS_SHOWN,
     select: {
       id: true,
       stageId: true,
@@ -846,6 +966,23 @@ export async function getProcessView(
     if (step.assigneeUserId) ids.add(step.assigneeUserId);
   }
   const names = await namesOf(client, [...ids]);
+  // Who could do each stage still to do (M1): one read of the team, only
+  // when something is left and the person may see it.
+  const pending = graph.stages.filter((stage) => {
+    if (stage.kind !== "MANUAL") return false;
+    const status = states.get(stage.id);
+    return status === "READY" || status === "WAITING";
+  });
+  const people =
+    graph.progress.status === "ACTIVE" && pending.length > 0
+      ? await eligiblePeople(actor.organizationId, client)
+      : [];
+  const doers = new Map(
+    pending.map((stage) => [
+      stage.id,
+      people.filter((person) => mayWork(person, document, stage, places)),
+    ]),
+  );
 
   const leafView = (stage: StageRow): ProcessLeafView => {
     const state = graph.states.find((each) => each.stageId === stage.id)!;
@@ -884,10 +1021,21 @@ export async function getProcessView(
       canTake: works && !state.takenByUserId,
       canComplete: works && free,
       canRelease:
-        active && ready && Boolean(state.takenByUserId) && (mine || assigns),
+        active &&
+        ready &&
+        Boolean(state.takenByUserId) &&
+        (mine || assigns(stage)),
       canSkip: works && free && stage.allowSkip,
       canBack: works && free && stage.allowBack,
-      canAssign: assigns && ready,
+      canAssign: assigns(stage) && ready,
+      // The titular may always do it, so only roles of the area count here.
+      nobody:
+        doers.has(stage.id) &&
+        !doers
+          .get(stage.id)!
+          .some((person) =>
+            mayWork({ ...person, isOwner: false }, document, stage, places),
+          ),
     };
   };
 
@@ -910,31 +1058,25 @@ export async function getProcessView(
     null;
 
   const assignees: ProcessView["assignees"] = {};
-  if (assigns) {
-    const readyStages = graph.stages.filter(
-      (stage) => states.get(stage.id) === "READY" && stage.kind === "MANUAL",
-    );
-    if (readyStages.length > 0) {
-      const people = await eligiblePeople(actor.organizationId, client);
-      for (const stage of readyStages) {
-        const state = graph.states.find((each) => each.stageId === stage.id)!;
-        assignees[state.id] = people
-          .filter((person) => mayWork(person, document, stage, places))
-          .map((person) => ({ userId: person.userId, name: person.name }));
-      }
-    }
+  for (const stage of pending) {
+    if (states.get(stage.id) !== "READY" || !assigns(stage)) continue;
+    const state = graph.states.find((each) => each.stageId === stage.id)!;
+    assignees[state.id] = (doers.get(stage.id) ?? []).map((person) => ({
+      userId: person.userId,
+      name: person.name,
+    }));
   }
 
+  // B6: the person reaches this process (checked above), so the photos of
+  // its steps are read once, without asking again per step.
+  const photosOf = await evidencePhotoLinksOf(
+    actor,
+    "process_step",
+    steps.filter((step) => step._count.photos > 0).map((step) => step.id),
+  );
   const stepViews: ProcessStepView[] = [];
   for (const step of steps) {
-    const photos =
-      step._count.photos > 0 && options.owners
-        ? await evidencePhotoLinks(
-            actor,
-            { kind: "process_step", id: step.id },
-            options.owners,
-          )
-        : [];
+    const photos = photosOf.get(step.id) ?? [];
     stepViews.push({
       id: step.id,
       actionLabel: STEP_ACTION_LABELS[step.action],
@@ -971,7 +1113,9 @@ export async function getProcessView(
       graph.progress.status === "ACTIVE" && !moduleActive(subject, document),
     assignees,
     steps: stepViews,
+    olderSteps: Math.max(0, stepCount - steps.length),
     photoLimit: FILE_PURPOSES.process_step_photo.evidence.perRecord,
+    moduleMissing: subject.modules?.get(document.module) === undefined,
   };
 }
 

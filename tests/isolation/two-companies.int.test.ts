@@ -1188,6 +1188,59 @@ beforeAll(async () => {
         unitCode: "piece",
       },
     });
+    // A recipe with a version, a material, what comes out and the lock
+    // of its activations (WMS-27).
+    const recipeId = newId();
+    const recipeVersionId = newId();
+    const author = organizationId === orgA ? ids.ana : ids.beto;
+    await db.recipe.create({
+      data: {
+        id: recipeId,
+        organizationId,
+        productId,
+        createdByUserId: author,
+      },
+    });
+    await db.recipeVersion.create({
+      data: {
+        id: recipeVersionId,
+        organizationId,
+        recipeId,
+        number: 1,
+        draftRecipeId: recipeId,
+        baseQuantity: "1",
+        unitCode: "piece",
+        createdByUserId: author,
+      },
+    });
+    await db.recipeInput.create({
+      data: {
+        id: newId(),
+        organizationId,
+        versionId: recipeVersionId,
+        lineNumber: 1,
+        productId: serialProductId,
+        capturedQuantity: "2",
+        factor: "1",
+        baseQuantity: "2",
+        unitCode: "piece",
+      },
+    });
+    await db.recipeOutput.create({
+      data: {
+        id: newId(),
+        organizationId,
+        versionId: recipeVersionId,
+        lineNumber: 1,
+        productId,
+        quantity: "1",
+        unitCode: "piece",
+        costShare: "100",
+      },
+    });
+    await db.recipeLock.create({
+      data: { id: organizationId, organizationId },
+    });
     // A notice, a preference, and an incident with its note (WMS-39).
     const who = organizationId === orgA ? ids.ana : ids.beto;
     await db.notification.create({
@@ -1488,7 +1541,6 @@ beforeAll(async () => {
         progressId,
         stageId,
         kind: "MANUAL",
-        status: "READY",
       },
     });
     await db.processStep.create({
@@ -1500,6 +1552,58 @@ beforeAll(async () => {
         action: "TAKEN",
         actorUserId: processOwner,
       },
+    });
+    // WMS-30A: an inspection plan with a draft, a point, an option and a defect.
+    const qualityPlanId = newId();
+    await db.qualityPlan.create({
+      data: {
+        id: qualityPlanId,
+        organizationId,
+        productId,
+        createdByUserId: author,
+      },
+    });
+    const qualityVersionId = newId();
+    await db.qualityPlanVersion.create({
+      data: {
+        id: qualityVersionId,
+        organizationId,
+        planId: qualityPlanId,
+        number: 1,
+        createdByUserId: author,
+      },
+    });
+    const qualityPointId = newId();
+    await db.qualityPlanPoint.create({
+      data: {
+        id: qualityPointId,
+        organizationId,
+        versionId: qualityVersionId,
+        position: 1,
+        label: "Acabado",
+        kind: "CHOICE",
+      },
+    });
+    await db.qualityPlanPointOption.create({
+      data: {
+        id: newId(),
+        organizationId,
+        pointId: qualityPointId,
+        position: 1,
+        label: "Bueno",
+        acceptable: true,
+      },
+    });
+    await db.qualityDefect.create({
+      data: {
+        id: newId(),
+        organizationId,
+        name: "Rayado",
+        createdByUserId: author,
+      },
+    });
+    await db.qualityDefectCatalog.create({
+      data: { id: newId(), organizationId },
     });
     const countLineId = newId();
     await db.stockCountLine.create({

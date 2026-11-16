@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-123 tablas en 30 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+134 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -36,6 +36,8 @@
 | Inventario › Equipos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
+| Calidad | 6 | [quality](modulos/quality.md) |
+| Producción | 5 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -911,6 +913,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `action` | `ProcessStepAction` |  |  |
 | `actorUserId` | `String? · Char(36)` |  | Null when the system did it. |
 | `assigneeUserId` | `String? · Char(36)` |  | Who received it (ASSIGNED). |
+| `previousUserId` | `String? · Char(36)` |  | Who had it before (ASSIGNED, RELEASED), if somebody did. |
 | `note` | `String? · VarChar(500)` |  |  |
 | `quantity` | `Decimal? · Decimal(18, 3)` |  |  |
 | `device` | `String? · VarChar(120)` |  | «Chrome en Android» (describeUserAgent, never the raw text). |
@@ -3169,3 +3172,269 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `PurchaseOrderStatus`: `DRAFT`, `SENT`, `PARTIAL`, `RECEIVED`, `CANCELLED`, `CLOSED`.
 - `PurchaseRequestStatus`: `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, `CONVERTED`, `CANCELLED`.
 - `PurchaseOrderDeliveryStatus`: `QUEUED`, `SENT`, `FAILED`.
+
+## Calidad
+
+Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A).
+
+Documento: [modulos/quality.md](modulos/quality.md).
+
+### QualityPlan · `quality_plan`
+
+The inspection plan of a product: one per product, with its versions. Never deleted; the product never changes (trigger).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `productId`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### QualityPlanVersion · `quality_plan_version`
+
+A version of an inspection plan. Only a draft changes; publishing retires the one in force (triggers). `draftPlanId` and `activePlanId` hold the plan only while the version is a draft or in force, so a plan has at most one of each.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `planId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `status` | `QualityPlanStatus` | `DRAFT` |  |
+| `draftPlanId` | `String? · Char(36)` |  |  |
+| `activePlanId` | `String? · Char(36)` |  |  |
+| `sampling` | `QualitySampling` | `DEFAULT` |  |
+| `sampleRule` | `QualitySampleRule?` |  |  |
+| `sampleQuantity` | `Decimal? · Decimal(15, 3)` |  | FIXED: how much is checked, in the unit of the product. |
+| `samplePercent` | `Int?` |  | PERCENT: share of what is verified (1 to 100), at least `sampleMin` and at most `sampleMax` (optional). |
+| `sampleMin` | `Decimal? · Decimal(15, 3)` |  |  |
+| `sampleMax` | `Decimal? · Decimal(15, 3)` |  |  |
+| `forProduced` | `Boolean` | `true` |  |
+| `forReceived` | `Boolean` | `true` |  |
+| `forReturned` | `Boolean` | `true` |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `publishedByUserId` | `String? · Char(36)` |  |  |
+| `publishedAt` | `DateTime? · DateTime(3)` |  |  |
+| `closedByUserId` | `String? · Char(36)` |  | When it was retired or discarded, and by whom. |
+| `closedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `planId`, `number`); (`organizationId`, `draftPlanId`); (`organizationId`, `activePlanId`).
+- Relaciones: `plan` → `QualityPlan` por (`organizationId`, `planId`) (al borrar: Restrict).
+
+### QualityPlanPoint · `quality_plan_point`
+
+A check point of a version. Written or removed only while its version is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `position` | `Int` |  |  |
+| `label` | `String · VarChar(80)` |  |  |
+| `kind` | `QualityPointKind` |  |  |
+| `required` | `Boolean` | `true` |  |
+| `photo` | `Boolean` | `false` | The inspector attaches a photo for it (WMS-30B, with WMS-37). |
+| `minValue` | `Decimal? · Decimal(19, 4)` |  | NUMBER: acceptable range (either end optional, at least one). |
+| `maxValue` | `Decimal? · Decimal(19, 4)` |  |  |
+| `unitLabel` | `String? · VarChar(20)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `versionId`, `label`).
+- Índices: (`organizationId`, `versionId`, `position`).
+- Relaciones: `version` → `QualityPlanVersion` por (`organizationId`, `versionId`) (al borrar: Restrict).
+
+### QualityPlanPointOption · `quality_plan_point_option`
+
+An option of a «one of a list» point, and whether choosing it passes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `pointId` | `String · Char(36)` |  |  |
+| `position` | `Int` |  |  |
+| `label` | `String · VarChar(60)` |  |  |
+| `acceptable` | `Boolean` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `pointId`, `label`).
+- Relaciones: `point` → `QualityPlanPoint` por (`organizationId`, `pointId`) (al borrar: Restrict).
+
+### QualityDefect · `quality_defect`
+
+A defect the company recognizes (WMS-30A), named freely. Renamed or archived, never deleted (trigger): an inspection that named it keeps naming it.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(60)` |  | Unique in the company without capitals or accents (the collation). |
+| `severity` | `QualityDefectSeverity` | `MAJOR` |  |
+| `archivedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `name`).
+- Índices: (`organizationId`, `archivedAt`, `name`).
+
+### QualityDefectCatalog · `quality_defect_catalog`
+
+One row per company, locked by whoever changes how many defects are in use (adding or bringing one back), so the cap holds with requests at once (WMS-30A). Created the first time it is needed; never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); `organizationId`.
+
+#### Enumeraciones de Calidad
+
+- `QualityPlanStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.
+- `QualitySampling`: `DEFAULT`, `FULL`, `SAMPLE`.
+- `QualitySampleRule`: `FIXED`, `PERCENT`.
+- `QualityPointKind`: `CHECK`, `NUMBER`, `CHOICE`, `TEXT`.
+- `QualityDefectSeverity`: `MINOR`, `MAJOR`, `CRITICAL`.
+
+## Producción
+
+Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones.
+
+Documento: [modulos/production.md](modulos/production.md).
+
+### Recipe · `recipe`
+
+The recipe of a product (WMS-27, ADR 0066): one per product, standard, defined by who runs production. What it says lives in its versions. Never deleted, and its product never changes (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `productId`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### RecipeVersion · `recipe_version`
+
+One version of a recipe: for how much (in the unit of the product of the card), its materials and what comes out. Draft → active → retired, or draft → discarded (RECIPE_VERSION_TRANSITIONS and trigger). One active and one draft per recipe at most (`activeRecipeId`/`draftRecipeId`, CHECK and unique index). Only a draft changes; nothing is deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `recipeId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `status` | `RecipeVersionStatus` | `DRAFT` |  |
+| `baseQuantity` | `Decimal · Decimal(12, 3)` |  | For how much of the product of the card, in `unitCode`. |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `activeRecipeId` | `String? · Char(36)` |  | The recipe id while ACTIVE, NULL otherwise: one active per recipe. |
+| `draftRecipeId` | `String? · Char(36)` |  | The recipe id while DRAFT, NULL otherwise: one draft per recipe. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `activatedAt` | `DateTime? · DateTime(3)` |  |  |
+| `activatedByUserId` | `String? · Char(36)` |  |  |
+| `retiredAt` | `DateTime? · DateTime(3)` |  |  |
+| `retiredByUserId` | `String? · Char(36)` |  |  |
+| `discardedAt` | `DateTime? · DateTime(3)` |  |  |
+| `discardedByUserId` | `String? · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `recipeId`, `number`); (`organizationId`, `activeRecipeId`); (`organizationId`, `draftRecipeId`).
+- Índices: (`organizationId`, `status`).
+- Relaciones: `recipe` → `Recipe` por (`organizationId`, `recipeId`) (al borrar: Restrict).
+
+### RecipeInput · `recipe_input`
+
+One material of a recipe version, as an order line keeps it: what was written, the presentation and version of its content then, the factor and the result in the unit of the material (`unitCode` at that moment). Expected scrap is informative. One line per product; only while the version is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `capturedQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `presentationId` | `String? · Char(36)` |  |  |
+| `presentationVersionId` | `String? · Char(36)` |  |  |
+| `capturedUnitCode` | `String? · VarChar(12)` |  | Unit of another measure it was captured in («g» for a product in kg). |
+| `factor` | `Decimal · Decimal(18, 6)` |  |  |
+| `baseQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `scrapPercent` | `Decimal? · Decimal(5, 2)` |  | Expected scrap, percent (0 to less than 100), optional. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `versionId`, `lineNumber`); (`organizationId`, `versionId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `version` → `RecipeVersion` por (`organizationId`, `versionId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `presentation` → `ProductPresentation` por (`organizationId`, `productId`, `presentationId`) (al borrar: Restrict); `presentationVersion` → `PresentationVersion` por (`organizationId`, `presentationId`, `presentationVersionId`) (al borrar: Restrict).
+
+### RecipeOutput · `recipe_output`
+
+What comes out of a recipe version: a product, how much for the base (in its unit) and its share of the cost (percent; the shares of a version add up to 100 to activate it). One line per product; only while the version is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `costShare` | `Decimal · Decimal(5, 2)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `versionId`, `lineNumber`); (`organizationId`, `versionId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `version` → `RecipeVersion` por (`organizationId`, `versionId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### RecipeLock · `recipe_lock`
+
+One row per company whose lock puts every recipe activation of the company one after the other, so two at once cannot close a cycle (ADR 0066). Its id is the company id. Holds nothing else.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  | única |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+
+#### Enumeraciones de Producción
+
+- `RecipeVersionStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.

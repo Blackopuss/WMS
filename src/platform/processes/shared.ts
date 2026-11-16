@@ -285,6 +285,8 @@ export async function memberIn(
   tx: ProcessTx,
   organizationId: string,
   userId: string,
+  /** Who the request is at a shared terminal, read before the transaction. */
+  terminalUser: string | null,
 ): Promise<Member | null> {
   const membership = await tx.membership.findFirst({
     where: { userId, status: "ACTIVE" },
@@ -299,7 +301,7 @@ export async function memberIn(
   const isOwner = membership.organization.ownerUserId === userId;
   const scope = isOwner ? null : buildScope(membership.scopes);
   // A PIN session of a shared terminal (WMS-38) is cut by the policy.
-  const terminal = (await terminalUserOfRequest()) === userId;
+  const terminal = terminalUser === userId;
   return {
     isOwner,
     roles: membership.roles.map((each) => each.role),
@@ -359,17 +361,30 @@ export function mayWork(
   return true;
 }
 
-/** The person may hand stages of this document to others. */
+/**
+ * The person may hand this stage to others or take it from whoever has it:
+ * `platform.process.assign`, reads the document, and reaches its place —
+ * its zone too when the stage is of the zone (WMS-20: outside the scope it
+ * does not exist).
+ */
 export function mayAssign(
   subject: Subject,
   document: ProcessDocument,
-  places: { facility: Place },
+  stage: Pick<StageRow, "zoneOnly">,
+  places: { facility: Place; location: Place | null },
 ): boolean {
   if (subject.support === true) return false;
-  return (
-    permissionsOf(subject).has("platform.process.assign") &&
-    readsDocument(subject, document, places.facility)
-  );
+  if (!permissionsOf(subject).has("platform.process.assign")) return false;
+  if (!readsDocument(subject, document, places.facility)) return false;
+  if (stage.zoneOnly && places.location) {
+    return inScope(subject, places.location);
+  }
+  return true;
+}
+
+/** Who the request is at a shared terminal (WMS-38), before a transaction. */
+export async function terminalUser(): Promise<string | null> {
+  return terminalUserOfRequest();
 }
 
 /** The module of the document is in full use (not read-only, not gone). */

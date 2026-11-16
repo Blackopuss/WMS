@@ -5,13 +5,14 @@ import { notFound } from "next/navigation";
 
 import {
   NoAccessState,
+  NoModuleState,
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import { newId } from "@/lib";
-import { evidenceOwners, processDocuments } from "@/modules/registry";
+import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { getProcessView } from "@/platform/processes";
 
@@ -55,9 +56,17 @@ export default async function ProcesoPage({
     { organizationId: access.organization.id, userId: access.user.id },
     processDocuments,
     { progressId: String(id) },
-    { owners: evidenceOwners },
   );
   if (!view) notFound();
+  // MOD-11: without the module of the document, its screens say so.
+  if (view.moduleMissing) {
+    return (
+      <PageContainer>
+        {back}
+        <NoModuleState module={view.documentLabel} />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>

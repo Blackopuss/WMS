@@ -23,6 +23,7 @@ export type {
 export {
   attachEvidencePhotos,
   evidencePhotoLinks,
+  evidencePhotoLinksOf,
   purgeOrphanPhotos,
 } from "./evidence";
 export type { AttachPhotosResult, EvidencePhotoLink } from "./evidence";

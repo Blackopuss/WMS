@@ -24,7 +24,8 @@ plataforma recibe los documentos como lista (`processDocuments` de
 
 ### Contrato para un módulo
 
-Todo con el cliente `tx` de la transacción del módulo (`LOCKING_TRANSACTION`):
+Todo con el cliente `tx` de la transacción del módulo, que el módulo abre
+con `LOCKING_TRANSACTION`:
 
 1. Al crear el documento, después de insertarlo: `startProcess(tx, doc,
    actor, { documentId, facilityId, locationId?, label, milestone })`.
@@ -35,22 +36,29 @@ Todo con el cliente `tx` de la transacción del módulo (`LOCKING_TRANSACTION`):
    `assertStagesDone(tx, doc, documentId, operación)`; si responde `ok:
    false`, el módulo rechaza con su `message`.
 5. Después de escribir la operación: `completeOperationStage(tx, doc,
-   actor, documentId, operación)`.
+   actor, documentId, operación)`. Si la operación cambia el estado fijo,
+   `reachMilestone` va **antes** en la misma transacción: si el documento
+   no llegó al hito de la etapa, `completeOperationStage` lanza
+   `ProcessStagesPending` y todo se revierte.
 
 Orden de candados: documento del módulo → progreso → archivos de las fotos.
 Las acciones de las personas bloquean solo el progreso.
 
 ## Quién hace qué
 
-- Configurar: `platform.organization.update` y el módulo del documento
-  activo.
+- Configurar: `platform.organization.update`, ver toda la empresa
+  (`seesWholeCompany`) y el módulo del documento activo. Un área solo
+  admite roles que hacen etapas y leen el documento (se revisa otra vez al
+  publicar).
 - Hacer una etapa: membresía activa, `platform.process.work`, ser titular o
   tener un rol **vigente** del área (`activeRoles`: un rol ligado a un
   módulo cuenta solo con su módulo activo), leer el documento
   (`readPermission`), alcanzar su almacén (o su zona si la etapa es «solo en
   su zona») y el módulo activo. Para quien no lee el documento o no alcanza
   su almacén, el proceso «no existe».
-- Asignar y liberar lo de otra persona: `platform.process.assign`.
+- Asignar y liberar lo de otra persona: `platform.process.assign`, con el
+  alcance de zona de la etapa; queda en el rastro quién la tenía y se le
+  avisa.
 - Terminal con PIN: conserva `platform.process.work`, nunca asigna.
   Soporte de plataforma solo ve. La API no ofrece nada.
 - Plan vencido: todo se ve y nada se hace ni se configura.
@@ -61,7 +69,8 @@ Las acciones de las personas bloquean solo el progreso.
 definición; publicada no cambia), `process_stage` y `process_stage_role`
 (solo cambian en borrador, disparadores), `process_progress` (documento y
 versión fijos), `process_stage_state` (derivado por `settleStates`, nunca a
-mano) y `process_step` (rastro inmutable). Las fotos de un paso son
+mano; transiciones en `STAGE_STATE_TRANSITIONS` y su disparador) y
+`process_step` (rastro inmutable, con `previousUserId` al reasignar). Las fotos de un paso son
 `evidence_photo.processStepId` (propósito `process_step_photo`).
 
 ## Avisos

@@ -9,6 +9,7 @@ import {
   PageHeader,
   ReadOnlyNotice,
 } from "@/components";
+import { isAppError } from "@/lib";
 import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { getProcessDefinition } from "@/platform/processes";
@@ -44,11 +45,30 @@ export default async function ProcesoConfigPage({
     );
   }
   const { clave } = await params;
-  const view = await getProcessDefinition(
-    { organizationId: access.organization.id, userId: access.user.id },
-    processDocuments,
-    decodeURIComponent(String(clave)),
-  );
+  let view: Awaited<ReturnType<typeof getProcessDefinition>>;
+  try {
+    view = await getProcessDefinition(
+      { organizationId: access.organization.id, userId: access.user.id },
+      processDocuments,
+      decodeURIComponent(String(clave)),
+    );
+  } catch (error) {
+    // Processes are of the whole company (N6).
+    if (isAppError(error) && error.kind === "forbidden") {
+      return (
+        <PageContainer>
+          {back}
+          <p
+            role="status"
+            className="max-w-3xl rounded-xl border bg-card p-4 text-sm sm:p-5"
+          >
+            {error.message}
+          </p>
+        </PageContainer>
+      );
+    }
+    throw error;
+  }
   if (!view) notFound();
 
   return (

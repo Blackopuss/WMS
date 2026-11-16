@@ -55,7 +55,16 @@ export default async function TareasPage({
   searchParams,
 }: PageProps<"/tareas">) {
   const access = await getModuleAccess();
-  if (!access.can("inventory.task.read")) {
+  // WMS-74: who works stages of processes (Inspector, Encargado de
+  // producción…) sees their part here even without warehouse tasks; only
+  // while an active module declares documents with processes.
+  const readsTasks = access.can("inventory.task.read");
+  const worksStages =
+    access.can("platform.process.work") &&
+    processDocuments.some(
+      (document) => access.moduleState(document.module) === "active",
+    );
+  if (!readsTasks && !worksStages) {
     return (
       <PageContainer>
         <NoAccessState />
@@ -63,7 +72,7 @@ export default async function TareasPage({
     );
   }
   const moduleState = access.moduleState("inventory");
-  if (moduleState === "none") {
+  if (readsTasks && moduleState === "none") {
     return (
       <PageContainer>
         <NoModuleState module="Inventario" />
@@ -74,17 +83,20 @@ export default async function TareasPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const supervises = access.can("inventory.task.create");
-  const executes = access.can("inventory.task.execute");
+  const supervises = readsTasks && access.can("inventory.task.create");
+  const executes = readsTasks && access.can("inventory.task.execute");
+  const ownTabs = executes || worksStages;
   const { vista, pagina, dia } = await searchParams;
   const asked = typeof vista === "string" ? vista : "";
   // Who does not execute tasks starts with every open one.
   const view: TaskListView =
-    asked === "available" || asked === "open" || asked === "closed"
+    (asked === "open" || asked === "closed") && readsTasks
       ? asked
-      : asked === "mine" || executes
-        ? "mine"
-        : "open";
+      : asked === "available" && ownTabs
+        ? asked
+        : ownTabs || !readsTasks
+          ? "mine"
+          : "open";
   // WMS-74: the stages of processes that are the person's or their area's,
   // in the same tabs (without processes, nothing is queried nor shown).
   const noWork: ProcessWorkPage = {
@@ -94,24 +106,28 @@ export default async function TareasPage({
     pageCount: 1,
   };
   const [list, counts, waves, processWork, processCounts] = await Promise.all([
-    listTasks(actor, {
-      view,
-      day: typeof dia === "string" ? dia : undefined,
-      page:
-        typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
-          ? Number(pagina)
-          : undefined,
-    }),
-    countMyTasks(actor),
+    readsTasks
+      ? listTasks(actor, {
+          view,
+          day: typeof dia === "string" ? dia : undefined,
+          page:
+            typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+              ? Number(pagina)
+              : undefined,
+        })
+      : { items: [], total: 0, page: 1, pageCount: 1, day: null },
+    readsTasks ? countMyTasks(actor) : { mine: 0, available: 0, blocked: 0 },
     // WMS-25: open waves with work here, when the company picks in waves.
-    wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : [])),
+    readsTasks
+      ? wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : []))
+      : [],
     view === "mine" || view === "available"
       ? listProcessWork(actor, processDocuments, { view })
       : noWork,
     countProcessWork(actor, processDocuments),
   ]);
   const tabs: { id: TaskListView; label: string; count?: number }[] = [
-    ...(executes
+    ...(ownTabs
       ? [
           {
             id: "mine" as const,
@@ -125,8 +141,12 @@ export default async function TareasPage({
           },
         ]
       : []),
-    { id: "open", label: "Abiertas" },
-    { id: "closed", label: "Terminadas" },
+    ...(readsTasks
+      ? [
+          { id: "open" as const, label: "Abiertas" },
+          { id: "closed" as const, label: "Terminadas" },
+        ]
+      : []),
   ];
   // The day only travels between the pages of the same narrowed list.
   const href = (target: TaskListView, page = 1, day: string | null = null) => {

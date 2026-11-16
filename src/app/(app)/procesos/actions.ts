@@ -135,9 +135,11 @@ export async function stageAction(
 
 /**
  * A photo taken to complete a stage (WMS-37): checked and kept unlinked,
- * for the person only, until the stage is completed.
+ * for the person only, until the stage is completed. Only for a stage the
+ * person may do now (the engine checks it).
  */
 export async function uploadProcessPhotoAction(
+  stateId: string,
   formData: FormData,
 ): Promise<ProcessPhotoResult> {
   const file = formData.get("photo");
@@ -145,7 +147,8 @@ export async function uploadProcessPhotoAction(
     return { ok: false, error: "No llegó la foto. Tómala otra vez." };
   }
   try {
-    return await uploadProcessPhoto(await actor(), {
+    return await uploadProcessPhoto(await actor(), processDocuments, {
+      stateId: idPath(stateId),
       name: file.name,
       bytes: new Uint8Array(await file.arrayBuffer()),
     });

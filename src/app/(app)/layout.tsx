@@ -3,6 +3,7 @@ import { LifeBuoy } from "lucide-react";
 import { AppShell, visibleNavItems } from "@/components";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
+import { processDocuments } from "@/modules/registry";
 import { isPermission } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getActiveFacility, listFacilities } from "@/platform/locations";
@@ -47,8 +48,16 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     : [[], null];
   // The menu only offers what the roles of the person allow (USR-09) in
   // modules the company has (MOD-05).
+  // WMS-74: working stages shows Tareas only while an active module
+  // declares documents with processes (no query: the list is in code).
+  const processesOn = processDocuments.some(
+    (document) => access.moduleState(document.module) === "active",
+  );
   const allowedHrefs = visibleNavItems(
-    (permission) => isPermission(permission) && access.allows(permission),
+    (permission) =>
+      isPermission(permission) &&
+      access.allows(permission) &&
+      (permission !== "platform.process.work" || processesOn),
   ).map((item) => item.href);
   return (
     <AppShell

@@ -127,6 +127,7 @@ CREATE TABLE `process_step` (
     `action` ENUM('COMPLETED', 'OPERATION', 'SKIPPED', 'BACK', 'TAKEN', 'RELEASED', 'ASSIGNED') NOT NULL,
     `actorUserId` CHAR(36) NULL,
     `assigneeUserId` CHAR(36) NULL,
+    `previousUserId` CHAR(36) NULL,
     `note` VARCHAR(500) NULL,
     `quantity` DECIMAL(18, 3) NULL,
     `device` VARCHAR(120) NULL,
@@ -199,7 +200,6 @@ ALTER TABLE `process_step` ADD CONSTRAINT `process_step_organizationId_progressI
 -- AddForeignKey
 ALTER TABLE `process_step` ADD CONSTRAINT `process_step_organizationId_stageId_fkey` FOREIGN KEY (`organizationId`, `stageId`) REFERENCES `process_stage`(`organizationId`, `id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
-
 -- WMS-74 (ADR 0069): a photo of evidence has exactly one owner; a step of a
 -- process is the second kind. Its purpose is its own.
 ALTER TABLE `evidence_photo` DROP CHECK `evidence_photo_one_owner`;
@@ -232,6 +232,7 @@ ALTER TABLE `process_stage_state` ADD CONSTRAINT `process_stage_state_taken` CHE
 ALTER TABLE `process_step` ADD CONSTRAINT `process_step_values` CHECK (
     (`quantity` IS NULL OR `quantity` > 0)
     AND (`assigneeUserId` IS NULL OR `action` = 'ASSIGNED')
+    AND (`previousUserId` IS NULL OR `action` IN ('ASSIGNED', 'RELEASED'))
 );
 
 -- The states of a version: DRAFT → PUBLISHED → RETIRED
@@ -363,6 +364,9 @@ END;
 
 CREATE TRIGGER `process_stage_state_insert_rules` BEFORE INSERT ON `process_stage_state` FOR EACH ROW
 BEGIN
+    IF NEW.`status` <> 'WAITING' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_stage_state: a stage starts waiting';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM `process_stage` s JOIN `process_progress` p
                       ON p.`organizationId` = s.`organizationId` AND p.`versionId` = s.`versionId`
                     WHERE s.`organizationId` = NEW.`organizationId` AND s.`id` = NEW.`stageId`
@@ -371,10 +375,29 @@ BEGIN
     END IF;
 END;
 
+-- The states of a stage of work (STAGE_STATE_TRANSITIONS of
+-- src/platform/processes/states.ts; change both together): WAITING ↔ READY,
+-- READY → DONE | SKIPPED, and DONE | SKIPPED → WAITING when going back.
+-- Nothing changes once its process is over.
 CREATE TRIGGER `process_stage_state_keep` BEFORE UPDATE ON `process_stage_state` FOR EACH ROW
 BEGIN
     IF NEW.`progressId` <> OLD.`progressId` OR NEW.`stageId` <> OLD.`stageId` OR NEW.`kind` <> OLD.`kind` THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_stage_state: its stage never changes';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM `process_progress`
+                    WHERE `organizationId` = OLD.`organizationId` AND `id` = OLD.`progressId`
+                      AND `status` = 'ACTIVE') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_stage_state: its process is over';
+    END IF;
+    IF OLD.`status` <> NEW.`status` AND NOT (
+        (OLD.`status` = 'WAITING' AND NEW.`status` = 'READY')
+        OR (OLD.`status` = 'READY' AND NEW.`status` IN ('WAITING', 'DONE', 'SKIPPED'))
+        OR (OLD.`status` IN ('DONE', 'SKIPPED') AND NEW.`status` = 'WAITING')
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_stage_state: transition not allowed';
+    END IF;
+    IF NEW.`status` = 'SKIPPED' AND NEW.`kind` <> 'MANUAL' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_stage_state: only a manual stage is skipped';
     END IF;
 END;
 
@@ -386,6 +409,11 @@ END;
 -- The trail never changes nor goes away, and its stage is of its version.
 CREATE TRIGGER `process_step_insert_rules` BEFORE INSERT ON `process_step` FOR EACH ROW
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM `process_progress`
+                    WHERE `organizationId` = NEW.`organizationId` AND `id` = NEW.`progressId`
+                      AND `status` = 'ACTIVE') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_step: its process is over';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM `process_stage` s JOIN `process_progress` p
                       ON p.`organizationId` = s.`organizationId` AND p.`versionId` = s.`versionId`
                     WHERE s.`organizationId` = NEW.`organizationId` AND s.`id` = NEW.`stageId`

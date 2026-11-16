@@ -98,9 +98,15 @@ Todas las tablas son de empresa (`organizationId`, llaves compuestas,
   tienen subetapas; una etapa con subetapas queda hecha cuando todas lo
   están): `WAITING`, `READY`, `DONE`, `SKIPPED`, quién la tiene y quién la
   asignó. Los estados los deriva una sola función pura (`settleStates`,
-  `rules.ts`) cada vez que algo cambia; nunca se escriben a mano.
+  `rules.ts`) cada vez que algo cambia; nunca se escriben a mano. Sus
+  transiciones son `STAGE_STATE_TRANSITIONS` (`states.ts`: `WAITING ↔
+  READY`, `READY → DONE | SKIPPED`, `DONE | SKIPPED → WAITING` al regresar)
+  y el disparador `process_stage_state_keep` las repite; una fila nace en
+  `WAITING`, solo una etapa manual se salta y nada cambia ni se registra
+  con el proceso terminado o cerrado.
 - `process_step`: rastro inmutable (disparadores sin cambio ni baja), con
-  clave de confirmación única por empresa.
+  clave de confirmación única por empresa y, al asignar o liberar, quién
+  la tenía antes (`previousUserId`).
 - `evidence_photo.processStepId` (nuevo dueño de fotos, propósito
   `process_step_photo`, con su `CHECK` de un solo dueño y de propósito).
 
@@ -136,8 +142,10 @@ cambian (`setProcessPlace`): el motor no lee tablas de módulos.
 
 ## Contrato para WMS-28, WMS-29 y WMS-30B
 
-Todos reciben el cliente `tx` de la transacción del módulo (abierta con
-`LOCKING_TRANSACTION`) y el `ProcessDocument` del módulo:
+Todos reciben el cliente `tx` de la transacción del módulo y el
+`ProcessDocument` del módulo. **El módulo abre esa transacción con
+`LOCKING_TRANSACTION`** (READ COMMITTED): el motor bloquea el progreso y
+decide con lo que lee después del candado.
 
 - `startProcess(tx, doc, actor, { documentId, facilityId, locationId?,
   label, milestone })` → `{ started: boolean; progressId: string | null }`.
@@ -155,8 +163,10 @@ Todos reciben el cliente `tx` de la transacción del módulo (abierta con
   Si el proceso no tiene esa operación como etapa, responde `ok: true`.
 - `completeOperationStage(tx, doc, actor, documentId, operationKey)` →
   `{ applied: boolean }`, **después de las escrituras de la operación**.
-  Lanza `ProcessStagesPending` si el módulo no preguntó antes y faltan
-  etapas (error de programación: todo se revierte).
+  Lanza `ProcessStagesPending` si faltan etapas anteriores **o si el
+  documento todavía no llega al hito de esa etapa**: si la operación cambia
+  el estado fijo del documento, el módulo llama `reachMilestone` **antes**,
+  en la misma transacción. Es un error de programación: todo se revierte.
 
 Orden en la transacción del módulo: candados del módulo (productos →
 ubicaciones → documento) → `assertStagesDone` → escrituras de la operación →
@@ -217,10 +227,29 @@ sigue con su versión).
   relevo y «Disponibles» le llegan solo por sus propios roles (opción nueva
   `ownerByRole: false` de `notify`): si no, recibiría cada relevo de la
   empresa. Asignar avisa a la persona (`processes.assigned`).
+- **Roles de un área** (hallazgo M1 de la revisión): el editor ofrece y el
+  servicio acepta solo roles que en esa empresa tienen
+  `platform.process.work` **y** el permiso de lectura del documento (un rol
+  ligado, solo con su módulo activo); publicar los vuelve a comprobar.
 - **Si un rol del área deja de existir para la empresa o nadie alcanza la
   etapa**: el pendiente sigue ahí (no se pierde ni se salta solo); el
-  titular siempre puede hacerlo, y quien configura puede publicar otra
-  versión para los documentos nuevos. Lo empezado no cambia de versión.
+  titular siempre puede hacerlo, la pantalla del documento dice «Nadie de
+  tu equipo puede hacer esta etapa» (sin contar al titular) y quien
+  configura puede publicar otra versión para los documentos nuevos. Lo
+  empezado no cambia de versión.
+- **Quien asigna** también está limitado por zona en las etapas «solo en
+  su zona»: fuera de su alcance la etapa no existe para él. Asignar a otra
+  persona o liberar lo de alguien deja en el rastro quién la tenía y le
+  avisa (`processes.assigned`).
+- **Configurar procesos es de toda la empresa**: además de
+  `platform.organization.update`, exige no estar limitado a almacenes
+  (`seesWholeCompany`), como los tipos de equipo y los webhooks. Guardar y
+  publicar desde la pantalla es una sola transacción.
+- **Tareas e Inicio**: quien tiene `platform.process.work` ve «Tareas»
+  (solo sus etapas si no tiene permiso de tareas de almacén) y los números
+  de «Para hoy», mientras algún módulo activo declare documentos.
+- **Fotos de un paso**: se suben solo para una etapa por hacer que la
+  persona puede hacer y que pide foto.
 - **Etapas de operación**: no se saltan ni se regresan; no crean pendiente.
   Su operación se rechaza mientras falten anteriores (`assertStagesDone`).
 - **Fuera de esta entrega** (6.8): autorización por etapa, avisos a otros

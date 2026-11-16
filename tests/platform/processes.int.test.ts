@@ -11,7 +11,11 @@ import {
 import { newId } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import type { Role } from "@/platform/authorization";
-import { activateModule, createModuleRegistry } from "@/platform/billing";
+import {
+  activateModule,
+  createModuleRegistry,
+  deactivateModule,
+} from "@/platform/billing";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { createFileLink } from "@/platform/files";
 import { createLocation } from "@/platform/locations";
@@ -973,11 +977,16 @@ describe("a document with its process", () => {
     expect(
       await completeStage(worker, DOCUMENTS, { stateId: state.id }),
     ).toMatchObject({ ok: false, field: "photos" });
-    // Somebody without the permission to work stages uploads nothing.
-    await expect(
-      uploadProcessPhoto(reader, { name: "a.jpg", bytes: TEST_JPEG }),
-    ).rejects.toMatchObject({ code: "permission_denied" });
-    const photo = await uploadProcessPhoto(worker, {
+    // Who may not do the stage uploads nothing for it (N4).
+    expect(
+      await uploadProcessPhoto(reader, DOCUMENTS, {
+        stateId: state.id,
+        name: "a.jpg",
+        bytes: TEST_JPEG,
+      }),
+    ).toMatchObject({ ok: false });
+    const photo = await uploadProcessPhoto(worker, DOCUMENTS, {
+      stateId: state.id,
       name: "a.jpg",
       bytes: TEST_JPEG,
     });
@@ -1001,15 +1010,18 @@ describe("a document with its process", () => {
     const { owner: stranger } = await newCompany();
     const foreign = await createFileLink(stranger, photo.fileId, { owners });
     expect(foreign.ok).toBe(false);
-    const view = await getProcessView(
-      reader,
-      DOCUMENTS,
-      {
-        progressId: doc.progressId!,
-      },
-      { owners },
-    );
+    const view = await getProcessView(reader, DOCUMENTS, {
+      progressId: doc.progressId!,
+    });
     expect(view?.steps[0]?.photos).toHaveLength(1);
+    // Once done, nobody stores photos for that stage any more.
+    expect(
+      await uploadProcessPhoto(worker, DOCUMENTS, {
+        stateId: state.id,
+        name: "b.jpg",
+        bytes: TEST_JPEG,
+      }),
+    ).toMatchObject({ ok: false });
   });
 });
 
@@ -1071,7 +1083,21 @@ describe("who hears and who reaches (scope, modules, companies)", () => {
         role: "production_operator",
       },
     });
-    await publishProcess(owner, DOCUMENTS, DOC.key);
+    // As if the module had been removed after publishing: the engine and
+    // the editor both refuse such a role now, so it goes straight in.
+    await db.processVersion.updateMany({
+      where: { organizationId: owner.organizationId, status: "PUBLISHED" },
+      data: { status: "RETIRED", currentKey: null, retiredAt: new Date() },
+    });
+    await db.processVersion.update({
+      where: { id: versionId },
+      data: {
+        status: "PUBLISHED",
+        draftKey: null,
+        currentKey: definition.id,
+        publishedAt: new Date(),
+      },
+    });
     const doc = await start(owner, facilityId);
     expect(await relayed(owner.organizationId, doc.progressId!)).toEqual([]);
     const state = await stateOf(
@@ -1253,5 +1279,278 @@ describe("who hears and who reaches (scope, modules, companies)", () => {
       mine: 0,
       available: 0,
     });
+  });
+});
+
+describe("review of WMS-74", () => {
+  const ONE: DraftInput = {
+    stages: [
+      {
+        name: "Paso",
+        kind: "MANUAL",
+        milestone: "OPEN",
+        roles: ["operator"],
+        zoneOnly: true,
+      },
+    ],
+  };
+
+  it("an area takes only roles that can do stages of the document (M1)", async () => {
+    const { owner, facilityId } = await newCompany();
+    for (const role of ["forklift", "viewer", "manager", "buyer"] as const) {
+      const result = await saveProcessDraft(owner, DOCUMENTS, DOC.key, {
+        stages: [
+          { name: "X", kind: "MANUAL", milestone: "OPEN", roles: [role] },
+        ],
+      });
+      expect(result, role).toMatchObject({ ok: false, reason: "invalid" });
+    }
+    const view = await getProcessDefinition(owner, DOCUMENTS, DOC.key);
+    const offered = view?.roleOptions.map((option) => option.value) ?? [];
+    expect(offered).toContain("operator");
+    expect(offered).not.toContain("forklift");
+    expect(offered).not.toContain("viewer");
+    // A draft that got a bad role is refused again at publishing.
+    await saveProcessDraft(owner, DOCUMENTS, DOC.key, ONE);
+    const stage = await db.processStage.findFirstOrThrow({
+      where: {
+        organizationId: owner.organizationId,
+        version: { status: "DRAFT" },
+      },
+      select: { id: true },
+    });
+    await db.processStageRole.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        stageId: stage.id,
+        role: "forklift",
+      },
+    });
+    expect(await publishProcess(owner, DOCUMENTS, DOC.key)).toMatchObject({
+      ok: false,
+      reason: "invalid",
+      index: 0,
+    });
+    // Saved and published in one go; with nobody of the area, it says so.
+    expect(
+      await saveProcessDraft(owner, DOCUMENTS, DOC.key, ONE, { publish: true }),
+    ).toMatchObject({ ok: true, published: true });
+    const doc = await start(owner, facilityId);
+    const seen = await getProcessView(owner, DOCUMENTS, {
+      progressId: doc.progressId!,
+    });
+    expect(seen?.stages[0]?.leaves[0]?.nobody).toBe(true);
+    await member(owner.organizationId, ["operator"]);
+    const after = await getProcessView(owner, DOCUMENTS, {
+      progressId: doc.progressId!,
+    });
+    expect(after?.stages[0]?.leaves[0]?.nobody).toBe(false);
+  });
+
+  it("reassigning keeps who had it in the trail and tells them (B1)", async () => {
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, ONE);
+    const a = await member(owner.organizationId, ["operator"]);
+    const b = await member(owner.organizationId, ["operator"]);
+    const lead = await member(owner.organizationId, ["supervisor"]);
+    const doc = await start(owner, facilityId);
+    const state = await stateOf(owner.organizationId, doc.progressId!, "Paso");
+    expect(await takeStage(a, DOCUMENTS, { stateId: state.id })).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await assignStage(lead, DOCUMENTS, {
+        stateId: state.id,
+        assigneeUserId: b.userId,
+      }),
+    ).toMatchObject({ ok: true });
+    const step = await db.processStep.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, action: "ASSIGNED" },
+      select: { previousUserId: true, assigneeUserId: true },
+    });
+    expect(step).toEqual({
+      previousUserId: a.userId,
+      assigneeUserId: b.userId,
+    });
+    const told = await db.notification.findMany({
+      where: {
+        organizationId: owner.organizationId,
+        recipientUserId: a.userId,
+        typeKey: "processes.assigned",
+      },
+      select: { text: true },
+    });
+    expect(told.map((row) => row.text).join(" ")).toContain("ahora la tiene");
+  });
+
+  it("the same confirmation on two processes at once is refused, not an error (B2)", async () => {
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, ONE);
+    const worker = await member(owner.organizationId, ["operator"]);
+    const first = await start(owner, facilityId);
+    const second = await start(owner, facilityId);
+    const confirmation = key();
+    const results = await Promise.all(
+      [first, second].map(async (doc) =>
+        takeStage(worker, DOCUMENTS, {
+          stateId: (
+            await stateOf(owner.organizationId, doc.progressId!, "Paso")
+          ).id,
+          idempotencyKey: confirmation,
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.find((result) => !result.ok)).toMatchObject({
+      reason: "key_reused",
+    });
+  });
+
+  it("who assigns is limited by zone too (B3)", async () => {
+    const { owner, facilityId } = await newCompany();
+    const zoneA = await createLocation(owner, { level: 1, name: "Zona A" });
+    const zoneB = await createLocation(owner, { level: 1, name: "Zona B" });
+    if (!zoneA.ok || !zoneB.ok) throw new Error("zones");
+    await publish(owner, ONE);
+    const worker = await member(owner.organizationId, ["operator"]);
+    const leadA = await member(
+      owner.organizationId,
+      ["supervisor"],
+      [{ facilityId, locationId: zoneA.locationId }],
+    );
+    const doc = await start(owner, facilityId, {
+      locationId: zoneB.locationId,
+    });
+    const state = await stateOf(owner.organizationId, doc.progressId!, "Paso");
+    expect(
+      await assignStage(leadA, DOCUMENTS, {
+        stateId: state.id,
+        assigneeUserId: worker.userId,
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    await takeStage(worker, DOCUMENTS, { stateId: state.id });
+    expect(
+      await releaseStage(leadA, DOCUMENTS, { stateId: state.id }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    const view = await getProcessView(leadA, DOCUMENTS, {
+      progressId: doc.progressId!,
+    });
+    expect(view?.stages[0]?.leaves[0]?.canAssign).toBe(false);
+    expect(view?.stages[0]?.leaves[0]?.canRelease).toBe(false);
+    expect(view?.assignees).toEqual({});
+  });
+
+  it("the trail says when it shows only the latest steps (B6)", async () => {
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, {
+      stages: [
+        {
+          name: "Paso",
+          kind: "MANUAL",
+          milestone: "OPEN",
+          roles: ["operator"],
+        },
+      ],
+    });
+    const worker = await member(owner.organizationId, ["operator"]);
+    const doc = await start(owner, facilityId);
+    const state = await stateOf(owner.organizationId, doc.progressId!, "Paso");
+    for (let round = 0; round < 51; round++) {
+      await takeStage(worker, DOCUMENTS, { stateId: state.id });
+      await releaseStage(worker, DOCUMENTS, { stateId: state.id });
+    }
+    const view = await getProcessView(worker, DOCUMENTS, {
+      progressId: doc.progressId!,
+    });
+    expect(view?.steps).toHaveLength(100);
+    expect(view?.olderSteps).toBe(2);
+  }, 60_000);
+
+  it("without the module of the document the screen says so (B7)", async () => {
+    const { owner, facilityId } = await newCompany(["production"]);
+    await publish(
+      owner,
+      {
+        stages: [
+          {
+            name: "Corte",
+            kind: "MANUAL",
+            milestone: "OPEN",
+            roles: ["production_operator"],
+          },
+        ],
+      },
+      PRODUCTION_DOC,
+    );
+    const doc = await start(owner, facilityId, { doc: PRODUCTION_DOC });
+    expect(
+      (await getProcessView(owner, DOCUMENTS, { progressId: doc.progressId! }))
+        ?.moduleMissing,
+    ).toBe(false);
+    // Removed, the module stays to read: the process is seen, read-only.
+    await deactivateModule(registry, {
+      organizationId: owner.organizationId,
+      moduleId: "production",
+      actorUserId: null,
+    });
+    invalidateEntitlements(owner.organizationId);
+    const readOnly = await getProcessView(owner, DOCUMENTS, {
+      progressId: doc.progressId!,
+    });
+    expect(readOnly?.moduleMissing).toBe(false);
+    expect(readOnly?.readOnly).toBe(true);
+    // With no trace of the module at all, the screen says it is missing.
+    await db.entitlement.deleteMany({
+      where: { organizationId: owner.organizationId, key: "production" },
+    });
+    invalidateEntitlements(owner.organizationId);
+    expect(
+      (await getProcessView(owner, DOCUMENTS, { progressId: doc.progressId! }))
+        ?.moduleMissing,
+    ).toBe(true);
+  });
+
+  it("the base keeps the states of a stage and nothing changes once over (N3)", async () => {
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, {
+      stages: [
+        { name: "Uno", kind: "MANUAL", milestone: "OPEN", roles: ["operator"] },
+        { name: "Dos", kind: "MANUAL", milestone: "OPEN", roles: ["operator"] },
+      ],
+    });
+    const doc = await start(owner, facilityId);
+    const dos = await stateOf(owner.organizationId, doc.progressId!, "Dos");
+    await expect(
+      db.processStageState.update({
+        where: { id: dos.id },
+        data: { status: "DONE" },
+      }),
+    ).rejects.toThrow(/transition not allowed/);
+    await forOrganization(owner.organizationId).$transaction((tx) =>
+      reachMilestone(tx, DOC, owner, doc.documentId, "CANCELLED"),
+    );
+    const uno = await stateOf(owner.organizationId, doc.progressId!, "Uno");
+    await expect(
+      db.processStageState.update({
+        where: { id: uno.id },
+        data: { status: "DONE" },
+      }),
+    ).rejects.toThrow(/process is over/);
+  });
+
+  it("who is limited to a warehouse does not configure processes (N6)", async () => {
+    const { owner, facilityId } = await newCompany();
+    const admin = await member(
+      owner.organizationId,
+      ["administrator"],
+      [{ facilityId }],
+    );
+    await expect(getProcessSettings(admin, DOCUMENTS)).rejects.toMatchObject({
+      code: "whole_company_required",
+    });
+    await expect(
+      saveProcessDraft(admin, DOCUMENTS, DOC.key, ONE),
+    ).rejects.toMatchObject({ code: "whole_company_required" });
   });
 });

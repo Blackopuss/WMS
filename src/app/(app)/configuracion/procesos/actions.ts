@@ -4,11 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { isAppError } from "@/lib";
 import { processDocuments } from "@/modules/registry";
-import {
-  publishProcess,
-  saveProcessDraft,
-  type DraftInput,
-} from "@/platform/processes";
+import { saveProcessDraft, type DraftInput } from "@/platform/processes";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 /**
@@ -55,26 +51,23 @@ export async function saveProcessAction(
       answers,
     };
   }
+  const publish = formData.get("publish") === "1";
   try {
+    // B4: saving and publishing are one transaction, so what is published
+    // is exactly what this person saved.
     const saved = await saveProcessDraft(
       actor,
       processDocuments,
       documentKey,
       draft,
+      { publish },
     );
     if (!saved.ok) {
       return { error: saved.error, index: saved.index, answers };
     }
-    let message = `Borrador guardado (versión ${saved.number}). Nada cambia hasta que lo publiques.`;
-    if (formData.get("publish") === "1") {
-      const published = await publishProcess(
-        actor,
-        processDocuments,
-        documentKey,
-      );
-      if (!published.ok) return { error: published.error, answers };
-      message = `Versión ${published.number} publicada: la usan los documentos nuevos; los que ya empezaron siguen con la suya.`;
-    }
+    const message = saved.published
+      ? `Versión ${saved.number} publicada: la usan los documentos nuevos; los que ya empezaron siguen con la suya.`
+      : `Borrador guardado (versión ${saved.number}). Nada cambia hasta que lo publiques.`;
     revalidatePath("/configuracion/procesos");
     return { ok: true, message, answers };
   } catch (error) {

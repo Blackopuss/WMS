@@ -15,8 +15,9 @@ export const PROCESS_READY_NOTICE: NotificationType = {
 export const PROCESS_ASSIGNED_NOTICE: NotificationType = {
   key: "processes.assigned",
   module: null,
-  label: "Te asignaron una etapa de proceso",
-  description: "Cuando alguien te da una etapa de un proceso para hacerla.",
+  label: "Te asignan o te quitan una etapa de proceso",
+  description:
+    "Cuando alguien te da una etapa de un proceso o se la pasa a otra persona.",
   defaultEnabled: true,
   visibleWith: ["platform.process.work"],
 };

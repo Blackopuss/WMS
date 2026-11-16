@@ -5,6 +5,7 @@ import {
   History,
   KeyRound,
   LifeBuoy,
+  ListChecks,
   ListPlus,
   ListTree,
   MapPin,
@@ -43,6 +44,9 @@ export default async function ConfiguracionPage() {
   const showLocations =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
+  // WMS-30A: the defects of Calidad, set up once like the custom fields.
+  const showDefects =
+    access.moduleState("quality") !== "none" && access.can("quality.plan.read");
   // WMS-42: equipment is registered rarely, so it lives here too.
   const showEquipment =
     access.moduleState("inventory") !== "none" &&
@@ -70,6 +74,7 @@ export default async function ConfiguracionPage() {
     <PageContainer>
       <PageHeader title="Configuración" />
       {(showLocations ||
+        showDefects ||
         showEquipment ||
         access.can("platform.team.read") ||
         access.can("platform.terminal.read") ||
@@ -119,6 +124,14 @@ export default async function ConfiguracionPage() {
               icon={ListTree}
               title="Procesos"
               description="Etapas que sigue cada documento y qué área hace cada una."
+            />
+          )}
+          {showDefects && (
+            <SettingsLink
+              href="/configuracion/defectos"
+              icon={ListChecks}
+              title="Defectos"
+              description="Lo que Calidad anota al rechazar algo."
             />
           )}
           {showEquipment && (
@@ -311,6 +324,7 @@ function SettingsLink({
     | "/configuracion/operacion"
     | "/configuracion/campos"
     | "/configuracion/procesos"
+    | "/configuracion/defectos"
     | "/configuracion/equipos-del-almacen"
     | "/configuracion/equipo"
     | "/configuracion/avisos"

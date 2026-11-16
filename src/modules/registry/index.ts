@@ -18,9 +18,9 @@ export { processDocuments } from "./processes";
 export { webhookEventTypes } from "./webhooks";
 
 /**
- * Installed modules. Inventario and Compras can be contracted; Producción
- * and Calidad (WMS-59) and CRM are announced but not available, so nothing
- * can activate them yet.
+ * Installed modules. Inventario, Compras, Producción and Calidad (WMS-30A)
+ * can be contracted; CRM is announced but not available, so nothing can
+ * activate it yet.
  * A module added here with an unknown or circular dependency stops the
  * application from starting.
  */

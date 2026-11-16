@@ -234,7 +234,7 @@ Permisos del módulo Producción; ninguno da nada sin el módulo contratado (MOD
 | Permiso | Alcance y referencia | T | A | AL | CO | CN | SU | AS | MO | GE | OP | EP | IC |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `production.recipe.read` | Ver la receta de un producto (materiales, para cuánto y lo que sale) y sus versiones, sin costos; WMS-27. | Sí | Sí | Sí | No | Sí | Sí | No | No | Sí | Sí | Sí | No |
-| `production.recipe.manage` | Crear, activar y versionar la receta en la ficha del producto; una versión usada no se edita; WMS-27. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
+| `production.recipe.manage` | Crear, activar y versionar la receta en la ficha del producto; una versión usada no se edita; nunca en una terminal compartida con PIN (se lee, no se cambia); WMS-27, ADR 0066. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
 | `production.order.read` | Consultar órdenes de producción, sus materiales apartados, avance y quién aprobó y ejecutó; WMS-28, WMS-28B (P7d). | Sí | Sí | Sí | No | Sí | Sí | No | No | Sí | Sí | Sí | Sí |
 | `production.order.create` | Crear una orden en borrador para el área; quien la crea responde por ella (P8); WMS-28. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
 | `production.order.release` | Liberar una orden: aparta materiales y, con surtido desde el almacén de insumos, crea sus tareas; WMS-28. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |

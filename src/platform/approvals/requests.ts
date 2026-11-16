@@ -8,7 +8,7 @@ import { terminalUserOfRequest } from "@/platform/auth";
 import {
   buildScope,
   companyModules,
-  knownRoles,
+  activeRoles,
   loadScope,
   loadSubject,
   permissionsOf,
@@ -228,9 +228,11 @@ function mayDecide(
 ): boolean {
   // Support only looks (PIL-12); a shared terminal never decides (WMS-38).
   if (subject.support === true || subject.terminal === true) return false;
+  // WMS-74 (B5): the roles in force, like the notice that asks to decide
+  // (`memberReaches`): a tied role without its module never qualifies.
   const byRole =
     subject.isOwner === true ||
-    knownRoles(subject.roles).some((role) => rule.roles.includes(role));
+    activeRoles(subject).some((role) => rule.roles.includes(role));
   if (!byRole) return false;
   if (type.module && entitlements.moduleState(type.module) !== "active") {
     return false;
