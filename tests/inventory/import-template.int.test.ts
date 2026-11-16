@@ -257,7 +257,7 @@ describe("import template", () => {
     });
     const lines = template.bytes.toString("utf8").split("\r\n");
     expect(lines[0]).toBe(`﻿${headers.join(",")}`);
-    expect(lines[1]).toContain("TOR-001");
+    expect(lines[1]).toContain("ART-001");
     expect(lines[1]).toContain("pieza,Caja,100,3,Caja");
     expect(lines.filter((line) => line !== "")).toHaveLength(5);
   });
