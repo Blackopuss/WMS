@@ -1,5 +1,6 @@
 import { INVENTORY_SETTINGS } from "@/modules/inventory";
 import { PURCHASING_SETTINGS } from "@/modules/purchasing";
+import { QUALITY_SETTINGS } from "@/modules/quality";
 import { NOTIFICATION_SETTINGS } from "@/platform/notifications";
 import {
   assertValidRegistry,
@@ -15,6 +16,8 @@ import { TERMINAL_SETTINGS } from "@/platform/terminals";
 export const operationSettings: readonly SettingDefinition[] = [
   ...INVENTORY_SETTINGS,
   ...PURCHASING_SETTINGS,
+  // WMS-30A (ADR 0067): sampling and photos of Calidad.
+  ...QUALITY_SETTINGS,
   // WMS-39B (ADR 0060): whether the company sends notices by mail.
   ...NOTIFICATION_SETTINGS,
   // WMS-38: shown on Configuración › Terminales compartidas, not in

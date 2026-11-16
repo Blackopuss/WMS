@@ -341,6 +341,20 @@ export const AREAS = [
       "PurchaseRequestLine",
     ],
   },
+  {
+    id: "quality",
+    title: "Calidad",
+    doc: "quality",
+    summary:
+      "Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A).",
+    models: [
+      "QualityPlan",
+      "QualityPlanVersion",
+      "QualityPlanPoint",
+      "QualityPlanPointOption",
+      "QualityDefect",
+    ],
+  },
 ];
 
 // ── Parser ───────────────────────────────────────────────────────────────

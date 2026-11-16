@@ -1361,6 +1361,56 @@ beforeAll(async () => {
         setAt: new Date(),
       },
     });
+    // WMS-30A: an inspection plan with a draft, a point, an option and a defect.
+    const qualityPlanId = newId();
+    const author = organizationId === orgA ? ids.ana : ids.beto;
+    await db.qualityPlan.create({
+      data: {
+        id: qualityPlanId,
+        organizationId,
+        productId,
+        createdByUserId: author,
+      },
+    });
+    const qualityVersionId = newId();
+    await db.qualityPlanVersion.create({
+      data: {
+        id: qualityVersionId,
+        organizationId,
+        planId: qualityPlanId,
+        number: 1,
+        createdByUserId: author,
+      },
+    });
+    const qualityPointId = newId();
+    await db.qualityPlanPoint.create({
+      data: {
+        id: qualityPointId,
+        organizationId,
+        versionId: qualityVersionId,
+        position: 1,
+        label: "Acabado",
+        kind: "CHOICE",
+      },
+    });
+    await db.qualityPlanPointOption.create({
+      data: {
+        id: newId(),
+        organizationId,
+        pointId: qualityPointId,
+        position: 1,
+        label: "Bueno",
+        acceptable: true,
+      },
+    });
+    await db.qualityDefect.create({
+      data: {
+        id: newId(),
+        organizationId,
+        name: "Rayado",
+        createdByUserId: author,
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

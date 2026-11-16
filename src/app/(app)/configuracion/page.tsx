@@ -5,6 +5,7 @@ import {
   History,
   KeyRound,
   LifeBuoy,
+  ListChecks,
   ListPlus,
   MapPin,
   MonitorSmartphone,
@@ -39,6 +40,9 @@ export default async function ConfiguracionPage() {
   const showLocations =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
+  // WMS-30A: the defects of Calidad, set up once like the custom fields.
+  const showDefects =
+    access.moduleState("quality") !== "none" && access.can("quality.plan.read");
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
@@ -58,6 +62,7 @@ export default async function ConfiguracionPage() {
     <PageContainer>
       <PageHeader title="Configuración" />
       {(showLocations ||
+        showDefects ||
         access.can("platform.team.read") ||
         access.can("platform.terminal.read") ||
         access.can("platform.plan.read") ||
@@ -98,6 +103,14 @@ export default async function ConfiguracionPage() {
               icon={ListPlus}
               title="Campos personalizados"
               description="Datos propios de tus productos, ubicaciones y proveedores."
+            />
+          )}
+          {showDefects && (
+            <SettingsLink
+              href="/configuracion/defectos"
+              icon={ListChecks}
+              title="Defectos"
+              description="Lo que Calidad anota al rechazar algo."
             />
           )}
           {access.can("platform.team.read") && (
@@ -275,6 +288,7 @@ function SettingsLink({
     | "/configuracion/almacenes"
     | "/configuracion/operacion"
     | "/configuracion/campos"
+    | "/configuracion/defectos"
     | "/configuracion/equipo"
     | "/configuracion/avisos"
     | "/configuracion/plan"

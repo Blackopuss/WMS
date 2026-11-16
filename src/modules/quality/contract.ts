@@ -6,13 +6,14 @@ import { defineModule } from "@/platform/billing";
  * produced, received and returned. It is never contracted without
  * Producción (founder, D9): it cannot be activated without it, and
  * Producción cannot be removed while it is active. Its permissions are the
- * `quality.*` entries of the approved catalog. Announced until WMS-30A.
+ * `quality.*` entries of the approved catalog. Available since WMS-30A
+ * (inspection plans and defects, ADR 0067).
  */
 export const qualityModule = defineModule({
   id: "quality",
   name: "Calidad",
   version: "0.1.0",
-  availability: "unavailable",
+  availability: "available",
   required: false,
   dependsOn: ["production"],
   uses: ["catalog"],

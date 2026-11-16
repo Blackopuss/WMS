@@ -12,7 +12,7 @@ export const productionModule = defineModule({
   id: "production",
   name: "Producción",
   version: "0.1.0",
-  availability: "unavailable",
+  availability: "available",
   required: false,
   dependsOn: ["inventory"],
   uses: ["catalog"],

@@ -120,6 +120,11 @@ export const TENANT_MODELS = [
   "WebhookEndpoint",
   "WebhookEvent",
   "WebhookDelivery",
+  "QualityPlan",
+  "QualityPlanVersion",
+  "QualityPlanPoint",
+  "QualityPlanPointOption",
+  "QualityDefect",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -336,6 +341,8 @@ const LOCKABLE = {
   webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
+  qualityPlan: "quality_plan",
+  qualityDefect: "quality_defect",
 } as const;
 
 /**

@@ -37,6 +37,7 @@ import {
   listRecentMovements,
 } from "@/modules/inventory";
 import { listSuppliersOfProduct } from "@/modules/purchasing";
+import { getProductInspection } from "@/modules/quality";
 import { getModuleAccess } from "@/platform/billing";
 import {
   TRACKING_LABELS,
@@ -133,6 +134,11 @@ export default async function ProductoPage({
     getCustomValues(actor, "PRODUCT", [product.id]),
   ]);
   const customShown = custom.byRecord.get(product.id)?.shown ?? [];
+  // WMS-30A: what Calidad checks, only with Calidad and for who may read it.
+  const inspection =
+    access.moduleState("quality") !== "none" && access.can("quality.plan.read")
+      ? await getProductInspection(actor, product.id)
+      : null;
   // WMS-21B: a product by serial lists its units inside, by page.
   const { series } = await searchParams;
   const serialPage =
@@ -650,6 +656,28 @@ export default async function ProductoPage({
           )}
         </dl>
       </section>
+
+      {inspection && (
+        <section
+          aria-labelledby="inspeccion-producto"
+          className="space-y-1 rounded-xl border bg-card p-4 sm:p-5"
+        >
+          <h2 id="inspeccion-producto" className="font-medium">
+            <Link
+              href={`/inventario/${product.id}/inspeccion`}
+              className="inline-flex min-h-11 items-center gap-1 rounded text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Inspección
+              <ChevronRight aria-hidden="true" className="size-4" />
+            </Link>
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {inspection.active
+              ? `Versión ${inspection.active.number} · ${inspection.active.samplingText} · ${inspection.active.points.length} ${inspection.active.points.length === 1 ? "punto" : "puntos"} · ${inspection.active.originsText}`
+              : `Sin plan de inspección: la calidad se revisa como dice el ajuste de la empresa (${inspection.defaultSamplingText.toLowerCase()}).`}
+          </p>
+        </section>
+      )}
 
       {suppliers && suppliers.total > 0 && (
         <section
