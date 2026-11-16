@@ -430,6 +430,21 @@ export async function startRecipeChange(
           })),
         });
       }
+    } else {
+      // Nothing was ever in force (every draft was discarded): it starts
+      // like a new recipe, with the product coming out with all the cost.
+      await tx.recipeOutput.create({
+        data: {
+          id: newId(),
+          organizationId,
+          versionId,
+          lineNumber: 1,
+          productId: recipe.productId,
+          quantity: from.baseQuantity,
+          unitCode: from.unitCode,
+          costShare: "100",
+        },
+      });
     }
     return { ok: true as const, versionId, repeated: false };
   });
@@ -881,7 +896,11 @@ export async function activateRecipeVersion(
   await ensureRecipeLock(organizationId);
   return inRecipe(organizationId, async (tx) => {
     // Locks: the company's activations first, then the recipe.
-    await lockRows(tx, "recipeLock", [organizationId]);
+    const locked = await lockRows(tx, "recipeLock", [organizationId]);
+    // Without its row there is no lock: never activate unordered.
+    if (locked.length !== 1) {
+      throw new Error("recipe_lock row missing for the company");
+    }
     const found = await tx.recipeVersion.findFirst({
       where: { id: idOf(versionId) },
       select: { recipeId: true },
@@ -1465,10 +1484,25 @@ export type RecipeVersionSummary = {
 };
 
 /** Every version of the recipe of a product, newest first. */
+/** Versions shown per page of the history. */
+export const RECIPE_VERSIONS_PAGE_SIZE = 20;
+
+export type RecipeVersionPage = {
+  items: RecipeVersionSummary[];
+  total: number;
+  page: number;
+  pageCount: number;
+};
+
+/**
+ * The versions of the recipe of a product, newest first, by page in the
+ * database (INV-10); a page out of range shows the last one.
+ */
 export async function listRecipeVersions(
   actor: ProductionActor,
   productId: string,
-): Promise<RecipeVersionSummary[]> {
+  options: { page?: number } = {},
+): Promise<RecipeVersionPage> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
     organizationId,
@@ -1476,9 +1510,20 @@ export async function listRecipeVersions(
     "production.recipe.read",
   );
   const client = forOrganization(organizationId);
+  const where = { recipe: { productId: idOf(productId) } };
+  const total = await client.recipeVersion.count({ where });
+  const pageCount = Math.max(1, Math.ceil(total / RECIPE_VERSIONS_PAGE_SIZE));
+  const wanted = Math.floor(Number(options.page ?? 1));
+  const page = Math.min(
+    pageCount,
+    Number.isFinite(wanted) && wanted >= 1 ? wanted : 1,
+  );
   const rows = await client.recipeVersion.findMany({
-    where: { recipe: { productId: idOf(productId) } },
-    orderBy: { number: "desc" },
+    where,
+    // Ordered by number, which is unique within the recipe (its index).
+    orderBy: [{ number: "desc" }, { id: "desc" }],
+    skip: (page - 1) * RECIPE_VERSIONS_PAGE_SIZE,
+    take: RECIPE_VERSIONS_PAGE_SIZE,
     select: {
       id: true,
       number: true,
@@ -1497,7 +1542,7 @@ export async function listRecipeVersions(
     client,
     rows.map((row) => row.activatedByUserId),
   );
-  return rows.map((row) => ({
+  const items = rows.map((row) => ({
     id: row.id,
     label: formatRecipeVersion(row.number),
     status: row.status,
@@ -1512,6 +1557,7 @@ export async function listRecipeVersions(
     retiredAt: row.retiredAt,
     discardedAt: row.discardedAt,
   }));
+  return { items, total, page, pageCount };
 }
 
 /**

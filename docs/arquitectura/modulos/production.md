@@ -34,8 +34,11 @@ reservas.
 
 Cada servicio empieza con `assertModulePermission` (`production.recipe.read`
 o `production.recipe.manage`). Candados: un cambio del borrador bloquea su
-`recipe`; activar bloquea primero `recipe_lock` (una fila por empresa) y
-después la receta, así dos activaciones no forman un ciclo.
+`recipe`; activar bloquea primero `recipe_lock` (una fila por empresa, que
+no se borra; activar exige haberla bloqueado) y después la receta, así dos
+activaciones no forman un ciclo. `listRecipeVersions` se pagina en la base
+(20 por página). En una terminal compartida con PIN la receta se lee y no se
+cambia (`TERMINAL_DESK_ONLY` de `platform/authorization`).
 
 ## Permisos
 

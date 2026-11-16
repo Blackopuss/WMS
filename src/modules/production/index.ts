@@ -23,6 +23,7 @@ export {
 } from "./recipe-states";
 export {
   RECIPE_USED_IN_MAX,
+  RECIPE_VERSIONS_PAGE_SIZE,
   activateRecipeVersion,
   activeRecipeOf,
   createRecipe,
@@ -45,6 +46,7 @@ export {
   type RecipeInputView,
   type RecipeOutputInput,
   type RecipeOutputView,
+  type RecipeVersionPage,
   type RecipeVersionSummary,
   type RecipeVersionView,
 } from "./recipes";

@@ -172,11 +172,11 @@ ALTER TABLE `recipe_version` ADD CONSTRAINT `recipe_version_state_check` CHECK (
         AND `activatedAt` IS NULL AND `retiredAt` IS NULL AND `discardedAt` IS NOT NULL)
 );
 
--- Una receta no se borra y su producto no cambia.
+-- Una receta no se borra; su producto y quien la creó no cambian.
 CREATE TRIGGER `recipe_fixed` BEFORE UPDATE ON `recipe` FOR EACH ROW
 BEGIN
-    IF NEW.`productId` <> OLD.`productId` THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe: the product cannot change';
+    IF NEW.`productId` <> OLD.`productId` OR NEW.`createdByUserId` <> OLD.`createdByUserId` THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe: the product and the author cannot change';
     END IF;
 END;
 CREATE TRIGGER `recipe_no_delete` BEFORE DELETE ON `recipe` FOR EACH ROW
@@ -199,9 +199,34 @@ BEGIN
         OR NEW.`createdByUserId` <> OLD.`createdByUserId` THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_version: recipe, number and author cannot change';
     END IF;
-    IF OLD.`status` <> 'DRAFT' AND (NEW.`baseQuantity` <> OLD.`baseQuantity`
+    -- Para cuánto y su unidad solo cambian en un borrador que sigue siendo
+    -- borrador: nunca en la misma sentencia que cambia el estado.
+    IF (OLD.`status` <> 'DRAFT' OR NEW.`status` <> 'DRAFT') AND (NEW.`baseQuantity` <> OLD.`baseQuantity`
         OR NEW.`unitCode` <> OLD.`unitCode`) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_version: only a draft changes';
+    END IF;
+    -- Quién y cuándo la activó, retiró o descartó: se escribe una vez.
+    IF (OLD.`activatedAt` IS NOT NULL AND NOT (NEW.`activatedAt` <=> OLD.`activatedAt`))
+        OR (OLD.`activatedByUserId` IS NOT NULL AND NOT (NEW.`activatedByUserId` <=> OLD.`activatedByUserId`))
+        OR (OLD.`retiredAt` IS NOT NULL AND NOT (NEW.`retiredAt` <=> OLD.`retiredAt`))
+        OR (OLD.`retiredByUserId` IS NOT NULL AND NOT (NEW.`retiredByUserId` <=> OLD.`retiredByUserId`))
+        OR (OLD.`discardedAt` IS NOT NULL AND NOT (NEW.`discardedAt` <=> OLD.`discardedAt`))
+        OR (OLD.`discardedByUserId` IS NOT NULL AND NOT (NEW.`discardedByUserId` <=> OLD.`discardedByUserId`)) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_version: who and when cannot change';
+    END IF;
+    -- Lo que no es de su estado no se escribe fuera de él.
+    IF (NEW.`status` IN ('DRAFT', 'DISCARDED') AND (NEW.`activatedByUserId` IS NOT NULL OR NEW.`retiredByUserId` IS NOT NULL))
+        OR (NEW.`status` = 'ACTIVE' AND NEW.`retiredByUserId` IS NOT NULL)
+        OR (NEW.`status` <> 'DISCARDED' AND NEW.`discardedByUserId` IS NOT NULL) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_version: data of another state';
+    END IF;
+END;
+-- Toda versión nace borrador: una vigente solo llega por la activación.
+CREATE TRIGGER `recipe_version_born_draft` BEFORE INSERT ON `recipe_version` FOR EACH ROW
+BEGIN
+    IF NEW.`status` <> 'DRAFT' OR NEW.`activatedByUserId` IS NOT NULL
+        OR NEW.`retiredByUserId` IS NOT NULL OR NEW.`discardedByUserId` IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_version: a version is born as a draft';
     END IF;
 END;
 CREATE TRIGGER `recipe_version_no_delete` BEFORE DELETE ON `recipe_version` FOR EACH ROW
@@ -247,4 +272,10 @@ BEGIN
     IF (SELECT `status` FROM `recipe_version` WHERE `id` = OLD.`versionId`) <> 'DRAFT' THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_output: the version is not a draft';
     END IF;
+END;
+
+-- El candado de activaciones de la empresa no se borra.
+CREATE TRIGGER `recipe_lock_no_delete` BEFORE DELETE ON `recipe_lock` FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'recipe_lock: the lock is never deleted';
 END;

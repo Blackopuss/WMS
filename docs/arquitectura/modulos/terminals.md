@@ -46,7 +46,9 @@ Una sesión de PIN lleva `Subject.terminal`: la política (`keptAtTerminal`)
 le quita todo `platform.*` salvo `TERMINAL_PLATFORM_KEEP` (leer empresa,
 módulos y capacidad), toda exportación masiva (salvo los documentos de
 `TERMINAL_EXPORT_KEEP`: hoja de embarque y de traslado) y leer costos
-(`TERMINAL_COST_PERMISSIONS`; registrar el último costo se conserva); el motor de aprobaciones no la deja
+(`TERMINAL_COST_PERMISSIONS`; registrar el último costo se conserva) y
+lo que es de escritorio (`TERMINAL_DESK_ONLY`: cambiar la receta de un
+producto, WMS-27; leerla se conserva); el motor de aprobaciones no la deja
 decidir. Aceptar una invitación también la rechaza. La seguridad de la cuenta (dos pasos, sesiones, PIN) la rechaza
 cada servicio con `assertNotTerminalSession`.
 

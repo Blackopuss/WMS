@@ -28,7 +28,8 @@ siguen siendo del fundador; no se agregan aquí.
 
 1. **Quién y dónde.** El Encargado de producción, Administración o el
    titular (`production.recipe.manage`), en escritorio (también funciona en
-   tableta), en la ficha del producto (`/inventario/[id]`), bloque
+   tableta con su propia sesión; **nunca en una terminal compartida con
+   PIN**, donde la receta se lee y no se cambia), en la ficha del producto (`/inventario/[id]`), bloque
    **«Receta»**. El bloque existe solo con Producción contratada y para
    quien tiene `production.recipe.read`; con el módulo en solo lectura (plan
    vencido o módulo quitado) se ve y no se edita.
@@ -50,13 +51,15 @@ siguen siendo del fundador; no se agregan aquí.
      desarman: lo que sale puede no incluir el producto de la ficha.
    - **Para cuánto** se puede cambiar; si lo que sale del producto de la
      ficha era igual a la cantidad base anterior, cambia con ella.
-4. **Activar.** «Activar esta versión» comprueba todo otra vez bajo
-   candado y, si pasa, la hace la vigente (`ACTIVE`) y retira la anterior
+4. **Activar.** «Activar esta versión» vuelve a comprobar todo bajo el
+   candado de la receta (ver «Validaciones») y, si pasa, la hace la vigente (`ACTIVE`) y retira la anterior
    (`RETIRED`) en la misma transacción. Bitácora
    `production.recipe_activated`.
 5. **Cambiar receta.** Una versión que dejó de ser borrador no se edita
    (disparador). «Cambiar receta» crea la siguiente versión en borrador,
-   copiada de la vigente (o de la última), y se activa igual. Si ya hay un
+   copiada de la vigente (o de la última que lo fue), y se activa igual. Si
+   nunca hubo una vigente (todos los borradores se descartaron), empieza como
+   una receta nueva: con el producto de la ficha saliendo con el 100 %. Si ya hay un
    borrador, lleva a él (uno por receta). «Descartar borrador» lo deja
    `DISCARDED`, con su bitácora. Nada se borra: ni recetas ni versiones.
 6. **Lo que se ve.** La ficha muestra la versión vigente (para cuánto,
@@ -83,11 +86,15 @@ DRAFT ──▶ ACTIVE ──▶ RETIRED
 - `recipe_version`: número consecutivo por receta, estado, para cuánto
   (`baseQuantity`, `DECIMAL(12,3)`, en la unidad del producto de la ficha,
   con esa unidad guardada en `unitCode`), quién y cuándo la creó, activó,
-  retiró o descartó. **Una sola vigente y un solo borrador por receta**:
+  retiró o descartó (se escribe una vez y ya no cambia: disparador; lo que
+  no es de su estado no se escribe). Toda versión **nace borrador**
+  (disparador `BEFORE INSERT`): una vigente solo llega por la activación.
+  **Una sola vigente y un solo borrador por receta**:
   columnas `activeRecipeId` y `draftRecipeId` que valen el id de la receta
   solo en ese estado (`CHECK`) con índice único, como `openOrderId` de los
-  embarques. Receta, número, para cuánto y unidad solo cambian en borrador
-  (disparador).
+  embarques. Receta, número y autor nunca cambian; para cuánto y unidad
+  solo cambian en un borrador que sigue siéndolo (nunca en la misma
+  sentencia que cambia el estado). En `recipe`, producto y autor no cambian.
 - `recipe_input`: un material por línea, un producto una sola vez por
   versión, con `capturedQuantity`, `presentationId`,
   `presentationVersionId`, `capturedUnitCode` (si se escribió en otra
@@ -114,7 +121,12 @@ DRAFT ──▶ ACTIVE ──▶ RETIRED
 ### Validaciones
 
 En cada cambio del borrador (rechazos claros, nada escrito) y **otra vez al
-activar, bajo candado**:
+activar**, releyendo la versión y sus líneas bajo el candado de la receta.
+Los productos (estado, unidad, precisión) se leen sin bloquearlos: activar
+no toma candados de producto, para no detener movimientos de existencias por
+una receta. Un producto archivado o con otra unidad justo después de activar
+queda como en «Cambios en los productos de una receta vigente», y WMS-28
+vuelve a comprobarlo al crear y al liberar cada orden.
 
 - Para cuánto, cantidades de materiales y de lo que sale: `parseQuantity`
   (o `resolveConversion`) con la regla vigente de cada producto.
@@ -147,7 +159,9 @@ activaciones de una empresa se ordenan con un candado propio,
 `recipe_lock` (una fila por empresa, su id es el de la empresa; se crea
 antes de la transacción si falta, en una escritura aparte que tolera la
 carrera). Orden de candados al activar: `recipe_lock` → `recipe` (la
-receta) → lectura de la versión y sus líneas. Las ediciones del borrador
+receta) → lectura de la versión y sus líneas. La fila de `recipe_lock` no
+se borra (disparador) y activar exige haber bloqueado exactamente una; si
+faltara, falla en vez de activar sin orden. Las ediciones del borrador
 bloquean solo su `recipe`, así que nunca esperan a otra activación en
 círculo. Con READ COMMITTED (`LOCKING_TRANSACTION`), la segunda activación
 lee el grafo ya con la primera vigente y la rechaza si cerraría un ciclo.
@@ -158,6 +172,21 @@ interbloquearse con una activación.
 
 La comprobación también corre (sin candado, solo para avisar antes) al
 agregar un material o una salida.
+
+**Armar y desarmar el mismo producto (pendiente del fundador).** Hoy una
+empresa no puede tener a la vez «Juego = A + B» (armar) y «Juego → A + B»
+(desarmar): con la de armar vigente, la de desarmar cierra el ciclo
+Juego → A → Juego y se rechaza; además no cabría en la ficha del juego,
+que ya tiene su receta (una por producto, P13). Lo fija la prueba
+«assembling and taking apart the same kit». Si el fundador lo quiere:
+
+- **Permitir desarmar lo que se arma:** el ciclo tendría que medirse por
+  costo y no por grafo (desarmar no «hace» el juego con sus partes), o
+  marcar la receta como «desarmar» y excluirla del grafo de armado; y la
+  receta de desarmar viviría en la ficha de una de las partes o en un
+  producto aparte («Juego para desarmar»).
+- **Dejarlo como está:** quien desarma usa otro producto (el juego que
+  regresa) con su propia receta.
 
 ### Cambios en los productos de una receta vigente
 
@@ -182,12 +211,14 @@ receta. Lo que pasa:
 Permisos que ya existen (ADR 0062), sin nuevos:
 
 - `production.recipe.read`: titular, Administración, Almacén, Consulta,
-  Supervisor de almacén, Gerencia, Operario, Encargado e Inspector (este
-  último solo con Calidad activa: su rol está ligado a ese módulo, ADR
-  0062).
+  Supervisor de almacén, Gerencia, Operario y Encargado de producción.
 - `production.recipe.manage`: titular, Administración y Encargado de
-  producción.
-- Almacenista, Montacarguista y Comprador no ven el bloque.
+  producción; **nunca en una terminal compartida con PIN**
+  (`TERMINAL_DESK_ONLY` en `keptAtTerminal`): ahí la receta se lee y no se
+  cambia, aunque el Encargado entre con PIN (`pin_roles =
+  floor_supervision`).
+- Almacenista, Montacarguista, Comprador e Inspector de calidad no la ven
+  (el Inspector no tiene `production.recipe.read` en la matriz).
 - **Nadie ve costos por aquí**: la parte del costo es un porcentaje, no un
   importe; el costo de lo producido es de WMS-29 y solo para
   `inventory.cost.read`.
@@ -228,6 +259,11 @@ pinta nada.
 `moduleOpenWork` avisa de los borradores de receta sin activar
 («N recetas con cambios sin activar»). Nada se cancela ni se borra: queda
 en solo lectura.
+
+### Historial
+
+«Ver versiones» se pagina en la base (20 por página, `?pagina=`, INV-10):
+cada «Cambiar receta» agrega una versión y ninguna se borra.
 
 ### Fuera de este paso
 

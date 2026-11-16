@@ -190,6 +190,17 @@ describe("shared terminal (WMS-38)", () => {
     );
   });
 
+  it("reads the recipe of a product and never changes it (WMS-27)", () => {
+    const encargado = member("production_supervisor");
+    const atTerminal: Subject = { ...encargado, terminal: true };
+    expect(can(encargado, "production.recipe.manage")).toBe(true);
+    expect(can(atTerminal, "production.recipe.manage")).toBe(false);
+    expect(can(atTerminal, "production.recipe.read")).toBe(true);
+    const titular: Subject = { ...owner(), terminal: true };
+    expect(can(titular, "production.recipe.manage")).toBe(false);
+    expect(can(titular, "production.recipe.read")).toBe(true);
+  });
+
   it("applies on top of an API key's cut, never instead of it (WMS-60)", () => {
     const both: Subject = {
       isOwner: false,

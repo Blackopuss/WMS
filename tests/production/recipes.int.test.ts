@@ -29,6 +29,8 @@ import { invalidateEntitlements } from "@/platform/entitlements";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
+import { migratorConnection } from "../setup/test-db";
+
 // WMS-27 (ADR 0066): the recipe of a product. One per product, versioned;
 // only a draft changes; activating checks again under the locks, retires
 // the previous version and never closes a cycle, not even with two
@@ -314,7 +316,7 @@ describe("create, activate and version", () => {
       inputs: [{ productId: board }],
     });
     expect(await activateRecipeVersion(owner, v2)).toMatchObject({ ok: true });
-    const versions = await listRecipeVersions(owner, crate);
+    const versions = (await listRecipeVersions(owner, crate)).items;
     expect(versions.map((v) => [v.label, v.status])).toEqual([
       ["v2", "ACTIVE"],
       ["v1", "RETIRED"],
@@ -741,7 +743,7 @@ describe("who sees and who changes (ADR 0062)", () => {
     }
   });
 
-  it("the floor (Almacenista, Montacarguista) and the buyer do not see recipes; the Inspector only with Calidad", async () => {
+  it("the floor (Almacenista, Montacarguista) and the buyer do not see recipes, nor the Inspector (not in its list)", async () => {
     const owner = await company();
     const crate = await product(owner, "Caja");
     for (const role of [
@@ -772,7 +774,7 @@ describe("who sees and who changes (ADR 0062)", () => {
     });
     invalidateEntitlements(owner.organizationId);
     expect((await getProductRecipe(owner, crate)).active?.id).toBe(versionId);
-    expect(await listRecipeVersions(owner, crate)).toHaveLength(1);
+    expect((await listRecipeVersions(owner, crate)).total).toBe(1);
     await expect(startRecipeChange(owner, recipeId)).rejects.toMatchObject({
       code: "module_read_only",
     });
@@ -804,7 +806,10 @@ describe("between companies", () => {
       active: null,
       usedIn: [],
     });
-    expect(await listRecipeVersions(mine, crate)).toEqual([]);
+    expect(await listRecipeVersions(mine, crate)).toMatchObject({
+      items: [],
+      total: 0,
+    });
     expect(await activateRecipeVersion(mine, change.versionId)).toMatchObject({
       ok: false,
       reason: "not_found",
@@ -843,5 +848,180 @@ describe("no stock moves", () => {
     expect(await db.stockMovement.count({ where })).toBe(0);
     expect(await db.stockBalance.count({ where })).toBe(0);
     expect(await db.stockReservation.count({ where })).toBe(0);
+  });
+});
+
+describe("the database keeps what a version says (SQL by hand)", () => {
+  async function sql(query: string, values: unknown[] = []) {
+    const connection = await migratorConnection();
+    try {
+      return await connection.query(query, values);
+    } finally {
+      await connection.end();
+    }
+  }
+
+  it("who and when it was activated, retired or discarded is written once", async () => {
+    const owner = await company();
+    const crate = await product(owner, "Caja");
+    const board = await product(owner, "Tabla");
+    const { recipeId, versionId: v1 } = await activeRecipe(owner, crate, [
+      board,
+    ]);
+    const other = await newUser();
+    await expect(
+      sql("UPDATE recipe_version SET activatedByUserId = ? WHERE id = ?", [
+        other,
+        v1,
+      ]),
+    ).rejects.toThrow(/who and when cannot change/);
+    await expect(
+      sql(
+        "UPDATE recipe_version SET activatedAt = activatedAt + INTERVAL 1 DAY WHERE id = ?",
+        [v1],
+      ),
+    ).rejects.toThrow(/who and when cannot change/);
+    const change = await startRecipeChange(owner, recipeId);
+    if (!change.ok) throw new Error("no draft");
+    await activateRecipeVersion(owner, change.versionId);
+    // v1 is retired now: its retirement does not move either.
+    await expect(
+      sql("UPDATE recipe_version SET retiredByUserId = ? WHERE id = ?", [
+        other,
+        v1,
+      ]),
+    ).rejects.toThrow(/who and when cannot change/);
+    const next = await startRecipeChange(owner, recipeId);
+    if (!next.ok) throw new Error("no draft");
+    await discardRecipeDraft(owner, next.versionId);
+    await expect(
+      sql("UPDATE recipe_version SET discardedAt = NOW(3) WHERE id = ?", [
+        next.versionId,
+      ]),
+    ).rejects.toThrow(/who and when cannot change/);
+    await expect(
+      sql("UPDATE recipe SET createdByUserId = ? WHERE id = ?", [
+        other,
+        recipeId,
+      ]),
+    ).rejects.toThrow(/cannot change/);
+  });
+
+  it("a version is born as a draft and «para cuánto» does not change with its state", async () => {
+    const owner = await company();
+    const crate = await product(owner, "Caja");
+    const board = await product(owner, "Tabla");
+    const { recipeId, versionId } = await draftOf(owner, crate);
+    await addInput(owner, versionId, board, "1");
+    for (const status of ["ACTIVE", "RETIRED"]) {
+      await expect(
+        sql(
+          `INSERT INTO recipe_version (id, organizationId, recipeId, number, status, baseQuantity, unitCode, createdByUserId, activatedAt, activatedByUserId, retiredAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, 1, 'piece', ?, NOW(3), ?, ?, NOW(3))`,
+          [
+            newId(),
+            owner.organizationId,
+            recipeId,
+            status === "ACTIVE" ? 7 : 8,
+            status,
+            owner.userId,
+            owner.userId,
+            status === "RETIRED" ? new Date() : null,
+          ],
+        ),
+        status,
+      ).rejects.toThrow(/born as a draft/);
+    }
+    await expect(
+      sql(
+        `UPDATE recipe_version SET status = 'ACTIVE', draftRecipeId = NULL, activeRecipeId = recipeId,
+           activatedAt = NOW(3), activatedByUserId = ?, baseQuantity = 5 WHERE id = ?`,
+        [owner.userId, versionId],
+      ),
+    ).rejects.toThrow(/only a draft changes/);
+    expect(
+      await db.recipeVersion.findUniqueOrThrow({ where: { id: versionId } }),
+    ).toMatchObject({ status: "DRAFT" });
+  });
+
+  it("the lock of the activations is never deleted, and activating needs it", async () => {
+    const owner = await company();
+    const crate = await product(owner, "Caja");
+    const board = await product(owner, "Tabla");
+    await activeRecipe(owner, crate, [board]);
+    await expect(
+      sql("DELETE FROM recipe_lock WHERE organizationId = ?", [
+        owner.organizationId,
+      ]),
+    ).rejects.toThrow(/never deleted/);
+    await expect(
+      db.recipeLock.deleteMany({
+        where: { organizationId: owner.organizationId },
+      }),
+    ).rejects.toThrow(/never deleted/);
+  });
+});
+
+describe("drafts after a discard", () => {
+  it("a recipe never activated starts again with the product coming out", async () => {
+    const owner = await company();
+    const crate = await product(owner, "Caja");
+    const { recipeId, versionId } = await draftOf(owner, crate, "4");
+    await discardRecipeDraft(owner, versionId);
+    const change = await startRecipeChange(owner, recipeId);
+    if (!change.ok) throw new Error("no draft");
+    expect(await getRecipeVersion(owner, change.versionId)).toMatchObject({
+      label: "v2",
+      baseLabel: "4 piezas",
+      inputs: [],
+      outputs: [
+        { productId: crate, quantityLabel: "4 piezas", costShare: "100" },
+      ],
+    });
+  });
+});
+
+describe("history by pages (INV-10)", () => {
+  it("lists the versions newest first, 20 per page, and a page out of range shows the last", async () => {
+    const owner = await company();
+    const crate = await product(owner, "Caja");
+    const { recipeId, versionId } = await draftOf(owner, crate);
+    await discardRecipeDraft(owner, versionId);
+    for (let i = 0; i < 21; i++) {
+      const change = await startRecipeChange(owner, recipeId);
+      if (!change.ok) throw new Error("no draft");
+      await discardRecipeDraft(owner, change.versionId);
+    }
+    const first = await listRecipeVersions(owner, crate);
+    expect(first).toMatchObject({ total: 22, page: 1, pageCount: 2 });
+    expect(first.items).toHaveLength(20);
+    expect(first.items[0]?.label).toBe("v22");
+    const last = await listRecipeVersions(owner, crate, { page: 9 });
+    expect(last).toMatchObject({ page: 2 });
+    expect(last.items.map((v) => v.label)).toEqual(["v2", "v1"]);
+  });
+});
+
+describe("assembling and taking apart the same kit (pending decision, M1)", () => {
+  // Today a company cannot both assemble and take apart the same kit:
+  // with «Kit = A + B» in force, a recipe that uses the kit to get A and B
+  // closes kit → A → kit, so it is refused as a cycle; and it could not
+  // live on the card of the kit anyway (one recipe per product, P13).
+  // Changing this is a decision of the founder (ADR 0066).
+  it("refuses taking apart a kit that is assembled with a recipe in force", async () => {
+    const owner = await company();
+    const kit = await product(owner, "Juego");
+    const partA = await product(owner, "Parte A");
+    const partB = await product(owner, "Parte B");
+    await activeRecipe(owner, kit, [partA, partB]);
+    // Its own card already has the assembling recipe.
+    expect(await createRecipe(owner, kit, { baseQuantity: "1" })).toMatchObject(
+      { ok: false, reason: "exists" },
+    );
+    // On the card of a part, taking the kit apart closes a cycle.
+    const { versionId } = await draftOf(owner, partA);
+    expect(
+      await setRecipeInput(owner, versionId, { productId: kit, quantity: "1" }),
+    ).toMatchObject({ ok: false, reason: "cycle" });
   });
 });

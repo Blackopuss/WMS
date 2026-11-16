@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -11,8 +11,13 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
-import { getRecipeVersion, listRecipeVersions } from "@/modules/production";
+import {
+  getProductRecipe,
+  getRecipeVersion,
+  listRecipeVersions,
+} from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
 import { getProduct } from "@/platform/catalog";
 
@@ -66,14 +71,27 @@ export default async function VersionesRecetaPage({
   };
   const product = await getProduct(actor, id);
   if (!product) notFound();
-  const versions = await listRecipeVersions(actor, product.id);
-  // The version opened, from the address; only one of this recipe.
-  const { version: wanted } = await searchParams;
-  const openId =
-    typeof wanted === "string" && versions.some((v) => v.id === wanted)
-      ? wanted
-      : (versions.find((v) => v.status === "ACTIVE")?.id ?? null);
-  const open = openId ? await getRecipeVersion(actor, openId) : null;
+  // The page and the version opened, from the address (INV-10).
+  const { version: wanted, pagina } = await searchParams;
+  const requested =
+    typeof pagina === "string" && /^\d{1,6}$/.test(pagina) ? Number(pagina) : 1;
+  const [list, recipe] = await Promise.all([
+    listRecipeVersions(actor, product.id, { page: requested }),
+    getProductRecipe(actor, product.id),
+  ]);
+  const versions = list.items;
+  const asked =
+    typeof wanted === "string" ? await getRecipeVersion(actor, wanted) : null;
+  // Only a version of this product's recipe opens here.
+  const open = asked && asked.product.id === product.id ? asked : recipe.active;
+  const openId = open?.id ?? null;
+  const href = (page: number, versionId?: string | null) => {
+    const query = new URLSearchParams();
+    if (page > 1) query.set("pagina", String(page));
+    if (versionId) query.set("version", versionId);
+    const text = query.toString();
+    return `/inventario/${product.id}/receta/versiones${text ? `?${text}` : ""}`;
+  };
 
   return (
     <PageContainer>
@@ -94,7 +112,7 @@ export default async function VersionesRecetaPage({
               <div className="min-w-0 flex-1 basis-48">
                 <p className="font-medium">
                   <Link
-                    href={`/inventario/${product.id}/receta/versiones?version=${version.id}`}
+                    href={href(list.page, version.id)}
                     aria-current={version.id === openId ? "true" : undefined}
                     className="rounded underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
@@ -127,6 +145,36 @@ export default async function VersionesRecetaPage({
             </li>
           ))}
         </ul>
+      )}
+      {list.pageCount > 1 && (
+        <nav
+          aria-label="Páginas de versiones"
+          className="flex items-center justify-between gap-3"
+        >
+          {list.page > 1 ? (
+            <Button asChild variant="outline">
+              <Link href={href(list.page - 1)} rel="prev">
+                <ChevronLeft aria-hidden="true" data-icon="inline-start" />
+                Anterior
+              </Link>
+            </Button>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <p className="text-sm text-muted-foreground tabular-nums">
+            Página {list.page} de {list.pageCount}
+          </p>
+          {list.page < list.pageCount ? (
+            <Button asChild variant="outline">
+              <Link href={href(list.page + 1)} rel="next">
+                Siguiente
+                <ChevronRight aria-hidden="true" data-icon="inline-end" />
+              </Link>
+            </Button>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+        </nav>
       )}
       {open && (
         <section
