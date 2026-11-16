@@ -621,6 +621,8 @@ sin escribir aquí su flujo (regla 15).
 
 ### WMS-27..31 · Producción y calidad
 
+**Alto del fundador (2026-11-16, tarde):** se terminan WMS-76 y WMS-28B y no se abre WMS-29, WMS-30B, WMS-31 ni WMS-29B hasta que lo indique. Sigue la revisión visual (WMS-77: sitio público con módulos y precios nuevos; WMS-78A, B y C: pantallas de la app). Decidido y sin implementar: Montacarguista y Comprador hacen etapas de procesos.
+
 **WMS-28 hecho (2026-11-16, ADR 0073):** órdenes de producción con materiales apartados, tareas «Surtir a producción», área de producción y proceso de la orden. Pendiente: reporte y consumo (WMS-29), solicitudes (WMS-28B), cierre (WMS-31), «Materiales surtidos» como etapa, avisos, revisar las pantallas en navegador y las preguntas abiertas del ADR.
 
 **WMS-76, antes de WMS-29 (abierto el 2026-11-16):** corregir el interbloqueo de `registerTransfer` (y de toda llamada de `lockRows` con varios ids sobre tablas que los movimientos bloquean de una en una) contra salidas, liberación de pedidos y cambios de estado en el mismo estante. Paso «corazón», con pruebas `Promise.all` y revisor independiente; se abre al unirse WMS-28.
