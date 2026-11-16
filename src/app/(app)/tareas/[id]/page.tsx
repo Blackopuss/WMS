@@ -8,6 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
+  PhotoGallery,
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
@@ -17,9 +18,11 @@ import {
   listTaskPeople,
   nextTaskFor,
   taskEquipmentChoices,
+  taskPhotoMode,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
+import { FILE_PURPOSES } from "@/platform/files";
 
 import { PickForm } from "./pick-form";
 import { PickUpForm } from "./pick-up-form";
@@ -30,6 +33,7 @@ import {
   ReleaseTask,
   EquipmentStep,
   ReportProblem,
+  DeliverStep,
   TaskStep,
 } from "./task-controls";
 
@@ -149,6 +153,12 @@ export default async function TareaPage({
     takingWithEquipment || changingEquipment
       ? await taskEquipmentChoices(actor, task.id)
       : [];
+  // WMS-37B: the photo of where it was left, on the last step only.
+  const photoMode =
+    step?.step === "deliver" || puttingAway
+      ? await taskPhotoMode(actor)
+      : "off";
+  const maxPhotos = FILE_PURPOSES.task_photo.evidence.perRecord;
 
   // Where the task is among its three steps; nothing for one that is
   // stopped (problem, cancelled) or finished.
@@ -455,6 +465,8 @@ export default async function TareaPage({
       {puttingAway && (
         <PutawayForm
           taskId={task.id}
+          photoMode={photoMode}
+          maxPhotos={maxPhotos}
           hint={
             task.recommendedPath
               ? `Escanea la etiqueta de ${task.recommendedPath}${task.recommendedCode ? ` o escribe ${task.recommendedCode}` : ""}. Si lo dejaste en otro lugar, escanea ese.`
@@ -480,6 +492,13 @@ export default async function TareaPage({
                 taskId={task.id}
                 asked={task.quantityText}
                 label={step.label}
+              />
+            ) : step.step === "deliver" ? (
+              <DeliverStep
+                taskId={task.id}
+                label={step.label}
+                photoMode={photoMode}
+                maxPhotos={maxPhotos}
               />
             ) : (
               <TaskStep taskId={task.id} step={step.step} label={step.label} />
@@ -550,6 +569,16 @@ export default async function TareaPage({
               Movimientos.
             </li>
           )}
+          {/* WMS-37B: who took the photos of where it was left, and when. */}
+          {task.photos.length > 0 && (
+            <li className="[overflow-wrap:anywhere]">
+              {task.photos.length === 1 ? "Foto" : "Fotos"} de dónde quedó
+              {task.photos[0]!.byName
+                ? `, de ${task.photos[0]!.byName},`
+                : ""}{" "}
+              el {when(task.photos[0]!.createdAt)}
+            </li>
+          )}
           {task.cancelledAt && (
             <li className="[overflow-wrap:anywhere]">
               Cancelada el {when(task.cancelledAt)}
@@ -557,6 +586,10 @@ export default async function TareaPage({
             </li>
           )}
         </ul>
+        <PhotoGallery
+          photos={task.photos}
+          label={`la tarea ${task.numberText}`}
+        />
       </section>
     </PageContainer>
   );

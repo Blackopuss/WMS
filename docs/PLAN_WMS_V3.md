@@ -631,6 +631,8 @@ sin escribir aquí su flujo (regla 15).
 
 **WMS-77 hecho (2026-11-16):** sitio público con Producción y Calidad (3,000 pesos cada uno), módulos nuevos, términos versión 2026-11-16 y revisión de accesibilidad y rendimiento (`docs/ux/REVISION_VISUAL_SITIO.md`). Pendiente: `Providers` del layout raíz fuera del sitio (rendimiento 100 en teléfono), `sitemap.xml` con el dominio, privacidad (PIN, fotos, R2).
 
+**WMS-37B hecho (2026-11-16, ADR 0076):** foto de evidencia al entregar una tarea, atada a su tarea, con ajuste por empresa. Pendiente: foto al reportar un problema de la tarea; la foto de quien reporta lo producido (WMS-29) y la de Calidad (WMS-30B) reutilizan el mecanismo `boundToOwner`.
+
 ### WMS-79 · Pedido del cliente ligado a producción y embarque (anotado el 2026-11-16, sin abrir)
 
 **Depende de:** WMS-29 (reporte de producción) y WMS-31 (cierre). **Corazón** (toca reservas y existencias): revisor independiente.

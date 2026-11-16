@@ -8,6 +8,8 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-37B** Foto de evidencia al entregar una tarea del almacén, atada a
+  su tarea, con ajuste por empresa (apagada, opcional u obligatoria). ADR 0076.
 - **WMS-28B** Solicitudes de producción desde el piso, decisión dentro del
   alcance y orden que nace liberada a nombre de quien aceptó. ADR 0075.
 - **WMS-77** Sitio público: Producción y Calidad con su precio, módulos

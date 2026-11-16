@@ -13,6 +13,7 @@ import {
   CUSTOMER_RETURN_WITHOUT_ORDER,
   REPAIR_RELEASE,
   INCIDENT_PHOTO,
+  TASK_PHOTO,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
   ABC_BASIS,
@@ -224,6 +225,12 @@ describe("operation settings", () => {
         value: "optional",
         defaultValue: "optional",
       },
+      // WMS-37B: a photo is optional when delivering a task.
+      {
+        key: TASK_PHOTO.key,
+        value: "optional",
+        defaultValue: "optional",
+      },
       // WMS-26: letter sheets with barcode and QR unless the company says.
       {
         key: LABEL_FORMAT.key,
@@ -281,6 +288,7 @@ describe("operation settings", () => {
       { key: CUSTOMER_RETURN_WITHOUT_ORDER.key, value: "allow" },
       { key: REPAIR_RELEASE.key, value: "direct" },
       { key: INCIDENT_PHOTO.key, value: "optional" },
+      { key: TASK_PHOTO.key, value: "optional" },
       { key: LABEL_FORMAT.key, value: "letter_10" },
       { key: LABEL_CODES_SETTING.key, value: "both" },
       { key: REPLENISHMENT_MODE.key, value: "off" },

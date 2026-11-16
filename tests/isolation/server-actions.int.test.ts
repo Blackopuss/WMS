@@ -402,11 +402,32 @@ const REVIEWED: Record<string, Review> = {
   },
   taskStepAction: {
     input:
-      "id de la tarea, el paso (tomar, recoger o entregar) y, al tomar una que pide equipo, el código del equipo (WMS-42)",
+      "id de la tarea, el paso (tomar o recoger) y, al tomar una que pide equipo, el código del equipo (WMS-42)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona; el equipo se busca solo en esa empresa y en el almacén de la tarea",
     coveredBy:
       "tests/inventory/tasks.int.test.ts, tests/inventory/equipment.int.test.ts",
+  },
+  deliverTaskAction: {
+    input:
+      "id de la tarea e ids de las fotos de dónde quedó (WMS-37B), hasta 10",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa, dentro del alcance, y debe ser de esa persona; las fotos se ligan solo si son de esa empresa, de esa persona, del propósito task_photo y sin ligar",
+    coveredBy:
+      "tests/inventory/tasks.int.test.ts, tests/inventory/task-photos.int.test.ts",
+  },
+  uploadTaskPhotoAction: {
+    input:
+      "id de la tarea y una foto (FormData «photo»); nombre y bytes, el tipo lo decide el servidor por el contenido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige inventory.task.execute y una tarea de esa empresa, dentro del alcance, de esa persona y por entregar; la foto queda a nombre de la persona y sin ligar, visible solo para ella",
+    coveredBy: "tests/inventory/task-photos.int.test.ts",
+  },
+  discardTaskPhotoAction: {
+    input: "id de una foto que la persona tomó para entregar y quitó",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige inventory.task.execute; solo una foto task_photo de esa persona, en esa empresa y sin ligar",
+    coveredBy: "tests/inventory/task-photos.int.test.ts",
   },
   changeTaskEquipmentAction: {
     input: "id de la tarea y el código del equipo, escaneado o elegido",
