@@ -5,8 +5,10 @@ import { recordAuditEvent } from "@/platform/audit";
 import { isAllowed, seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import {
+  ARCHIVED_FACILITY_MESSAGE,
   activeFacilityOf,
   assertWholeFacilityInScope,
+  holdOpenFacility,
   isFacilityInScope,
   isLimited,
   locationScopeWhere,
@@ -516,6 +518,11 @@ export async function createEquipment(
       // A piece of equipment goes all over its warehouse: who registers it
       // reaches the whole of it (like its levels).
       await assertWholeFacilityInScope(tx, userId, facility.id);
+      // WMS-82 (ADR 0077): its warehouse, shared, before it is written;
+      // archiving takes it in exclusive and sees this piece of equipment.
+      if (!(await holdOpenFacility(tx, facility.id))) {
+        return stop("not_allowed", ARCHIVED_FACILITY_MESSAGE);
+      }
       const type = await typeInUse(tx, data.typeId);
       if (type.archivedAt) {
         return stop(

@@ -17,7 +17,12 @@ import { recordAuditEvent } from "@/platform/audit";
 import { loadScope } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { pluralizeName, resolveConversion } from "@/platform/catalog";
-import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
+import {
+  ARCHIVED_FACILITY_MESSAGE,
+  activeFacilityOf,
+  holdOpenFacility,
+  isFacilityInScope,
+} from "@/platform/locations";
 import { notify, type NotifyTx } from "@/platform/notifications";
 import {
   LOCKING_TRANSACTION,
@@ -386,6 +391,16 @@ export async function createPurchaseRequest(
     const number = (last?.number ?? 0) + 1;
     try {
       return await inRequest(organizationId, async (tx) => {
+        // WMS-82 (ADR 0077): its warehouse, shared, before it is written;
+        // archiving takes it in exclusive and sees this request.
+        if (!(await holdOpenFacility(tx, facility.id))) {
+          throw new Rejected({
+            ok: false,
+            reason: "not_allowed",
+            fieldErrors: {},
+            formError: ARCHIVED_FACILITY_MESSAGE,
+          });
+        }
         await tx.purchaseRequest.create({
           data: {
             id: requestId,

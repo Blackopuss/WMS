@@ -6,7 +6,12 @@ import { dec, newId, type Decimal } from "@/lib";
 import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
-import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
+import {
+  ARCHIVED_FACILITY_MESSAGE,
+  activeFacilityOf,
+  holdOpenFacility,
+  isFacilityInScope,
+} from "@/platform/locations";
 import {
   ProcessStagesPending,
   assertStagesDone,
@@ -387,6 +392,14 @@ export async function createShipment(
     userId,
   );
   return inShipment(organizationId, async (tx) => {
+    // WMS-82 (ADR 0077): its warehouse, shared, before its orders.
+    if (!(await holdOpenFacility(tx, facility.id))) {
+      throw new Rejected({
+        ok: false,
+        reason: "not_allowed",
+        formError: ARCHIVED_FACILITY_MESSAGE,
+      });
+    }
     const orders = await joinable(tx, orderIds, facility.id, userId);
     const last = await tx.shipment.findFirst({
       orderBy: { number: "desc" },

@@ -40,7 +40,7 @@ import {
   type CapacityLimits,
 } from "./limits";
 import { getActiveFacility } from "./facilities";
-import { lockAllFacilities } from "./facility-lock";
+import { lockAllFacilities, retryingFacilitySet } from "./facility-lock";
 import {
   assertFacilityInScope,
   assertLocationsInScope,
@@ -185,24 +185,29 @@ async function changeTree(
   facilityId: string | null = null,
 ): Promise<LocationResult> {
   try {
-    const locationId = await forOrganization(organizationId).$transaction(
-      async (tx) => {
-        // Every warehouse of the company: the same lock as creating or
-        // archiving a warehouse (by the primary key, ADR 0074).
-        await lockAllFacilities(tx);
-        const facility = await tx.facility.findFirst({
-          where: facilityId
-            ? { id: facilityId, archivedAt: null }
-            : { isDefault: true },
-          select: { id: true },
-        });
-        if (!facility) {
-          return reject("not_found", "Ese almacén ya no existe o se archivó.");
-        }
-        return change(tx, facility.id);
-      },
-      // Each read after the lock must see what the previous change left.
-      LOCKING_TRANSACTION,
+    const locationId = await retryingFacilitySet(() =>
+      forOrganization(organizationId).$transaction(
+        async (tx) => {
+          // Every warehouse of the company: the same lock as creating or
+          // archiving a warehouse (by the primary key, ADR 0074).
+          await lockAllFacilities(tx);
+          const facility = await tx.facility.findFirst({
+            where: facilityId
+              ? { id: facilityId, archivedAt: null }
+              : { isDefault: true },
+            select: { id: true },
+          });
+          if (!facility) {
+            return reject(
+              "not_found",
+              "Ese almacén ya no existe o se archivó.",
+            );
+          }
+          return change(tx, facility.id);
+        },
+        // Each read after the lock must see what the previous change left.
+        LOCKING_TRANSACTION,
+      ),
     );
     return { ok: true, locationId };
   } catch (error) {
@@ -1381,6 +1386,18 @@ export async function restoreLocation(
     await assertLocationsInScope(tx, userId, [location.id]);
     if (!location.archivedAt) {
       reject("unchanged", "Esta ubicación ya está activa.");
+    }
+    // WMS-82 (ADR 0077): the locations of an archived warehouse stay
+    // archived (read under every warehouse locked).
+    const home = await tx.facility.findFirst({
+      where: { id: location.facilityId },
+      select: { name: true, archivedAt: true },
+    });
+    if (!home || home.archivedAt) {
+      reject(
+        "not_allowed",
+        `Está en ${home?.name ?? "un almacén"}, que se archivó: no se reactiva.`,
+      );
     }
     if (location.parentId) {
       const parent = await findLocation(tx, location.parentId);

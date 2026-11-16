@@ -415,7 +415,12 @@ export async function lockRows(
    * Never take it and then write the same rows (two holders would wait for
    * each other).
    */
-  options: { mode?: "update" | "share" } = {},
+  /**
+   * `nowait`: `FOR UPDATE NOWAIT`, fails at once (`isLockBusy`) instead of
+   * waiting when another transaction holds a row. Only `archiveFacility`
+   * (WMS-82, ADR 0077), which must never wait for a location.
+   */
+  options: { mode?: "update" | "share"; nowait?: boolean } = {},
 ): Promise<string[]> {
   const scope = (tx as Record<symbol, unknown>)[TRANSACTION] as
     { client: RawTransaction; organizationId: string } | undefined;
@@ -432,7 +437,12 @@ export async function lockRows(
   if (unique.length === 0) return [];
   // The table comes from the fixed list above; every value is a parameter.
   const rows = await scope.client.$queryRawUnsafe<{ id: string }[]>(
-    lockStatement(table, unique.length, options.mode ?? "update"),
+    lockStatement(
+      table,
+      unique.length,
+      options.mode ?? "update",
+      options.nowait === true,
+    ),
     scope.organizationId,
     ...unique,
   );
@@ -447,8 +457,34 @@ export function lockStatement(
   table: string,
   count: number,
   mode: "update" | "share",
+  nowait = false,
 ): string {
-  return `SELECT id FROM \`${table}\` FORCE INDEX (PRIMARY) WHERE organizationId = ? AND id IN (${Array.from({ length: count }, () => "?").join(", ")}) ORDER BY id FOR ${mode === "share" ? "SHARE" : "UPDATE"}`;
+  return `SELECT id FROM \`${table}\` FORCE INDEX (PRIMARY) WHERE organizationId = ? AND id IN (${Array.from({ length: count }, () => "?").join(", ")}) ORDER BY id FOR ${mode === "share" ? "SHARE" : "UPDATE"}${nowait ? " NOWAIT" : ""}`;
+}
+
+/**
+ * Whether an error is MySQL refusing a `NOWAIT` lock (3572,
+ * ER_LOCK_NOWAIT): another transaction holds the row.
+ */
+export function isLockBusy(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  const visit = (value: unknown): boolean => {
+    if (!value || typeof value !== "object" || seen.has(value)) return false;
+    seen.add(value);
+    const record = value as Record<string, unknown>;
+    if (record.code === 3572 || record.errno === 3572) return true;
+    if (record.originalCode === "3572" || record.code === "3572") return true;
+    if (
+      typeof record.message === "string" &&
+      record.message.includes("NOWAIT is set")
+    ) {
+      return true;
+    }
+    return ["cause", "meta", "driverAdapterError"].some((key) =>
+      visit(record[key]),
+    );
+  };
+  return visit(error);
 }
 
 /**
@@ -473,4 +509,33 @@ export async function shareOrganization(tx: object): Promise<boolean> {
     scope.organizationId,
   );
   return rows.length === 1;
+}
+
+/**
+ * WMS-82 (ADR 0077): a shared lock on one warehouse of the company of this
+ * transaction, by its primary key, and whether it is archived, read by that
+ * same locking statement (a locking read sees the last committed version
+ * whatever the isolation of the transaction). `null` when the company has
+ * no such warehouse. Through `holdOpenFacility` of `@/platform/locations`.
+ */
+export async function shareFacilityRow(
+  tx: object,
+  facilityId: string,
+): Promise<{ id: string; archived: boolean } | null> {
+  const scope = (tx as Record<symbol, unknown>)[TRANSACTION] as
+    { client: RawTransaction; organizationId: string } | undefined;
+  if (!scope) {
+    throw new TenantScopeError(
+      "shareFacilityRow necesita el cliente de una transacción de empresa.",
+    );
+  }
+  const rows = await scope.client.$queryRawUnsafe<
+    { id: string; archivedAt: Date | null }[]
+  >(
+    "SELECT id, archivedAt FROM `facility` FORCE INDEX (PRIMARY) WHERE organizationId = ? AND id = ? FOR SHARE",
+    scope.organizationId,
+    String(facilityId),
+  );
+  const row = rows[0];
+  return row ? { id: row.id, archived: row.archivedAt !== null } : null;
 }

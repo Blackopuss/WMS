@@ -14,8 +14,10 @@ import { isAllowed } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
 import {
+  ARCHIVED_FACILITY_MESSAGE,
   LOCATION_PARENTS,
   activeFacilityOf,
+  holdOpenFacility,
   isLimited,
   locationPath,
   locationScopeWhere,
@@ -463,6 +465,12 @@ export async function submitProductionRequest(
     // locking the membership first deadlocked with the team change, and
     // inserting first deadlocked four requests of one person at once).
     await shareOrganization(tx);
+    // WMS-82 (ADR 0077): its warehouse, shared, before the membership
+    // (archiving a warehouse locks it in exclusive and then the memberships
+    // that work there); archiving sees this request or it sees it archived.
+    if (!(await holdOpenFacility(tx, facility.id))) {
+      return stop("not_allowed", ARCHIVED_FACILITY_MESSAGE);
+    }
     const membership = await tx.membership.findFirst({
       where: { userId },
       select: { id: true },

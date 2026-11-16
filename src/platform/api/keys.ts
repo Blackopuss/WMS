@@ -227,6 +227,14 @@ export async function createApiKey(
           },
         });
         if (active >= API_KEYS_MAX) return true;
+        // WMS-82 (ADR 0077): its warehouse, shared, by its primary key,
+        // before it is written; archiving takes it in exclusive and sees
+        // this key. The archived mark is read by the locking statement.
+        const [home] = await tx.$queryRaw<{ archivedAt: Date | null }[]>`
+          SELECT archivedAt FROM facility FORCE INDEX (PRIMARY)
+          WHERE id = ${facility.id} AND organizationId = ${organizationId}
+          FOR SHARE`;
+        if (!home || home.archivedAt) return "archived" as const;
         await tx.apiKey.create({
           data: {
             id: keyId,
@@ -258,6 +266,13 @@ export async function createApiKey(
         });
         return false;
       });
+      if (full === "archived") {
+        return {
+          ok: false,
+          reason: "invalid",
+          fieldErrors: { facilityId: "Elige un almacén en el que trabajes." },
+        };
+      }
       if (full) {
         return {
           ok: false,

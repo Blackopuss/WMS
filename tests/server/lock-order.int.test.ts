@@ -17,7 +17,7 @@ import {
   setOutboundLine,
   type InventoryActor,
 } from "@/modules/inventory";
-import { moduleRegistry } from "@/modules/registry";
+import { moduleRegistry, operationSettings } from "@/modules/registry";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import {
@@ -27,6 +27,7 @@ import {
   editLocation,
   switchFacility,
 } from "@/platform/locations";
+import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -363,5 +364,57 @@ describe("locks in one order (WMS-76)", () => {
       );
     }
     expect(errors).toEqual([]);
+  }, 180_000);
+  it("archiving a warehouse never deadlocks with an entry that then locks the shelf of its putaway task (WMS-82)", async () => {
+    // The entry locks «General» of the warehouse and, at the end, the shelf
+    // its putaway task recommends: two locations one after the other.
+    // Archiving takes every location of the warehouse without waiting, so
+    // it answers «try again» instead of closing a circle.
+    const owner = await company();
+    const set = await updateOperationSetting(
+      owner,
+      operationSettings,
+      "inventory.putaway.mode",
+      "tasks",
+    );
+    if (!set.ok) throw new Error(set.error);
+    const item = await product(owner);
+    const errors: string[] = [];
+    for (let round = 0; round < 20; round++) {
+      const made = await createFacility(owner, {
+        name: `Por archivar ${++counter}`,
+        code: `P${counter}`,
+      });
+      if (!made.ok) throw new Error("facility setup failed");
+      const moved = await switchFacility(owner, made.facilityId);
+      if (!moved.ok) throw new Error("switch failed");
+      for (let n = 0; n < 3; n++) await shelf(owner);
+      errors.push(
+        ...(await together([
+          () =>
+            registerEntry(owner, {
+              productId: item,
+              quantity: "4",
+              acceptRepeat: true,
+              acceptCapacity: true,
+            }),
+          () => archiveFacility(owner, made.facilityId),
+        ])),
+      );
+      const archived = await db.facility.findUniqueOrThrow({
+        where: { id: made.facilityId },
+        select: { archivedAt: true },
+      });
+      const stocked = await db.stockBalance.count({
+        where: {
+          organizationId: owner.organizationId,
+          quantity: { gt: 0 },
+          location: { facilityId: made.facilityId },
+        },
+      });
+      expect(archived.archivedAt !== null && stocked > 0).toBe(false);
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
   }, 180_000);
 });

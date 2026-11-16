@@ -98,7 +98,28 @@ import {
  * balance each one reads is the one the previous left.
  */
 
+/**
+ * «General» of the person's active warehouse, to lock it before reading it
+ * (WMS-82, ADR 0077: it is archived with its warehouse).
+ */
+async function generalLocationIdOf(
+  tx: Parameters<
+    Parameters<ReturnType<typeof forOrganization>["$transaction"]>[0]
+  >[0],
+  userId: string,
+): Promise<string | null> {
+  const general = await tx.location.findFirst({
+    where: {
+      isDefault: true,
+      facilityId: (await activeFacilityOf(tx, userId)).id,
+    },
+    select: { id: true },
+  });
+  return general?.id ?? null;
+}
+
 /** Who is acting; always taken from the session, never from the form. */
+
 export type InventoryActor = { organizationId: string; userId: string };
 
 /** A balance beyond this is a mistake, not stock. */
@@ -563,9 +584,11 @@ async function post(
       // From here on, nobody else moves this product until we finish.
       const [productId] = await lockRows(tx, "product", [data.productId]);
       // Archiving a location locks its row first, so it cannot be archived
-      // between our check and the balance we write (INV-19B). «General»
-      // is never archived and needs no lock.
-      if (data.locationId) await lockRows(tx, "location", [data.locationId]);
+      // between our check and the balance we write (INV-19B). «General» is
+      // locked too: it is archived with its warehouse (WMS-82, ADR 0077).
+      const placeId =
+        data.locationId ?? (await generalLocationIdOf(tx, userId));
+      if (placeId) await lockRows(tx, "location", [placeId]);
 
       // A retry of a confirmation that already went through answers with
       // the movement it wrote, before any other check: by now the stock or
@@ -600,15 +623,17 @@ async function post(
         return reject("not_allowed", "productId", kind.archived);
       }
 
-      const location = await tx.location.findFirst({
-        where: data.locationId
-          ? { id: data.locationId }
-          : {
-              isDefault: true,
-              facilityId: (await activeFacilityOf(tx, userId)).id,
+      const location = placeId
+        ? await tx.location.findFirst({
+            where: { id: placeId },
+            select: {
+              id: true,
+              name: true,
+              archivedAt: true,
+              facilityId: true,
             },
-        select: { id: true, name: true, archivedAt: true, facilityId: true },
-      });
+          })
+        : null;
       if (!location) {
         return reject(
           "not_found",
@@ -2164,7 +2189,9 @@ async function adjustIn(
       ? { kind: "unit", quantity: data.quantity, unitCode: data.unitCode }
       : { kind: "base", quantity: data.quantity };
   const [productId] = await lockRows(tx, "product", [data.productId]);
-  if (data.locationId) await lockRows(tx, "location", [data.locationId]);
+  // «General» is locked too: archived with its warehouse (WMS-82).
+  const placeId = data.locationId ?? (await generalLocationIdOf(tx, userId));
+  if (placeId) await lockRows(tx, "location", [placeId]);
 
   if (data.idempotencyKey) {
     const replay = await findReplay(tx, data.idempotencyKey);
@@ -2237,15 +2264,12 @@ async function adjustIn(
       "Este producto está archivado. Reactívalo para ajustar sus existencias.",
     );
   }
-  const location = await tx.location.findFirst({
-    where: data.locationId
-      ? { id: data.locationId }
-      : {
-          isDefault: true,
-          facilityId: (await activeFacilityOf(tx, userId)).id,
-        },
-    select: { id: true, name: true, archivedAt: true, facilityId: true },
-  });
+  const location = placeId
+    ? await tx.location.findFirst({
+        where: { id: placeId },
+        select: { id: true, name: true, archivedAt: true, facilityId: true },
+      })
+    : null;
   if (!location) {
     return reject(
       "not_found",

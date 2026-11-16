@@ -5,7 +5,9 @@ export {
   TENANT_MODELS,
   TenantScopeError,
   forOrganization,
+  isLockBusy,
   lockRows,
+  shareFacilityRow,
   shareOrganization,
 } from "./tenant-db";
 export type { TenantDb } from "./tenant-db";

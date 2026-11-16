@@ -94,3 +94,4 @@ export type {
   FacilityResult,
   FacilitySummary,
 } from "./facilities";
+export { ARCHIVED_FACILITY_MESSAGE, holdOpenFacility } from "./facility-lock";

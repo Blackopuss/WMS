@@ -11,11 +11,13 @@ import {
   LOCKING_TRANSACTION,
   delegationOf,
   forOrganization,
+  isLockBusy,
+  lockRows,
   type TenantDb,
 } from "@/server";
 
 import { createDefaultLevels } from "./bootstrap";
-import { lockAllFacilities } from "./facility-lock";
+import { lockAllFacilities, retryingFacilitySet } from "./facility-lock";
 import type { LocationActor } from "./locations";
 import { FACILITY_OUT_OF_SCOPE_MESSAGE, facilityInScope } from "./scope";
 
@@ -169,7 +171,13 @@ export type FacilityResult =
   | { ok: true; facilityId: string; summary: string; repeated?: true }
   | {
       ok: false;
-      reason: "invalid" | "duplicate" | "not_found" | "not_allowed" | "limit";
+      reason:
+        | "invalid"
+        | "duplicate"
+        | "not_found"
+        | "not_allowed"
+        | "limit"
+        | "busy";
       fieldErrors?: Partial<Record<FacilityField, string>>;
       formError?: string;
     };
@@ -242,10 +250,12 @@ async function inFacilities(
   work: (tx: Tx) => Promise<FacilityResult>,
 ): Promise<FacilityResult> {
   try {
-    return await forOrganization(organizationId).$transaction(async (tx) => {
-      await lockAllFacilities(tx);
-      return work(tx);
-    }, LOCKING_TRANSACTION);
+    return await retryingFacilitySet(() =>
+      forOrganization(organizationId).$transaction(async (tx) => {
+        await lockAllFacilities(tx);
+        return work(tx);
+      }, LOCKING_TRANSACTION),
+    );
   } catch (error) {
     if (error instanceof Rejected) return error.result;
     if ((error as { code?: string }).code === "P2002") {
@@ -376,10 +386,144 @@ export async function updateFacility(
   });
 }
 
+const OPEN_PURCHASE_ORDER = ["DRAFT", "SENT", "PARTIAL"] as const;
+const OPEN_PURCHASE_REQUEST = ["DRAFT", "SUBMITTED", "APPROVED"] as const;
+const OPEN_PRODUCTION_ORDER = ["DRAFT", "RELEASED", "IN_PROGRESS"] as const;
+
 /**
- * Archives a warehouse with nothing left in it: no stock in any state, no
- * outbound order on its way and no open task. Who worked there goes back
- * to the main warehouse. The main warehouse is never archived.
+ * Stops archiving while anything of the warehouse is still open (WMS-82,
+ * ADR 0077). Read after locking every warehouse and every location of this
+ * one: a document created at the same time either finished first (and is
+ * counted here) or finds the warehouse archived. The first that applies
+ * answers.
+ */
+async function refuseWhatStaysOpen(tx: Tx, facilityId: string) {
+  const inside = { facilityId } as const;
+  const checks: [() => Promise<number>, string][] = [
+    [
+      () =>
+        tx.stockBalance.count({
+          where: { quantity: { gt: 0 }, location: inside },
+        }),
+      "Este almacén todavía tiene existencias.",
+    ],
+    [
+      () =>
+        tx.stockReservation.count({
+          where: { state: "ACTIVE", location: inside },
+        }),
+      "Este almacén tiene existencias apartadas: libéralas primero.",
+    ],
+    [
+      () =>
+        tx.outboundOrder.count({
+          where: { facilityId, status: { notIn: ["SHIPPED", "CANCELLED"] } },
+        }),
+      "Este almacén tiene pedidos sin terminar.",
+    ],
+    [
+      () =>
+        tx.warehouseTask.count({
+          where: {
+            OR: [{ fromLocation: inside }, { toLocation: inside }],
+            status: { notIn: ["DELIVERED", "CANCELLED"] },
+          },
+        }),
+      "Este almacén tiene tareas abiertas.",
+    ],
+    // WMS-53: nor a pallet or box still put together (even empty).
+    [
+      () => tx.container.count({ where: { status: "OPEN", location: inside } }),
+      "Este almacén tiene tarimas o cajas armadas: desármalas primero.",
+    ],
+    // WMS-19: nor a transfer from or to it that is not finished.
+    [
+      () =>
+        tx.facilityTransfer.count({
+          where: {
+            status: { in: ["DRAFT", "SENT"] },
+            OR: [{ fromFacilityId: facilityId }, { toFacilityId: facilityId }],
+          },
+        }),
+      "Este almacén tiene traslados sin terminar: termínalos o cancélalos primero.",
+    ],
+    [
+      () => tx.shipment.count({ where: { facilityId, status: "DRAFT" } }),
+      "Este almacén tiene embarques sin despachar: despáchalos o cancélalos primero.",
+    ],
+    [
+      () =>
+        tx.purchaseOrder.count({
+          where: { facilityId, status: { in: [...OPEN_PURCHASE_ORDER] } },
+        }),
+      "Este almacén tiene órdenes de compra abiertas: recíbelas, ciérralas o cancélalas primero.",
+    ],
+    [
+      () =>
+        tx.purchaseRequest.count({
+          where: { facilityId, status: { in: [...OPEN_PURCHASE_REQUEST] } },
+        }),
+      "Este almacén tiene solicitudes de compra abiertas: atiéndelas o cancélalas primero.",
+    ],
+    [
+      () =>
+        tx.stockCount.count({ where: { status: "OPEN", location: inside } }),
+      "Este almacén tiene conteos abiertos: aplícalos o cancélalos primero.",
+    ],
+    [
+      () => tx.pickWave.count({ where: { facilityId, status: "OPEN" } }),
+      "Este almacén tiene olas de surtido abiertas.",
+    ],
+    [
+      () =>
+        tx.productionOrder.count({
+          where: { facilityId, status: { in: [...OPEN_PRODUCTION_ORDER] } },
+        }),
+      "Este almacén tiene órdenes de producción abiertas: ciérralas o cancélalas primero.",
+    ],
+    [
+      () =>
+        tx.productionRequest.count({
+          where: { facilityId, status: "SUBMITTED" },
+        }),
+      "Este almacén tiene solicitudes de producción por atender.",
+    ],
+    [
+      () =>
+        tx.approvalRequest.count({ where: { facilityId, status: "PENDING" } }),
+      "Este almacén tiene solicitudes de autorización pendientes.",
+    ],
+    [
+      () =>
+        tx.incident.count({
+          where: { facilityId, status: { in: ["OPEN", "IN_PROGRESS"] } },
+        }),
+      "Este almacén tiene incidencias abiertas: resuélvelas o descártalas primero.",
+    ],
+    // WMS-38: nor a shared terminal still registered on its floor.
+    [
+      () => tx.sharedTerminal.count({ where: { facilityId, removedAt: null } }),
+      "Este almacén tiene terminales compartidas: quítalas primero en Configuración › Terminales compartidas.",
+    ],
+    [
+      () => tx.equipment.count({ where: { facilityId, retiredAt: null } }),
+      "Este almacén tiene equipos registrados: dalos de baja primero en Configuración › Equipos del almacén.",
+    ],
+    [
+      () => tx.apiKey.count({ where: { facilityId, revokedAt: null } }),
+      "Este almacén tiene llaves de la API activas: revócalas primero en Configuración › API y webhooks.",
+    ],
+  ];
+  for (const [count, message] of checks) {
+    if ((await count()) > 0) stop("not_allowed", message);
+  }
+}
+
+/**
+ * Archives a warehouse with nothing left in it (`refuseWhatStaysOpen`),
+ * together with all its locations (WMS-82, ADR 0077): a location of an
+ * archived warehouse is archived, so nothing enters it. Who worked there
+ * goes back to the main warehouse. The main warehouse is never archived.
  */
 export async function archiveFacility(
   actor: LocationActor,
@@ -409,83 +553,62 @@ export async function archiveFacility(
     if (facility.isDefault) {
       stop("not_allowed", "El almacén principal no se archiva.");
     }
-    const [stock, orders, tasks, boxes, transfers, terminals] =
-      await Promise.all([
-        tx.stockBalance.count({
-          where: { quantity: { gt: 0 }, location: { facilityId: facility.id } },
-        }),
-        tx.outboundOrder.count({
-          where: {
-            facilityId: facility.id,
-            status: { notIn: ["SHIPPED", "CANCELLED"] },
-          },
-        }),
-        tx.warehouseTask.count({
-          where: {
-            fromLocation: { facilityId: facility.id },
-            status: { notIn: ["DELIVERED", "CANCELLED"] },
-          },
-        }),
-        // WMS-53: nor a pallet or box still put together (even empty).
-        tx.container.count({
-          where: { status: "OPEN", location: { facilityId: facility.id } },
-        }),
-        // WMS-19: nor a transfer from or to it that is not finished.
-        tx.facilityTransfer.count({
-          where: {
-            status: { in: ["DRAFT", "SENT"] },
-            OR: [
-              { fromFacilityId: facility.id },
-              { toFacilityId: facility.id },
-            ],
-          },
-        }),
-        // WMS-38: nor a shared terminal still registered on its floor.
-        tx.sharedTerminal.count({
-          where: { facilityId: facility.id, removedAt: null },
-        }),
-      ]);
-    if (stock > 0) {
-      stop("not_allowed", "Este almacén todavía tiene existencias.");
-    }
-    if (orders > 0) {
-      stop("not_allowed", "Este almacén tiene pedidos sin terminar.");
-    }
-    if (tasks > 0) {
-      stop("not_allowed", "Este almacén tiene tareas abiertas.");
-    }
-    if (boxes > 0) {
+    // WMS-82 (ADR 0077): every location of the warehouse, by its primary
+    // key and without waiting. Whoever puts stock in a location locks it
+    // first: if one is held, something is moving there now and archiving
+    // answers «try again»; once we hold them all, nothing arrives until we
+    // finish, and it finds them archived. Never waiting is what keeps us out
+    // of a circle with an operation that locks two locations one after the
+    // other.
+    const places = await tx.location.findMany({
+      where: { facilityId: facility.id },
+      select: { id: true, archivedAt: true },
+    });
+    try {
+      await lockRows(
+        tx,
+        "location",
+        places.map((place) => place.id),
+        { nowait: true },
+      );
+    } catch (error) {
+      if (!isLockBusy(error)) throw error;
       stop(
-        "not_allowed",
-        "Este almacén tiene tarimas o cajas armadas: desármalas primero.",
+        "busy",
+        "Hay movimientos en curso en este almacén. Intenta de nuevo en un momento.",
       );
     }
-    if (transfers > 0) {
-      stop(
-        "not_allowed",
-        "Este almacén tiene traslados sin terminar: termínalos o cancélalos primero.",
-      );
-    }
-    if (terminals > 0) {
-      stop(
-        "not_allowed",
-        "Este almacén tiene terminales compartidas: quítalas primero en Configuración › Terminales compartidas.",
-      );
-    }
+    await refuseWhatStaysOpen(tx, facility.id);
+    const now = new Date();
+    const active = places
+      .filter((place) => place.archivedAt === null)
+      .map((place) => place.id);
     await tx.membership.updateMany({
       where: { activeFacilityId: facility.id },
       data: { activeFacilityId: null },
     });
+    // The warehouse first: «General» and the transit location are archived
+    // only with it (the base checks it).
     await tx.facility.update({
       where: { id: facility.id },
-      data: { archivedAt: new Date() },
+      data: { archivedAt: now },
     });
+    if (active.length > 0) {
+      await tx.location.updateMany({
+        where: { id: { in: active } },
+        data: { archivedAt: now },
+      });
+    }
     await recordAuditEvent(tx, {
       organizationId,
       actorUserId: userId,
       action: "facility.archived",
       target: { type: "facility", id: facility.id },
-      metadata: { almacen: facility.name, codigo: facility.code },
+      metadata: {
+        almacen: facility.name,
+        codigo: facility.code,
+        ubicaciones: active.length,
+      },
     });
     return {
       ok: true,
