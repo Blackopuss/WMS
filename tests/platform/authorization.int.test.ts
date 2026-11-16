@@ -121,9 +121,10 @@ describe("isAllowed", () => {
   it("a member without roles can do nothing", async () => {
     const userId = await newUser("sin-rol");
     await addMember(esperanza, userId, []);
-    expect(await loadSubject(esperanza, userId)).toMatchObject({
+    expect(await loadSubject(esperanza, userId)).toEqual({
       isOwner: false,
       roles: [],
+      modules: expect.any(Map),
     });
     expect(await isAllowed(esperanza, userId, "inventory.product.read")).toBe(
       false,

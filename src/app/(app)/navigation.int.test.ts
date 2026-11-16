@@ -130,6 +130,8 @@ describe("menu by role", () => {
     }
   });
 
+  // What Almacén and Supervisor de almacén gain with Producción has no
+  // section yet: catalog.test.ts fixes it (P7c, P7d).
   it("without their module the new roles see only Inicio and Configuración", () => {
     const onlyInventory = new Map([["inventory", "active"]] as const);
     for (const role of [
@@ -155,12 +157,6 @@ describe("menu by role", () => {
         modules: new Map([["quality", "active"]] as const),
       }),
     ).toEqual(["Inicio", "Configuración"]);
-  });
-
-  it("Almacén and Supervisor de almacén keep their menu with Producción", () => {
-    expect(menuOf(member("supervisor"))).toEqual(
-      menuOf({ isOwner: false, roles: ["supervisor"] }),
-    );
   });
 });
 

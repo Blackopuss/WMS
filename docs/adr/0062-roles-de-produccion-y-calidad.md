@@ -30,15 +30,18 @@ está implementado), precios ni textos del sitio para los módulos nuevos
    módulos que ya existe (`activateModule`, `deactivateModule`,
    `provisionCompany`) a partir de `dependsOn`; no hay código nuevo para eso.
 2. Con el módulo activo, el titular o un Administrador ve los roles nuevos en
-   Configuración › Equipo y los asigna (al invitar o a un miembro). Sin el
-   módulo, los roles no se ofrecen **y el servidor rechaza** asignarlos o
-   invitar con ellos («Ese rol necesita un módulo que tu empresa no tiene
-   contratado.»), salvo que la persona ya los tuviera (quitar un módulo no
-   obliga a reescribir los roles de nadie).
+   Configuración › Equipo y los asigna (al invitar, a un miembro o como
+   roles del titular que transfiere la empresa). Sin el módulo **activo**
+   (también en solo lectura), los roles no se ofrecen **y el servidor
+   rechaza** asignarlos, invitar con ellos u ofrecerlos en una transferencia
+   («Ese rol necesita un módulo que tu empresa no tiene contratado.»), salvo
+   que la persona ya los tuviera (quitar un módulo no obliga a reescribir
+   los roles de nadie).
 3. Cada petición vuelve a decidir: un rol ligado a un módulo da sus permisos
    solo si la empresa tiene ese módulo. Activo, todos; en solo lectura (plan
-   vencido o módulo quitado), solo sus lecturas y exportaciones; sin el
-   módulo, **nada**, tampoco las lecturas de Inventario que trae el rol.
+   vencido o módulo quitado), **solo las lecturas y exportaciones de ese
+   módulo** (`production.*` o `quality.*`), nunca sus lecturas de Inventario
+   ni de plataforma; sin el módulo, **nada**.
 4. Los servicios de cada paso (WMS-27, 28, 28B, 29, 30A, 30B, 31) piden su
    permiso con `assertModulePermission`, que además exige el módulo activo.
 
@@ -164,27 +167,54 @@ Claves `production_operator` («Operario de producción»),
 ### 5. Un rol sin su módulo no da nada
 
 `Subject.modules` (nuevo) lleva el estado de los módulos de la empresa;
-`permissionsOf` lo usa para los roles de `ROLE_MODULE`: módulo activo, todos
-sus permisos; en solo lectura, solo los que terminan en `.read` o `.export`
-(o son `*.export.create`, la misma regla de MOD-11); sin el módulo, ninguno.
-**Si el sujeto no trae `modules`, el rol ligado no da nada** (falla cerrado):
-así, un lugar que arma sujetos por su cuenta nunca regala permisos.
-`loadSubject` lo llena con `getEntitlements` (caché de 15 s por empresa, la
-misma que usa la guarda de módulos), y como las llaves de la API y las
-sesiones de terminal pasan por `loadSubject`, el recorte aplica igual ahí.
+`permissionsOf` lo usa para los roles de `ROLE_MODULE`:
 
-Pendiente aceptado: `memberReaches` (avisos y su correo) arma sus sujetos sin
-`modules`, así que hoy los roles ligados no reciben avisos por permiso. No
-hay avisos de producción todavía; el primer paso que los agregue (WMS-28B)
-lee los módulos con el cliente de su transacción.
+| Módulo | Lo que da el rol ligado |
+| --- | --- |
+| Activo | Todos sus permisos |
+| Solo lectura (quitado o plan vencido) | Solo las lecturas y exportaciones de ese módulo (`production.*.read` o `quality.*.read`, regla de MOD-11 limitada al módulo) |
+| Sin el módulo | Nada |
+
+**Las lecturas de Inventario y de plataforma de un rol ligado solo existen
+con su módulo activo.** Se evaluó distinguir «módulo quitado» de «plan
+vencido» (el módulo terminó mientras el límite `active_products` sigue
+vigente) para que, con el plan vencido, el rol conservara todas sus lecturas
+como los demás roles (MOD-11). Se descartó: quitar un módulo y vencer el plan
+solo se distinguen por fechas que se escriben por caminos distintos
+(`deactivateModule`, `recordManualPayment`, `provisionCompany`) y un módulo
+puede terminar en el mismo instante que el plan; una regla que dependa de
+esa coincidencia podría dar lecturas de existencias a alguien a quien solo
+se le asignó un rol por un módulo que ya no está. Regla única: en solo
+lectura, solo lo del propio módulo. Con el plan vencido, el Operario, el
+Encargado y el Inspector ven el historial de su módulo pero no las
+existencias; quien necesite verlas tiene otro rol (Consulta, Gerencia).
+Nadie queda en un estado roto: Inicio y Configuración no piden permisos, el
+menú solo muestra lo que el rol permite y `platform.organization.read` y
+`platform.module.read` no protegen hoy ninguna pantalla.
+
+**Si el sujeto no trae `modules`, el rol ligado no da nada** (falla
+cerrado). Los tres lugares que arman sujetos se los pasan:
+
+1. `loadSubject` (pantallas, servicios, llaves de la API, sesiones de PIN),
+   con `getEntitlements` (caché de 15 s por empresa, la misma que usa la
+   guarda de módulos).
+2. `decideApproval` (`subjectIn`), con los derechos que ya leía antes de su
+   transacción; y `rolesThatMayDecide` solo ofrece un rol ligado como
+   aprobador con su módulo activo.
+3. `memberReaches` (avisos al crearse y su correo al enviarse), con
+   `readModuleStates(cliente, empresa)` de `@/platform/entitlements` (las
+   mismas reglas que `getEntitlements`, con el cliente de la transacción del
+   hecho, sin abrir otra conexión). Solo se lee cuando algún candidato tiene
+   un rol ligado (`modulesFor`): sin ellos no se agrega ninguna consulta.
 
 ### 6. Reglas de equipo
 
 Sin cambios en quién maneja a quién: el titular asigna todos; un
 Administrador, todos menos Administrador; nadie más. Se agrega una regla: un
-rol ligado a un módulo que la empresa no tiene (estado «ninguno») no se
-asigna ni se invita (`module_missing`); uno que la persona ya tenía se puede
-conservar al cambiarle otros roles. `assignableRoles` ya no ofrece esos
+rol ligado a un módulo que la empresa no tiene **activo** no se asigna, no se
+invita ni se ofrece como rol del titular en una transferencia
+(`module_missing`); uno que la persona ya tenía se puede conservar al
+cambiarle otros roles. `assignableRoles` ya no ofrece esos
 roles, así que la pantalla de Equipo no necesita su propio filtro.
 
 ### 7. Dos pasos, PIN, API y soporte
@@ -200,17 +230,19 @@ roles, así que la pantalla de Equipo no necesita su propio filtro.
   manda órdenes. La etiqueta del ajuste cambia a «Personal de piso».
 - **API:** `API_CAPABILITIES` no cambia: ninguna llave recibe permisos de
   producción ni de calidad hasta que un paso agregue una ruta y su capacidad.
-- **Soporte:** sigue leyendo como Consulta; con los módulos activos ve sus
-  lecturas, sin escribir ni exportar.
+- **Soporte:** sigue leyendo como Consulta (que no es un rol ligado): la
+  política le da las lecturas de producción y calidad con o sin el módulo, y
+  lo que las corta sin el módulo es la guarda de módulo
+  (`assertModulePermission`, `access.moduleState`). Nunca escribe ni exporta.
 
 ## Casos negativos (matriz)
 
 NEG-27 a NEG-33 en `docs/MATRIZ_ROLES_PERMISOS.md`. Hoy se prueban con la
 política, el catálogo y miembros reales (`tests/platform/production-roles.int.test.ts`,
-`catalog.test.ts`, `team-rules.test.ts`, `navigation.int.test.ts`,
-`tests/platform/module-activation.int.test.ts`); los que necesitan servicios
-(decidir fuera del alcance, cancelar la orden de una solicitud aprobada)
-esperan a WMS-28B.
+que también prueba la dependencia entre módulos, la transferencia y los
+avisos; `catalog.test.ts`, `policy.test.ts`, `team-rules.test.ts`,
+`navigation.int.test.ts`); los que necesitan servicios (decidir fuera del
+alcance, cancelar la orden de una solicitud aprobada) esperan a WMS-28B.
 
 ## Migración
 
@@ -224,9 +256,11 @@ WMS-50). Las invitaciones guardan sus roles como texto validado con
 - **Declarar solo los permisos que este paso usa:** este paso no usa ninguno
   (no hay servicios); los roles quedarían vacíos y la matriz no serviría para
   platicar con el cliente.
-- **Dejar que el rol sin módulo dé sus lecturas de Inventario:** contradice
-  «sin el módulo, el rol no da nada» y abriría existencias a alguien a quien
-  se le asignó un rol por un módulo que la empresa ya no tiene.
+- **Dejar que el rol sin módulo (o con él en solo lectura) dé sus lecturas
+  de Inventario:** contradice «sin el módulo, el rol no da nada» y abriría
+  existencias a alguien a quien se le asignó un rol por un módulo que la
+  empresa ya no tiene.
+- **Distinguir módulo quitado de plan vencido:** ver la decisión 5.
 - **Marcar los módulos disponibles ya:** ofrecería módulos vacíos en «Mi
   plan» y roles que no hacen nada.
 - **Filtrar solo en la pantalla de Equipo:** la regla 6 del fundador pide

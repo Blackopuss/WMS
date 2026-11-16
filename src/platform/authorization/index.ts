@@ -18,6 +18,7 @@ export {
   buildScope,
   can,
   companyModules,
+  hasTiedRole,
   canAll,
   canAny,
   isOwnerOnly,

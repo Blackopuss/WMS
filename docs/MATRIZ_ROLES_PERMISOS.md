@@ -225,7 +225,7 @@ Solicitudes de compra (WMS-57, ADR 0055): Almacén y Supervisión **piden** merc
 
 ### Producción (WMS-59, ADR 0062)
 
-Permisos del módulo Producción; ninguno da nada sin el módulo contratado (MOD-05) y los roles OP y EP no dan nada sin él, tampoco sus lecturas de Inventario (ADR 0062 §5). Se declaran en WMS-59 y los usa el paso indicado.
+Permisos del módulo Producción; ninguno da nada sin el módulo contratado (MOD-05). Los roles OP, EP e IC dan sus «Sí» de cualquier tabla solo con su módulo **activo**; con el módulo en solo lectura (quitado o plan vencido), solo las lecturas de su propio módulo, y sin él, nada (ADR 0062 §5). Se declaran en WMS-59 y los usa el paso indicado.
 
 | Permiso | Alcance y referencia | T | A | AL | CO | CN | SU | AS | MO | GE | OP | EP | IC |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -339,7 +339,7 @@ Son casos propuestos, no pruebas implementadas ni ejecutadas. Ejecutar las llama
 | NEG-28 | Almacén o Supervisor de almacén crea, libera, cancela o cierra una orden de producción, también la de una solicitud que aprobó. | Denegado: decidir una solicitud no da permisos sobre órdenes (P7d). |
 | NEG-29 | Almacenista, Montacarguista o Comprador decide una solicitud de producción. | Denegado. |
 | NEG-30 | Inspector de calidad reporta producción, crea órdenes o corrige existencias. | Denegado. |
-| NEG-31 | Un rol de producción o calidad sin su módulo contratado lee o escribe algo (también Inventario), o se asigna o invita sin el módulo; Calidad se activa sin Producción o Producción se quita con Calidad activa. | Sin permisos; asignación e invitación rechazadas; activación y baja rechazadas por dependencia, sin cambios parciales. |
+| NEG-31 | Un rol de producción o calidad sin su módulo activo lee o escribe algo de Inventario, de plataforma o de su módulo (en solo lectura, solo lee lo de su módulo), recibe avisos o decide aprobaciones; se asigna, invita u ofrece en una transferencia sin el módulo activo; Calidad se activa sin Producción o Producción se quita con Calidad activa. | Sin permisos fuera de las lecturas de su módulo en solo lectura; asignación, invitación y transferencia rechazadas; activación y baja rechazadas por dependencia, sin cambios parciales. |
 | NEG-32 | Encargado de producción, Almacén o Supervisor de almacén decide una solicitud de un área o almacén que no alcanza, o la pantalla de decisión cuenta algo de fuera de su alcance. | La solicitud «no existe» para esa persona; nada se cuenta ni se nombra. |
 | NEG-33 | Un rol de producción o calidad de la empresa A se usa en la empresa B. | Sin permisos en B (NEG-13). |
 

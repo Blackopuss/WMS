@@ -353,6 +353,24 @@ describe("roles of Producción and Calidad", () => {
     ).toEqual({ ok: false, reason: "module_missing" });
   });
 
+  it("a module in read-only does not hand out new roles", () => {
+    const readOnly = {
+      ...admin,
+      modules: new Map([["production", "read_only"]] as const),
+    };
+    expect(
+      checkTeamChange(readOnly, viewer, {
+        kind: "assign_roles",
+        roles: ["production_operator"],
+      }),
+    ).toEqual({ ok: false, reason: "module_missing" });
+    expect(checkInvitationRoles(readOnly, ["production_operator"])).toEqual({
+      ok: false,
+      reason: "module_missing",
+    });
+    expect(assignableRoles(readOnly)).not.toContain("production_operator");
+  });
+
   it("a role the person already has may stay when the module is gone", () => {
     const worker = person("operario", ["production_operator"]);
     expect(

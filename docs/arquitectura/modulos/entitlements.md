@@ -10,7 +10,7 @@ cuánto de cada límite está usando. Solo depende de la base, así que cualquie
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Derechos | `entitlements.ts` | `getEntitlements` (con caché corta), `getFreshEntitlements` (para decidir), `invalidateEntitlements` (llamarla tras escribir `entitlement`), `readLimit(tx, …)` dentro de una transacción |
+| Derechos | `entitlements.ts` | `getEntitlements` (con caché corta), `getFreshEntitlements` (para decidir), `invalidateEntitlements` (llamarla tras escribir `entitlement`), `readLimit(tx, …)` dentro de una transacción; `readModuleStates(cliente, empresa)`: módulos activos y en solo lectura con el cliente del llamador (WMS-59, para los roles ligados a un módulo) |
 | Cupos | `quota.ts` | `consumeQuota`, `releaseQuota` (altas y archivos), `reserveQuota` → `confirmReservation` / `releaseReservation` (importaciones), `ensureQuotaRows` (al dar de alta el plan), `getQuotaUsage` |
 
 Nunca se cuentan filas para decidir si algo cabe: decide el contador, dentro

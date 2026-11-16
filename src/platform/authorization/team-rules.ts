@@ -12,9 +12,9 @@
  * - And for closing someone's sessions from the team screen (WMS-40): never
  *   the titular's, never one's own (that is «Sesiones activas» and «Cerrar
  *   sesión»), an administrator's only by the titular.
- * - A role tied to a module (WMS-59, ADR 0062) is not handed out while the
- *   company lacks that module (`actor.modules`); one the person already has
- *   may stay when other roles change.
+ * - A role tied to a module (WMS-59, ADR 0062) is not handed out unless the
+ *   company has that module in full use (`actor.modules`); one the person
+ *   already has may stay when other roles change.
  */
 import {
   ROLES,
@@ -71,10 +71,14 @@ const deny = (reason: TeamRuleReason): TeamRuleResult => ({
   reason,
 });
 
-/** True when the company has the module a role needs (or it needs none). */
+/**
+ * True when the company has the module a role needs in full use (or it
+ * needs none): a module removed or with the plan ended (read-only) does
+ * not hand out new roles.
+ */
 function moduleOfRoleIsThere(actor: Subject, role: string): boolean {
   const needs = isRole(role) ? ROLE_MODULE[role] : undefined;
-  return needs === undefined || actor.modules?.has(needs) === true;
+  return needs === undefined || actor.modules?.get(needs) === "active";
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   assignRoles,
   createInvitation,
   isAllowed,
+  offerOwnershipTransfer,
   type Permission,
   type Role,
 } from "@/platform/authorization";
@@ -17,8 +18,9 @@ import {
   deactivateModule,
 } from "@/platform/billing";
 import { invalidateEntitlements } from "@/platform/entitlements";
+import { notify } from "@/platform/notifications";
 import { createOrganization } from "@/platform/tenancy";
-import { db } from "@/server";
+import { db, forOrganization } from "@/server";
 
 import { grantSeats } from "../setup/plan";
 
@@ -337,6 +339,39 @@ describe("roles with their modules", () => {
       );
     }
   });
+
+  it("the same person and role in two companies follows each one's modules (NEG-33)", async () => {
+    // Member with the tied role in a company with Producción and in one
+    // without it: each company decides with its own modules.
+    const userId = people.production_supervisor!;
+    const plain = await newCompany("Almacén vecino", []);
+    const membership = await db.membership.create({
+      data: {
+        id: newId(),
+        organizationId: plain.org,
+        userId,
+        status: "ACTIVE",
+      },
+    });
+    await db.membershipRole.create({
+      data: {
+        id: newId(),
+        organizationId: plain.org,
+        membershipId: membership.id,
+        role: "production_supervisor",
+      },
+    });
+    expect(await isAllowed(org, userId, "inventory.stock.read")).toBe(true);
+    expect(await isAllowed(org, userId, "production.request.decide")).toBe(
+      true,
+    );
+    await expectGrants(
+      plain.org,
+      userId,
+      ["inventory.stock.read", "production.request.decide"],
+      false,
+    );
+  });
 });
 
 describe("a tied role without its module gives nothing (NEG-31)", () => {
@@ -380,7 +415,7 @@ describe("a tied role without its module gives nothing (NEG-31)", () => {
     expect(await isAllowed(org, operator, "inventory.stock.read")).toBe(true);
   });
 
-  it("with the module removed, the role keeps only its reads", async () => {
+  it("with the module removed, the role keeps only the reads of that module", async () => {
     const { org } = await newCompany("Planta que dejó calidad", [
       "production",
       "quality",
@@ -392,20 +427,65 @@ describe("a tied role without its module gives nothing (NEG-31)", () => {
     expect(await deactivateModule(registry, change(org, "quality"))).toEqual({
       ok: true,
     });
-    expect(await isAllowed(org, inspector, "quality.inspection.read")).toBe(
+    await expectGrants(
+      org,
+      inspector,
+      ["quality.inspection.read", "quality.plan.read"],
       true,
     );
-    expect(await isAllowed(org, inspector, "inventory.stock.read")).toBe(true);
+    // Its Inventario, Producción and platform reads go with the module.
     await expectGrants(
       org,
       inspector,
       [
         "quality.inspection.decide",
         "quality.lot.release",
+        "inventory.stock.read",
+        "inventory.product.read",
+        "inventory.incident.read",
         "inventory.incident.create",
+        "production.order.read",
+        "platform.organization.read",
       ],
       false,
     );
+    // …and it is not handed out again while the module is read-only,
+    // though the person keeps it when other roles change.
+    const admin = await addMember(org, ["administrator"]);
+    const worker = await addMember(org, ["viewer"]);
+    expect(
+      await assignRoles(org, admin, {
+        userId: worker,
+        roles: ["quality_inspector"],
+      }),
+    ).toMatchObject({ ok: false, reason: "module_missing" });
+    expect(
+      await assignRoles(org, admin, {
+        userId: inspector,
+        roles: ["quality_inspector", "viewer"],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("the titular keeps a tied role after a transfer only with its module", async () => {
+    const { org, owner } = await newCompany("Almacén que se transfiere", []);
+    const heir = await addMember(org, ["viewer"]);
+    expect(
+      await offerOwnershipTransfer(org, owner, {
+        toUserId: heir,
+        previousOwnerRoles: ["production_supervisor"],
+      }),
+    ).toMatchObject({ ok: false, reason: "module_missing" });
+    const withModule = await newCompany("Planta que se transfiere", [
+      "production",
+    ]);
+    const heir2 = await addMember(withModule.org, ["viewer"]);
+    expect(
+      await offerOwnershipTransfer(withModule.org, withModule.owner, {
+        toUserId: heir2,
+        previousOwnerRoles: ["production_supervisor"],
+      }),
+    ).toMatchObject({ ok: true });
   });
 
   it("the team rules refuse handing it out without the module", async () => {
@@ -451,5 +531,42 @@ describe("a tied role without its module gives nothing (NEG-31)", () => {
         roles: ["production_operator"],
       }),
     ).toMatchObject({ ok: true });
+  });
+});
+
+describe("notices reach a tied role only with its module (ADR 0062)", () => {
+  const TYPE = { key: "inventory.test_notice", defaultEnabled: true };
+
+  async function noticeTo(org: string, key: string) {
+    return forOrganization(org).$transaction((tx) =>
+      notify(tx, TYPE, {
+        organizationId: org,
+        actorUserId: null,
+        to: { permissions: ["inventory.stock.read"] },
+        text: "Aviso de prueba",
+        href: "/inicio",
+        key,
+      }),
+    );
+  }
+
+  async function got(org: string, userId: string, key: string) {
+    return db.notification.count({
+      where: { organizationId: org, recipientUserId: userId, dedupeKey: key },
+    });
+  }
+
+  it("with Producción the Encargado is notified; without it, not", async () => {
+    const plant = await newCompany("Planta con avisos", ["production"]);
+    const store = await newCompany("Almacén con avisos", []);
+    const inPlant = await addMember(plant.org, ["production_supervisor"]);
+    const inStore = await addMember(store.org, ["production_supervisor"]);
+    const keeper = await addMember(store.org, ["warehouse"]);
+    const key = `prueba:${stamp}`;
+    await noticeTo(plant.org, key);
+    await noticeTo(store.org, key);
+    expect(await got(plant.org, inPlant, key)).toBe(1);
+    expect(await got(store.org, inStore, key)).toBe(0);
+    expect(await got(store.org, keeper, key)).toBe(1);
   });
 });

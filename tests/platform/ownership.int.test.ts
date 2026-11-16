@@ -176,9 +176,10 @@ describe("acceptOwnershipTransfer", () => {
     ).toEqual({ ok: true });
 
     expect(await ownerOf(s.org)).toBe(s.recipient);
-    expect(await loadSubject(s.org, s.recipient)).toMatchObject({
+    expect(await loadSubject(s.org, s.recipient)).toEqual({
       isOwner: true,
       roles: [],
+      modules: expect.any(Map),
     });
     const previous = await loadSubject(s.org, s.owner);
     expect(previous.isOwner).toBe(false);

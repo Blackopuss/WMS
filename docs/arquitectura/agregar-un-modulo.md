@@ -74,8 +74,10 @@ dependencias).
    `membership_role` + `team-rules.test.ts` y `navigation.int.test.ts`; si el
    rol solo tiene sentido con el módulo, `ROLE_MODULE`: sin el módulo no da
    nada (tampoco sus lecturas de Inventario), con el módulo en solo lectura
-   solo lecturas y exportaciones, y no se asigna ni se invita sin él
-   (ADR 0062). Decidir también si entra a `PIN_ROLE_SETS` (terminales).
+   solo las lecturas de ese módulo, y no se asigna, invita ni ofrece en una
+   transferencia sin él activo (ADR 0062). Quien arme un sujeto por su
+   cuenta le pasa `modules` (ver `memberReaches`); sin ellos el rol no da
+   nada. Decidir también si entra a `PIN_ROLE_SETS` (terminales).
 
 ## 4. Tablas
 

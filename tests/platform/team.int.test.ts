@@ -160,9 +160,10 @@ describe("assignRoles", () => {
         await assignRoles(org, actor, { userId: owner, roles: ["viewer"] }),
       ).toMatchObject({ ok: false, reason: "owner_protected" });
     }
-    expect(await loadSubject(org, owner)).toMatchObject({
+    expect(await loadSubject(org, owner)).toEqual({
       isOwner: true,
       roles: [],
+      modules: expect.any(Map),
     });
   });
 

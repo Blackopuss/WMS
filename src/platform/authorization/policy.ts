@@ -47,8 +47,9 @@ export type Subject = {
   /**
    * WMS-59 (ADR 0062): the company's modules and their state, for the roles
    * tied to a module (ROLE_MODULE). A tied role gives everything with its
-   * module active, only its reads and exports with it in read-only, and
-   * nothing without it. Absent = no module: a tied role then gives nothing
+   * module active, only the reads and exports of that module (never its
+   * Inventario or platform reads) with it in read-only, and nothing
+   * without it. Absent = no module: a tied role then gives nothing
    * (fail closed), so a subject built elsewhere never grants by mistake.
    */
   modules?: ReadonlyMap<string, CompanyModuleState>;
@@ -68,16 +69,28 @@ export function companyModules(entitlements: {
   return states;
 }
 
-/** Same rule as the module guard (MOD-11): what only looks or takes data out. */
-function onlyLooks(permission: string): boolean {
-  const [, resource, action] = permission.split(".");
-  return action === "read" || action === "export" || resource === "export";
+/**
+ * Same rule as the module guard (MOD-11), limited to one module: what only
+ * looks at it or takes its data out.
+ */
+function onlyLooksAt(moduleId: string, permission: string): boolean {
+  const [prefix, resource, action] = permission.split(".");
+  return (
+    prefix === moduleId &&
+    (action === "read" || action === "export" || resource === "export")
+  );
+}
+
+/** True when one of the roles is tied to a module (WMS-59). */
+export function hasTiedRole(roles: readonly string[]): boolean {
+  return roles.some((role) => isRole(role) && ROLE_MODULE[role] !== undefined);
 }
 
 /**
  * Permissions a role gives in this company (WMS-59): all of them, unless
  * the role is tied to a module the company lacks (none) or has only to
- * read (its reads and exports).
+ * read (the reads and exports of that module, nothing else: removed or
+ * with the plan ended, its Inventario and platform reads go too).
  */
 function permissionsOfRole(
   subject: Subject,
@@ -87,7 +100,9 @@ function permissionsOfRole(
   if (needs === undefined) return ROLE_PERMISSIONS[role];
   const state = subject.modules?.get(needs);
   if (state === "active") return ROLE_PERMISSIONS[role];
-  if (state === "read_only") return ROLE_PERMISSIONS[role].filter(onlyLooks);
+  if (state === "read_only") {
+    return ROLE_PERMISSIONS[role].filter((p) => onlyLooksAt(needs, p));
+  }
   return [];
 }
 

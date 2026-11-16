@@ -266,7 +266,7 @@ describe("roles tied to a module (WMS-59, ADR 0062)", () => {
     ).toBe(0);
   });
 
-  it("with the module in read-only they keep only reads and exports", () => {
+  it("with the module in read-only they keep only that module's reads", () => {
     const readOnly = new Map([
       ["inventory", "active"],
       ["production", "read_only"],
@@ -275,8 +275,13 @@ describe("roles tied to a module (WMS-59, ADR 0062)", () => {
       withModules(["production_supervisor"], readOnly),
     );
     expect(granted.size).toBeGreaterThan(0);
-    for (const permission of granted) expect(permission).toMatch(/\.read$/);
+    for (const permission of granted) {
+      expect(permission).toMatch(/^production\.[a-z_]+\.read$/);
+    }
     expect(granted.has("production.order.create")).toBe(false);
+    // Removed or with the plan ended, its Inventario and platform reads go.
+    expect(granted.has("inventory.stock.read")).toBe(false);
+    expect(granted.has("platform.organization.read")).toBe(false);
   });
 
   it("with the module active they give their list", () => {
