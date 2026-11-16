@@ -194,8 +194,22 @@ async function catalogOf(organizationId: string): Promise<string> {
   }
 }
 
+/**
+ * Locks the catalog row of the company. It must be there: without it the
+ * cap would be counted without a lock, so its absence is an error, never
+ * a reason to go on.
+ */
+async function lockCatalog(tx: Tx, catalogId: string) {
+  const locked = await lockRows(tx, "qualityDefectCatalog", [catalogId]);
+  if (locked.length !== 1) {
+    throw new Error(
+      "quality_defect_catalog: the lock row of the company is missing",
+    );
+  }
+}
+
 async function assertRoomFor(tx: Tx, catalogId: string, message: string) {
-  await lockRows(tx, "qualityDefectCatalog", [catalogId]);
+  await lockCatalog(tx, catalogId);
   const inUse = await tx.qualityDefect.count({ where: { archivedAt: null } });
   if (inUse >= MAX_ACTIVE_DEFECTS) fail(message);
 }
@@ -312,9 +326,7 @@ export async function setDefectArchived(
   // defect), as when adding one.
   const catalogId = archived ? null : await catalogOf(actor.organizationId);
   return run(actor.organizationId, async (tx) => {
-    if (catalogId) {
-      await lockRows(tx, "qualityDefectCatalog", [catalogId]);
-    }
+    if (catalogId) await lockCatalog(tx, catalogId);
     const defect = await lockDefect(tx, defectId);
     if ((defect.archivedAt !== null) === archived) {
       return {

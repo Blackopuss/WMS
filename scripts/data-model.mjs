@@ -169,8 +169,8 @@ export const AREAS = [
     title: "Plataforma › Archivos",
     doc: "files",
     summary:
-      "Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar).",
-    models: ["StoredFile"],
+      "Archivos privados de una empresa (lo que sube para importar, lo que se genera para descargar) y fotos de evidencia ligadas a un registro (WMS-37).",
+    models: ["StoredFile", "EvidencePhoto"],
   },
   {
     id: "jobs",
@@ -362,6 +362,20 @@ export const AREAS = [
       "QualityPlanPointOption",
       "QualityDefect",
       "QualityDefectCatalog",
+    ],
+  },
+  {
+    id: "production",
+    title: "Producción",
+    doc: "production",
+    summary:
+      "Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones.",
+    models: [
+      "Recipe",
+      "RecipeVersion",
+      "RecipeInput",
+      "RecipeOutput",
+      "RecipeLock",
     ],
   },
 ];

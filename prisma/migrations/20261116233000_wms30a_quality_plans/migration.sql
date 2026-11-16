@@ -312,3 +312,11 @@ CREATE TRIGGER `quality_defect_catalog_no_delete` BEFORE DELETE ON `quality_defe
 BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'quality_defect_catalog: never deleted';
 END;
+
+-- The lock row stays with its company.
+CREATE TRIGGER `quality_defect_catalog_fixed` BEFORE UPDATE ON `quality_defect_catalog` FOR EACH ROW
+BEGIN
+    IF NEW.`organizationId` <> OLD.`organizationId` OR NEW.`id` <> OLD.`id` THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'quality_defect_catalog: the company of the row cannot change';
+    END IF;
+END;

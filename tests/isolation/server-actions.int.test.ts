@@ -18,6 +18,64 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  // WMS-27: the recipe of a product (ADR 0066).
+  createRecipeAction: {
+    input: "id del producto (fijado por la página) y «para cuánto»",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  updateRecipeBaseAction: {
+    input:
+      "ids del producto y del borrador (fijados por la página) y «para cuánto»",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  saveRecipeInputAction: {
+    input:
+      "ids del producto, del borrador y, al cambiar, del material (fijados por la página); nombre, clave o código de barras (o la clave elegida entre parecidos), cómo se cuenta (base, presentación o unidad), cantidad y merma esperada",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  saveRecipeOutputAction: {
+    input:
+      "ids del producto, del borrador y, al cambiar, del producto que sale (fijados por la página); nombre, clave o código de barras (o la clave elegida), cantidad y parte del costo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  removeRecipeInputAction: {
+    input: "ids del producto y del material",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  removeRecipeOutputAction: {
+    input: "ids del producto y de lo que sale",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  activateRecipeAction: {
+    input: "ids del producto y del borrador",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  discardRecipeAction: {
+    input: "ids del producto y del borrador",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  startRecipeChangeAction: {
+    input: "ids del producto y de la receta",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
   packAction: {
     input:
       "producto y tarima (fijados por la página), ubicación y lote elegidos, etiqueta y tipo de una tarima nueva, cantidad y series",
@@ -1205,16 +1263,16 @@ const REVIEWED: Record<string, Review> = {
   },
   reportIncidentAction: {
     input:
-      "tipo, descripción, ubicación, producto y equipo (WMS-42) escaneados o escritos, tarea o pedido (fijados por la página) y clave de confirmación",
+      "tipo, descripción, ubicación, producto y equipo (WMS-42) escaneados o escritos, tarea o pedido (fijados por la página), ids de fotos ya subidas y clave de confirmación",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el almacén es el activo de la persona; ubicación, producto, tarea y pedido se buscan solo en esa empresa, en ese almacén y dentro de su alcance; exige inventory.incident.create",
     coveredBy: "tests/inventory/incidents.int.test.ts",
   },
   incidentStepAction: {
     input:
-      "id de la incidencia y el paso (fijados por la página) y el texto de la resolución, el motivo o la nota",
+      "id de la incidencia y el paso (fijados por la página) y el texto de la resolución, el motivo o la nota, con ids de fotos ya subidas",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create",
+      "sesión y empresa activa (requireOrganizationContext); la incidencia se bloquea solo en esa empresa y dentro del alcance de la persona; atender y cerrar exigen inventory.incident.manage, una nota inventory.incident.create; solo se ligan fotos de esa empresa subidas por la misma persona y sin ligar",
     coveredBy: "tests/inventory/incidents.int.test.ts",
   },
   startDraftAction: {
@@ -1272,6 +1330,19 @@ const REVIEWED: Record<string, Review> = {
     identity:
       "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea el defecto solo en esa empresa",
     coveredBy: "tests/quality/defects.int.test.ts",
+  },
+  uploadIncidentPhotoAction: {
+    input:
+      "una foto (FormData «photo»); nombre y bytes, el tipo lo decide el servidor por el contenido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige inventory.incident.create; la foto queda en esa empresa a nombre de la persona y sin ligar, visible solo para ella",
+    coveredBy: "tests/inventory/incident-photos.int.test.ts",
+  },
+  discardIncidentPhotoAction: {
+    input: "id de una foto que la persona tomó y quitó del formulario",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige inventory.incident.create; solo borra una foto de esa empresa, subida por esa persona y sin ligar, bajo el candado del archivo",
+    coveredBy: "tests/inventory/incident-photos.int.test.ts",
   },
   createFieldAction: {
     input:

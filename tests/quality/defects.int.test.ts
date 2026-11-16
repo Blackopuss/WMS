@@ -158,6 +158,41 @@ describe("the defects of a company", () => {
     ).toBe(MAX_ACTIVE_DEFECTS);
   });
 
+  it("the lock row of the defects cannot leave its company or disappear", async () => {
+    const owner = await company();
+    const other = await company();
+    expect(await createDefect(owner, { name: "Primero" })).toMatchObject({
+      ok: true,
+    });
+    const row = await db.qualityDefectCatalog.findFirstOrThrow({
+      where: { organizationId: owner.organizationId },
+    });
+    await expect(
+      db.qualityDefectCatalog.update({
+        where: { id: row.id },
+        data: { organizationId: other.organizationId },
+      }),
+    ).rejects.toThrow(/cannot change/);
+    await expect(
+      db.qualityDefectCatalog.update({
+        where: { id: row.id },
+        data: { id: crypto.randomUUID() },
+      }),
+    ).rejects.toThrow(/cannot change/);
+    await expect(
+      db.qualityDefectCatalog.delete({ where: { id: row.id } }),
+    ).rejects.toThrow(/never deleted/);
+    // Every later change of the count goes through the same row.
+    expect(await createDefect(owner, { name: "Segundo" })).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await db.qualityDefectCatalog.count({
+        where: { organizationId: owner.organizationId },
+      }),
+    ).toBe(1);
+  });
+
   it("archived defects are listed by page", async () => {
     const owner = await company();
     await db.qualityDefect.createMany({

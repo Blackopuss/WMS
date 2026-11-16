@@ -176,9 +176,8 @@ nombre: una se queda; dos opciones que la intercalación iguala, como «ß» y
 
 ## Disponibilidad de los módulos
 
-Producción y Calidad pasan a `available` en este paso (Producción con el
-cambio mínimo, idéntico al de WMS-27, que la deja disponible por sus
-recetas). Precio, nombre comercial y textos del sitio siguen pendientes del
+Calidad pasa a `available` en este paso (Producción ya lo está desde
+WMS-27, por sus recetas). Precio, nombre comercial y textos del sitio siguen pendientes del
 fundador: no se agregan a `PLAN_TIERS` ni al sitio.
 
 ## Quitar Calidad
@@ -186,6 +185,13 @@ fundador: no se agregan a `PLAN_TIERS` ni al sitio.
 Nunca se borra nada. La consola avisa de los planes con un borrador sin
 publicar («N planes de inspección con cambios sin publicar»,
 `qualityOpenWork`). Los planes y defectos quedan en solo lectura.
+
+## Terminales compartidas
+
+`quality.plan.manage` está en `TERMINAL_DESK_ONLY` (`policy.ts`), como
+`production.recipe.manage`: en una sesión de PIN los planes y defectos se
+leen, nunca se cambian. Hoy solo lo tienen titular y Administración, que no
+usan PIN, pero la regla queda escrita y probada (`policy.test.ts`).
 
 ## Decisiones que el fundador puede cambiar
 

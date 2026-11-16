@@ -55,8 +55,8 @@ src/
   server/       Infraestructura: cliente Prisma (db), cliente por empresa
                 (forOrganization), candados (lockRows), LOCKING_TRANSACTION.
   platform/*    Núcleo compartido por todos los módulos (ver modulos/).
-  modules/*     Módulos contratables: inventory (la base), purchasing; production y quality
-                anunciados (WMS-59); registry los reúne.
+  modules/*     Módulos contratables: inventory (la base), purchasing, production
+                (recetas, WMS-27); quality anunciado (WMS-59); registry los reúne.
 ```
 
 | Desde | Puede importar |

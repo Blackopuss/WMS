@@ -1,3 +1,4 @@
+import { productionOpenWork } from "@/modules/production";
 import { purchasingOpenWork } from "@/modules/purchasing";
 import { qualityOpenWork } from "@/modules/quality";
 
@@ -12,6 +13,7 @@ const OPEN_WORK: Record<string, (organizationId: string) => Promise<string[]>> =
   {
     purchasing: purchasingOpenWork,
     quality: qualityOpenWork,
+    production: productionOpenWork,
   };
 
 export async function moduleOpenWork(

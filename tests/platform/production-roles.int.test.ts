@@ -32,8 +32,9 @@ import { grantSeats } from "../setup/plan";
 const stamp = Date.now();
 let counter = 0;
 
-// Both modules are announced today (unavailable). The same contracts,
-// marked available, prove their dependency rules.
+// Calidad is announced today (unavailable; Producción is available since
+// WMS-27). The same contracts, marked available, prove their dependency
+// rules.
 const registry = createModuleRegistry(
   moduleRegistry.all.map((contract) =>
     contract.id === "production" || contract.id === "quality"

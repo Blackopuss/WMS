@@ -37,10 +37,10 @@ describe("installed modules", () => {
 
   it("Inventario is the base; Inventario, Compras, Producción and Calidad can be contracted", () => {
     expect(moduleRegistry.base.id).toBe("inventory");
-    expect(moduleRegistry.available.map((m) => m.id)).toEqual([
+    expect(moduleRegistry.available.map((m) => m.id).sort()).toEqual([
       "inventory",
-      "purchasing",
       "production",
+      "purchasing",
       "quality",
     ]);
   });
@@ -60,8 +60,9 @@ describe("installed modules", () => {
       moduleRegistry
         .dependentsOf("inventory")
         .filter((m) => m.availability === "available")
-        .map((m) => m.id),
-    ).toEqual(["purchasing", "production", "quality"]);
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(["production", "purchasing", "quality"]);
   });
 
   it("every business permission of the catalog belongs to exactly one module", () => {
