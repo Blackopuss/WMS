@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +24,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import {
   assignTaskAction,
   blockTaskAction,
+  changeTaskEquipmentAction,
   cancelTaskAction,
   releaseTaskAction,
   taskStepAction,
@@ -283,6 +285,106 @@ export function AssignTask({
       >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         Guardar
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * WMS-42: the equipment the person uses for a task that asks for a type,
+ * scanned (lector or camera) or chosen from the available ones; with it,
+ * take the task or change the one in use. The server checks it again.
+ */
+export function EquipmentStep({
+  taskId,
+  mode,
+  label,
+  typeName,
+  choices,
+}: {
+  taskId: string;
+  mode: "accept" | "change";
+  label: string;
+  typeName: string;
+  choices: { code: string; name: string }[];
+}) {
+  const [code, setCode] = useState("");
+  const { pending, error, run } = useTaskAction();
+  const inputId = `equipment-${mode}`;
+  return (
+    <form
+      noValidate
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const typed = new FormData(event.currentTarget).get("equipmentCode");
+        run(
+          () =>
+            mode === "accept"
+              ? taskStepAction(taskId, "accept", String(typed ?? ""))
+              : changeTaskEquipmentAction(taskId, String(typed ?? "")),
+          () => setCode(""),
+        );
+      }}
+    >
+      <div className="space-y-2">
+        <Label htmlFor={inputId}>
+          {mode === "accept" ? `¿Con qué ${typeName}?` : `Otro ${typeName}`}
+        </Label>
+        <div className="flex gap-2">
+          <Input
+            id={inputId}
+            name="equipmentCode"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            list={`${inputId}-list`}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            maxLength={40}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={`${inputId}-hint${error ? ` ${inputId}-error` : ""}`}
+          />
+          <CameraScanButton target={inputId} title="Escanear el equipo" />
+        </div>
+        <datalist id={`${inputId}-list`}>
+          {choices.map((choice) => (
+            <option key={choice.code} value={choice.code}>
+              {choice.name}
+            </option>
+          ))}
+        </datalist>
+        <p id={`${inputId}-hint`} className="text-sm text-muted-foreground">
+          {choices.length === 0
+            ? `No hay un ${typeName} libre en servicio en este almacén.`
+            : `Escanea su etiqueta o escribe su código. Libres: ${choices
+                .slice(0, 6)
+                .map((choice) => choice.code)
+                .join(", ")}${choices.length > 6 ? "…" : ""}.`}
+        </p>
+        {error && (
+          <p
+            id={`${inputId}-error`}
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {error}
+          </p>
+        )}
+      </div>
+      <Button
+        type="submit"
+        size={mode === "accept" ? "lg" : "default"}
+        variant={mode === "accept" ? "default" : "outline"}
+        className={
+          mode === "accept"
+            ? "min-h-14 w-full text-base sm:w-auto sm:min-w-72"
+            : "min-h-12 w-full sm:w-auto"
+        }
+        disabled={pending}
+      >
+        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+        {pending ? "Guardando…" : label}
       </Button>
     </form>
   );

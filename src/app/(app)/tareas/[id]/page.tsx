@@ -12,7 +12,12 @@ import {
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
-import { getTask, listTaskPeople, nextTaskFor } from "@/modules/inventory";
+import {
+  getTask,
+  listTaskPeople,
+  nextTaskFor,
+  taskEquipmentChoices,
+} from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
 
@@ -23,6 +28,7 @@ import {
   AssignTask,
   CancelTask,
   ReleaseTask,
+  EquipmentStep,
   ReportProblem,
   TaskStep,
 } from "./task-controls";
@@ -130,6 +136,19 @@ export default async function TareaPage({
   const canCancel =
     cancels &&
     ["PENDING", "ASSIGNED", "ACCEPTED", "BLOCKED"].includes(task.status);
+  // WMS-42: a task that asks for equipment is taken with one, and changed
+  // while the load is not picked up yet.
+  const takingWithEquipment =
+    step?.step === "accept" && task.equipmentTypeName !== null;
+  const changingEquipment =
+    executes &&
+    mine &&
+    task.status === "ACCEPTED" &&
+    task.equipmentTypeName !== null;
+  const equipmentChoices =
+    takingWithEquipment || changingEquipment
+      ? await taskEquipmentChoices(actor, task.id)
+      : [];
 
   // Where the task is among its three steps; nothing for one that is
   // stopped (problem, cancelled) or finished.
@@ -336,7 +355,25 @@ export default async function TareaPage({
             {task.note}
           </p>
         )}
+        {task.equipmentTypeName && (
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">Equipo</p>
+            <p className="font-medium [overflow-wrap:anywhere]">
+              {task.equipmentText ?? `Pide ${task.equipmentTypeName}`}
+            </p>
+          </div>
+        )}
       </section>
+
+      {task.equipmentStopped && task.status === "ACCEPTED" && (
+        <p
+          role="status"
+          className="max-w-xl rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+        >
+          El equipo de esta tarea quedó fuera de servicio. Elige otro antes de
+          recoger la carga.
+        </p>
+      )}
 
       {task.status === "BLOCKED" && task.blockedReason && (
         <p
@@ -394,7 +431,15 @@ export default async function TareaPage({
       {(step || canReport) && (
         <div className="flex max-w-xl flex-col gap-3">
           {step &&
-            (step.step === "pickUp" && task.bySerial ? (
+            (takingWithEquipment ? (
+              <EquipmentStep
+                taskId={task.id}
+                mode="accept"
+                label={step.label}
+                typeName={task.equipmentTypeName!}
+                choices={equipmentChoices}
+              />
+            ) : step.step === "pickUp" && task.bySerial ? (
               // WMS-21B: the units taken are scanned when picking up.
               <PickUpForm
                 taskId={task.id}
@@ -406,6 +451,26 @@ export default async function TareaPage({
             ))}
           {canReport && <ReportProblem taskId={task.id} />}
         </div>
+      )}
+
+      {changingEquipment && (
+        <details
+          open={task.equipmentStopped}
+          className="max-w-xl rounded-xl border bg-card p-4 sm:p-5"
+        >
+          <summary className="min-h-11 cursor-pointer content-center font-medium">
+            Cambiar de equipo
+          </summary>
+          <div className="pt-3">
+            <EquipmentStep
+              taskId={task.id}
+              mode="change"
+              label="Usar este equipo"
+              typeName={task.equipmentTypeName!}
+              choices={equipmentChoices}
+            />
+          </div>
+        </details>
       )}
 
       {(people || (cancels && task.status === "BLOCKED") || canCancel) && (

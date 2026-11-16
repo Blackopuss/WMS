@@ -271,10 +271,60 @@ const REVIEWED: Record<string, Review> = {
       "tests/inventory/tasks.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
   taskStepAction: {
-    input: "id de la tarea y el paso (tomar, recoger o entregar)",
+    input:
+      "id de la tarea, el paso (tomar, recoger o entregar) y, al tomar una que pide equipo, el código del equipo (WMS-42)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona",
-    coveredBy: "tests/inventory/tasks.int.test.ts",
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona; el equipo se busca solo en esa empresa y en el almacén de la tarea",
+    coveredBy:
+      "tests/inventory/tasks.int.test.ts, tests/inventory/equipment.int.test.ts",
+  },
+  changeTaskEquipmentAction: {
+    input: "id de la tarea y el código del equipo, escaneado o elegido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la tarea se bloquea solo en esa empresa y debe ser de esa persona; el equipo se busca solo en esa empresa y en el almacén de la tarea",
+    coveredBy: "tests/inventory/equipment.int.test.ts",
+  },
+  createEquipmentAction: {
+    input: "código, nombre, tipo y próximo mantenimiento de un equipo (WMS-42)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén es el activo de la persona y debe alcanzarlo entero; el tipo se busca solo en esa empresa; exige inventory.equipment.manage",
+    coveredBy:
+      "tests/inventory/equipment.int.test.ts, tests/inventory/scope.int.test.ts",
+  },
+  updateEquipmentAction: {
+    input:
+      "id del equipo (fijado por la página), código, nombre, tipo y próximo mantenimiento",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el equipo se bloquea solo en esa empresa y en un almacén que la persona alcanza entero; exige inventory.equipment.manage",
+    coveredBy: "tests/inventory/equipment.int.test.ts",
+  },
+  equipmentStepAction: {
+    input:
+      "id del equipo y el paso (fijados por la página: fuera de servicio, en servicio o baja) y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el equipo se bloquea solo en esa empresa y en un almacén que la persona alcanza entero; exige inventory.equipment.manage",
+    coveredBy:
+      "tests/inventory/equipment.int.test.ts, tests/inventory/scope.int.test.ts",
+  },
+  maintenanceAction: {
+    input:
+      "id del equipo (fijado por la página), día, qué se hizo, quién lo hizo y el siguiente mantenimiento",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el equipo se bloquea solo en esa empresa y en un almacén que la persona alcanza entero; exige inventory.equipment.manage",
+    coveredBy: "tests/inventory/equipment.int.test.ts",
+  },
+  saveEquipmentTypeAction: {
+    input:
+      "id del tipo (fijado por la página, vacío para uno nuevo) y su nombre",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el tipo se bloquea solo en esa empresa; exige inventory.equipment.manage",
+    coveredBy: "tests/inventory/equipment.int.test.ts",
+  },
+  archiveEquipmentTypeAction: {
+    input: "id del tipo y si se archiva (fijados por la página)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el tipo se bloquea solo en esa empresa; exige inventory.equipment.manage",
+    coveredBy: "tests/inventory/equipment.int.test.ts",
   },
   pickUpSerialsAction: {
     input:
@@ -1155,7 +1205,7 @@ const REVIEWED: Record<string, Review> = {
   },
   reportIncidentAction: {
     input:
-      "tipo, descripción, ubicación y producto escaneados o escritos, tarea o pedido (fijados por la página) y clave de confirmación",
+      "tipo, descripción, ubicación, producto y equipo (WMS-42) escaneados o escritos, tarea o pedido (fijados por la página) y clave de confirmación",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el almacén es el activo de la persona; ubicación, producto, tarea y pedido se buscan solo en esa empresa, en ese almacén y dentro de su alcance; exige inventory.incident.create",
     coveredBy: "tests/inventory/incidents.int.test.ts",

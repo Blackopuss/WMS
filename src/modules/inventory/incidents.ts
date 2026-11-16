@@ -38,6 +38,12 @@ import { INCIDENT_CHANGED_NOTICE, INCIDENT_REPORTED_NOTICE } from "./notices";
 import { formatOutboundNumber } from "./outbound-states";
 import { PLACE_NOT_FOUND, scannedPlace } from "./scanned-place";
 import { formatTaskNumber } from "./task-states";
+import {
+  EQUIPMENT_CODE_NOT_FOUND,
+  equipmentByCode,
+  equipmentForIncident,
+  equipmentLabel,
+} from "./equipment";
 
 /**
  * Incidents (WMS-39, ADR 0057): a problem of the warehouse that somebody
@@ -60,7 +66,13 @@ type Client = ReturnType<typeof forOrganization>;
 export const INCIDENT_PAGE_SIZE = 25;
 
 export type IncidentField =
-  "kind" | "description" | "location" | "product" | "resolution" | "note";
+  | "kind"
+  | "description"
+  | "location"
+  | "product"
+  | "equipment"
+  | "resolution"
+  | "note";
 
 type Failure = {
   ok: false;
@@ -153,6 +165,11 @@ export type ReportIncidentInput = {
   location?: string | null;
   /** Scanned or typed: barcode or key of a product (optional). */
   product?: string | null;
+  /**
+   * Scanned or typed: the code of a piece of equipment of the warehouse
+   * (optional, WMS-42).
+   */
+  equipment?: string | null;
   /** A task or an outbound order it is about (ids, optional). */
   taskId?: string | null;
   orderId?: string | null;
@@ -231,6 +248,13 @@ export async function reportIncident(
     if (!found) fieldErrors.product = PRODUCT_NOT_FOUND;
     else productId = found.id;
   }
+  let equipmentId: string | null = null;
+  const typedEquipment = String(input.equipment ?? "").trim();
+  if (typedEquipment) {
+    const found = await equipmentByCode(client, facility.id, typedEquipment);
+    if (!found) fieldErrors.equipment = EQUIPMENT_CODE_NOT_FOUND;
+    else equipmentId = found.id;
+  }
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, reason: "invalid", fieldErrors };
   }
@@ -297,6 +321,18 @@ export async function reportIncident(
         });
         const number = (last?.number ?? 0) + 1;
         const numberText = formatIncidentNumber(number);
+        // WMS-42 (ADR 0065): the equipment locked (the only lock); a report
+        // «Equipo descompuesto» may leave it out of service.
+        const equipment = equipmentId
+          ? await equipmentForIncident(tx, actor, equipmentId, {
+              number,
+              broken: kind === "BROKEN_EQUIPMENT",
+              description: description.data!,
+            })
+          : null;
+        if (equipmentId && !equipment) {
+          return stop("invalid", EQUIPMENT_CODE_NOT_FOUND, "equipment");
+        }
         const id = newId();
         await tx.incident.create({
           data: {
@@ -310,6 +346,7 @@ export async function reportIncident(
             productId,
             taskId,
             outboundOrderId: orderId,
+            equipmentId,
             idempotencyKey: key,
             reportedByUserId: userId,
           },
@@ -330,6 +367,7 @@ export async function reportIncident(
             incidencia: numberText,
             tipo: INCIDENT_KIND_LABELS[kind!],
             almacen: facility.name,
+            ...(equipment ? { equipo: equipment.label } : {}),
           },
         });
         // Who attends incidents where it happened hears it now.
@@ -340,16 +378,16 @@ export async function reportIncident(
             permissions: ["inventory.incident.manage"],
             ...(locationId ? { locationId } : { facilityId: facility.id }),
           },
-          text: `${await memberName(tx, userId)} reportó ${numberText}: ${INCIDENT_KIND_LABELS[kind!]}${where}. ${gist(description.data!)}`,
+          text: `${await memberName(tx, userId)} reportó ${numberText}: ${INCIDENT_KIND_LABELS[kind!]}${where}${equipment ? ` (${equipment.label}${equipment.stopped ? ", quedó fuera de servicio" : ""})` : ""}. ${gist(description.data!)}`,
           href: `/incidencias/${id}`,
           key: `incident:${id}:reported`,
         });
         return {
           ok: true as const,
           incidentId: id,
-          summary: `Reportaste ${numberText}. Quien atiende las incidencias ya recibió el aviso.`,
+          summary: `Reportaste ${numberText}.${equipment?.stopped ? ` ${equipment.label} quedó fuera de servicio.` : ""} Quien atiende las incidencias ya recibió el aviso.`,
         };
-      });
+      }, LOCKING_TRANSACTION);
     } catch (error) {
       if (error instanceof Rejected) return error.result;
       if (isClash(error, "number") && attempt < 4) continue;
@@ -800,6 +838,8 @@ export type IncidentDetail = IncidentSummary & {
   productSku: string | null;
   task: { id: string; numberText: string } | null;
   order: { id: string; numberText: string } | null;
+  /** WMS-42: the equipment it is about. */
+  equipment: { id: string; text: string } | null;
   mine: boolean;
   attendedByName: string | null;
   attendedAt: Date | null;
@@ -844,6 +884,7 @@ export async function getIncident(
       product: { select: { name: true, sku: true } },
       task: { select: { id: true, number: true } },
       outboundOrder: { select: { id: true, number: true } },
+      equipment: { select: { id: true, code: true, name: true } },
       notes: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         take: 200,
@@ -887,6 +928,9 @@ export async function getIncident(
           id: row.outboundOrder.id,
           numberText: formatOutboundNumber(row.outboundOrder.number),
         }
+      : null,
+    equipment: row.equipment
+      ? { id: row.equipment.id, text: equipmentLabel(row.equipment) }
       : null,
     mine: row.reportedByUserId === actor.userId,
     attendedByName: row.attendedByUserId

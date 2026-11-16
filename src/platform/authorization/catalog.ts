@@ -160,6 +160,8 @@ export const PERMISSIONS = [
   "inventory.incident.read",
   "inventory.incident.create",
   "inventory.incident.manage",
+  "inventory.equipment.read",
+  "inventory.equipment.manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -283,6 +285,8 @@ export const OWNER_PERMISSIONS: readonly Permission[] = [
   "inventory.incident.read",
   "inventory.incident.create",
   "inventory.incident.manage",
+  "inventory.equipment.read",
+  "inventory.equipment.manage",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
@@ -396,6 +400,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.incident.read",
     "inventory.incident.create",
     "inventory.incident.manage",
+    "inventory.equipment.read",
+    "inventory.equipment.manage",
   ],
   warehouse: [
     "platform.organization.read",
@@ -465,6 +471,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.incident.read",
     "inventory.incident.create",
     "inventory.incident.manage",
+    "inventory.equipment.read",
+    "inventory.equipment.manage",
   ],
   buyer: [
     "platform.organization.read",
@@ -539,6 +547,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.report.export",
     "purchasing.request.read",
     "inventory.incident.read",
+    "inventory.equipment.read",
   ],
   supervisor: [
     "platform.organization.read",
@@ -615,6 +624,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "inventory.incident.read",
     "inventory.incident.create",
     "inventory.incident.manage",
+    "inventory.equipment.read",
+    "inventory.equipment.manage",
   ],
   operator: [
     "platform.organization.read",
@@ -710,6 +721,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "purchasing.report.export",
     "purchasing.request.read",
     "inventory.incident.read",
+    "inventory.equipment.read",
   ],
 };
 

@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  createEquipment,
+  getEquipment,
   getIncident,
+  listEquipment,
+  saveEquipmentType,
+  setEquipmentOutOfService,
   listIncidents,
   reportIncident,
   startIncident,
@@ -1634,6 +1639,42 @@ describe("PC-12: incidents and their notices (WMS-39)", () => {
       ok: false,
       fieldErrors: { location: expect.any(String) },
     });
+  });
+});
+
+describe("PC-12: equipment (WMS-42)", () => {
+  it("a piece of equipment of A does not exist from B, nor is it named in a report there", async () => {
+    const type = await saveEquipmentType(free, { name: "Patín de alcance" });
+    if (!type.ok) throw new Error(JSON.stringify(type));
+    const made = await createEquipment(free, {
+      code: "PA-01",
+      name: "Patín de A",
+      typeId: type.typeId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect(await getEquipment(free, made.equipmentId)).not.toBeNull();
+    expect(await getEquipment(limited, made.equipmentId)).toBeNull();
+    expect(
+      (await listEquipment(limited)).rows.map((row) => row.id),
+    ).not.toContain(made.equipmentId);
+    expect(
+      await setEquipmentOutOfService(limited, made.equipmentId, {
+        reason: "Desde B no",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await reportIncident(limited, {
+        kind: "BROKEN_EQUIPMENT",
+        description: "No arranca el patín.",
+        equipment: "PA-01",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { equipment: expect.any(String) },
+    });
+    const still = await getEquipment(free, made.equipmentId);
+    expect(still!.status).toBe("IN_SERVICE");
   });
 });
 

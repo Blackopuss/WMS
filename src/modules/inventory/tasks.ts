@@ -70,6 +70,17 @@ import { compareRoute, inRouteOrder, routeKey } from "./pick-route";
 import { formatWaveNumber } from "./wave-states";
 import { TASK_ASSIGNED_NOTICE, TASK_BLOCKED_NOTICE } from "./notices";
 import { settleWaveOf } from "./wave-settle";
+import {
+  EQUIPMENT_CODE_NOT_FOUND,
+  equipmentChoices,
+  equipmentLabel,
+  type EquipmentChoice,
+} from "./equipment";
+import {
+  EQUIPMENT_HOLDING_STATUSES,
+  equipmentHolder,
+  normalizeEquipmentCode,
+} from "./equipment-rules";
 
 /**
  * Warehouse tasks (WMS-06, especificación WMS v5 5.3): a supervisor asks
@@ -110,7 +121,9 @@ export type TaskField =
   | "shortReason"
   | "serials"
   | "lotId"
-  | "lotCode";
+  | "lotCode"
+  | "equipmentTypeId"
+  | "equipmentCode";
 
 type Failure = Extract<TaskResult, { ok: false }>;
 
@@ -201,6 +214,7 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
             select: {
               name: true,
               code: true,
+              facilityId: true,
               parent: LOCATION_PARENTS,
             },
           },
@@ -208,6 +222,10 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
           placedLocationId: true,
           containerId: true,
           container: { select: { code: true, kind: true } },
+          // WMS-42: the type of equipment it asks for and the one in use.
+          equipmentTypeId: true,
+          equipmentType: { select: { name: true } },
+          equipmentId: true,
         },
       })
     : null;
@@ -397,6 +415,13 @@ const createSchema = z.object({
     .string()
     .trim()
     .max(NOTE_MAX, `Usa como máximo ${NOTE_MAX} caracteres.`)
+    .optional()
+    .transform((value) => value || null),
+  /** WMS-42: the type of equipment the task asks for (optional). */
+  equipmentTypeId: z
+    .string()
+    .trim()
+    .max(36)
     .optional()
     .transform((value) => value || null),
 });
@@ -592,6 +617,28 @@ export async function createTask(
         ) {
           return stop("invalid", ASSIGNEE_OUT_OF_SCOPE, "assignToUserId");
         }
+        // WMS-42: a type in use with some equipment in this warehouse, or
+        // nobody could ever take the task.
+        let equipmentType: { id: string; name: string } | null = null;
+        if (data.equipmentTypeId) {
+          equipmentType = await tx.equipmentType.findFirst({
+            where: {
+              id: data.equipmentTypeId,
+              archivedAt: null,
+              equipment: {
+                some: { facilityId: from.facilityId, retiredAt: null },
+              },
+            },
+            select: { id: true, name: true },
+          });
+          if (!equipmentType) {
+            return stop(
+              "invalid",
+              "Este almacén no tiene equipos de ese tipo. Elige otro o deja la tarea sin equipo.",
+              "equipmentTypeId",
+            );
+          }
+        }
         const last = await tx.warehouseTask.findFirst({
           orderBy: { number: "desc" },
           select: { number: true },
@@ -614,6 +661,7 @@ export async function createTask(
             note: data.note,
             createdByUserId: userId,
             assignedToUserId: data.assignToUserId,
+            equipmentTypeId: equipmentType?.id ?? null,
           },
         });
         // WMS-39: given to someone when created, they hear it.
@@ -630,7 +678,7 @@ export async function createTask(
         return {
           ok: true,
           taskId: id,
-          summary: `Se creó la tarea ${formatTaskNumber(number)}: ${formatStock(quantity.quantity.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} de ${from.name} a ${to.name}.`,
+          summary: `Se creó la tarea ${formatTaskNumber(number)}: ${formatStock(quantity.quantity.toString(), product.unitCode)} de ${product.name}${ofLot(lot)} de ${from.name} a ${to.name}${equipmentType ? `, con ${equipmentType.name}` : ""}.`,
         };
       });
     } catch (error) {
@@ -675,14 +723,131 @@ async function step(
   });
 }
 
-/** Takes an available task, or the one given to this person. */
+/**
+ * Takes an available task, or the one given to this person. A task that
+ * asks for a type of equipment (WMS-42) is taken with one: its code,
+ * scanned or chosen (`equipmentCode`).
+ */
 export function acceptTask(
   actor: InventoryActor,
   taskId: string,
+  input: { equipmentCode?: unknown } = {},
 ): Promise<TaskResult> {
   return step(actor, taskId, "inventory.task.execute", (tx, task) =>
-    acceptLocked(tx, actor, task),
+    acceptLocked(tx, actor, task, input.equipmentCode),
   );
+}
+
+/**
+ * WMS-42 (ADR 0065): the equipment this person takes for a task that asks
+ * for a type, under its lock (task → equipment): of that type, of the
+ * task's warehouse, in service, not retired and not used by someone else
+ * in an open task (the same person may use it in several).
+ */
+async function takeEquipment(
+  tx: Tx,
+  actor: InventoryActor,
+  task: LockedTask,
+  typed: unknown,
+): Promise<{ id: string; code: string; name: string }> {
+  const asked = task.equipmentType?.name ?? "equipo";
+  const code = normalizeEquipmentCode(String(typed ?? "").slice(0, 60));
+  if (!code.ok) {
+    return stop(
+      "invalid",
+      String(typed ?? "").trim() === ""
+        ? `Esta tarea pide ${asked}: escanea o elige el que vas a usar.`
+        : EQUIPMENT_CODE_NOT_FOUND,
+      "equipmentCode",
+    );
+  }
+  const found = await tx.equipment.findFirst({
+    where: { code: code.code },
+    select: { id: true },
+  });
+  const [id] = found ? await lockRows(tx, "equipment", [found.id]) : [];
+  const equipment = id
+    ? await tx.equipment.findFirst({
+        where: { id },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          facilityId: true,
+          typeId: true,
+          status: true,
+          outOfServiceReason: true,
+          retiredAt: true,
+          type: { select: { name: true } },
+        },
+      })
+    : null;
+  if (
+    !equipment ||
+    equipment.retiredAt ||
+    equipment.facilityId !== task.fromLocation.facilityId
+  ) {
+    return stop("invalid", EQUIPMENT_CODE_NOT_FOUND, "equipmentCode");
+  }
+  if (equipment.typeId !== task.equipmentTypeId) {
+    return stop(
+      "invalid",
+      `${equipment.code} es ${equipment.type.name}; esta tarea pide ${asked}.`,
+      "equipmentCode",
+    );
+  }
+  if (equipment.status !== "IN_SERVICE") {
+    return stop(
+      "invalid",
+      `${equipment.code} está fuera de servicio${equipment.outOfServiceReason ? `: ${equipment.outOfServiceReason}` : ""}. Elige otro.`,
+      "equipmentCode",
+    );
+  }
+  const holders = await tx.warehouseTask.findMany({
+    where: {
+      equipmentId: equipment.id,
+      status: { in: [...EQUIPMENT_HOLDING_STATUSES] },
+      NOT: { id: task.id },
+    },
+    orderBy: { number: "asc" },
+    take: 20,
+    select: { assignedToUserId: true, number: true },
+  });
+  const other = equipmentHolder(
+    holders.map((row) => ({
+      userId: row.assignedToUserId,
+      taskNumber: row.number,
+    })),
+    actor.userId,
+  );
+  if (other) {
+    return stop(
+      "invalid",
+      `${equipment.code} lo está usando ${await memberName(tx, other.userId)} en ${formatTaskNumber(other.taskNumber)}. Elige otro.`,
+      "equipmentCode",
+    );
+  }
+  return equipment;
+}
+
+/**
+ * WMS-42: the load is not picked up with equipment out of service or
+ * retired (the person changes it first); a load in hand is delivered.
+ */
+async function assertEquipmentUsable(tx: Tx, task: LockedTask) {
+  if (!task.equipmentId) return;
+  await lockRows(tx, "equipment", [task.equipmentId]);
+  const equipment = await tx.equipment.findFirst({
+    where: { id: task.equipmentId },
+    select: { code: true, status: true, retiredAt: true },
+  });
+  if (!equipment || equipment.retiredAt || equipment.status !== "IN_SERVICE") {
+    stop(
+      "not_allowed",
+      `${equipment?.code ?? "El equipo"} quedó fuera de servicio: cambia de equipo antes de recoger la carga.`,
+      "equipmentCode",
+    );
+  }
 }
 
 /** `acceptTask` on a task already locked (with its order before it). */
@@ -690,6 +855,7 @@ async function acceptLocked(
   tx: Tx,
   actor: InventoryActor,
   task: LockedTask,
+  equipmentCode?: unknown,
 ): Promise<TaskResult> {
   const mine = task.assignedToUserId === actor.userId;
   if (task.status === "ACCEPTED" && mine) {
@@ -704,20 +870,70 @@ async function acceptLocked(
     return stop("not_allowed", "Esta tarea está asignada a otra persona.");
   }
   ensure(task, "ACCEPTED");
+  // WMS-42: locked after the task (order → task → equipment).
+  const equipment = task.equipmentTypeId
+    ? await takeEquipment(tx, actor, task, equipmentCode)
+    : null;
   await tx.warehouseTask.update({
     where: { id: task.id },
     data: {
       status: "ACCEPTED",
       assignedToUserId: actor.userId,
       acceptedAt: new Date(),
+      ...(equipment ? { equipmentId: equipment.id } : {}),
     },
   });
   if (task.outboundLine) await startPicking(tx, task.outboundLine.orderId);
   return {
     ok: true,
     taskId: task.id,
-    summary: `Tomaste la tarea ${describe(task)}. Ve a ${task.fromLocation.name}.`,
+    summary: `Tomaste la tarea ${describe(task)}${equipment ? ` con ${equipment.code}` : ""}. Ve a ${task.fromLocation.name}.`,
   };
+}
+
+/**
+ * WMS-42: another piece of equipment for a task taken and not yet picked
+ * up (the one in use went out of service, or the person changed it).
+ */
+export function changeTaskEquipment(
+  actor: InventoryActor,
+  taskId: string,
+  input: { equipmentCode?: unknown },
+): Promise<TaskResult> {
+  return step(actor, taskId, "inventory.task.execute", async (tx, task) => {
+    if (task.assignedToUserId !== actor.userId) {
+      return stop("not_allowed", "Esta tarea la tiene otra persona.");
+    }
+    if (!task.equipmentTypeId) {
+      return stop("not_allowed", "Esta tarea no pide equipo.");
+    }
+    if (task.status !== "ACCEPTED") {
+      return stop(
+        "not_allowed",
+        task.status === "PICKED_UP"
+          ? "La carga ya se recogió: entrégala o reporta el problema."
+          : "Primero toma la tarea.",
+      );
+    }
+    const equipment = await takeEquipment(tx, actor, task, input.equipmentCode);
+    if (equipment.id === task.equipmentId) {
+      return {
+        ok: true,
+        taskId: task.id,
+        repeated: true,
+        summary: `Ya usabas ${equipment.code} en esta tarea.`,
+      };
+    }
+    await tx.warehouseTask.update({
+      where: { id: task.id },
+      data: { equipmentId: equipment.id },
+    });
+    return {
+      ok: true,
+      taskId: task.id,
+      summary: `Ahora haces la tarea ${formatTaskNumber(task.number)} con ${equipmentLabel(equipment)}.`,
+    };
+  });
 }
 
 /**
@@ -752,6 +968,7 @@ export function pickUpTask(
         );
       }
       ensure(task, "PICKED_UP");
+      await assertEquipmentUsable(tx, task);
       // WMS-53: a container carries its units; nothing to scan.
       const units = task.containerId
         ? []
@@ -854,6 +1071,7 @@ async function confirmPickLocked(
     }
   }
   ensure(task, "PICKED_UP");
+  await assertEquipmentUsable(tx, task);
   const code = foldName(String(input.productCode ?? "").slice(0, 80));
   if (code === "") {
     return stop(
@@ -1810,27 +2028,44 @@ export async function takeTasks(
     await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
     const locked = await lockRows(tx, "warehouseTask", ids);
     let changed = 0;
+    let withEquipment = 0;
     for (const id of locked) {
       const task = await lockTask(tx, id, userId);
       const free =
         task.status === "PENDING" ||
         (task.status === "ASSIGNED" && task.assignedToUserId === userId);
       if (!free) continue;
+      // WMS-42: one that asks for equipment is taken alone, saying which.
+      if (task.equipmentTypeId) {
+        withEquipment++;
+        continue;
+      }
       await acceptLocked(tx, actor, task);
       changed++;
     }
+    const alone =
+      withEquipment === 0
+        ? ""
+        : withEquipment === 1
+          ? " 1 pide equipo: tómala sola."
+          : ` ${withEquipment} piden equipo: tómalas una por una.`;
     return changed === 0
       ? {
           ok: true,
           count: 0,
           repeated: true,
-          summary: "No quedaba ninguna disponible: alguien ya las tomó.",
+          summary:
+            withEquipment > 0
+              ? `No tomaste ninguna.${alone}`
+              : "No quedaba ninguna disponible: alguien ya las tomó.",
         }
       : {
           ok: true,
           count: changed,
           summary:
-            changed === 1 ? "Tomaste 1 tarea." : `Tomaste ${changed} tareas.`,
+            (changed === 1
+              ? "Tomaste 1 tarea."
+              : `Tomaste ${changed} tareas.`) + alone,
         };
   });
 }
@@ -2029,6 +2264,8 @@ export function releaseTask(
         // Whoever takes it again confirms again what they pick.
         pickedQuantity: null,
         shortReason: null,
+        // WMS-42: and says which equipment they use.
+        equipmentId: null,
       },
     });
     // WMS-21B: and scans again the units they take.
@@ -2160,6 +2397,10 @@ export type TaskSummary = {
   assignedToUserId: string | null;
   assignedToName: string | null;
   createdAt: Date;
+  /** WMS-42: the type of equipment it asks for («Montacargas»). */
+  equipmentTypeName: string | null;
+  /** WMS-42: the equipment it is done with, «MC-01 · Montacargas 1». */
+  equipmentText: string | null;
 };
 
 export type TaskView = TaskSummary & {
@@ -2193,6 +2434,11 @@ export type TaskView = TaskSummary & {
   placedPath: string | null;
   /** PICK (WMS-25): the open wave of its order, if any. */
   wave: { id: string; numberText: string } | null;
+  /**
+   * WMS-42: the equipment in use went out of service or was retired: the
+   * load is not picked up with it (the person changes it).
+   */
+  equipmentStopped: boolean;
 };
 
 /** «mine»: what this person has; «available»: what anyone may take. */
@@ -2232,6 +2478,8 @@ const SUMMARY_SELECT = {
   fromLocation: LOCATION_NAMES,
   toLocation: LOCATION_NAMES,
   placedLocation: LOCATION_NAMES,
+  equipmentType: { select: { name: true } },
+  equipment: { select: { code: true, name: true } },
 } as const;
 
 type SummaryRow = {
@@ -2255,6 +2503,8 @@ type SummaryRow = {
   fromLocation: LocationNames;
   toLocation: LocationNames;
   placedLocation: LocationNames | null;
+  equipmentType: { name: string } | null;
+  equipment: { code: string; name: string } | null;
 };
 
 /** WMS-52: a put-away whose destination is its origin had no recommendation. */
@@ -2328,6 +2578,8 @@ const summaryOf = (
     ? (names.get(row.assignedToUserId) ?? null)
     : null,
   createdAt: row.createdAt,
+  equipmentTypeName: row.equipmentType?.name ?? null,
+  equipmentText: row.equipment ? equipmentLabel(row.equipment) : null,
 });
 
 export type TaskPage = {
@@ -2596,6 +2848,9 @@ export async function getTask(
       shortReason: true,
       product: { select: { name: true, sku: true, tracking: true } },
       toLocation: { select: { ...LOCATION_NAMES.select, code: true } },
+      equipment: {
+        select: { code: true, name: true, status: true, retiredAt: true },
+      },
       serials: {
         orderBy: { id: "asc" },
         take: 1_000,
@@ -2645,6 +2900,10 @@ export async function getTask(
     recommendedPath: recommendationOf(row) ? pathOf(row.toLocation) : null,
     recommendedCode: recommendationOf(row) ? row.toLocation.code : null,
     placedPath: row.placedLocation ? pathOf(row.placedLocation) : null,
+    equipmentStopped: row.equipment
+      ? row.equipment.status !== "IN_SERVICE" ||
+        row.equipment.retiredAt !== null
+      : false,
   };
 }
 
@@ -2670,4 +2929,37 @@ export async function listTaskPeople(
     .filter((_, index) => allowed[index])
     .map((member) => ({ id: member.userId, name: member.user.name }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+/**
+ * WMS-42: the equipment this person may choose to take a task that asks
+ * for a type (or to change the one in use): empty for a task that asks
+ * for none or that is outside their scope. Checked again when taking.
+ */
+export async function taskEquipmentChoices(
+  actor: InventoryActor,
+  taskId: string,
+): Promise<EquipmentChoice[]> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.task.execute",
+  );
+  const client = forOrganization(actor.organizationId);
+  const task = await client.warehouseTask.findFirst({
+    where: {
+      id: String(taskId ?? ""),
+      ...(await taskScope(client, actor.userId)),
+    },
+    select: {
+      equipmentTypeId: true,
+      fromLocation: { select: { facilityId: true } },
+    },
+  });
+  if (!task?.equipmentTypeId) return [];
+  return equipmentChoices(client, {
+    facilityId: task.fromLocation.facilityId,
+    typeId: task.equipmentTypeId,
+    userId: actor.userId,
+  });
 }
