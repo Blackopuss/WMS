@@ -55,9 +55,10 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <strong>Seguridad y accesos:</strong> dirección IP, tipo de
-                dispositivo y navegador, fecha de cada inicio de sesión, intentos
-                fallidos, bloqueos y la configuración de tu verificación en dos
-                pasos. No determinamos tu país a partir de la IP.
+                dispositivo y navegador, fecha de cada inicio de sesión,
+                intentos fallidos, bloqueos y la configuración de tu
+                verificación en dos pasos. No determinamos tu país a partir de
+                la IP.
               </li>
               <li>
                 <strong>PIN de terminal compartida:</strong> si tu empresa usa
@@ -114,9 +115,8 @@ export default function PrivacyPage() {
                 tarea), dentro de los almacenes y zonas que tengan asignados.
               </li>
               <li>
-                Al subirlas se les quitan los metadatos que traen (ubicación
-                GPS incluida), así que lo guardado no revela dónde se tomó la
-                foto.
+                Al subirlas se les quitan los metadatos que traen (ubicación GPS
+                incluida), así que lo guardado no revela dónde se tomó la foto.
               </li>
               <li>
                 Una foto que se sube y nunca se liga a un registro se borra
@@ -210,7 +210,10 @@ export default function PrivacyPage() {
                 esos fines, y con autoridades cuando la ley lo exija:
               </p>
               <ul>
-                <li>Hospedaje de la aplicación y la base de datos: el proveedor de servidores que contratemos.</li>
+                <li>
+                  Hospedaje de la aplicación y la base de datos: el proveedor de
+                  servidores que contratemos.
+                </li>
                 <li>
                   Almacenamiento de archivos (fotos y archivos importados): un
                   proveedor externo compatible con S3, Cloudflare R2.
@@ -258,8 +261,8 @@ export default function PrivacyPage() {
               <li>Bitácora de cambios sensibles que no se puede alterar.</li>
               <li>
                 Respaldos cifrados y revisiones de seguridad periódicas. Los
-                archivos se sirven siempre a través del sistema, con permiso
-                de quien los pide.
+                archivos se sirven siempre a través del sistema, con permiso de
+                quien los pide.
               </li>
               <li>
                 Los PIN de terminal compartida se guardan derivados y solo
