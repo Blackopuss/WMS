@@ -29,8 +29,8 @@ id de sesión para que reporten ahí**):
 | WMS-74 motor de procesos (ADR 0069) | — | `wms-74-motor-procesos` | **Cerrado y unido el 2026-11-16.** |
 | WMS-75 estado «En restauración» (ADR 0072) | — | `wms-75-en-restauracion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-28 órdenes de producción (ADR 0073) | — | `wms-28-ordenes-produccion` | **Cerrado y unido el 2026-11-16.** |
-| WMS-76 interbloqueo de `lockRows` con varios ids (ADR 0074) | (ver `list_sessions children:true`) | `wms-76-candados-varios-ids` | Abierto el 2026-11-16 al unirse WMS-28. **Corazón**, va antes de WMS-29: revisor independiente con pruebas `Promise.all`. |
-| WMS-28B solicitudes de producción (ADR 0075) | (ver `list_sessions children:true`) | `wms-28b-solicitudes-produccion` | Abierto el 2026-11-16 al unirse WMS-28 (no es corazón; toca permisos: lleva revisor). Migraciones desde `20261117090000`. |
+| WMS-76 interbloqueo de `lockRows` con varios ids (ADR 0074) | `session_01QMjUPUs2bD9T4LHx3KGrg9` | `wms-76-candados-varios-ids` | Abierto el 2026-11-16 al unirse WMS-28. **Corazón**, va antes de WMS-29: revisor independiente con pruebas `Promise.all`. |
+| WMS-28B solicitudes de producción (ADR 0075) | `session_01QMjUPV2Rdkrbb81NuhoPw8` | `wms-28b-solicitudes-produccion` | Abierto el 2026-11-16 al unirse WMS-28 (no es corazón; toca permisos: lleva revisor). Migraciones desde `20261117090000`. |
 | WMS-74B procesos en embarques (ADR 0071) | — | `wms-74b-procesos-embarques` | **Cerrado y unido el 2026-11-16.** |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
 
