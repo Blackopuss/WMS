@@ -9,7 +9,7 @@ export const RECEIPT_CONFIRMED_EVENT: WebhookEventType = {
   module: "purchasing",
   label: "Recepción confirmada",
   description:
-    "Al recibir mercancía de una orden de compra: lo que entró, a qué ubicación, si llegó dañado y cómo quedó la orden.",
+    "Al recibir mercancía de una orden de compra: lo que entró, a qué ubicación, si llegó dañado o quedó en inspección (`status`: AVAILABLE, DAMAGED o INSPECTION) y cómo quedó la orden.",
 };
 
 export const PURCHASING_WEBHOOK_EVENTS: readonly WebhookEventType[] = [

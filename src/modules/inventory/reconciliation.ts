@@ -117,8 +117,8 @@ async function reconcileHolds(
         lotKey: true,
         remaining: true,
         units: {
-          where: { releasedAt: null },
           select: {
+            releasedAt: true,
             serialUnit: { select: { locationId: true, status: true } },
           },
         },
@@ -143,7 +143,23 @@ async function reconcileHolds(
   for (const hold of holds) {
     const id = `${hold.productId}|${hold.locationId}|${hold.status}|${hold.lotKey}`;
     add(id, dec(hold.remaining.toString()));
-    const away = hold.units.filter(
+    // A hold by serial keeps exactly as many units as it has left.
+    const kept = hold.units.filter((unit) => unit.releasedAt === null);
+    if (
+      hold.units.length > 0 &&
+      !dec(hold.remaining.toString()).equals(kept.length)
+    ) {
+      drift.push({
+        productId: hold.productId,
+        locationId: hold.locationId,
+        status: hold.status,
+        lotId: hold.lotKey || null,
+        fromMovements: hold.remaining.toString(),
+        balance: String(kept.length),
+        source: "holds",
+      });
+    }
+    const away = kept.filter(
       (unit) =>
         unit.serialUnit.locationId !== hold.locationId ||
         unit.serialUnit.status !== hold.status,
@@ -154,8 +170,8 @@ async function reconcileHolds(
         locationId: hold.locationId,
         status: hold.status,
         lotId: hold.lotKey || null,
-        fromMovements: String(hold.units.length),
-        balance: String(hold.units.length - away),
+        fromMovements: String(kept.length),
+        balance: String(kept.length - away),
         source: "holds",
       });
     }

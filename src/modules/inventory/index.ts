@@ -65,6 +65,7 @@ export {
   type ReturnableStatus,
 } from "./return-exit";
 export {
+  HOLDABLE_STATUSES,
   heldStock,
   holdStock,
   releaseHold,

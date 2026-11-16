@@ -80,13 +80,15 @@ ALTER TABLE `stock_movement` ADD CONSTRAINT `stock_movement_disposal_reason_chec
     `type` <> 'DISPOSAL' OR (`reason` IS NOT NULL AND CHAR_LENGTH(TRIM(`reason`)) >= 3)
 );
 
--- Una retención es de existencias no disponibles, con su lote, entera al
--- nacer y nunca por debajo de cero.
+-- Una retención es de existencias no disponibles (ni en tránsito ni en
+-- recepción, que son de sus operaciones), con su lote, entera al nacer y
+-- nunca por debajo de cero.
 ALTER TABLE `stock_hold`
-  ADD CONSTRAINT `stock_hold_not_available` CHECK (`status` <> 'AVAILABLE'),
+  ADD CONSTRAINT `stock_hold_status` CHECK (`status` IN ('INSPECTION', 'QUARANTINE', 'DAMAGED', 'REJECTED', 'BLOCKED')),
   ADD CONSTRAINT `stock_hold_lot_key` CHECK (`lotKey` = COALESCE(`lotId`, '')),
   ADD CONSTRAINT `stock_hold_quantity` CHECK (`quantity` > 0 AND `remaining` >= 0 AND `remaining` <= `quantity`),
   ADD CONSTRAINT `stock_hold_closed` CHECK ((`state` = 'CLOSED') = (`remaining` = 0)),
+  ADD CONSTRAINT `stock_hold_closed_at` CHECK ((`state` = 'CLOSED') = (`closedAt` IS NOT NULL)),
   ADD CONSTRAINT `stock_hold_source_text` CHECK (CHAR_LENGTH(TRIM(`sourceText`)) >= 1);
 
 CREATE TRIGGER `stock_hold_insert_rules` BEFORE INSERT ON `stock_hold` FOR EACH ROW
@@ -125,11 +127,22 @@ END;
 CREATE TRIGGER `stock_hold_no_delete` BEFORE DELETE ON `stock_hold` FOR EACH ROW
   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'stock_hold cannot be deleted';
 
--- Una unidad retenida nace sin soltar y se suelta una sola vez.
+-- Una unidad retenida nace sin soltar, en una retención activa y del mismo
+-- producto, y se suelta una sola vez.
 CREATE TRIGGER `stock_hold_unit_insert_rules` BEFORE INSERT ON `stock_hold_unit` FOR EACH ROW
 BEGIN
   IF NEW.`releasedAt` IS NOT NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'stock_hold_unit starts held';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM `stock_hold` AS h
+    JOIN `serial_unit` AS u ON u.`organizationId` = h.`organizationId` AND u.`productId` = h.`productId`
+    WHERE h.`organizationId` = NEW.`organizationId`
+      AND h.`id` = NEW.`holdId`
+      AND h.`state` = 'ACTIVE'
+      AND u.`id` = NEW.`serialUnitId`
+  ) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'stock_hold_unit: an active hold of the same product';
   END IF;
 END;
 

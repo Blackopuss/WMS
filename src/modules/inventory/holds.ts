@@ -170,6 +170,20 @@ export async function holdProblem(
   return null;
 }
 
+/**
+ * States a document may hold (ADR 0068): never available (that is
+ * reserved), nor in transit or receiving, which belong to their own
+ * operations. Which locations a document may hold is for the caller to
+ * check (its scope), like any operation.
+ */
+export const HOLDABLE_STATUSES: readonly StockStatus[] = [
+  "INSPECTION",
+  "QUARANTINE",
+  "DAMAGED",
+  "REJECTED",
+  "BLOCKED",
+];
+
 export type HoldResult =
   { ok: true; holdId: string } | { ok: false; error: string };
 
@@ -190,8 +204,8 @@ export async function holdStock(
       unitIds?: readonly string[];
     },
 ): Promise<HoldResult> {
-  if (input.status === "AVAILABLE") {
-    throw new Error("Available stock is reserved, not held");
+  if (!HOLDABLE_STATUSES.includes(input.status)) {
+    throw new Error(`Stock in ${input.status} is not held`);
   }
   const quantity = dec(input.quantity.toString());
   if (!quantity.greaterThan(0)) {
@@ -286,7 +300,9 @@ export async function holdStock(
 /**
  * Lets go of part of a hold (what its document decided) or all of it
  * (`quantity` omitted: what remains), with the units that leave it.
- * Inside the document's transaction, after its locks. Closes it at 0.
+ * Inside the document's transaction, after its locks. Closes it at 0. A
+ * hold of units by serial lets go of part of it only naming exactly that
+ * many of its units still held.
  */
 export async function releaseHold(
   tx: Tx,
@@ -307,6 +323,20 @@ export async function releaseHold(
     throw new Error(`Hold ${holdId} cannot release ${quantity.toString()}`);
   }
   const left = remaining.minus(quantity);
+  const held = await tx.stockHoldUnit.findMany({
+    where: { holdId: hold.id, releasedAt: null },
+    select: { serialUnitId: true },
+  });
+  const named = [...new Set(release.unitIds ?? [])];
+  if (held.length > 0 && release.quantity !== undefined) {
+    const ids = new Set(held.map((unit) => unit.serialUnitId));
+    if (
+      !quantity.equals(named.length) ||
+      named.some((id) => !ids.has(id))
+    ) {
+      throw new Error(`Hold ${holdId} releases units by name`);
+    }
+  }
   const now = new Date();
   const updated = await tx.stockHold.updateMany({
     where: { id: hold.id, remaining: { gte: quantity.toString() } },
@@ -319,10 +349,10 @@ export async function releaseHold(
   const unitWhere =
     release.quantity === undefined
       ? { holdId: hold.id, releasedAt: null }
-      : release.unitIds && release.unitIds.length > 0
+      : named.length > 0
         ? {
             holdId: hold.id,
-            serialUnitId: { in: [...release.unitIds] },
+            serialUnitId: { in: named },
             releasedAt: null,
           }
         : null;
