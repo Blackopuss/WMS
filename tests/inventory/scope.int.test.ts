@@ -79,8 +79,10 @@ import {
   pickUpTask,
   reconcileStock,
   countAwaitingInspection,
+  countInRepair,
   disposeStock,
   listAwaitingInspection,
+  listInRepair,
   registerAdjustment,
   registerEntry,
   registerExit,
@@ -1911,6 +1913,61 @@ describe("PC-12: inspection and write-offs (WMS-30-0)", () => {
           status: "REJECTED",
           quantity: 1,
         },
+      }),
+    ).toBe(1);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: what is in restoration (WMS-75)", () => {
+  it("what is restored in A is neither listed, counted nor released from B", async () => {
+    const moved = await changeStockStatus(owner, {
+      productId,
+      locationId: shelfA,
+      from: "AVAILABLE",
+      to: "REPAIR",
+      quantity: "1",
+      reason: "Se repara",
+      idempotencyKey: key(),
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    expect(
+      (await listInRepair(owner)).items.some(
+        (item) => item.locationId === shelfA,
+      ),
+    ).toBe(true);
+    // From B, where nothing is in restoration, there is nothing.
+    expect(await countInRepair(limited)).toBe(0);
+    expect((await listInRepair(limited)).items).toEqual([]);
+    for (const to of ["AVAILABLE", "DAMAGED"] as const) {
+      await expect(
+        changeStockStatus(limited, {
+          productId,
+          locationId: shelfA,
+          from: "REPAIR",
+          to,
+          quantity: "1",
+          reason: "Restaurado",
+          idempotencyKey: key(),
+        }),
+      ).rejects.toMatchObject(OUTSIDE);
+    }
+    // Nor is stock of B sent to a restoration place of A.
+    await expect(
+      changeStockStatus(limited, {
+        productId,
+        locationId: shelfB,
+        toLocationId: shelfA,
+        from: "AVAILABLE",
+        to: "REPAIR",
+        quantity: "1",
+        reason: "Se repara",
+        idempotencyKey: key(),
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    expect(
+      await db.stockBalance.count({
+        where: { productId, locationId: shelfA, status: "REPAIR", quantity: 1 },
       }),
     ).toBe(1);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);

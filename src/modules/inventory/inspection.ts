@@ -12,6 +12,7 @@ import {
 import { forOrganization } from "@/server";
 
 import { heldStock } from "./holds";
+import { STOCK_STATUS_LABELS, type StockStatus } from "./stock-status";
 import {
   MOVEMENT_TYPE_LABELS,
   formatStock,
@@ -28,6 +29,9 @@ import {
  * never from «Cambiar estado».
  *
  * WMS-30B puts the inspector's tray on top of this same list.
+ *
+ * WMS-75 (ADR 0072): «En restauración» is the same list for REPAIR
+ * (`listInRepair`, `countInRepair`): one core, `listInStatus`.
  */
 
 export const INSPECTION_PAGE_SIZE = 25;
@@ -50,7 +54,7 @@ export type AwaitingInspectionItem = {
   heldBy: string | null;
   /** Whether part of it may be decided here («Cambiar estado»). */
   decidable: boolean;
-  /** «Recepción de compra · OC-0007»: the last entry into inspection. */
+  /** «Recepción de compra · OC-0007»: the last entry into that state. */
   origin: string | null;
   since: Date | null;
 };
@@ -65,14 +69,35 @@ export type AwaitingInspectionPage = {
 
 type Client = ReturnType<typeof forOrganization>;
 
-async function inspectionWhere(client: Client, userId: string) {
+/** «Recepción de compra · OC-0007», «Desde Dañado · DV-0003». */
+function originText(movement: {
+  type: keyof typeof MOVEMENT_TYPE_LABELS;
+  reference: string | null;
+  lines: { status: StockStatus }[];
+}): string {
+  const from = movement.lines[0]?.status;
+  const what =
+    movement.type === "STATUS_CHANGE" && from
+      ? `Desde ${STOCK_STATUS_LABELS[from]}`
+      : MOVEMENT_TYPE_LABELS[movement.type];
+  return [what, movement.reference].filter(Boolean).join(" · ");
+}
+
+/** The states that have a list of their own (derived, nothing stored). */
+type ListedStatus = "INSPECTION" | "REPAIR";
+
+async function statusWhere(
+  client: Client,
+  userId: string,
+  status: ListedStatus,
+) {
   const facility = await activeFacilityOf(client, userId);
   // WMS-20: someone limited to zones only sees what is in their own.
   const scoped = await locationScopeWhere(client, userId);
   return {
     facility,
     where: {
-      status: "INSPECTION" as const,
+      status,
       quantity: { gt: 0 },
       location: {
         facilityId: facility.id,
@@ -82,9 +107,9 @@ async function inspectionWhere(client: Client, userId: string) {
   };
 }
 
-/** How many balances wait for inspection (for the notice in Inicio). */
-export async function countAwaitingInspection(
+async function countInStatus(
   actor: InventoryActor,
+  status: ListedStatus,
 ): Promise<number> {
   await assertModulePermission(
     actor.organizationId,
@@ -92,14 +117,34 @@ export async function countAwaitingInspection(
     "inventory.stock.read",
   );
   const client = forOrganization(actor.organizationId);
-  const { where } = await inspectionWhere(client, actor.userId);
+  const { where } = await statusWhere(client, actor.userId, status);
   return client.stockBalance.count({ where });
 }
 
+/** How many balances wait for inspection (for the notice in Inicio). */
+export const countAwaitingInspection = (actor: InventoryActor) =>
+  countInStatus(actor, "INSPECTION");
+
+/** How many balances are in restoration (notice in Inventario, WMS-75). */
+export const countInRepair = (actor: InventoryActor) =>
+  countInStatus(actor, "REPAIR");
+
 /** What waits for inspection, a page at a time (oldest balance first). */
-export async function listAwaitingInspection(
+export const listAwaitingInspection = (
   actor: InventoryActor,
   options: { page?: number } = {},
+) => listInStatus(actor, "INSPECTION", options);
+
+/** What is in restoration, a page at a time (WMS-75, ADR 0072). */
+export const listInRepair = (
+  actor: InventoryActor,
+  options: { page?: number } = {},
+) => listInStatus(actor, "REPAIR", options);
+
+async function listInStatus(
+  actor: InventoryActor,
+  status: ListedStatus,
+  options: { page?: number },
 ): Promise<AwaitingInspectionPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -107,7 +152,7 @@ export async function listAwaitingInspection(
     "inventory.stock.read",
   );
   const client = forOrganization(actor.organizationId);
-  const { facility, where } = await inspectionWhere(client, actor.userId);
+  const { facility, where } = await statusWhere(client, actor.userId, status);
   const total = await client.stockBalance.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / INSPECTION_PAGE_SIZE));
   const requested = Number.isInteger(options.page) ? Number(options.page) : 1;
@@ -136,7 +181,7 @@ export async function listAwaitingInspection(
     const held = await heldStock(client, {
       productId: row.productId,
       locationId: row.locationId,
-      status: "INSPECTION",
+      status,
       lotId: row.lotId,
     });
     const entry = await client.stockMovementLine.findFirst({
@@ -144,13 +189,25 @@ export async function listAwaitingInspection(
         productId: row.productId,
         locationId: row.locationId,
         lotKey: row.lotId ?? "",
-        status: "INSPECTION",
+        status,
         direction: "IN",
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: {
         createdAt: true,
-        movement: { select: { type: true, reference: true } },
+        movement: {
+          select: {
+            type: true,
+            reference: true,
+            // A change of state says which state it came from.
+            lines: {
+              where: { direction: "OUT" },
+              orderBy: { lineNumber: "asc" },
+              take: 1,
+              select: { status: true },
+            },
+          },
+        },
       },
     });
     const heldQuantity = held.quantity.greaterThan(quantity)
@@ -172,11 +229,7 @@ export async function listAwaitingInspection(
         : null,
       heldBy: heldQuantity.greaterThan(0) ? held.firstText : null,
       decidable: quantity.greaterThan(heldQuantity),
-      origin: entry
-        ? [MOVEMENT_TYPE_LABELS[entry.movement.type], entry.movement.reference]
-            .filter(Boolean)
-            .join(" · ")
-        : null,
+      origin: entry ? originText(entry.movement) : null,
       since: entry?.createdAt ?? null,
     });
   }

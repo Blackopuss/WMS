@@ -43,8 +43,13 @@ export function canCustomerReturnTransition(
   return CUSTOMER_RETURN_TRANSITIONS[from].includes(to);
 }
 
-/** What a line of a return may end up as (WMS-17). */
-export const RETURN_OUTCOMES = ["AVAILABLE", "DAMAGED", "REJECTED"] as const;
+/** What a line of a return may end up as (WMS-17; restoration, WMS-75). */
+export const RETURN_OUTCOMES = [
+  "AVAILABLE",
+  "DAMAGED",
+  "REJECTED",
+  "REPAIR",
+] as const;
 export type ReturnOutcome = (typeof RETURN_OUTCOMES)[number];
 
 export function isReturnOutcome(value: unknown): value is ReturnOutcome {

@@ -31,6 +31,7 @@ import {
   countExpiringLots,
   containersVisible,
   countAwaitingInspection,
+  countInRepair,
   countUnplacedStock,
   formatStock,
   getInventoryValue,
@@ -183,6 +184,14 @@ export default async function InventarioPage({
     (access.allows("inventory.status.release") ||
       access.allows("inventory.status.change"))
       ? await countAwaitingInspection(actor)
+      : 0;
+  // WMS-75: what is being restored, for who decides it; only if any.
+  const repairCount =
+    !showArchived &&
+    access.can("inventory.stock.read") &&
+    (access.allows("inventory.status.release") ||
+      access.allows("inventory.status.change"))
+      ? await countInRepair(actor)
       : 0;
   // WMS-53: pallets and boxes, only for a company that uses them.
   const showContainers =
@@ -415,6 +424,19 @@ export default async function InventarioPage({
             {inspectingCount === 1
               ? "1 renglón por inspeccionar."
               : `${inspectingCount.toLocaleString("es-MX")} renglones por inspeccionar.`}
+          </span>
+          <span className="font-medium text-primary">Ver cuáles</span>
+        </Link>
+      )}
+      {repairCount > 0 && (
+        <Link
+          href="/inventario/en-restauracion"
+          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="flex-1">
+            {repairCount === 1
+              ? "1 renglón en restauración."
+              : `${repairCount.toLocaleString("es-MX")} renglones en restauración.`}
           </span>
           <span className="font-medium text-primary">Ver cuáles</span>
         </Link>

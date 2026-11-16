@@ -136,7 +136,8 @@ código»):
 | Movimientos | `movements.ts` | `registerEntry`, `registerExit`, `registerTransfer`, `registerAdjustment` (sobre el umbral, con la regla encendida, responde `pending_approval` y no escribe nada, WMS-41), `registerInitialBalance`, `reverseMovement`; historial (`listMovements`, `listRecentMovements`, `listMovementAuthors`); lecturas de saldo (`getStockByLocation`, `getStockTotals`, `listStockLocations`, `listProductsWithoutStock`); `findConfirmation` (verificación por clave) y `formatStock` |
 | Salida rápida | `quick-exit.ts` | `registerQuickExit`: varias líneas en un movimiento |
 | Existencias de un producto | `product-stock.ts`, `stock-status.ts` | `getProductStock` («hay», «disponible», apartado); estados del saldo y filtros `availableOfLot`, `AVAILABLE_ANY_LOT` |
-| Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo; lo que termina disponible en un lugar de paso crea su tarea de acomodo, WMS-30-0), `permissionForStatusChange` |
+| Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo; lo que termina disponible en un lugar de paso crea su tarea de acomodo, WMS-30-0), `permissionForStatusChange`, `MANUAL_STOCK_STATUSES` (con `REPAIR`, WMS-75) |
+| Restauración (WMS-75) | `repair-release.ts`, `inspection.ts` | Estado `REPAIR` («En restauración», no disponible); `repairReleaseProblem` (ajuste `inventory.repair.release`, leído en `writeStatusChange` y en la reversa de un cambio de estado); `listInRepair`/`countInRepair` (derivadas, mismo núcleo que «Por inspeccionar»). Uso de ubicación `REPAIR` («Restauración»), que como la cuarentena no admite disponible (ADR 0072) |
 | Inspección al recibir (WMS-30-0) | `inspection.ts` | `listAwaitingInspection` y `countAwaitingInspection` (derivadas: saldos en `INSPECTION` del almacén activo y del alcance, con su origen y lo retenido); la regla es `product.inspectOnReceipt` y la aplica `postReceiptEntry` |
 | Retención genérica (WMS-30-0) | `holds.ts` | `holdStock`, `releaseHold`, `releaseHoldsOf` (dentro de la transacción del documento, después de sus candados) y `heldStock` (la única lectura: suma `stock_hold` y lo que retienen las devoluciones de clientes); la usan «Cambiar estado» (`holdSource` en `writeStatusChange`), las reversas, «Desechar» y la devolución al proveedor. Para WMS-30B (ADR 0068) |
 | Desechar (WMS-30-0) | `disposal.ts` | `disposeStock` (de dañado o rechazado, con motivo, clave de confirmación, `repeated`), `findDisposalConfirmation`, `postDisposal` (núcleo dentro de una transacción ajena, para WMS-29 y WMS-30B; `allowedStatuses`, `holdSource`), `DISPOSABLE_STATUSES`. Movimiento `DISPOSAL` al costo promedio; no se reversa |
@@ -263,6 +264,7 @@ la transacción que decide:
 | `inventory.packing.mode` | **`off`**, `on` (verificar y empacar antes de despachar, WMS-15) |
 | `inventory.shipment.details` | **`optional`**, `required` (transportista y quién se lo lleva antes de confirmar la salida, WMS-16) |
 | `inventory.customer_return.without_order` | **`allow`**, `forbid` (devoluciones de clientes sin pedido, WMS-17) |
+| `inventory.repair.release` | **`direct`**, `inspection` (lo restaurado vuelve directo a disponible o pasa antes por inspección, WMS-75) |
 | `inventory.incident.photo` | **`optional`**, `required` (foto al reportar una incidencia, WMS-37) |
 | `inventory.labels.format` | **`letter_10`** (hoja carta, 10 por hoja), `100x50`, `100x150` (mm; WMS-26) |
 | `inventory.labels.codes` | **`both`** (barras y QR), `barcode`, `qr` (WMS-26) |
@@ -371,7 +373,8 @@ contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
-(inspección al recibir, desechar y retención genérica).
+(inspección al recibir, desechar y retención genérica), 0072 (estado «En
+restauración»).
 
 ## Pruebas
 
@@ -386,7 +389,9 @@ vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int
 `facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;
 inspección al recibir, desechar, PC-5 y retención genérica en
 `inspection-on-receipt.int.test.ts` (`reconcileStock` agrega `source:
-"holds"`: lo retenido nunca pasa del saldo). Casos de alcance en
+"holds"`: lo retenido nunca pasa del saldo); el estado «En restauración»
+(PC-5, permisos, ajuste, ubicación, lotes, series, retención) en
+`repair.int.test.ts`. Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara

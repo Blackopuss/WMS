@@ -13,6 +13,8 @@ export const STOCK_STATUSES = [
   "QUARANTINE",
   "DAMAGED",
   "REJECTED",
+  /** WMS-75 (ADR 0072): being repaired, refurbished or repacked. */
+  "REPAIR",
   "IN_TRANSIT",
   "BLOCKED",
 ] as const;
@@ -26,6 +28,7 @@ export const STOCK_STATUS_LABELS: Record<StockStatus, string> = {
   QUARANTINE: "En cuarentena",
   DAMAGED: "Dañado",
   REJECTED: "Rechazado",
+  REPAIR: "En restauración",
   IN_TRANSIT: "En tránsito",
   BLOCKED: "Bloqueado",
 };

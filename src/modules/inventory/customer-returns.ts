@@ -1249,7 +1249,7 @@ export type CustomerReturnDecisionInput = {
 };
 
 /**
- * «Disponible», «Dañado», «Rechazado»: decides part or all of what a line
+ * «Disponible», «Dañado», «Rechazado», «A restauración» (WMS-75): decides part or all of what a line
  * still has in inspection. A change of state out of inspection, tied to
  * the return (PC-5): the only way something returned becomes available.
  */
@@ -1293,7 +1293,9 @@ export async function decideCustomerReturn(
         reason:
           outcome === "DAMAGED"
             ? "Escribe qué daño tiene."
-            : "Escribe por qué se rechaza.",
+            : outcome === "REPAIR"
+              ? "Escribe qué hay que restaurar."
+              : "Escribe por qué se rechaza.",
       },
     };
   }
@@ -1584,6 +1586,7 @@ const OUTCOME_SENTENCE: Record<ReturnOutcome, string> = {
   AVAILABLE: "queda disponible",
   DAMAGED: "queda como dañado",
   REJECTED: "queda como rechazado",
+  REPAIR: "pasa a restauración",
 };
 
 /**

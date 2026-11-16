@@ -23,6 +23,8 @@ export const LOCATION_TYPES = [
   "STAGING",
   "QUARANTINE",
   "DOCK",
+  /** WMS-75 (ADR 0072): where things are restored; takes nothing available. */
+  "REPAIR",
 ] as const;
 export type LocationType = (typeof LOCATION_TYPES)[number];
 
@@ -33,6 +35,7 @@ export const LOCATION_TYPE_LABELS: Record<LocationType, string> = {
   STAGING: "Preparación",
   QUARANTINE: "Cuarentena",
   DOCK: "Andén",
+  REPAIR: "Restauración",
 };
 
 export function isLocationType(value: unknown): value is LocationType {

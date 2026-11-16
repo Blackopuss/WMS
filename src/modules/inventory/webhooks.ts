@@ -27,7 +27,7 @@ export const STOCK_STATUS_CHANGED_EVENT: WebhookEventType = {
   module: "inventory",
   label: "Cambio de estado de existencias",
   description:
-    "Al pasar existencias de un estado a otro (disponible, dañado, cuarentena…), también al decidir una devolución de cliente.",
+    "Al pasar existencias de un estado a otro (disponible, dañado, cuarentena, en restauración…), también al decidir una devolución de cliente.",
 };
 
 export const INVENTORY_WEBHOOK_EVENTS: readonly WebhookEventType[] = [

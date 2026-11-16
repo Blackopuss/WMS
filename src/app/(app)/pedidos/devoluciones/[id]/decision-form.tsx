@@ -44,7 +44,12 @@ export function DecisionForm({
   placeName: string;
   /** Where it may go; empty = the person may not move it. */
   places: { id: string; path: string }[];
-  outcomes: { available: boolean; damaged: boolean; rejected: boolean };
+  outcomes: {
+    available: boolean;
+    damaged: boolean;
+    rejected: boolean;
+    repair: boolean;
+  };
   idempotencyKey: string;
 }) {
   const router = useRouter();
@@ -153,7 +158,7 @@ export function DecisionForm({
       <FormField
         id={`${prefix}-reason`}
         label="Motivo"
-        hint="Obligatorio si está dañado o se rechaza."
+        hint="Obligatorio si está dañado, se rechaza o va a restauración."
         error={state.fieldErrors?.reason}
       >
         {(control) => (
@@ -225,6 +230,18 @@ export function DecisionForm({
             disabled={busy}
           >
             Rechazado
+          </Button>
+        )}
+        {outcomes.repair && (
+          <Button
+            type="submit"
+            name="outcome"
+            value="REPAIR"
+            variant="outline"
+            className="min-h-11"
+            disabled={busy}
+          >
+            A restauración
           </Button>
         )}
       </div>

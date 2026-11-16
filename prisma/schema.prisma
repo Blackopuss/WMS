@@ -323,6 +323,8 @@ enum LocationType {
   STAGING
   QUARANTINE
   DOCK
+  /// WMS-75 (ADR 0072): where things are restored; takes nothing available.
+  REPAIR
 }
 
 /// The levels of a warehouse (WMS-22A, ADR 0036): «Zona», «Pasillo»,
@@ -2613,6 +2615,9 @@ enum StockStatus {
   REJECTED
   IN_TRANSIT
   BLOCKED
+  /// WMS-75 (ADR 0072): being repaired, refurbished or repacked; not
+  /// available.
+  REPAIR
 }
 
 /// A lot of a product (WMS-21, ADR 0040): its code — normalized, unique

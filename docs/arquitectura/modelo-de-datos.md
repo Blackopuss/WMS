@@ -1524,7 +1524,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Plataforma › Almacenes y ubicaciones
 
-- `LocationType`: `STORAGE`, `PICKING`, `RECEIVING`, `STAGING`, `QUARANTINE`, `DOCK`.
+- `LocationType`: `STORAGE`, `PICKING`, `RECEIVING`, `STAGING`, `QUARANTINE`, `DOCK`, `REPAIR`.
 
 ## Plataforma › Catálogo de productos
 
@@ -1870,7 +1870,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`, `FACILITY_TRANSFER`, `DISPOSAL`.
 - `StockDirection`: `IN`, `OUT`.
-- `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`.
+- `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`, `REPAIR`.
 
 ## Inventario › Tarimas y contenedores
 

@@ -126,6 +126,12 @@ export class CapacityNotice extends Error {
   }
 }
 
+/** Uses of a location that take no available stock (WMS-22B, WMS-75). */
+const NO_AVAILABLE_TYPES: ReadonlySet<string> = new Set([
+  "QUARANTINE",
+  "REPAIR",
+]);
+
 type Node = {
   id: string;
   name: string;
@@ -268,12 +274,12 @@ export function restrictionProblem(
       ? `«${destination.name}» ${what}`
       : `«${destination.name}» está dentro de «${node.name}», que ${what}`;
 
-  // A quarantine place takes no available stock, wherever it comes from:
-  // not even a change of state done right there.
+  // A quarantine place (and a repair place, WMS-75) takes no available
+  // stock, wherever it comes from: not even a change of state done there.
   if (arrival.status === "AVAILABLE") {
-    const quarantine = chain.find((node) => node.type === "QUARANTINE");
-    if (quarantine) {
-      return `${where(quarantine, "es de cuarentena")}: solo recibe existencias que no están disponibles.`;
+    const closed = chain.find((node) => NO_AVAILABLE_TYPES.has(node.type));
+    if (closed) {
+      return `${where(closed, closed.type === "REPAIR" ? "es de restauración" : "es de cuarentena")}: solo recibe existencias que no están disponibles.`;
     }
   }
   // Products and categories: asked of every location it enters. What it
@@ -432,7 +438,7 @@ export async function checkPlacement(
       arrival.status === "AVAILABLE" &&
       rules
         .chainOf(arrival.toLocationId)
-        .some((node) => node.type === "QUARANTINE"),
+        .some((node) => NO_AVAILABLE_TYPES.has(node.type)),
   );
   const limited = policy.mode !== "skip" && rules.capacities.size > 0;
   // The usual case: nothing configured, nothing more to read.

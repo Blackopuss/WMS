@@ -44,6 +44,7 @@ const OUTCOME_VARIANT = {
   AVAILABLE: "default",
   DAMAGED: "destructive",
   REJECTED: "outline",
+  REPAIR: "outline",
 } as const;
 
 /**
@@ -102,10 +103,15 @@ export default async function DevolucionPage({
     available: active && access.allows("inventory.status.release"),
     damaged: active && access.allows("inventory.status.change"),
     rejected: active && access.allows("inventory.status.change"),
+    // WMS-75 (ADR 0072): the same permission as damaged or rejected.
+    repair: active && access.allows("inventory.status.change"),
   };
   const decides =
     view.status === "RECEIVED" &&
-    (outcomes.available || outcomes.damaged || outcomes.rejected);
+    (outcomes.available ||
+      outcomes.damaged ||
+      outcomes.rejected ||
+      outcomes.repair);
   const places =
     decides &&
     access.allows("inventory.transfer.create") &&
