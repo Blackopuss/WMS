@@ -240,6 +240,17 @@ describe("operation settings", () => {
       { key: PICKING_MODE.key, value: "orders", defaultValue: "orders" },
       // WMS-39B: the daily summary at 7:00; mail is up to each person.
       { key: DIGEST_HOUR.key, value: "7", defaultValue: "7" },
+      // WMS-42: equipment (shown on its own screen).
+      {
+        key: "inventory.equipment.maintenance_notice",
+        value: "7",
+        defaultValue: "7",
+      },
+      {
+        key: "inventory.equipment.on_broken_report",
+        value: "stop",
+        defaultValue: "stop",
+      },
       { key: "platform.notices.email", value: "on", defaultValue: "on" },
       // WMS-38: shared terminals (always visible; shown on their screen).
       { key: PIN_ROLES.key, value: "floor", defaultValue: "floor" },
@@ -269,6 +280,8 @@ describe("operation settings", () => {
       { key: ADJUSTMENT_APPROVAL_THRESHOLD.key, value: "any" },
       { key: PICKING_MODE.key, value: "orders" },
       { key: DIGEST_HOUR.key, value: "7" },
+      { key: "inventory.equipment.maintenance_notice", value: "7" },
+      { key: "inventory.equipment.on_broken_report", value: "stop" },
       { key: "platform.notices.email", value: "on" },
       { key: PIN_ROLES.key, value: "floor" },
       { key: PIN_LENGTH.key, value: "6" },

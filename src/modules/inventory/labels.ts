@@ -31,6 +31,7 @@ import type { InventoryActor } from "./movements";
 import { getOutboundOrder } from "./outbound-orders";
 import { formatOutboundNumber } from "./outbound-states";
 import { LABEL_CODES_SETTING, LABEL_FORMAT } from "./settings";
+import { getEquipment } from "./equipment";
 import { getShipment } from "./shipments";
 
 /**
@@ -57,6 +58,7 @@ export const LABEL_KINDS = [
   "bultos",
   "pedido",
   "embarque",
+  "equipo",
 ] as const;
 
 export type LabelKind = (typeof LABEL_KINDS)[number];
@@ -548,6 +550,25 @@ async function shipmentLabels(
   );
 }
 
+/** WMS-42: a piece of equipment, read as its card reads it. */
+async function equipmentLabels(
+  actor: InventoryActor,
+  request: LabelRequest,
+  copies: number,
+): Promise<LabelContent[] | LabelsResult> {
+  const id = idOf(request.id);
+  const equipment = id ? await getEquipment(actor, id) : null;
+  if (!equipment) return { ok: false, reason: "not_found" };
+  return repeat(
+    {
+      code: equipment.code,
+      title: equipment.name,
+      lines: [equipment.typeName, equipment.facilityName],
+    },
+    copies,
+  );
+}
+
 /** What a print was of, for the audit trail. */
 const KIND_NAMES: Record<LabelKind, string> = {
   ubicaciones: "Ubicaciones",
@@ -558,6 +579,7 @@ const KIND_NAMES: Record<LabelKind, string> = {
   bultos: "Bultos de un pedido",
   pedido: "Pedido",
   embarque: "Embarque",
+  equipo: "Equipo",
 };
 
 const FILE_NAMES: Record<LabelKind, string> = {
@@ -569,6 +591,7 @@ const FILE_NAMES: Record<LabelKind, string> = {
   bultos: "etiquetas-bultos",
   pedido: "etiqueta-pedido",
   embarque: "etiqueta-embarque",
+  equipo: "etiqueta-equipo",
 };
 
 /**
@@ -612,6 +635,9 @@ export async function buildLabels(
       break;
     case "embarque":
       made = await shipmentLabels(actor, request, copies);
+      break;
+    case "equipo":
+      made = await equipmentLabels(actor, request, copies);
       break;
     default:
       return { ok: false, reason: "not_found" };

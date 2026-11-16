@@ -611,6 +611,69 @@ export const DIGEST_HOUR = {
   defaultValue: "7",
 } as const satisfies SettingDefinition;
 
+/**
+ * How many days before its next maintenance a piece of equipment asks for
+ * attention (WMS-42, ADR 0065): the notice to who manages equipment and
+ * the count of Inicio. Shown on Configuración › Equipos del almacén.
+ */
+export const EQUIPMENT_MAINTENANCE_NOTICE = {
+  key: "inventory.equipment.maintenance_notice",
+  module: "inventory",
+  area: "Equipos",
+  label: "Avisar del mantenimiento de un equipo",
+  options: [
+    {
+      value: "3",
+      label: "3 días antes",
+      help: "Para mantenimientos que se resuelven en el día.",
+    },
+    { value: "7", label: "7 días antes", help: "Una semana para programarlo." },
+    {
+      value: "15",
+      label: "15 días antes",
+      help: "Para pedir el servicio con tiempo.",
+    },
+    {
+      value: "30",
+      label: "30 días antes",
+      help: "Para talleres con mucha espera.",
+    },
+  ],
+  defaultValue: "7",
+} as const satisfies SettingDefinition;
+
+/**
+ * What a report «Equipo descompuesto» that names a piece of equipment
+ * does (WMS-42, ADR 0065): «stop» leaves it out of service at once (the
+ * floor can stop a machine it thinks is unsafe; putting it back is of who
+ * manages equipment); «notify» only tells who attends incidents.
+ */
+export const EQUIPMENT_ON_BROKEN_REPORT = {
+  key: "inventory.equipment.on_broken_report",
+  module: "inventory",
+  area: "Equipos",
+  label: "Cuando alguien reporta un equipo descompuesto",
+  options: [
+    {
+      value: "stop",
+      label: "Queda fuera de servicio",
+      help: "Nadie lo vuelve a tomar hasta que quien administra los equipos lo revise.",
+    },
+    {
+      value: "notify",
+      label: "Solo se avisa",
+      help: "Sigue en servicio; quien atiende las incidencias decide.",
+    },
+  ],
+  defaultValue: "stop",
+} as const satisfies SettingDefinition;
+
+/** The settings of equipment: on their screen, not in Operación. */
+export const EQUIPMENT_SETTINGS: readonly SettingDefinition[] = [
+  EQUIPMENT_MAINTENANCE_NOTICE,
+  EQUIPMENT_ON_BROKEN_REPORT,
+];
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -634,4 +697,5 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   ADJUSTMENT_APPROVAL_THRESHOLD,
   PICKING_MODE,
   DIGEST_HOUR,
+  ...EQUIPMENT_SETTINGS,
 ];

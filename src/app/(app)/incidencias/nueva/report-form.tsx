@@ -9,7 +9,13 @@ import { Input } from "@/components/ui/input";
 
 import { reportIncidentAction, type ReportState } from "../actions";
 
-const FIELDS = ["kind", "description", "location", "product"] as const;
+const FIELDS = [
+  "kind",
+  "description",
+  "location",
+  "product",
+  "equipment",
+] as const;
 
 const areaClass =
   "w-full min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30";
@@ -24,16 +30,25 @@ export function ReportForm({
   taskId,
   orderId,
   kinds,
+  withEquipment,
 }: {
   idempotencyKey: string;
   taskId: string | null;
   orderId: string | null;
   kinds: { value: string; label: string }[];
+  /** WMS-42: the warehouse has equipment, so the report may name one. */
+  withEquipment: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     reportIncidentAction.bind(null, { taskId, orderId }),
     {
-      values: { kind: "", description: "", location: "", product: "" },
+      values: {
+        kind: "",
+        description: "",
+        location: "",
+        product: "",
+        equipment: "",
+      },
       answers: 0,
     } satisfies ReportState,
   );
@@ -166,6 +181,29 @@ export function ReportForm({
           </div>
         )}
       </FormField>
+      {withEquipment && (
+        <FormField
+          id="equipment"
+          label="¿Qué equipo? (opcional)"
+          hint="Escanea la etiqueta del equipo o escribe su código."
+          error={errors.equipment}
+        >
+          {(control) => (
+            <div className="flex gap-2">
+              <Input
+                {...control}
+                name="equipment"
+                defaultValue={state.values.equipment}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={40}
+              />
+              <CameraScanButton target="equipment" title="Escanear el equipo" />
+            </div>
+          )}
+        </FormField>
+      )}
       {/* WMS-37 will add photos here. */}
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "Enviando…" : "Reportar"}

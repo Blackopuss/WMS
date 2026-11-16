@@ -22,6 +22,7 @@ import {
   lotSourceChoices,
   listStockLocations,
   listTaskPeople,
+  equipmentTypesForTasks,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { getProduct, getUnit, listProducts } from "@/platform/catalog";
@@ -206,10 +207,12 @@ export default async function NuevaTareaPage({
       </PageContainer>
     );
   }
-  const [locations, stock, people] = await Promise.all([
+  const [locations, stock, people, equipmentTypes] = await Promise.all([
     listStockLocations(actor),
     getStockByLocation(actor, product.id),
     listTaskPeople(actor),
+    // WMS-42: only when the warehouse has equipment.
+    equipmentTypesForTasks(actor),
   ]);
   const holding = (id: string) =>
     formatStock(stock[id] ?? "0", product.unitCode);
@@ -272,6 +275,10 @@ export default async function NuevaTareaPage({
         people={people.map((person) => ({
           id: person.id,
           label: person.name,
+        }))}
+        equipmentTypes={equipmentTypes.map((type) => ({
+          id: type.id,
+          label: type.name,
         }))}
       />
     </PageContainer>

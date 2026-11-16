@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components";
+import { EQUIPMENT_SETTINGS } from "@/modules/inventory";
 import { approvalTypes, operationSettings } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { listLocations } from "@/platform/locations";
@@ -48,13 +49,15 @@ export default async function OperacionPage() {
       (type.settings ?? []).map((setting) => setting.key),
     ),
   );
-  // WMS-38: the settings of shared terminals live on their screen.
+  // WMS-38: the settings of shared terminals live on their screen, and
+  // WMS-42 those of equipment on theirs.
   const settings = (
     await getOperationSettings(actor, operationSettings)
   ).filter(
     (setting) =>
       !withRules.has(setting.key) &&
-      !TERMINAL_SETTINGS.some((each) => each.key === setting.key),
+      !TERMINAL_SETTINGS.some((each) => each.key === setting.key) &&
+      !EQUIPMENT_SETTINGS.some((each) => each.key === setting.key),
   );
   const inventory =
     access.hasModule("inventory") && access.allows("inventory.location.update");
