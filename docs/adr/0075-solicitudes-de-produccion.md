@@ -71,6 +71,16 @@ propuesta no decía.
    del mismo producto («Ya pediste … espera la respuesta»); se comprueba
    bajo el candado de su membresía, así dos envíos a la vez no pasan los
    dos.
+   **Lo que «Queda poco» revela** (revisión): a quien tiene alcance
+   limitado le dice, en sí o no y sin cantidades, que un producto de su
+   área está cerca del mínimo **de toda la empresa** (el mínimo es de toda
+   la empresa, INV-30). Es lo que pide la condición 3 y es menos que lo
+   que WMS-20 protege (cantidades, ubicaciones y almacenes de fuera del
+   alcance). La lista se busca en la base por páginas de 1,000 productos
+   (solo activos, con mínimo y con receta vigente de un área de su alcance
+   o sin área), en orden de nombre, hasta juntar 50; ningún corte deja
+   fuera productos sin decirlo: si hay más de 50, la pantalla dice «Se
+   muestran los primeros 50».
 5. **Quién decide** (decidido, P7 posterior y P7c):
    `production.request.decide` (titular, Administración, Almacén, Supervisor
    de almacén y Encargado de producción) **y** alcanzar el área de la
@@ -96,7 +106,9 @@ propuesta no decía.
    existencia), pero el disponible al lado es solo el de su alcance, y así
    lo dice la pantalla.
 7. **Aceptar** (puede cambiar cantidad, día compromiso y a quién se
-   asigna; por omisión quien pidió): en la **misma transacción** nace la
+   asigna; por omisión quien pidió; **quien no tiene a la vez
+   `production.order.create` y `production.order.release` acepta como
+   mucho lo pedido**, ver abajo): en la **misma transacción** nace la
    orden de producción **a nombre de quien aceptó** (`createdByUserId`), con
    la solicitud de la que nació (`production_order.requestId`), y **queda
    liberada** (aparta materiales con el mismo núcleo de «Liberar orden»).
@@ -140,9 +152,13 @@ motivo, quién y cuándo pidió nunca cambian.
 - `production_order.requestId` (opcional, único por empresa, llave
   compuesta a la solicitud): la solicitud de la que nació la orden. **Una
   solicitud da como mucho una orden** (índice único) y la base exige que la
-  solicitud esté aceptada y sea del mismo producto y almacén (disparador al
-  insertar); la columna nunca cambia (disparador aparte, sin tocar el de
-  transiciones de WMS-28). **Quién aprobó** es quien decidió la solicitud
+  solicitud esté aceptada y sea del mismo producto, almacén y área
+  (disparador al insertar; el área se agregó en la migración
+  `20261117090100` tras la revisión); la columna nunca cambia (disparador
+  aparte, sin tocar el de transiciones de WMS-28). **Que una solicitud
+  aceptada tenga su orden es garantía del servicio**, no de la base: con
+  SQL directo puede quedar una solicitud `ACCEPTED` sin orden (aceptar las
+  escribe juntas en una transacción). **Quién aprobó** es quien decidió la solicitud
   (`production_request.decidedByUserId`), que además es el autor de la
   orden; **quién ejecutó** saldrá de los reportes (WMS-29).
 
@@ -166,6 +182,18 @@ motivo, quién y cuándo pidió nunca cambian.
 - Para el Encargado y Administración, aceptar no exige además sus permisos
   de órdenes: decidir la solicitud es lo que los habilita (es el mismo
   efecto para todos los que deciden).
+- **Tope de lo aceptado (decisión de quien coordina tras la revisión; el
+  fundador puede cambiarla):** quien acepta sin tener a la vez
+  `production.order.create` y `production.order.release` (Almacén, el
+  Supervisor de almacén) puede aceptar lo pedido **o menos**, nunca más,
+  en cualquier modo (liberada, con lo que hay o en borrador). Sin ese tope,
+  Almacén podía aceptar una solicitud de 1 como una orden de 100,000 que
+  apartaba todo el material libre y que después no podía cancelar. Quien
+  sí tiene los dos permisos cambia la cantidad libremente: podría crear
+  esa orden a mano. El tope se comprueba en el servidor, después de tomar
+  la solicitud y con la regla de cantidad vigente del producto (lo que no
+  se entiende se rechaza, nunca se salta), y la pantalla lo dice junto a
+  la cantidad.
 
 ## Candados
 
@@ -173,8 +201,15 @@ Orden global de ADR 0073: productos → ubicaciones → documento → contenedor
 → tareas → capacidad → progreso. **Una operación que bloquea productos
 nunca toma el almacén antes que ellos.**
 
-- **Pedir:** membresía de quien pide (`lockRows(tx, "membership", …)`, como
-  las fotos pendientes) → lecturas → solicitud nueva → aviso. No bloquea
+- **Pedir:** lecturas sin candado (las tres condiciones) → **la solicitud
+  nueva**, cuya llave foránea toma la empresa en compartido → la
+  membresía de quien pide (`lockRows(tx, "membership", …)`) → otra vez
+  «sigue activa», «nada a su nombre» y «no tiene otra por atender del
+  mismo producto» → aviso; si algo falla, la fila se revierte. Es el
+  orden empresa → membresía de un cambio de equipo (`withTeamChange`) y de
+  las fotos pendientes (`files.ts`). La primera versión bloqueaba la
+  membresía antes de insertar y se interbloqueaba con desactivar a quien
+  pide (revisión, reproducido; prueba «never deadlocks»). No bloquea
   productos ni el almacén: no aparta nada.
 - **Aceptar:** lee la solicitud y la receta vigente sin candado; bloquea
   los productos de los materiales (ordenados) → **la solicitud**, con una
@@ -199,6 +234,12 @@ nunca toma el almacén antes que ellos.**
   listas filtran por el almacén activo y `locationScopeWhere`.
 - Al pedir, el área sale del alcance de quien pide (condición 2); al
   decidir, del de quien decide.
+- **Si el área deja de servir** (cambia de uso o se archiva) mientras la
+  solicitud espera, no se impide ese cambio (las solicitudes no apartan
+  nada ni cuentan en `refuseOpenProductionOrders`, lo más simple): la ficha
+  lo dice («… ya no es un área de producción: esta solicitud solo se puede
+  rechazar») y ofrece solo «Rechazar»; aceptar la rechaza el servicio al
+  crear la orden.
 - Aceptar libera la orden **apartando solo de lo que alcanza quien acepta**
   (la regla de ADR 0073). La pantalla de decisión calcula con lo mismo.
 
@@ -273,6 +314,10 @@ Nada se cancela.
 7. Si la orden no se puede liberar por algo distinto de un faltante, no se
    acepta y se ofrece «Aceptar como borrador».
 8. Decidir se puede desde una terminal con PIN.
+9. Quien acepta sin poder crear y liberar órdenes acepta como mucho lo
+   pedido (decisión de quien coordina, revisión).
+10. Un área que deja de servir no se bloquea por solicitudes por atender:
+    esas solo se rechazan.
 
 ## Fuera de este paso
 

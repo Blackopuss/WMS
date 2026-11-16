@@ -291,6 +291,12 @@ export default async function TareasPage({
               </li>
             ))}
           </ul>
+          {lowStock?.ok && lowStock.more && (
+            <p className="border-t p-4 text-sm text-muted-foreground sm:px-5">
+              Se muestran los primeros {toAsk.length}; hay más productos por
+              acabarse.
+            </p>
+          )}
         </section>
       )}
 

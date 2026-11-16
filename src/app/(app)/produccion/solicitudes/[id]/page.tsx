@@ -270,7 +270,13 @@ export default async function SolicitudProduccionPage({
             </section>
           )}
 
-          {decision.materials !== null && (
+          {decision.areaProblem && (
+            <section className="max-w-3xl space-y-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm sm:px-5">
+              <p role="status">{decision.areaProblem}</p>
+              <RejectRequest requestId={request.id} />
+            </section>
+          )}
+          {decision.materials !== null && !decision.areaProblem && (
             <section
               aria-labelledby="decidir"
               className="max-w-3xl space-y-4 rounded-xl border bg-card p-4 sm:px-5"
@@ -288,11 +294,16 @@ export default async function SolicitudProduccionPage({
                 unitName={getUnit(request.unitCode).plural}
                 people={decision.people}
                 requestedByUserId={request.requestedByUserId}
+                capText={
+                  decision.capped
+                    ? `Puedes aceptar hasta ${request.quantityText} o menos.`
+                    : null
+                }
               />
               <RejectRequest requestId={request.id} />
             </section>
           )}
-          {decision.materials === null && (
+          {decision.materials === null && !decision.areaProblem && (
             <RejectRequest requestId={request.id} />
           )}
         </>

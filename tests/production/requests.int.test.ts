@@ -37,7 +37,8 @@ import type { Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import { invalidateEntitlements } from "@/platform/entitlements";
-import { createLocation } from "@/platform/locations";
+import { disableMember } from "@/platform/authorization";
+import { createLocation, editLocation } from "@/platform/locations";
 import {
   publishProcess,
   saveProcessDraft,
@@ -313,6 +314,7 @@ describe("what may be asked", () => {
     const list = await listRequestableProducts(w.operator);
     expect(list).toEqual({
       ok: true,
+      more: false,
       items: [
         {
           id: w.crate,
@@ -331,6 +333,7 @@ describe("what may be asked", () => {
       "unitCode",
     ]);
     expect(JSON.stringify(list)).not.toMatch(/\d+ piezas|Rack|stock|cantidad/i);
+    expect(list.more).toBe(false);
   });
 
   it("follows the margin of the company (0, 10, 25, 50)", async () => {
@@ -1176,5 +1179,125 @@ describe("the database", () => {
     } finally {
       await sql.end();
     }
+  });
+});
+
+describe("review of WMS-28B", () => {
+  it("asking while the titular disables who asks never deadlocks (company → membership)", async () => {
+    for (let round = 0; round < 2; round++) {
+      const w = await workshop();
+      // Another connection holds the area so the request waits inside its
+      // transaction while the team change starts.
+      const sql = await migratorConnection();
+      try {
+        await sql.query("START TRANSACTION");
+        await sql.query("SELECT id FROM location WHERE id = ? FOR UPDATE", [
+          w.area,
+        ]);
+        const asking = submitProductionRequest(w.operator, {
+          productId: w.crate,
+          quantity: "5",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const disabling = disableMember(
+          w.owner.organizationId,
+          w.owner.userId,
+          {
+            userId: w.operator.userId,
+          },
+        );
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await sql.query("COMMIT");
+        const [asked, disabled] = await Promise.all([asking, disabling]);
+        expect(disabled).toEqual({ ok: true });
+        // Either it went in before the change, or it saw the person out.
+        if (!asked.ok) {
+          expect(asked).toMatchObject({ reason: "not_allowed" });
+        }
+      } finally {
+        await sql.end();
+      }
+    }
+  });
+
+  it("who decides without permissions over orders accepts at most what was asked", async () => {
+    const w = await workshop();
+    const id = await ask(w.operator, w.crate, "5");
+    for (const mode of ["take", "draft", "release"] as const) {
+      expect(
+        await acceptProductionRequest(w.warehouse, id, {
+          quantity: "100000",
+          mode,
+        }),
+        mode,
+      ).toMatchObject({
+        ok: false,
+        reason: "invalid",
+        fieldErrors: { quantity: expect.stringContaining("5 piezas") },
+      });
+    }
+    expect(
+      (await getProductionRequest(w.warehouse, id))?.decision,
+    ).toMatchObject({ capped: true });
+    expect(
+      await acceptProductionRequest(w.warehouse, id, { quantity: "3" }),
+    ).toMatchObject({ ok: true });
+    expect(
+      (
+        await db.productionOrder.findFirstOrThrow({ where: { requestId: id } })
+      ).quantity.toString(),
+    ).toBe("3");
+    // Who may create and release orders changes it freely.
+    const other = await member(w.owner.organizationId, ["production_operator"]);
+    const second = await ask(other, w.crate, "1");
+    expect(
+      (await getProductionRequest(w.encargado, second))?.decision,
+    ).toMatchObject({ capped: false });
+    expect(
+      await acceptProductionRequest(w.encargado, second, { quantity: "8" }),
+    ).toMatchObject({ ok: true });
+    await balanced(w.owner.organizationId);
+  });
+
+  it("an order born of a request keeps its area (trigger)", async () => {
+    const w = await workshop();
+    const id = await ask(w.operator, w.crate, "1");
+    const accepted = await acceptProductionRequest(w.encargado, id, {
+      mode: "draft",
+    });
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted));
+    const other = await place(w.owner, "Otra línea", { type: "PRODUCTION" });
+    const sql = await migratorConnection();
+    try {
+      await expect(
+        sql.query(
+          `INSERT INTO production_order (id, organizationId, number, facilityId, areaLocationId, productId, recipeVersionId, quantity, unitCode, priority, status, createdByUserId, updatedAt, requestId)
+           SELECT ?, organizationId, number + 100, facilityId, ?, productId, recipeVersionId, quantity, unitCode, priority, 'DRAFT', createdByUserId, NOW(3), requestId
+           FROM production_order WHERE id = ?`,
+          [newId(), other, accepted.orderId],
+        ),
+      ).rejects.toThrow(/accepted request of its product, warehouse and area/);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("when the area stops being a production area, the request is only rejected", async () => {
+    const w = await workshop();
+    const id = await ask(w.operator, w.crate, "5");
+    expect(
+      await editLocation(w.owner, w.area, { type: "STORAGE" }),
+    ).toMatchObject({ ok: true });
+    expect(
+      (await getProductionRequest(w.encargado, id))?.decision,
+    ).toMatchObject({
+      areaProblem: expect.stringContaining("solo se puede rechazar"),
+    });
+    expect(await acceptProductionRequest(w.encargado, id)).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await rejectProductionRequest(w.encargado, id, "El área ya no produce"),
+    ).toMatchObject({ ok: true });
   });
 });

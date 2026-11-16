@@ -58,10 +58,13 @@ export function AcceptRequest({
   unitName,
   people,
   requestedByUserId,
+  capText,
 }: {
   requestId: string;
   quantity: string;
   unitName: string;
+  /** Who may not create orders accepts at most what was asked: says so. */
+  capText: string | null;
   people: { id: string; name: string }[];
   requestedByUserId: string;
 }) {
@@ -90,6 +93,7 @@ export function AcceptRequest({
         <Label htmlFor="accept-quantity">Cuánto ({unitName})</Label>
         <Input
           id="accept-quantity"
+          aria-describedby={capText ? "accept-quantity-help" : undefined}
           inputMode="decimal"
           autoComplete="off"
           maxLength={20}
@@ -98,6 +102,14 @@ export function AcceptRequest({
             setValues((now) => ({ ...now, quantity: event.target.value }))
           }
         />
+        {capText && (
+          <p
+            id="accept-quantity-help"
+            className="text-sm text-muted-foreground"
+          >
+            {capText}
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="accept-due">Para cuándo (opcional)</Label>

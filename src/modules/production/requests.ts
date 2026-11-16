@@ -95,6 +95,8 @@ type Client = ReturnType<typeof forOrganization>;
 export const PRODUCTION_REQUEST_PAGE_SIZE = 25;
 /** At most this many products are offered in «Queda poco». */
 export const REQUESTABLE_MAX = 50;
+/** Products read at a time while looking for what may be asked. */
+const REQUESTABLE_PAGE = 1_000;
 /** Open requests of the same product shown to who decides. */
 const OTHER_REQUESTS_MAX = 10;
 /** Big enough to read everything free of a material. */
@@ -282,47 +284,58 @@ async function requestable(
   facilityId: string,
   margin: string,
   onlyProductId?: string,
+  /** Stops after finding one more than this (to say there are more). */
+  limit = REQUESTABLE_MAX,
 ): Promise<Candidate[]> {
   const areas = await areasInReach(client, userId, facilityId);
   if (areas.length === 0) return [];
   const byId = new Map(areas.map((area) => [area.id, area]));
-  const products = await client.product.findMany({
-    where: {
-      ...(onlyProductId ? { id: onlyProductId } : {}),
-      status: "ACTIVE",
-      recipe: { versions: { some: { status: "ACTIVE" } } },
-    },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-    take: 5_000,
-    select: {
-      id: true,
-      name: true,
-      unitCode: true,
-      quantityStep: true,
-      recipe: { select: { areaLocationId: true } },
-    },
-  });
-  const inArea = products.flatMap((product) => {
-    const own = product.recipe?.areaLocationId ?? null;
-    const reach = own ? (byId.has(own) ? [byId.get(own)!] : []) : areas;
-    return reach.length === 0
-      ? []
-      : [
-          {
-            id: product.id,
-            name: product.name,
-            unitCode: product.unitCode,
-            quantityStep: product.quantityStep.toString(),
-            areas: reach,
-          },
-        ];
-  });
-  const near = await productsNearMinimum(
-    client,
-    inArea.map((product) => product.id),
-    margin,
-  );
-  return inArea.filter((product) => near.has(product.id));
+  const ids = [...byId.keys()];
+  const found: Candidate[] = [];
+  // Read in name order, a page at a time, only products with a minimum and
+  // a recipe of an area in reach (or without area), until `limit` are
+  // close to their minimum: nothing is left out by a cut.
+  for (let skip = 0; ; skip += REQUESTABLE_PAGE) {
+    const products = await client.product.findMany({
+      where: {
+        ...(onlyProductId ? { id: onlyProductId } : {}),
+        status: "ACTIVE",
+        minimum: { isNot: null },
+        recipe: {
+          versions: { some: { status: "ACTIVE" } },
+          OR: [{ areaLocationId: null }, { areaLocationId: { in: ids } }],
+        },
+      },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      skip,
+      take: REQUESTABLE_PAGE,
+      select: {
+        id: true,
+        name: true,
+        unitCode: true,
+        quantityStep: true,
+        recipe: { select: { areaLocationId: true } },
+      },
+    });
+    const near = await productsNearMinimum(
+      client,
+      products.map((product) => product.id),
+      margin,
+    );
+    for (const product of products) {
+      if (!near.has(product.id)) continue;
+      const own = product.recipe?.areaLocationId ?? null;
+      found.push({
+        id: product.id,
+        name: product.name,
+        unitCode: product.unitCode,
+        quantityStep: product.quantityStep.toString(),
+        areas: own ? [byId.get(own)!] : areas,
+      });
+      if (found.length > limit) return found;
+    }
+    if (products.length < REQUESTABLE_PAGE) return found;
+  }
 }
 
 export type RequestableProduct = {
@@ -339,7 +352,12 @@ export type RequestableProduct = {
 };
 
 export type RequestableProducts =
-  | { ok: true; items: RequestableProduct[] }
+  | {
+      ok: true;
+      items: RequestableProduct[];
+      /** There are more than REQUESTABLE_MAX: the screen says so. */
+      more: boolean;
+    }
   | { ok: false; reason: "busy"; message: string };
 
 /**
@@ -371,6 +389,7 @@ export async function listRequestableProducts(
   );
   return {
     ok: true,
+    more: items.length > REQUESTABLE_MAX,
     items: items.slice(0, REQUESTABLE_MAX).map((item) => ({
       id: item.id,
       name: item.name,
@@ -434,13 +453,7 @@ export async function submitProductionRequest(
     userId,
   );
   return inRequest(organizationId, async (tx) => {
-    // Two requests of the same person at once go one after the other.
-    const membership = await tx.membership.findFirst({
-      where: { userId, status: "ACTIVE" },
-      select: { id: true },
-    });
-    if (!membership) return stop("not_allowed", "Ya no eres parte del equipo.");
-    await lockRows(tx, "membership", [membership.id]);
+    // Checked here once without locks and again after the lock below.
     const busy = await assignedWork(tx, userId);
     if (busy) return stop("busy", busy);
     const margin = await readSetting(tx, LOW_MARGIN);
@@ -474,21 +487,6 @@ export async function submitProductionRequest(
       data.quantity,
     );
     if (!quantity.ok) return stop("invalid", quantity.error, "quantity");
-    const open = await tx.productionRequest.findFirst({
-      where: {
-        requestedByUserId: userId,
-        productId: product.id,
-        status: "SUBMITTED",
-      },
-      select: { number: true },
-    });
-    if (open) {
-      return stop(
-        "not_allowed",
-        `Ya pediste ${product.name} (${formatProductionRequestNumber(open.number)}): espera la respuesta.`,
-        "productId",
-      );
-    }
     const last = await tx.productionRequest.findFirst({
       orderBy: { number: "desc" },
       select: { number: true },
@@ -510,6 +508,45 @@ export async function submitProductionRequest(
         requestedByUserId: userId,
       },
     });
+    // Locks: the row is written first — its key to the company takes a
+    // shared lock on the company, as every insert does — and then the
+    // person's membership is locked, so two requests of the same person go
+    // one after the other. Company → membership is the order of a change of
+    // the team (`withTeamChange`) and of pending photos (files.ts): taking
+    // the membership first deadlocked with disabling the person (review of
+    // WMS-28B). Whatever fails from here rolls the row back.
+    const membership = await tx.membership.findFirst({
+      where: { userId },
+      select: { id: true },
+    });
+    if (membership) await lockRows(tx, "membership", [membership.id]);
+    const member = membership
+      ? await tx.membership.findFirst({
+          where: { id: membership.id },
+          select: { status: true },
+        })
+      : null;
+    if (member?.status !== "ACTIVE") {
+      return stop("not_allowed", "Ya no eres parte del equipo.");
+    }
+    const stillBusy = await assignedWork(tx, userId);
+    if (stillBusy) return stop("busy", stillBusy);
+    const open = await tx.productionRequest.findFirst({
+      where: {
+        requestedByUserId: userId,
+        productId: product.id,
+        status: "SUBMITTED",
+        id: { not: id },
+      },
+      select: { number: true },
+    });
+    if (open) {
+      return stop(
+        "not_allowed",
+        `Ya pediste ${product.name} (${formatProductionRequestNumber(open.number)}): espera la respuesta.`,
+        "productId",
+      );
+    }
     const quantityText = formatStock(
       quantity.quantity.toString(),
       product.unitCode,
@@ -806,11 +843,15 @@ export async function acceptProductionRequest(
   }
   // Who may not cancel orders accepted it: the Encargado and Administración
   // hear about the order (P7d).
-  const managesOrders = await isAllowed(
-    organizationId,
-    userId,
-    "production.order.cancel",
-  );
+  const [managesOrders, mayCreate, mayRelease] = await Promise.all([
+    isAllowed(organizationId, userId, "production.order.cancel"),
+    isAllowed(organizationId, userId, "production.order.create"),
+    isAllowed(organizationId, userId, "production.order.release"),
+  ]);
+  // Deciding does not give power over orders (review of WMS-28B): who
+  // could not create and release this order by hand accepts at most what
+  // was asked.
+  const capped = !(mayCreate && mayRelease);
   return inRequest(organizationId, async (tx) => {
     // Products → request → warehouse (shared) → order → progress.
     await lockRows(tx, "product", productIds);
@@ -818,6 +859,40 @@ export async function acceptProductionRequest(
     const claimed = await claim(tx, actor, row, "ACCEPTED");
     if (!claimed.done) return claimed.result;
     const numberText = formatProductionRequestNumber(row.number);
+    if (capped) {
+      // With the rule of the product today, the same one the order uses:
+      // what does not parse is refused here, never skipped.
+      const item = await tx.product.findFirst({
+        where: { id: row.productId },
+        select: { unitCode: true, quantityStep: true },
+      });
+      const typed = item
+        ? parseQuantity(
+            {
+              unitCode: item.unitCode,
+              quantityStep: item.quantityStep.toString(),
+            },
+            header.data.quantity,
+          )
+        : null;
+      if (!typed || !typed.ok) {
+        return stop(
+          "invalid",
+          typed && !typed.ok ? typed.error : NOT_FOUND,
+          "quantity",
+        );
+      }
+      if (
+        item!.unitCode !== row.unitCode ||
+        typed.quantity.greaterThan(row.quantity.toString())
+      ) {
+        return stop(
+          "invalid",
+          `Puedes aceptar hasta lo que se pidió (${formatStock(row.quantity.toString(), row.unitCode)}) o menos.`,
+          "quantity",
+        );
+      }
+    }
     await shareFacility(tx, row.facilityId);
     const made = await createOrderUnderLock(tx, actor, {
       facilityId: row.facilityId,
@@ -1172,6 +1247,16 @@ export type RequestDecisionView = {
   releaseShort: "ask" | "block";
   /** Who the order may be assigned to (may report production, reach the area). */
   people: { id: string; name: string }[];
+  /**
+   * Who decides could not create and release orders by hand: they accept
+   * at most what was asked.
+   */
+  capped: boolean;
+  /**
+   * The area stopped being a production area (or was archived): the
+   * request can only be rejected.
+   */
+  areaProblem: string | null;
 };
 
 export type ProductionRequestView = ProductionRequestSummary & {
@@ -1459,7 +1544,22 @@ async function decisionOf(
       requestedByUserId: true,
     },
   });
-  const people = await peopleFor(organizationId, row.areaLocationId);
+  const [people, area, mayCreate, mayRelease] = await Promise.all([
+    peopleFor(organizationId, row.areaLocationId),
+    client.location.findFirst({
+      where: { id: row.areaLocationId },
+      select: { name: true, type: true, archivedAt: true },
+    }),
+    isAllowed(organizationId, userId, "production.order.create"),
+    isAllowed(organizationId, userId, "production.order.release"),
+  ]);
+  const areaProblem = !area
+    ? "El área de esta solicitud ya no existe: solo se puede rechazar."
+    : area.archivedAt
+      ? `${area.name} está archivada: esta solicitud solo se puede rechazar.`
+      : area.type !== "PRODUCTION"
+        ? `${area.name} ya no es un área de producción: esta solicitud solo se puede rechazar.`
+        : null;
   const names = await namesOf(
     client,
     othersRows.map((other) => other.requestedByUserId),
@@ -1479,6 +1579,8 @@ async function decisionOf(
     })),
     releaseShort: releaseShort === "block" ? "block" : "ask",
     people,
+    capped: !(mayCreate && mayRelease),
+    areaProblem,
   };
 }
 
