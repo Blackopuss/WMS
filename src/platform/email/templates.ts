@@ -358,3 +358,57 @@ export function dailyDigestEmail(input: {
     ].join("\n"),
   };
 }
+
+/**
+ * Alert of a suspicious access to the person's own account (WMS-68, ADR
+ * 0064): a device or browser never seen before, or many wrong tries that
+ * blocked it. No access links: only where to recover the password (no
+ * token) and where to see the history.
+ */
+export function accessAlertEmail(input: {
+  to: string;
+  name: string;
+  kind: "new_device" | "failed_attempts";
+  /** «16 nov 2026, 10:42». */
+  when: string;
+  /** «Chrome en Android»; only for a new device. */
+  device?: string;
+  /** IP of the sign-in into their own account; only for a new device. */
+  ipAddress?: string | null;
+  recoverUrl: string;
+  historyUrl: string;
+}): EmailMessage {
+  const name = oneLine(input.name, 80);
+  const lines =
+    input.kind === "new_device"
+      ? [
+          `Se inició sesión en tu cuenta de WMS desde un dispositivo o navegador que no habías usado: ${oneLine(input.device ?? "Otro navegador", 80)}.`,
+          `Cuándo: ${input.when}.`,
+          ...(input.ipAddress ? [`Dirección IP: ${input.ipAddress}.`] : []),
+          "",
+          "Si fuiste tú, no tienes que hacer nada.",
+          "Si no fuiste tú, cambia tu contraseña de inmediato:",
+        ]
+      : [
+          "Hubo muchos intentos fallidos de entrar a tu cuenta de WMS y la bloqueamos un rato para protegerla.",
+          `Cuándo: ${input.when}.`,
+          "",
+          "Si fuiste tú, espera unos minutos e inténtalo de nuevo.",
+          "Si no fuiste tú, tu cuenta sigue protegida; si crees que alguien conoce tu contraseña, cámbiala:",
+        ];
+  return {
+    to: input.to,
+    subject:
+      input.kind === "new_device"
+        ? "Nuevo inicio de sesión en tu cuenta de WMS"
+        : "Intentos fallidos de entrar a tu cuenta de WMS",
+    text: [
+      `Hola, ${name}:`,
+      "",
+      ...lines,
+      input.recoverUrl,
+      "",
+      `Revisa tus accesos en Configuración › Seguridad › Historial de accesos: ${input.historyUrl}`,
+    ].join("\n"),
+  };
+}

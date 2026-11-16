@@ -11,6 +11,7 @@ import {
 import { recordSecurityEvent } from "@/platform/audit";
 import { db } from "@/server";
 
+import { noteCodeLock, noteFailedCode, noteSignIn } from "./access-history";
 import { TOTP_DIGITS, auth } from "./auth";
 import { normalizeBackupCode } from "./backup-codes";
 import { isMfaRequired } from "./mfa-policy";
@@ -262,6 +263,7 @@ export async function verifySignInCode(
     const errorCode = isAPIError(error) ? String(error.body?.code ?? "") : "";
     if (errorCode === "INVALID_CODE" || errorCode === "INVALID_BACKUP_CODE") {
       await settleFailure([ipKey]);
+      await noteFailedCode(headers, backup ? "backup" : "totp");
       return {
         ok: false,
         reason: "invalid",
@@ -273,6 +275,8 @@ export async function verifySignInCode(
     // Not a wrong code: the attempt is given back.
     await refundAttempt([ipKey]);
     if (errorCode === "ACCOUNT_TEMPORARILY_LOCKED") {
+      // WMS-68: wrong codes after the right password: alert the owner.
+      await noteCodeLock(headers);
       return {
         ok: false,
         reason: "restart",
@@ -304,11 +308,11 @@ export async function verifySignInCode(
   if (backup) {
     // Backup codes are removed when used; tell the owner how many are left.
     const left = (await readBackupCodes(session.userId)).length;
-    await recordSecurityEvent({
+    await noteSignIn({
       userId: session.userId,
       action: "mfa.backup_code_used",
       metadata: { left },
-      ipAddress: clientIp(headers),
+      headers,
     });
     const user = await db.user.findUniqueOrThrow({
       where: { id: session.userId },
@@ -334,11 +338,11 @@ export async function verifySignInCode(
         "Ese código ya se usó. Espera a que tu app muestre uno nuevo e inicia sesión de nuevo.",
     };
   }
-  await recordSecurityEvent({
+  await noteSignIn({
     userId: session.userId,
     action: "sign_in.succeeded",
     metadata: { mfa: true },
-    ipAddress: clientIp(headers),
+    headers,
   });
   return { ok: true };
 }

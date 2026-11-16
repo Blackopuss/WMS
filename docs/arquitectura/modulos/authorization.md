@@ -16,6 +16,7 @@ asientos del plan, alcance por almacén y zona, y el acceso de soporte.
 | Alcance | `scope.ts`, `scope-rows.ts` | `loadScope`, `seesWholeCompany`; validación de filas de alcance al editar o invitar |
 | Equipo | `team.ts`, `team-rules.ts` | `listTeamMembers`, `assignRoles`, `disableMember`, `reactivateMember`, `setMemberScope`; reglas `checkTeamChange` (también `revoke_sessions`, WMS-40), `checkInvitationRoles` |
 | Sesiones del equipo | `team-sessions.ts` | `listMemberSessions`, `revokeMemberSession`, `revokeAllMemberSessions` (WMS-40): solo las sesiones cuya empresa activa es la empresa; las de otra no existen. «Todas» y desactivar escriben el corte `membership.sessionsRevokedAt` y avisan a la persona (`TEAM_NOTIFICATION_TYPES`, `notices.ts`) |
+| Historial de accesos del equipo | `team-access-history.ts` | `listMemberAccessHistory` (WMS-68, ADR 0064): con `platform.session.read`, los eventos de la persona en esta empresa y los de su cuenta solo mientras no pertenezca a otra empresa (y desde que entró); los de otra empresa no existen. Cerrar sesiones desde el equipo y desactivar dejan `session.closed_by_team` en el historial de la persona |
 | Invitaciones | `invitations.ts`, `invitation-accept.ts` | crear, reenviar, cancelar, previsualizar y aceptar (el token solo se guarda como hash) |
 | Titularidad | `ownership.ts` | ofrecer, cancelar y aceptar la transferencia |
 | Asientos | `seats.ts` | `lockOrganization`, `assertSeatAvailable`, `getSeatUsage` |

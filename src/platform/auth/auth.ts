@@ -41,7 +41,7 @@ export const VERIFY_EMAIL_COOKIE = "almacen-confirmar-correo";
  * for an existing account (which sends an email) would take longer than
  * one for an unknown email, revealing which accounts exist.
  */
-function inBackground(task: Promise<unknown>): void {
+export function inBackground(task: Promise<unknown>): void {
   try {
     after(task);
   } catch {

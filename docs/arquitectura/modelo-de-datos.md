@@ -632,9 +632,13 @@ No es de una empresa (sin `organizationId`).
 | `action` | `String · VarChar(80)` |  |  |
 | `metadata` | `Json?` |  |  |
 | `ipAddress` | `String? · VarChar(64)` |  |  |
+| `eventOrganizationId` | `String? · Char(36)` |  | Company of the event when it happens inside one (terminal, team); null for account events (WMS-68, ADR 0064). No foreign key. |
+| `deviceKey` | `String? · VarChar(80)` |  | «phone\|Chrome\|Android» from describeUserAgent; never the raw text. |
+| `dedupeKey` | `String? · VarChar(120)` |  | Something that must happen once per person (an alert, a lock). |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
-- Índices: (`userId`, `createdAt`).
+- Únicas: (`userId`, `dedupeKey`).
+- Índices: (`userId`, `createdAt`); (`userId`, `deviceKey`).
 
 ## Plataforma › Aceptación de documentos
 

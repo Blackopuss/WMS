@@ -75,3 +75,29 @@ export function describeUserAgent(ua: string | null | undefined): DeviceInfo {
     label,
   };
 }
+
+const KINDS: readonly DeviceKind[] = ["computer", "phone", "tablet", "other"];
+
+/**
+ * What identifies «the same device» for the access alerts (WMS-68, ADR
+ * 0064): kind, browser and system, never the raw text. Coarse on purpose:
+ * no fingerprinting.
+ */
+export function deviceKeyOf(ua: string | null | undefined): string {
+  const info = describeUserAgent(ua);
+  return `${info.kind}|${info.browser}|${info.os}`.slice(0, 80);
+}
+
+/** The device of a stored key, as shown on screen; null for no key. */
+export function describeDeviceKey(
+  key: string | null | undefined,
+): { kind: DeviceKind; label: string } | null {
+  if (!key) return null;
+  const [kindText, browser = UNKNOWN, os = UNKNOWN] = key.split("|");
+  const kind = KINDS.find((each) => each === kindText) ?? "other";
+  const browserText = browser === UNKNOWN ? "Otro navegador" : browser;
+  return {
+    kind,
+    label: os === UNKNOWN ? browserText : `${browserText} en ${os}`,
+  };
+}

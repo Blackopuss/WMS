@@ -245,6 +245,12 @@ export default async function ConfiguracionPage() {
               }
             />
           )}
+          <SettingsLink
+            href="/configuracion/accesos"
+            icon={History}
+            title="Historial de accesos"
+            description="Tus entradas, los intentos fallidos y las alertas."
+          />
           <SessionsPanel
             sessions={sessions.map((s) => ({
               ...s,
@@ -282,6 +288,7 @@ function SettingsLink({
     | "/configuracion/pin"
     | "/configuracion/api"
     | "/configuracion/bitacora"
+    | "/configuracion/accesos"
     | "/aprobaciones"
     | "/configuracion/aprobaciones";
   icon: LucideIcon;

@@ -620,6 +620,21 @@ describe("signing in with a PIN", () => {
           where: { userId: olivia, action: "pin_sign_in.succeeded" },
         }),
       ).toBe(1);
+      // WMS-68: the entry is of the terminal's company, with its terminal,
+      // and a terminal never raises a «new device» alert.
+      const entry = await db.securityEvent.findFirstOrThrow({
+        where: { userId: olivia, action: "pin_sign_in.succeeded" },
+      });
+      expect(entry).toMatchObject({
+        eventOrganizationId: A.org,
+        metadata: { terminalId },
+        deviceKey: "tablet|Otro|Otro",
+      });
+      expect(
+        await db.securityEvent.count({
+          where: { userId: olivia, action: { startsWith: "access.alert" } },
+        }),
+      ).toBe(0);
 
       // The browser now carries a Better Auth session cookie that works.
       const context = await requireOrganizationContext();
@@ -726,6 +741,16 @@ describe("attempts", () => {
           where: { userId: victim, action: "pin.locked" },
         }),
       ).toBeGreaterThanOrEqual(1);
+      // WMS-68: the owner of the PIN gets one alert, however many blocks.
+      expect(
+        await db.securityEvent.count({
+          where: { userId: victim, action: "access.alert_failed_attempts" },
+        }),
+      ).toBe(1);
+      const failure = await db.securityEvent.findFirstOrThrow({
+        where: { userId: victim, action: "pin_sign_in.failed" },
+      });
+      expect(failure.eventOrganizationId).toBe(A.org);
       // Signing in with the password, from their own device, proves who it
       // is: the PIN works again.
       onDevice(null);

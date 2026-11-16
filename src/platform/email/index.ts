@@ -15,6 +15,7 @@ export type {
   StoredEmail,
 } from "./send";
 export {
+  accessAlertEmail,
   backupCodeUsedEmail,
   backupCodesRegeneratedEmail,
   dailyDigestEmail,

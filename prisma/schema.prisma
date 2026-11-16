@@ -645,15 +645,24 @@ model AuditEvent {
 
 /// Account security events (password, MFA, sessions), not tied to a company.
 model SecurityEvent {
-  id        String   @id @db.Char(36)
+  id                  String   @id @db.Char(36)
   /// No foreign key: the history outlives accounts.
-  userId    String   @db.Char(36)
-  action    String   @db.VarChar(80)
-  metadata  Json?
-  ipAddress String?  @db.VarChar(64)
-  createdAt DateTime @default(now()) @db.DateTime(3)
+  userId              String   @db.Char(36)
+  action              String   @db.VarChar(80)
+  metadata            Json?
+  ipAddress           String?  @db.VarChar(64)
+  /// Company of the event when it happens inside one (terminal, team);
+  /// null for account events (WMS-68, ADR 0064). No foreign key.
+  eventOrganizationId String?  @db.Char(36)
+  /// «phone|Chrome|Android» from describeUserAgent; never the raw text.
+  deviceKey           String?  @db.VarChar(80)
+  /// Something that must happen once per person (an alert, a lock).
+  dedupeKey           String?  @db.VarChar(120)
+  createdAt           DateTime @default(now()) @db.DateTime(3)
 
+  @@unique([userId, dedupeKey])
   @@index([userId, createdAt])
+  @@index([userId, deviceKey])
   @@map("security_event")
 }
 

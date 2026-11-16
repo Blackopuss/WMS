@@ -83,6 +83,14 @@ export default async function PersonaPage({
             <Badge variant="secondary">Desactivado</Badge>
           )}
         </p>
+        <p>
+          <Link
+            href={`/configuracion/equipo/${encodeURIComponent(member.userId)}/accesos`}
+            className="inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Historial de accesos
+          </Link>
+        </p>
       </div>
 
       <MemberSessionsPanel
