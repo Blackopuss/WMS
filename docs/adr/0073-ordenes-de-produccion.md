@@ -169,30 +169,44 @@ comprobar:
 
 ## Candados
 
-Orden global: **almacén (compartido)** → productos → ubicaciones →
-documento → contenedor → tareas → capacidad → progreso del proceso.
+Orden global: productos → ubicaciones → documento → contenedor → tareas →
+capacidad → progreso del proceso. El almacén de la orden se toma
+compartido en dos formas, según la operación:
 
-- **Regla para toda escritura de una orden (también WMS-29 y WMS-31):**
-  el primer candado es uno **compartido de la fila del almacén de la
-  orden**, tomado por el índice único `(organizationId, id)`
-  (`lockRows(tx, "facility", [id], { mode: "share", byTenantKey: true })`).
-  Escribir una orden hace que InnoDB revise su llave foránea al almacén
-  por ese índice, y cambiar ubicaciones (`changeTree`: editar, mover,
-  archivar) bloquea primero todos los almacenes por ese índice y después
-  una ubicación (INV-19B: almacén → ubicación). Sin este candado, liberar
-  (área → orden → revisión del almacén) se interbloqueaba con editar,
-  mover o archivar su área (revisión independiente, 6 de 6 rondas). Tomado
-  por la llave primaria también se interbloqueaba: el índice debe ir
-  primero, como en `changeTree` (la misma lección de WMS-75).
-- **Liberar:** almacén → productos de los materiales (de una vez,
-  ordenados) → el área → orden → capacidad del área (con tareas) →
-  progreso (`assertStagesDone`) → escrituras (estado, reservas y tareas
-  nuevas, que no esperan a nadie) → `reachMilestone` y
-  `completeOperationStage` sobre el mismo progreso.
-- **Cancelar:** almacén → productos de los materiales → orden → tareas
-  `ISSUE` → progreso.
-- **Crear y guardar el borrador:** almacén → área → orden (nueva o
-  bloqueada) → progreso. **Personas:** almacén → orden.
+- **Regla: una operación que bloquea productos nunca toma el almacén
+  antes que ellos** (también WMS-29 y WMS-31). Liberar y cancelar bloquean
+  productos → orden y dejan que la llave foránea de la orden tome el
+  almacén en compartido al escribir su estado, igual que un pedido de
+  salida. Tomarlo primero cerraba un ciclo a tres bandas (segunda
+  revisión): la orden con el almacén esperaba un producto; otro documento
+  con ese producto pedía el almacén (su llave foránea, por ejemplo al
+  crear «Preparación» al liberar el primer pedido del almacén) y quedaba
+  en fila detrás de `changeTree`, que esperaba el almacén en exclusivo
+  detenido por la orden.
+- **Crear, guardar el borrador y cambiar personas** no bloquean productos:
+  toman **primero** el almacén en compartido por el índice único
+  `(organizationId, id)` (`lockRows(tx, "facility", [id], { mode:
+  "share", byTenantKey: true })`, el mismo índice y orden que `changeTree`:
+  por la llave primaria se interbloqueaba, la lección de WMS-75). Así una
+  orden nunca se crea ni se guarda con un área que en ese momento se
+  archiva o cambia de uso: `changeTree` tiene todos los almacenes en
+  exclusivo cuando cuenta las órdenes abiertas del área, y la orden espera
+  (o al revés: si la orden se guardó primero, `changeTree` la ve y
+  rechaza; si el área cambió primero, `areaOf` lo ve y rechaza).
+- **El área no se bloquea.** Mientras tenga órdenes abiertas (borradores
+  incluidos) no cambia de uso, no se archiva ni queda bajo un uso que no
+  admite existencias disponibles (`refuseOpenProductionOrders` en
+  `hierarchy.ts`), y liberar la vuelve a leer con `areaOf`. Bloquearla era
+  lo que cerraba el primer ciclo (liberar: área → orden → almacén por la
+  llave foránea, contra `changeTree`: almacén → área).
+- **Liberar:** productos de los materiales (de una vez, ordenados) →
+  orden → capacidad del área (con tareas) → progreso (`assertStagesDone`)
+  → escrituras (estado, reservas y tareas nuevas, que no esperan a nadie)
+  → `reachMilestone` y `completeOperationStage` sobre el mismo progreso.
+- **Cancelar:** productos de los materiales → orden → tareas `ISSUE` →
+  progreso.
+- **Crear y guardar el borrador:** almacén (compartido) → orden (nueva o
+  bloqueada) → progreso. **Personas:** almacén (compartido) → orden.
 - **Tarea `ISSUE`** (Inventario): cada paso bloquea producto (si mueve) →
   ubicaciones → **orden de producción** → tarea, como el surtido bloquea su
   pedido. La entrega comprueba bajo el candado de la orden que siga liberada
@@ -219,7 +233,9 @@ documento → contenedor → tareas → capacidad → progreso del proceso.
   «Producción», del almacén de la orden, sin archivar y dentro del alcance
   (un borrador guardado antes de que el área cambiara no se libera).
 - Mientras un área tenga órdenes `DRAFT`, `RELEASED` o `IN_PROGRESS`, no
-  se le cambia el uso ni se archiva: `editLocation` y `archiveLocation`
+  se le cambia el uso, no se archiva, no se mueve debajo de una ubicación
+  de Cuarentena o Restauración ni la ubicación que la contiene pasa a uno
+  de esos usos: `editLocation` y `archiveLocation`
   responden cuántas órdenes abiertas la usan (quien la edita la alcanza,
   así que no cuenta nada de otra zona). Lo leen de la tabla, como ya
   leían las tarimas: plataforma no importa el módulo. Mover el área dentro

@@ -50,15 +50,16 @@ activaciones no forman un ciclo. `listRecipeVersions` se pagina en la base
 (20 por página). En una terminal compartida con PIN la receta se lee y no se
 cambia (`TERMINAL_DESK_ONLY` de `platform/authorization`).
 
-**Órdenes (WMS-28, ADR 0073).** Candados: **la fila del almacén de la
-orden, compartida y por el índice `(organizationId, id)`** (`lockRows(tx,
-"facility", [id], { mode: "share", byTenantKey: true })`; toda escritura de
-una orden la toma primero, también WMS-29 y WMS-31, porque cambiar
-ubicaciones bloquea los almacenes por ese índice antes que una ubicación)
-→ productos de los materiales (de una vez) → el área → la orden
-(`lockRows(tx, "productionOrder", …)`) → capacidad → progreso del proceso.
-Un área con órdenes abiertas no cambia de uso ni se archiva
-(`hierarchy.ts` lo lee de la tabla). Una tarea `ISSUE` la ejecuta Inventario:
+**Órdenes (WMS-28, ADR 0073).** Candados: liberar y cancelar, productos
+de los materiales (de una vez) → la orden (`lockRows(tx,
+"productionOrder", …)`) → capacidad → progreso del proceso; **una
+operación que bloquea productos nunca toma el almacén antes que ellos**
+(también WMS-29 y WMS-31). Crear, guardar y cambiar personas no bloquean
+productos y toman primero el almacén en compartido por el índice
+`(organizationId, id)` (`byTenantKey`), como `changeTree`. El área no se
+bloquea: con órdenes abiertas no cambia de uso, no se archiva ni queda bajo
+Cuarentena o Restauración (`hierarchy.ts` lo lee de la tabla), y liberar la
+vuelve a leer. Una tarea `ISSUE` la ejecuta Inventario:
 cada paso bloquea producto → ubicaciones → orden de producción → tarea,
 como el surtido bloquea su pedido. Una orden existe solo para quien alcanza
 su área. Liberar vuelve a comprobar bajo candado que la versión copiada

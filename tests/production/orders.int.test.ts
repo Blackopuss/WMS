@@ -5,6 +5,12 @@ import {
   acceptTask,
   blockTask,
   cancelTask,
+  confirmPick,
+  createOutboundOrder,
+  createShipment,
+  dispatchShipment,
+  releaseOutboundOrder,
+  setOutboundLine,
   deliverTask,
   formatIssueOrderNumber,
   pickUpTask,
@@ -45,7 +51,9 @@ import { archiveProduct, createProduct } from "@/platform/catalog";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import {
   archiveLocation,
+  createFacility,
   createLocation,
+  switchFacility,
   editLocation,
   moveLocation,
   setLocationLimits,
@@ -103,8 +111,9 @@ async function company(modules = ["inventory", "production"]) {
     staff,
     created.organizationId,
     {
-      productLimit: 80,
+      productLimit: 400,
       users: 30,
+      facilities: 60,
       modules,
       validUntil: null,
       reason: "Prueba de órdenes de producción",
@@ -1472,5 +1481,147 @@ describe("review of WMS-28", () => {
     expect(await productionOpenWork(owner.organizationId)).toContain(
       "1 orden de producción abierta; 1 tiene materiales apartados, que seguirán apartados.",
     );
+  });
+});
+
+describe("second review of WMS-28: no warehouse before the products", () => {
+  /** An outbound order of `productId` in the person's warehouse. */
+  async function outbound(actor: ProductionActor, productId: string) {
+    const made = await createOutboundOrder(actor, { recipient: "Cliente" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    const line = await setOutboundLine(actor, made.orderId, {
+      productId,
+      quantity: "1",
+    });
+    if (!line.ok) throw new Error(JSON.stringify(line));
+    return made.orderId;
+  }
+
+  const answered = (results: unknown[]) => {
+    for (const result of results) expect(result).toHaveProperty("ok");
+  };
+
+  it("releasing an order, the first outbound order of the warehouse and editing a location at once: never a raw error", async () => {
+    const { owner } = await company();
+    const crate = await product(owner, "Crate");
+    const board = await product(owner, "Tabla");
+    await recipe(owner, crate, [[board, "1"]]);
+    for (let round = 0; round < 40; round++) {
+      // A new warehouse each round: its first release creates «Preparación».
+      const facility = await createFacility(owner, {
+        name: `Planta ${round}`,
+        code: `P${round}`,
+      });
+      if (!facility.ok) throw new Error(JSON.stringify(facility));
+      await switchFacility(owner, facility.facilityId);
+      const area = await place(owner, "Línea", { type: "PRODUCTION" });
+      const shelf = await place(owner, "Rack");
+      await enter(owner, board, shelf, "4");
+      const id = await order(owner, crate, area, "1");
+      const leaving = await outbound(owner, board);
+      const results = await Promise.all([
+        releaseProductionOrder(owner, id),
+        releaseOutboundOrder(owner, leaving),
+        editLocation(owner, shelf, { name: `Rack ${round} b` }),
+      ]);
+      answered(results);
+      expect(results[0]).toMatchObject({ ok: true });
+      expect(results[1]).toMatchObject({ ok: true });
+    }
+    await balanced(owner.organizationId);
+  }, 240_000);
+
+  it("cancelling an order, releasing an outbound order and editing a location at once", async () => {
+    const { owner, crate, board, shelf } = await workshop();
+    const area = await place(owner, "Línea B", { type: "PRODUCTION" });
+    for (let round = 0; round < 40; round++) {
+      const id = await order(owner, crate, area, "1");
+      expect(await releaseProductionOrder(owner, id)).toMatchObject({
+        ok: true,
+      });
+      const leaving = await outbound(owner, board);
+      const results = await Promise.all([
+        cancelProductionOrder(owner, id, "Ronda de prueba"),
+        releaseOutboundOrder(owner, leaving),
+        editLocation(owner, shelf, { name: `Rack ${round} c` }),
+      ]);
+      answered(results);
+      expect(results[0]).toMatchObject({ ok: true });
+      expect(results[1]).toMatchObject({ ok: true });
+    }
+    await balanced(owner.organizationId);
+  }, 240_000);
+
+  it("releasing an order, dispatching a shipment and editing a location at once", async () => {
+    const { owner, crate, board, shelf } = await workshop();
+    const area = await place(owner, "Línea D", { type: "PRODUCTION" });
+    for (let round = 0; round < 15; round++) {
+      const leaving = await outbound(owner, board);
+      expect(await releaseOutboundOrder(owner, leaving)).toMatchObject({
+        ok: true,
+      });
+      const tasks = await db.warehouseTask.findMany({
+        where: { kind: "PICK", outboundLine: { orderId: leaving } },
+        include: { product: true, fromLocation: true },
+      });
+      for (const task of tasks) {
+        await acceptTask(owner, task.id);
+        const picked = await confirmPick(owner, task.id, {
+          productCode: task.product!.sku,
+          locationCode: task.fromLocation.name,
+          quantity: task.quantity!.toString(),
+        });
+        if (!picked.ok) throw new Error(JSON.stringify(picked));
+        await deliverTask(owner, task.id);
+      }
+      const shipment = await createShipment(owner, { orderIds: [leaving] });
+      if (!shipment.ok) throw new Error(JSON.stringify(shipment));
+      const id = await order(owner, crate, area, "1");
+      const results = await Promise.all([
+        releaseProductionOrder(owner, id),
+        dispatchShipment(owner, shipment.shipmentId),
+        editLocation(owner, shelf, { name: `Rack ${round} d` }),
+      ]);
+      answered(results);
+      expect(results[0]).toMatchObject({ ok: true });
+      expect(results[1]).toMatchObject({ ok: true });
+    }
+    await balanced(owner.organizationId);
+  }, 240_000);
+
+  it("an area with open orders does not go under a quarantine or restoration place, nor does its container become one", async () => {
+    const { owner, crate } = await workshop();
+    const zone = await place(owner, "Zona");
+    const quarantine = await place(owner, "Cuarentena", { type: "QUARANTINE" });
+    const area = await place(owner, "Línea", {
+      type: "PRODUCTION",
+      parentId: zone,
+      level: 2,
+    });
+    const id = await order(owner, crate, area, "1");
+    // The quarantine of level 1 cannot hold a level 2 inside? It can: the
+    // area is of level 2.
+    expect(
+      await moveLocation(owner, area, { parentId: quarantine }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        parentId: expect.stringContaining("orden de producción abierta"),
+      },
+    });
+    for (const type of ["QUARANTINE", "REPAIR"]) {
+      expect(await editLocation(owner, zone, { type })).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          type: expect.stringContaining("orden de producción abierta"),
+        },
+      });
+    }
+    expect(await cancelProductionOrder(owner, id, "Ya no va")).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await editLocation(owner, zone, { type: "QUARANTINE" }),
+    ).toMatchObject({ ok: true });
   });
 });

@@ -216,12 +216,22 @@ async function lockOrder(tx: Tx, orderId: string, userId: string) {
 
 /**
  * The warehouse of an order, read before its transaction (it never
- * changes), and a shared lock of its row as the first lock: writing an
- * order makes InnoDB check its foreign key to the warehouse, and changing
- * locations locks every warehouse first and then a location (INV-19B:
- * warehouse → location). Taking the warehouse first keeps that order
- * (review of WMS-28: releasing deadlocked with editing its area). WMS-29
- * and WMS-31, which also change the order, follow the same rule.
+ * changes). Creating, saving and changing the people of an order take a
+ * shared lock of its row FIRST, through the unique index (organizationId,
+ * id): those steps lock no product, and changing locations (changeTree:
+ * editing, moving, archiving) locks every warehouse that way before a
+ * location and counts the open orders of an area under that lock. So an
+ * order is never created or saved with an area that is being archived or
+ * changing its use (one waits for the other), and the area need not be
+ * locked itself.
+ *
+ * The rule (review of WMS-28): an operation that locks products NEVER
+ * takes the warehouse before them. Releasing and cancelling lock products
+ * → order and let the foreign key of the order take the warehouse
+ * (shared) when its state is written, like an outbound order; taking it
+ * first closed a cycle with another document holding a product and
+ * waiting for the warehouse behind changeTree. WMS-29 and WMS-31 follow
+ * the same rule.
  */
 async function facilityOfOrder(
   organizationId: string,
@@ -699,7 +709,6 @@ export async function createProductionOrder(
   );
   return inOrder(organizationId, async (tx) => {
     await shareFacility(tx, facility.id);
-    await lockRows(tx, "location", [idOf(data.areaLocationId)]);
     const area = await areaOf(tx, userId, facility.id, data.areaLocationId);
     await assigneesReachArea(tx, data.assigneeIds, area.id);
     const copy = await copyRecipe(tx, idOf(input.productId), data.quantity);
@@ -789,7 +798,6 @@ export async function updateProductionOrder(
   const facilityId = await facilityOfOrder(organizationId, orderId);
   return inOrder(organizationId, async (tx) => {
     await shareFacility(tx, facilityId);
-    await lockRows(tx, "location", [idOf(data.areaLocationId)]);
     const order = await lockOrder(tx, orderId, userId);
     const problem = productionTransitionProblem(order.status, "DRAFT");
     if (order.status !== "DRAFT") {
@@ -955,12 +963,11 @@ export async function releaseProductionOrder(
     "production.order.release",
   );
   // A draft's lines and area change until it is locked: read them to lock
-  // their products and location first, then check under the lock.
+  // their products first, then check under the lock.
   const draft = await forOrganization(organizationId).productionOrder.findFirst(
     {
       where: { id: idOf(orderId) },
       select: {
-        facilityId: true,
         areaLocationId: true,
         lines: { select: { productId: true } },
       },
@@ -969,9 +976,9 @@ export async function releaseProductionOrder(
   if (!draft) return { ok: false, reason: "not_found", formError: NOT_FOUND };
   const productIds = draft.lines.map((line) => line.productId);
   return inOrder(organizationId, async (tx) => {
-    await shareFacility(tx, draft.facilityId);
+    // Products → order: no warehouse first, nor the area (it does not
+    // change while the order is open, and `areaOf` reads it again below).
     await lockRows(tx, "product", productIds);
-    await lockRows(tx, "location", [draft.areaLocationId]);
     const order = await lockOrder(tx, orderId, userId);
     if (order.status === "RELEASED" || order.status === "IN_PROGRESS") {
       return {
@@ -1248,12 +1255,12 @@ export async function cancelProductionOrder(
   const draft = await forOrganization(organizationId).productionOrder.findFirst(
     {
       where: { id: idOf(orderId) },
-      select: { facilityId: true, lines: { select: { productId: true } } },
+      select: { lines: { select: { productId: true } } },
     },
   );
   const productIds = draft?.lines.map((line) => line.productId) ?? [];
   return inOrder(organizationId, async (tx) => {
-    await shareFacility(tx, draft?.facilityId ?? null);
+    // Products → order: no warehouse first (it locks products).
     await lockRows(tx, "product", productIds);
     const order = await lockOrder(tx, orderId, userId);
     if (order.status === "CANCELLED") {

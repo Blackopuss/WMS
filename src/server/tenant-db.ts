@@ -341,7 +341,7 @@ export function forOrganization(organizationId: string): TenantDb {
 export const LOCKING_TRANSACTION = { isolationLevel: "ReadCommitted" } as const;
 
 /** Tables whose rows a business rule may lock, by their model name. */
-const LOCKABLE = {
+export const LOCKABLE = {
   container: "container",
   facility: "facility",
   location: "location",

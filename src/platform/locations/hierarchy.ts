@@ -297,10 +297,28 @@ async function refuseOpenProductionOrders(
   locationId: string,
   doing: string,
   field?: LocationField,
+  /** The whole branch (a closed use above it would close the area too). */
+  branch = false,
 ): Promise<void> {
+  const ids = [locationId];
+  if (branch) {
+    let frontier = [locationId];
+    for (
+      let depth = 0;
+      depth <= MAX_LOCATION_LEVELS && frontier.length;
+      depth++
+    ) {
+      const children = await tx.location.findMany({
+        where: { parentId: { in: frontier } },
+        select: { id: true },
+      });
+      frontier = children.map((child) => child.id);
+      ids.push(...frontier);
+    }
+  }
   const open = await tx.productionOrder.count({
     where: {
-      areaLocationId: locationId,
+      areaLocationId: { in: ids },
       status: { in: ["DRAFT", "RELEASED", "IN_PROGRESS"] },
     },
   });
@@ -308,8 +326,8 @@ async function refuseOpenProductionOrders(
   reject(
     "not_allowed",
     (open === 1
-      ? "Una orden de producción abierta usa esta área"
-      : `${open} órdenes de producción abiertas usan esta área`) +
+      ? `Una orden de producción abierta usa ${branch ? "un área de aquí" : "esta área"}`
+      : `${open} órdenes de producción abiertas usan ${branch ? "áreas de aquí" : "esta área"}`) +
       `: termínalas, cancélalas o cámbiales el área antes de ${doing}.`,
     field,
   );
@@ -941,6 +959,14 @@ export async function editLocation(
     // available stock does not become one.
     if (type !== location.type && NO_AVAILABLE_USES.has(type)) {
       await refuseAvailableInside(tx, location.id, type);
+      // WMS-28: a production area inside would take no materials.
+      await refuseOpenProductionOrders(
+        tx,
+        location.id,
+        "cambiarle el uso",
+        "type",
+        true,
+      );
     }
     if (location.type === "PRODUCTION" && type !== location.type) {
       await refuseOpenProductionOrders(
@@ -1159,6 +1185,14 @@ export async function moveLocation(
     const closed = await closedUseOf(tx, parent?.id ?? null);
     if (closed) {
       await refuseAvailableInside(tx, location.id, closed, "parentId");
+      // WMS-28: nor a production area with open orders.
+      await refuseOpenProductionOrders(
+        tx,
+        location.id,
+        "ponerla ahí",
+        "parentId",
+        true,
+      );
     }
     const before = await pathOf(tx, location);
     await tx.location.updateMany({
