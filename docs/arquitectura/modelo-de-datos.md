@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-117 tablas en 29 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+122 tablas en 30 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -35,6 +35,7 @@
 | Inventario › Equipos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
+| Producción | 5 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -3011,3 +3012,127 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `PurchaseOrderStatus`: `DRAFT`, `SENT`, `PARTIAL`, `RECEIVED`, `CANCELLED`, `CLOSED`.
 - `PurchaseRequestStatus`: `DRAFT`, `SUBMITTED`, `APPROVED`, `REJECTED`, `CONVERTED`, `CANCELLED`.
 - `PurchaseOrderDeliveryStatus`: `QUEUED`, `SENT`, `FAILED`.
+
+## Producción
+
+Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones.
+
+Documento: [modulos/production.md](modulos/production.md).
+
+### Recipe · `recipe`
+
+The recipe of a product (WMS-27, ADR 0066): one per product, standard, defined by who runs production. What it says lives in its versions. Never deleted, and its product never changes (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `productId`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### RecipeVersion · `recipe_version`
+
+One version of a recipe: for how much (in the unit of the product of the card), its materials and what comes out. Draft → active → retired, or draft → discarded (RECIPE_VERSION_TRANSITIONS and trigger). One active and one draft per recipe at most (`activeRecipeId`/`draftRecipeId`, CHECK and unique index). Only a draft changes; nothing is deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `recipeId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `status` | `RecipeVersionStatus` | `DRAFT` |  |
+| `baseQuantity` | `Decimal · Decimal(12, 3)` |  | For how much of the product of the card, in `unitCode`. |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `activeRecipeId` | `String? · Char(36)` |  | The recipe id while ACTIVE, NULL otherwise: one active per recipe. |
+| `draftRecipeId` | `String? · Char(36)` |  | The recipe id while DRAFT, NULL otherwise: one draft per recipe. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `activatedAt` | `DateTime? · DateTime(3)` |  |  |
+| `activatedByUserId` | `String? · Char(36)` |  |  |
+| `retiredAt` | `DateTime? · DateTime(3)` |  |  |
+| `retiredByUserId` | `String? · Char(36)` |  |  |
+| `discardedAt` | `DateTime? · DateTime(3)` |  |  |
+| `discardedByUserId` | `String? · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `recipeId`, `number`); (`organizationId`, `activeRecipeId`); (`organizationId`, `draftRecipeId`).
+- Índices: (`organizationId`, `status`).
+- Relaciones: `recipe` → `Recipe` por (`organizationId`, `recipeId`) (al borrar: Restrict).
+
+### RecipeInput · `recipe_input`
+
+One material of a recipe version, as an order line keeps it: what was written, the presentation and version of its content then, the factor and the result in the unit of the material (`unitCode` at that moment). Expected scrap is informative. One line per product; only while the version is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `capturedQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `presentationId` | `String? · Char(36)` |  |  |
+| `presentationVersionId` | `String? · Char(36)` |  |  |
+| `capturedUnitCode` | `String? · VarChar(12)` |  | Unit of another measure it was captured in («g» for a product in kg). |
+| `factor` | `Decimal · Decimal(18, 6)` |  |  |
+| `baseQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `scrapPercent` | `Decimal? · Decimal(5, 2)` |  | Expected scrap, percent (0 to less than 100), optional. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `versionId`, `lineNumber`); (`organizationId`, `versionId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `version` → `RecipeVersion` por (`organizationId`, `versionId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `presentation` → `ProductPresentation` por (`organizationId`, `productId`, `presentationId`) (al borrar: Restrict); `presentationVersion` → `PresentationVersion` por (`organizationId`, `presentationId`, `presentationVersionId`) (al borrar: Restrict).
+
+### RecipeOutput · `recipe_output`
+
+What comes out of a recipe version: a product, how much for the base (in its unit) and its share of the cost (percent; the shares of a version add up to 100 to activate it). One line per product; only while the version is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `costShare` | `Decimal · Decimal(5, 2)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `versionId`, `lineNumber`); (`organizationId`, `versionId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `version` → `RecipeVersion` por (`organizationId`, `versionId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### RecipeLock · `recipe_lock`
+
+One row per company whose lock puts every recipe activation of the company one after the other, so two at once cannot close a cycle (ADR 0066). Its id is the company id. Holds nothing else.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  | única |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+
+#### Enumeraciones de Producción
+
+- `RecipeVersionStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.

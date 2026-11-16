@@ -18,6 +18,64 @@ type Review = {
 };
 
 const REVIEWED: Record<string, Review> = {
+  // WMS-27: the recipe of a product (ADR 0066).
+  createRecipeAction: {
+    input: "id del producto (fijado por la página) y «para cuánto»",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  updateRecipeBaseAction: {
+    input:
+      "ids del producto y del borrador (fijados por la página) y «para cuánto»",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  saveRecipeInputAction: {
+    input:
+      "ids del producto, del borrador y, al cambiar, del material (fijados por la página); nombre, clave o código de barras (o la clave elegida entre parecidos), cómo se cuenta (base, presentación o unidad), cantidad y merma esperada",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  saveRecipeOutputAction: {
+    input:
+      "ids del producto, del borrador y, al cambiar, del producto que sale (fijados por la página); nombre, clave o código de barras (o la clave elegida), cantidad y parte del costo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  removeRecipeInputAction: {
+    input: "ids del producto y del material",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  removeRecipeOutputAction: {
+    input: "ids del producto y de lo que sale",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  activateRecipeAction: {
+    input: "ids del producto y del borrador",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  discardRecipeAction: {
+    input: "ids del producto y del borrador",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
+  startRecipeChangeAction: {
+    input: "ids del producto y de la receta",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la receta, la versión o la línea se bloquean y se buscan solo en esa empresa",
+    coveredBy: "tests/production/recipes.int.test.ts",
+  },
   packAction: {
     input:
       "producto y tarima (fijados por la página), ubicación y lote elegidos, etiqueta y tipo de una tarima nueva, cantidad y series",
