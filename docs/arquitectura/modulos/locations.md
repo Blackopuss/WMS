@@ -11,9 +11,11 @@ a ubicaciones.
 
 Los usos «Cuarentena» y «Restauración» (WMS-75) no admiten existencias
 disponibles, ni en ellos ni en lo que contienen: `editLocation` rechaza
-cambiar a uno de esos usos mientras la ubicación o algo dentro tenga saldo
-disponible (bloquea antes las filas de toda la rama); lo que llega después lo
-detiene `checkPlacement` de Inventario.
+cambiar a uno de esos usos, y `moveLocation` meter algo dentro de uno de
+ellos, mientras la ubicación o algo dentro tenga saldo disponible (bloquea
+antes las filas de toda la rama, **una por una en orden de id**: bloquearlas
+de una vez recorre el índice único y se interbloquea con los movimientos,
+ADR 0072); lo que llega después lo detiene `checkPlacement` de Inventario.
 
 ## Servicios públicos (`index.ts`)
 

@@ -124,6 +124,36 @@ de lugar opcional en el mismo almacén). No hay movimiento nuevo.
   saldos. Quien edita una ubicación la alcanza, y el alcance es por zona,
   así que alcanza todo lo que contiene: el conteo nunca nombra algo de
   fuera de su alcance.
+- **Mover** una ubicación (`moveLocation`) dentro de otra que es, o está
+  dentro de, una de cuarentena o restauración pasa por la misma revisión de
+  toda la rama que se mueve (segunda revisión, hallazgo medio B). Las demás
+  puertas no hacen falta: una ubicación nueva nace vacía, una archivada no
+  tenía existencias (archivar lo exige) y al reactivarse sigue vacía, y los
+  límites (`setLocationLimits`) y los niveles no cambian el uso.
+- **Interbloqueo investigado (segunda revisión, hallazgo medio A).** La
+  primera versión bloqueaba toda la rama con un solo `lockRows`. Con un id,
+  MySQL resuelve `organizationId = ? AND id IN (?)` por la llave primaria;
+  con varios, recorre el índice único `(organizationId, id)` y bloquea
+  primero su entrada y después la llave primaria. Una entrada o un cambio de
+  estado hacia un estante de la rama bloquea la llave primaria de esa fila
+  (`lockRows` con una fila) y, al insertar su línea de movimiento, pide un
+  candado compartido en el mismo índice único por la llave foránea
+  compuesta: orden contrario, interbloqueo en 9 a 11 de cada 12 corridas
+  (`SHOW ENGINE INNODB STATUS`), con la edición como víctima y un error 500.
+  **Salida elegida: quitar la causa.** `refuseAvailableInside` bloquea las
+  filas una por una, en orden de id, así cada candado se toma como el de un
+  movimiento (llave primaria primero). No se cambió `lockRows` para el resto
+  del sistema ni se agregó un reintento. La prueba con `Promise.all`
+  (`location-limits.int.test.ts`: editar el uso de una zona contra una
+  entrada y contra un cambio de estado a disponible en un estante suyo, y
+  mover un pasillo bajo una cuarentena contra una entrada) falla con la
+  versión anterior por el error 1213 y pasa con esta en cuatro corridas
+  seguidas: siempre pasa exactamente uno de los dos y nunca queda
+  disponible dentro.
+- **Pendiente:** la revisión limita la profundidad pero no el número de
+  filas; una zona con miles de ubicaciones toma miles de candados (uno por
+  consulta). Es aceptable para algo que se hace rara vez; no se puso un
+  tope arbitrario.
 
 ### 5. Lista derivada «En restauración»
 
