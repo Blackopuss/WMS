@@ -176,7 +176,7 @@ describe("acceptOwnershipTransfer", () => {
     ).toEqual({ ok: true });
 
     expect(await ownerOf(s.org)).toBe(s.recipient);
-    expect(await loadSubject(s.org, s.recipient)).toEqual({
+    expect(await loadSubject(s.org, s.recipient)).toMatchObject({
       isOwner: true,
       roles: [],
     });

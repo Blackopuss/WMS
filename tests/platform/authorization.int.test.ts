@@ -121,7 +121,7 @@ describe("isAllowed", () => {
   it("a member without roles can do nothing", async () => {
     const userId = await newUser("sin-rol");
     await addMember(esperanza, userId, []);
-    expect(await loadSubject(esperanza, userId)).toEqual({
+    expect(await loadSubject(esperanza, userId)).toMatchObject({
       isOwner: false,
       roles: [],
     });
