@@ -9,8 +9,8 @@ cerrar cada paso.
 ## 2026-11-16
 
 - Revisión de la documentación: `docs/ESTADO_WMS.md`, el plan, la memoria y el
-  relevo al día; en la propuesta de producción y calidad quedan dos puntos por
-  confirmar con el fundador (P7d y P8d).
+  relevo al día; el fundador contestó P7d y P8d y la propuesta de producción y
+  calidad quedó sin preguntas abiertas.
 
 ## 2026-11-15
 

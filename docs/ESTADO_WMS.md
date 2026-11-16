@@ -25,7 +25,7 @@ abajo son de ese documento).
 | Terminales compartidas con PIN | Hecho (WMS-38, ADR 0061, 2026-11-14) |
 | API y webhooks | Hecho (WMS-60, ADR 0058, 2026-11-14) |
 | Hoja de traslado en PDF y mensaje al archivar un producto según el alcance | Hecho (WMS-19B, WMS-57B; ADR 0048, 0055; 2026-11-14) |
-| Producción y calidad | Falta (WMS-27..31, WMS-59); el flujo ya está decidido (`docs/flujos/PRODUCCION_CALIDAD.md`) y espera que el fundador indique empezar, con WMS-59 primero (quedan dos puntos por confirmar, P7d y P8d) |
+| Producción y calidad | Falta (WMS-27..31, WMS-59); el flujo ya está decidido (`docs/flujos/PRODUCCION_CALIDAD.md`) y espera que el fundador indique empezar, con WMS-59 primero |
 | Analítica | Falta (WMS-32..34) |
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
 | Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |

@@ -67,13 +67,11 @@ para arrancar sin releer la conversación anterior.
 
 - Producción y calidad: el fundador contestó todo (D1 a D11, P1 a P13 y P10b
   el 2026-11-14; P7c, P8c, R1, R2 y R3 el 2026-11-15; está en `MEMORY.md` y en
-  la sección 1 de la propuesta). Falta que diga cuándo empezar y que confirme
-  dos puntos de la sección 11 de la propuesta: **P7d** (cuando Almacén o el
-  Supervisor de almacén aceptan una solicitud de producción, a nombre de quién
-  queda la orden y quién la cancela y cierra; se necesita antes del ADR de
-  WMS-59) y **P8d** (si las tareas disponibles del área que nadie ha tomado
-  también impiden que el operario pida producción; se necesita antes de
-  WMS-28B). La propuesta supone además que lo restaurado vuelve directo al
+  la sección 1 de la propuesta; P7d y P8d el 2026-11-16, sección 1.5). **Ya
+  no hay preguntas abiertas: solo falta que diga cuándo empezar.** Dos cosas
+  que la propuesta supone y él puede cambiar: aprobar una solicitud no da
+  permisos sobre órdenes (cancelar y cerrar siguen siendo del Encargado de
+  producción del área y de Administración), y lo restaurado vuelve directo al
   inventario por omisión (el ajuste deja mandarlo a Calidad).
 - WMS-38: decisiones de quien coordina que puede cambiar (en una terminal no se
   entra con contraseña; PIN de 6 dígitos por omisión y 5 como opción; una
@@ -102,7 +100,9 @@ para arrancar sin releer la conversación anterior.
   `check` y `build`.
 - Producción y calidad (2026-11-15): las solicitudes de producción las deciden
   el Encargado de producción del área, Almacén y el Supervisor de almacén;
-  «tareas asignadas» incluye las tareas de almacén; estado «En restauración»
+  «tareas asignadas» incluye las tareas de almacén y no las disponibles que
+  nadie ha tomado; la orden guarda quién aprobó la solicitud y quién la
+  ejecutó (2026-11-16); estado «En restauración»
   y orden de reproceso; lo restaurado va directo o por Calidad según un ajuste;
   el Almacenista de piso no manda a restauración.
 

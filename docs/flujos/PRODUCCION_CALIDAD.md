@@ -6,15 +6,16 @@ Versión 6, 2026-11-15. Las versiones 1, 2 y 3 se unieron a `pruebas` en
 las decisiones D1–D11, las preguntas P1–P13, la tercera ronda (roles, P1, P3,
 P6, P7, P8), dos respuestas posteriores (quién decide las solicitudes de
 producción y P10b) y, el 2026-11-15, las cinco que faltaban (P7c, P8c, R1, R2
-y R3; sección 1.4). Quedan **dos puntos por confirmar** que salieron al revisar
-esta versión (P7d y P8d, sección 11). **Todavía no se programa nada: falta que
-el fundador indique empezar.** Los ADR se escriben antes de cada paso.
+y R3; sección 1.4). Los dos puntos que salieron al revisar esta versión (P7d y
+P8d) los contestó el 2026-11-16 (sección 1.5): **no queda ninguna pregunta
+abierta** (sección 11). **Todavía no se programa nada: falta que el fundador
+indique empezar.** Los ADR se escriben antes de cada paso.
 
 Cómo leer este documento:
 
 - **Hecho** = lo dice el código, la especificación o las instrucciones (con su
   referencia).
-- **Decidido** = lo contestó el fundador el 2026-11-14 o el 2026-11-15
+- **Decidido** = lo contestó el fundador entre el 2026-11-14 y el 2026-11-16
   (sección 1).
 - **Propuesta** = lo que sugiere este documento. Puede cambiar.
 - **Por confirmar** = interpretación de una respuesta del fundador que él
@@ -77,11 +78,18 @@ Cómo leer este documento:
 
 | # | Pregunta | Respuesta del fundador (textual) | Cómo queda |
 | --- | --- | --- | --- |
-| P7c | ¿Almacén y el Supervisor de almacén también pueden aceptar o rechazar solicitudes de producción, o solo se enteran? | «también deciden» | **Decidido (opción b):** además del Encargado de producción del área y de Administración, **Almacén y el Supervisor de almacén aceptan o rechazan** las solicitudes de producción de lo que alcanzan en su almacén. **Por confirmar (P7d):** a nombre de quién queda la orden cuando acepta Almacén o el Supervisor de almacén, y quién puede cancelarla y cerrarla. Secciones 2.3, 5.3 y 5.9. |
-| P8c | ¿Qué cuenta como «tareas asignadas» para que el operario pueda pedir? | «las actividades, quedamos que por ejemplo una persona puede decirle al montacarguista que tiene que llevar material de punto a apunto b, es una tarea asignada» | **Decidido:** cuenta toda actividad que alguien le asignó a esa persona o que ella tomó: órdenes de producción a su nombre, pendientes de proceso y **tareas de almacén** (por ejemplo, un traslado de un punto a otro que se le encargó). **Por confirmar (P8d):** el fundador no dijo si lo «disponible» del área que nadie ha tomado también impide pedir; la propuesta supone que no. Sección 5.3. |
+| P7c | ¿Almacén y el Supervisor de almacén también pueden aceptar o rechazar solicitudes de producción, o solo se enteran? | «también deciden» | **Decidido (opción b):** además del Encargado de producción del área y de Administración, **Almacén y el Supervisor de almacén aceptan o rechazan** las solicitudes de producción de lo que alcanzan en su almacén. La orden guarda quién aprobó la solicitud y quién la ejecutó (P7d, sección 1.5). Secciones 2.3, 5.3 y 5.9. |
+| P8c | ¿Qué cuenta como «tareas asignadas» para que el operario pueda pedir? | «las actividades, quedamos que por ejemplo una persona puede decirle al montacarguista que tiene que llevar material de punto a apunto b, es una tarea asignada» | **Decidido:** cuenta toda actividad que alguien le asignó a esa persona o que ella tomó: órdenes de producción a su nombre, pendientes de proceso y **tareas de almacén** (por ejemplo, un traslado de un punto a otro que se le encargó). Lo «disponible» del área que nadie ha tomado no cuenta (P8d, sección 1.5). Sección 5.3. |
 | R1 | ¿Estado nuevo «En restauración» para todas las empresas y orden de reproceso para quien tenga Producción? | «si, ambas» | **Decidido (opción a):** estado nuevo fijo y genérico «En restauración» para cualquier empresa (WMS-75) **y** orden de reproceso con Producción (WMS-29B). Sección 5.10. |
 | R2 | Lo restaurado, ¿vuelve directo a disponible o pasa antes por inspección? | «depende, déjalo como toggle de pasar a calidad o inv» | **Decidido:** es un ajuste de la empresa (`inventory.repair.release`): lo restaurado vuelve **directo al inventario** (`direct`) o pasa antes **por Calidad / inspección** (`inspection`). El fundador no dijo cuál va por omisión; se propone `direct`, porque sirve también a quien no tiene Calidad. Secciones 5.10 y 10. |
 | R3 | ¿El Almacenista puede mandar a restauración? | «no» | **Decidido (opción a):** el Almacenista de piso **no** manda a restauración; reporta como dañado, igual que hoy, y el jefe de almacén (Administrador, Almacén o Supervisor de almacén) decide si se restaura. Sección 5.10. |
+
+### 1.5 Quinta ronda (2026-11-16): P7d y P8d
+
+| # | Pregunta | Respuesta del fundador (textual) | Cómo queda |
+| --- | --- | --- | --- |
+| P7d | Cuando Almacén o el Supervisor de almacén aceptan una solicitud, ¿a nombre de quién queda la orden y quién puede cancelarla y cerrarla? | «de ambos lados, quien aprobo la solicitud y quien la ejecuto, para que haya una trazabilidad» | **Decidido:** la orden guarda **los dos nombres**: quién **aprobó** la solicitud (el Encargado, Almacén o el Supervisor de almacén que la aceptó) y quién la **ejecutó** (quien reporta la producción). Los dos se ven en la orden, en su historial y en el rastreo. **Propuesta (el fundador no habló de permisos):** aprobar no da permisos sobre órdenes; cancelar y cerrar la orden siguen siendo del Encargado de producción del área y de Administración (P8). Sección 5.3. |
+| P8d | Lo «disponible» del área que nadie ha tomado, ¿también impide que el operario pida producción? | «se supone que no» | **Decidido:** no lo impide; solo cuenta lo que la persona tiene a su nombre. Sección 5.3. |
 
 ---
 
@@ -169,8 +177,8 @@ Supervisor de almacén** dentro de lo que alcanzan (decidido, P7c).
   la orden. Si el operario se queda sin tareas y algo de su área se acaba,
   manda una **solicitud de producción** que el Encargado de producción del
   área, Almacén o el Supervisor de almacén aceptan o rechazan (P7c); al
-  aceptar nace la orden (a nombre de quién, cuando no acepta el Encargado, está
-  por confirmar: P7d).
+  aceptar nace la orden, que guarda quién aprobó la solicitud y quién la
+  ejecutó (P7d).
 - **Restauración** (base de Inventario, para cualquier empresa): un estado
   «En restauración» para lo que se repara, reacondiciona o reempaca, que no está
   disponible hasta que alguien lo libera (sección 5.10).
@@ -194,8 +202,9 @@ inspección en Inventario y Compras → recetas, motor de procesos y criterios
 de inspección → órdenes → solicitudes y reporte de producción → verificación
 de Calidad → cierre y producto a su lugar → procesos en embarques.
 
-**Quedan dos puntos por confirmar** (P7d y P8d, sección 11). Lo último que
-contestó el fundador (2026-11-15): Almacén y el Supervisor de almacén también
+**Ya no falta nada por decidir para empezar** (sección 11; P7d y P8d se
+contestaron el 2026-11-16, sección 1.5). Lo último que contestó el fundador
+(2026-11-15): Almacén y el Supervisor de almacén también
 aceptan o rechazan solicitudes (P7c); «tareas asignadas» es toda actividad a
 nombre de la persona, incluidas las tareas de almacén (P8c); habrá estado «En
 restauración» para cualquier empresa y orden de reproceso con Producción (R1);
@@ -291,8 +300,8 @@ inmutable; «0.25 kg por 100 piezas» exacto; sin ciclos; entre empresas.
 **Decidido (P8):** las genera el encargado del área, que responde por ellas.
 
 **Quién y dónde.** Encargado de producción, en escritorio o tableta (también
-las que nacen cuando se acepta una solicitud, 5.3; si la acepta Almacén o el
-Supervisor de almacén, ver P7d).
+las que nacen cuando se acepta una solicitud, 5.3). Toda orden guarda quién
+la creó o aprobó y quién la ejecutó (P7d).
 
 **Flujo (propuesta).**
 
@@ -340,8 +349,8 @@ existencias bajas; el **Encargado de producción del área** (y Administración)
 acepta o rechaza; al aceptar nace la orden a su nombre y él responde por ella;
 no hay otra autorización. **Almacén y el Supervisor de almacén también
 aceptan o rechazan** las solicitudes de lo que alcanzan en su almacén
-(decidido, P7c); a nombre de quién nace la orden en ese caso está por
-confirmar (P7d).
+(decidido, P7c). La orden guarda **quién aprobó la solicitud y quién la
+ejecutó** (decidido, P7d).
 
 **Las tres condiciones para pedir (la primera decidida en P8c; las otras
 dos, propuesta con lo que ya existe).**
@@ -351,10 +360,9 @@ dos, propuesta con lo que ya existe).**
    proceso que tomó o le asignaron (sección 6.4), ni (c) tareas de almacén
    abiertas asignadas a él (`warehouse_task`, por ejemplo «Surtir a
    producción», o un traslado de un punto a otro que alguien le encargó).
-   Que cuenta la actividad asignada a la persona está decidido (P8c). Lo
-   «disponible» de su área que nadie ha tomado **no** cuenta: eso es propuesta
-   y está por confirmar (P8d). Se comprueba al abrir la pantalla y otra vez en
-   el servidor al enviar.
+   Lo «disponible» de su área que nadie ha tomado **no** cuenta (decidido,
+   P8c y P8d: solo cuenta lo que la persona tiene a su nombre). Se comprueba
+   al abrir la pantalla y otra vez en el servidor al enviar.
 2. **«De su área»**: productos con receta activa cuya **área de producción**
    (la ubicación de uso «Producción» que la receta dice, nueva columna
    opcional; sin ella, cualquier área del almacén) está dentro de su alcance
@@ -431,13 +439,19 @@ producción), `production.request.decide` (Encargado de producción, Administrad
 **Almacén y Supervisor de almacén**, decidido en P7c; Gerencia solo lee).
 Para el Encargado y el Administrador, aceptar usa los permisos que ya tienen
 de crear y liberar órdenes (`production.order.create` y
-`production.order.release`). **Por confirmar (P7d):** qué pasa cuando acepta
-Almacén o el Supervisor de almacén. El fundador dijo en P8 que las órdenes las
-generan los encargados de área, que responden por ellas, y en P7c que Almacén
-y el Supervisor de almacén también deciden las solicitudes; juntas dejan sin
-definir a nombre de quién queda esa orden. Si quedara a nombre de quien
-aceptó sin darle permisos de orden, el «responsable» no podría cancelarla ni
-cerrarla; por eso no se propone así. Opciones en la sección 11.
+`production.order.release`). **Decidido (P7d):** la orden que nace de una
+solicitud guarda de los dos lados quién **aprobó** la solicitud (el Encargado,
+Almacén o el Supervisor de almacén que la aceptó) y quién la **ejecutó**
+(quien reporta la producción), para la trazabilidad; los dos nombres se ven en
+la orden, en su historial, en la bitácora y en el rastreo. **Propuesta, a
+fijar en el ADR de WMS-28B (el fundador no habló de permisos):** aprobar una
+solicitud no da permisos sobre órdenes. Almacén y el Supervisor de almacén no
+reciben `production.order.create` ni `production.order.release`: su permiso es
+`production.request.decide`, y el efecto de aceptar es crear y liberar **esa**
+orden, con el producto y la cantidad de la solicitud. Cancelarla, cerrarla o
+reasignarla sigue siendo del Encargado de producción del área y de
+Administración (P8), a quienes se les avisa que nació una orden en su área
+aprobada por Almacén.
 
 **Listo cuando:** no se pide con tareas asignadas (comprobado en el
 servidor); solo se ofrecen productos del área y cerca del mínimo; la lista no
@@ -683,8 +697,8 @@ Cerrar con faltante pide motivo; libera lo apartado; la orden queda inmutable.
    (sin cantidades). Pide 20 (`SP-0001`); el Encargado de producción del área
    ve que hay 4 contra un mínimo de 24 y que el triplay alcanza, y acepta:
    nace OP-0002 liberada a su nombre, con Juan asignado. El Supervisor de
-   almacén también habría podido aceptarla (P7c; a nombre de quién quedaría
-   la orden está por confirmar, P7d). Ana, con una
+   almacén también habría podido aceptarla (P7c); la orden diría entonces
+   «Aprobó: Supervisor de almacén» y «Ejecutó: Juan» (P7d). Ana, con una
    orden asignada, no ve «Queda poco».
    Una hoja se rompe al cortar: Juan la reporta como merma de material, fuera
    del costo de las tablas.
@@ -713,8 +727,9 @@ decidir (`inventory.stock.read`, `inventory.minimum.read`; sin costos).
 Almacén y Supervisor de almacén reciben, con Producción contratada,
 `production.request.read` y **`production.request.decide`** (decidido, P7c:
 también aceptan o rechazan solicitudes) y las lecturas de producción que la
-pantalla de decisión necesita (recetas y órdenes abiertas). Si además reciben
-permisos sobre las órdenes depende de P7d.
+pantalla de decisión necesita (recetas y órdenes abiertas). No reciben
+permisos sobre las órdenes (propuesta; P7d pide que la orden guarde quién
+aprobó y quién ejecutó, no que quien aprueba la administre).
 Cambio de roles: matriz + catálogo + migración del `CHECK` de
 `membership_role` + `team-rules.test.ts` y `navigation.int.test.ts`.
 
@@ -722,8 +737,8 @@ Cambio de roles: matriz + catálogo + migración del `CHECK` de
 negativos (el operario no crea órdenes, no ve costos, no verifica ni decide
 solicitudes; ni el Encargado ni Almacén ni el Supervisor de almacén deciden
 solicitudes de un área que no alcanzan; Almacén y Supervisor de almacén no
-crean órdenes por su cuenta (lo que pueden hacer con la orden de una
-solicitud aceptada depende de P7d); el Almacenista de piso y el
+crean órdenes por su cuenta ni cancelan o cierran la de una solicitud que
+aprobaron; el Almacenista de piso y el
 Montacarguista no deciden solicitudes; el inspector no reporta; un rol sin su
 módulo no hace nada).
 
@@ -1050,48 +1065,21 @@ Quitados: `production.consumption.mode` y `production.consumption.exceptions`
 
 ## 11. Preguntas que siguen abiertas
 
-El fundador contestó el 2026-11-15 las cinco que quedaban (sección 1.4): P7c
-(Almacén y el Supervisor de almacén también deciden las solicitudes), P8c
-(cuenta toda actividad asignada a la persona, incluidas las tareas de
-almacén), R1 (estado «En restauración» y orden de reproceso), R2 (ajuste de
-la empresa: directo al inventario o por Calidad) y R3 (el Almacenista no manda
-a restauración).
+**Ninguna.** El fundador contestó el 2026-11-15 las cinco que quedaban
+(sección 1.4: P7c, P8c, R1, R2 y R3) y el 2026-11-16 los dos puntos que
+salieron al revisar esta versión (sección 1.5): P7d (la orden guarda quién
+aprobó la solicitud y quién la ejecutó) y P8d (lo disponible que nadie ha
+tomado no impide pedir).
 
-Al revisar esta versión (2026-11-16) salieron **dos puntos que sus respuestas
-no cubren** y que la versión anterior había anotado como decididos sin
-serlo. No detienen los primeros pasos, pero se confirman antes del ADR de
-WMS-59 (P7d) y del de WMS-28B (P8d):
+Lo que este documento propone por su cuenta a partir de esas respuestas, y que
+se fija en el ADR de cada paso (el fundador puede cambiarlo):
 
-**P7d. Cuando Almacén o el Supervisor de almacén aceptan una solicitud, ¿a
-nombre de quién queda la orden y quién puede cancelarla y cerrarla?** En P8
-el fundador dijo que las órdenes las generan los encargados de área y que
-ellos son los responsables; en P7c, que Almacén y el Supervisor de almacén
-también deciden las solicitudes.
-- a) **Queda a nombre del Encargado de producción del área** (si hay varios,
-  del que alcanza el área y la toma primero; si no hay ninguno, de
-  Administración). Almacén y el Supervisor de almacén solo dan el visto bueno
-  y no reciben permisos sobre órdenes.
-- b) **Queda a nombre de quien aceptó**, y Almacén y el Supervisor de almacén
-  reciben los permisos para liberar, cancelar y cerrar **esa** orden (no para
-  crear otras por su cuenta).
-- **Recomendación: a)**: respeta P8 (un solo responsable por área, que es
-  quien manda a la gente de producción) y no reparte permisos de producción
-  fuera del área.
-
-**P8d. Lo «disponible» del área que nadie ha tomado, ¿también impide que el
-operario pida producción?** El fundador dijo que «tareas asignadas» son las
-actividades que se le encargaron a la persona; no habló de las que están
-disponibles sin dueño.
-- a) **No lo impide**: solo cuenta lo que está a su nombre.
-- b) **Sí lo impide**: mientras haya trabajo disponible de su área que puede
-  tomar, no puede pedir.
-- **Recomendación: a)**, que es lo literal de su respuesta; con b) casi nunca
-  podría pedir. La propuesta supone a) mientras no diga otra cosa.
-
-Lo que este documento propone por su cuenta y se fija en el ADR de cada paso:
-que `inventory.repair.release` valga `direct` por omisión (5.10) y el nombre
-en pantalla «En restauración» (si el fundador prefiere otro más general, se
-cambia antes de programar WMS-75).
+- Aprobar una solicitud no da permisos sobre órdenes: cancelar y cerrar la
+  orden que aprobó Almacén o el Supervisor de almacén sigue siendo del
+  Encargado de producción del área y de Administración (5.3).
+- `inventory.repair.release` vale `direct` por omisión (5.10).
+- El nombre en pantalla «En restauración» (si el fundador prefiere otro más
+  general, se cambia antes de programar WMS-75).
 
 **Pueden esperar:** P14 (nomenclatura por producto), P15 (nomenclatura para
 otros consecutivos), reparto de costo entre coproductos, cerrar una orden con
@@ -1107,7 +1095,7 @@ quién libera de cuarentena, tiempos por etapa, sugerir órdenes sin solicitud
 
 | Orden | Paso | Qué | Depende de | Corazón | En paralelo con |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **WMS-59** | Contratos (`quality` depende de `production`), permisos, roles (Operario, Encargado de producción, Inspector), `production.request.decide` para el Encargado de producción (y Administrador), lectura y decisión de solicitudes para Almacén y Supervisor de almacén (P7c), matriz, `ROLE_MODULE` | P7d (solo cambia si Almacén y Supervisor de almacén reciben permisos de orden) | No | — |
+| 1 | **WMS-59** | Contratos (`quality` depende de `production`), permisos, roles (Operario, Encargado de producción, Inspector), `production.request.decide` para el Encargado de producción (y Administrador), lectura y decisión de solicitudes para Almacén y Supervisor de almacén (P7c), matriz, `ROLE_MODULE` | — | No | — |
 | 2 | **WMS-37** | Fotos privadas | — | No | WMS-27, WMS-74, WMS-30A |
 | 3 | **WMS-30-0** | Recibir en inspección (cualquier empresa), devolver y desechar lo rechazado (`DISPOSAL`), retención genérica | WMS-59 | **Sí** | WMS-27, WMS-74, WMS-30A |
 | 3b | **WMS-75** | Estado «En restauración», decisión «A restauración» en devoluciones, lista derivada | WMS-30-0 | **Sí** | WMS-27, WMS-74, WMS-30A |
@@ -1116,7 +1104,7 @@ quién libera de cuarentena, tiempos por etapa, sugerir órdenes sin solicitud
 | 3 | **WMS-30A** | Planes de inspección y defectos | WMS-59 | No | WMS-27, WMS-74 |
 | 4 | **WMS-28** | Órdenes, materiales apartados, `ISSUE`, uso «Producción», área de la receta, proceso de la orden | WMS-27, WMS-75, WMS-74 | **Sí** | — |
 | 5 | **WMS-29** | Reporte con foto, descuento automático de la receta, merma extra (`DISPOSAL`), `PRODUCTION`, costo, nomenclatura, lote con su proceso, turnos, rastreo | WMS-28 | **Sí** | WMS-28B |
-| 5 | **WMS-28B** | Solicitudes de producción (tres condiciones; decide el Encargado del área, Almacén o el Supervisor de almacén viendo existencias y materiales; a nombre de quién nace la orden: P7d) | WMS-28, P7d, P8d | No | WMS-29 |
+| 5 | **WMS-28B** | Solicitudes de producción (tres condiciones; decide el Encargado del área, Almacén o el Supervisor de almacén viendo existencias y materiales; la orden guarda quién aprobó y quién ejecutó, P7d) | WMS-28 | No | WMS-29 |
 | 6 | **WMS-30B** | Verificación e inspección, diferencias por causa, «A restauración», candado de etapas del mismo lote u orden, devoluciones por `decideCustomerReturn` | WMS-29, WMS-30A | **Sí** | WMS-74B |
 | 7 | **WMS-31** | Producto a su lugar, «Se guardó» automático, cierre | WMS-30B | **Sí** | WMS-74B |
 | 6–7 | **WMS-74B** | Procesos en embarques | WMS-74 | No | WMS-30B, WMS-31 |
@@ -1151,8 +1139,9 @@ y ADR):
   del mínimo, sin cantidades; deciden el Encargado, Almacén y el Supervisor
   de almacén que alcanzan el área (y Administración si no hay nadie); una
   tarea de almacén asignada también impide pedir; la pantalla de decisión no cuenta nada de fuera del alcance;
-  orden liberada a nombre de quien corresponda según P7d, o en borrador si
-  falta material;
+  orden liberada que guarda quién aprobó y quién ejecutó (P7d), o en borrador
+  si falta material; quien aprobó sin ser Encargado no puede cancelarla ni
+  cerrarla;
   dos Encargados a la vez; avisos; rechazo con motivo.
 - **WMS-30B:** **PC-4**, **PC-5**; las cuatro causas; foto y motivo
   obligatorios; lote con etapas pendientes no se verifica, pero un lote listo
