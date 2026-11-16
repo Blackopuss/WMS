@@ -135,7 +135,7 @@ export function RegisterForm({ minLength }: { minLength: number }) {
         ¿Ya tienes cuenta?{" "}
         <Link
           href="/ingresar"
-          className="rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="rounded py-1 font-medium text-primary underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           Inicia sesión
         </Link>

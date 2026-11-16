@@ -122,7 +122,7 @@ export function CreateOrganizationForm({
         <span className="text-muted-foreground">¿No es tu cuenta? </span>
         <button
           type="submit"
-          className="inline-flex min-h-11 items-center rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-0"
+          className="inline-flex min-h-11 items-center rounded py-1 font-medium text-primary underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-0"
         >
           Cerrar sesión
         </button>

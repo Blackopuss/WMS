@@ -113,6 +113,13 @@ const SCREENS = [
   "/configuracion/pin",
   // WMS-60: API keys and webhook destinations.
   "/configuracion/api",
+  // WMS-78A: access and Configuración screens that were missing.
+  "/configuracion/accesos",
+  "/configuracion/bitacora",
+  "/configuracion/procesos",
+  "/configuracion/procesos/inventory.shipment",
+  "/configuracion/defectos",
+  "/no-existe-esta-pagina",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
@@ -130,6 +137,11 @@ const PUBLIC = [
   "/registro",
   "/recuperar-contrasena",
   "/sin-conexion",
+  // WMS-78A: the other screens before signing in, and a missing page.
+  "/restablecer-contrasena",
+  "/verifica-tu-correo",
+  "/invitacion",
+  "/no-existe-esta-pagina",
 ];
 
 /** Forms sent empty: the focus must land on a described, invalid field. */
@@ -349,6 +361,20 @@ try {
       ["/pedidos/olas", /^\/tareas\/olas\/[0-9a-f-]{36}$/],
       // WMS-40: a person of the team, with their sessions.
       ["/configuracion/equipo", /^\/configuracion\/equipo\/[0-9a-f-]{36}$/],
+      // WMS-78A: a person's access history, a warehouse and a terminal.
+      [
+        "/configuracion/equipo",
+        /^\/configuracion\/equipo\/[0-9a-f-]{36}$/,
+        "/accesos",
+      ],
+      [
+        "/configuracion/almacenes",
+        /^\/configuracion\/almacenes\/[0-9a-f-]{36}$/,
+      ],
+      [
+        "/configuracion/terminales",
+        /^\/configuracion\/terminales\/[0-9a-f-]{36}$/,
+      ],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>
