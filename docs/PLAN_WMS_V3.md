@@ -64,6 +64,8 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. **Toda la tanda quedó cerrada y unida ese día:** WMS-19B (PDF del traslado, ADR 0048), WMS-57B (mensaje al archivar, ADR 0055), WMS-40 (sesiones del equipo, ADR 0059), WMS-39B (avisos por correo y resumen diario, ADR 0060), WMS-60 (API y webhooks, ADR 0058) y WMS-38 (terminales compartidas con PIN, ADR 0061). La propuesta de producción y calidad va en su sexta versión (2026-11-15), con todas las respuestas del fundador y sin preguntas abiertas (P7d y P8d se contestaron el 2026-11-16).
 
+**En curso (2026-11-16):** **El fundador indicó empezar producción y calidad el 2026-11-16**, por WMS-59 (roles de producción y calidad) y en el orden de la sección 12 de la propuesta, **un paso a la vez: no se empieza el siguiente sin avisarle.** WMS-59 está en su chat y su rama (`wms-59-roles-produccion-calidad`). **Forma de trabajo de producción y calidad (fundador, 2026-11-16):** quien coordina reparte, revisa e integra, no implementa, y escribe poco en su chat para cuidar el contexto. Cada paso lo implementa un chat nuevo con el modelo Opus (`claude-opus-5-5`) en esfuerzo medio, en su propia rama creada desde `pruebas`: escribe su ADR con el flujo antes de programar, sube solo a su rama y manda su reporte y sus hallazgos a quien coordina. Documentación y pendientes chicos sin existencias ni permisos pueden ir con Sonnet (`claude-sonnet-5-5`) en esfuerzo medio. Lo que toca seguridad, permisos o existencias lo lee además un revisor independiente antes de unir, y sus hallazgos regresan al chat que implementó. Un chat que pasa de 400,000 tokens hace relevo a un chat nuevo. Lo que el fundador comenta o decide se anota el mismo día en `MEMORY.md`, el plan, `AGENTS.md` y el relevo. Antes de subir código, `npm run check` y `npm run build` en local, y después comprobar CI; un cambio solo de `.md` puede subirse directo a `pruebas` y `main`. En el primer paso que toque código se sube `timeout-minutes` de `.github/workflows/ci.yml` a 30. **Al cerrar cada paso, `main` queda igual que `pruebas`.** Sin emojis.
+
 **Qué sigue cuando el fundador lo indique, en el orden de la tabla de fases:** producción y calidad (el flujo ya está decidido; el orden de pasos es el de la sección 12 de la propuesta, con WMS-59 primero, y cada paso escribe su ADR antes de programar), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37 (requisito de producción), WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5. Ya están hechos WMS-60, WMS-38 y WMS-40.
 
 **Decisiones del fundador (2026-11-13):**
@@ -645,7 +647,7 @@ Almacenista de piso no manda a restauración (R3). Al revisar esa versión
 (2026-11-16) salieron dos puntos más, que contestó ese mismo día: la orden
 guarda quién aprobó la solicitud y quién la ejecutó (P7d) y lo disponible del
 área que nadie ha tomado no impide pedir (P8d). Ya no hay preguntas abiertas.
-**Nada se programa hasta que el fundador indique empezar;** el orden de pasos es el de la sección 12 de la propuesta, con
+**El fundador indicó empezar el 2026-11-16**, un paso a la vez; el orden de pasos es el de la sección 12 de la propuesta, con
 WMS-59 primero.
 
 ### WMS-60 · API y webhooks

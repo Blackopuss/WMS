@@ -14,11 +14,16 @@ para arrancar sin releer la conversación anterior.
   del equipo), WMS-39B (avisos por correo y resumen diario) y WMS-60 (API y
   webhooks). Fuera de lo que él pidió, un chat nuevo pregunta qué sigue; no
   retoma el plan por su cuenta.
-- **Nada en curso:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
+- **En curso (2026-11-16): WMS-59 (roles de producción y calidad).** El
+  fundador indicó empezar producción y calidad ese día, en el orden de la
+  sección 12 de la propuesta, un paso a la vez y sin empezar el siguiente sin
+  avisarle. Lo implementa un chat nuevo de Opus en la rama
+  `wms-59-roles-produccion-calidad`; quien coordina revisa, manda a un revisor
+  independiente y une.
+- **Cerrado antes:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
   unido el 2026-11-14 tras tres vueltas de revisión de seguridad, y la
   propuesta de producción y calidad está unida en su sexta versión
-  (2026-11-15), ya con todas las respuestas del fundador. No hay chats ni
-  ramas con trabajo pendiente.
+  (2026-11-15), ya con todas las respuestas del fundador.
 - Las ramas ya unidas (`pend-traslado-pdf-archivar`, `wms-40-sesiones-equipo`,
   `pend-avisos-correo`, `wms-60-api-webhooks`, `wms-38-terminales-pin`,
   `flujo-produccion-calidad`) siguen en GitHub: desde un chat
@@ -53,8 +58,8 @@ para arrancar sin releer la conversación anterior.
 - Producción y calidad: el orden de pasos está en la propuesta (WMS-59 roles,
   WMS-37 fotos, base de inspección, recetas, motor de procesos WMS-74, órdenes,
   solicitudes, reporte, inspección, cierre). El flujo ya está decidido (sexta
-  versión). **No se programa hasta que el fundador indique empezar;** el
-  primer paso es WMS-59 (roles), con su ADR antes del código.
+  versión). **El fundador indicó empezar el 2026-11-16**, un paso a la vez;
+  el primer paso es WMS-59 (roles), con su ADR antes del código.
 - WMS-61/62 y WMS-63 esperan decisión del fundador.
 - Transversales: WMS-37 (fotos; pasa a ser requisito de producción), WMS-67,
   WMS-42, WMS-68, WMS-47. Después, Fases 4 y 5.
@@ -68,7 +73,7 @@ para arrancar sin releer la conversación anterior.
 - Producción y calidad: el fundador contestó todo (D1 a D11, P1 a P13 y P10b
   el 2026-11-14; P7c, P8c, R1, R2 y R3 el 2026-11-15; está en `MEMORY.md` y en
   la sección 1 de la propuesta; P7d y P8d el 2026-11-16, sección 1.5). **Ya
-  no hay preguntas abiertas: solo falta que diga cuándo empezar.** Dos cosas
+  no hay preguntas abiertas y ya indicó empezar (2026-11-16).** Dos cosas
   que la propuesta supone y él puede cambiar: aprobar una solicitud no da
   permisos sobre órdenes (cancelar y cerrar siguen siendo del Encargado de
   producción del área y de Administración), y lo restaurado vuelve directo al
@@ -141,6 +146,8 @@ npm run skills:link                           # enlaza .agents/skills
 ## Cómo se viene trabajando (pedido por el fundador)
 
 Quien coordina no implementa: reparte, revisa e integra.
+
+**Forma de trabajo de producción y calidad (fundador, 2026-11-16):** quien coordina reparte, revisa e integra, no implementa, y escribe poco en su chat para cuidar el contexto. Cada paso lo implementa un chat nuevo con el modelo Opus (`claude-opus-5-5`) en esfuerzo medio, en su propia rama creada desde `pruebas`: escribe su ADR con el flujo antes de programar, sube solo a su rama y manda su reporte y sus hallazgos a quien coordina. Documentación y pendientes chicos sin existencias ni permisos pueden ir con Sonnet (`claude-sonnet-5-5`) en esfuerzo medio. Lo que toca seguridad, permisos o existencias lo lee además un revisor independiente antes de unir, y sus hallazgos regresan al chat que implementó. Un chat que pasa de 400,000 tokens hace relevo a un chat nuevo. Lo que el fundador comenta o decide se anota el mismo día en `MEMORY.md`, el plan, `AGENTS.md` y el relevo. Antes de subir código, `npm run check` y `npm run build` en local, y después comprobar CI; un cambio solo de `.md` puede subirse directo a `pruebas` y `main`. En el primer paso que toque código se sube `timeout-minutes` de `.github/workflows/ci.yml` a 30. **Al cerrar cada paso, `main` queda igual que `pruebas`.** Sin emojis.
 
 1. Por paso, un worktree en una rama nueva desde `pruebas`
    (`git worktree add /home/user/wt/<nombre> -b <rama> pruebas`), con su copia
