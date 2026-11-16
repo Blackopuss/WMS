@@ -1,0 +1,89 @@
+# Plataforma: procesos (`platform/processes`)
+
+## Responsabilidad
+
+El motor de procesos de la empresa (WMS-74, ADR 0069): por cada tipo de
+documento que declara un módulo, la empresa define etapas y subetapas
+**encima de los estados fijos** del documento, con candado entre etapas del
+mismo documento (P10, P10b) y relevo automático entre áreas. Avanzar una etapa
+**nunca mueve existencias ni cambia el estado fijo del documento**. La
+plataforma recibe los documentos como lista (`processDocuments` de
+`src/modules/registry/processes.ts`, hoy vacía) y no conoce a los módulos.
+
+## Servicios públicos (`index.ts`)
+
+| Grupo | Archivo | Qué ofrece |
+| --- | --- | --- |
+| Definiciones | `definitions.ts` | tipo `ProcessDocument` (`key` `modulo.cosa`, `module`, `label`, `milestones` en orden con `closes`, `operations` con su hito, `readPermission`, `href`), `PROCESS_LIMITS`, `assertValidProcessDocuments`, `milestoneIndex` |
+| Reglas (puras) | `rules.ts` | `settleStates` (qué etapa se puede hacer: candado, hito y subetapas en orden o en cualquier orden), `waitingFor` («Esperando: …»), `previousStage` (a dónde regresa «Regresar»), `checkDraft` y `draftSchema` (forma de un borrador); prueba unitaria `rules.test.ts` |
+| Estados | `states.ts` | `PROCESS_VERSION_TRANSITIONS` (`DRAFT → PUBLISHED → RETIRED`; la repite el disparador `process_version_transition`), etiquetas de estados y acciones |
+| Para los módulos | `engine.ts` | `startProcess`, `reachMilestone`, `setProcessPlace`, `assertStagesDone`, `completeOperationStage` (con el `tx` del módulo), `ProcessStagesPending` |
+| Para las personas | `work.ts` | `takeStage`, `releaseStage`, `assignStage`, `completeStage` (nota, cantidad y fotos), `skipStage`, `backStage` (motivo); `uploadProcessPhoto`, `discardProcessPhoto`; `processStepReach` (dueño de las fotos) |
+| Leer | `work.ts` | `getProcessView` (línea de etapas, siguiente paso, a quién asignar, rastro con fotos), `listProcessWork` y `countProcessWork` («Mis tareas» y «Disponibles») |
+| Configurar | `config.ts` | `getProcessSettings`, `getProcessDefinition`, `saveProcessDraft` (bitácora `process.draft_saved`), `publishProcess` (`process.published`), `hasProcessDocuments` (para el menú de Configuración) |
+
+### Contrato para un módulo
+
+Todo con el cliente `tx` de la transacción del módulo (`LOCKING_TRANSACTION`):
+
+1. Al crear el documento, después de insertarlo: `startProcess(tx, doc,
+   actor, { documentId, facilityId, locationId?, label, milestone })`.
+2. Al cambiar su estado fijo, después de escribirlo: `reachMilestone(tx, doc,
+   actor, documentId, hito)`. Un hito con `closes` cierra el proceso.
+3. Si cambia de lugar: `setProcessPlace(tx, doc, documentId, lugar)`.
+4. Antes de una operación que puede ser etapa, después de sus candados:
+   `assertStagesDone(tx, doc, documentId, operación)`; si responde `ok:
+   false`, el módulo rechaza con su `message`.
+5. Después de escribir la operación: `completeOperationStage(tx, doc,
+   actor, documentId, operación)`.
+
+Orden de candados: documento del módulo → progreso → archivos de las fotos.
+Las acciones de las personas bloquean solo el progreso.
+
+## Quién hace qué
+
+- Configurar: `platform.organization.update` y el módulo del documento
+  activo.
+- Hacer una etapa: membresía activa, `platform.process.work`, ser titular o
+  tener un rol **vigente** del área (`activeRoles`: un rol ligado a un
+  módulo cuenta solo con su módulo activo), leer el documento
+  (`readPermission`), alcanzar su almacén (o su zona si la etapa es «solo en
+  su zona») y el módulo activo. Para quien no lee el documento o no alcanza
+  su almacén, el proceso «no existe».
+- Asignar y liberar lo de otra persona: `platform.process.assign`.
+- Terminal con PIN: conserva `platform.process.work`, nunca asigna.
+  Soporte de plataforma solo ve. La API no ofrece nada.
+- Plan vencido: todo se ve y nada se hace ni se configura.
+
+## Tablas
+
+`process_definition`, `process_version` (una en borrador y una publicada por
+definición; publicada no cambia), `process_stage` y `process_stage_role`
+(solo cambian en borrador, disparadores), `process_progress` (documento y
+versión fijos), `process_stage_state` (derivado por `settleStates`, nunca a
+mano) y `process_step` (rastro inmutable). Las fotos de un paso son
+`evidence_photo.processStepId` (propósito `process_step_photo`).
+
+## Avisos
+
+`processes.ready`: la etapa siguiente quedó lista para su área (por
+permisos, roles vigentes con `ownerByRole: false` y lugar).
+`processes.assigned`: a la persona a quien se asignó una etapa.
+
+## Pantallas
+
+Configuración › Procesos (`/configuracion/procesos`, solo si un módulo
+activo declara documentos), el editor `/configuracion/procesos/[clave]`, la
+pantalla del proceso `/procesos/[id]` (componente `ProcessPanel`, que cada
+documento puede poner en su ficha) y el bloque de etapas en `/tareas`.
+
+## Pendientes
+
+Autorización por etapa, avisos a otros roles además del área, tiempos por
+etapa (WMS-33), vista de toda la cadena, «Seguimiento» con filtro por etapa,
+embarques (WMS-74B), órdenes de compra, pedidos y traslados.
+
+## ADR
+
+0069 (motor de procesos), 0057 (avisos), 0062 (roles ligados a módulos),
+0063 (fotos de evidencia).

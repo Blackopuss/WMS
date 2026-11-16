@@ -25,6 +25,7 @@ export type Extension = SheetExtension | ImageExtension;
  */
 export const EVIDENCE_OWNER_KINDS = {
   incident: "incidentId",
+  process_step: "processStepId",
 } as const;
 
 export type EvidenceOwnerKind = keyof typeof EVIDENCE_OWNER_KINDS;
@@ -100,6 +101,20 @@ export const FILE_PURPOSES = {
     extensions: PHOTO_EXTENSIONS,
     evidence: { owner: "incident", perRecord: 5, perOwner: 30 },
   },
+  /**
+   * WMS-74 (ADR 0069): photos of a step of a process (a stage completed
+   * with its evidence). Who works stages takes them; who reads the
+   * document sees them — the engine of processes decides through
+   * `EvidenceOwners`, so the permission to read here is only the floor
+   * every member has.
+   */
+  process_step_photo: {
+    write: "platform.process.work",
+    read: "platform.organization.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: { owner: "process_step", perRecord: 5, perOwner: 5 },
+  },
 } as const satisfies Record<string, Purpose>;
 
 export type FilePurpose = keyof typeof FILE_PURPOSES;
@@ -120,13 +135,19 @@ export function ownerWhere(owner: EvidenceOwner) {
   switch (owner.kind) {
     case "incident":
       return { incidentId: String(owner.id).slice(0, 36) };
+    case "process_step":
+      return { processStepId: String(owner.id).slice(0, 36) };
   }
 }
 
 /** The record an evidence row points to. */
 export function ownerOfLink(link: {
   incidentId: string | null;
+  processStepId?: string | null;
 }): EvidenceOwner | null {
   if (link.incidentId) return { kind: "incident", id: link.incidentId };
+  if (link.processStepId) {
+    return { kind: "process_step", id: link.processStepId };
+  }
   return null;
 }

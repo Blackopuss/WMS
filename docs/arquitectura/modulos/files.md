@@ -38,7 +38,9 @@ Cada propósito de `FILE_PURPOSES` dice qué permiso escribe y cuál lee:
 `import_source` (`inventory.import.create` / `.read`), `outbound_source`
 (`inventory.outbound.create` / `.read`), `export` (`inventory.export.create`)
 e `incident_photo` (`inventory.incident.create` / `.read`; 5 MB; 5 fotos a la
-vez y 30 por incidencia).
+vez y 30 por incidencia) y `process_step_photo` (WMS-74:
+`platform.process.work` / `platform.organization.read`, porque quién la ve
+lo decide `processStepReach` del motor de procesos; 5 fotos por paso).
 Un módulo que suba o genere archivos agrega aquí su propósito con sus
 permisos.
 
@@ -46,7 +48,8 @@ permisos.
 
 `stored_file` (con `width` y `height` de una imagen) y `evidence_photo`
 (vínculo inmutable de una foto con su registro: una columna por clase de
-registro, hoy `incidentId` e `incidentNoteId`).
+registro, hoy `incidentId` e `incidentNoteId`, y `processStepId` de un paso
+de un proceso, WMS-74).
 
 ## Ajustes y trabajos
 

@@ -1421,6 +1421,86 @@ beforeAll(async () => {
         setAt: new Date(),
       },
     });
+    // WMS-74: a process with a stage, a document following it and a step.
+    const processOwner = organizationId === orgA ? ids.ana : ids.beto;
+    const definitionId = newId();
+    await db.processDefinition.create({
+      data: {
+        id: definitionId,
+        organizationId,
+        documentKey: "test.document",
+        createdByUserId: processOwner,
+      },
+    });
+    const versionId = newId();
+    await db.processVersion.create({
+      data: {
+        id: versionId,
+        organizationId,
+        definitionId,
+        number: 1,
+        status: "DRAFT",
+        draftKey: definitionId,
+        createdByUserId: processOwner,
+      },
+    });
+    const stageId = newId();
+    await db.processStage.create({
+      data: {
+        id: stageId,
+        organizationId,
+        versionId,
+        position: 0,
+        name: "Revisión",
+        kind: "MANUAL",
+        milestoneKey: "OPEN",
+      },
+    });
+    await db.processStageRole.create({
+      data: { id: newId(), organizationId, stageId, role: "operator" },
+    });
+    await db.processVersion.update({
+      where: { id: versionId },
+      data: {
+        status: "PUBLISHED",
+        draftKey: null,
+        currentKey: definitionId,
+        publishedAt: new Date(),
+      },
+    });
+    const progressId = newId();
+    await db.processProgress.create({
+      data: {
+        id: progressId,
+        organizationId,
+        documentKey: "test.document",
+        documentId: newId(),
+        versionId,
+        facilityId: location.facilityId,
+        milestoneKey: "OPEN",
+        label: "DOC-1",
+      },
+    });
+    await db.processStageState.create({
+      data: {
+        id: newId(),
+        organizationId,
+        progressId,
+        stageId,
+        kind: "MANUAL",
+        status: "READY",
+      },
+    });
+    await db.processStep.create({
+      data: {
+        id: newId(),
+        organizationId,
+        progressId,
+        stageId,
+        action: "TAKEN",
+        actorUserId: processOwner,
+      },
+    });
     const countLineId = newId();
     await db.stockCountLine.create({
       data: {

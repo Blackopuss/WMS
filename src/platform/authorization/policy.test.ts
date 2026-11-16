@@ -16,6 +16,7 @@ import {
   canAny,
   inScope,
   isOwnerOnly,
+  activeRoles,
   knownRoles,
   permissionsOf,
   scopeOf,
@@ -176,9 +177,13 @@ describe("shared terminal (WMS-38)", () => {
       "platform.plan.read",
       "platform.terminal.manage",
       "platform.organization.update",
+      // WMS-74: assigning stages of a process is not floor work.
+      "platform.process.assign",
     ] as const) {
       expect(can(everything, permission)).toBe(false);
     }
+    // Doing the stages of a process is (WMS-74).
+    expect(can(everything, "platform.process.work")).toBe(true);
     expect(can(everything, "inventory.task.execute")).toBe(true);
     expect(can(everything, "purchasing.receipt.create")).toBe(true);
     expect(platform.sort()).toEqual(
@@ -186,6 +191,7 @@ describe("shared terminal (WMS-38)", () => {
         "platform.capacity.read",
         "platform.module.read",
         "platform.organization.read",
+        "platform.process.work",
       ].sort(),
     );
   });
@@ -245,6 +251,21 @@ describe("roles tied to a module (WMS-59, ADR 0062)", () => {
     roles: string[],
     modules?: Subject["modules"],
   ): Subject => ({ isOwner: false, roles, ...(modules ? { modules } : {}) });
+
+  it("count as roles in force only with their module active (WMS-74)", () => {
+    const mixed = ["warehouse", "production_operator"];
+    expect(activeRoles(withModules(mixed))).toEqual(["warehouse"]);
+    expect(
+      activeRoles(
+        withModules(mixed, new Map([["production", "read_only"]] as const)),
+      ),
+    ).toEqual(["warehouse"]);
+    expect(
+      activeRoles(
+        withModules(mixed, new Map([["production", "active"]] as const)),
+      ),
+    ).toEqual(["production_operator", "warehouse"]);
+  });
 
   it("give nothing without their module, not even Inventario reads", () => {
     for (const role of tied) {

@@ -6,7 +6,7 @@ import {
   companyModules,
   hasTiedRole,
   inScope,
-  knownRoles,
+  activeRoles,
   permissionsOf,
   type CompanyModuleState,
   type Permission,
@@ -58,6 +58,11 @@ export type NotifyRecipients = {
   match?: "all" | "any";
   /** Only these roles (or the titular): the roles of an approval rule. */
   roles?: readonly string[];
+  /**
+   * False: the titular passes `roles` only with one of them, like anybody
+   * (the area of a process stage, WMS-74). By default the titular passes.
+   */
+  ownerByRole?: boolean;
   /** Only who reaches this warehouse (WMS-20)… */
   facilityId?: string | null;
   /** …or this location (and so its warehouse). */
@@ -229,7 +234,7 @@ export async function modulesFor(
  */
 export function memberReaches(
   member: MemberRow,
-  to: Pick<NotifyRecipients, "permissions" | "match" | "roles">,
+  to: Pick<NotifyRecipients, "permissions" | "match" | "roles" | "ownerByRole">,
   place: Place | null,
   modules?: ReadonlyMap<string, CompanyModuleState>,
 ): boolean {
@@ -241,10 +246,12 @@ export function memberReaches(
     scope: isOwner ? null : buildScope(member.scopes),
     ...(modules ? { modules } : {}),
   };
+  // WMS-74: a role tied to a module counts only with its module active
+  // (the rule of WMS-59), so the filter by roles reads the roles in force.
   if (
     to.roles &&
-    !isOwner &&
-    !knownRoles(roles).some((role) => to.roles!.includes(role))
+    (!isOwner || to.ownerByRole === false) &&
+    !activeRoles(subject).some((role) => to.roles!.includes(role))
   ) {
     return false;
   }
@@ -272,7 +279,12 @@ export const NOTICE_EMAIL_MAX_ATTEMPTS = 4;
 /** What receiving the notice required, kept to check it again. */
 export type NoticeRequirement = Pick<
   NotifyRecipients,
-  "permissions" | "match" | "roles" | "facilityId" | "locationId"
+  | "permissions"
+  | "match"
+  | "roles"
+  | "ownerByRole"
+  | "facilityId"
+  | "locationId"
 >;
 
 /** When the next mail to a person may leave, from its last one. */
@@ -330,6 +342,7 @@ async function queueNoticeEmails(
     ...(to.permissions ? { permissions: [...to.permissions] } : {}),
     ...(to.match ? { match: to.match } : {}),
     ...(to.roles ? { roles: [...to.roles] } : {}),
+    ...(to.ownerByRole === false ? { ownerByRole: false } : {}),
     ...(to.facilityId ? { facilityId: to.facilityId } : {}),
     ...(to.locationId ? { locationId: to.locationId } : {}),
   };

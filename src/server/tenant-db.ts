@@ -111,6 +111,13 @@ export const TENANT_MODELS = [
   "Incident",
   "IncidentNote",
   "EvidencePhoto",
+  "ProcessDefinition",
+  "ProcessVersion",
+  "ProcessStage",
+  "ProcessStageRole",
+  "ProcessProgress",
+  "ProcessStageState",
+  "ProcessStep",
   "EquipmentType",
   "Equipment",
   "EquipmentMaintenance",
@@ -344,6 +351,8 @@ const LOCKABLE = {
   sharedTerminal: "shared_terminal",
   storedFile: "stored_file",
   membership: "membership",
+  processDefinition: "process_definition",
+  processProgress: "process_progress",
 } as const;
 
 /**

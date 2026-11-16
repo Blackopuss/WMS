@@ -122,6 +122,22 @@ export const AREAS = [
     models: ["ApprovalRule", "ApprovalRequest"],
   },
   {
+    id: "processes",
+    title: "Plataforma › Procesos",
+    doc: "processes",
+    summary:
+      "Procesos de cada empresa por tipo de documento: versiones (borrador, publicada, retirada) con sus etapas, subetapas y áreas; el proceso de cada documento ligado a su versión, el estado de cada etapa con quién la tiene y el rastro inmutable de cada paso. Los documentos los declara cada módulo.",
+    models: [
+      "ProcessDefinition",
+      "ProcessVersion",
+      "ProcessStage",
+      "ProcessStageRole",
+      "ProcessProgress",
+      "ProcessStageState",
+      "ProcessStep",
+    ],
+  },
+  {
     id: "notifications",
     title: "Plataforma › Avisos",
     doc: "notifications",

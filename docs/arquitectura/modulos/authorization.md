@@ -45,7 +45,10 @@ persona borra su PIN (`member_pin`). Las sesiones del equipo muestran
 Usa: `platform.team.read|invite|assign_roles|disable`,
 `platform.session.read|revoke` (WMS-40), `platform.terminal.read|manage` (WMS-38),
 `platform.invitation.resend|cancel`, `platform.ownership.transfer`,
-`platform.support.grant`. `platform.api.manage` (WMS-60) lo usa `platform/api`. Es dueño del catálogo completo (todos los módulos
+`platform.support.grant`. `platform.api.manage` (WMS-60) lo usa `platform/api`;
+`platform.process.work|assign` (WMS-74) los usa `platform/processes`
+(`work` se conserva en una terminal con PIN; `assign` no). `activeRoles`
+(política) da los roles que cuentan con los módulos de la empresa. Es dueño del catálogo completo (todos los módulos
 declaran sus permisos aquí y en la matriz).
 
 ## Tablas
