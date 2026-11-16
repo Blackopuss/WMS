@@ -1283,6 +1283,38 @@ beforeAll(async () => {
         createdByUserId: who,
       },
     });
+    // A type of equipment, a piece of equipment and its maintenance (WMS-42).
+    const equipmentTypeId = newId();
+    await db.equipmentType.create({
+      data: {
+        id: equipmentTypeId,
+        organizationId,
+        name: "Montacargas",
+        createdByUserId: who,
+      },
+    });
+    const equipmentId = newId();
+    await db.equipment.create({
+      data: {
+        id: equipmentId,
+        organizationId,
+        facilityId: location.facilityId,
+        typeId: equipmentTypeId,
+        code: "MC-01",
+        name: "Montacargas 1",
+        createdByUserId: who,
+      },
+    });
+    await db.equipmentMaintenance.create({
+      data: {
+        id: newId(),
+        organizationId,
+        equipmentId,
+        performedOn: new Date("2026-11-10T00:00:00.000Z"),
+        description: "Cambio de aceite",
+        recordedByUserId: who,
+      },
+    });
     // An API key, a webhook destination, an event and its delivery (WMS-60).
     await db.apiKey.create({
       data: {

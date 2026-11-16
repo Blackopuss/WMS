@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  createEquipment,
+  getEquipment,
   getIncident,
+  listEquipment,
+  saveEquipmentType,
+  setEquipmentOutOfService,
   listIncidents,
   reportIncident,
   startIncident,
@@ -1273,6 +1278,81 @@ describe("limited to a zone of a warehouse", () => {
     await removeReplenishmentRule(owner, inside.ruleId);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
+  it("an equipment card shows only what is inside the zone, and a task outside it is not named (WMS-42)", async () => {
+    await switchFacility(owner, facilityB);
+    const type = await saveEquipmentType(owner, { name: "Patín de zona" });
+    if (!type.ok) throw new Error(JSON.stringify(type));
+    const made = await createEquipment(owner, {
+      code: "MZ-01",
+      name: "Patín de B",
+      typeId: type.typeId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    // An incident outside the zone and one of the whole warehouse.
+    const outside = await reportIncident(owner, {
+      kind: "OTHER",
+      description: "Rayado en el estante B1.",
+      location: "Estante B1",
+      equipment: "MZ-01",
+      idempotencyKey: key(),
+    });
+    const anywhere = await reportIncident(owner, {
+      kind: "OTHER",
+      description: "Le falta una etiqueta.",
+      equipment: "MZ-01",
+      idempotencyKey: key(),
+    });
+    if (!outside.ok || !anywhere.ok) throw new Error("incidents failed");
+    // A task outside the zone, taken with it by the titular.
+    const away = await createTask(owner, {
+      productId,
+      fromLocationId: generalB,
+      toLocationId: shelfB,
+      quantity: "1",
+      equipmentTypeId: type.typeId,
+    });
+    if (!away.ok) throw new Error(JSON.stringify(away));
+    const taken = await acceptTask(owner, away.taskId, {
+      equipmentCode: "MZ-01",
+    });
+    if (!taken.ok) throw new Error(JSON.stringify(taken));
+    await switchFacility(owner, facilityA);
+
+    const card = await getEquipment(zoned, made.equipmentId);
+    expect(card).not.toBeNull();
+    expect(card!.incidents.map((each) => each.id)).toEqual([
+      anywhere.incidentId,
+    ]);
+    expect(card!.openTasks).toEqual([]);
+    expect(card!.tasks).toEqual([]);
+    expect(card!.inUseBy).toBe("Otra persona");
+    // The zone does not manage what goes all over the warehouse.
+    await expect(
+      setEquipmentOutOfService(zoned, made.equipmentId, {
+        reason: "Desde la zona no",
+      }),
+    ).rejects.toMatchObject({ kind: "forbidden" });
+    // Taking a task of the zone with it: told it is busy, not where.
+    const here = await createTask(zoned, {
+      productId,
+      fromLocationId: inZone,
+      toLocationId: zoneId,
+      quantity: "1",
+      equipmentTypeId: type.typeId,
+    });
+    if (!here.ok) throw new Error(JSON.stringify(here));
+    const busy = await acceptTask(zoned, here.taskId, {
+      equipmentCode: "MZ-01",
+    });
+    expect(busy).toMatchObject({ ok: false });
+    if (!busy.ok) {
+      expect(busy.fieldErrors?.equipmentCode).toContain("otra persona");
+      expect(busy.fieldErrors?.equipmentCode).not.toMatch(/T-\d/);
+    }
+    // Leave nothing open for the rest of the file.
+    await cancelTask(zoned, here.taskId, "Prueba terminada");
+    await cancelTask(owner, away.taskId, "Prueba terminada");
+  });
 });
 
 describe("PC-12: customer returns (WMS-17)", () => {
@@ -1634,6 +1714,42 @@ describe("PC-12: incidents and their notices (WMS-39)", () => {
       ok: false,
       fieldErrors: { location: expect.any(String) },
     });
+  });
+});
+
+describe("PC-12: equipment (WMS-42)", () => {
+  it("a piece of equipment of A does not exist from B, nor is it named in a report there", async () => {
+    const type = await saveEquipmentType(free, { name: "Patín de alcance" });
+    if (!type.ok) throw new Error(JSON.stringify(type));
+    const made = await createEquipment(free, {
+      code: "PA-01",
+      name: "Patín de A",
+      typeId: type.typeId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect(await getEquipment(free, made.equipmentId)).not.toBeNull();
+    expect(await getEquipment(limited, made.equipmentId)).toBeNull();
+    expect(
+      (await listEquipment(limited)).rows.map((row) => row.id),
+    ).not.toContain(made.equipmentId);
+    expect(
+      await setEquipmentOutOfService(limited, made.equipmentId, {
+        reason: "Desde B no",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await reportIncident(limited, {
+        kind: "BROKEN_EQUIPMENT",
+        description: "No arranca el patín.",
+        equipment: "PA-01",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { equipment: expect.any(String) },
+    });
+    const still = await getEquipment(free, made.equipmentId);
+    expect(still!.status).toBe("IN_SERVICE");
   });
 });
 

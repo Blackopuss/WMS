@@ -13,6 +13,7 @@ import {
   INCIDENT_KINDS,
   INCIDENT_KIND_LABELS,
   incidentPhotoRequired,
+  hasEquipmentHere,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { FILE_PURPOSES } from "@/platform/files";
@@ -59,6 +60,11 @@ export default async function ReportarProblemaPage({
     );
   }
   const { tarea, pedido } = await searchParams;
+  // WMS-42: the equipment field exists only where there is equipment.
+  const withEquipment = await hasEquipmentHere({
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  });
   return (
     <PageContainer>
       {back}
@@ -76,6 +82,7 @@ export default async function ReportarProblemaPage({
           userId: access.user.id,
         })}
         maxPhotos={FILE_PURPOSES.incident_photo.evidence.perRecord}
+        withEquipment={withEquipment}
       />
     </PageContainer>
   );

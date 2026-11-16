@@ -1,6 +1,7 @@
 import {
   runCycleCountRound,
   runDailyDigestRound,
+  runEquipmentMaintenanceRound,
   runReplenishmentRound,
 } from "@/modules/inventory";
 import { allOrganizations, type ScheduledRound } from "@/platform/jobs";
@@ -56,6 +57,12 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "inventory.daily_digest",
     module: "inventory",
     run: (organizationId) => runDailyDigestRound(organizationId),
+  },
+  // WMS-42 (ADR 0065): the notice of equipment maintenance near or due.
+  {
+    name: "inventory.equipment_maintenance",
+    module: "inventory",
+    run: (organizationId) => runEquipmentMaintenanceRound(organizationId),
   },
   // WMS-60 (ADR 0058): webhook events and deliveries older than 30 days,
   // for every company that has any (whatever its modules).

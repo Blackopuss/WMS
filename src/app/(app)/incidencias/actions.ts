@@ -54,6 +54,8 @@ export type ReportValues = {
   description: string;
   location: string;
   product: string;
+  /** WMS-42: the code of a piece of equipment, when the warehouse has any. */
+  equipment: string;
 };
 
 export type ReportState = {
@@ -77,6 +79,7 @@ export async function reportIncidentAction(
     description: text(formData, "description", 2000),
     location: text(formData, "location", 200),
     product: text(formData, "product", 80),
+    equipment: text(formData, "equipment", 60),
   };
   let result: IncidentResult;
   try {

@@ -777,3 +777,47 @@ export {
   isIncidentKind,
 } from "./incident-states";
 export type { IncidentKind, IncidentStatus } from "./incident-states";
+// WMS-42 (ADR 0065): equipment of a warehouse.
+export {
+  EQUIPMENT_PAGE_SIZE,
+  countEquipmentAttention,
+  createEquipment,
+  equipmentTypesForTasks,
+  getEquipment,
+  hasEquipmentHere,
+  listEquipment,
+  listEquipmentTypes,
+  mayEditEquipmentTypes,
+  recordMaintenance,
+  retireEquipment,
+  returnEquipmentToService,
+  runEquipmentMaintenanceRound,
+  saveEquipmentType,
+  setEquipmentOutOfService,
+  setEquipmentTypeArchived,
+  updateEquipment,
+} from "./equipment";
+export type {
+  EquipmentChoice,
+  EquipmentDetail,
+  EquipmentField,
+  EquipmentInput,
+  EquipmentListFilter,
+  EquipmentPage,
+  EquipmentResult,
+  EquipmentSummary,
+  EquipmentTypeResult,
+  EquipmentTypeView,
+  MaintenanceInput,
+} from "./equipment";
+export {
+  EQUIPMENT_STATUS_LABELS,
+  EQUIPMENT_TYPES_MAX,
+} from "./equipment-rules";
+export type { MaintenancePhase } from "./equipment-rules";
+export {
+  EQUIPMENT_MAINTENANCE_NOTICE,
+  EQUIPMENT_ON_BROKEN_REPORT,
+  EQUIPMENT_SETTINGS,
+} from "./settings";
+export { changeTaskEquipment, taskEquipmentChoices } from "./tasks";

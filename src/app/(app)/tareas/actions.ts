@@ -9,6 +9,7 @@ import {
   assignTask,
   blockTask,
   cancelTask,
+  changeTaskEquipment,
   confirmPick,
   createTask,
   deliverTask,
@@ -41,6 +42,8 @@ export type CreateTaskState = {
     priority: string;
     assignToUserId: string;
     note: string;
+    /** WMS-42: the type of equipment it asks for, if any. */
+    equipmentTypeId: string;
   };
   /** Bumped on every answer, so selects show what was sent. */
   answers: number;
@@ -62,6 +65,7 @@ export async function createTaskAction(
     priority: text(formData, "priority", 10),
     assignToUserId: text(formData, "assignToUserId", 36),
     note: text(formData, "note", 400),
+    equipmentTypeId: text(formData, "equipmentTypeId", 36),
   };
   const productId = text(formData, "productId", 36);
   const [fromLocationId = "", lotId = ""] = values.fromLocationId.split("|");
@@ -151,14 +155,21 @@ async function run(
   }
 }
 
-/** The next step of the person who does it: take, pick up or deliver. */
+/**
+ * The next step of the person who does it: take, pick up or deliver. To
+ * take a task that asks for equipment (WMS-42), the code of the one used,
+ * scanned or chosen; the service looks for it only in that company.
+ */
 export async function taskStepAction(
   taskId: string,
   step: "accept" | "pickUp" | "deliver",
+  equipmentCode?: string,
 ): Promise<TaskStepState> {
+  const code = String(equipmentCode ?? "").slice(0, 60);
   const work =
     step === "accept"
-      ? acceptTask
+      ? (actor: { organizationId: string; userId: string }, id: string) =>
+          acceptTask(actor, id, { equipmentCode: code })
       : step === "pickUp"
         ? (actor: { organizationId: string; userId: string }, id: string) =>
             pickUpTask(actor, id)
@@ -168,6 +179,20 @@ export async function taskStepAction(
           : null;
   if (!work) return { ok: false, error: "No se pudo cambiar la tarea." };
   return run(taskId, work);
+}
+
+/**
+ * WMS-42: another piece of equipment for a task taken and not yet picked
+ * up, by its code (scanned or chosen).
+ */
+export async function changeTaskEquipmentAction(
+  taskId: string,
+  equipmentCode: string,
+): Promise<TaskStepState> {
+  const code = String(equipmentCode ?? "").slice(0, 60);
+  return run(taskId, (actor, id) =>
+    changeTaskEquipment(actor, id, { equipmentCode: code }),
+  );
 }
 
 export type PutawayState = {

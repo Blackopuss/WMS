@@ -20,6 +20,7 @@ const FIELDS = [
   "location",
   "product",
   "photos",
+  "equipment",
 ] as const;
 
 const areaClass =
@@ -37,6 +38,7 @@ export function ReportForm({
   kinds,
   photoRequired,
   maxPhotos,
+  withEquipment,
 }: {
   idempotencyKey: string;
   taskId: string | null;
@@ -44,13 +46,21 @@ export function ReportForm({
   kinds: { value: string; label: string }[];
   photoRequired: boolean;
   maxPhotos: number;
+  /** WMS-42: the warehouse has equipment, so the report may name one. */
+  withEquipment: boolean;
 }) {
   // Outside the form, which is rebuilt on each answer: what was taken stays.
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [state, formAction, pending] = useActionState(
     reportIncidentAction.bind(null, { taskId, orderId }),
     {
-      values: { kind: "", description: "", location: "", product: "" },
+      values: {
+        kind: "",
+        description: "",
+        location: "",
+        product: "",
+        equipment: "",
+      },
       answers: 0,
     } satisfies ReportState,
   );
@@ -185,6 +195,29 @@ export function ReportForm({
           </div>
         )}
       </FormField>
+      {withEquipment && (
+        <FormField
+          id="equipment"
+          label="¿Qué equipo? (opcional)"
+          hint="Escanea la etiqueta del equipo o escribe su código."
+          error={errors.equipment}
+        >
+          {(control) => (
+            <div className="flex gap-2">
+              <Input
+                {...control}
+                name="equipment"
+                defaultValue={state.values.equipment}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={40}
+              />
+              <CameraScanButton target="equipment" title="Escanear el equipo" />
+            </div>
+          )}
+        </FormField>
+      )}
       <div id="photos-group">
         <PhotoCapture
           id="photos"

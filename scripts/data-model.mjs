@@ -309,6 +309,14 @@ export const AREAS = [
     models: ["Incident", "IncidentNote"],
   },
   {
+    id: "inventory-equipment",
+    title: "Inventario › Equipos",
+    doc: "inventory",
+    summary:
+      "Equipos de cada almacén (montacargas, patines, básculas; el tipo lo nombra cada empresa), su estado en servicio o fuera de servicio, su baja y los mantenimientos hechos; las tareas que piden un tipo dicen con cuál se hicieron (WMS-42).",
+    models: ["EquipmentType", "Equipment", "EquipmentMaintenance"],
+  },
+  {
     id: "inventory-imports",
     title: "Inventario › Importaciones",
     doc: "inventory",

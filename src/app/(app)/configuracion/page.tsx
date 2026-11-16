@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   Users,
   Warehouse,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -39,6 +40,10 @@ export default async function ConfiguracionPage() {
   const showLocations =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.location.read");
+  // WMS-42: equipment is registered rarely, so it lives here too.
+  const showEquipment =
+    access.moduleState("inventory") !== "none" &&
+    access.can("inventory.equipment.read");
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
@@ -58,6 +63,7 @@ export default async function ConfiguracionPage() {
     <PageContainer>
       <PageHeader title="Configuración" />
       {(showLocations ||
+        showEquipment ||
         access.can("platform.team.read") ||
         access.can("platform.terminal.read") ||
         access.can("platform.plan.read") ||
@@ -98,6 +104,14 @@ export default async function ConfiguracionPage() {
               icon={ListPlus}
               title="Campos personalizados"
               description="Datos propios de tus productos, ubicaciones y proveedores."
+            />
+          )}
+          {showEquipment && (
+            <SettingsLink
+              href="/configuracion/equipos-del-almacen"
+              icon={Wrench}
+              title="Equipos del almacén"
+              description="Equipos, su mantenimiento y sus fallas."
             />
           )}
           {access.can("platform.team.read") && (
@@ -275,6 +289,7 @@ function SettingsLink({
     | "/configuracion/almacenes"
     | "/configuracion/operacion"
     | "/configuracion/campos"
+    | "/configuracion/equipos-del-almacen"
     | "/configuracion/equipo"
     | "/configuracion/avisos"
     | "/configuracion/plan"
