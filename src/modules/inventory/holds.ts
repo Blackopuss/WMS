@@ -32,6 +32,10 @@ import {
  */
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
+type Reader = Pick<
+  Tx,
+  "customerReturnLine" | "stockMovementLine" | "serialMove" | "stockHold"
+>;
 
 export type HoldSlot = {
   productId: string;
@@ -65,7 +69,7 @@ export type HoldExcept = {
  * Read under the caller's product lock.
  */
 export async function heldStock(
-  client: Tx,
+  client: Reader,
   slot: HoldSlot,
   except: HoldExcept = {},
 ): Promise<HeldStock> {

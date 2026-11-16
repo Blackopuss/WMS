@@ -159,6 +159,8 @@ const receipts: ApiRoute = {
             locationId: z.string(),
             lotCode: z.string().nullable(),
             damaged: z.boolean(),
+            /** WMS-30-0: it entered in inspection (ADR 0068). */
+            inspection: z.boolean(),
           }),
         ),
       }),
@@ -184,6 +186,7 @@ const receipts: ApiRoute = {
             locationId: line.locationId,
             lotCode: line.lotCode,
             damaged: line.damaged,
+            inspection: line.inspection,
           })),
         })),
       },

@@ -57,10 +57,24 @@ export type {
   ReceiptEntryResult,
 } from "./receipt-entry";
 export {
+  RETURNABLE_STATUSES,
+  isReturnableStatus,
   postReturnExit,
   type ReturnExitLine,
   type ReturnExitResult,
+  type ReturnableStatus,
 } from "./return-exit";
+export {
+  heldStock,
+  holdStock,
+  releaseHold,
+  releaseHoldsOf,
+  type HeldStock,
+  type HoldExcept,
+  type HoldSlot,
+  type HoldSource,
+} from "./holds";
+export type { ReceiptLineStatus } from "./receipt-entry";
 export { reconcileStock, reconcileValue } from "./reconciliation";
 export type { StockDrift, ValueDrift } from "./reconciliation";
 export {
@@ -821,3 +835,20 @@ export {
   EQUIPMENT_SETTINGS,
 } from "./settings";
 export { changeTaskEquipment, taskEquipmentChoices } from "./tasks";
+export {
+  DISPOSABLE_STATUSES,
+  disposeStock,
+  findDisposalConfirmation,
+  postDisposal,
+  type DisposalField,
+  type DisposalInput,
+  type DisposalLine,
+  type DisposalResult,
+} from "./disposal";
+export {
+  INSPECTION_PAGE_SIZE,
+  countAwaitingInspection,
+  listAwaitingInspection,
+  type AwaitingInspectionItem,
+  type AwaitingInspectionPage,
+} from "./inspection";

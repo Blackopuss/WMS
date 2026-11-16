@@ -3,7 +3,12 @@ import "server-only";
 import { z } from "zod";
 
 import { dec, newId } from "@/lib";
-import { postReturnExit, serialUnitsOfLines } from "@/modules/inventory";
+import {
+  isReturnableStatus,
+  postReturnExit,
+  serialUnitsOfLines,
+  type ReturnableStatus,
+} from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity, pluralizeName } from "@/platform/catalog";
@@ -102,6 +107,19 @@ const returnSchema = z.object({
          * text), for a product by serial: units of this receipt line.
          */
         serials: z.string().max(60_000).optional(),
+        /**
+         * WMS-30-0 (ADR 0068): the state it leaves from (available, in
+         * inspection, damaged or rejected); empty = the state its receipt
+         * line came in.
+         */
+        status: z
+          .string()
+          .trim()
+          .max(20)
+          .optional()
+          .refine((value) => !value || isReturnableStatus(value), {
+            message: "Elige de qué estado sale.",
+          }),
       }),
     )
     .max(PURCHASE_ORDER_MAX_LINES),
@@ -157,6 +175,14 @@ const refuseLines = (lineErrors: Record<string, string>): never => {
   });
 };
 
+/** «1 caja de Clavo rechazado»: the state it left from (WMS-30-0). */
+const STATE_WORD: Record<ReturnableStatus, string> = {
+  AVAILABLE: "",
+  INSPECTION: "en inspección",
+  DAMAGED: "dañado",
+  REJECTED: "rechazado",
+};
+
 const isNothing = (text: string) =>
   text.trim() === "" || /^0+([.,]0*)?$/.test(text.trim());
 
@@ -188,8 +214,17 @@ function sameReturn(
     receiptLineId: string;
     capturedQuantity: { toString(): string };
     locationId: string;
+    /** The state it left from (its movement line), WMS-30-0. */
+    status: string;
+    /** The state its receipt line came in. */
+    receivedStatus: string;
   }[],
-  asked: { receiptLineId: string; quantity: string; locationId?: string }[],
+  asked: {
+    receiptLineId: string;
+    quantity: string;
+    locationId?: string;
+    status?: string;
+  }[],
 ): boolean {
   const wanted = asked.filter((item) => !isNothing(item.quantity));
   if (wanted.length !== stored.length) return false;
@@ -202,7 +237,8 @@ function sameReturn(
         dec(item.quantity.replace(/,(?=\d{3}(\D|$))/g, "")).equals(
           line.capturedQuantity.toString(),
         ) &&
-        (!item.locationId || item.locationId === line.locationId)
+        (!item.locationId || item.locationId === line.locationId) &&
+        (item.status || line.receivedStatus) === line.status
       );
     } catch {
       return false;
@@ -284,20 +320,39 @@ export async function returnToSupplier(
           id: true,
           receiptId: true,
           returnedByUserId: true,
+          movementId: true,
           lines: {
+            orderBy: { lineNumber: "asc" },
             select: {
+              lineNumber: true,
               receiptLineId: true,
               capturedQuantity: true,
               locationId: true,
+              receiptLine: { select: { status: true } },
             },
           },
         },
       });
       if (replay) {
+        // WMS-30-0: the state each line left from is its movement line's.
+        const exitLines = await tx.stockMovementLine.findMany({
+          where: { movementId: replay.movementId },
+          select: { lineNumber: true, status: true },
+        });
+        const leftFrom = new Map(
+          exitLines.map((line) => [line.lineNumber, line.status]),
+        );
         if (
           replay.receiptId !== receipt.id ||
           replay.returnedByUserId !== userId ||
-          !sameReturn(replay.lines, data.lines)
+          !sameReturn(
+            replay.lines.map((line) => ({
+              ...line,
+              status: leftFrom.get(line.lineNumber) ?? "",
+              receivedStatus: line.receiptLine.status,
+            })),
+            data.lines,
+          )
         ) {
           return refuse("not_allowed", KEY_REUSED);
         }
@@ -354,6 +409,7 @@ export async function returnToSupplier(
         quantity: Decimal;
         locationId: string;
         serials: string | null;
+        status: ReturnableStatus;
       }[] = [];
       const seen = new Set<string>();
       for (const item of data.lines) {
@@ -400,6 +456,12 @@ export async function returnToSupplier(
           quantity: quantity.quantity,
           locationId: item.locationId || line.locationId,
           serials: item.serials || null,
+          // WMS-30-0: by default, the state it came in.
+          status: isReturnableStatus(item.status)
+            ? item.status
+            : isReturnableStatus(line.status)
+              ? line.status
+              : "AVAILABLE",
         });
       }
       if (Object.keys(errors).length > 0) return refuseLines(errors);
@@ -443,7 +505,7 @@ export async function returnToSupplier(
           lotId: item.line.lotId,
           serials: item.serials,
           receivedUnitIds: receivedUnits.get(item.line.lineNumber) ?? new Set(),
-          status: item.line.status === "DAMAGED" ? "DAMAGED" : "AVAILABLE",
+          status: item.status,
         })),
         reference: `${numberText} · Devolución`,
         reason: data.reason,
@@ -488,7 +550,10 @@ export async function returnToSupplier(
           item.line.presentation,
           item.line.unitCode,
         );
-        const damaged = item.line.status === "DAMAGED" ? " dañado" : "";
+        const damaged =
+          item.status === "AVAILABLE"
+            ? ""
+            : ` ${STATE_WORD[item.status]}`;
         return item.line.presentation
           ? `${terms} de ${item.line.product.name}${damaged} (${exit.texts[index]})`
           : `${terms} de ${item.line.product.name}${damaged}`;

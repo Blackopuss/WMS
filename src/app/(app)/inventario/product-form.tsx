@@ -29,6 +29,7 @@ export const EMPTY_PRODUCT: ProductFormState["values"] = {
   volume: "",
   tracking: "NONE",
   lotExpiry: "NONE",
+  inspectOnReceipt: "no",
 };
 
 const FIELD_ORDER = [
@@ -44,6 +45,7 @@ const FIELD_ORDER = [
   "volume",
   "tracking",
   "lotExpiry",
+  "inspectOnReceipt",
 ] as const;
 
 /** Card of a product: used to create it and to edit it (INV-02, INV-03). */
@@ -433,6 +435,39 @@ export function ProductForm({
                 <option value="NONE">No lleva</option>
                 <option value="OPTIONAL">Opcional</option>
                 <option value="REQUIRED">Obligatoria</option>
+              </NativeSelect>
+            )}
+          </FormField>
+        </div>
+      </details>
+
+      {/* WMS-30-0 (ADR 0068): few products are inspected on receipt;
+          folded unless this one is. */}
+      <details
+        className="rounded-lg border p-3"
+        open={Boolean(
+          state.values.inspectOnReceipt === "yes" ||
+          state.fieldErrors.inspectOnReceipt,
+        )}
+      >
+        <summary className="-m-1 flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          Inspección al recibir (opcional)
+        </summary>
+        <div className="mt-4 grid gap-5 sm:grid-cols-2">
+          <FormField
+            id="inspectOnReceipt"
+            label="Al recibirlo de un proveedor"
+            error={state.fieldErrors.inspectOnReceipt}
+          >
+            {(control) => (
+              <NativeSelect
+                {...control}
+                name="inspectOnReceipt"
+                key={`inspectOnReceipt-${attempt}`}
+                defaultValue={state.values.inspectOnReceipt || "no"}
+              >
+                <option value="no">Queda disponible</option>
+                <option value="yes">Queda en inspección hasta revisarlo</option>
               </NativeSelect>
             )}
           </FormField>

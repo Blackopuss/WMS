@@ -150,6 +150,7 @@ Consultar equivalencias (INV-09) no concede permiso para confirmar el movimiento
 | `inventory.task.cancel` | Cancelar una tarea con motivo o liberar una con problema para que la tome otra persona; WMS-06. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
 | `inventory.status.change` | Poner existencias en cuarentena, inspección, dañado, rechazado o bloqueado, con motivo; WMS-11 (ADR 0033). | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
 | `inventory.status.release` | Devolver a disponible lo que estaba en otro estado, con motivo; WMS-11. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
+| `inventory.disposal.create` | Desechar lo dañado o rechazado con motivo obligatorio: sale al costo promedio, como pérdida, y no se reversa; WMS-30-0 (ADR 0068). Mismos roles que ajustan; el fundador puede cambiarlos. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
 | `inventory.damage.report` | Reportar como dañado lo disponible de una ubicación, con motivo; WMS-11. No libera ni cambia otros estados. | Sí | Sí | Sí | No | No | Sí | Sí | No | No | No | No | No |
 | `inventory.outbound.read` | Consultar pedidos de salida, sus líneas y lo reservado; WMS-13. | Sí | Sí | Sí | No | Sí | Sí | Sí | No | Sí | No | No | No |
 | `inventory.outbound.create` | Crear y editar pedidos de salida en borrador (destinatario, fecha, líneas); WMS-13. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |

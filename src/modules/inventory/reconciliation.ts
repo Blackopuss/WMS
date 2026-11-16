@@ -30,7 +30,7 @@ export type StockDrift = {
    * is their count); `serial_moves`: the units whose last move left them
    * there.
    */
-  source?: "serial_units" | "serial_moves" | "containers";
+  source?: "serial_units" | "serial_moves" | "containers" | "holds";
 };
 
 /** Differences between balances and movement history; empty when they agree. */
@@ -92,6 +92,102 @@ export async function reconcileStock(
   }
   drift.push(...(await reconcileSerials(organizationId, stored)));
   drift.push(...(await reconcileContainers(organizationId, stored)));
+  drift.push(...(await reconcileHolds(organizationId, stored)));
+  return drift;
+}
+
+/**
+ * WMS-30-0 (ADR 0068): what open documents hold of stock that is not
+ * available (active holds and open customer returns) never exceeds the
+ * balance of its key, and each unit held is still there, in that state.
+ * `source: "holds"`; `fromMovements` is what is held.
+ */
+async function reconcileHolds(
+  organizationId: string,
+  stored: Map<string, ReturnType<typeof dec>>,
+): Promise<StockDrift[]> {
+  const client = forOrganization(organizationId);
+  const [holds, returnLines] = await Promise.all([
+    client.stockHold.findMany({
+      where: { state: "ACTIVE" },
+      select: {
+        productId: true,
+        locationId: true,
+        status: true,
+        lotKey: true,
+        remaining: true,
+        units: {
+          where: { releasedAt: null },
+          select: {
+            serialUnit: { select: { locationId: true, status: true } },
+          },
+        },
+      },
+    }),
+    client.customerReturnLine.findMany({
+      where: { return: { status: "RECEIVED" } },
+      select: {
+        productId: true,
+        lotId: true,
+        quantity: true,
+        return: { select: { locationId: true } },
+        decisions: { select: { quantity: true } },
+      },
+    }),
+  ]);
+  if (holds.length === 0 && returnLines.length === 0) return [];
+  const drift: StockDrift[] = [];
+  const held = new Map<string, ReturnType<typeof dec>>();
+  const add = (id: string, quantity: ReturnType<typeof dec>) =>
+    held.set(id, (held.get(id) ?? dec(0)).plus(quantity));
+  for (const hold of holds) {
+    const id = `${hold.productId}|${hold.locationId}|${hold.status}|${hold.lotKey}`;
+    add(id, dec(hold.remaining.toString()));
+    const away = hold.units.filter(
+      (unit) =>
+        unit.serialUnit.locationId !== hold.locationId ||
+        unit.serialUnit.status !== hold.status,
+    ).length;
+    if (away > 0) {
+      drift.push({
+        productId: hold.productId,
+        locationId: hold.locationId,
+        status: hold.status,
+        lotId: hold.lotKey || null,
+        fromMovements: String(hold.units.length),
+        balance: String(hold.units.length - away),
+        source: "holds",
+      });
+    }
+  }
+  for (const line of returnLines) {
+    const decided = line.decisions.reduce(
+      (sum, decision) => sum.plus(decision.quantity.toString()),
+      dec(0),
+    );
+    const pending = dec(line.quantity.toString()).minus(decided);
+    if (!pending.greaterThan(0)) continue;
+    add(
+      `${line.productId}|${line.return.locationId}|INSPECTION|${line.lotId ?? ""}`,
+      pending,
+    );
+  }
+  for (const [id, quantity] of held) {
+    const balance = stored.get(id) ?? dec(0);
+    if (quantity.greaterThan(balance)) {
+      const [productId = "", locationId = "", status = "", lotKey = ""] =
+        id.split("|");
+      drift.push({
+        productId,
+        locationId,
+        status,
+        lotId: lotKey || null,
+        fromMovements: quantity.toString(),
+        balance: balance.toString(),
+        source: "holds",
+      });
+    }
+  }
   return drift;
 }
 

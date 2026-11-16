@@ -11,6 +11,8 @@ import {
   isTaskNumberClash,
   parseSerialList,
   postReceiptEntry,
+  RETURNABLE_STATUSES,
+  STOCK_STATUS_LABELS,
   type CrossDockSent,
 } from "@/modules/inventory";
 import { emitWebhookEvent } from "@/platform/api";
@@ -1142,6 +1144,18 @@ export type ReceiptSummary = {
      * back to the supplier from there).
      */
     damaged: boolean;
+    /**
+     * WMS-30-0 (ADR 0068): it entered in «En inspección» (a product
+     * inspected on receipt) and waits for someone to decide it.
+     */
+    inspection: boolean;
+    /** The state it entered in: AVAILABLE, DAMAGED or INSPECTION. */
+    status: string;
+    /**
+     * WMS-30-0: the states it may go back from where it was received, when
+     * there is more than one; empty otherwise.
+     */
+    returnStates: { id: string; label: string }[];
   }[];
   /** Absent for who may not see returns (`purchasing.return.read`). */
   returns?: {
@@ -1351,6 +1365,7 @@ export async function getOrderReceipts(
               presentation: { select: { name: true } },
               location: { select: placeSelect },
               lot: { select: { code: true, expiresOn: true } },
+              lotId: true,
               status: true,
               returnLines: { select: { capturedQuantity: true } },
             },
@@ -1448,6 +1463,52 @@ export async function getOrderReceipts(
     select: { userId: true, user: { select: { name: true } } },
   });
   const names = new Map(authors.map((row) => [row.userId, row.user.name]));
+  // WMS-30-0 (ADR 0068): the states each received product is in where it
+  // was received, so a return may say which one it leaves from.
+  const allLines = order.receipts.flatMap((receipt) => receipt.lines);
+  const stateRows =
+    allLines.length > 0
+      ? await client.stockBalance.findMany({
+          where: {
+            productId: { in: [...new Set(allLines.map((l) => l.productId))] },
+            locationId: {
+              in: [...new Set(allLines.map((l) => l.locationId))],
+            },
+            status: { in: [...RETURNABLE_STATUSES] },
+            quantity: { gt: 0 },
+          },
+          select: {
+            productId: true,
+            locationId: true,
+            lotKey: true,
+            status: true,
+          },
+        })
+      : [];
+  const statesAt = new Map<string, Set<string>>();
+  for (const row of stateRows) {
+    const key = `${row.productId} ${row.locationId} ${row.lotKey}`;
+    statesAt.set(key, (statesAt.get(key) ?? new Set()).add(row.status));
+  }
+  const returnStatesOf = (line: {
+    productId: string;
+    locationId: string;
+    lotId: string | null;
+    status: string;
+  }) => {
+    const there =
+      statesAt.get(`${line.productId} ${line.locationId} ${line.lotId ?? ""}`) ??
+      new Set<string>();
+    const options = RETURNABLE_STATUSES.filter(
+      (status) => status === line.status || there.has(status),
+    );
+    return options.length > 1
+      ? options.map((status) => ({
+          id: status,
+          label: STOCK_STATUS_LABELS[status],
+        }))
+      : [];
+  };
 
   const receipts = order.receipts.map((receipt): ReceiptSummary => ({
     id: receipt.id,
@@ -1493,6 +1554,9 @@ export async function getOrderReceipts(
           : null,
         bySerial: line.product.tracking === "SERIAL",
         damaged: line.status === "DAMAGED",
+        inspection: line.status === "INSPECTION",
+        status: line.status,
+        returnStates: returnStatesOf(line),
       };
     }),
     ...(seeReturns

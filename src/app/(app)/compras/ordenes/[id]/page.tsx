@@ -469,6 +469,8 @@ ${order.closeReason ?? ""}`,
                           {line.lotText && ` · ${line.lotText}`}
                           {/* WMS-54: it entered in «Dañado». */}
                           {line.damaged && " · Dañado"}
+                          {/* WMS-30-0: it entered in inspection. */}
+                          {line.inspection && " · En inspección"}
                           {line.returnedText &&
                             ` · devuelto: ${line.returnedText}`}
                         </span>
@@ -521,7 +523,7 @@ ${order.closeReason ?? ""}`,
                         productName: line.productName,
                         sku: line.sku,
                         // WMS-21: two lots of one product read apart.
-                        detail: `${line.damaged ? "Dañado · " : ""}${line.lotText ? `${line.lotText} · ` : ""}${
+                        detail: `${line.damaged ? "Dañado · " : ""}${line.inspection ? "En inspección · " : ""}${line.lotText ? `${line.lotText} · ` : ""}${
                           line.returnedText
                             ? `puedes devolver ${line.returnableText} (ya devolviste ${line.returnedText})`
                             : `llegaron ${line.returnableText}`
@@ -529,6 +531,8 @@ ${order.closeReason ?? ""}`,
                         unitText: line.unitText,
                         locationId: line.locationId,
                         bySerial: line.bySerial,
+                        states: line.returnStates,
+                        receivedStatus: line.status,
                       }))}
                       locations={locations.map((location) => ({
                         id: location.id,

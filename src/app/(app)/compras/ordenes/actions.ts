@@ -632,6 +632,8 @@ export type ReturnFormState = {
     places: Record<string, string>;
     /** WMS-21B: serials of the units that go back, by receipt line. */
     serials: Record<string, string>;
+    /** WMS-30-0: the state a line leaves from, when chosen. */
+    states?: Record<string, string>;
   };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
@@ -655,10 +657,16 @@ export async function returnToSupplierAction(
   const quantities: Record<string, string> = {};
   const places: Record<string, string> = {};
   const serials: Record<string, string> = {};
+  // WMS-30-0: `st:<id>`, the state it leaves from, when offered.
+  const states: Record<string, string> = {};
   for (const [name, value] of formData.entries()) {
     if (typeof value !== "string") continue;
     if (name.startsWith("ser:") && Object.keys(serials).length < 200) {
       serials[name.slice(4, 40)] = value.slice(0, 40_000);
+      continue;
+    }
+    if (name.startsWith("st:") && Object.keys(states).length < 200) {
+      states[name.slice(3, 39)] = value.slice(0, 20);
       continue;
     }
     if (name.startsWith("q:") && Object.keys(quantities).length < 200) {
@@ -675,6 +683,7 @@ export async function returnToSupplierAction(
     reason: String(formData.get("reason") ?? "").slice(0, 1000),
     quantities,
     places,
+    states,
     serials,
   };
   const answers = prev.answers + 1;
@@ -690,6 +699,7 @@ export async function returnToSupplierAction(
           quantity,
           locationId: places[receiptLineId],
           serials: serials[receiptLineId],
+          status: states[receiptLineId],
         })),
         idempotencyKey: String(formData.get("idempotencyKey") ?? "").slice(
           0,
