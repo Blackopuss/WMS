@@ -357,6 +357,36 @@ export const INCIDENT_PHOTO = {
 } as const satisfies SettingDefinition;
 
 /**
+ * WMS-37B (ADR 0076): a photo of where a warehouse task was left, taken on
+ * its last step («Entregar»). One setting for every kind of task; read by
+ * `deliverTask` under its locks, before writing anything.
+ */
+export const TASK_PHOTO = {
+  key: "inventory.task.photo",
+  module: "inventory",
+  area: "Tareas",
+  label: "Foto al entregar una tarea",
+  options: [
+    {
+      value: "off",
+      label: "Sin foto",
+      help: "Las tareas se entregan sin foto.",
+    },
+    {
+      value: "optional",
+      label: "Opcional",
+      help: "Quien entrega puede tomar una foto de dónde lo dejó.",
+    },
+    {
+      value: "required",
+      label: "Obligatoria",
+      help: "Ninguna tarea se entrega sin al menos una foto de dónde quedó. Las olas se entregan tarea por tarea.",
+    },
+  ],
+  defaultValue: "optional",
+} as const satisfies SettingDefinition;
+
+/**
  * WMS-26 (ADR 0047): the size of the labels a «Imprimir etiqueta» link
  * downloads (the values are `LABEL_FORMATS` of `@/platform/files`). A
  * letter sheet by default: every office has a printer for it.
@@ -739,6 +769,7 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   CUSTOMER_RETURN_WITHOUT_ORDER,
   REPAIR_RELEASE,
   INCIDENT_PHOTO,
+  TASK_PHOTO,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
   REPLENISHMENT_MODE,

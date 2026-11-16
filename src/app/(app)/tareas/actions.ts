@@ -13,9 +13,12 @@ import {
   confirmPick,
   createTask,
   deliverTask,
+  discardTaskPhoto,
   pickUpTask,
   releaseTask,
+  uploadTaskPhoto,
   type TaskField,
+  type TaskPhotoResult,
   type TaskResult,
 } from "@/modules/inventory";
 import { requireOrganizationContext } from "@/platform/tenancy";
@@ -114,7 +117,9 @@ export async function createTaskAction(
 }
 
 export type TaskStepState =
-  { ok: true; summary: string } | { ok: false; error: string };
+  | { ok: true; summary: string }
+  /** `photos`: the refusal is about the photos (WMS-37B). */
+  | { ok: false; error: string; field?: "photos" };
 
 /** What a step answers: a task result, or a capacity warning (WMS-22B). */
 type StepAnswer =
@@ -142,6 +147,9 @@ async function run(
           result.formError ??
           Object.values(result.fieldErrors ?? {})[0] ??
           "No se pudo cambiar la tarea.",
+        ...(result.fieldErrors && "photos" in result.fieldErrors
+          ? { field: "photos" as const }
+          : {}),
       };
     }
     revalidatePath("/tareas");
@@ -156,13 +164,14 @@ async function run(
 }
 
 /**
- * The next step of the person who does it: take, pick up or deliver. To
- * take a task that asks for equipment (WMS-42), the code of the one used,
- * scanned or chosen; the service looks for it only in that company.
+ * The next step of the person who does it: take or pick up (delivering is
+ * `deliverTaskAction`, with its photos). To take a task that asks for
+ * equipment (WMS-42), the code of the one used, scanned or chosen; the
+ * service looks for it only in that company.
  */
 export async function taskStepAction(
   taskId: string,
-  step: "accept" | "pickUp" | "deliver",
+  step: "accept" | "pickUp",
   equipmentCode?: string,
 ): Promise<TaskStepState> {
   const code = String(equipmentCode ?? "").slice(0, 60);
@@ -173,12 +182,78 @@ export async function taskStepAction(
       : step === "pickUp"
         ? (actor: { organizationId: string; userId: string }, id: string) =>
             pickUpTask(actor, id)
-        : step === "deliver"
-          ? (actor: { organizationId: string; userId: string }, id: string) =>
-              deliverTask(actor, id)
-          : null;
+        : null;
   if (!work) return { ok: false, error: "No se pudo cambiar la tarea." };
   return run(taskId, work);
+}
+
+/** At most the photos a delivery may carry, and a little room. */
+const PHOTO_IDS_MAX = 10;
+
+const photoIdsOf = (ids: unknown): string[] =>
+  (Array.isArray(ids) ? ids : [])
+    .slice(0, PHOTO_IDS_MAX)
+    .map((id) => String(id ?? "").slice(0, 36));
+
+/**
+ * The last step of a task (not a put-away, which scans its place):
+ * delivered where it was going, with the photos of where it was left
+ * (WMS-37B). The ids are of photos uploaded by this person; the service
+ * links them only if they are, inside the delivery's transaction.
+ */
+export async function deliverTaskAction(
+  taskId: string,
+  photoIds: string[],
+): Promise<TaskStepState> {
+  const photos = photoIdsOf(photoIds);
+  return run(taskId, (actor, id) =>
+    deliverTask(actor, id, { photoIds: photos }),
+  );
+}
+
+/**
+ * A photo taken to deliver a task (WMS-37B): checked and kept unlinked,
+ * for the person only, until the task is delivered. Only for a task of
+ * this person with its load picked up (the service checks it).
+ */
+export async function uploadTaskPhotoAction(
+  taskId: string,
+  formData: FormData,
+): Promise<TaskPhotoResult> {
+  const { user, organization } = await requireOrganizationContext();
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "No llegó la foto. Tómala otra vez." };
+  }
+  try {
+    return await uploadTaskPhoto(
+      { organizationId: organization.id, userId: user.id },
+      String(taskId ?? "").slice(0, 36),
+      { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** «Quitar» a photo taken and not used: only the person's, unlinked. */
+export async function discardTaskPhotoAction(
+  fileId: string,
+): Promise<{ ok: boolean }> {
+  const { user, organization } = await requireOrganizationContext();
+  try {
+    return await discardTaskPhoto(
+      { organizationId: organization.id, userId: user.id },
+      String(fileId ?? "").slice(0, 36),
+    );
+  } catch (error) {
+    // The plan expired meanwhile: nothing goes; the round removes it later.
+    if (isAppError(error) && error.kind === "forbidden") return { ok: false };
+    throw error;
+  }
 }
 
 /**
@@ -234,6 +309,8 @@ export async function putawayAction(
         locationCode: values.locationCode,
         // Only the button of the warning about this place carries it.
         acceptCapacity: formData.get("acceptCapacity") === stamp,
+        // WMS-37B: the photos of where it was left, by their ids.
+        photoIds: photoIdsOf(formData.getAll("photoIds")),
       },
     );
   } catch (error) {

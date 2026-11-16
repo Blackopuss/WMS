@@ -231,12 +231,26 @@ export type StoreFileResult =
  */
 export async function storeFile(
   actor: FileActor,
-  input: { purpose: FilePurpose; name: string; bytes: Uint8Array },
+  input: {
+    purpose: FilePurpose;
+    name: string;
+    bytes: Uint8Array;
+    /**
+     * WMS-37B: the record a photo is taken for, when its purpose is
+     * `boundToOwner` (required then, refused otherwise). The caller has
+     * already checked the person may work that record now.
+     */
+    pendingOwnerId?: string;
+  },
 ): Promise<StoreFileResult> {
   const { organizationId, userId } = actor;
   if (!isPurpose(input.purpose)) throw new Error("Unknown file purpose");
   const purpose = purposeOf(input.purpose);
   await assertModulePermission(organizationId, userId, purpose.write);
+  const pendingOwnerId = String(input.pendingOwnerId ?? "").slice(0, 36);
+  if (Boolean(purpose.evidence?.boundToOwner) !== (pendingOwnerId !== "")) {
+    throw new Error(`${input.purpose}: wrong pending owner`);
+  }
 
   const name = cleanName(input.name);
   const extension = name.includes(".")
@@ -310,6 +324,7 @@ export async function storeFile(
     createdByUserId: userId,
     width: dimensions?.width ?? null,
     height: dimensions?.height ?? null,
+    pendingOwnerId: pendingOwnerId || null,
   };
   // WMS-67 (ADR 0070): the key is written down before the bytes go to the
   // storage, which may be remote and fail or take long. The row of the file
@@ -426,7 +441,9 @@ const FILE_SELECT = {
   sha256: true,
   storageKey: true,
   createdByUserId: true,
-  evidencePhoto: { select: { incidentId: true, processStepId: true } },
+  evidencePhoto: {
+    select: { incidentId: true, processStepId: true, warehouseTaskId: true },
+  },
 } as const;
 
 type FileRow = {
@@ -441,6 +458,7 @@ type FileRow = {
   evidencePhoto: {
     incidentId: string | null;
     processStepId: string | null;
+    warehouseTaskId: string | null;
   } | null;
 };
 

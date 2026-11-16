@@ -715,7 +715,13 @@ export type WaveView = {
   /** Available tasks in the zone shown: to take them or give them. */
   availableIds: string[];
   /** What this person picked and still carries, to leave in staging. */
-  toLeave: { taskIds: string[]; text: string; place: string } | null;
+  toLeave: {
+    taskIds: string[];
+    /** WMS-37B: each one, to deliver it from its own screen with a photo. */
+    tasks: { id: string; numberText: string }[];
+    text: string;
+    place: string;
+  } | null;
 };
 
 type PlaceRow = {
@@ -1057,6 +1063,10 @@ export async function getWave(
       carried.length > 0
         ? {
             taskIds: carried.map((task) => task.id),
+            tasks: carried.map((task) => ({
+              id: task.id,
+              numberText: formatTaskNumber(task.number),
+            })),
             text:
               carried.length === 1
                 ? "1 tarea surtida"
