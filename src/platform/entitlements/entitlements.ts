@@ -154,6 +154,61 @@ export async function getFreshEntitlements(
   return getEntitlements(organizationId);
 }
 
+/** Anything that can read the modules of a company: a client or a transaction. */
+export type ModuleReader = {
+  entitlement: {
+    findMany(args: {
+      where: { organizationId: string; kind: "MODULE" };
+      select: {
+        kind: true;
+        key: true;
+        value: true;
+        validFrom: true;
+        validUntil: true;
+      };
+    }): PromiseLike<Row[]>;
+  };
+  subscription: {
+    findFirst(args: {
+      where: { organizationId: string };
+      select: { status: true };
+    }): PromiseLike<{ status: SubscriptionStatus } | null>;
+  };
+};
+
+/**
+ * Modules in full use and in read-only, read with the caller's own client
+ * and the same rules as getEntitlements (WMS-59). Use it inside
+ * transactions, where another connection must not be opened; the company
+ * is named in each filter, so a plain client works too.
+ */
+export async function readModuleStates(
+  client: ModuleReader,
+  organizationId: string,
+): Promise<Pick<Entitlements, "modules" | "readOnlyModules">> {
+  const [rows, subscription] = await Promise.all([
+    client.entitlement.findMany({
+      where: { organizationId, kind: "MODULE" },
+      select: {
+        kind: true,
+        key: true,
+        value: true,
+        validFrom: true,
+        validUntil: true,
+      },
+    }),
+    client.subscription.findFirst({
+      where: { organizationId },
+      select: { status: true },
+    }),
+  ]);
+  const { modules, readOnlyModules } = effective(
+    { rows, status: subscription?.status ?? null, loadedAt: 0 },
+    now(),
+  );
+  return { modules, readOnlyModules };
+}
+
 /** Forgets the cached rows of a company (or of all). Call after writing entitlements. */
 export function invalidateEntitlements(organizationId?: string): void {
   if (organizationId === undefined) cache.clear();

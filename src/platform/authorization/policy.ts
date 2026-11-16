@@ -6,6 +6,7 @@
  */
 import {
   OWNER_PERMISSIONS,
+  ROLE_MODULE,
   ROLE_PERMISSIONS,
   isPermission,
   isRole,
@@ -43,7 +44,67 @@ export type Subject = {
    * limits them, the scope of their key does).
    */
   limit?: SubjectLimit;
+  /**
+   * WMS-59 (ADR 0062): the company's modules and their state, for the roles
+   * tied to a module (ROLE_MODULE). A tied role gives everything with its
+   * module active, only the reads and exports of that module (never its
+   * Inventario or platform reads) with it in read-only, and nothing
+   * without it. Absent = no module: a tied role then gives nothing
+   * (fail closed), so a subject built elsewhere never grants by mistake.
+   */
+  modules?: ReadonlyMap<string, CompanyModuleState>;
 };
+
+/** A module the company has: in full use or only to read and export. */
+export type CompanyModuleState = "active" | "read_only";
+
+/** The `modules` of a subject, from the company's entitlements. */
+export function companyModules(entitlements: {
+  modules: ReadonlySet<string>;
+  readOnlyModules: ReadonlySet<string>;
+}): ReadonlyMap<string, CompanyModuleState> {
+  const states = new Map<string, CompanyModuleState>();
+  for (const id of entitlements.readOnlyModules) states.set(id, "read_only");
+  for (const id of entitlements.modules) states.set(id, "active");
+  return states;
+}
+
+/**
+ * Same rule as the module guard (MOD-11), limited to one module: what only
+ * looks at it or takes its data out.
+ */
+function onlyLooksAt(moduleId: string, permission: string): boolean {
+  const [prefix, resource, action] = permission.split(".");
+  return (
+    prefix === moduleId &&
+    (action === "read" || action === "export" || resource === "export")
+  );
+}
+
+/** True when one of the roles is tied to a module (WMS-59). */
+export function hasTiedRole(roles: readonly string[]): boolean {
+  return roles.some((role) => isRole(role) && ROLE_MODULE[role] !== undefined);
+}
+
+/**
+ * Permissions a role gives in this company (WMS-59): all of them, unless
+ * the role is tied to a module the company lacks (none) or has only to
+ * read (the reads and exports of that module, nothing else: removed or
+ * with the plan ended, its Inventario and platform reads go too).
+ */
+function permissionsOfRole(
+  subject: Subject,
+  role: Role,
+): readonly Permission[] {
+  const needs = ROLE_MODULE[role];
+  if (needs === undefined) return ROLE_PERMISSIONS[role];
+  const state = subject.modules?.get(needs);
+  if (state === "active") return ROLE_PERMISSIONS[role];
+  if (state === "read_only") {
+    return ROLE_PERMISSIONS[role].filter((p) => onlyLooksAt(needs, p));
+  }
+  return [];
+}
 
 /** What an API key leaves of its creator's power (WMS-60). */
 export type SubjectLimit = {
@@ -188,7 +249,9 @@ export function permissionsOf(subject: Subject): ReadonlySet<Permission> {
     for (const permission of OWNER_PERMISSIONS) granted.add(permission);
   }
   for (const role of knownRoles(subject.roles)) {
-    for (const permission of ROLE_PERMISSIONS[role]) granted.add(permission);
+    for (const permission of permissionsOfRole(subject, role)) {
+      granted.add(permission);
+    }
   }
   const limited = subject.limit
     ? new Set([...granted].filter((p) => subject.limit?.permissions.has(p)))

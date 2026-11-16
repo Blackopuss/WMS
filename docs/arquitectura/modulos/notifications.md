@@ -48,6 +48,11 @@ así lo puede llamar un cambio de equipo con el cliente normal de su
 transacción (sesiones del equipo, WMS-40), siempre sin `facilityId` ni
 `locationId`.
 
+Roles ligados a un módulo (WMS-59, ADR 0062): `memberReaches` recibe los
+módulos de la empresa (`modulesFor`, que los lee con el cliente de la
+transacción solo si algún candidato tiene un rol ligado); sin ellos esos
+roles no reciben avisos por permiso.
+
 ## Permisos
 
 Ninguno propio: cada persona ve, abre y marca solo sus avisos, y elige solo

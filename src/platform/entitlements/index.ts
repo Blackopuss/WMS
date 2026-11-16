@@ -7,11 +7,13 @@ export {
   getFreshEntitlements,
   invalidateEntitlements,
   readLimit,
+  readModuleStates,
   setEntitlementClock,
 } from "./entitlements";
 export type {
   Entitlements,
   LimitReader,
+  ModuleReader,
   ModuleState,
   SubscriptionStatus,
 } from "./entitlements";

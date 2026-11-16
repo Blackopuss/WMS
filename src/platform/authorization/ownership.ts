@@ -4,7 +4,9 @@ import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { db, forOrganization } from "@/server";
 
-import { isRole, type Role } from "./catalog";
+import { modulesOf } from "./access";
+import { ROLE_MODULE, isRole, type Role } from "./catalog";
+import { TEAM_RULE_MESSAGES } from "./team-rules";
 
 /**
  * Ownership transfer (USR-03B, founder's answer 8). Two steps:
@@ -28,6 +30,7 @@ export type OwnershipReason =
   | "not_owner"
   | "invalid_recipient"
   | "invalid_roles"
+  | "module_missing"
   | "not_found"
   | "expired"
   | "mfa_required";
@@ -37,6 +40,7 @@ export const OWNERSHIP_MESSAGES: Record<OwnershipReason, string> = {
   invalid_recipient:
     "Elige a una persona activa de tu equipo distinta de ti para recibir la empresa.",
   invalid_roles: "Elige roles válidos para conservar después de transferir.",
+  module_missing: TEAM_RULE_MESSAGES.module_missing,
   not_found: "Esta transferencia ya no está disponible.",
   expired: "Esta transferencia venció. Pide al titular que la envíe de nuevo.",
   mfa_required:
@@ -78,15 +82,28 @@ export async function offerOwnershipTransfer(
   const roles = parseRoles(input.previousOwnerRoles);
   if (!roles) return fail("invalid_roles");
   const toUserId = String(input.toUserId);
+  // WMS-59: a role tied to a module is kept only with that module in full
+  // use, unless the titular already has it (same rule as the team).
+  const modules = await modulesOf(organizationId);
 
   return db.$transaction(async (tx) => {
     const owner = await lockOwner(tx, organizationId);
     if (owner === null || owner !== actorUserId) return fail("not_owner");
     const ownMembership = await tx.membership.findFirst({
       where: { organizationId, userId: actorUserId, status: "ACTIVE" },
-      select: { id: true },
+      select: { id: true, roles: { select: { role: true } } },
     });
     if (!ownMembership) return fail("not_owner");
+    const held = new Set(ownMembership.roles.map((each) => each.role));
+    const missing = roles.some((role) => {
+      const needs = ROLE_MODULE[role];
+      return (
+        needs !== undefined &&
+        !held.has(role) &&
+        modules.get(needs) !== "active"
+      );
+    });
+    if (missing) return fail("module_missing");
 
     const recipient =
       toUserId === actorUserId

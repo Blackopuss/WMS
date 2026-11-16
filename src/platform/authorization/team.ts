@@ -5,6 +5,7 @@ import { recordAuditEvent, recordSecurityEvent } from "@/platform/audit";
 import { terminalUserOfRequest } from "@/platform/auth";
 import { db, forOrganization } from "@/server";
 
+import { modulesOf } from "./access";
 import { isRole, type Role } from "./catalog";
 import { buildScope, can, inScope, knownRoles } from "./policy";
 import { resolveScopeRows } from "./scope-rows";
@@ -95,6 +96,9 @@ export async function withTeamChange(
   // A PIN session (WMS-38) is cut down here as everywhere else: one
   // decision, the policy. Read before the transaction (another connection).
   const atTerminal = (await terminalUserOfRequest()) === actorUserId;
+  // WMS-59: roles tied to a module need it, for the actor's own roles and
+  // for the ones handed out. Read before the transaction (cached rows).
+  const modules = await modulesOf(organizationId);
   return db.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<
       { ownerUserId: string }[]
@@ -103,7 +107,11 @@ export async function withTeamChange(
     if (!owner) return fail("forbidden");
     const member = await memberIn(tx, organizationId, owner, actorUserId);
     if (!member || member.status !== "ACTIVE") return fail("forbidden");
-    const actor = atTerminal ? { ...member, terminal: true } : member;
+    const actor = {
+      ...member,
+      modules,
+      ...(atTerminal ? { terminal: true } : {}),
+    };
     const target = await memberIn(
       tx,
       organizationId,
