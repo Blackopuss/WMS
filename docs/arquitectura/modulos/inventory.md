@@ -168,7 +168,7 @@ código»):
 | Conteos | `counts.ts` | `openCount`, `captureCount`, `removeCapture`, `applyCount` (con `reviewed` cuando la empresa pide revisar diferencias grandes, WMS-55; con la regla `inventory.count_apply` encendida responde `pending_approval`, WMS-41), `cancelCount`, `getCount` (programa, líneas por revisar, lo que está en tarimas y `pendingApprovalId`), `listCountPage` (paginada; vista «De hoy»), `listCounts` (su primera página); `applyApprovedCount` (efecto de la autorización) |
 | Aprobaciones (WMS-41) | `approvals.ts`, `approval-keys.ts`, `approval-rules.ts` | `INVENTORY_APPROVAL_TYPES` (`inventory.adjustment` con `applyApprovedAdjustment` de `movements.ts`, `inventory.count_apply` con `applyApprovedCount`), `ADJUSTMENT_APPROVAL`, `COUNT_APPROVAL`; regla pura del umbral `exceedsThreshold` |
 | Conteos cíclicos (WMS-55) | `cycle-counts.ts`, `abc-rules.ts`, `count-accuracy.ts` | `createCountProgram`, `updateCountProgram`, `setCountProgramPaused`, `listCountPrograms`, `getCountProgram` (con lo que generaría hoy), `generateTodayCounts` («Generar los de hoy»), `runCycleCountRound` (la ronda del worker), `countTodayCounts` (Inicio); `getCountAccuracy` (exactitud por semana o mes contra el periodo anterior, por programa; tope `ACCURACY_MAX_ROWS`); reglas puras `classifyAbc`, `locationClass`, `parseAbcCuts` |
-| Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY`, `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta) e `ISSUE` («Surtir a producción», WMS-28, ADR 0073: la crea Producción al liberar una orden con `setAsideForProduction` de `issue.ts`; entregar consume la reserva de su línea en el origen, mueve al área y la vuelve a apartar ahí para la misma línea; cancelar suelta su parte; cada paso bloquea la orden de producción antes que la tarea); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53) |
+| Tareas | `tasks.ts`, `task-states.ts` | crear, asignar, tomar, recoger, entregar (`deliverTask`; un acomodo con la ubicación escaneada, `locationCode`), reportar, liberar, cancelar, `confirmPick` (surtido); listas; tabla de transiciones `WAREHOUSE_TASK_TRANSITIONS`. Tipos `TRANSFER`, `PICK`, `PUTAWAY`, `REPLENISH` (WMS-24: entregar consume su apartado y mueve a la ubicación de surtido; cancelar lo suelta) e `ISSUE` («Surtir a producción», WMS-28, ADR 0073: la crea Producción al liberar una orden con `setAsideForProduction` de `issue.ts`; entregar consume la reserva de su línea en el origen, mueve al área y la vuelve a apartar ahí para la misma línea; cancelar suelta su parte; cada paso bloquea la orden de producción antes que la tarea); una tarea mueve un producto o un contenedor entero (`containerId`, WMS-53). Foto al entregar (WMS-37B, ADR 0076): `uploadTaskPhoto` (propósito `task_photo`; solo la tarea propia «Por entregar», en alcance y con el ajuste encendido), `discardTaskPhoto`, `photoIds` en `deliverTask` (todas las entregas; se ligan al final de su transacción y, con `inventory.task.photo = required`, sin foto no se mueve nada), `photos` en `getTask` (con quién y cuándo), `reachesTask` (dueño de las fotos para `evidenceOwners`) y `taskPhotoMode`; `deliverPickGroup` se rechaza con la foto obligatoria |
 | Pedidos de salida | `outbound-orders.ts`, `outbound-states.ts` | crear, editar líneas, liberar (aparta y crea tareas de surtido), cancelar, listar; transiciones `OUTBOUND_ORDER_TRANSITIONS`; `releaseUnderLock` y `lockedOutboundOrder` (internas, para las olas) |
 | Olas de surtido (WMS-25) | `waves.ts`, `wave-states.ts`, `wave-settle.ts`, `pick-route.ts` | `createWave` (libera los borradores; todo o nada), `cancelWave` (solo desagrupa), `listWaves`, `listWaveCandidates`, `listOpenWaves`, `getWave` (lo que sigue, recorrido agrupado por producto + origen + lote, zonas, pedidos), `confirmWavePick`, `deliverWavePicks`, `takeWaveTasks`, `assignWaveTasks`, `waveOfOrder`, `wavesEnabled`; transiciones `PICK_WAVE_TRANSITIONS`; orden de recorrido `inRouteOrder`/`compareRoute` (puro); en `tasks.ts`, `confirmPickGroup`, `deliverPickGroup`, `takeTasks`, `assignTasks` y `nextTaskFor` («Siguiente tarea»); «Mis tareas» va en orden de recorrido |
 | Despacho y embarques | `shipments.ts`, `shipment-states.ts`, `shipment-ready.ts`, `shipment-pdf.ts` | `createShipment` (borrador con pedidos listos y datos del transporte), `updateShipment`, `addShipmentOrders`, `removeShipmentOrder`, `cancelShipment`, `dispatchShipment` (confirmar salida); lecturas `listShipments`, `getShipment`, `listReadyOrders`, `countOrdersToShip`, `shipmentOfOrder`, `shipmentDetailsRequired`; `buildShipmentPdf` (hoja de embarque, sin precios); `SHIPMENT_PROCESS` y `SHIPMENT_DISPATCHED_OPERATION` (documento del motor de procesos, WMS-74B); transiciones `SHIPMENT_TRANSITIONS`; `TO_SHIP` y `shippedOn` en `listOutboundOrders`; `shippedOnWhere` (resumen del día) |
@@ -252,7 +252,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `customer_return_line`, `customer_return_decision`, `facility_transfer`,
 `facility_transfer_line`, `facility_transfer_receipt`,
 `facility_transfer_receipt_line`,
-`incident`, `incident_note` (sus fotos en `evidence_photo` de plataforma),
+`incident`, `incident_note` (sus fotos en `evidence_photo` de plataforma, como las de `warehouse_task`, WMS-37B),
 `equipment_type`, `equipment`, `equipment_maintenance`,
 `product_import`,
 `product_import_item`, `exit_import`, `exit_import_row`, `outbound_import`.
@@ -279,6 +279,7 @@ la transacción que decide:
 | `inventory.customer_return.without_order` | **`allow`**, `forbid` (devoluciones de clientes sin pedido, WMS-17) |
 | `inventory.repair.release` | **`direct`**, `inspection` (lo restaurado vuelve directo a disponible o pasa antes por inspección, WMS-75) |
 | `inventory.incident.photo` | **`optional`**, `required` (foto al reportar una incidencia, WMS-37) |
+| `inventory.task.photo` | `off`, **`optional`**, `required` (foto de dónde quedó al entregar una tarea, todos los tipos; con `required` las olas se entregan tarea por tarea; WMS-37B) |
 | `inventory.labels.format` | **`letter_10`** (hoja carta, 10 por hoja), `100x50`, `100x150` (mm; WMS-26) |
 | `inventory.labels.codes` | **`both`** (barras y QR), `barcode`, `qr` (WMS-26) |
 | `inventory.replenishment.mode` | **`off`** (solo con «Reponer ahora»), `round` (la ronda del worker, cada hora; WMS-24) |
@@ -387,7 +388,7 @@ entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
 (inspección al recibir, desechar y retención genérica), 0071 (procesos en
-embarques), 0072 (estado «En restauración»).
+embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea).
 
 ## Pruebas
 
@@ -396,7 +397,7 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`,
 `replenishment-rules.test.ts`). Reposición de surtido en
 `replenishment.int.test.ts`.
-Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
+Fotos al entregar una tarea en `task-photos.int.test.ts`. Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; procesos en embarques en `shipment-process.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en
 `facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;

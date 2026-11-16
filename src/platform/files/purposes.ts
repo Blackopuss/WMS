@@ -26,6 +26,7 @@ export type Extension = SheetExtension | ImageExtension;
 export const EVIDENCE_OWNER_KINDS = {
   incident: "incidentId",
   process_step: "processStepId",
+  warehouse_task: "warehouseTaskId",
 } as const;
 
 export type EvidenceOwnerKind = keyof typeof EVIDENCE_OWNER_KINDS;
@@ -115,6 +116,19 @@ export const FILE_PURPOSES = {
     extensions: PHOTO_EXTENSIONS,
     evidence: { owner: "process_step", perRecord: 5, perOwner: 5 },
   },
+  /**
+   * WMS-37B (ADR 0076): photos of where a warehouse task was left, taken
+   * by who delivers it and linked with the delivery (a task is delivered
+   * once, so the photos of the record are the photos of the task). Who
+   * sees the task sees them.
+   */
+  task_photo: {
+    write: "inventory.task.execute",
+    read: "inventory.task.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: { owner: "warehouse_task", perRecord: 3, perOwner: 3 },
+  },
 } as const satisfies Record<string, Purpose>;
 
 export type FilePurpose = keyof typeof FILE_PURPOSES;
@@ -137,6 +151,8 @@ export function ownerWhere(owner: EvidenceOwner) {
       return { incidentId: String(owner.id).slice(0, 36) };
     case "process_step":
       return { processStepId: String(owner.id).slice(0, 36) };
+    case "warehouse_task":
+      return { warehouseTaskId: String(owner.id).slice(0, 36) };
   }
 }
 
@@ -144,10 +160,14 @@ export function ownerWhere(owner: EvidenceOwner) {
 export function ownerOfLink(link: {
   incidentId: string | null;
   processStepId?: string | null;
+  warehouseTaskId?: string | null;
 }): EvidenceOwner | null {
   if (link.incidentId) return { kind: "incident", id: link.incidentId };
   if (link.processStepId) {
     return { kind: "process_step", id: link.processStepId };
+  }
+  if (link.warehouseTaskId) {
+    return { kind: "warehouse_task", id: link.warehouseTaskId };
   }
   return null;
 }

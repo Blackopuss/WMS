@@ -137,6 +137,11 @@ export type EvidencePhotoLink = {
   height: number | null;
   /** The follow-up note it came with (incidents), or null. */
   noteId: string | null;
+  /**
+   * Who linked it, who is also who took it (only one's own photos are
+   * linked) — WMS-37B: «qué persona subió la foto».
+   */
+  createdByUserId: string;
   createdAt: Date;
 };
 
@@ -163,6 +168,7 @@ export async function evidencePhotoLinks(
       fileId: true,
       purpose: true,
       incidentNoteId: true,
+      createdByUserId: true,
       createdAt: true,
       file: { select: { width: true, height: true } },
     },
@@ -182,6 +188,7 @@ export async function evidencePhotoLinks(
     width: row.file.width,
     height: row.file.height,
     noteId: row.incidentNoteId,
+    createdByUserId: row.createdByUserId,
     createdAt: row.createdAt,
   }));
 }
@@ -228,7 +235,9 @@ export async function evidencePhotoLinksOf(
       purpose: true,
       incidentId: true,
       processStepId: true,
+      warehouseTaskId: true,
       incidentNoteId: true,
+      createdByUserId: true,
       createdAt: true,
       file: { select: { width: true, height: true } },
     },
@@ -252,6 +261,7 @@ export async function evidencePhotoLinksOf(
       width: row.file.width,
       height: row.file.height,
       noteId: row.incidentNoteId,
+      createdByUserId: row.createdByUserId,
       createdAt: row.createdAt,
     });
     result.set(owner, list);

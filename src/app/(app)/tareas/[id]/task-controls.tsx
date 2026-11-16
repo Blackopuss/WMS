@@ -2,9 +2,15 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import {
+  useState,
+  useTransition,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { toast } from "sonner";
 
+import { PhotoCapture, type CapturedPhoto } from "@/components";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +32,10 @@ import {
   blockTaskAction,
   changeTaskEquipmentAction,
   cancelTaskAction,
+  deliverTaskAction,
+  discardTaskPhotoAction,
   releaseTaskAction,
+  uploadTaskPhotoAction,
   taskStepAction,
   type TaskStepState,
 } from "../actions";
@@ -54,8 +63,9 @@ function useTaskAction() {
 
 /**
  * The next step of the person who has the task, as one big button: take
- * it, confirm the pick up, confirm the delivery (WMS-07). Repeating a step
- * is harmless: the service answers that it was already done.
+ * it or confirm the pick up (WMS-07); the delivery is `DeliverStep`.
+ * Repeating a step is harmless: the service answers that it was already
+ * done.
  */
 export function TaskStep({
   taskId,
@@ -63,7 +73,7 @@ export function TaskStep({
   label,
 }: {
   taskId: string;
-  step: "accept" | "pickUp" | "deliver";
+  step: "accept" | "pickUp";
   label: string;
 }) {
   const { pending, error, run } = useTaskAction();
@@ -387,5 +397,109 @@ export function EquipmentStep({
         {pending ? "Guardando…" : label}
       </Button>
     </form>
+  );
+}
+
+/** What the photo field says, by what the company asks (WMS-37B). */
+export function taskPhotoLabel(mode: "optional" | "required") {
+  return mode === "required"
+    ? "Foto de dónde lo dejaste"
+    : "Foto de dónde lo dejaste (opcional)";
+}
+
+/**
+ * The photo of where the load was left (WMS-37B, ADR 0076): taken right
+ * before the last tap, uploaded at once and linked by the delivery. Kept
+ * by the parent, so a refused delivery keeps what was taken.
+ */
+export function TaskPhotoField({
+  taskId,
+  mode,
+  max,
+  photos,
+  onPhotosChange,
+  error,
+}: {
+  taskId: string;
+  mode: "optional" | "required";
+  max: number;
+  photos: CapturedPhoto[];
+  onPhotosChange: Dispatch<SetStateAction<CapturedPhoto[]>>;
+  error?: string;
+}) {
+  return (
+    <PhotoCapture
+      id="task-photos"
+      label={taskPhotoLabel(mode)}
+      hint="Queda como prueba de dónde quedó la mercancía."
+      error={error}
+      photos={photos}
+      onPhotosChange={onPhotosChange}
+      upload={uploadTaskPhotoAction.bind(null, taskId)}
+      discard={discardTaskPhotoAction}
+      max={max}
+    />
+  );
+}
+
+/**
+ * The last step: left where it was going, with the photo of where it was
+ * left when the company asks for it — the same big button, no extra
+ * screen (WMS-37B). With the photo required, the button says first what
+ * is missing instead of sending.
+ */
+export function DeliverStep({
+  taskId,
+  label,
+  photoMode,
+  maxPhotos,
+}: {
+  taskId: string;
+  label: string;
+  photoMode: "off" | "optional" | "required";
+  maxPhotos: number;
+}) {
+  const { pending, error, run } = useTaskAction();
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [missing, setMissing] = useState(false);
+  return (
+    <div className="space-y-3">
+      {photoMode !== "off" && (
+        <TaskPhotoField
+          taskId={taskId}
+          mode={photoMode}
+          max={maxPhotos}
+          photos={photos}
+          onPhotosChange={setPhotos}
+        />
+      )}
+      <Button
+        type="button"
+        size="lg"
+        className="min-h-14 w-full text-base sm:w-auto sm:min-w-72"
+        disabled={pending}
+        onClick={() => {
+          if (photoMode === "required" && photos.length === 0) {
+            setMissing(true);
+            return;
+          }
+          setMissing(false);
+          run(() =>
+            deliverTaskAction(
+              taskId,
+              photos.map((photo) => photo.fileId),
+            ),
+          );
+        }}
+      >
+        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+        {pending ? "Guardando…" : label}
+      </Button>
+      {(error || (missing && photos.length === 0)) && (
+        <p role="alert" className="text-sm text-destructive">
+          {error ?? "Toma una foto de dónde la dejaste."}
+        </p>
+      )}
+    </div>
   );
 }

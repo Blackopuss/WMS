@@ -426,7 +426,9 @@ const FILE_SELECT = {
   sha256: true,
   storageKey: true,
   createdByUserId: true,
-  evidencePhoto: { select: { incidentId: true, processStepId: true } },
+  evidencePhoto: {
+    select: { incidentId: true, processStepId: true, warehouseTaskId: true },
+  },
 } as const;
 
 type FileRow = {
@@ -441,6 +443,7 @@ type FileRow = {
   evidencePhoto: {
     incidentId: string | null;
     processStepId: string | null;
+    warehouseTaskId: string | null;
   } | null;
 };
 

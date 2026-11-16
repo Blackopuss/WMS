@@ -18,7 +18,15 @@ import {
   locationScopeWhere,
   locationsOutOfScope,
 } from "@/platform/locations";
+import {
+  attachEvidencePhotos,
+  deleteFile,
+  evidencePhotoLinks,
+  storeFile,
+  type StoreFileResult,
+} from "@/platform/files";
 import { memberName, notify } from "@/platform/notifications";
+import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { dayWindow, type DayWindow } from "./calendar-day";
@@ -83,6 +91,7 @@ import {
   equipmentHolder,
   normalizeEquipmentCode,
 } from "./equipment-rules";
+import { TASK_PHOTO } from "./settings";
 
 /**
  * Warehouse tasks (WMS-06, especificación WMS v5 5.3): a supervisor asks
@@ -125,7 +134,8 @@ export type TaskField =
   | "lotId"
   | "lotCode"
   | "equipmentTypeId"
-  | "equipmentCode";
+  | "equipmentCode"
+  | "photos";
 
 type Failure = Extract<TaskResult, { ok: false }>;
 
@@ -1220,7 +1230,54 @@ export type DeliverInput = {
    * the person leaves it there anyway (WMS-22B).
    */
   acceptCapacity?: boolean;
+  /**
+   * WMS-37B (ADR 0076): photos of where it was left, uploaded with
+   * `uploadTaskPhoto`; linked with the delivery, in its transaction.
+   */
+  photoIds?: readonly string[];
 };
+
+const TASK_PHOTO_REQUIRED = "Toma una foto de dónde la dejaste.";
+const GROUP_NEEDS_PHOTO =
+  "Esta empresa pide una foto al entregar: deja cada tarea desde su ficha con su foto.";
+
+/**
+ * WMS-37B (ADR 0076): whether this company demands a photo to deliver,
+ * read inside the delivery's transaction (after its locks, before
+ * writing): with «required» and none, nothing is written.
+ */
+async function assertPhotoGiven(tx: Tx, photoIds: readonly string[]) {
+  if (
+    photoIds.length === 0 &&
+    (await readSetting(tx, TASK_PHOTO)) === "required"
+  ) {
+    stop("invalid", TASK_PHOTO_REQUIRED, "photos");
+  }
+}
+
+/**
+ * WMS-37B: links the photos of a delivery to its task, at the end of the
+ * delivery's transaction (after its moves and the task written as
+ * delivered; the files are the last locks). A photo that does not serve
+ * undoes the whole delivery. Says how many were kept, for the summary.
+ */
+async function attachTaskPhotos(
+  tx: Tx,
+  actor: InventoryActor,
+  taskId: string,
+  photoIds: readonly string[],
+): Promise<string> {
+  if (photoIds.length === 0) return "";
+  const linked = await attachEvidencePhotos(tx, actor, {
+    purpose: "task_photo",
+    owner: { kind: "warehouse_task", id: taskId },
+    fileIds: photoIds,
+  });
+  if (!linked.ok) return stop("invalid", linked.error, "photos");
+  return linked.count === 1
+    ? " Se guardó la foto."
+    : ` Se guardaron ${linked.count} fotos.`;
+}
 
 /**
  * Left at the destination: writes the TRANSFER movement (key
@@ -1316,55 +1373,17 @@ export async function deliverTask(
         };
       }
       ensure(task, "DELIVERED");
-      if (box) {
-        return deliverContainer(tx, actor, task, box, destination, input);
-      }
-      if (task.kind === "PICK" && task.outboundLineId && task.outboundLine) {
-        return deliverPickTask(tx, actor, ofProduct(task));
-      }
-      if (task.kind === "PUTAWAY") {
-        return deliverPutaway(tx, actor, ofProduct(task), destination, input);
-      }
-      if (task.kind === "REPLENISH") {
-        return deliverReplenish(tx, actor, ofProduct(task));
-      }
-      if (task.kind === "ISSUE") {
-        return deliverIssueTask(tx, actor, ofProduct(task));
-      }
-      const product = ofProduct(task);
-      const moved = await postTaskTransfer(tx, actor, {
-        productId: product.productId,
-        fromLocationId: task.fromLocationId,
-        toLocationId: task.toLocationId,
-        quantity: product.quantity.toString(),
-        lotId: task.lotId,
-        serials: await taskSerials(tx, task.id),
-        taskId: task.id,
-        idempotencyKey: `task:${task.id}`,
-        reference: formatTaskNumber(task.number),
+      // WMS-37B: a photo the company demands is asked before anything
+      // moves; the photos are linked after everything else.
+      const photoIds = input.photoIds ?? [];
+      await assertPhotoGiven(tx, photoIds);
+      const delivered = await deliverLocked(tx, actor, task, box, {
+        destination,
+        input,
       });
-      if (!moved.ok) {
-        return stop(
-          "not_allowed",
-          `${moved.formError ?? Object.values(moved.fieldErrors)[0] ?? "No se pudo mover la carga."} Si no puedes entregarla, reporta el problema.`,
-        );
-      }
-      await tx.warehouseTask.update({
-        where: { id: task.id },
-        data: {
-          status: "DELIVERED",
-          deliveredAt: new Date(),
-          movementId: moved.movementId,
-        },
-      });
-      return {
-        ok: true,
-        taskId: task.id,
-        // WMS-22B: a destination left above its capacity is said, not stopped.
-        summary:
-          `Entregaste la tarea ${describe(task)}.` +
-          (moved.notes ?? []).map((note) => ` ${note}`).join(""),
-      };
+      if (!delivered.ok) return delivered;
+      const photos = await attachTaskPhotos(tx, actor, task.id, photoIds);
+      return { ...delivered, summary: delivered.summary + photos };
     });
   } catch (error) {
     if (error instanceof CapacityNotice) return error.result;
@@ -1393,6 +1412,70 @@ export async function deliverTask(
     }
     throw error;
   }
+}
+
+/**
+ * The delivery of a task by its kind (the caller took every lock and
+ * checked it may be delivered). Moves the goods and writes the task as
+ * delivered; refuses by throwing, so everything is undone.
+ */
+async function deliverLocked(
+  tx: Tx,
+  actor: InventoryActor,
+  task: LockedTask,
+  box: LockedContainer | null,
+  where: { destination: string; input: DeliverInput },
+): Promise<TaskResult> {
+  const { destination, input } = where;
+  if (box) {
+    return deliverContainer(tx, actor, task, box, destination, input);
+  }
+  if (task.kind === "PICK" && task.outboundLineId && task.outboundLine) {
+    return deliverPickTask(tx, actor, ofProduct(task));
+  }
+  if (task.kind === "PUTAWAY") {
+    return deliverPutaway(tx, actor, ofProduct(task), destination, input);
+  }
+  if (task.kind === "REPLENISH") {
+    return deliverReplenish(tx, actor, ofProduct(task));
+  }
+  if (task.kind === "ISSUE") {
+    return deliverIssueTask(tx, actor, ofProduct(task));
+  }
+  const product = ofProduct(task);
+  const moved = await postTaskTransfer(tx, actor, {
+    productId: product.productId,
+    fromLocationId: task.fromLocationId,
+    toLocationId: task.toLocationId,
+    quantity: product.quantity.toString(),
+    lotId: task.lotId,
+    serials: await taskSerials(tx, task.id),
+    taskId: task.id,
+    idempotencyKey: `task:${task.id}`,
+    reference: formatTaskNumber(task.number),
+  });
+  if (!moved.ok) {
+    return stop(
+      "not_allowed",
+      `${moved.formError ?? Object.values(moved.fieldErrors)[0] ?? "No se pudo mover la carga."} Si no puedes entregarla, reporta el problema.`,
+    );
+  }
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "DELIVERED",
+      deliveredAt: new Date(),
+      movementId: moved.movementId,
+    },
+  });
+  return {
+    ok: true,
+    taskId: task.id,
+    // WMS-22B: a destination left above its capacity is said, not stopped.
+    summary:
+      `Entregaste la tarea ${describe(task)}.` +
+      (moved.notes ?? []).map((note) => ` ${note}`).join(""),
+  };
 }
 
 async function deliverPickTask(
@@ -1742,6 +1825,124 @@ async function deliverContainer(
   };
 }
 
+// ── Photos of a delivery (WMS-37B, ADR 0076) ────────────────────────────
+
+export type TaskPhotoResult =
+  { ok: true; fileId: string } | { ok: false; error: string };
+
+export type TaskPhotoMode = "off" | "optional" | "required";
+
+const PHOTO_NOT_NOW =
+  "Esta tarea ya no la estás entregando: vuelve a abrir la pantalla.";
+
+/**
+ * Keeps a photo taken to deliver a task: checked by its content and stored
+ * without metadata, unlinked (seen only by who took it) until the task is
+ * delivered, and gone after a day if it never is. Only for a task of this
+ * person, inside their scope, with its load picked up — nobody stores
+ * photos of a task they are not delivering — and while the company does
+ * not turn photos off.
+ */
+export async function uploadTaskPhoto(
+  actor: InventoryActor,
+  taskId: string,
+  input: { name: string; bytes: Uint8Array },
+): Promise<TaskPhotoResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.task.execute",
+  );
+  const client = forOrganization(organizationId);
+  const task = await client.warehouseTask.findFirst({
+    where: {
+      id: String(taskId ?? "").slice(0, 36),
+      ...(await taskScope(client, userId)),
+    },
+    select: { status: true, assignedToUserId: true },
+  });
+  if (
+    !task ||
+    task.assignedToUserId !== userId ||
+    task.status !== "PICKED_UP"
+  ) {
+    return { ok: false, error: PHOTO_NOT_NOW };
+  }
+  if ((await readSetting(client, TASK_PHOTO)) === "off") {
+    return {
+      ok: false,
+      error: "Esta empresa no pide fotos al entregar una tarea.",
+    };
+  }
+  const stored: StoreFileResult = await storeFile(actor, {
+    purpose: "task_photo",
+    name: input.name,
+    bytes: input.bytes,
+  });
+  return stored.ok
+    ? { ok: true, fileId: stored.fileId }
+    : { ok: false, error: stored.error };
+}
+
+/**
+ * «Quitar» a photo taken to deliver a task and not used: only one of this
+ * person, not linked (a linked photo is never touched).
+ */
+export async function discardTaskPhoto(
+  actor: InventoryActor,
+  fileId: string,
+): Promise<{ ok: boolean }> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.task.execute",
+  );
+  const file = await forOrganization(actor.organizationId).storedFile.findFirst(
+    {
+      where: { id: String(fileId ?? "").slice(0, 36), purpose: "task_photo" },
+      select: { id: true },
+    },
+  );
+  return file ? deleteFile(actor, file.id) : { ok: false };
+}
+
+/**
+ * Whether the person reaches a task — the same condition as `getTask`
+ * (its origin and destination inside their warehouses and zones): who
+ * decides if its photos exist for them (`evidenceOwners`, ADR 0063). The
+ * permission to read is checked by the platform with the purpose's.
+ */
+export async function reachesTask(
+  actor: InventoryActor,
+  taskId: string,
+): Promise<boolean> {
+  const client = forOrganization(actor.organizationId);
+  const task = await client.warehouseTask.findFirst({
+    where: {
+      id: String(taskId ?? "").slice(0, 36),
+      ...(await taskScope(client, actor.userId)),
+    },
+    select: { id: true },
+  });
+  return task !== null;
+}
+
+/** Whether this company asks for a photo to deliver (for the screen). */
+export async function taskPhotoMode(
+  actor: InventoryActor,
+): Promise<TaskPhotoMode> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.task.read",
+  );
+  return (await readSetting(
+    forOrganization(actor.organizationId),
+    TASK_PHOTO,
+  )) as TaskPhotoMode;
+}
+
 /** Something stops it: damage, wrong location, nothing there. */
 export function blockTask(
   actor: InventoryActor,
@@ -2049,6 +2250,9 @@ export async function deliverPickGroup(
     let changed = 0;
     const notes: string[] = [];
     const places = new Set<string>();
+    // WMS-37B (ADR 0076): a photo is evidence of one task, so a company
+    // that demands it delivers task by task (each with its photo).
+    const photoRequired = (await readSetting(tx, TASK_PHOTO)) === "required";
     for (const id of [...ids].sort()) {
       const task = await lockTask(tx, id, userId);
       if (task.assignedToUserId !== userId) {
@@ -2064,6 +2268,7 @@ export async function deliverPickGroup(
           `${formatTaskNumber(task.number)} todavía no está surtida.`,
         );
       }
+      if (photoRequired) return stop("invalid", GROUP_NEEDS_PHOTO);
       await each(task, async () => {
         ensure(task, "DELIVERED");
         const done = await deliverPickTask(tx, actor, ofProduct(task), false);
@@ -2552,6 +2757,18 @@ export type TaskView = TaskSummary & {
    * no piece of that type left (retired or changed): nobody can take it.
    */
   equipmentUnavailable: boolean;
+  /**
+   * WMS-37B (ADR 0076): photos of where it was left, with who took them
+   * and when; only for who reaches the task.
+   */
+  photos: {
+    fileId: string;
+    url: string;
+    width: number | null;
+    height: number | null;
+    byName: string | null;
+    createdAt: Date;
+  }[];
 };
 
 /** «mine»: what this person has; «available»: what anyone may take. */
@@ -2983,12 +3200,23 @@ export async function getTask(
         take: 1_000,
         select: { serialUnit: { select: { serial: true } } },
       },
+      _count: { select: { photos: true } },
     },
   });
   if (!row) return null;
+  // WMS-37B: the photos of its delivery, asked of their owner (this task).
+  const photos =
+    row._count.photos > 0
+      ? await evidencePhotoLinks(
+          actor,
+          { kind: "warehouse_task", id: row.id },
+          { warehouse_task: reachesTask },
+        )
+      : [];
   const names = await namesOf(actor.organizationId, [
     row.assignedToUserId,
     row.createdByUserId,
+    ...photos.map((photo) => photo.createdByUserId),
   ]);
   // WMS-25: the open wave its order is in, to go back to it.
   const inWave = row.outboundLine
@@ -3041,6 +3269,14 @@ export async function getTask(
           retiredAt: null,
         },
       })) === 0,
+    photos: photos.map((photo) => ({
+      fileId: photo.fileId,
+      url: photo.url,
+      width: photo.width,
+      height: photo.height,
+      byName: names.get(photo.createdByUserId) ?? null,
+      createdAt: photo.createdAt,
+    })),
   };
 }
 

@@ -1342,13 +1342,14 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `incidentId` | `String? · Char(36)` |  |  |
 | `incidentNoteId` | `String? · Char(36)` |  | The follow-up note it came with, if any (of the same incident). |
 | `processStepId` | `String? · Char(36)` |  | A step of a process (WMS-74, ADR 0069). |
+| `warehouseTaskId` | `String? · Char(36)` |  | A warehouse task, photographed where it was left (WMS-37B, ADR 0076). |
 | `position` | `Int` |  | Order inside its owner (0, 1, 2…). |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
-- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`).
-- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`).
+- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict).
 
 ### StorageCleanup · `storage_cleanup`
 

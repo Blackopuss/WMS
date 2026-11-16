@@ -90,3 +90,38 @@ con sesión de PIN y con soporte.
   servidor (no hay librería de imágenes).
 - Las fotos crecen rápido: almacenamiento externo y respaldos independientes
   antes de operar en producción con fotos (WMS-67).
+
+## Fotos al entregar una tarea (WMS-37B, ADR 0076, 2026-11-16)
+
+Tercer dueño de una foto: la tarea del almacén (`evidence_photo.warehouseTaskId`,
+propósito `task_photo`: escribe `inventory.task.execute`, lee
+`inventory.task.read`, 3 por tarea). Amenazas revisadas:
+
+- **Ligar una foto ajena o ya usada.** `attachEvidencePhotos` en la
+  transacción de la entrega, al final y bajo el candado de cada archivo
+  (misma persona, mismo propósito, sin ligar, sin borrar; único por
+  empresa). Prueba con fotos de otra persona, de otra empresa, de una
+  incidencia, ya ligadas y un id inventado: la entrega se revierte entera.
+- **Foto en una tarea ajena o abierta.** Además del servicio, el disparador
+  `evidence_photo_task_rules` exige tarea `DELIVERED` y que la ligue quien
+  la tenía asignada; el `CHECK` ata la columna a su propósito.
+- **Subir sin estar entregando.** `uploadTaskPhoto` exige la tarea propia,
+  en alcance (`taskScope`) y «Por entregar», y el ajuste distinto de «Sin
+  foto»; si no, no guarda nada.
+- **Ver la foto fuera del alcance.** `reachesTask` (en `evidenceOwners`)
+  usa la misma condición que `getTask`; con el enlace armado a mano la
+  ruta `/ver` responde 404 igual que un archivo que no existe. Probado con
+  una persona limitada a otra zona, a otro almacén y con otra empresa.
+- **Saltarse la foto obligatoria.** El ajuste se lee bajo los candados de
+  la entrega y se rechaza antes de escribir; la entrega en grupo de las
+  olas se rechaza con el ajuste en «Obligatoria».
+- **Concurrencia.** Dos entregas a la vez con la misma foto: una la liga y
+  la otra no mueve nada; la misma tarea dos veces: una entrega y un
+  `repeated`, sin fotos de más (pruebas con `Promise.all`).
+- **Terminal con PIN.** El Montacarguista sube y entrega con su sesión de
+  PIN (`inventory.task.execute` se conserva en la terminal) y ve la foto.
+
+Riesgo que queda: las fotos de una entrega repetida (respuesta perdida y
+reintento con fotos nuevas) quedan sin ligar hasta que la ronda de limpieza
+las borra a las 24 horas, y cuentan mientras tanto en el tope de 30 fotos
+sin ligar por persona.

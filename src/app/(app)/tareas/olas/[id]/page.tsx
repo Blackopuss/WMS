@@ -17,6 +17,7 @@ import {
   WAVE_PICKS_PAGE_SIZE,
   getWave,
   listTaskPeople,
+  taskPhotoMode,
   type WavePick,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
@@ -117,6 +118,11 @@ export default async function OlaPage({
     supervises && wave.availableIds.length > 0
       ? await listTaskPeople(actor)
       : [];
+  // WMS-37B: with the photo required, each task is left with its own.
+  const photoRequired =
+    executes && wave.toLeave
+      ? (await taskPhotoMode(actor)) === "required"
+      : false;
   const timeZone = access.organization.timeZone;
   const zoneName = wave.zones.find((zone) => zone.id === wave.zone)?.name;
   const href = (
@@ -190,11 +196,32 @@ export default async function OlaPage({
           <h2 id="dejar" className="font-medium">
             Llevas {wave.toLeave.text}
           </h2>
-          <LeaveInStaging
-            waveId={wave.id}
-            taskIds={wave.toLeave.taskIds}
-            label={`Ya lo dejé en ${wave.toLeave.place}`}
-          />
+          {photoRequired ? (
+            <>
+              <p className="text-sm">
+                Esta empresa pide una foto al entregar: deja cada tarea en{" "}
+                {wave.toLeave.place} desde su ficha, con su foto.
+              </p>
+              <ul className="flex flex-wrap gap-x-4">
+                {wave.toLeave.tasks.map((task) => (
+                  <li key={task.id}>
+                    <Link
+                      href={`/tareas/${task.id}`}
+                      className="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      Tarea {task.numberText}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <LeaveInStaging
+              waveId={wave.id}
+              taskIds={wave.toLeave.taskIds}
+              label={`Ya lo dejé en ${wave.toLeave.place}`}
+            />
+          )}
         </section>
       )}
 
