@@ -8,6 +8,7 @@ import {
   ACCESS_ALERTS_PER_DAY,
   ACCESS_HISTORY_PAGE_SIZE,
   alertFailedAttempts,
+  alertPinLocked,
   auth,
   confirmTotpEnrollment,
   listMyAccessHistory,
@@ -16,7 +17,9 @@ import {
   verifySignInCode,
 } from "@/platform/auth";
 import {
+  disableMember,
   listMemberAccessHistory,
+  reactivateMember,
   revokeAllMemberSessions,
   type Role,
 } from "@/platform/authorization";
@@ -34,11 +37,14 @@ vi.mock("next/headers", () => ({
   headers: async () => new Headers(),
   cookies: async () => ({ get: () => undefined, toString: () => "" }),
 }));
-// `after()` runs right away: the alert email is sent within the test.
+// `after()` keeps its callbacks until the test lets them run (`settle`),
+// as Next runs them once the response is sent: what is queued there must
+// not have happened before.
+const afterQueue: (() => unknown)[] = [];
 vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   after: (task: unknown) => {
-    void (typeof task === "function" ? task() : task);
+    if (typeof task === "function") afterQueue.push(task as () => unknown);
   },
 }));
 
@@ -115,10 +121,31 @@ const events = (userId: string, action?: string) =>
   });
 
 /** Lets the work scheduled after a response finish. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+async function settle() {
+  while (afterQueue.length > 0) await afterQueue.shift()!();
+}
+
+/** Today's email slots of a person, all taken. */
+async function useUpMailSlots(userId: string) {
+  const day = new Date().toISOString().slice(0, 10);
+  for (let i = 1; i <= ACCESS_ALERTS_PER_DAY; i += 1) {
+    await recordSecurityEvent({
+      userId,
+      action: "access.mail_slot",
+      dedupeKey: `alert_mail:${day}:${i}`,
+    });
+  }
+}
+
+const ALERT_SUBJECTS = new Set([
+  "Nuevo inicio de sesión en tu cuenta de WMS",
+  "Alguien escribió tu contraseña de WMS",
+  "Intentos fallidos de entrar a tu cuenta de WMS",
+  "Bloqueamos tu PIN de WMS",
+]);
 
 const alertMails = (email: string) =>
-  memoryOutboxFor(email).filter((m) => m.subject.includes("cuenta de WMS"));
+  memoryOutboxFor(email).filter((m) => ALERT_SUBJECTS.has(m.subject));
 
 afterAll(async () => {
   await db.$disconnect();
@@ -141,6 +168,7 @@ describe("entries and new devices", () => {
       // The raw user agent is never kept.
       expect(JSON.stringify(entry)).not.toContain("AppleWebKit");
       expect(await events(ana.id, "access.alert_new_device")).toHaveLength(0);
+      await settle();
       expect(alertMails(ana.email)).toHaveLength(0);
 
       // Same device again: nothing.
@@ -164,7 +192,8 @@ describe("entries and new devices", () => {
       const alerts = await events(beto.id, "access.alert_new_device");
       expect(alerts).toHaveLength(1);
       expect(alerts[0]?.deviceKey).toBe("phone|Chrome|Android");
-      await vi.waitFor(() => expect(alertMails(beto.email)).toHaveLength(1));
+      await settle();
+      expect(alertMails(beto.email)).toHaveLength(1);
       const [mail] = alertMails(beto.email);
       expect(mail?.subject).toBe("Nuevo inicio de sesión en tu cuenta de WMS");
       expect(mail?.text).toContain("Chrome en Android");
@@ -207,7 +236,6 @@ describe("failed tries", () => {
           from(UA.laptop),
         ),
       ).toEqual({ ok: false, reason: "invalid" });
-      // Written after the response: give it time, then nothing is there.
       await settle();
       expect(await db.securityEvent.count()).toBe(before);
       expect(
@@ -216,9 +244,11 @@ describe("failed tries", () => {
           from(UA.laptop),
         ),
       ).toEqual({ ok: false, reason: "invalid" });
-      await vi.waitFor(async () =>
-        expect(await events(dora.id, "sign_in.failed")).toHaveLength(1),
-      );
+      // Nothing of it ran before the answer: no lookup, no row.
+      expect(await events(dora.id)).toHaveLength(0);
+      expect(afterQueue.length).toBeGreaterThan(0);
+      await settle();
+      expect(await events(dora.id, "sign_in.failed")).toHaveLength(1);
       const failed = await events(dora.id, "sign_in.failed");
       expect(failed[0]?.deviceKey).toBe("computer|Chrome|Windows");
       expect(JSON.stringify(failed)).not.toContain("otra cosa");
@@ -245,8 +275,8 @@ describe("failed tries", () => {
       const shape = (answers: Awaited<ReturnType<typeof signIn>>[]) =>
         answers.map((a) => (a.ok ? "ok" : a.reason)).sort();
       expect(shape(mine)).toEqual(shape(nobody));
-      await vi.waitFor(() => expect(alertMails(eli.email)).toHaveLength(1));
       await settle();
+      expect(alertMails(eli.email)).toHaveLength(1);
       expect(await events(eli.id, "sign_in.locked")).toHaveLength(1);
       expect(await events(eli.id, "access.alert_failed_attempts")).toHaveLength(
         1,
@@ -256,6 +286,7 @@ describe("failed tries", () => {
       );
       // Another block the same day: recorded, no second email.
       await alertFailedAttempts(eli.id, from(UA.firefox));
+      await settle();
       expect(await events(eli.id, "access.alert_failed_attempts")).toHaveLength(
         1,
       );
@@ -269,30 +300,91 @@ describe("failed tries", () => {
     async () => {
       const fer = await newAccount("fer", false);
       await alertFailedAttempts(fer.id, from(UA.laptop));
-      expect(await events(fer.id, "access.alert_failed_attempts")).toHaveLength(
-        1,
-      );
+      await settle();
+      const [alert] = await events(fer.id, "access.alert_failed_attempts");
+      expect(alert?.metadata).toEqual({ mail: "unverified" });
       expect(alertMails(fer.email)).toHaveLength(0);
     },
     SLOW,
   );
 
   it(
-    "keeps to the daily cap of alerts",
+    "a blocked PIN has its own alert and key, and no email to whoever has no PIN",
+    async () => {
+      const ivan = await newAccount("ivan");
+      await alertPinLocked(ivan.id, false);
+      await settle();
+      const [pinAlert] = await events(ivan.id, "access.alert_pin_locked");
+      expect(pinAlert?.metadata).toEqual({ mail: "no_pin" });
+      expect(alertMails(ivan.email)).toHaveLength(0);
+      // The account's own block that day still warns.
+      await alertFailedAttempts(ivan.id, from(UA.laptop));
+      await settle();
+      expect(alertMails(ivan.email).map((m) => m.subject)).toEqual([
+        "Intentos fallidos de entrar a tu cuenta de WMS",
+      ]);
+      // With a PIN, its own text.
+      const juan = await newAccount("juan");
+      await alertPinLocked(juan.id, true);
+      await settle();
+      const [mail] = alertMails(juan.email);
+      expect(mail?.subject).toBe("Bloqueamos tu PIN de WMS");
+      expect(mail?.text).toContain("Tu cuenta y tu contraseña no cambiaron");
+    },
+    SLOW,
+  );
+
+  it(
+    "past the daily cap the alert stays in the history, not mailed",
     async () => {
       const gil = await newAccount("gil");
-      for (let i = 0; i < ACCESS_ALERTS_PER_DAY; i += 1) {
-        await recordSecurityEvent({
-          userId: gil.id,
-          action: "access.alert_new_device",
-          dedupeKey: `new_device:prueba-${i}`,
-        });
-      }
+      await useUpMailSlots(gil.id);
       await alertFailedAttempts(gil.id, from(UA.laptop));
-      expect(await events(gil.id, "access.alert_failed_attempts")).toHaveLength(
-        0,
-      );
+      await alertFailedAttempts(gil.id, from(UA.laptop));
+      await settle();
+      const alerts = await events(gil.id, "access.alert_failed_attempts");
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]?.metadata).toEqual({ mail: "daily_limit" });
       expect(alertMails(gil.email)).toHaveLength(0);
+    },
+    SLOW,
+  );
+
+  it(
+    "never mails more than the cap, even with many alerts at once",
+    async () => {
+      const hana = await newAccount("hana");
+      await signIn({ email: hana.email, password }, from(UA.laptop));
+      const devices = [
+        UA.phone,
+        UA.firefox,
+        UA.ipad,
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Version/18.0 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0 Safari/537.36 Edg/140.0",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+        "Mozilla/5.0 (Linux; Android 15) SamsungBrowser/27.0 Chrome/140.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0 Safari/537.36 OPR/120.0",
+      ];
+      // Two rounds of four at once (more would hit the account's limit of
+      // sign-ins): the second round fights for the last slot.
+      for (const round of [devices.slice(0, 4), devices.slice(4)]) {
+        const answers = await Promise.all(
+          round.map((ua) => signIn({ email: hana.email, password }, from(ua))),
+        );
+        expect(answers.every((a) => a.ok)).toBe(true);
+      }
+      await settle();
+      const alerts = await events(hana.id, "access.alert_new_device");
+      const mailed = alerts.filter(
+        (a) => (a.metadata as { mail?: string }).mail === "sent",
+      );
+      expect(alerts).toHaveLength(devices.length);
+      expect(mailed).toHaveLength(ACCESS_ALERTS_PER_DAY);
+      expect(alertMails(hana.email)).toHaveLength(ACCESS_ALERTS_PER_DAY);
+      // A device seen without the person hearing of it is not learnt: its
+      // next entry alerts again (once there is a slot).
+      const learnt = await events(hana.id, "access.device_known");
+      expect(learnt).toHaveLength(1 + ACCESS_ALERTS_PER_DAY);
     },
     SLOW,
   );
@@ -403,6 +495,63 @@ describe("second step", () => {
     },
     SLOW,
   );
+
+  it(
+    "a wrong code from a device the person does not know alerts once",
+    async () => {
+      const cookie = await challenge();
+      const wrong = String((Number(totp(secret)) + 2) % 1_000_000).padStart(
+        6,
+        "0",
+      );
+      await verifySignInCode({ code: wrong }, from(UA.firefox, cookie));
+      await verifySignInCode({ code: wrong }, from(UA.firefox, cookie));
+      await settle();
+      const alerts = await events(hugo.id, "access.alert_password_new_device");
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]?.deviceKey).toBe("computer|Firefox|Windows");
+      const mail = alertMails(hugo.email).find((m) =>
+        m.subject.includes("escribió tu contraseña"),
+      );
+      expect(mail?.text).toContain("Firefox en Windows");
+    },
+    SLOW,
+  );
+
+  it(
+    "the wrong code that locks the account alerts, without waiting for another try",
+    async () => {
+      const wrong = String((Number(totp(secret)) + 3) % 1_000_000).padStart(
+        6,
+        "0",
+      );
+      for (let round = 0; round < 3; round += 1) {
+        const cookie = await challenge();
+        for (let i = 0; i < 5; i += 1) {
+          await db.authThrottle.deleteMany({
+            where: { key: { startsWith: "mfa:" } },
+          });
+          await verifySignInCode({ code: wrong }, from(UA.phone, cookie));
+          const locked = await db.twoFactor.findUnique({
+            where: { userId: hugo.id },
+            select: { lockedUntil: true },
+          });
+          if (locked?.lockedUntil) break;
+        }
+        const locked = await db.twoFactor.findUnique({
+          where: { userId: hugo.id },
+          select: { lockedUntil: true },
+        });
+        if (locked?.lockedUntil) break;
+      }
+      await settle();
+      expect(await events(hugo.id, "sign_in.locked")).toHaveLength(1);
+      expect(
+        await events(hugo.id, "access.alert_failed_attempts"),
+      ).toHaveLength(1);
+    },
+    SLOW,
+  );
 });
 
 describe("who sees the history", () => {
@@ -504,6 +653,37 @@ describe("who sees the history", () => {
     expect(event).toMatchObject({ eventOrganizationId: org });
     const page = await listMemberAccessHistory(org, admin, picker);
     expect(page?.rows[0]?.action).toBe("session.closed_by_team");
+  });
+
+  it("while disabled, the company stops seeing the person's account; reactivated, it sees again", async () => {
+    const gone = await newPerson("baja");
+    await join(org, gone, ["operator"]);
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 15));
+    await recordSecurityEvent({ userId: gone, action: "sign_in.succeeded" });
+    await pause();
+    expect((await disableMember(org, admin, { userId: gone })).ok).toBe(true);
+    // No session was open: nothing «closed by the team» (N3).
+    expect(await events(gone, "session.closed_by_team")).toHaveLength(0);
+    await pause();
+    await recordSecurityEvent({ userId: gone, action: "sign_in.failed" });
+    expect(
+      (await listMemberAccessHistory(org, admin, gone))?.rows.map(
+        (r) => r.action,
+      ),
+    ).toEqual(["sign_in.succeeded"]);
+    await pause();
+    expect((await reactivateMember(org, admin, { userId: gone })).ok).toBe(
+      true,
+    );
+    await pause();
+    await recordSecurityEvent({ userId: gone, action: "password.reset" });
+    expect(
+      (await listMemberAccessHistory(org, admin, gone))?.rows
+        .map((r) => r.action)
+        .sort(),
+    ).toEqual(["password.reset", "sign_in.succeeded"]);
+    // The person sees all of it.
+    expect((await listMyAccessHistory(gone)).total).toBe(3);
   });
 
   it("pages in the database and clamps a page out of range", async () => {

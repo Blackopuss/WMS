@@ -1,7 +1,11 @@
 /**
  * Human description of a browser user agent, e.g. "Edge en Windows".
- * Only for showing sessions (PLT-05, WMS-40); never for security decisions.
- * What it does not recognize is «Otro»: the raw text never reaches a screen.
+ * For showing sessions (PLT-05, WMS-40) and, since WMS-68 (ADR 0064), to
+ * tell a device the person has not used before (`deviceKeyOf`): only to
+ * raise an alert, never to allow or refuse anything. The text is sent by
+ * the client, so anyone can make it look like a known device; that only
+ * avoids an alert, never opens a door. What it does not recognize is
+ * «Otro»: the raw text never reaches a screen nor the database.
  */
 export type DeviceKind = "computer" | "phone" | "tablet" | "other";
 

@@ -638,7 +638,7 @@ No es de una empresa (sin `organizationId`).
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`userId`, `dedupeKey`).
-- Índices: (`userId`, `createdAt`); (`userId`, `deviceKey`).
+- Índices: (`userId`, `createdAt`).
 
 ## Plataforma › Aceptación de documentos
 

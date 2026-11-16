@@ -210,16 +210,19 @@ export async function disableMember(
       await tx.memberPin.deleteMany({
         where: { organizationId, userId: target.userId },
       });
-      // WMS-68: in the person's access history, of this company.
-      await recordSecurityEvent(
-        {
-          userId: target.userId,
-          action: "session.closed_by_team",
-          organizationId,
-          metadata: { scope: "disabled", sessions: closed.count },
-        },
-        tx,
-      );
+      // WMS-68: in the person's access history, of this company, when
+      // there was some session to close.
+      if (closed.count > 0) {
+        await recordSecurityEvent(
+          {
+            userId: target.userId,
+            action: "session.closed_by_team",
+            organizationId,
+            metadata: { scope: "disabled", sessions: closed.count },
+          },
+          tx,
+        );
+      }
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId,

@@ -3,7 +3,7 @@ import "server-only";
 import { deviceKeyOf, log } from "@/lib";
 import { recordAuditEvent, recordSecurityEvent } from "@/platform/audit";
 import {
-  alertFailedAttempts,
+  alertPinLocked,
   blockedFor,
   clearAttempts,
   clientIp,
@@ -270,8 +270,9 @@ export async function pinSignIn(
             deviceKey: deviceKeyOf(headers.get("user-agent")),
           });
           await reportBlock(terminal, { userId: candidate.userId, everywhere });
-          // WMS-68: the owner of the PIN learns it by email (once a day).
-          await alertFailedAttempts(candidate.userId, headers);
+          // WMS-68: the owner learns it by email, once a day and only if
+          // they have a PIN (anyone at a terminal can pick a name).
+          await alertPinLocked(candidate.userId, Boolean(stored));
         }
       }
       if ((await blockedFor([terminalKey])) > 0) {

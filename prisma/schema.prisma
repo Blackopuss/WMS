@@ -662,7 +662,6 @@ model SecurityEvent {
 
   @@unique([userId, dedupeKey])
   @@index([userId, createdAt])
-  @@index([userId, deviceKey])
   @@map("security_event")
 }
 

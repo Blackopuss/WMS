@@ -39,14 +39,29 @@ export const VERIFY_EMAIL_COOKIE = "almacen-confirmar-correo";
 /**
  * Emails go out after the response is sent (PLT-16). Otherwise a request
  * for an existing account (which sends an email) would take longer than
- * one for an unknown email, revealing which accounts exist.
+ * one for an unknown email, revealing which accounts exist. Better Auth
+ * hands an already started promise: what starts it is Better Auth, so its
+ * work is not held back, only awaited after the response.
  */
-export function inBackground(task: Promise<unknown>): void {
+function inBackground(task: Promise<unknown>): void {
   try {
     after(task);
   } catch {
     // Outside a request (tests, scripts): let it run on its own.
     void task;
+  }
+}
+
+/**
+ * Runs `task` after the response is sent (WMS-68): nothing of it starts
+ * before, so its queries do not lengthen the answer. Outside a request
+ * (tests, scripts) it runs right away. `task` handles its own errors.
+ */
+export function afterResponse(task: () => Promise<unknown>): void {
+  try {
+    after(task);
+  } catch {
+    void task();
   }
 }
 

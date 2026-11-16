@@ -741,12 +741,14 @@ describe("attempts", () => {
           where: { userId: victim, action: "pin.locked" },
         }),
       ).toBeGreaterThanOrEqual(1);
-      // WMS-68: the owner of the PIN gets one alert, however many blocks.
-      expect(
-        await db.securityEvent.count({
-          where: { userId: victim, action: "access.alert_failed_attempts" },
-        }),
-      ).toBe(1);
+      // WMS-68: the owner of the PIN gets one alert of their PIN (not of
+      // the account), however many blocks, mailed because they have a PIN.
+      const alerts = await db.securityEvent.findMany({
+        where: { userId: victim, action: { startsWith: "access.alert_" } },
+      });
+      expect(alerts.map((a) => [a.action, a.metadata])).toEqual([
+        ["access.alert_pin_locked", { mail: "sent" }],
+      ]);
       const failure = await db.securityEvent.findFirstOrThrow({
         where: { userId: victim, action: "pin_sign_in.failed" },
       });

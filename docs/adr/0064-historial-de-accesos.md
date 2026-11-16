@@ -58,13 +58,25 @@ través de empresas; no es una tabla de empresa (`TENANT_MODELS`, PLT-13) y
 no se lee con `forOrganization`. Cada lectura filtra por persona y decide
 qué empresas le tocan (§3).
 
-Índices: `(userId, dedupeKey)` único y `(userId, deviceKey)` para saber si
-un dispositivo ya se conocía. Las filas viejas quedan con las columnas
-vacías (no se reescriben: la tabla no admite cambios).
+Índice: `(userId, dedupeKey)` único. También sirve para leer los
+dispositivos conocidos (`device:<deviceKey>`), así esa lectura nunca
+recorre los fallos de la persona; el índice `(userId, deviceKey)` de la
+primera migración se quitó en la segunda (revisión). Las filas viejas
+quedan con las columnas vacías (no se reescriben: la tabla no admite
+cambios).
+
+Filas internas, que no se listan: `access.device_known` (un dispositivo
+que la persona conoce), `access.mail_slot` (cada correo de alerta del
+día) y `access.claim` (quién atiende una alerta ese día).
 
 **Retención:** igual que el resto de la bitácora (ADR 0006): no se borra
 nada (los disparadores lo impiden y borrar un registro de seguridad sería
-lo que buscaría un intruso). **Tope de filas:** la pantalla pagina en la
+lo que buscaría un intruso). **Pendiente: no hay purga.** Lo que alguien
+sin la contraseña puede escribir contra una cuenta que existe es, como
+máximo, unos 480 `sign_in.failed` al día (5 por ventana de 15 minutos,
+96 ventanas) y 96 `sign_in.locked`, más una alerta de intentos y una de
+PIN; una purga de lo viejo (con su decisión de cuánto guardar) queda para
+cuando haya servidor y datos reales. **Tope de filas:** la pantalla pagina en la
 base (25 por página, orden `createdAt` y `id` descendentes, sobre el
 índice `(userId, createdAt)`). Lo que puede escribir alguien sin la
 contraseña está acotado por los límites de intentos que ya existen: una
@@ -86,7 +98,7 @@ correo que no tiene cuenta no escribe nada.
 | `session.revoked` / `session.revoked_others` | La persona cerró una u otras de sus sesiones | — |
 | `session.closed_by_team` | El titular o un administrador cerró una o todas sus sesiones, o la desactivó | La que cerró |
 | `password.reset` | Restableció la contraseña con el enlace del correo | — |
-| `access.alert_new_device` / `access.alert_failed_attempts` | Se mandó una alerta (abajo) | — |
+| `access.alert_new_device`, `access.alert_password_new_device`, `access.alert_failed_attempts`, `access.alert_pin_locked` | Una alerta (abajo); `metadata.mail` dice si salió el correo (`sent`) o por qué no (`daily_limit`, `unverified`, `no_pin`) | — |
 
 Cada fila guarda fecha, IP (la de `clientIp`, reglas de ADR 0003) y
 dispositivo cuando hay petición. Los demás eventos de `security_event`
@@ -113,8 +125,11 @@ real, así que si Better Auth cambia el formato la prueba falla.
   la persona. **Lo de otra empresa no existe** (regla de ADR 0059):
   - los eventos con `eventOrganizationId` de esta empresa, siempre;
   - los eventos de la cuenta (`eventOrganizationId` vacío) **solo si la persona
-    no tiene membresía en ninguna otra empresa** y solo desde que entró a
-    esta. Si trabaja también para otra, no se puede saber para cuál entró
+    no tiene membresía en ninguna otra empresa** y solo mientras perteneció
+    a esta: desde que entró, sin el tiempo en que estuvo desactivada (los
+    periodos salen de la bitácora de la empresa, `team.member_disabled` y
+    `team.member_reactivated`), y nada después de desactivarla si sigue
+    así. Si trabaja también para otra, no se puede saber para cuál entró
     con su contraseña, así que su administrador ve únicamente lo que pasó
     dentro de su empresa (terminales y cierres);
   - los eventos con `eventOrganizationId` de otra empresa, nunca.
@@ -128,15 +143,21 @@ real, así que si Better Auth cambia el formato la prueba falla.
 contraseña** (con o sin dos pasos, o con código de recuperación), después
 de registrarla:
 
-1. Si la persona no tenía ninguna entrada anterior con dispositivo
-   registrado, es su **primer acceso** (o el primero desde este paso): se
-   aprende el dispositivo y **no hay alerta**. Así una cuenta recién
-   creada, o todas las cuentas al desplegar este paso, no reciben un
-   correo por entrar.
-2. Si ya había entradas con dispositivo y ninguna con este `deviceKey`, es
-   nuevo: alerta `new_device:<deviceKey>`, una sola vez por dispositivo y
-   persona (la llave única impide que dos entradas al mismo tiempo manden
-   dos correos).
+1. Si la persona no conoce todavía ningún dispositivo, es su **primer
+   acceso** (o el primero desde este paso): se aprende el dispositivo y
+   **no hay alerta**. Así una cuenta recién creada, o todas las cuentas al
+   desplegar este paso, no reciben un correo por entrar.
+2. Si conoce otros y no este, es nuevo: alerta `new_device:<deviceKey>`,
+   una sola vez por dispositivo y persona (la llave única impide que dos
+   entradas al mismo tiempo manden dos correos). **El dispositivo se
+   aprende solo cuando el correo salió**: si no salió (tope del día), su
+   siguiente entrada vuelve a avisar.
+
+**Contraseña correcta desde un dispositivo nuevo y código equivocado**
+(revisión): quien escribe un código equivocado ya pasó la contraseña. Si
+lo hace desde un dispositivo que la persona no conoce (y conoce alguno),
+alerta `password_new_device:<deviceKey>`, una vez por dispositivo. Es la
+señal más fuerte de que alguien tiene la contraseña.
 
 «Dispositivo» = tipo, navegador y sistema que ya reconoce
 `describeUserAgent`. Es deliberadamente grueso: **sin huella del
@@ -155,28 +176,44 @@ dispositivo de la empresa ya registrado y su copia se detecta aparte (ADR
 - por contraseñas equivocadas (el contador de la cuenta de PLT-06 llegó a
   su límite: 5 en 15 minutos);
 - por códigos de dos pasos equivocados (Better Auth bloquea la cuenta tras
-  10 seguidos: alguien tiene la contraseña);
-- por PIN equivocados de la persona en una terminal (`pin.locked`).
+  10 seguidos: alguien tiene la contraseña). Better Auth pone el bloqueo
+  en el código que llega al límite y todavía responde «código
+  equivocado», así que tras cada código equivocado se lee
+  `twoFactor.lockedUntil` y se alerta ahí mismo, sin esperar otro intento.
 
 Alerta `failed_attempts:<día UTC>`: **una por persona por día**, aunque
 el ataque siga.
 
-**Tope:** además, como mucho `ACCESS_ALERTS_PER_DAY` (5) alertas por
-persona en 24 horas, de cualquier tipo. Lo que pasa del tope queda en el
-historial pero no manda correo.
+**PIN bloqueado** en una terminal (`pin.locked`): alerta propia
+`pin_locked:<día UTC>` con su propio texto (se bloqueó el PIN, no la
+cuenta) y su propia llave (no gasta la de la cuenta). **Sin correo para
+quien no tiene PIN**: cualquiera frente a una terminal puede elegir el
+nombre de un compañero; la alerta queda en su historial.
+
+**Tope:** como mucho `ACCESS_ALERTS_PER_DAY` (5) correos de alerta por
+persona por día UTC, de cualquier tipo. Cada correo toma un turno
+numerado (`alert_mail:<día>:<n>`, único por persona), así el tope se
+respeta aunque lleguen muchas alertas a la vez; y antes de tomar un turno
+una alerta se aparta para un solo pedido ese día (`claim:<llave>:<día>`),
+así peticiones simultáneas de la misma alerta no gastan turnos. Lo que
+pasa del tope **queda en el historial con `metadata.mail = daily_limit`**,
+una vez al día por alerta.
 
 ### 5. A quién y cómo
 
 - **Correo a la persona dueña de la cuenta**, solo si su correo está
-  confirmado. Se manda **después de responder** (`after()`, como los
-  correos de Better Auth, PLT-16): así un intento contra una cuenta que
-  existe tarda lo mismo que contra un correo sin cuenta, y la respuesta
-  nunca revela si la cuenta existe (el formulario dice lo mismo en los dos
-  casos y la búsqueda de la persona se hace en ambos).
+  confirmado. Se manda **después de responder** (`afterResponse`, que le
+  pasa a `after()` una función: nada empieza antes de la respuesta). Todo
+  lo de una contraseña equivocada (buscar a la persona, la fila, el
+  bloqueo y la alerta) también corre después de responder: un intento
+  contra una cuenta que existe tarda lo mismo que contra un correo sin
+  cuenta, y la respuesta nunca revela si la cuenta existe. (Los correos
+  propios de Better Auth le llegan a `after()` como una promesa ya
+  empezada: así los entrega Better Auth y no se cambió aquí.)
 - El correo dice qué pasó, cuándo (en la zona horaria de su primera
   empresa, o la de México), en qué dispositivo y, en el de dispositivo
   nuevo, desde qué IP (es la entrada a **su** cuenta). El de intentos
-  fallidos no lleva IP. Sin enlaces de acceso: solo la dirección de
+  fallidos y el de PIN no llevan IP. Sin enlaces de acceso: solo la dirección de
   «Recuperar contraseña» (sin token) y dónde ver el historial.
 - **Sin aviso en la campana.** Una entrada a la cuenta no es de ninguna
   empresa y la campana es por empresa; además, el primero en verla sería
@@ -229,7 +266,7 @@ una cabecera de confianza.
   `claimSecurityEvent` escribe algo que debe pasar una sola vez.
 - Todo camino nuevo de entrada o de intento llama a las funciones de
   `src/platform/auth/access-history.ts` (`noteSignIn`, `noteFailedSignIn`,
-  `noteFailedCode`, `noteCodeLock`, `alertFailedAttempts`) y agrega su
+  `noteFailedCode`, `noteCodeLock`, `alertFailedAttempts`, `alertPinLocked`) y agrega su
   caso a `tests/platform/access-history.int.test.ts`.
 - Pendiente: atribuir a una empresa la entrada con contraseña de quien
   trabaja en varias; cookie de dispositivo (si se pide); país por IP (§6);

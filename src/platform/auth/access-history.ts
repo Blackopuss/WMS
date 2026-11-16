@@ -12,10 +12,14 @@ import {
   type DeviceKind,
 } from "@/lib";
 import { claimSecurityEvent, recordSecurityEvent } from "@/platform/audit";
-import { accessAlertEmail, sendEmail } from "@/platform/email";
+import {
+  accessAlertEmail,
+  sendEmail,
+  type AccessAlertKind,
+} from "@/platform/email";
 import { db, forOrganization } from "@/server";
 
-import { auth, inBackground } from "./auth";
+import { afterResponse, auth } from "./auth";
 import { assertNotTerminalSession } from "./terminal-session";
 import { blockedFor, clientIp, throttleKeys } from "./throttle";
 
@@ -26,9 +30,6 @@ import { blockedFor, clientIp, throttleKeys } from "./throttle";
  * an attempt on an account that exists takes as long as one on an email
  * without an account.
  */
-
-/** Successful entries with a password (they teach and check devices). */
-const PASSWORD_SIGN_INS = ["sign_in.succeeded", "mfa.backup_code_used"];
 
 /** What the history lists, with its label. */
 export const ACCESS_ACTION_LABELS: Record<string, string> = {
@@ -45,7 +46,10 @@ export const ACCESS_ACTION_LABELS: Record<string, string> = {
   "session.closed_by_team": "El equipo cerró sus sesiones",
   "password.reset": "Restableció su contraseña",
   "access.alert_new_device": "Alerta: dispositivo o navegador nuevo",
+  "access.alert_password_new_device":
+    "Alerta: contraseña correcta desde un dispositivo nuevo",
   "access.alert_failed_attempts": "Alerta: muchos intentos fallidos",
+  "access.alert_pin_locked": "Alerta: PIN bloqueado",
 };
 
 export const ACCESS_ACTIONS = Object.keys(ACCESS_ACTION_LABELS);
@@ -60,65 +64,141 @@ const WARNING_ACTIONS = new Set([
 ]);
 const SUSPICIOUS_ACTIONS = new Set([
   "access.alert_new_device",
+  "access.alert_password_new_device",
   "access.alert_failed_attempts",
+  "access.alert_pin_locked",
 ]);
 
-/** At most this many alerts reach one person in 24 hours. */
+/**
+ * At most this many alert emails reach one person in a day (UTC): each one
+ * takes a numbered slot whose key is unique per person, so requests at the
+ * same time never go past it. What finds no slot stays in the history,
+ * marked as not mailed.
+ */
 export const ACCESS_ALERTS_PER_DAY = 5;
 
 /** Rows per page of the history. */
 export const ACCESS_HISTORY_PAGE_SIZE = 25;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** Window of the account's sign-in counter (one lock per window). */
 const LOCK_WINDOW_MS = 15 * 60 * 1000;
 
-type AlertKind = "new_device" | "failed_attempts";
-
-const ALERT_ACTION: Record<AlertKind, string> = {
+const ALERT_ACTION: Record<AccessAlertKind, string> = {
   new_device: "access.alert_new_device",
+  password_new_device: "access.alert_password_new_device",
   failed_attempts: "access.alert_failed_attempts",
+  pin_locked: "access.alert_pin_locked",
 };
+
+/** Marks a device the person knows (taught, or announced by email). */
+const DEVICE_KNOWN = "access.device_known";
+/** One of the person's daily alert email slots. */
+const MAIL_SLOT = "access.mail_slot";
+/** Who handles an alert today: only that request takes a slot. */
+const ALERT_CLAIM = "access.claim";
+
+const today = () => new Date().toISOString().slice(0, 10);
 
 function appUrl(path: string): string {
   return `${process.env.BETTER_AUTH_URL ?? ""}${path}`;
 }
 
+/** Takes one of today's email slots of the person; false when none is left. */
+async function takeMailSlot(userId: string): Promise<boolean> {
+  const day = today();
+  const used = await db.securityEvent.count({
+    where: { userId, dedupeKey: { startsWith: `alert_mail:${day}:` } },
+  });
+  for (let slot = used + 1; slot <= ACCESS_ALERTS_PER_DAY; slot += 1) {
+    if (
+      await claimSecurityEvent({
+        userId,
+        action: MAIL_SLOT,
+        dedupeKey: `alert_mail:${day}:${slot}`,
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type AlertOutcome = "sent" | "duplicate" | "not_mailed";
+
 /**
- * Sends one alert to the owner of the account, once per `dedupeKey` and
- * within ACCESS_ALERTS_PER_DAY; the email only to a confirmed address and
- * after the response. Returns whether the alert was raised (for tests);
- * never throws.
+ * One alert to the owner of the account, once per `dedupeKey`. It is
+ * mailed only to a confirmed address, within the daily slots, and after
+ * the response; otherwise the alert stays in the history marked as not
+ * mailed (once per key), and the same key may still be mailed later.
+ * Never throws.
  */
 async function raiseAlert(input: {
   userId: string;
-  kind: AlertKind;
+  kind: AccessAlertKind;
   dedupeKey: string;
   deviceKey?: string | null;
   ipAddress?: string | null;
-}): Promise<boolean> {
+  /** False: never by email (e.g. someone without a PIN). */
+  mail?: boolean;
+}): Promise<AlertOutcome> {
   try {
-    const recent = await db.securityEvent.count({
+    const already = await db.securityEvent.findUnique({
       where: {
-        userId: input.userId,
-        action: { in: Object.values(ALERT_ACTION) },
-        createdAt: { gt: new Date(Date.now() - DAY_MS) },
+        userId_dedupeKey: {
+          userId: input.userId,
+          dedupeKey: input.dedupeKey,
+        },
       },
+      select: { id: true },
     });
-    if (recent >= ACCESS_ALERTS_PER_DAY) return false;
-    const claimed = await claimSecurityEvent({
-      userId: input.userId,
-      action: ALERT_ACTION[input.kind],
-      dedupeKey: input.dedupeKey,
-      deviceKey: input.deviceKey ?? null,
-      ipAddress: input.ipAddress ?? null,
-    });
-    if (!claimed) return false;
+    if (already) return "duplicate";
+    // One request per alert and day goes on: requests at the same time do
+    // not each take an email slot.
+    const day = today();
+    if (
+      !(await claimSecurityEvent({
+        userId: input.userId,
+        action: ALERT_CLAIM,
+        dedupeKey: `claim:${input.dedupeKey}:${day}`,
+      }))
+    ) {
+      return "duplicate";
+    }
     const user = await db.user.findUnique({
       where: { id: input.userId },
       select: { email: true, name: true, emailVerified: true },
     });
-    if (!user?.emailVerified) return true;
+    if (!user) return "not_mailed";
+    const why =
+      input.mail === false
+        ? "no_pin"
+        : !user.emailVerified
+          ? "unverified"
+          : (await takeMailSlot(input.userId))
+            ? null
+            : "daily_limit";
+    const row = {
+      userId: input.userId,
+      action: ALERT_ACTION[input.kind],
+      deviceKey: input.deviceKey ?? null,
+      ipAddress: input.ipAddress ?? null,
+    };
+    if (why) {
+      // In the history, once a day; the alert may still be mailed another
+      // day (a new device is not learnt until then).
+      await claimSecurityEvent({
+        ...row,
+        metadata: { mail: why },
+        dedupeKey: `${input.dedupeKey}:not_mailed:${day}`,
+      });
+      return "not_mailed";
+    }
+    const claimed = await claimSecurityEvent({
+      ...row,
+      metadata: { mail: "sent" },
+      dedupeKey: input.dedupeKey,
+    });
+    if (!claimed) return "duplicate";
     const membership = await db.membership.findFirst({
       where: { userId: input.userId, status: "ACTIVE" },
       orderBy: { createdAt: "asc" },
@@ -132,34 +212,59 @@ async function raiseAlert(input: {
         new Date(),
         membership?.organization.timeZone ?? DEFAULT_TIME_ZONE,
       ),
-      ...(input.kind === "new_device"
-        ? {
-            device:
-              describeDeviceKey(input.deviceKey)?.label ?? "Otro navegador",
-            ipAddress: formatIp(input.ipAddress ?? null),
-          }
-        : {}),
+      device: describeDeviceKey(input.deviceKey)?.label ?? "Otro navegador",
+      ipAddress: formatIp(input.ipAddress ?? null),
       recoverUrl: appUrl("/recuperar-contrasena"),
       historyUrl: appUrl("/configuracion/accesos"),
     });
-    inBackground(
+    afterResponse(() =>
       sendEmail(message).catch((error: unknown) =>
         log.error("access.alert_email_failed", error),
       ),
     );
-    return true;
+    return "sent";
   } catch (error) {
     log.error("access.alert_failed", error);
-    return false;
+    return "not_mailed";
   }
+}
+
+/** Whether the person knows this device, and any device at all. */
+async function knownDevices(userId: string, deviceKey: string) {
+  // Both by the unique (userId, dedupeKey) index: they never scan the
+  // person's failures.
+  const [device, any] = await Promise.all([
+    db.securityEvent.findUnique({
+      where: {
+        userId_dedupeKey: { userId, dedupeKey: `device:${deviceKey}` },
+      },
+      select: { id: true },
+    }),
+    db.securityEvent.findFirst({
+      where: { userId, dedupeKey: { startsWith: "device:" } },
+      select: { id: true },
+    }),
+  ]);
+  return { known: Boolean(device), anyKnown: Boolean(any) };
+}
+
+async function learnDevice(userId: string, deviceKey: string) {
+  await claimSecurityEvent({
+    userId,
+    action: DEVICE_KNOWN,
+    deviceKey,
+    dedupeKey: `device:${deviceKey}`,
+  });
 }
 
 /**
  * A successful entry. With a password (`sign_in.succeeded`,
- * `mfa.backup_code_used`) it checks the device: the first entry with a
- * known device only teaches it; after that, a device never seen raises one
- * alert. A PIN entry (`terminal`) is recorded with its terminal and
- * company and never alerts (the terminal is a device of the company).
+ * `mfa.backup_code_used`) it checks the device: the person's first
+ * device is only learnt; after that, a device never seen raises one alert
+ * and is learnt only when the alert was mailed (a device seen without the
+ * person hearing of it alerts again on its next entry). A PIN entry
+ * (`terminal`) is recorded with its terminal and company and never
+ * alerts (the terminal is a device of the company).
  */
 export async function noteSignIn(input: {
   userId: string;
@@ -171,32 +276,6 @@ export async function noteSignIn(input: {
 }): Promise<void> {
   const deviceKey = deviceKeyOf(input.headers.get("user-agent"));
   const ipAddress = clientIp(input.headers);
-  let alert = false;
-  if (!input.terminal) {
-    try {
-      const [seenBefore, knownDevice] = await Promise.all([
-        db.securityEvent.findFirst({
-          where: {
-            userId: input.userId,
-            action: { in: PASSWORD_SIGN_INS },
-            deviceKey: { not: null },
-          },
-          select: { id: true },
-        }),
-        db.securityEvent.findFirst({
-          where: {
-            userId: input.userId,
-            action: { in: PASSWORD_SIGN_INS },
-            deviceKey,
-          },
-          select: { id: true },
-        }),
-      ]);
-      alert = Boolean(seenBefore) && !knownDevice;
-    } catch (error) {
-      log.error("access.device_check_failed", error);
-    }
-  }
   await recordSecurityEvent({
     userId: input.userId,
     action: input.action,
@@ -208,20 +287,32 @@ export async function noteSignIn(input: {
     deviceKey,
     organizationId: input.terminal?.organizationId ?? null,
   });
-  if (alert) {
-    await raiseAlert({
+  if (input.terminal) return;
+  try {
+    const { known, anyKnown } = await knownDevices(input.userId, deviceKey);
+    if (known) return;
+    if (!anyKnown) {
+      await learnDevice(input.userId, deviceKey);
+      return;
+    }
+    const outcome = await raiseAlert({
       userId: input.userId,
       kind: "new_device",
       dedupeKey: `new_device:${deviceKey}`,
       deviceKey,
       ipAddress,
     });
+    // Learnt only once the person was told; a request that lost the race
+    // leaves it to the one that sends.
+    if (outcome === "sent") await learnDevice(input.userId, deviceKey);
+  } catch (error) {
+    log.error("access.device_check_failed", error);
   }
 }
 
 /**
- * Many wrong tries blocked the person's account or PIN: one alert per
- * person per day (whatever goes on), within the daily cap.
+ * Many wrong passwords or codes blocked the person's account: one alert
+ * per person per day, whatever goes on.
  */
 export async function alertFailedAttempts(
   userId: string,
@@ -230,21 +321,38 @@ export async function alertFailedAttempts(
   await raiseAlert({
     userId,
     kind: "failed_attempts",
-    dedupeKey: `failed_attempts:${new Date().toISOString().slice(0, 10)}`,
+    dedupeKey: `failed_attempts:${today()}`,
     deviceKey: headers ? deviceKeyOf(headers.get("user-agent")) : null,
     ipAddress: headers ? clientIp(headers) : null,
   });
 }
 
 /**
+ * Wrong PINs blocked the person's PIN on a shared terminal: one alert per
+ * person per day, apart from the account's. Only by email when the person
+ * has a PIN (anyone at a terminal can pick a coworker's name).
+ */
+export async function alertPinLocked(
+  userId: string,
+  hasPin: boolean,
+): Promise<void> {
+  await raiseAlert({
+    userId,
+    kind: "pin_locked",
+    dedupeKey: `pin_locked:${today()}`,
+    mail: hasPin,
+  });
+}
+
+/**
  * A wrong password for `email`. All of it runs after the response
- * (`after()`): looking the person up, the row of an account that exists
- * and, when its counter is blocked, one `sign_in.locked` per window and
- * the alert. So the answer takes the same time whether the account exists
- * or not. Never throws.
+ * (`afterResponse`): looking the person up, the row of an account that
+ * exists and, when its counter is blocked, one `sign_in.locked` per window
+ * and the alert. So the answer takes the same time whether the account
+ * exists or not.
  */
 export function noteFailedSignIn(email: string, headers: Headers): void {
-  inBackground(recordFailedSignIn(email, headers));
+  afterResponse(() => recordFailedSignIn(email, headers));
 }
 
 async function recordFailedSignIn(
@@ -257,13 +365,11 @@ async function recordFailedSignIn(
       select: { id: true },
     });
     if (!user) return;
-    const deviceKey = deviceKeyOf(headers.get("user-agent"));
-    const ipAddress = clientIp(headers);
     await recordSecurityEvent({
       userId: user.id,
       action: "sign_in.failed",
-      ipAddress,
-      deviceKey,
+      ipAddress: clientIp(headers),
+      deviceKey: deviceKeyOf(headers.get("user-agent")),
     });
     if ((await blockedFor([throttleKeys.signInAccount(email)])) > 0) {
       await noteLock(user.id, "password", headers);
@@ -335,25 +441,55 @@ export async function challengeUserId(
   }
 }
 
-/** A wrong code in the second step of signing in. Never throws. */
+/**
+ * A wrong code in the second step of signing in: whoever typed it knew
+ * the password. Recorded; when it comes from a device the person does not
+ * know, an alert (once per device); and when the code locked the account
+ * (Better Auth sets `lockedUntil` on the wrong code that reaches its
+ * limit, still answering «invalid code»), the lock and its alert. Never
+ * throws.
+ */
 export async function noteFailedCode(
   headers: Headers,
   method: "totp" | "backup",
 ): Promise<void> {
-  const userId = await challengeUserId(headers);
-  if (!userId) return;
-  await recordSecurityEvent({
-    userId,
-    action: "mfa_code.failed",
-    metadata: { method },
-    ipAddress: clientIp(headers),
-    deviceKey: deviceKeyOf(headers.get("user-agent")),
-  });
+  try {
+    const userId = await challengeUserId(headers);
+    if (!userId) return;
+    const deviceKey = deviceKeyOf(headers.get("user-agent"));
+    const ipAddress = clientIp(headers);
+    await recordSecurityEvent({
+      userId,
+      action: "mfa_code.failed",
+      metadata: { method },
+      ipAddress,
+      deviceKey,
+    });
+    const { known, anyKnown } = await knownDevices(userId, deviceKey);
+    if (anyKnown && !known) {
+      await raiseAlert({
+        userId,
+        kind: "password_new_device",
+        dedupeKey: `password_new_device:${deviceKey}`,
+        deviceKey,
+        ipAddress,
+      });
+    }
+    const twoFactor = await db.twoFactor.findUnique({
+      where: { userId },
+      select: { lockedUntil: true },
+    });
+    if (twoFactor?.lockedUntil && twoFactor.lockedUntil > new Date()) {
+      await noteLock(userId, "code", headers);
+    }
+  } catch (error) {
+    log.error("access.failed_code_note_failed", error);
+  }
 }
 
 /**
- * Better Auth locked the account after wrong codes: someone has the
- * password. One lock per window and the alert. Never throws.
+ * Better Auth answered that the account is locked by wrong codes: someone
+ * has the password. One lock per window and the alert. Never throws.
  */
 export async function noteCodeLock(headers: Headers): Promise<void> {
   try {

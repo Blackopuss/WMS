@@ -359,49 +359,85 @@ export function dailyDigestEmail(input: {
   };
 }
 
+/** What an access alert is about (WMS-68). */
+export type AccessAlertKind =
+  "new_device" | "password_new_device" | "failed_attempts" | "pin_locked";
+
 /**
  * Alert of a suspicious access to the person's own account (WMS-68, ADR
- * 0064): a device or browser never seen before, or many wrong tries that
- * blocked it. No access links: only where to recover the password (no
- * token) and where to see the history.
+ * 0064). No access links: only where to recover the password (no token)
+ * and where to see the history. The IP only where it is the person's own
+ * account being entered from a new device.
  */
 export function accessAlertEmail(input: {
   to: string;
   name: string;
-  kind: "new_device" | "failed_attempts";
+  kind: AccessAlertKind;
   /** «16 nov 2026, 10:42». */
   when: string;
-  /** «Chrome en Android»; only for a new device. */
-  device?: string;
-  /** IP of the sign-in into their own account; only for a new device. */
+  /** «Chrome en Android». */
+  device: string;
   ipAddress?: string | null;
   recoverUrl: string;
   historyUrl: string;
 }): EmailMessage {
   const name = oneLine(input.name, 80);
-  const lines =
-    input.kind === "new_device"
-      ? [
-          `Se inició sesión en tu cuenta de WMS desde un dispositivo o navegador que no habías usado: ${oneLine(input.device ?? "Otro navegador", 80)}.`,
-          `Cuándo: ${input.when}.`,
-          ...(input.ipAddress ? [`Dirección IP: ${input.ipAddress}.`] : []),
-          "",
-          "Si fuiste tú, no tienes que hacer nada.",
-          "Si no fuiste tú, cambia tu contraseña de inmediato:",
-        ]
-      : [
-          "Hubo muchos intentos fallidos de entrar a tu cuenta de WMS y la bloqueamos un rato para protegerla.",
-          `Cuándo: ${input.when}.`,
-          "",
-          "Si fuiste tú, espera unos minutos e inténtalo de nuevo.",
-          "Si no fuiste tú, tu cuenta sigue protegida; si crees que alguien conoce tu contraseña, cámbiala:",
-        ];
+  const device = oneLine(input.device, 80);
+  const when = `Cuándo: ${input.when}.`;
+  const ip =
+    input.ipAddress &&
+    input.kind !== "failed_attempts" &&
+    input.kind !== "pin_locked"
+      ? [`Dirección IP: ${input.ipAddress}.`]
+      : [];
+  const body: Record<AccessAlertKind, { subject: string; lines: string[] }> = {
+    new_device: {
+      subject: "Nuevo inicio de sesión en tu cuenta de WMS",
+      lines: [
+        `Se inició sesión en tu cuenta de WMS desde un dispositivo o navegador que no habías usado: ${device}.`,
+        when,
+        ...ip,
+        "",
+        "Si fuiste tú, no tienes que hacer nada.",
+        "Si no fuiste tú, cambia tu contraseña de inmediato:",
+      ],
+    },
+    password_new_device: {
+      subject: "Alguien escribió tu contraseña de WMS",
+      lines: [
+        `Alguien escribió bien tu contraseña de WMS desde un dispositivo o navegador que no habías usado (${device}), pero no pasó el código de verificación.`,
+        when,
+        ...ip,
+        "",
+        "Si fuiste tú, no tienes que hacer nada.",
+        "Si no fuiste tú, alguien conoce tu contraseña: cámbiala de inmediato:",
+      ],
+    },
+    failed_attempts: {
+      subject: "Intentos fallidos de entrar a tu cuenta de WMS",
+      lines: [
+        "Hubo muchos intentos fallidos de entrar a tu cuenta de WMS y la bloqueamos un rato para protegerla.",
+        when,
+        "",
+        "Si fuiste tú, espera unos minutos e inténtalo de nuevo.",
+        "Si no fuiste tú, tu cuenta sigue protegida; si crees que alguien conoce tu contraseña, cámbiala:",
+      ],
+    },
+    pin_locked: {
+      subject: "Bloqueamos tu PIN de WMS",
+      lines: [
+        "Alguien escribió muchas veces un PIN equivocado a tu nombre en una terminal compartida y lo bloqueamos un rato. Tu cuenta y tu contraseña no cambiaron.",
+        when,
+        "",
+        "Si fuiste tú, espera unos minutos o entra con tu contraseña desde tu propio dispositivo para desbloquearlo.",
+        "Si no fuiste tú, cambia tu PIN en Configuración › Mi PIN. Para recuperar tu contraseña:",
+      ],
+    },
+  };
+  const { subject, lines } = body[input.kind];
   return {
     to: input.to,
-    subject:
-      input.kind === "new_device"
-        ? "Nuevo inicio de sesión en tu cuenta de WMS"
-        : "Intentos fallidos de entrar a tu cuenta de WMS",
+    subject,
     text: [
       `Hola, ${name}:`,
       "",

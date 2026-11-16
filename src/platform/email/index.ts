@@ -30,3 +30,4 @@ export {
   purchaseOrderEmail,
   verificationEmail,
 } from "./templates";
+export type { AccessAlertKind } from "./templates";

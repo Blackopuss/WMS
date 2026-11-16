@@ -28,6 +28,7 @@ export {
   ACCESS_ALERTS_PER_DAY,
   ACCESS_HISTORY_PAGE_SIZE,
   alertFailedAttempts,
+  alertPinLocked,
   listMyAccessHistory,
   noteSignIn,
   readAccessHistory,
