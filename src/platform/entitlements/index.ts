@@ -18,7 +18,12 @@ export type {
   SubscriptionStatus,
 } from "./entitlements";
 export {
+  FILE_STORAGE_DEFAULT_GB,
+  FILE_STORAGE_LIMIT_KEY,
+  FILE_STORAGE_MAX_GB,
   QUOTA_KEYS,
+  storageKib,
+  storageLimitGb,
   confirmReservation,
   ensureQuotaRows,
   consumeQuota,

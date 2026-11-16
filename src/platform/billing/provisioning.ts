@@ -7,6 +7,9 @@ import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { requireSession } from "@/platform/auth";
 import {
+  FILE_STORAGE_DEFAULT_GB,
+  FILE_STORAGE_LIMIT_KEY,
+  FILE_STORAGE_MAX_GB,
   ensureQuotaRows,
   getEntitlements,
   getFreshEntitlements,
@@ -81,6 +84,21 @@ const provisionSchema = z.object({
       .min(1, "Debe haber al menos 1 almacén.")
       .max(500, "El número de almacenes es demasiado grande."),
   ),
+  // WMS-67: GB for files; the default when not said.
+  storageGb: z.preprocess(
+    (value) =>
+      value === undefined || String(value).trim() === ""
+        ? FILE_STORAGE_DEFAULT_GB
+        : value,
+    z.coerce
+      .number("Escribe cuántos GB de archivos incluye.")
+      .int("El almacenamiento debe ser un número entero de GB.")
+      .min(1, "Debe incluir al menos 1 GB.")
+      .max(
+        FILE_STORAGE_MAX_GB,
+        `El máximo es ${FILE_STORAGE_MAX_GB.toLocaleString("es-MX")} GB.`,
+      ),
+  ),
   modules: z.array(z.string()).max(50),
   validUntil: z
     .date()
@@ -100,6 +118,8 @@ export type ProvisionInput = {
   users: number | string;
   /** Warehouses the plan includes (WMS-18); 1 when left out. */
   facilities?: number | string;
+  /** GB of files the plan includes (WMS-67); the default when left out. */
+  storageGb?: number | string;
   modules: string[];
   /** Null = without end date. */
   validUntil: Date | null;
@@ -192,7 +212,8 @@ export async function provisionCompany(
     }
     return { ok: false, fieldErrors };
   }
-  const { productLimit, users, facilities, validUntil, reason } = parsed.data;
+  const { productLimit, users, facilities, storageGb, validUntil, reason } =
+    parsed.data;
   const modules = [...new Set(parsed.data.modules)];
 
   const moduleError = (message: string): ProvisionResult => ({
@@ -279,6 +300,15 @@ export async function provisionCompany(
       validUntil,
       now,
     );
+    await setEntitlement(
+      tx,
+      organizationId,
+      "LIMIT",
+      FILE_STORAGE_LIMIT_KEY,
+      storageGb,
+      validUntil,
+      now,
+    );
     for (const id of modules) {
       await setEntitlement(
         tx,
@@ -310,6 +340,7 @@ export async function provisionCompany(
         productLimit,
         users,
         facilities,
+        storageGb,
         modules: registry.all
           .filter((m) => modules.includes(m.id))
           .map((m) => m.name),
@@ -374,6 +405,10 @@ export type CompanyPlan = CompanySummary & {
   users: number | null;
   /** Warehouses the plan includes; null when it does not say (1). */
   facilities: number | null;
+  /** GB of files the plan includes (the default when it does not say). */
+  storageGb: number;
+  /** KiB of files kept now. */
+  storageUsedKib: number;
   activeMembers: number;
   /** Earliest end date among what is in force; null = no end date. */
   validUntil: Date | null;
@@ -397,8 +432,8 @@ export async function getCompanyPlan(
   if (!row) return null;
   invalidateEntitlements(row.id);
   const now = new Date();
-  const [entitlements, products, activeMembers, ends, plan] = await Promise.all(
-    [
+  const [entitlements, products, activeMembers, ends, plan, storage] =
+    await Promise.all([
       getEntitlements(row.id),
       getQuotaUsage(row.id, "active_products"),
       db.membership.count({
@@ -421,8 +456,8 @@ export async function getCompanyPlan(
         },
         select: { validUntil: true },
       }),
-    ],
-  );
+      getQuotaUsage(row.id, "file_storage_kib"),
+    ]);
   const planEnd = plan?.validUntil ?? null;
   return {
     id: row.id,
@@ -435,6 +470,8 @@ export async function getCompanyPlan(
     productsUsed: products.used + products.reserved,
     users: entitlements.limit("users"),
     facilities: entitlements.limit("facilities"),
+    storageGb: (storage.limit ?? 0) / (1024 * 1024),
+    storageUsedKib: storage.used + storage.reserved,
     activeMembers,
     validUntil: ends?.validUntil ?? null,
     endedAt: planEnd !== null && planEnd <= now ? planEnd : null,

@@ -1,5 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
-import path from "node:path";
+import { readdirSync } from "node:fs";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -17,6 +16,7 @@ import {
   storeFile,
   type FileActor,
 } from "@/platform/files";
+import { configuredDriver, storageDriver } from "@/platform/files/storage";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -105,6 +105,9 @@ async function linkOf(owner: FileActor, fileId: string, now?: Date) {
 }
 
 const storageDir = process.env.FILE_STORAGE_DIR!;
+/** Whether the configured storage holds these bytes (disk or S3, WMS-67). */
+const stored = async (key: string) =>
+  (await storageDriver().head(key)) !== null;
 let actor: FileActor;
 
 beforeAll(async () => {
@@ -140,9 +143,7 @@ describe("storeFile", () => {
     expect(row.sha256).toMatch(/^[0-9a-f]{64}$/);
     // Tests write to a throwaway folder, never to the project's storage.
     expect(storageDir).not.toContain(process.cwd());
-    expect(
-      existsSync(path.join(storageDir, actor.organizationId, result.fileId)),
-    ).toBe(true);
+    expect(await stored(`${actor.organizationId}/${result.fileId}`)).toBe(true);
     const content = await readStoredFile(actor.organizationId, result.fileId);
     expect(content!.bytes.equals(csv())).toBe(true);
   });
@@ -181,9 +182,11 @@ describe("storeFile", () => {
     expect(row.name).toBe("passwd.csv");
     expect(row.storageKey).toBe(`${actor.organizationId}/${fileId}`);
     // Nothing was written outside the company's folder.
-    expect(
-      readdirSync(storageDir).every((n) => /^[0-9a-f-]{36}$/.test(n)),
-    ).toBe(true);
+    if (configuredDriver() === "disk") {
+      expect(
+        readdirSync(storageDir).every((n) => /^[0-9a-f-]{36}$/.test(n)),
+      ).toBe(true);
+    }
   });
 
   it("only who may import uploads", async () => {
@@ -375,9 +378,7 @@ describe("temporary links", () => {
     });
     expect(await readStoredFile(actor.organizationId, fileId)).toBeNull();
     // The bytes are gone; the row stays as a trace.
-    expect(
-      existsSync(path.join(storageDir, actor.organizationId, fileId)),
-    ).toBe(false);
+    expect(await stored(`${actor.organizationId}/${fileId}`)).toBe(false);
     const row = await db.storedFile.findUniqueOrThrow({
       where: { id: fileId },
     });

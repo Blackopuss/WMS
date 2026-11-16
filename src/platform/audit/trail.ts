@@ -73,6 +73,10 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "purchase_order.received": "Recibió mercancía de una orden de compra",
   "purchase_order.returned": "Devolvió mercancía al proveedor",
   "purchasing.report_exported": "Exportó un reporte de compras a un archivo",
+  "production.recipe_created": "Agregó la receta de un producto",
+  "production.recipe_activated":
+    "Activó una versión de la receta de un producto",
+  "production.recipe_discarded": "Descartó un borrador de receta",
   "customer.created": "Registró un cliente",
   "customer.email_updated": "Cambió el correo de un cliente",
   "purchase_order.delivery_requested":
@@ -161,6 +165,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "custom_field.changed": "Cambió un campo personalizado",
   "custom_field.archived": "Archivó un campo personalizado",
   "custom_field.restored": "Reactivó un campo personalizado",
+  "quality.plan_published": "Publicó un plan de inspección",
+  "quality.plan_discarded": "Descartó un borrador de plan de inspección",
+  "quality.defect_created": "Agregó un defecto",
+  "quality.defect_changed": "Cambió un defecto",
+  "quality.defect_archived": "Archivó un defecto",
+  "quality.defect_restored": "Volvió a usar un defecto",
   "api_key.created": "Creó una llave de la API",
   "api_key.changed": "Cambió una llave de la API",
   "api_key.revoked": "Revocó una llave de la API",

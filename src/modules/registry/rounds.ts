@@ -4,11 +4,12 @@ import {
   runEquipmentMaintenanceRound,
   runReplenishmentRound,
 } from "@/modules/inventory";
-import type { ScheduledRound } from "@/platform/jobs";
+import { allOrganizations, type ScheduledRound } from "@/platform/jobs";
 import {
   organizationsWithWebhookHistory,
   purgeWebhookHistory,
 } from "@/platform/api";
+import { processStorageCleanup, purgeOrphanPhotos } from "@/platform/files";
 import {
   purgeFinishedNoticeEmails,
   purgeReadNotifications,
@@ -41,6 +42,23 @@ export const scheduledRounds: readonly ScheduledRound[] = [
       notices: await purgeReadNotifications(organizationId),
       mails: await purgeFinishedNoticeEmails(organizationId),
     }),
+  },
+  // WMS-37 (ADR 0063): photos taken and never linked to a record, a day
+  // after, for every company that has any (whatever its modules or plan).
+  {
+    name: "platform.photo_orphans_cleanup",
+    organizations: allOrganizations,
+    run: async (organizationId) => ({
+      photos: await purgeOrphanPhotos(organizationId),
+    }),
+  },
+  // WMS-67 (ADR 0070): bytes left without a live file (an upload that did
+  // not end, a removal whose bytes could not go), for every company
+  // (one indexed read when it has nothing waiting).
+  {
+    name: "platform.storage_cleanup",
+    organizations: allOrganizations,
+    run: (organizationId) => processStorageCleanup(organizationId),
   },
   // WMS-39B (ADR 0060): the daily summary by mail of who asked for it.
   {

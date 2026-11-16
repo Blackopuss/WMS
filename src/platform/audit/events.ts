@@ -96,29 +96,85 @@ export type SecurityEventInput = {
   action: string;
   metadata?: AuditMetadata;
   ipAddress?: string | null;
+  /** Company the event happened in (WMS-68); none for account events. */
+  organizationId?: string | null;
+  /** «phone|Chrome|Android» (`deviceKeyOf`); never the raw user agent. */
+  deviceKey?: string | null;
+  /** Makes the event happen once per person (`claimSecurityEvent`). */
+  dedupeKey?: string | null;
 };
+
+type SecurityEventWriter = {
+  securityEvent: {
+    create(args: {
+      data: {
+        id: string;
+        userId: string;
+        action: string;
+        metadata?: SafeJsonObject;
+        ipAddress: string | null;
+        eventOrganizationId: string | null;
+        deviceKey: string | null;
+        dedupeKey: string | null;
+      };
+    }): PromiseLike<unknown>;
+  };
+};
+
+function securityEventData(event: SecurityEventInput) {
+  checkAction(event.action);
+  const metadata = sanitizeMetadata(event.metadata);
+  return {
+    id: newId(),
+    userId: event.userId,
+    action: event.action,
+    ...(metadata ? { metadata } : {}),
+    ipAddress: event.ipAddress?.slice(0, 64) ?? null,
+    eventOrganizationId: event.organizationId?.slice(0, 36) ?? null,
+    deviceKey: event.deviceKey?.slice(0, 80) ?? null,
+    dedupeKey: event.dedupeKey?.slice(0, 120) ?? null,
+  };
+}
 
 /**
  * Records an account security event. Never breaks the operation that
- * triggered it: a failure is logged and the operation goes on.
+ * triggered it: a failure is logged and the operation goes on. With
+ * `client` (a transaction) it is written with the change it belongs to,
+ * and a failure goes up with it.
  */
 export async function recordSecurityEvent(
   event: SecurityEventInput,
+  client?: SecurityEventWriter,
 ): Promise<void> {
-  checkAction(event.action);
-  const metadata = sanitizeMetadata(event.metadata);
+  const data = securityEventData(event);
+  if (client) {
+    await client.securityEvent.create({ data });
+    return;
+  }
   try {
-    await db.securityEvent.create({
-      data: {
-        id: newId(),
-        userId: event.userId,
-        action: event.action,
-        ...(metadata ? { metadata } : {}),
-        ipAddress: event.ipAddress?.slice(0, 64) ?? null,
-      },
-    });
+    await db.securityEvent.create({ data });
   } catch (error) {
     console.error("recordSecurityEvent failed", event.action, error);
+  }
+}
+
+/**
+ * Records an event that must happen once per person (`dedupeKey`, unique
+ * with the person): true when this call wrote it, false when it was
+ * already there (two requests at once: only one gets true) or could not be
+ * written (logged).
+ */
+export async function claimSecurityEvent(
+  event: SecurityEventInput & { dedupeKey: string },
+): Promise<boolean> {
+  try {
+    await db.securityEvent.create({ data: securityEventData(event) });
+    return true;
+  } catch (error) {
+    if ((error as { code?: string }).code !== "P2002") {
+      console.error("claimSecurityEvent failed", event.action, error);
+    }
+    return false;
   }
 }
 

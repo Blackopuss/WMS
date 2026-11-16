@@ -12,9 +12,11 @@ import { newId } from "@/lib";
 import {
   INCIDENT_KINDS,
   INCIDENT_KIND_LABELS,
+  incidentPhotoRequired,
   hasEquipmentHere,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
+import { FILE_PURPOSES } from "@/platform/files";
 
 import { ReportForm } from "./report-form";
 
@@ -75,6 +77,11 @@ export default async function ReportarProblemaPage({
           value: kind,
           label: INCIDENT_KIND_LABELS[kind],
         }))}
+        photoRequired={await incidentPhotoRequired({
+          organizationId: access.organization.id,
+          userId: access.user.id,
+        })}
+        maxPhotos={FILE_PURPOSES.incident_photo.evidence.perRecord}
         withEquipment={withEquipment}
       />
     </PageContainer>

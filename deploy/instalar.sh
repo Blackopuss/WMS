@@ -258,10 +258,32 @@ AGE_RECIPIENT=$CLAVE_RESPALDOS
 RETENER_DIAS=14
 # Copia fuera del servidor con rclone (vacío = no copiar), p. ej. b2:almacen-respaldos
 RCLONE_DESTINO=
+# Dónde viven los archivos de las empresas (WMS-67, ADR 0070): «disco» (se
+# cifran con la base) o «externo» (R2: se copian al bucket de respaldo,
+# FILE_BACKUP_S3_* en la configuración de la app).
+ARCHIVOS=disco
 EOF
 fi
 chown root:root "$RESPALDO_ENV"
 chmod 640 "$RESPALDO_ENV"
+# Credenciales del bucket de respaldo de los archivos (WMS-67, ADR 0070):
+# solo root las lee y el respaldo se las pasa al copiador; nunca van en la
+# configuración de la app web, así quien la comprometa no puede vaciar el
+# respaldo. Se llenan a mano al pasar los archivos a R2 (docs/DESPLIEGUE.md).
+ARCHIVOS_RESPALDO_ENV="$CONFIG_DIR/archivos-respaldo.env"
+if [[ ! -f "$ARCHIVOS_RESPALDO_ENV" ]]; then
+  cat > "$ARCHIVOS_RESPALDO_ENV" <<'EOF'
+# Bucket de respaldo de los archivos (otra cuenta de Cloudflare u otro
+# proveedor compatible con S3), con su propio token. Solo con ARCHIVOS=externo.
+FILE_BACKUP_S3_ENDPOINT=
+FILE_BACKUP_S3_BUCKET=
+FILE_BACKUP_S3_REGION=auto
+FILE_BACKUP_S3_ACCESS_KEY_ID=
+FILE_BACKUP_S3_SECRET_ACCESS_KEY=
+EOF
+fi
+chown root:root "$ARCHIVOS_RESPALDO_ENV"
+chmod 600 "$ARCHIVOS_RESPALDO_ENV"
 
 paso "Scripts de operación y servicios"
 for script in desplegar volver respaldo restaurar almacen; do

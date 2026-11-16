@@ -18,6 +18,7 @@ export {
   isAppError,
 } from "./errors";
 export type { ErrorKind } from "./errors";
+export { formatStorageSize } from "./storage-size";
 export { fingerprint } from "./fingerprint";
 export { isId, newId } from "./ids";
 export { isInternalHref } from "./internal-href";
@@ -29,10 +30,19 @@ export {
   nowUtc,
   toIsoUtc,
 } from "./time";
-export { DEVICE_KIND_LABELS, describeUserAgent } from "./user-agent";
+export {
+  DEVICE_KIND_LABELS,
+  describeDeviceKey,
+  describeUserAgent,
+  deviceKeyOf,
+} from "./user-agent";
 export type { DeviceInfo, DeviceKind } from "./user-agent";
 export { formatIp, isLoopbackHost } from "./ip";
 export { contentSecurityPolicy, newNonce } from "./csp";
+export {
+  FILE_CONTENT_SECURITY_POLICY,
+  fileResponseHeaders,
+} from "./file-response";
 export { log, pathWithoutQuery, recentErrorCount } from "./log";
 export type { LogFields } from "./log";
 export {

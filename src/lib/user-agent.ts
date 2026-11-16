@@ -1,7 +1,11 @@
 /**
  * Human description of a browser user agent, e.g. "Edge en Windows".
- * Only for showing sessions (PLT-05, WMS-40); never for security decisions.
- * What it does not recognize is «Otro»: the raw text never reaches a screen.
+ * For showing sessions (PLT-05, WMS-40) and, since WMS-68 (ADR 0064), to
+ * tell a device the person has not used before (`deviceKeyOf`): only to
+ * raise an alert, never to allow or refuse anything. The text is sent by
+ * the client, so anyone can make it look like a known device; that only
+ * avoids an alert, never opens a door. What it does not recognize is
+ * «Otro»: the raw text never reaches a screen nor the database.
  */
 export type DeviceKind = "computer" | "phone" | "tablet" | "other";
 
@@ -73,5 +77,31 @@ export function describeUserAgent(ua: string | null | undefined): DeviceInfo {
     kind,
     mobile: kind === "phone",
     label,
+  };
+}
+
+const KINDS: readonly DeviceKind[] = ["computer", "phone", "tablet", "other"];
+
+/**
+ * What identifies «the same device» for the access alerts (WMS-68, ADR
+ * 0064): kind, browser and system, never the raw text. Coarse on purpose:
+ * no fingerprinting.
+ */
+export function deviceKeyOf(ua: string | null | undefined): string {
+  const info = describeUserAgent(ua);
+  return `${info.kind}|${info.browser}|${info.os}`.slice(0, 80);
+}
+
+/** The device of a stored key, as shown on screen; null for no key. */
+export function describeDeviceKey(
+  key: string | null | undefined,
+): { kind: DeviceKind; label: string } | null {
+  if (!key) return null;
+  const [kindText, browser = UNKNOWN, os = UNKNOWN] = key.split("|");
+  const kind = KINDS.find((each) => each === kindText) ?? "other";
+  const browserText = browser === UNKNOWN ? "Otro navegador" : browser;
+  return {
+    kind,
+    label: os === UNKNOWN ? browserText : `${browserText} en ${os}`,
   };
 }

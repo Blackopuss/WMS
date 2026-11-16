@@ -34,9 +34,12 @@ const { runScheduledRounds } = await import("@/platform/jobs/rounds");
 const {
   ALERT_EVERY_MS,
   HEARTBEAT_EVERY_MS,
+  STORAGE_CHECK_EVERY_MS,
   runAlertRound,
+  writeStorageCheck,
   writeWorkerHeartbeat,
 } = await import("@/platform/ops");
+const { pingStorage } = await import("@/platform/files/storage");
 const { log } = await import("@/lib");
 
 const stop = new AbortController();
@@ -71,6 +74,28 @@ const alerts = setInterval(() => {
     .finally(() => (checking = false));
 }, ALERT_EVERY_MS);
 
+// Storage of files (WMS-67, ADR 0070): a small write, read and removal
+// every few minutes; /api/salud reads what it left, never probing itself.
+let probing = false;
+const probeStorage = () => {
+  if (probing) return;
+  probing = true;
+  pingStorage()
+    .then(async (probe) => {
+      if (!probe.ok) {
+        log.warn("storage_probe_failed", {
+          driver: probe.driver,
+          reason: probe.error,
+        });
+      }
+      await writeStorageCheck(probe);
+    })
+    .catch((error: unknown) => log.error("storage_probe_round_failed", error))
+    .finally(() => (probing = false));
+};
+probeStorage();
+const storageProbe = setInterval(probeStorage, STORAGE_CHECK_EVERY_MS);
+
 // Scheduled rounds of the modules (PAG-07): a minute after starting and
 // then once an hour, never two at once.
 const ROUNDS_EVERY_MS = 60 * 60 * 1000;
@@ -103,6 +128,7 @@ await runWorker(jobHandlers, {
 });
 clearInterval(heartbeat);
 clearInterval(alerts);
+clearInterval(storageProbe);
 clearTimeout(firstRounds);
 clearInterval(rounds);
 await db.$disconnect();

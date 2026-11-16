@@ -22,6 +22,7 @@ const FIELD_ORDER = [
   "productLimit",
   "users",
   "facilities",
+  "storageGb",
   "validUntil",
   "reason",
 ] as const;
@@ -46,6 +47,7 @@ export function ProvisionForm({
     productLimit: number | null;
     users: number | null;
     facilities: number | null;
+    storageGb: number;
     modules: string[];
     validUntil: string | null;
   };
@@ -185,6 +187,21 @@ export function ProvisionForm({
                 inputMode="numeric"
                 autoComplete="off"
                 defaultValue={String(current.facilities ?? 1)}
+              />
+            )}
+          </FormField>
+          <FormField
+            id="storageGb"
+            label="Almacenamiento de archivos (GB)"
+            error={state.fieldErrors.storageGb}
+          >
+            {(control) => (
+              <Input
+                {...control}
+                name="storageGb"
+                inputMode="numeric"
+                autoComplete="off"
+                defaultValue={String(current.storageGb)}
               />
             )}
           </FormField>

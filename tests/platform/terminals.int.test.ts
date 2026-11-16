@@ -68,13 +68,21 @@ import {
 import { GET as exportRoute } from "@/app/api/exportaciones/[tipo]/route";
 import { keepTerminalSessionAction } from "@/app/(app)/actions";
 import { moduleRegistry } from "@/modules/registry";
-import { buildExport } from "@/modules/inventory";
+import {
+  buildExport,
+  getIncident,
+  reportIncident,
+  uploadIncidentPhoto,
+} from "@/modules/inventory";
+import { evidenceOwners } from "@/modules/registry";
+import { openFileLink } from "@/platform/files";
 import { can } from "@/platform/authorization";
 import { createApiKey, handleApiRequest, listApiKeys } from "@/platform/api";
 import { apiRoutes } from "@/app/api/v1/_routes";
 import { provisionCompany } from "@/platform/billing";
 import { db, forOrganization, runDelegated } from "@/server";
 
+import { TEST_JPEG } from "../setup/images";
 import { grantSeats } from "../setup/plan";
 
 // WMS-38 (ADR 0061): shared terminals with PIN. A PIN only exists on a
@@ -620,6 +628,21 @@ describe("signing in with a PIN", () => {
           where: { userId: olivia, action: "pin_sign_in.succeeded" },
         }),
       ).toBe(1);
+      // WMS-68: the entry is of the terminal's company, with its terminal,
+      // and a terminal never raises a «new device» alert.
+      const entry = await db.securityEvent.findFirstOrThrow({
+        where: { userId: olivia, action: "pin_sign_in.succeeded" },
+      });
+      expect(entry).toMatchObject({
+        eventOrganizationId: A.org,
+        metadata: { terminalId },
+        deviceKey: "tablet|Otro|Otro",
+      });
+      expect(
+        await db.securityEvent.count({
+          where: { userId: olivia, action: { startsWith: "access.alert" } },
+        }),
+      ).toBe(0);
 
       // The browser now carries a Better Auth session cookie that works.
       const context = await requireOrganizationContext();
@@ -726,6 +749,18 @@ describe("attempts", () => {
           where: { userId: victim, action: "pin.locked" },
         }),
       ).toBeGreaterThanOrEqual(1);
+      // WMS-68: the owner of the PIN gets one alert of their PIN (not of
+      // the account), however many blocks, mailed because they have a PIN.
+      const alerts = await db.securityEvent.findMany({
+        where: { userId: victim, action: { startsWith: "access.alert_" } },
+      });
+      expect(alerts.map((a) => [a.action, a.metadata])).toEqual([
+        ["access.alert_pin_locked", { mail: "sent" }],
+      ]);
+      const failure = await db.securityEvent.findFirstOrThrow({
+        where: { userId: victim, action: "pin_sign_in.failed" },
+      });
+      expect(failure.eventOrganizationId).toBe(A.org);
       // Signing in with the password, from their own device, proves who it
       // is: the PIN works again.
       onDevice(null);
@@ -1842,6 +1877,58 @@ describe("second review of the step (WMS-38)", () => {
       } finally {
         spy.mockRestore();
       }
+    },
+    SLOW,
+  );
+});
+
+describe("fotos de evidencia en la terminal (WMS-37)", () => {
+  it(
+    "en una sesión de PIN se toman y se ven; lo recortado sigue fuera",
+    async () => {
+      onDevice(terminalCookie);
+      expect(
+        await pinSignIn({ userId: olivia, pin: "482915" }, from()),
+      ).toEqual({ ok: true });
+      // This browser is now Olivia's PIN session.
+      expect(await terminalUserOfRequest()).toBe(olivia);
+      const actor = { organizationId: A.org, userId: olivia };
+      const uploaded = await uploadIncidentPhoto(actor, {
+        name: "foto.jpg",
+        bytes: TEST_JPEG,
+      });
+      expect(uploaded.ok).toBe(true);
+      if (!uploaded.ok) return;
+      const reported = await reportIncident(actor, {
+        kind: "DAMAGED_GOODS",
+        description: "Caja rota en el andén",
+        photoIds: [uploaded.fileId],
+        idempotencyKey: `inc-${newId()}`,
+      });
+      expect(reported.ok).toBe(true);
+      if (!reported.ok) return;
+      const detail = await getIncident(actor, reported.incidentId);
+      expect(detail!.photos.map((each) => each.fileId)).toEqual([
+        uploaded.fileId,
+      ]);
+      const url = new URL(detail!.photos[0]!.url, "http://localhost");
+      expect(
+        await openFileLink(
+          actor,
+          {
+            fileId: uploaded.fileId,
+            expires: url.searchParams.get("e") ?? "",
+            signature: url.searchParams.get("s") ?? "",
+          },
+          { owners: evidenceOwners },
+        ),
+      ).toMatchObject({ ok: true, inline: true });
+      // Still a PIN session: what it never does stays out.
+      expect(await isAllowed(A.org, olivia, "inventory.export.create")).toBe(
+        false,
+      );
+      expect(await isAllowed(A.org, olivia, "platform.team.read")).toBe(false);
+      onDevice(null);
     },
     SLOW,
   );

@@ -5,8 +5,8 @@ import { PERMISSIONS } from "@/platform/authorization";
 
 import { moduleRegistry } from "./index";
 
-// MOD-02: the real registry starts, with Inventario and Compras available
-// and Producción, Calidad (WMS-59) and CRM announced but not contractable
+// MOD-02: the real registry starts, with Inventario, Compras, Producción
+// and Calidad (WMS-30A) available and CRM announced but not contractable
 // (Ventas was removed, WMS-02).
 
 describe("installed modules", () => {
@@ -28,18 +28,20 @@ describe("installed modules", () => {
     expect(moduleRegistry.dependentsOf("production").map((m) => m.id)).toEqual([
       "quality",
     ]);
-    // Announced until their first step leaves something to use.
+    // Available since their first steps (WMS-27, WMS-30A).
     for (const id of ["production", "quality"]) {
-      expect(moduleRegistry.get(id).availability, id).toBe("unavailable");
+      expect(moduleRegistry.get(id).availability, id).toBe("available");
       expect(moduleRegistry.get(id).permissions.length, id).toBeGreaterThan(0);
     }
   });
 
-  it("Inventario is the base; Inventario and Compras can be contracted", () => {
+  it("Inventario is the base; Inventario, Compras, Producción and Calidad can be contracted", () => {
     expect(moduleRegistry.base.id).toBe("inventory");
-    expect(moduleRegistry.available.map((m) => m.id)).toEqual([
+    expect(moduleRegistry.available.map((m) => m.id).sort()).toEqual([
       "inventory",
+      "production",
       "purchasing",
+      "quality",
     ]);
   });
 
@@ -58,8 +60,9 @@ describe("installed modules", () => {
       moduleRegistry
         .dependentsOf("inventory")
         .filter((m) => m.availability === "available")
-        .map((m) => m.id),
-    ).toEqual(["purchasing"]);
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(["production", "purchasing", "quality"]);
   });
 
   it("every business permission of the catalog belongs to exactly one module", () => {

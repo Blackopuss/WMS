@@ -6,9 +6,12 @@ export {
   ERROR_ALERT_THRESHOLD,
   HEARTBEAT_EVERY_MS,
   QUEUE_STUCK_AFTER_MS,
+  STORAGE_CHECK_EVERY_MS,
+  STORAGE_CHECK_STALE_AFTER_MS,
   WORKER_DOWN_AFTER_MS,
   checkHealth,
   heartbeatFile,
+  writeStorageCheck,
   writeWorkerHeartbeat,
 } from "./health";
 export type { CheckState, Health } from "./health";

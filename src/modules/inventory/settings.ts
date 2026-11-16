@@ -306,6 +306,31 @@ export const CUSTOMER_RETURN_WITHOUT_ORDER = {
 } as const satisfies SettingDefinition;
 
 /**
+ * WMS-37 (ADR 0063): whether reporting an incident demands a photo. Optional
+ * by default: not every device of the floor has a camera, and some problems
+ * (equipment, an unsafe place) are told better in words.
+ */
+export const INCIDENT_PHOTO = {
+  key: "inventory.incident.photo",
+  module: "inventory",
+  area: "Incidencias",
+  label: "Foto al reportar un problema",
+  options: [
+    {
+      value: "optional",
+      label: "Opcional",
+      help: "Quien reporta puede agregar fotos si ayudan.",
+    },
+    {
+      value: "required",
+      label: "Obligatoria",
+      help: "Toda incidencia lleva al menos una foto.",
+    },
+  ],
+  defaultValue: "optional",
+} as const satisfies SettingDefinition;
+
+/**
  * WMS-26 (ADR 0047): the size of the labels a «Imprimir etiqueta» link
  * downloads (the values are `LABEL_FORMATS` of `@/platform/files`). A
  * letter sheet by default: every office has a printer for it.
@@ -686,6 +711,7 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PACKING_MODE,
   SHIPMENT_DETAILS,
   CUSTOMER_RETURN_WITHOUT_ORDER,
+  INCIDENT_PHOTO,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
   REPLENISHMENT_MODE,

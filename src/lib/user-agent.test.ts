@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { describeUserAgent } from "./user-agent";
+import {
+  describeDeviceKey,
+  describeUserAgent,
+  deviceKeyOf,
+} from "./user-agent";
 
 describe("describeUserAgent", () => {
   it.each([
@@ -82,5 +86,26 @@ describe("describeUserAgent", () => {
   ])("%s is a %s", (ua, kind) => {
     expect(describeUserAgent(ua).kind).toBe(kind);
     expect(describeUserAgent(ua).mobile).toBe(kind === "phone");
+  });
+});
+
+describe("deviceKeyOf (WMS-68)", () => {
+  const android =
+    "Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/140.0 Mobile Safari/537.36";
+
+  it("is kind, browser and system, never the raw text", () => {
+    expect(deviceKeyOf(android)).toBe("phone|Chrome|Android");
+    expect(deviceKeyOf(null)).toBe("other|Otro|Otro");
+    expect(deviceKeyOf(`${android} secret-token-123`)).not.toContain("secret");
+  });
+
+  it("reads back as the same label as the session", () => {
+    expect(describeDeviceKey(deviceKeyOf(android))).toEqual({
+      kind: "phone",
+      label: describeUserAgent(android).label,
+    });
+    expect(describeDeviceKey("other|Otro|Otro")?.label).toBe("Otro navegador");
+    expect(describeDeviceKey("weird|X")?.kind).toBe("other");
+    expect(describeDeviceKey(null)).toBeNull();
   });
 });

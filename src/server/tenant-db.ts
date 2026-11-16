@@ -106,12 +106,19 @@ export const TENANT_MODELS = [
   "PickWaveOrder",
   "PurchaseRequest",
   "PurchaseRequestLine",
+  "Recipe",
+  "RecipeVersion",
+  "RecipeInput",
+  "RecipeOutput",
+  "RecipeLock",
   "Notification",
   "NotificationPreference",
   "NotificationEmail",
   "DailyDigest",
   "Incident",
   "IncidentNote",
+  "EvidencePhoto",
+  "StorageCleanup",
   "EquipmentType",
   "Equipment",
   "EquipmentMaintenance",
@@ -125,6 +132,12 @@ export const TENANT_MODELS = [
   "WebhookEndpoint",
   "WebhookEvent",
   "WebhookDelivery",
+  "QualityPlan",
+  "QualityPlanVersion",
+  "QualityPlanPoint",
+  "QualityPlanPointOption",
+  "QualityDefect",
+  "QualityDefectCatalog",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -343,6 +356,13 @@ const LOCKABLE = {
   webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
+  qualityPlan: "quality_plan",
+  qualityDefect: "quality_defect",
+  qualityDefectCatalog: "quality_defect_catalog",
+  storedFile: "stored_file",
+  membership: "membership",
+  recipe: "recipe",
+  recipeLock: "recipe_lock",
 } as const;
 
 /**

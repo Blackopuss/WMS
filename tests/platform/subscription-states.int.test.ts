@@ -364,7 +364,7 @@ describe("effect of each subscription status", () => {
         await db.entitlement.count({
           where: { organizationId: org, validUntil: null },
         }),
-      ).toBe(5);
+      ).toBe(6);
     },
   );
 

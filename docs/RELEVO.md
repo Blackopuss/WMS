@@ -1,9 +1,96 @@
 # Relevo entre sesiones
 
-Actualizado: 2026-11-16. Para quien abre un chat nuevo sobre este repositorio:
+Actualizado: 2026-11-16 (relevo de quien coordina, 08:35 UTC). Para quien abre un chat nuevo sobre este repositorio:
 dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando. El
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
+
+## Relevo de quien coordina (2026-11-16, 08:35 UTC)
+
+El chat que coordinaba (`session_01QMjUPVEbPAkRHP3gBSqvpY`) pasó de 400,000
+tokens. Esto es lo que necesita quien lo releve; lo demás del documento sigue
+valiendo.
+
+**Cerrado y unido hoy (en `pruebas` y `main`):** WMS-59 roles (`c863e92`, CI en
+verde), WMS-42 equipos (`7c265a9`), WMS-68 accesos (`ab9e957`) y WMS-37 fotos
+(`60eacb7`, 2665 pruebas en local). **Falta comprobar que la corrida de CI de
+`60eacb7` quedó en verde** en `pruebas` y `main` (tarda unos 18 minutos).
+
+**Chats en curso** (cada uno es un chat de Opus `claude-opus-5-5` en esfuerzo
+medio, en su rama; todos tienen la instrucción de reportar con `send_message`
+a la sesión que coordinaba: **quien releve les manda un mensaje con su propio
+id de sesión para que reporten ahí**):
+
+| Paso | Sesión | Rama | Estado |
+| --- | --- | --- | --- |
+| WMS-27 recetas (ADR 0066) | — | `wms-27-recetas` | **Cerrado y unido el 2026-11-16.** |
+| WMS-30A planes de inspección (ADR 0067) | — | `wms-30a-planes-inspeccion` | **Cerrado y unido el 2026-11-16.** |
+| WMS-30-0 recibir en inspección, desechar, retención (ADR 0068) | `session_01QMjUPXSxZtmZAnShDUjdgp` | `wms-30-0-inspeccion-al-recibir` | Implementando. **Corazón:** revisor independiente con ejecución de pruebas y `stock:reconcile`. Partió de `7c265a9`: tendrá que traer `pruebas`. |
+| WMS-74 motor de procesos (ADR 0069) | `session_01QMjUPWrrjBJrhqeh1iMJQh` | `wms-74-motor-procesos` | Implementando (se prueba con un documento de prueba; ningún módulo declara documentos todavía). |
+| WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
+
+El siguiente ADR libre es el 0071. Las ramas ya unidas (`wms-59-…`,
+`wms-42-equipos`, `wms-68-…`, `wms-37-…`) siguen en GitHub.
+
+**Qué se abre después, por dependencias (sección 12 de la propuesta):** WMS-75
+(restauración, corazón) al unirse WMS-30-0; WMS-28 (órdenes, corazón) cuando
+estén WMS-27, WMS-75 y WMS-74; WMS-29 (reporte, corazón) y WMS-28B
+(solicitudes) después de WMS-28; WMS-30B (verificación, corazón) con WMS-29 y
+WMS-30A; WMS-31 (cierre); WMS-74B (procesos en embarques) con WMS-74; WMS-29B
+al final. Los pasos «corazón» van uno tras otro. Al abrir cada uno se avisa al
+fundador.
+
+**Esperan al fundador (anotado en `MEMORY.md`):** si una misma empresa debe
+poder armar y desarmar el mismo kit (hoy se rechaza como ciclo y «una receta
+por producto» lo impide; se lo pregunté el 2026-11-16 y no ha contestado);
+precio, nombre comercial y textos del sitio de Producción y Calidad (al unir
+WMS-27 y WMS-30A «Mi plan» los mostrará disponibles sin precio); las
+decisiones que tomó cada chat que implementó (están listadas por paso en
+`MEMORY.md`); si Gerencia y administración deben ver el historial de accesos
+con IP del titular y de los administradores (hoy sí, como las sesiones).
+
+**Cómo se hizo cada paso hoy (para repetirlo igual):**
+
+1. Abrir el chat con `create_session` (modelo `claude-opus-5-5`, esfuerzo
+   medio, `source_revision: pruebas`, `outcome_branch` = la rama). Sus
+   instrucciones dicen: qué leer, qué es y qué no es el paso, ADR antes del
+   código con su número, convenciones que le tocan, pruebas pedidas por la
+   propuesta, no editar `AGENTS.md`, `MEMORY.md`, plan, relevo, estado,
+   `CHANGELOG.md`, `package.json` ni `ci.yml`, `check` y `build` antes de
+   subir, commits sin atribución a IA, relevo a los 400,000 tokens y reporte
+   por `send_message`.
+2. Al llegar el reporte: traer la rama a un worktree (`/home/user/wt/<paso>`)
+   y lanzar un **revisor independiente** (subagente local con el modelo Opus),
+   al que se le da el código y las líneas de ataque, no la conclusión. Sus
+   hallazgos regresan al chat que implementó con `send_message`. Cada
+   corrección vuelve al mismo revisor (se le continúa con `SendMessage`, que
+   conserva su contexto) hasta que no quede nada medio o mayor. Han hecho
+   falta dos o tres vueltas por paso.
+3. Unir en local sin confirmar (`git merge --no-ff --no-commit <commit>`); si
+   hay conflictos con otro paso ya unido, **se le pide al chat que implementó
+   que traiga `origin/pruebas` a su rama y los resuelva** (y el revisor mira
+   la resolución). Recrear la base de pruebas vacía antes de verificar (queda
+   sucia con migraciones de ramas probadas antes), `npm run db:generate`,
+   aplicar migraciones, `npm run check` y `npm run build` sobre la unión.
+   Ojo con leer un registro viejo de una corrida anterior: borrar el archivo
+   antes de esperar su resultado.
+4. Documentación de cierre en el mismo commit de la unión: párrafo de
+   convención en `AGENTS.md` (antes de «Documentación técnica (WMS-51)»),
+   «Hechos», lista de ADR y de revisiones de seguridad, conteo de pruebas,
+   `MEMORY.md` (con las decisiones que el fundador puede cambiar), el plan,
+   `CHANGELOG.md` y este documento. Commit `WMS-xx: …` sin atribución a IA,
+   `git push origin pruebas` y `git push origin pruebas:main`.
+5. Comprobar CI con `mcp__github__actions_list` (`list_workflow_runs`,
+   `ci.yml`, `perPage` 2 o 3). Un push nuevo cancela la corrida anterior.
+6. Varios chats eligieron el mismo prefijo de fecha para su migración: al
+   pedir correcciones, darles una hora que no use otra rama. Usadas hasta
+   hoy: `…160000` (WMS-59), `…180000` y `…200000` (WMS-68), `…210000` y
+   `…220000` (WMS-42), `…230000` y `…230100` (WMS-37); reservadas `…230000`
+   (WMS-27, otro nombre), `…233000` (WMS-30A), después de `20261117000000`
+   (WMS-74) y de `20261117010000` (WMS-67).
+7. En la nube, si el contenedor se reinicia, `dockerd` muere: levantarlo otra
+   vez (sección de abajo). `list_events` de otra sesión devuelve muchísimo
+   texto: usar `list_sessions` con `children: true` para ver quién sigue vivo.
 
 ## Dónde quedó
 
@@ -18,8 +105,8 @@ para arrancar sin releer la conversación anterior.
   El fundador indicó empezar producción y calidad ese día, en el orden de la
   sección 12 de la propuesta. Los módulos quedan anunciados hasta WMS-27
   (Producción) y WMS-30A (Calidad).
-- **También en curso: WMS-37 (fotos)**, rama `wms-37-fotos-evidencia`. **Pasos en paralelo (fundador, 2026-11-16, más tarde):** con la misma forma de trabajo, se abren a la vez los pasos cuyas dependencias ya están implementadas, cada uno en su chat y su rama independiente, y se unen a `pruebas` de uno en uno; esto reemplaza «un paso a la vez» (quien coordina avisa al abrir cada uno). Abierto por eso WMS-37 (fotos, rama `wms-37-fotos-evidencia`), que no depende de nada; al unirse WMS-59 se abren WMS-27, WMS-30A y WMS-30-0, y al unirse WMS-37, WMS-74. Los pasos «corazón» siguen yendo uno tras otro.
-- **Cerrado el 2026-11-16: WMS-42 (equipos del almacén, ADR 0065). También en curso: WMS-68.** **Transversales (fundador, 2026-11-16):** (WMS-68) un acceso es sospechoso por dispositivo o navegador nuevo y por muchos intentos fallidos; **sin país por IP por ahora** (sin base de países ni servicio externo): el país se agrega cuando haya servidor detrás de Cloudflare, que lo manda en una cabecera. (WMS-42) primera entrega con **registro y tareas**: registro de equipos (el tipo lo pone cada empresa), mantenimiento e incidencias, y además la tarea puede pedir un tipo de equipo y quien la toma dice cuál usa; como toca tareas, cuenta como paso «corazón». (WMS-67) **el almacenamiento externo será Cloudflare R2** («se piensa utilizar el R2 de Cloudflare»); se construye compatible con S3 pensando en R2, después de unir WMS-37 porque toca la misma área de archivos. Abiertos ese día, cada uno en su chat y su rama: WMS-68 (`wms-68-historial-accesos`) y WMS-42 (`wms-42-equipos`); mientras WMS-42 no se una, WMS-30-0 espera y WMS-27 y WMS-30A sí avanzan.
+- **Cerrado el 2026-11-16: WMS-37 (fotos de evidencia, ADR 0063).** **Pasos en paralelo (fundador, 2026-11-16, más tarde):** con la misma forma de trabajo, se abren a la vez los pasos cuyas dependencias ya están implementadas, cada uno en su chat y su rama independiente, y se unen a `pruebas` de uno en uno; esto reemplaza «un paso a la vez» (quien coordina avisa al abrir cada uno). Abierto por eso WMS-37 (fotos, rama `wms-37-fotos-evidencia`), que no depende de nada; al unirse WMS-59 se abren WMS-27, WMS-30A y WMS-30-0, y al unirse WMS-37, WMS-74. Los pasos «corazón» siguen yendo uno tras otro.
+- **Cerrado el 2026-11-16: WMS-42 (equipos del almacén, ADR 0065). Cerrado también WMS-68 (historial de accesos, ADR 0064).** **Transversales (fundador, 2026-11-16):** (WMS-68) un acceso es sospechoso por dispositivo o navegador nuevo y por muchos intentos fallidos; **sin país por IP por ahora** (sin base de países ni servicio externo): el país se agrega cuando haya servidor detrás de Cloudflare, que lo manda en una cabecera. (WMS-42) primera entrega con **registro y tareas**: registro de equipos (el tipo lo pone cada empresa), mantenimiento e incidencias, y además la tarea puede pedir un tipo de equipo y quien la toma dice cuál usa; como toca tareas, cuenta como paso «corazón». (WMS-67) **el almacenamiento externo será Cloudflare R2** («se piensa utilizar el R2 de Cloudflare»); se construye compatible con S3 pensando en R2, después de unir WMS-37 porque toca la misma área de archivos. Abiertos ese día, cada uno en su chat y su rama: WMS-68 (`wms-68-historial-accesos`) y WMS-42 (`wms-42-equipos`); mientras WMS-42 no se una, WMS-30-0 espera y WMS-27 y WMS-30A sí avanzan.
 - **Cerrado antes:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
   unido el 2026-11-14 tras tres vueltas de revisión de seguridad, y la
   propuesta de producción y calidad está unida en su sexta versión
@@ -202,7 +289,13 @@ Quien coordina no implementa: reparte, revisa e integra.
 
 ## Mensaje sugerido para abrir el chat nuevo
 
-> Trabaja en la rama `pruebas` de `Blackopuss/WMS`. Lee `docs/RELEVO.md`,
-> `AGENTS.md` y `docs/PLAN_WMS_V3.md` antes de nada. Quiero que … (el paso o la
-> tarea). Sigue la forma de trabajo del relevo: subagentes de Opus en esfuerzo
-> medio implementan y tú coordinas, revisas e integras.
+> Trabaja en la rama `pruebas` de `Blackopuss/WMS`. Lee `docs/RELEVO.md`
+> (empieza por «Relevo de quien coordina»), `AGENTS.md` y
+> `docs/PLAN_WMS_V3.md` antes de nada. Relevas al chat que coordinaba
+> producción y calidad: tú coordinas, repartes, revisas e integras; no
+> implementas. Levanta el entorno, comprueba CI del último commit de
+> `pruebas`, manda tu id de sesión a los cinco chats en curso para que te
+> reporten a ti, y sigue con ellos como dice el relevo: revisor independiente
+> antes de unir, `check` y `build` en local, `main` igual que `pruebas` al
+> cerrar cada paso, y abrir el siguiente paso cuando sus dependencias estén
+> unidas, avisándome. Sin emojis.

@@ -3,10 +3,15 @@
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField, PhotoCapture, type CapturedPhoto } from "@/components";
 import { Button } from "@/components/ui/button";
 
-import { incidentStepAction, type StepState } from "../actions";
+import {
+  incidentStepAction,
+  discardIncidentPhotoAction,
+  uploadIncidentPhotoAction,
+  type StepState,
+} from "../actions";
 
 const areaClass =
   "w-full min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30";
@@ -23,12 +28,16 @@ export function IncidentSteps({
   status,
   manages,
   writesNotes,
+  maxPhotos,
 }: {
   incidentId: string;
   status: string;
   manages: boolean;
   writesNotes: boolean;
+  maxPhotos: number;
 }) {
+  // Photos of the next note; kept while the note form is rebuilt.
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [closing, setClosing] = useState<"resolve" | "dismiss" | null>(null);
   const [startState, start, starting] = useActionState(
     incidentStepAction.bind(null, { incidentId, step: "start" }),
@@ -46,7 +55,21 @@ export function IncidentSteps({
   const close = closing === "dismiss" ? dismiss : resolve;
   const sending = resolving || dismissing;
   const [noteState, note, noting] = useActionState(
-    incidentStepAction.bind(null, { incidentId, step: "note" }),
+    async (previous: StepState, formData: FormData) => {
+      const answer = await incidentStepAction(
+        { incidentId, step: "note" },
+        previous,
+        formData,
+      );
+      // Saved: the photos belong to the note now; the list starts over.
+      if (answer.ok) {
+        setPhotos((list) => {
+          for (const photo of list) URL.revokeObjectURL(photo.preview);
+          return [];
+        });
+      }
+      return answer;
+    },
     INITIAL,
   );
 
@@ -152,7 +175,7 @@ export function IncidentSteps({
         >
           <FormField
             id="note-text"
-            label="Agregar una nota"
+            label="Agregar una nota o fotos"
             error={noteState.error}
           >
             {(control) => (
@@ -166,6 +189,15 @@ export function IncidentSteps({
               />
             )}
           </FormField>
+          <PhotoCapture
+            id="note-photos"
+            label="Fotos (opcional)"
+            photos={photos}
+            onPhotosChange={setPhotos}
+            upload={uploadIncidentPhotoAction}
+            discard={discardIncidentPhotoAction}
+            max={maxPhotos}
+          />
           <Button type="submit" variant="outline" disabled={noting}>
             Agregar nota
           </Button>
