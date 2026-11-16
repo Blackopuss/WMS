@@ -212,6 +212,41 @@ function concat(parts: Uint8Array[]): Uint8Array {
  */
 const JPEG_LIMITS = { segments: 1024, tables: 32, scans: 64 } as const;
 
+/**
+ * DQT: 1 to 4 tables, each a byte (precision 0 or 1, destination 0..3)
+ * and 64 values of 1 or 2 bytes: from 67 to 518 bytes with its length.
+ */
+function quantizationFits(bytes: Uint8Array, at: number, end: number) {
+  let count = 0;
+  while (at < end) {
+    const precision = bytes[at]! >> 4;
+    const destination = bytes[at]! & 0x0f;
+    if (precision > 1 || destination > 3 || ++count > 4) return false;
+    at += 1 + 64 * (precision + 1);
+  }
+  return count > 0 && at === end;
+}
+
+/**
+ * DHT: 1 to 4 tables, each a byte (class 0 or 1, destination 0..3), 16
+ * counts and as many values as they add up (1 to 256): from 20 to 1,094
+ * bytes with its length.
+ */
+function huffmanFits(bytes: Uint8Array, at: number, end: number) {
+  let count = 0;
+  while (at < end) {
+    if (at + 17 > end) return false;
+    const kind = bytes[at]! >> 4;
+    const destination = bytes[at]! & 0x0f;
+    if (kind > 1 || destination > 3 || ++count > 4) return false;
+    let codes = 0;
+    for (let i = 1; i <= 16; i++) codes += bytes[at + i]!;
+    if (codes < 1 || codes > 256) return false;
+    at += 17 + codes;
+  }
+  return count > 0 && at === end;
+}
+
 /** Baseline, extended and progressive: what every browser draws. */
 const JPEG_FRAMES = new Set([0xc0, 0xc1, 0xc2]);
 
@@ -273,14 +308,14 @@ function cleanJpeg(bytes: Uint8Array) {
       // Lossless, hierarchical or arithmetic frames: not accepted.
       throw new BrokenType();
     } else if (marker === 0xdb || marker === 0xc4 || marker === 0xdd) {
-      // Quantization (one 8-bit table at least: 1 + 64), Huffman (class
-      // and id, 16 counts and one code at least) and restart interval
-      // (exactly 2 bytes).
+      // Quantization, Huffman and restart interval, each walked table by
+      // table as ITU T.81 (B.2.4) defines them: the segment must be
+      // exactly its tables, so nothing else can travel inside.
       const fits =
         marker === 0xdb
-          ? length >= 2 + 65
+          ? quantizationFits(bytes, data, end)
           : marker === 0xc4
-            ? length >= 2 + 18
+            ? huffmanFits(bytes, data, end)
             : length === 4;
       if (!fits || ++tables > JPEG_LIMITS.tables) throw new Broken();
       parts.push(segment);

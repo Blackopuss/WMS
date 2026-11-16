@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { newId } from "@/lib";
 import {
@@ -18,7 +18,14 @@ import {
   operationSettings,
 } from "@/modules/registry";
 import { scheduledRounds } from "@/modules/registry/rounds";
-import { can, setMemberScope, type Role } from "@/platform/authorization";
+import { GET as viewPhoto } from "@/app/api/archivos/[id]/ver/route";
+import {
+  assignRoles,
+  enterSupport,
+  grantSupportAccess,
+  setMemberScope,
+  type Role,
+} from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import {
@@ -45,6 +52,30 @@ import {
   TEST_PNG,
   cameraJpeg,
 } from "../setup/images";
+
+/** Who the routes see as signed in (null: nobody). */
+let signedIn: { user: { id: string }; organization: { id: string } } | null =
+  null;
+vi.mock("@/platform/tenancy", async (original) => ({
+  ...(await original<typeof import("@/platform/tenancy")>()),
+  requireOrganizationContext: async () => {
+    if (!signedIn) throw new Error("redirect:/ingresar");
+    return signedIn;
+  },
+}));
+const as = (actor: InventoryActor) => {
+  signedIn = {
+    user: { id: actor.userId },
+    organization: { id: actor.organizationId },
+  };
+};
+const open = (fileId: string) =>
+  viewPhoto(
+    new Request(`http://localhost/api/archivos/${fileId}/ver`) as never,
+    {
+      params: Promise.resolve({ id: fileId }),
+    },
+  );
 
 // WMS-37 (ADR 0063): photos as evidence of an incident. A fake file is
 // refused, what is kept has no GPS, a photo exists only for who reaches
@@ -717,13 +748,44 @@ describe("quitar, zonas, terminal, soporte y plan vencido", () => {
     expect(seen!.photos.map((each) => each.fileId)).toEqual([fileId]);
   });
 
-  it("en una terminal con PIN se toman y se ven; soporte solo las ve", () => {
-    const floor = { isOwner: false, roles: ["operator"], terminal: true };
-    expect(can(floor, "inventory.incident.create")).toBe(true);
-    expect(can(floor, "inventory.incident.read")).toBe(true);
-    const support = { isOwner: false, roles: ["administrator"], support: true };
-    expect(can(support, "inventory.incident.read")).toBe(true);
-    expect(can(support, "inventory.incident.create")).toBe(false);
+  it("soporte de plataforma ve las fotos de lo que ve y no sube", async () => {
+    const fileId = await photo(operator);
+    const reported = await reportIncident(operator, {
+      kind: "OTHER",
+      description: "Para soporte",
+      photoIds: [fileId],
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    const staffId = await newUser("Soporte");
+    await db.platformStaff.create({ data: { userId: staffId } });
+    await grantSupportAccess(owner);
+    const session = await db.session.create({
+      data: {
+        id: newId(),
+        userId: staffId,
+        token: newId(),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    });
+    expect(
+      await enterSupport(staffId, session.id, owner.organizationId),
+    ).toEqual({ ok: true });
+    const staff = { organizationId: owner.organizationId, userId: staffId };
+    const detail = await getIncident(staff, reported.incidentId);
+    expect(detail!.photos.map((each) => each.fileId)).toEqual([fileId]);
+    expect(
+      await openFileLink(staff, linkParts(detail!.photos[0]!.url), {
+        owners: evidenceOwners,
+      }),
+    ).toMatchObject({ ok: true, inline: true });
+    await expect(photo(staff)).rejects.toThrow();
+    await expect(
+      addIncidentNote(staff, reported.incidentId, {
+        text: "Soporte no escribe",
+        photoIds: [],
+      }),
+    ).rejects.toThrow();
   });
 
   it("con el plan vencido no se suben fotos, pero se siguen viendo", async () => {
@@ -794,5 +856,111 @@ describe("quitar, zonas, terminal, soporte y plan vencido", () => {
         where: { createdByUserId: hurried.userId, deletedAt: null },
       }),
     ).toBe(PENDING_PHOTOS_MAX);
+  }, 60_000);
+});
+
+describe("abrir la foto completa con un enlace nuevo (/api/archivos/<id>/ver)", () => {
+  let fileId = "";
+  let locationOnly: InventoryActor;
+
+  beforeAll(async () => {
+    fileId = await photo(operator);
+    const reported = await reportIncident(operator, {
+      kind: "DAMAGED_GOODS",
+      description: "Para la ruta de fotos",
+      location: "A-01",
+      photoIds: [fileId],
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    locationOnly = await member(owner.organizationId, "supervisor", "Lupe");
+    const elsewhere = await createFacility(owner, {
+      name: `Bodega ruta ${counter}`,
+      code: `R${counter}`,
+    });
+    if (!elsewhere.ok) throw new Error(JSON.stringify(elsewhere));
+    const limited = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: locationOnly.userId,
+      facilities: [{ facilityId: elsewhere.facilityId }],
+    });
+    if (!limited.ok) throw new Error(JSON.stringify(limited));
+  });
+
+  it("redirige a un enlace fresco a quien alcanza la foto", async () => {
+    as(supervisor);
+    const answer = await open(fileId);
+    expect(answer.status).toBe(303);
+    expect(answer.headers.get("cache-control")).toBe("no-store");
+    const location = answer.headers.get("location")!;
+    expect(location).toMatch(
+      new RegExp(`^/api/archivos/${fileId}\\?e=\\d+&s=`),
+    );
+    expect(
+      await openFileLink(supervisor, linkParts(location), {
+        owners: evidenceOwners,
+      }),
+    ).toMatchObject({ ok: true, inline: true });
+  });
+
+  it("para todo lo demás responde como si no existiera", async () => {
+    const notFound = async (actor: InventoryActor | null, id: string) => {
+      signedIn = null;
+      if (actor) as(actor);
+      const answer = await open(id);
+      expect(answer.status).toBe(404);
+      expect(answer.headers.get("location")).toBeNull();
+    };
+    // Out of the person's scope.
+    await notFound(locationOnly, fileId);
+    // Another company.
+    await notFound(other, fileId);
+    // Without the permission to see incidents.
+    const buyer = await member(owner.organizationId, "buyer", "Beni");
+    await notFound(buyer, fileId);
+    // A photo of another person that is not saved yet.
+    await notFound(supervisor, await photo(operator));
+    // A file that is not a photo of evidence: an import sheet of somebody
+    // else, whose id is known.
+    const sheetId = newId();
+    await db.storedFile.create({
+      data: {
+        id: sheetId,
+        organizationId: owner.organizationId,
+        purpose: "import_source",
+        name: "productos.csv",
+        contentType: "text/csv; charset=utf-8",
+        size: 1,
+        sha256: "0".repeat(64),
+        storageKey: `${owner.organizationId}/${sheetId}`,
+        createdByUserId: operator.userId,
+      },
+    });
+    await notFound(owner, sheetId);
+    // Not even an id.
+    await notFound(supervisor, "../../etc/passwd");
+  });
+
+  it("sin sesión no da nada", async () => {
+    signedIn = null;
+    await expect(open(fileId)).rejects.toThrow("redirect:/ingresar");
+  });
+});
+
+describe("subir una foto mientras cambian los roles de la persona", () => {
+  it("no se bloquean entre sí", async () => {
+    const worker = await member(owner.organizationId, "operator", "Rosa");
+    for (let round = 0; round < 6; round++) {
+      const results = await Promise.all([
+        uploadIncidentPhoto(worker, { name: "foto.jpg", bytes: TEST_JPEG }),
+        assignRoles(owner.organizationId, owner.userId, {
+          userId: worker.userId,
+          roles: round % 2 === 0 ? ["operator", "forklift"] : ["operator"],
+        }),
+        uploadIncidentPhoto(worker, { name: "foto.jpg", bytes: TEST_JPEG }),
+      ]);
+      expect(results[0]).toMatchObject({ ok: true });
+      expect(results[1]).toMatchObject({ ok: true });
+      expect(results[2]).toMatchObject({ ok: true });
+    }
   }, 60_000);
 });

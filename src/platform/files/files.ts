@@ -32,6 +32,9 @@ import { getBytes, putBytes, removeBytes } from "./storage";
 export type { FileActor, FilePurpose } from "./purposes";
 export { FILE_PURPOSES } from "./purposes";
 
+/** A photo over the limit of photos waiting: its transaction goes back. */
+class TooManyPending extends Error {}
+
 /** Photos uploaded and not yet linked, per person in 24 hours. */
 export const PENDING_PHOTOS_MAX = 30;
 export const PENDING_PHOTOS_HOURS = 24;
@@ -150,10 +153,16 @@ export async function storeFile(
     if (!purpose.evidence) {
       await client.storedFile.create({ data: row });
     } else {
-      // Whoever uploads without saving does not fill the disk: counted
-      // under the lock of the person's membership, so uploads at the same
-      // time wait for each other.
-      const created = await client.$transaction(async (tx) => {
+      // Whoever uploads without saving does not fill the disk. The row is
+      // written first (its key to the company takes a shared lock on the
+      // company, as every insert does) and then the person's membership is
+      // locked to count, the photo itself included: uploads of the same
+      // person at the same time count one after another. The order is
+      // company → membership, the same as a change of the team
+      // (`withTeamChange`), so the two never wait for each other in a
+      // circle.
+      await client.$transaction(async (tx) => {
+        await tx.storedFile.create({ data: row });
         const membership = await tx.membership.findFirst({
           where: { userId },
           select: { id: true },
@@ -169,21 +178,19 @@ export async function storeFile(
             evidencePhoto: { is: null },
           },
         });
-        if (pending >= PENDING_PHOTOS_MAX) return false;
-        await tx.storedFile.create({ data: row });
-        return true;
+        // Over the limit: everything goes back, this row included.
+        if (pending > PENDING_PHOTOS_MAX) throw new TooManyPending();
       }, LOCKING_TRANSACTION);
-      if (!created) {
-        await removeBytes(storageKey).catch(() => {});
-        return {
-          ok: false,
-          reason: "too_many",
-          error: `Tienes ${PENDING_PHOTOS_MAX} fotos tomadas sin guardar. Quita las que no vayas a usar o termina lo que estabas reportando; las que no se usen se borran solas al día siguiente.`,
-        };
-      }
     }
   } catch (error) {
     await removeBytes(storageKey).catch(() => {});
+    if (error instanceof TooManyPending) {
+      return {
+        ok: false,
+        reason: "too_many",
+        error: `Tienes ${PENDING_PHOTOS_MAX} fotos tomadas sin guardar. Quita las que no vayas a usar o termina lo que estabas reportando; las que no se usen se borran solas al día siguiente.`,
+      };
+    }
     throw error;
   }
   return { ok: true, fileId };
@@ -377,10 +384,19 @@ export type FileLinkResult =
 export async function createFileLink(
   actor: FileActor,
   fileId: string,
-  options: { now?: Date; owners?: EvidenceOwners } = {},
+  options: {
+    now?: Date;
+    owners?: EvidenceOwners;
+    /** Only a photo of evidence; any other file «does not exist». */
+    onlyEvidence?: boolean;
+  } = {},
 ): Promise<FileLinkResult> {
   const file = await findFile(actor.organizationId, fileId);
-  if (!file || !isPurpose(file.purpose))
+  if (
+    !file ||
+    !isPurpose(file.purpose) ||
+    (options.onlyEvidence && !purposeOf(file.purpose).evidence)
+  )
     return { ok: false, reason: "not_found" };
   await assertModulePermission(
     actor.organizationId,

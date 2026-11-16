@@ -39,14 +39,18 @@ revisión independiente»).
 | Adivinar el id de una foto o reutilizar un enlace | UUIDv7; enlace firmado por persona, empresa y vencimiento de 5 minutos; la ruta exige sesión y vuelve a comprobar todo | `incident-photos.int.test.ts` («…otra persona con la misma dirección no obtiene nada») |
 | Foto de otra empresa | Toda lectura filtra por empresa: un enlace firmado correctamente para alguien de la otra empresa no encuentra nada | `incident-photos.int.test.ts` («una foto de otra empresa no existe») |
 | Foto de un registro fuera del alcance (almacén o zona) | `openFileLink`/`createFileLink` preguntan al dueño del registro (`reachesIncident`) en cada apertura; si la persona deja de alcanzarlo, su enlace deja de servir; sin la función del dueño, la foto no existe para nadie | `incident-photos.int.test.ts` («fuera del alcance…», «limitado a otra zona…») |
-| Enlace vencido en una ficha abierta mucho tiempo | Miniaturas sin carga diferida; la foto completa se abre por `/api/archivos/<id>/ver`, que vuelve a comprobar todo y hace un enlace nuevo | Revisión |
+| Enlace vencido en una ficha abierta mucho tiempo | Miniaturas sin carga diferida; la foto completa se abre por `/api/archivos/<id>/ver`, que vuelve a comprobar todo y hace un enlace nuevo | `incident-photos.int.test.ts` («redirige a un enlace fresco…») |
+| Convertir el id de un archivo ajeno (una hoja de importación) en un enlace propio por `/ver` | `/ver` atiende solo propósitos de evidencia (`onlyEvidence`); lo demás responde 404 como lo inexistente | `incident-photos.int.test.ts` («para todo lo demás responde como si no existiera»: fuera de alcance, otra empresa, sin permiso, foto ajena sin ligar, hoja de importación, id inválido; «sin sesión no da nada») |
+| Carga arbitraria dentro de tablas DQT o DHT | Cada segmento debe ser exactamente sus tablas (ITU T.81 B.2.4): 1 a 4, con su precisión, clase y destino válidos, y cuentas de códigos que suman lo que trae | `images.test.ts` («las tablas de un JPEG son solo tablas») |
+| Interbloqueo entre subir una foto y un cambio de equipo | Orden de candados empresa → membresía en los dos caminos: la fila se escribe primero (candado compartido de la empresa por su llave foránea) y luego se bloquea la membresía. Con el orden anterior (membresía y luego empresa) el ciclo era posible en teoría (subida con la membresía bloqueada esperando la empresa; cambio de equipo con la empresa bloqueada esperando la membresía al escribir `membership_role`); no se reprodujo en pruebas con retrasos forzados, pero el orden nuevo lo descarta por construcción | `incident-photos.int.test.ts` («no se bloquean entre sí») |
 | Foto sin ligar vista por otra persona | Solo existe para quien la subió | `incident-photos.int.test.ts` («una foto sin ligar solo existe para quien la tomó») |
 | Ligar la foto de otra persona, de otra empresa o la misma foto dos veces | Se liga solo lo subido por la misma persona, del mismo propósito, sin borrar y sin ligar, bajo el candado del archivo; único por empresa; disparador que exige archivo vivo y del mismo propósito | `incident-photos.int.test.ts` («no liga la foto de otra persona…», «la base no liga…») |
 | Borrar o cambiar evidencia | `deleteFile` bloquea la fila, la relee y borra bytes solo si marcó esa fila (una foto que se liga a la vez no se pierde); rechaza una foto ligada; disparadores: el vínculo no cambia ni se borra y el archivo ligado no cambia; `CHECK` que ata la columna de dueño a su propósito | `incident-photos.int.test.ts` («una foto ligada no cambia ni se borra», «Quitar borra la foto propia sin ligar…») |
 | Llenar el disco subiendo sin guardar | 30 fotos sin ligar por persona en 24 h, contadas bajo el candado de su membresía; «Quitar» la borra; la ronda borra lo no ligado a las 24 h en todas las empresas, también con el plan vencido | `incident-photos.int.test.ts` («quien sube sin guardar…», «subidas a la vez no pasan del tope…», «se borran solas…», «con el plan vencido…») |
 | Llenar el disco con fotos ligadas | Pendiente: no hay cupo total por empresa (30 por incidencia); se decide con el almacenamiento externo (WMS-67) | — |
 | Terminal compartida: lo de una persona visible para la siguiente | `Cache-Control: private, no-store`; el service worker no guarda imágenes (solo `/sin-conexion`, solo navegaciones); las miniaturas `blob:` se liberan al quitar y al salir del formulario | Revisión (ADR 0049) |
-| Soporte de plataforma | Solo `.read`: ve las fotos de lo que ve; subir es escritura | `incident-photos.int.test.ts` («…soporte solo las ve») |
+| Soporte de plataforma | Solo `.read`: ve las fotos de lo que ve; subir y escribir notas es escritura | `incident-photos.int.test.ts` («soporte de plataforma ve las fotos de lo que ve y no sube», con una entrada real de soporte) |
+| Sesión de PIN en una terminal | Sube y ve con el permiso del piso; lo recortado (exportaciones, plataforma) sigue fuera | `terminals.int.test.ts` («fotos de evidencia en la terminal») |
 | Llave de la API | No hay ruta de la API para fotos; `/api/archivos` exige la cookie de sesión, que la API nunca lee | Revisión |
 | Plan vencido | Subir pide `inventory.incident.create` (escritura): bloqueado; ver sigue | `incident-photos.int.test.ts` («con el plan vencido…») |
 
@@ -68,6 +72,10 @@ revisión independiente»).
   abrir.
 - Notas: el componente muestra el error del navegador y el del servidor a
   la vez; `CHECK` que ata dueño y propósito.
+
+Segunda vuelta (2026-11-16): `/ver` solo para evidencia; tablas DQT y DHT
+validadas por dentro; orden de candados empresa → membresía; pruebas reales
+con sesión de PIN y con soporte.
 
 ## Riesgos residuales
 - El servidor no decodifica los píxeles: un JPEG con datos de imagen

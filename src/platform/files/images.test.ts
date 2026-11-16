@@ -290,6 +290,78 @@ describe("sanitizeImage", () => {
   });
 });
 
+describe("las tablas de un JPEG son solo tablas", () => {
+  const withSegment = (segment: Uint8Array) =>
+    join(TEST_JPEG.subarray(0, 2), segment, TEST_JPEG.subarray(2));
+  const table = (first: number, size: number) =>
+    join(Uint8Array.of(first), new Uint8Array(size).fill(7));
+
+  it("acepta tablas de cuantización y Huffman del tamaño del estándar", () => {
+    // Four 16-bit tables: 518 bytes with the length, the most there is.
+    const dqt = jpegSegment(
+      0xdb,
+      join(
+        table(0x10, 128),
+        table(0x11, 128),
+        table(0x12, 128),
+        table(0x13, 128),
+      ),
+    );
+    expect(dqt.length - 2).toBe(518);
+    expect(sanitizeImage(withSegment(dqt))).toMatchObject({ ok: true });
+    // A Huffman table with 256 codes, four times: 1,094 bytes.
+    const huffman = (id: number) => {
+      const counts = new Uint8Array(16);
+      counts[15] = 255;
+      counts[14] = 1;
+      return join(Uint8Array.of(id), counts, new Uint8Array(256).fill(3));
+    };
+    const dht = jpegSegment(
+      0xc4,
+      join(huffman(0x00), huffman(0x01), huffman(0x10), huffman(0x11)),
+    );
+    expect(dht.length - 2).toBe(1094);
+    expect(sanitizeImage(withSegment(dht))).toMatchObject({ ok: true });
+  });
+
+  it("rechaza una tabla con bytes de más, de otra clase o enorme", () => {
+    for (const segment of [
+      // A valid table followed by text.
+      jpegSegment(0xdb, join(table(0x00, 64), bytesOf("texto oculto"))),
+      // 64 KB of anything in a quantization segment.
+      jpegSegment(0xdb, new Uint8Array(65_000).fill(0x41)),
+      // A fifth table, or a destination that does not exist.
+      jpegSegment(
+        0xdb,
+        join(
+          table(0x00, 64),
+          table(0x01, 64),
+          table(0x02, 64),
+          table(0x03, 64),
+          table(0x00, 64),
+        ),
+      ),
+      jpegSegment(0xdb, table(0x04, 64)),
+      // Huffman: counts that promise more than there is, or extra bytes.
+      jpegSegment(0xc4, join(Uint8Array.of(0x00), new Uint8Array(16).fill(1))),
+      jpegSegment(
+        0xc4,
+        join(
+          Uint8Array.of(0x00),
+          Uint8Array.of(1, ...new Array(15).fill(0)),
+          Uint8Array.of(5),
+          bytesOf("de más"),
+        ),
+      ),
+    ]) {
+      expect(sanitizeImage(withSegment(segment))).toMatchObject({
+        ok: false,
+        reason: "broken",
+      });
+    }
+  });
+});
+
 describe("un archivo hostil cuesta lo que una foto", () => {
   const BOUNDS = { ms: 150, mb: 25 };
 

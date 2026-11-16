@@ -5,8 +5,10 @@ import { createFileLink } from "@/platform/files";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 /**
- * Opens a private file with a fresh link (WMS-37): a gallery that stayed
- * open longer than a link lasts still opens the whole photo. Everything is
+ * Opens a photo of evidence with a fresh link (WMS-37): a gallery that
+ * stayed open longer than a link lasts still opens the whole photo. Only
+ * photos of evidence: any other file (an import sheet, an export) answers
+ * as if it did not exist, so knowing its id never turns into a link. Everything is
  * checked as when the link is made — session, company, permission and, for
  * a photo of evidence, that the person reaches its record — and the answer
  * is a redirect to a link made now for this person; nothing else.
@@ -21,7 +23,7 @@ export async function GET(
     ? await createFileLink(
         { organizationId: organization.id, userId: user.id },
         id,
-        { owners: evidenceOwners },
+        { owners: evidenceOwners, onlyEvidence: true },
       ).catch(() => null)
     : null;
   if (!link?.ok) {

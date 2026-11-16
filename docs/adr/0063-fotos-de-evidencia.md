@@ -56,7 +56,10 @@ ya existe.
    las descargas de hoy, así que las miniaturas se cargan de inmediato (sin
    carga diferida); abrir la foto completa pasa por `/api/archivos/<id>/ver`,
    que hace un enlace nuevo en ese momento con las mismas comprobaciones,
-   así funciona aunque la ficha lleve rato abierta. Quien no alcanza el
+   así funciona aunque la ficha lleve rato abierta. Esa ruta solo atiende
+   fotos de evidencia: cualquier otro archivo (una hoja de importación, una
+   exportación) responde como si no existiera, así conocer su id nunca da
+   un enlace. Quien no alcanza el
    registro no recibe enlace y, si lo arma a mano, la foto «no existe».
 6. **Qué deja de rastro.** La fila del archivo (`stored_file`: quién, cuándo,
    tamaño, `sha256`, ancho y alto) y la fila del vínculo (`evidence_photo`:
@@ -95,8 +98,10 @@ ya existe.
   y la segunda imagen que describe, perfiles ICC, miniaturas, comentarios,
   textos) y **se conserva** solo lo que sigue, cada parte con el tamaño que
   su formato admite:
-  - **JPEG:** SOI, tablas de cuantización (al menos 67 bytes), Huffman (al
-    menos 20) y de reinicio (exactamente 4), hasta 32 en total; un solo SOF
+  - **JPEG:** SOI, tablas de cuantización y Huffman recorridas tabla por
+    tabla como las define ITU T.81 (B.2.4): el segmento debe ser
+    exactamente sus tablas (DQT de 67 a 518 bytes, DHT de 20 a 1,094, de 1
+    a 4 tablas cada uno), y de reinicio (exactamente 4), hasta 32 en total; un solo SOF
     baseline, extendido o progresivo con su tamaño exacto; hasta 64 SOS,
     cada uno con su tamaño exacto y sus datos; `APP14 Adobe` una vez y con
     su tamaño fijo (cambia cómo se decodifican los colores); EOI. Todos los
@@ -171,9 +176,13 @@ ya existe.
   subió. La plataforma no importa módulos: recibe las funciones.
 - **Topes por propósito:** fotos por registro (5 por incidencia y 5 por
   nota) y por dueño (30 por incidencia). Fotos sin ligar por persona: 30 en
-  24 horas, contadas bajo el candado de la membresía de la persona, así que
-  subidas simultáneas no pasan del tope (quien sube sin guardar no llena el
-  disco); «Quitar» libera el lugar.
+  24 horas (quien sube sin guardar no llena el disco); «Quitar» libera el
+  lugar. Se cuentan después de escribir la fila, bajo el candado de la
+  membresía de la persona y contando la propia: subidas simultáneas cuentan
+  una tras otra. El orden de candados es empresa (el `INSERT` toma un
+  candado compartido de la empresa por su llave foránea) → membresía, el
+  mismo que un cambio de equipo (`withTeamChange`), así que los dos nunca
+  se esperan en círculo.
 - **Borrar** una foto sin ligar (`deleteFile`) bloquea su fila, la vuelve a
   leer y borra los bytes solo si marcó esa fila: una foto que se está
   ligando en ese momento no se pierde.
