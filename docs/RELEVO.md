@@ -28,9 +28,11 @@ id de sesión para que reporten ahí**):
 | WMS-30-0 recibir en inspección, desechar, retención (ADR 0068) | — | `wms-30-0-inspeccion-al-recibir` | **Cerrado y unido el 2026-11-16.** |
 | WMS-74 motor de procesos (ADR 0069) | — | `wms-74-motor-procesos` | **Cerrado y unido el 2026-11-16.** |
 | WMS-75 estado «En restauración» (ADR 0072) | — | `wms-75-en-restauracion` | **Cerrado y unido el 2026-11-16.** |
-| WMS-28 órdenes de producción (ADR 0073) | (ver `list_sessions children:true`) | `wms-28-ordenes-produccion` | Abierto el 2026-11-16 al unirse WMS-75. **Corazón:** revisor independiente con ejecución de pruebas y reconciliación. Migraciones desde `20261117070000`. Después: WMS-29 (corazón) y WMS-28B. |
+| WMS-28 órdenes de producción (ADR 0073) | `session_01QMjUPUD9XiWb6p2nUetQYM` | `wms-28-ordenes-produccion` | Abierto el 2026-11-16 al unirse WMS-75. Reporte entregado (`f8f89b4`); primera revisión con dos hallazgos altos (escalado de la receta, interbloqueo al liberar contra editar el área) y tres medios: en correcciones. **Corazón:** revisor independiente con ejecución de pruebas y reconciliación. Migraciones desde `20261117070000`. Después: WMS-29 (corazón) y WMS-28B. |
 | WMS-74B procesos en embarques (ADR 0071) | — | `wms-74b-procesos-embarques` | **Cerrado y unido el 2026-11-16.** |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
+
+**Paso pendiente de abrir al unirse WMS-28, antes de WMS-29 (hallazgo del revisor de WMS-28 sobre código ya unido):** `registerTransfer` (`src/modules/inventory/movements.ts`) bloquea sus dos ubicaciones en una sola llamada de `lockRows` y se interbloquea (5 de 6 rondas) con una salida, la liberación de un pedido o un cambio de estado sobre el mismo estante; es la causa que explicó WMS-75 (`lockRows` con varios ids recorre el índice único antes que la llave primaria). Hay que revisar toda llamada de `lockRows` con varios ids de `location` y de las demás tablas que los movimientos bloquean de una en una, corregirlo en un solo lugar si se puede (por ejemplo dentro de `lockRows`), con pruebas `Promise.all` y revisor independiente. Es paso «corazón».
 
 El siguiente ADR libre es el 0074. Las ramas ya unidas (`wms-59-…`,
 `wms-42-equipos`, `wms-68-…`, `wms-37-…`) siguen en GitHub.
