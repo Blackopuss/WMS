@@ -49,6 +49,8 @@ export const ACCESS_ACTION_LABELS: Record<string, string> = {
   "access.alert_password_new_device":
     "Alerta: contraseña correcta desde un dispositivo nuevo",
   "access.alert_failed_attempts": "Alerta: muchos intentos fallidos",
+  "access.alert_code_locked":
+    "Alerta: contraseña correcta y códigos de verificación equivocados",
   "access.alert_pin_locked": "Alerta: PIN bloqueado",
 };
 
@@ -66,6 +68,7 @@ const SUSPICIOUS_ACTIONS = new Set([
   "access.alert_new_device",
   "access.alert_password_new_device",
   "access.alert_failed_attempts",
+  "access.alert_code_locked",
   "access.alert_pin_locked",
 ]);
 
@@ -87,6 +90,7 @@ const ALERT_ACTION: Record<AccessAlertKind, string> = {
   new_device: "access.alert_new_device",
   password_new_device: "access.alert_password_new_device",
   failed_attempts: "access.alert_failed_attempts",
+  code_locked: "access.alert_code_locked",
   pin_locked: "access.alert_pin_locked",
 };
 
@@ -393,7 +397,20 @@ async function noteLock(
     ipAddress: clientIp(headers),
     deviceKey: deviceKeyOf(headers.get("user-agent")),
   });
-  if (locked) await alertFailedAttempts(userId, headers);
+  if (!locked) return;
+  if (step === "password") {
+    await alertFailedAttempts(userId, headers);
+    return;
+  }
+  // Wrong codes after the right password: its own alert and key, so a
+  // password lock caused by anyone the same day never silences it.
+  await raiseAlert({
+    userId,
+    kind: "code_locked",
+    dedupeKey: `code_locked:${today()}`,
+    deviceKey: deviceKeyOf(headers.get("user-agent")),
+    ipAddress: clientIp(headers),
+  });
 }
 
 /**
@@ -444,7 +461,7 @@ export async function challengeUserId(
 /**
  * A wrong code in the second step of signing in: whoever typed it knew
  * the password. Recorded; when it comes from a device the person does not
- * know, an alert (once per device); and when the code locked the account
+ * know, an alert (once a day per device); and when the code locked the account
  * (Better Auth sets `lockedUntil` on the wrong code that reaches its
  * limit, still answering «invalid code»), the lock and its alert. Never
  * throws.
@@ -470,7 +487,9 @@ export async function noteFailedCode(
       await raiseAlert({
         userId,
         kind: "password_new_device",
-        dedupeKey: `password_new_device:${deviceKey}`,
+        // Once a day per device: this alert does not teach the device, so
+        // a later try from the same (coarse) device warns again.
+        dedupeKey: `password_new_device:${deviceKey}:${today()}`,
         deviceKey,
         ipAddress,
       });
@@ -510,9 +529,24 @@ export type AccessHistoryRow = {
   ipAddress: string | null;
   /** Shared terminal of a PIN entry or failure, when it is readable. */
   terminalName: string | null;
-  /** «warning»: a failure or lock; «suspicious»: an alert went out. */
+  /** «warning»: a failure or lock; «suspicious»: an alert. */
   tone: "normal" | "warning" | "suspicious";
+  /** For an alert: whether the email went out, and why not. */
+  mailText: string | null;
 };
+
+const MAIL_TEXT: Record<string, string> = {
+  sent: "Se envió el correo de alerta.",
+  daily_limit: `No se envió correo: ya se habían enviado ${ACCESS_ALERTS_PER_DAY} alertas ese día.`,
+  unverified: "No se envió correo: el correo de la cuenta no está confirmado.",
+  no_pin: "No se envió correo: no tiene PIN.",
+};
+
+function mailTextOf(action: string, metadata: unknown): string | null {
+  if (!SUSPICIOUS_ACTIONS.has(action)) return null;
+  const mail = (metadata as { mail?: unknown } | null)?.mail;
+  return typeof mail === "string" ? (MAIL_TEXT[mail] ?? null) : null;
+}
 
 export type AccessHistoryPage = {
   rows: AccessHistoryRow[];
@@ -593,6 +627,7 @@ export async function readAccessHistory(
         : WARNING_ACTIONS.has(event.action)
           ? ("warning" as const)
           : ("normal" as const),
+      mailText: mailTextOf(event.action, event.metadata),
     };
   });
   return { rows, page, pageCount, total };

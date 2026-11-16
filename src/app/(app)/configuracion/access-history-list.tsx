@@ -60,6 +60,11 @@ export function AccessHistoryList({
                     {facts.join(" · ")}
                   </p>
                 )}
+                {row.mailText && (
+                  <p className="text-sm text-muted-foreground">
+                    {row.mailText}
+                  </p>
+                )}
                 <p className="text-sm text-muted-foreground">
                   <time dateTime={row.at.toISOString()}>
                     {formatDateTime(row.at, timeZone)}

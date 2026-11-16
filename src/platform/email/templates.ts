@@ -361,7 +361,11 @@ export function dailyDigestEmail(input: {
 
 /** What an access alert is about (WMS-68). */
 export type AccessAlertKind =
-  "new_device" | "password_new_device" | "failed_attempts" | "pin_locked";
+  | "new_device"
+  | "password_new_device"
+  | "failed_attempts"
+  | "code_locked"
+  | "pin_locked";
 
 /**
  * Alert of a suspicious access to the person's own account (WMS-68, ADR
@@ -387,6 +391,7 @@ export function accessAlertEmail(input: {
   const ip =
     input.ipAddress &&
     input.kind !== "failed_attempts" &&
+    input.kind !== "code_locked" &&
     input.kind !== "pin_locked"
       ? [`Dirección IP: ${input.ipAddress}.`]
       : [];
@@ -421,6 +426,16 @@ export function accessAlertEmail(input: {
         "",
         "Si fuiste tú, espera unos minutos e inténtalo de nuevo.",
         "Si no fuiste tú, tu cuenta sigue protegida; si crees que alguien conoce tu contraseña, cámbiala:",
+      ],
+    },
+    code_locked: {
+      subject: "Alguien tiene tu contraseña de WMS",
+      lines: [
+        "Alguien escribió bien tu contraseña de WMS pero falló muchas veces el código de verificación, y bloqueamos tu cuenta un rato.",
+        when,
+        "",
+        "Si fuiste tú, espera unos minutos e inténtalo de nuevo.",
+        "Si no fuiste tú, alguien conoce tu contraseña: cámbiala de inmediato:",
       ],
     },
     pin_locked: {

@@ -98,7 +98,7 @@ correo que no tiene cuenta no escribe nada.
 | `session.revoked` / `session.revoked_others` | La persona cerró una u otras de sus sesiones | — |
 | `session.closed_by_team` | El titular o un administrador cerró una o todas sus sesiones, o la desactivó | La que cerró |
 | `password.reset` | Restableció la contraseña con el enlace del correo | — |
-| `access.alert_new_device`, `access.alert_password_new_device`, `access.alert_failed_attempts`, `access.alert_pin_locked` | Una alerta (abajo); `metadata.mail` dice si salió el correo (`sent`) o por qué no (`daily_limit`, `unverified`, `no_pin`) | — |
+| `access.alert_new_device`, `access.alert_password_new_device`, `access.alert_failed_attempts`, `access.alert_code_locked`, `access.alert_pin_locked` | Una alerta (abajo); `metadata.mail` dice si salió el correo (`sent`) o por qué no (`daily_limit`, `unverified`, `no_pin`), y las dos pantallas lo muestran («No se envió correo: …») | — |
 
 Cada fila guarda fecha, IP (la de `clientIp`, reglas de ADR 0003) y
 dispositivo cuando hay petición. Los demás eventos de `security_event`
@@ -156,8 +156,10 @@ de registrarla:
 **Contraseña correcta desde un dispositivo nuevo y código equivocado**
 (revisión): quien escribe un código equivocado ya pasó la contraseña. Si
 lo hace desde un dispositivo que la persona no conoce (y conoce alguno),
-alerta `password_new_device:<deviceKey>`, una vez por dispositivo. Es la
-señal más fuerte de que alguien tiene la contraseña.
+alerta `password_new_device:<deviceKey>:<día UTC>`, una vez al día por
+dispositivo (esta alerta no aprende el dispositivo: otro intento otro día
+vuelve a avisar). Es la señal más fuerte de que alguien tiene la
+contraseña.
 
 «Dispositivo» = tipo, navegador y sistema que ya reconoce
 `describeUserAgent`. Es deliberadamente grueso: **sin huella del
@@ -181,8 +183,13 @@ dispositivo de la empresa ya registrado y su copia se detecta aparte (ADR
   equivocado», así que tras cada código equivocado se lee
   `twoFactor.lockedUntil` y se alerta ahí mismo, sin esperar otro intento.
 
-Alerta `failed_attempts:<día UTC>`: **una por persona por día**, aunque
-el ataque siga.
+Contraseñas: alerta `failed_attempts:<día UTC>`, **una por persona por
+día**, aunque el ataque siga. Códigos: alerta propia
+`code_locked:<día UTC>`, con su propio texto («alguien escribió bien tu
+contraseña y falló el código: cámbiala»). Llaves separadas a propósito
+(revisión): un bloqueo de contraseña que cualquiera provoca sin
+credenciales no debe silenciar ese mismo día el bloqueo por códigos, que
+sí significa que alguien tiene la contraseña.
 
 **PIN bloqueado** en una terminal (`pin.locked`): alerta propia
 `pin_locked:<día UTC>` con su propio texto (se bloqueó el PIN, no la
@@ -224,6 +231,10 @@ una vez al día por alerta.
   ruido y, si la persona trabaja en varias empresas, hablarían de otra).
   Ven las marcas en el historial de su gente con las reglas de §3, y
   siguen recibiendo los avisos de terminales que ya existen (ADR 0061).
+- **Riesgo aceptado (revisión):** el dispositivo nuevo se aprende cuando su
+  alerta toma un turno y programa el correo; si después el servidor de
+  correo falla, el dispositivo queda aprendido sin que el correo llegue
+  (se registra el error). Desde fuera no se puede provocar.
 - **Nada se configura** en este paso, ni por empresa ni por persona: las
   alertas de seguridad de la propia cuenta no se apagan.
 

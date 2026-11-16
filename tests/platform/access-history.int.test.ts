@@ -142,6 +142,7 @@ const ALERT_SUBJECTS = new Set([
   "Alguien escribió tu contraseña de WMS",
   "Intentos fallidos de entrar a tu cuenta de WMS",
   "Bloqueamos tu PIN de WMS",
+  "Alguien tiene tu contraseña de WMS",
 ]);
 
 const alertMails = (email: string) =>
@@ -346,6 +347,11 @@ describe("failed tries", () => {
       expect(alerts).toHaveLength(1);
       expect(alerts[0]?.metadata).toEqual({ mail: "daily_limit" });
       expect(alertMails(gil.email)).toHaveLength(0);
+      // The history says the email did not go out, and why.
+      const [row] = (await listMyAccessHistory(gil.id)).rows;
+      expect(row?.mailText).toBe(
+        `No se envió correo: ya se habían enviado ${ACCESS_ALERTS_PER_DAY} alertas ese día.`,
+      );
     },
     SLOW,
   );
@@ -519,8 +525,20 @@ describe("second step", () => {
   );
 
   it(
-    "the wrong code that locks the account alerts, without waiting for another try",
+    "the wrong code that locks the account alerts, even after a password lock the same day",
     async () => {
+      // Anyone, without credentials, locks the password first: the
+      // account's «failed attempts» alert of the day goes out.
+      await Promise.all(
+        Array.from({ length: 6 }, () =>
+          signIn({ email: hugo.email, password: "mal" }, from(UA.phone)),
+        ),
+      );
+      await settle();
+      expect(
+        await events(hugo.id, "access.alert_failed_attempts"),
+      ).toHaveLength(1);
+      // Then someone with the password fails the codes from a known device.
       const wrong = String((Number(totp(secret)) + 3) % 1_000_000).padStart(
         6,
         "0",
@@ -545,10 +563,18 @@ describe("second step", () => {
         if (locked?.lockedUntil) break;
       }
       await settle();
-      expect(await events(hugo.id, "sign_in.locked")).toHaveLength(1);
+      const locks = await events(hugo.id, "sign_in.locked");
       expect(
-        await events(hugo.id, "access.alert_failed_attempts"),
+        locks.map((l) => (l.metadata as { step: string }).step).sort(),
+      ).toEqual(["code", "password"]);
+      expect(
+        await events(hugo.id, "access.alert_password_new_device"),
       ).toHaveLength(1);
+      const [codeAlert] = await events(hugo.id, "access.alert_code_locked");
+      expect(codeAlert?.metadata).toEqual({ mail: "sent" });
+      expect(alertMails(hugo.email).map((m) => m.subject)).toContain(
+        "Alguien tiene tu contraseña de WMS",
+      );
     },
     SLOW,
   );

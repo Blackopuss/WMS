@@ -27,7 +27,9 @@ implementó el paso; la leerá un revisor independiente antes de unir.
 | Saber si un correo tiene cuenta por la respuesta | `signIn` responde igual (`invalid` y luego `throttled`) para una cuenta que existe y para un correo sin cuenta; los contadores de PLT-06 ya contaban el correo enviado, exista o no | `access-history.int.test.ts` («alerts once a day when the account gets blocked, without telling whether it exists») |
 | Saber si un correo tiene cuenta por el tiempo | Todo lo de una contraseña equivocada (buscar a la persona, la fila, el bloqueo, la alerta y su correo) corre **después** de responder: `afterResponse` le pasa a `after()` una función, así nada empieza antes (revisión: antes se le pasaba una promesa ya empezada) | «records a wrong password…» (con `after()` retenido, nada existe hasta soltarlo) |
 | Inundar de correos a una persona | Sin la contraseña solo se provoca la alerta de intentos fallidos (una por persona por día) o la de PIN (una por día, solo a quien tiene PIN, con llave aparte); la de dispositivo nuevo exige entrar y la de contraseña desde un dispositivo nuevo exige la contraseña; además, como mucho 5 correos por persona por día, con turnos de llave única (atómico) y una sola petición por alerta y día | «alerts once a day…», «past the daily cap…», «never mails more than the cap, even with many alerts at once», «a blocked PIN has its own alert…» |
-| Un intruso con la contraseña que prueba códigos de dos pasos | Un código equivocado desde un dispositivo que la persona no conoce alerta (una vez por dispositivo); el código que bloquea la cuenta alerta al momento (se lee `lockedUntil`, porque Better Auth todavía responde «código equivocado») | «a wrong code from a device the person does not know alerts once», «the wrong code that locks the account alerts…» |
+| Un intruso con la contraseña que prueba códigos de dos pasos | Un código equivocado desde un dispositivo que la persona no conoce alerta (una vez al día por dispositivo); el código que bloquea la cuenta alerta al momento (se lee `lockedUntil`, porque Better Auth todavía responde «código equivocado») con su propia llave diaria y su texto | «a wrong code from a device the person does not know alerts once», «the wrong code that locks the account alerts, even after a password lock the same day» |
+| Silenciar la alerta de códigos bloqueando antes la contraseña sin credenciales | El bloqueo por códigos tiene su llave (`code_locked:<día>`), aparte de la de contraseñas (`failed_attempts:<día>`) | «the wrong code that locks the account alerts, even after a password lock the same day» |
+| Creer que una alerta llegó cuando no salió | El historial dice en cada alerta si se envió el correo o por qué no | «past the daily cap…» |
 | Dispositivo nuevo que nadie supo | Solo se aprende cuando su correo salió; si no salió (tope), avisa en su siguiente entrada | «never mails more than the cap…» |
 | Correos a un buzón que no es de la persona | Solo a cuentas con correo confirmado | «never emails an account whose email is not confirmed» |
 | Dos alertas por peticiones simultáneas | La alerta es una fila con `dedupeKey` única por persona: solo una petición la escribe y solo esa manda correo; igual el bloqueo (`locked:<paso>:<ventana de 15 min>`) | «alerts once for a device never seen, even with simultaneous entries», «takes the attempt before checking» en `terminals.int.test.ts` |
@@ -54,7 +56,9 @@ implementó el paso; la leerá un revisor independiente antes de unir.
 - El correo de alerta se manda una vez, después de responder, sin cola ni
   reintento: si el servidor de correo falla en ese momento, la alerta queda
   en el historial pero el correo no llega (se registra el error), y el
-  dispositivo nuevo ya quedó aprendido.
+  dispositivo nuevo ya quedó aprendido. Riesgo aceptado: el dispositivo se
+  aprende cuando la alerta toma su turno y programa el correo; un fallo
+  posterior del servidor de correo no se puede provocar desde fuera.
 - Los correos propios de Better Auth (confirmación, recuperación) le llegan
   a `after()` como una promesa ya empezada; así los entrega Better Auth.
 - Sin país por IP (decisión del fundador); entrará solo desde una cabecera
