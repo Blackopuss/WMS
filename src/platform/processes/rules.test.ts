@@ -22,7 +22,9 @@ const DOC = {
     { key: "OPEN", label: "Abierto" },
     { key: "CHECK", label: "En revisión" },
   ],
-  operations: [{ key: "op.check", label: "Revisó", milestone: "CHECK" }],
+  operations: [
+    { key: "op.check", label: "Revisó", milestone: "CHECK", leadsTo: null },
+  ],
 };
 
 const stage = (

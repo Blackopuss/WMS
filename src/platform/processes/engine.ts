@@ -81,11 +81,17 @@ export async function startProcess(
     select: { id: true },
   });
   if (existing) return { started: false, progressId: existing.id };
+  // The version in force cannot change while it starts: publishing locks
+  // the definition for update, this waits for it or makes it wait
+  // (WMS-74B review), so the trigger never sees a version just retired.
+  const definition = await tx.processDefinition.findFirst({
+    where: { documentKey: document.key },
+    select: { id: true },
+  });
+  if (!definition) return { started: false, progressId: null };
+  await lockRows(tx, "processDefinition", [definition.id], { mode: "share" });
   const version = await tx.processVersion.findFirst({
-    where: {
-      status: "PUBLISHED",
-      definition: { documentKey: document.key },
-    },
+    where: { status: "PUBLISHED", definitionId: definition.id },
     select: { id: true },
   });
   if (!version) return { started: false, progressId: null };
@@ -265,4 +271,77 @@ export async function completeOperationStage(
   });
   await settle(tx, document, graph, actor);
   return { applied: true };
+}
+
+/**
+ * What the operation of a document waits for, read without a lock: for a
+ * screen that does not offer an operation whose earlier stages are not
+ * done (6.4, «la pantalla dice por qué»). Null when it may happen now or
+ * the document has no process. The module decides again under its locks
+ * with `assertStagesDone`.
+ */
+export async function operationWaits(
+  client: Pick<
+    ProcessTx,
+    "processProgress" | "processStage" | "processStageState"
+  >,
+  document: ProcessDocument,
+  documentId: string,
+  operationKey: string,
+): Promise<string | null> {
+  const found = await client.processProgress.findFirst({
+    where: {
+      documentKey: document.key,
+      documentId: String(documentId).slice(0, 36),
+    },
+    select: { id: true, status: true },
+  });
+  if (!found || found.status !== "ACTIVE") return null;
+  const graph = await readGraph(client, found.id);
+  if (!graph) return null;
+  return pendingMessage(document, graph, operationKey);
+}
+
+/**
+ * The manual stages of the milestone the document is in that are already
+ * DONE (not skipped), by name: what a module must not change under them
+ * (WMS-74B review: the orders of a shipment after its loading was done).
+ * With `lock`, under the lock of the progress (call it after the module's
+ * locks, with the module's `tx`); without it, a plain read for a screen.
+ * Empty without an active process.
+ */
+export async function doneStagesAt(
+  client: Pick<
+    ProcessTx,
+    "processProgress" | "processStage" | "processStageState"
+  >,
+  document: ProcessDocument,
+  documentId: string,
+  options: { lock?: boolean } = {},
+): Promise<string[]> {
+  let graph: Graph | null;
+  if (options.lock) {
+    // Locking needs the client of the module's transaction.
+    graph = await lockedGraph(client as ProcessTx, document, documentId);
+  } else {
+    const found = await client.processProgress.findFirst({
+      where: {
+        documentKey: document.key,
+        documentId: String(documentId).slice(0, 36),
+      },
+      select: { id: true },
+    });
+    graph = found ? await readGraph(client, found.id) : null;
+  }
+  if (!graph || graph.progress.status !== "ACTIVE") return [];
+  const byId = new Map(graph.stages.map((stage) => [stage.id, stage]));
+  const names: string[] = [];
+  for (const stage of workStages(graph.stages)) {
+    const top = stage.parentStageId ? byId.get(stage.parentStageId) : stage;
+    if (stage.kind !== "MANUAL") continue;
+    if ((top ?? stage).milestoneKey !== graph.progress.milestoneKey) continue;
+    const state = graph.states.find((each) => each.stageId === stage.id);
+    if (state?.status === "DONE") names.push(stage.name);
+  }
+  return names;
 }

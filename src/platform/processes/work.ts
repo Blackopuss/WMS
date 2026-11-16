@@ -68,7 +68,13 @@ const NOT_FOUND = "Este proceso ya no existe.";
 const ID = /^[0-9a-f-]{36}$/;
 
 export type StageActionResult =
-  | { ok: true; message: string; repeated?: true }
+  | {
+      ok: true;
+      message: string;
+      repeated?: true;
+      /** The screen of the document, to refresh it too (WMS-74B). */
+      documentHref?: string;
+    }
   | {
       ok: false;
       reason:
@@ -193,6 +199,7 @@ async function act(
               ok: true as const,
               repeated: true as const,
               message: "Ya quedó registrado.",
+              documentHref: document.href(graph.progress.documentId),
             };
           }
           return refuse(
@@ -228,7 +235,11 @@ async function act(
         device: deviceText(input),
         key,
       });
-      return { ok: true as const, message };
+      return {
+        ok: true as const,
+        message,
+        documentHref: document.href(graph.progress.documentId),
+      };
     }, LOCKING_TRANSACTION);
   } catch (error) {
     if (error instanceof Refused) return error.result;

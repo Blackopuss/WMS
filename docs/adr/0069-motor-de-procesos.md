@@ -130,7 +130,8 @@ declara un `ProcessDocument`:
     { key: "CANCELLED", label: "Cancelado", closes: true },
   ],
   operations: [                     // lo que puede ser etapa de operación
-    { key: "quality.decided", label: "Calidad decidió", milestone: "INSPECTION" },
+    { key: "quality.decided", label: "Calidad decidió", milestone: "INSPECTION",
+      leadsTo: null },               // o el hito al que lleva (WMS-74B)
   ],
   readPermission: "production.order.read",
   href: (documentId) => `/produccion/lotes/${documentId}`,
@@ -139,6 +140,15 @@ declara un `ProcessDocument`:
 
 El almacén y la ubicación los da el módulo al empezar el proceso y cuando
 cambian (`setProcessPlace`): el motor no lee tablas de módulos.
+
+**Añadido en WMS-74B (ADR 0071):** cada operación declara `leadsTo`
+(obligatorio): el hito al que lleva el documento, o `null` si no cambia su
+estado fijo. `assertValidProcessDocuments` exige que `leadsTo` exista y vaya
+**después** de `milestone`, y que `milestone` no sea un hito `closes`: una
+operación que cambia el estado declarada en el hito de llegada esperaría
+para siempre. `startProcess` lee la versión vigente con un candado
+compartido de la definición (publicar la bloquea para escribir), y
+`doneStagesAt` dice qué etapas manuales del hito actual ya están hechas.
 
 ## Contrato para WMS-28, WMS-29 y WMS-30B
 

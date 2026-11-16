@@ -409,6 +409,10 @@ export {
 export type { ShipmentStatus } from "./shipment-states";
 export { TO_SHIP } from "./shipment-ready";
 export {
+  SHIPMENT_DISPATCHED_OPERATION,
+  SHIPMENT_PROCESS,
+} from "./shipment-process";
+export {
   CUSTOMER_RETURN_MAX_LINES,
   CUSTOMER_RETURN_PAGE_SIZE,
   countReturnsToReview,

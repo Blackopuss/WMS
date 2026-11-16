@@ -7,6 +7,15 @@ import { emitWebhookEvent } from "@/platform/api";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
+import {
+  ProcessStagesPending,
+  assertStagesDone,
+  completeOperationStage,
+  doneStagesAt,
+  operationWaits,
+  reachMilestone,
+  startProcess,
+} from "@/platform/processes";
 import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
@@ -24,6 +33,10 @@ import { blockedMessage, consumeReservation, freeToTake } from "./reservations";
 import { serialsText } from "./serial-rules";
 import { serialsForTake, writeSerialMoves, type SerialPick } from "./serials";
 import { SHIPMENT_DETAILS } from "./settings";
+import {
+  SHIPMENT_DISPATCHED_OPERATION,
+  SHIPMENT_PROCESS,
+} from "./shipment-process";
 import { IN_NO_SHIPMENT, readyStatuses } from "./shipment-ready";
 import {
   SHIPMENT_STATUS_LABELS,
@@ -45,7 +58,9 @@ import { lineCost, openCostBook } from "./valuation";
  * ships the orders. What left, for which order, stays in `shipment_line`.
  *
  * Locks: products → locations (where the orders' stock waits) → shipment →
- * orders → packages. Adding or removing orders locks shipment → orders.
+ * orders → packages → progress of the process (WMS-74B, ADR 0071). Adding
+ * or removing orders locks shipment → orders; cancelling, shipment →
+ * progress.
  */
 
 type Tx = Parameters<
@@ -126,6 +141,11 @@ async function inShipment(
       );
     } catch (error) {
       if (error instanceof Rejected) return error.result;
+      // WMS-74B: a stage of the process was missing after all (the exit
+      // asks first, so it should not happen): everything rolled back.
+      if (error instanceof ProcessStagesPending) {
+        return { ok: false, reason: "not_allowed", formError: error.message };
+      }
       if (
         (error instanceof ShipmentChanged ||
           (isClash(error, "number") && !isClash(error, "openOrderId"))) &&
@@ -239,6 +259,27 @@ function draftOnly(status: ShipmentStatus): void {
   if (status !== "DRAFT") {
     stop("not_allowed", shipmentTransitionProblem(status, "SHIPPED")!);
   }
+}
+
+/**
+ * WMS-74B (review): once a stage of «Por confirmar» was done (the loading,
+ * with its photo), the orders of the shipment stay as they were: what
+ * leaves is what was checked. «Regresar» that stage (if it allows it) or
+ * cancelling the shipment opens them again. Under the lock of the process,
+ * after the shipment's (and the orders') locks.
+ */
+async function ordersFixed(tx: Tx, shipmentId: string): Promise<void> {
+  const done = await doneStagesAt(tx, SHIPMENT_PROCESS, shipmentId, {
+    lock: true,
+  });
+  if (done.length > 0) stop("not_allowed", ordersFixedMessage(done));
+}
+
+function ordersFixedMessage(done: readonly string[]): string {
+  const names = done.map((name) => `«${name}»`).join(", ");
+  // «Regresar» only exists from a later manual stage that allows it, so
+  // the way out that always exists is said too.
+  return `${done.length === 1 ? "Ya se hizo" : "Ya se hicieron"} ${names}: para cambiar los pedidos de este embarque, regresa el proceso a esa etapa (si lo permite) o cancela el embarque y ármalo otra vez.`;
 }
 
 /**
@@ -373,6 +414,14 @@ export async function createShipment(
         createdByUserId: userId,
       })),
     });
+    // WMS-74B: the process of the company, if it has one (lock: progress
+    // after the shipment).
+    await startProcess(tx, SHIPMENT_PROCESS, actor, {
+      documentId: id,
+      facilityId: facility.id,
+      label: formatShipmentNumber(number),
+      milestone: "DRAFT",
+    });
     return {
       ok: true,
       shipmentId: id,
@@ -442,6 +491,7 @@ export async function addShipmentOrders(
       shipment.facilityId,
       actor.userId,
     );
+    await ordersFixed(tx, shipment.id);
     await tx.shipmentOrder.createMany({
       data: orders.map((order) => ({
         id: newId(),
@@ -477,6 +527,7 @@ export async function removeShipmentOrder(
   return inShipment(actor.organizationId, async (tx) => {
     const shipment = await lockShipment(tx, shipmentId, actor.userId);
     draftOnly(shipment.status);
+    await ordersFixed(tx, shipment.id);
     const row = await tx.shipmentOrder.findFirst({
       where: {
         shipmentId: shipment.id,
@@ -551,6 +602,8 @@ export async function cancelShipment(
       where: { shipmentId: shipment.id, openOrderId: { not: null } },
       data: { openOrderId: null },
     });
+    // WMS-74B: its process ends; what was to do disappears.
+    await reachMilestone(tx, SHIPMENT_PROCESS, actor, shipment.id, "CANCELLED");
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -986,6 +1039,16 @@ export async function dispatchShipment(
         })
       ).map((box) => box.id);
       await lockRows(tx, "container", boxIds);
+      // WMS-74B: when confirming the exit is a stage of the company's
+      // process, it waits for the earlier stages of this shipment (lock:
+      // the progress, after every lock of the shipment).
+      const stages = await assertStagesDone(
+        tx,
+        SHIPMENT_PROCESS,
+        shipment.id,
+        SHIPMENT_DISPATCHED_OPERATION,
+      );
+      if (!stages.ok) return stop("not_allowed", stages.message);
       const load = await loadOf(tx, orders);
       const firstProblem = [...load.problems.values()][0];
       if (firstProblem) return stop("not_allowed", firstProblem);
@@ -1242,6 +1305,17 @@ export async function dispatchShipment(
           movementId,
         },
       });
+      // WMS-74B: the process reaches «Despachado» first (the operation
+      // changed the fixed state), then its stage is done by itself and the
+      // next one falls to its area. Neither moves stock.
+      await reachMilestone(tx, SHIPMENT_PROCESS, actor, shipment.id, "SHIPPED");
+      await completeOperationStage(
+        tx,
+        SHIPMENT_PROCESS,
+        actor,
+        shipment.id,
+        SHIPMENT_DISPATCHED_OPERATION,
+      );
       // WMS-60: who listens by webhook hears of it, inside this transaction.
       await emitWebhookEvent(tx, SHIPMENT_DISPATCHED_EVENT, {
         organizationId,
@@ -1537,6 +1611,17 @@ export type ShipmentView = {
   ready: boolean;
   /** The company asks for the carrier and who takes it (setting). */
   detailsRequired: boolean;
+  /**
+   * WMS-74B: why the exit cannot be confirmed yet — an earlier stage of
+   * the company's process for this shipment («Esperando: …»); null when
+   * nothing waits. The exit decides again under its locks.
+   */
+  dispatchWaits: string | null;
+  /**
+   * WMS-74B: why its orders cannot change now — a stage of «Por confirmar»
+   * already done; null when they can.
+   */
+  ordersFixed: string | null;
 };
 
 /**
@@ -1740,6 +1825,21 @@ export async function getShipment(
       views.every((order) => order.problem === null),
     detailsRequired:
       (await readSetting(client, SHIPMENT_DETAILS)) === "required",
+    dispatchWaits:
+      row.status === "DRAFT"
+        ? await operationWaits(
+            client,
+            SHIPMENT_PROCESS,
+            row.id,
+            SHIPMENT_DISPATCHED_OPERATION,
+          )
+        : null,
+    ordersFixed:
+      row.status === "DRAFT"
+        ? await doneStagesAt(client, SHIPMENT_PROCESS, row.id).then((done) =>
+            done.length > 0 ? ordersFixedMessage(done) : null,
+          )
+        : null,
   };
 }
 
