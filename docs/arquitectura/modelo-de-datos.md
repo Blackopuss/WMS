@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-128 tablas en 31 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+130 tablas en 31 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -27,7 +27,7 @@
 | Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
 | Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 4 | [inventory](modulos/inventory.md) |
-| Inventario › Tareas, reservas y pedidos de salida | 9 | [inventory](modulos/inventory.md) |
+| Inventario › Tareas, reservas y pedidos de salida | 11 | [inventory](modulos/inventory.md) |
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
@@ -1371,6 +1371,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `unitVolume` | `Decimal? · Decimal(14, 6)` |  | Volume of one unit of the product, in liters; NULL = unknown. |
 | `tracking` | `ProductTracking` | `NONE` | How its stock is controlled (WMS-21, ADR 0040): without a lot or by lot. It only changes while the product has no stock and nothing reserved; triggers keep lines and balances consistent with it. |
 | `lotExpiry` | `LotExpiryRule` | `NONE` | Whether its lots carry an expiry date; only read when it is by lot. |
+| `inspectOnReceipt` | `Boolean` | `false` | WMS-30-0 (ADR 0068): what arrives healthy from a supplier enters in inspection, never available, until someone decides it. |
 | `status` | `ProductStatus` | `ACTIVE` |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
@@ -1684,7 +1685,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Inventario › Existencias y movimientos
 
-- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`, `FACILITY_TRANSFER`.
+- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`, `FACILITY_TRANSFER`, `DISPOSAL`.
 - `StockDirection`: `IN`, `OUT`.
 - `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`.
 
@@ -1892,7 +1893,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Inventario › Tareas, reservas y pedidos de salida
 
-Tareas de traslado, surtido y reposición (con las series que tomaron), lo apartado para un documento, los pedidos de salida, lo que faltó al empacarlos, las reglas de reposición de las ubicaciones de surtido y las olas que agrupan pedidos para surtirlos juntos (WMS-25).
+Tareas de traslado, surtido y reposición (con las series que tomaron), lo apartado para un documento, lo retenido de existencias no disponibles mientras un documento lo decide (WMS-30-0), los pedidos de salida, lo que faltó al empacarlos, las reglas de reposición de las ubicaciones de surtido y las olas que agrupan pedidos para surtirlos juntos (WMS-25).
 
 Documento: [modulos/inventory.md](modulos/inventory.md).
 
@@ -1986,6 +1987,53 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Únicas: (`organizationId`, `id`).
 - Índices: (`organizationId`, `productId`, `state`); (`organizationId`, `sourceType`, `sourceId`).
 - Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict).
+
+### StockHold · `stock_hold`
+
+What an open document holds of stock that is NOT available (WMS-30-0, ADR 0068): while it is active, no change of state, reversal, disposal or return to the supplier takes it. Written only by `holdStock` and `releaseHold` (holds.ts), inside the document's transaction and after its locks. `quantity` never changes; `remaining` only goes down; it is never deleted (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `locationId` | `String · Char(36)` |  |  |
+| `status` | `StockStatus` |  | Never AVAILABLE: what is available is reserved, not held (CHECK). |
+| `lotId` | `String? · Char(36)` |  |  |
+| `lotKey` | `String · Char(36)` | `""` | COALESCE(lotId, ''), as in the balance (CHECK). |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | In the product's unit. |
+| `remaining` | `Decimal · Decimal(12, 3)` |  |  |
+| `state` | `StockReservationState` | `ACTIVE` |  |
+| `sourceType` | `String · VarChar(40)` |  | The document holding it: «quality_inspection», «test»… |
+| `sourceId` | `String · Char(36)` |  |  |
+| `sourceText` | `String · VarChar(40)` |  | «IN-0003»: how people see the document. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `closedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `productId`, `locationId`, `state`); (`organizationId`, `sourceType`, `sourceId`).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict).
+
+### StockHoldUnit · `stock_hold_unit`
+
+The units by serial a hold keeps (WMS-30-0). `releasedAt` is written once; never deleted (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `holdId` | `String · Char(36)` |  |  |
+| `serialUnitId` | `String · Char(36)` |  |  |
+| `releasedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `holdId`, `serialUnitId`).
+- Índices: (`organizationId`, `serialUnitId`).
+- Relaciones: `hold` → `StockHold` por (`organizationId`, `holdId`) (al borrar: Restrict); `serialUnit` → `SerialUnit` por (`organizationId`, `serialUnitId`) (al borrar: Restrict).
 
 ### OutboundOrder · `outbound_order`
 
