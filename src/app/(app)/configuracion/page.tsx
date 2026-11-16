@@ -225,7 +225,7 @@ export default async function ConfiguracionPage() {
             <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground">
               <LifeBuoy aria-hidden="true" className="size-5" />
             </span>
-            <p className="min-w-0 flex-1 text-sm">
+            <p className="min-w-0 flex-1 basis-56 text-sm">
               {support.until ? (
                 <>
                   <span className="block font-medium">
@@ -252,13 +252,18 @@ export default async function ConfiguracionPage() {
               )}
             </p>
             <form
+              className="w-full sm:w-auto"
               action={
                 support.until
                   ? revokeSupportAccessAction
                   : grantSupportAccessAction
               }
             >
-              <Button type="submit" variant="outline">
+              <Button
+                type="submit"
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
                 {support.until ? "Quitar acceso" : "Permitir acceso"}
               </Button>
             </form>

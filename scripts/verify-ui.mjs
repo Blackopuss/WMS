@@ -267,7 +267,7 @@ try {
     // Team screen (USR-08): reached from Configuración; the demo account is
     // the titular, so it sees itself protected and may invite any role.
     await page.goto(`${BASE}/configuracion`, { waitUntil: "networkidle" });
-    await page.getByRole("link", { name: /Equipo/ }).click();
+    await page.getByRole("link", { name: /^Equipo Personas/ }).click();
     await page.waitForURL("**/configuracion/equipo");
     await page.getByRole("heading", { name: "Equipo", level: 1 }).waitFor();
     const people = page.getByRole("region", { name: "Personas" });
@@ -909,6 +909,78 @@ try {
       `${viewport.name}: password visibility toggle works`,
     );
     await page.close();
+  }
+
+  // WMS-78A: access and Configuración. Read-only: nothing is saved.
+  {
+    // Links inside a sentence are underlined (in dark mode the primary
+    // color is white, so color alone does not tell them apart).
+    const page = await newPage(browser, {
+      viewport: { width: 375, height: 812 },
+    });
+    await page.goto(`${BASE}/registro`, { waitUntil: "networkidle" });
+    const underlined = await page.$$eval(
+      "form a[href='/terminos'], form a[href='/privacidad'], main a[href='/ingresar']",
+      (links) =>
+        links.length > 0 &&
+        links.every((a) =>
+          getComputedStyle(a).textDecorationLine.includes("underline"),
+        ),
+    );
+    check(underlined, "WMS-78A: links in a sentence are underlined");
+    await page.context().close();
+  }
+  {
+    const page = await signedInPage(browser, { width: 1280, height: 800 });
+    // Signing out is a button with its words, not an icon alone.
+    const signOut = page
+      .locator("aside")
+      .getByRole("button", { name: "Cerrar sesión" });
+    check(
+      (await signOut.isVisible()) &&
+        ((await signOut.textContent()) ?? "").includes("Cerrar sesión"),
+      "WMS-78A: desktop sidebar says «Cerrar sesión» in words",
+    );
+    // The theme switch keeps a 3:1 ring around its track in both themes.
+    const ring = await page
+      .locator("aside [role=switch] > span")
+      .first()
+      .evaluate((el) => getComputedStyle(el).boxShadow);
+    check(
+      ring !== "none" && !/rgba\(0, 0, 0, 0\.05\)/.test(ring),
+      "WMS-78A: the theme switch has a visible ring",
+    );
+    await page.context().close();
+  }
+  {
+    const page = await signedInPage(browser, { width: 375, height: 812 });
+    // Screens outside the menu name themselves in the phone header.
+    await page.goto(`${BASE}/avisos`, { waitUntil: "networkidle" });
+    check(
+      ((await page.locator("header span.truncate").textContent()) ?? "") ===
+        "Avisos",
+      "WMS-78A: phone header says «Avisos» on /avisos",
+    );
+    // A select with a width limit keeps its arrow next to it.
+    await page.goto(`${BASE}/configuracion/operacion`, {
+      waitUntil: "networkidle",
+    });
+    const staging = page.locator("#staging");
+    if ((await staging.count()) > 0) {
+      const gap = await staging.evaluate((select) => {
+        const arrow = select.parentElement?.querySelector("svg");
+        if (!arrow) return 999;
+        return (
+          select.getBoundingClientRect().right -
+          arrow.getBoundingClientRect().right
+        );
+      });
+      check(
+        gap >= 0 && gap < 24,
+        "WMS-78A: a narrow select keeps its arrow inside",
+      );
+    }
+    await page.context().close();
   }
 } finally {
   await browser.close();

@@ -10,7 +10,7 @@ import { signOutAction } from "../../(app)/actions";
 import { acceptLegalAction, type AcceptLegalState } from "./actions";
 
 const link =
-  "rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50";
+  "rounded py-1 font-medium text-primary underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50";
 
 export function AcceptLegalForm({
   documents,
@@ -60,7 +60,7 @@ export function AcceptLegalForm({
         <span className="text-muted-foreground">¿No estás de acuerdo? </span>
         <button
           type="submit"
-          className="inline-flex min-h-11 items-center rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-0"
+          className="inline-flex min-h-11 items-center rounded py-1 font-medium text-primary underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-0"
         >
           Cerrar sesión
         </button>

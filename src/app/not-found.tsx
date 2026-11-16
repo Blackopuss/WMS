@@ -1,23 +1,10 @@
-import Link from "next/link";
+import { NotFoundContent } from "./not-found-content";
 
-import { PageContainer } from "@/components";
-import { Button } from "@/components/ui/button";
-
+/** An address that does not exist: outside every layout with a <main>. */
 export default function NotFound() {
   return (
-    <PageContainer>
-      <div className="flex flex-col items-center py-20 text-center">
-        <p className="text-sm font-medium text-primary">Error 404</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-          No encontramos esta página
-        </h1>
-        <p className="mt-2 max-w-sm text-muted-foreground">
-          Puede que el enlace esté incompleto o que la página ya no exista.
-        </p>
-        <Button asChild className="mt-6">
-          <Link href="/inicio">Ir a Inicio</Link>
-        </Button>
-      </div>
-    </PageContainer>
+    <main id="contenido" className="min-h-dvh bg-background">
+      <NotFoundContent />
+    </main>
   );
 }
