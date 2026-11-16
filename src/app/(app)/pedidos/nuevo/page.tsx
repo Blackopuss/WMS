@@ -43,7 +43,10 @@ export default async function NuevoPedidoPage() {
         {moduleState === "none" ? (
           <NoModuleState module="Inventario" />
         ) : (
-          <ReadOnlyNotice module="Inventario" />
+          <>
+            <PageHeader title="Nuevo pedido" />
+            <ReadOnlyNotice module="Inventario" />
+          </>
         )}
       </PageContainer>
     );

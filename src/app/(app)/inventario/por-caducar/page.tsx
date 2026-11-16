@@ -118,7 +118,7 @@ export default async function PorCaducarPage({
                     {item.sku} · Lote {item.code}
                   </p>
                 </div>
-                <div className="text-right text-sm">
+                <div className="ml-auto text-right text-sm">
                   <p className="font-medium tabular-nums">
                     {item.quantityLabel}
                   </p>
@@ -133,7 +133,7 @@ export default async function PorCaducarPage({
                 </div>
                 <ChevronRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
+                  className="ml-auto size-4 shrink-0 text-muted-foreground"
                 />
               </li>
             ))}

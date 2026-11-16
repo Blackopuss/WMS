@@ -347,8 +347,9 @@ export default async function EmbarquePage({
             }}
           />
         ) : (
-          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
-            {(
+          (() => {
+            // Only the data that exists (docs/ux/AUDITORIA_KISS.md #22).
+            const facts = (
               [
                 ["Transportista", shipment.carrier],
                 ["Guía", shipment.trackingNumber],
@@ -356,13 +357,22 @@ export default async function EmbarquePage({
                 ["Se lo lleva", shipment.driverName],
                 ["Notas", shipment.note],
               ] as const
-            ).map(([name, value]) => (
-              <div key={name} className="contents">
-                <dt className="text-muted-foreground">{name}</dt>
-                <dd className="[overflow-wrap:anywhere]">{value ?? "—"}</dd>
-              </div>
-            ))}
-          </dl>
+            ).filter(([, value]) => value);
+            return facts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Sin datos de transporte.
+              </p>
+            ) : (
+              <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+                {facts.map(([name, value]) => (
+                  <div key={name} className="contents">
+                    <dt className="text-muted-foreground">{name}</dt>
+                    <dd className="[overflow-wrap:anywhere]">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            );
+          })()
         )}
       </section>
 

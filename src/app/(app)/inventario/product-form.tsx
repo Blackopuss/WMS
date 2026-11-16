@@ -413,9 +413,15 @@ export function ProductForm({
                 key={`tracking-${attempt}`}
                 defaultValue={state.values.tracking || "NONE"}
               >
-                <option value="NONE">Sin lote ni serie</option>
-                <option value="LOT">Por lote</option>
-                <option value="SERIAL">Por número de serie</option>
+                <option key="NONE" value="NONE">
+                  Sin lote ni serie
+                </option>
+                <option key="LOT" value="LOT">
+                  Por lote
+                </option>
+                <option key="SERIAL" value="SERIAL">
+                  Por número de serie
+                </option>
               </NativeSelect>
             )}
           </FormField>
@@ -432,9 +438,15 @@ export function ProductForm({
                 key={`lotExpiry-${attempt}`}
                 defaultValue={state.values.lotExpiry || "NONE"}
               >
-                <option value="NONE">No lleva</option>
-                <option value="OPTIONAL">Opcional</option>
-                <option value="REQUIRED">Obligatoria</option>
+                <option key="NONE" value="NONE">
+                  No lleva
+                </option>
+                <option key="OPTIONAL" value="OPTIONAL">
+                  Opcional
+                </option>
+                <option key="REQUIRED" value="REQUIRED">
+                  Obligatoria
+                </option>
               </NativeSelect>
             )}
           </FormField>
@@ -466,8 +478,12 @@ export function ProductForm({
                 key={`inspectOnReceipt-${attempt}`}
                 defaultValue={state.values.inspectOnReceipt || "no"}
               >
-                <option value="no">Queda disponible</option>
-                <option value="yes">Queda en inspección hasta revisarlo</option>
+                <option key="no" value="no">
+                  Queda disponible
+                </option>
+                <option key="yes" value="yes">
+                  Queda en inspección hasta revisarlo
+                </option>
               </NativeSelect>
             )}
           </FormField>
