@@ -755,107 +755,171 @@ describe("«Desechar» (WMS-30-0)", () => {
   });
 });
 
-describe("return states by how a line arrived (WMS-30-0, review)", () => {
-  it("a healthy line never takes what another receipt received damaged", async () => {
+describe("return states by how a line arrived (WMS-30-0, ADR 0068)", () => {
+  /** Receives `quantity` of a one-line order, with extra fields. */
+  async function receipt(
+    owner: PurchasingActor,
+    orderId: string,
+    orderLineId: string,
+    quantity: string,
+    extra: Record<string, string> = {},
+  ) {
+    const result = await receivePurchaseOrder(owner, orderId, {
+      idempotencyKey: newId(),
+      lines: [{ orderLineId, quantity, ...extra }],
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    const view = await getOrderReceipts(owner, orderId);
+    return {
+      receiptId: result.receiptId,
+      line: view!.receipts.find((r) => r.id === result.receiptId)!.lines[0]!,
+    };
+  }
+  const back = (
+    owner: PurchasingActor,
+    receiptId: string,
+    receiptLineId: string,
+    quantity: string,
+    status?: string,
+  ) =>
+    returnToSupplier(owner, receiptId, {
+      reason: "Se regresa",
+      idempotencyKey: newId(),
+      lines: [{ receiptLineId, quantity, ...(status ? { status } : {}) }],
+    });
+
+  it("stock of one product, lot, place and state is interchangeable between receipts", async () => {
     const owner = await company();
     const productId = await product(owner, { inspect: false });
     const orderId = await sentOrder(owner, [{ productId, quantity: "10" }]);
     const orderLineId = await lineIdOf(owner, orderId);
-    const first = await receivePurchaseOrder(owner, orderId, {
-      idempotencyKey: newId(),
-      lines: [{ orderLineId, quantity: "5" }],
+    const healthy = await receipt(owner, orderId, orderLineId, "5");
+    const damaged = await receipt(owner, orderId, orderLineId, "5", {
+      damaged: "5",
     });
-    const second = await receivePurchaseOrder(owner, orderId, {
-      idempotencyKey: newId(),
-      lines: [{ orderLineId, quantity: "5", damaged: "5" }],
-    });
-    if (!first.ok || !second.ok) throw new Error("receipts");
+    // What is offered is what the service takes: the healthy line may
+    // leave from available or from damaged (there is stock in both).
     const view = await getOrderReceipts(owner, orderId);
-    const healthy = view!.receipts.find((r) => r.id === first.receiptId)!
-      .lines[0]!;
-    const damaged = view!.receipts.find((r) => r.id === second.receiptId)!
-      .lines[0]!;
-    // Nothing changed to damaged after the first receipt: only available.
-    expect(healthy.returnStates).toEqual([]);
-    const fromDamaged = await returnToSupplier(owner, first.receiptId, {
-      reason: "Se regresa",
-      idempotencyKey: newId(),
-      lines: [
-        {
-          receiptLineId: healthy.receiptLineId,
-          quantity: "5",
-          status: "DAMAGED",
-        },
-      ],
-    });
-    expect(fromDamaged).toMatchObject({ ok: false });
-    // What arrived damaged goes back only from «Dañado».
     expect(
-      await returnToSupplier(owner, second.receiptId, {
-        reason: "Se regresa",
-        idempotencyKey: newId(),
-        lines: [
-          {
-            receiptLineId: damaged.receiptLineId,
-            quantity: "1",
-            status: "AVAILABLE",
-          },
-        ],
-      }),
-    ).toMatchObject({ ok: false });
-
-    // 2 of the healthy ones get damaged here: those may go back from
-    // «Dañado», never the 5 of the second receipt.
-    await changeStockStatus(owner, {
-      productId,
-      locationId: healthy.locationId,
-      from: "AVAILABLE",
-      to: "DAMAGED",
-      quantity: "2",
-      reason: "Se golpearon",
-      idempotencyKey: newId(),
-    });
-    const again = await getOrderReceipts(owner, orderId);
-    expect(
-      again!.receipts
-        .find((r) => r.id === first.receiptId)!
+      view!.receipts
+        .find((r) => r.id === healthy.receiptId)!
         .lines[0]!.returnStates.map((state) => state.id),
     ).toEqual(["AVAILABLE", "DAMAGED"]);
+    // The damaged line only from «Dañado»: nothing else is offered.
+    expect(damaged.line.returnStates).toEqual([]);
+    // Up to its own cap (5), from «Dañado».
     expect(
-      await returnToSupplier(owner, first.receiptId, {
-        reason: "Se regresa",
-        idempotencyKey: newId(),
-        lines: [
-          {
-            receiptLineId: healthy.receiptLineId,
-            quantity: "3",
-            status: "DAMAGED",
-          },
-        ],
-      }),
+      await back(
+        owner,
+        healthy.receiptId,
+        healthy.line.receiptLineId,
+        "6",
+        "DAMAGED",
+      ),
     ).toMatchObject({ ok: false });
     expect(
-      await returnToSupplier(owner, first.receiptId, {
-        reason: "Se golpearon",
-        idempotencyKey: newId(),
-        lines: [
-          {
-            receiptLineId: healthy.receiptLineId,
-            quantity: "2",
-            status: "DAMAGED",
-          },
-        ],
-      }),
+      await back(
+        owner,
+        healthy.receiptId,
+        healthy.line.receiptLineId,
+        "5",
+        "DAMAGED",
+      ),
     ).toMatchObject({ ok: true });
-    // The second receipt still returns all of its own.
+    // The damaged line finds nothing left in «Dañado»: the usual message.
+    const empty = await back(
+      owner,
+      damaged.receiptId,
+      damaged.line.receiptLineId,
+      "1",
+    );
+    expect(empty).toMatchObject({ ok: false });
+    expect(JSON.stringify(empty)).toContain("solo hay 0 piezas");
+    expect(plain(await balances(productId))).toEqual(["AVAILABLE 5"]);
+    expect(await valueOf(productId)).toBe("50");
+    await balanced(owner.organizationId);
+  });
+
+  it("a line that arrived damaged leaves neither from available nor from rejected", async () => {
+    const owner = await company();
+    const productId = await product(owner, { inspect: false });
+    const orderId = await sentOrder(owner, [{ productId, quantity: "10" }]);
+    const orderLineId = await lineIdOf(owner, orderId);
+    await receipt(owner, orderId, orderLineId, "5");
+    const damaged = await receipt(owner, orderId, orderLineId, "5", {
+      damaged: "5",
+    });
+    for (const status of ["AVAILABLE", "REJECTED", "INSPECTION"]) {
+      const answer = await back(
+        owner,
+        damaged.receiptId,
+        damaged.line.receiptLineId,
+        "1",
+        status,
+      );
+      expect(answer).toMatchObject({ ok: false });
+      expect(JSON.stringify(answer)).toContain("se devuelve desde «Dañado»");
+    }
+    await balanced(owner.organizationId);
+  });
+
+  it("a line that arrived available does not leave from inspection", async () => {
+    const owner = await company();
+    const productId = await product(owner, { inspect: false });
+    const { receiptId, view, orderId } = await received(owner, productId, "4");
+    const line = view!.receipts[0]!.lines[0]!;
+    await changeStockStatus(owner, {
+      productId,
+      locationId: line.locationId,
+      from: "AVAILABLE",
+      to: "INSPECTION",
+      quantity: "2",
+      reason: "Se revisa",
+      idempotencyKey: newId(),
+    });
+    // Inspection is not offered, and the service refuses it.
+    const again = await getOrderReceipts(owner, orderId);
     expect(
-      await returnToSupplier(owner, second.receiptId, {
-        reason: "Llegó roto",
-        idempotencyKey: newId(),
-        lines: [{ receiptLineId: damaged.receiptLineId, quantity: "5" }],
+      again!.receipts[0]!.lines[0]!.returnStates.map((state) => state.id),
+    ).not.toContain("INSPECTION");
+    expect(
+      (await back(owner, receiptId, line.receiptLineId, "1", "INSPECTION")).ok,
+    ).toBe(false);
+    expect(
+      (await back(owner, receiptId, line.receiptLineId, "1", "AVAILABLE")).ok,
+    ).toBe(true);
+    await balanced(owner.organizationId);
+  });
+
+  it("by lot, a return only takes from its own lot", async () => {
+    const owner = await company();
+    const productId = await product(owner, {
+      inspect: false,
+      tracking: "LOT",
+    });
+    const orderId = await sentOrder(owner, [{ productId, quantity: "10" }]);
+    const orderLineId = await lineIdOf(owner, orderId);
+    const first = await receipt(owner, orderId, orderLineId, "5", {
+      lotCode: "L-A",
+    });
+    await receipt(owner, orderId, orderLineId, "5", {
+      lotCode: "L-B",
+      damaged: "5",
+    });
+    // Lot L-A has nothing damaged: the damaged of L-B are not taken.
+    const answer = await back(
+      owner,
+      first.receiptId,
+      first.line.receiptLineId,
+      "1",
+      "DAMAGED",
+    );
+    expect(answer).toMatchObject({ ok: false });
+    expect(
+      await db.stockBalance.count({
+        where: { productId, status: "DAMAGED", quantity: 5 },
       }),
-    ).toMatchObject({ ok: true });
-    expect(plain(await balances(productId))).toEqual(["AVAILABLE 3"]);
+    ).toBe(1);
     await balanced(owner.organizationId);
   });
 });

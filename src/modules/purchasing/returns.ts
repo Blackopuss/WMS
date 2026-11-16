@@ -27,7 +27,7 @@ import {
 } from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
 import { inTermsOf } from "./receipts";
-import { changedToAfter, damagedOwed, returnStatesFor } from "./return-states";
+import { returnStatesFor } from "./return-states";
 
 /**
  * Returns to the supplier (CMP-12). What arrived with a receipt and goes
@@ -371,7 +371,6 @@ export async function returnToSupplier(
         where: { id: receipt.id },
         select: {
           movementId: true,
-          createdAt: true,
           order: {
             select: { number: true, contact: { select: { name: true } } },
           },
@@ -499,66 +498,13 @@ export async function returnToSupplier(
       if (Object.keys(errors).length > 0) return refuseLines(errors);
 
       // WMS-30-0 (ADR 0068): each line goes back only from a state that
-      // belongs to how it arrived (`returnStatesFor`).
+      // belongs to how it arrived (`returnStatesFor`, pure).
       for (const item of chosen) {
-        const rule = returnStatesFor(item.line.status);
-        if (rule.always.includes(item.status)) continue;
-        const changed = rule.ifChanged.includes(item.status)
-          ? await changedToAfter(tx, {
-              productId: item.line.productId,
-              lotId: item.line.lotId,
-              facilityId: facilityOf.get(item.line.locationId) ?? "",
-              since: current.createdAt,
-              statuses: [item.status],
-            })
-          : new Set<string>();
-        if (!changed.has(item.status)) {
+        if (!returnStatesFor(item.line.status).includes(item.status)) {
           errors[item.line.id] =
             item.line.status === "DAMAGED"
               ? "Lo que llegó dañado se devuelve desde «Dañado»."
-              : `Esto no pasó a «${STOCK_STATUS_LABELS[item.status]}» después de recibirlo: devuélvelo desde el estado en que está lo de esta recepción.`;
-        }
-      }
-      if (Object.keys(errors).length > 0) return refuseLines(errors);
-      // What a line that did not arrive damaged takes from «Dañado» never
-      // eats what other receipt lines received damaged there and still owe.
-      const fromDamaged = new Map<string, Decimal>();
-      for (const item of chosen) {
-        if (item.status !== "DAMAGED" || item.line.status === "DAMAGED") {
-          continue;
-        }
-        const slot = `${item.line.productId} ${item.locationId} ${item.line.lotId ?? ""}`;
-        fromDamaged.set(
-          slot,
-          (fromDamaged.get(slot) ?? dec(0)).plus(
-            item.quantity.times(item.line.factor.toString()),
-          ),
-        );
-      }
-      for (const [slot, quantity] of fromDamaged) {
-        const [productId = "", locationId = "", lotKey = ""] = slot.split(" ");
-        const balance = await tx.stockBalance.findFirst({
-          where: { productId, locationId, lotKey, status: "DAMAGED" },
-          select: { quantity: true },
-        });
-        const owed = await damagedOwed(tx, {
-          productId,
-          locationId,
-          lotId: lotKey || null,
-        });
-        const free = dec(balance?.quantity.toString() ?? 0).minus(owed);
-        if (quantity.greaterThan(free)) {
-          for (const item of chosen) {
-            if (
-              item.status === "DAMAGED" &&
-              item.line.status !== "DAMAGED" &&
-              `${item.line.productId} ${item.locationId} ${item.line.lotId ?? ""}` ===
-                slot
-            ) {
-              errors[item.line.id] =
-                "Lo dañado que hay ahí es de otra recepción que llegó dañada: devuélvelo desde esa recepción.";
-            }
-          }
+              : `Lo de esta recepción no sale de «${STOCK_STATUS_LABELS[item.status]}».`;
         }
       }
       if (Object.keys(errors).length > 0) return refuseLines(errors);

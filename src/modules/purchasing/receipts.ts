@@ -48,7 +48,7 @@ import {
   type PurchaseOrderStatus,
 } from "./order-states";
 import { RECEIPT_CONFIRMED_EVENT } from "./webhooks";
-import { changedToAfter, returnStatesFor } from "./return-states";
+import { returnStatesFor } from "./return-states";
 import { recordLastCost, type PurchasingActor } from "./product-suppliers";
 
 /**
@@ -1492,54 +1492,30 @@ export async function getOrderReceipts(
     statesAt.set(key, (statesAt.get(key) ?? new Set()).add(row.status));
   }
   // The same rule as the return (`returnStatesFor`): what is offered is
-  // what the service takes.
-  const facilityOfPlace = new Map(
-    (
-      await client.location.findMany({
-        where: { id: { in: [...new Set(allLines.map((l) => l.locationId))] } },
-        select: { id: true, facilityId: true },
-      })
-    ).map((place) => [place.id, place.facilityId]),
-  );
-  const returnStates = new Map<string, { id: string; label: string }[]>();
-  for (const receipt of order.receipts) {
-    for (const line of receipt.lines) {
-      const there =
-        statesAt.get(
-          `${line.productId} ${line.locationId} ${line.lotId ?? ""}`,
-        ) ?? new Set<string>();
-      const rule = returnStatesFor(line.status);
-      const offered = new Set<string>(
-        rule.always.filter(
-          (status) => status === line.status || there.has(status),
-        ),
-      );
-      const maybe = rule.ifChanged.filter((status) => there.has(status));
-      if (maybe.length > 0) {
-        const changed = await changedToAfter(client, {
-          productId: line.productId,
-          lotId: line.lotId,
-          facilityId: facilityOfPlace.get(line.locationId) ?? "",
-          since: receipt.createdAt,
-          statuses: maybe,
-        });
-        for (const status of maybe)
-          if (changed.has(status)) offered.add(status);
-      }
-      const options = RETURNABLE_STATUSES.filter((status) =>
-        offered.has(status),
-      );
-      returnStates.set(
-        line.id,
-        options.length > 1
-          ? options.map((status) => ({
-              id: status,
-              label: STOCK_STATUS_LABELS[status],
-            }))
-          : [],
-      );
-    }
-  }
+  // what the service takes, among the states with stock there.
+  const returnStatesOf = (line: {
+    productId: string;
+    locationId: string;
+    lotId: string | null;
+    status: string;
+  }) => {
+    const there =
+      statesAt.get(
+        `${line.productId} ${line.locationId} ${line.lotId ?? ""}`,
+      ) ?? new Set<string>();
+    const allowed = returnStatesFor(line.status);
+    const options = RETURNABLE_STATUSES.filter(
+      (status) =>
+        allowed.includes(status) &&
+        (status === line.status || there.has(status)),
+    );
+    return options.length > 1
+      ? options.map((status) => ({
+          id: status,
+          label: STOCK_STATUS_LABELS[status],
+        }))
+      : [];
+  };
 
   const receipts = order.receipts.map((receipt): ReceiptSummary => ({
     id: receipt.id,
@@ -1587,7 +1563,7 @@ export async function getOrderReceipts(
         damaged: line.status === "DAMAGED",
         inspection: line.status === "INSPECTION",
         status: line.status,
-        returnStates: returnStates.get(line.id) ?? [],
+        returnStates: returnStatesOf(line),
       };
     }),
     ...(seeReturns

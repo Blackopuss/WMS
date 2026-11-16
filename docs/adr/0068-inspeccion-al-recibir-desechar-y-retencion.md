@@ -99,24 +99,44 @@ con estado por línea (WMS-54), `postReturnExit` (CMP-12), `openCostBook`
 ### 3. Devolver al proveedor lo rechazado
 
 - Cada renglón de una devolución puede decir **de qué estado sale**
-  (`status`): `AVAILABLE`, `INSPECTION`, `DAMAGED` o `REJECTED`. Por omisión,
-  el estado en que llegó su línea de recepción (como hoy). **Regla
-  conservadora (revisión independiente; el fundador puede cambiarla),
-  `returnStatesFor` en `return-states.ts`:**
-  - lo que llegó dañado se devuelve solo desde `DAMAGED`, como antes;
-  - lo que llegó en inspección, desde `INSPECTION` o desde lo que se decidió
-    (`AVAILABLE`, `REJECTED`, `DAMAGED`);
-  - lo que llegó disponible, desde `AVAILABLE` y, desde `DAMAGED` o
-    `REJECTED`, solo si ese producto (y lote) cambió a ese estado en ese
-    almacén después de la recepción (un `STATUS_CHANGE` posterior);
-  - lo que una línea que **no** llegó dañada saca de `DAMAGED` nunca se come
-    lo que otras líneas de recepción del mismo producto, lote y ubicación
-    recibieron dañado y aún no devuelven (`damagedOwed`: recibido − devuelto,
-    leído bajo el candado del producto). Se acota a esa ubicación: si una
-    línea dañada se devolvió desde otro lugar, lo que debe se sigue contando
-    donde llegó (más estricto, nunca menos).
-  La pantalla («Estado») ofrece exactamente lo que esta regla acepta, armado
-  en el servidor; aparece solo con más de una opción.
+  (`status`). Por omisión, el estado en que llegó su línea de recepción. Qué
+  estados admite depende **solo de cómo llegó esa línea** (`returnStatesFor`
+  en `return-states.ts`, pura, sin consultas):
+  - llegó dañada: solo `DAMAGED` (como desde WMS-54);
+  - llegó en inspección: `INSPECTION`, `AVAILABLE`, `REJECTED` o `DAMAGED`;
+  - llegó disponible: `AVAILABLE`, `REJECTED` o `DAMAGED` (nunca
+    `INSPECTION`).
+  La pantalla («Estado») ofrece exactamente esos estados que además tienen
+  existencias ahí, armados en el servidor; aparece solo con más de una
+  opción.
+- **Las existencias del mismo producto, lote, ubicación y estado son
+  intercambiables: el sistema no sabe de qué recepción vino cada pieza.**
+  Quien necesita distinguirlo controla el producto por lote o por serie, y
+  entonces la devolución sale del lote y de las series de su línea. Por eso
+  una devolución puede llevarse lo que otra recepción o una devolución de
+  cliente dejó en «Dañado» o «Rechazado», igual que ya pasaba con lo
+  disponible. Esto además cubre el pendiente del ADR 0046 «devolver al
+  proveedor lo que un cliente regresó y se rechazó».
+- **Se intentó una regla por recepción y se descartó** (revisión
+  independiente): permitir dañado o rechazado a una línea que llegó
+  disponible solo si hubo después un cambio de estado de ese producto en el
+  almacén, y no comerse lo dañado que otras líneas aún debían. Se pudo
+  burlar y bloqueaba caminos legítimos: (N1) cualquier `STATUS_CHANGE` la
+  habilitaba (también la decisión de una devolución de cliente, uno
+  reversado, o uno de 1 pieza que habilitaba devolver 5) y miraba todo el
+  almacén; (N2) una línea que llegó en inspección y se liberó completa
+  devolvía desde «Rechazado» lo de otra recepción, que esa cuenta no
+  protegía; (N3) lo dañado que ya se había desechado seguía contando como
+  debido y bloqueaba para siempre devoluciones legítimas en esa ubicación y
+  lote; (N4) las dos consultas crecían con la historia y corrían bajo el
+  candado del producto. Hacerlo bien exige saber de qué recepción vino cada
+  pieza, que el sistema no modela.
+- **Pregunta abierta al fundador:** si quiere atribución por recepción sin
+  lotes, es un paso propio con su modelo (capas por recepción), no una regla
+  sobre los movimientos.
+- **Caso sin salida directa (documentado):** una línea que llegó dañada
+  cuyas piezas dañadas ya se llevó otra devolución no puede devolverse desde
+  otro estado; se resuelve desde la otra línea o con «Desechar».
 - Lo demás no cambia: nunca más de lo recibido (sumado bajo el candado de la
   orden), su lote y sus series (las que llegaron con esa línea), el factor y
   el costo de la línea de recepción. Desde un estado no disponible no hay
