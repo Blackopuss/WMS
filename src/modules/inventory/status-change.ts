@@ -36,7 +36,8 @@ import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import { lotColumns } from "./stock-status";
 import { blockedMessage, freeToTake } from "./reservations";
 import { lineCost, openCostBook } from "./valuation";
-import { heldForReturns, heldMessage } from "./return-holds";
+import { holdProblem, type HoldSource } from "./holds";
+import { createPutawayTasks, isTaskNumberClash } from "./putaway";
 import { SERIALS_FIELD } from "./movements";
 import {
   hasSerials,
@@ -132,7 +133,14 @@ export type StatusChangeField = Exclude<
 >;
 
 export type StatusChangeResult =
-  | { ok: true; movementId: string; summary: string; repeated?: true }
+  | {
+      ok: true;
+      movementId: string;
+      summary: string;
+      repeated?: true;
+      /** What changed, in the product's unit (absent on a retry). */
+      baseQuantity?: string;
+    }
   | {
       ok: false;
       reason: "invalid" | "not_found" | "not_allowed";
@@ -224,13 +232,19 @@ export type StatusChangeData = {
  *
  * WMS-17 (ADR 0046, PC-5): what an open customer return holds in
  * inspection is not taken here unless `returnLineId` is the line deciding
- * it.
+ * it. WMS-30-0 (ADR 0068): the same for any hold of stock that is not
+ * available (`heldStock`), unless `holdSource` is the document holding it.
  */
 export async function writeStatusChange(
   tx: Tx,
   actor: InventoryActor,
   data: StatusChangeData,
-  options: { acceptCapacity?: boolean; returnLineId?: string | null } = {},
+  options: {
+    acceptCapacity?: boolean;
+    returnLineId?: string | null;
+    /** WMS-30B: the document deciding what it holds (ADR 0068). */
+    holdSource?: HoldSource | null;
+  } = {},
 ): Promise<Extract<StatusChangeResult, { ok: true }>> {
   const { organizationId, userId } = actor;
   const moves = data.toLocationId !== data.locationId;
@@ -374,36 +388,29 @@ export async function writeStatusChange(
       );
     }
   }
-  if (data.from === "INSPECTION") {
-    // WMS-17 (PC-5): what a customer return still has to decide is
-    // decided only from it, never from here.
-    const hold = await heldForReturns(
-      tx,
-      {
-        productId: product.id,
-        locationId: location.id,
-        lotId: lot?.id ?? null,
-      },
-      options.returnLineId,
+  // WMS-17 (PC-5), WMS-30-0 (ADR 0068): what an open document (a customer
+  // return, a verification) holds of stock that is not available is
+  // decided only from that document.
+  const held = await holdProblem(
+    tx,
+    {
+      productId: product.id,
+      locationId: location.id,
+      status: data.from,
+      lotId: lot?.id ?? null,
+    },
+    there,
+    base,
+    units,
+    product.unitCode,
+    { returnLineId: options.returnLineId, holdSource: options.holdSource },
+  );
+  if (held) {
+    return refuse(
+      "not_allowed",
+      held.serial ? "serials" : "quantity",
+      held.message,
     );
-    const free = there.minus(hold.quantity);
-    const heldUnit = units.find((unit) => unit.id && hold.unitIds.has(unit.id));
-    if (free.lessThan(base) || heldUnit) {
-      return refuse(
-        "not_allowed",
-        heldUnit ? "serials" : "quantity",
-        heldUnit
-          ? `La serie ${heldUnit.serial} es de la devolución ${hold.firstNumberText ?? ""}: decídela desde la devolución.`
-          : heldMessage(
-              free.greaterThan(0) ? free : dec(0),
-              hold,
-              formatStock(
-                (free.greaterThan(0) ? free : dec(0)).toString(),
-                product.unitCode,
-              ),
-            ),
-      );
-    }
   }
   const nowInTarget = dec(target?.quantity.toString() ?? 0).plus(base);
   if (nowInTarget.greaterThan(MAX_BALANCE)) {
@@ -576,6 +583,7 @@ export async function writeStatusChange(
   return {
     ok: true as const,
     movementId,
+    baseQuantity: base.toString(),
     summary:
       (moves
         ? `${formatStock(base.toString(), product.unitCode)} de ${product.name}${ofLot(lot)}${ofSerials(units)} pasaron de ${STOCK_STATUS_LABELS[data.from]} en ${location.name} a ${STOCK_STATUS_LABELS[data.to]} en ${destination.name}.`
@@ -636,111 +644,135 @@ export async function changeStockStatus(
     );
   }
 
-  try {
-    return await forOrganization(organizationId).$transaction(async (tx) => {
-      const [productId] = await lockRows(tx, "product", [data.productId]);
-      // Both ends at once: `lockRows` takes them in id order.
-      const lockedPlaces = await lockRows(tx, "location", [
-        data.locationId,
-        toLocationId,
-      ]);
-      const locationId = lockedPlaces.includes(data.locationId)
-        ? data.locationId
-        : null;
-      // WMS-20: only stock of locations inside the person's scope.
-      await assertLocationsInScope(tx, userId, [data.locationId, toLocationId]);
+  // WMS-52: a release into a place «de paso» creates its put-away task;
+  // two tasks born at once may clash on their number: try again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await forOrganization(organizationId).$transaction(async (tx) => {
+        const [productId] = await lockRows(tx, "product", [data.productId]);
+        // Both ends at once: `lockRows` takes them in id order.
+        const lockedPlaces = await lockRows(tx, "location", [
+          data.locationId,
+          toLocationId,
+        ]);
+        const locationId = lockedPlaces.includes(data.locationId)
+          ? data.locationId
+          : null;
+        // WMS-20: only stock of locations inside the person's scope.
+        await assertLocationsInScope(tx, userId, [
+          data.locationId,
+          toLocationId,
+        ]);
 
-      const replay = await tx.stockMovement.findFirst({
-        where: { idempotencyKey: data.idempotencyKey },
-        select: {
-          id: true,
-          type: true,
-          createdByUserId: true,
-          lines: {
-            orderBy: { lineNumber: "asc" },
-            select: {
-              id: true,
-              productId: true,
-              locationId: true,
-              status: true,
-              baseQuantity: true,
-              unitCode: true,
-              lotId: true,
+        const replay = await tx.stockMovement.findFirst({
+          where: { idempotencyKey: data.idempotencyKey },
+          select: {
+            id: true,
+            type: true,
+            createdByUserId: true,
+            lines: {
+              orderBy: { lineNumber: "asc" },
+              select: {
+                id: true,
+                productId: true,
+                locationId: true,
+                status: true,
+                baseQuantity: true,
+                unitCode: true,
+                lotId: true,
+              },
             },
           },
-        },
-      });
-      if (replay) {
-        const [out, into] = replay.lines;
-        // WMS-21B: the same key with other serials is another change.
-        const stored = out
-          ? ((await serialsOfLines(tx, [out.id])).get(out.id) ?? [])
-          : [];
-        if (
-          (stored.length > 0 || hasSerials(data.serials)) &&
-          !sameSerials(stored, data.serials)
-        ) {
-          return refuse("not_allowed", null, KEY_REUSED);
+        });
+        if (replay) {
+          const [out, into] = replay.lines;
+          // WMS-21B: the same key with other serials is another change.
+          const stored = out
+            ? ((await serialsOfLines(tx, [out.id])).get(out.id) ?? [])
+            : [];
+          if (
+            (stored.length > 0 || hasSerials(data.serials)) &&
+            !sameSerials(stored, data.serials)
+          ) {
+            return refuse("not_allowed", null, KEY_REUSED);
+          }
+          let same = false;
+          try {
+            same =
+              !!out && dec(data.quantity).equals(out.baseQuantity.toString());
+          } catch {
+            same = false;
+          }
+          if (
+            replay.type !== "STATUS_CHANGE" ||
+            replay.createdByUserId !== userId ||
+            !out ||
+            !into ||
+            out.productId !== data.productId ||
+            out.locationId !== data.locationId ||
+            into.locationId !== toLocationId ||
+            (out.lotId ?? null) !== data.lotId ||
+            out.status !== data.from ||
+            into.status !== data.to ||
+            !same
+          ) {
+            return refuse("not_allowed", null, KEY_REUSED);
+          }
+          return {
+            ok: true as const,
+            movementId: replay.id,
+            repeated: true as const,
+            summary: `Este cambio ya estaba registrado: ${formatStock(out.baseQuantity.toString(), out.unitCode)} de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}. No se registró de nuevo.`,
+          };
         }
-        let same = false;
-        try {
-          same =
-            !!out && dec(data.quantity).equals(out.baseQuantity.toString());
-        } catch {
-          same = false;
-        }
-        if (
-          replay.type !== "STATUS_CHANGE" ||
-          replay.createdByUserId !== userId ||
-          !out ||
-          !into ||
-          out.productId !== data.productId ||
-          out.locationId !== data.locationId ||
-          into.locationId !== toLocationId ||
-          (out.lotId ?? null) !== data.lotId ||
-          out.status !== data.from ||
-          into.status !== data.to ||
-          !same
-        ) {
-          return refuse("not_allowed", null, KEY_REUSED);
-        }
+
+        const done = await writeStatusChange(
+          tx,
+          actor,
+          {
+            ...data,
+            productId: productId ?? "",
+            locationId: locationId ?? "",
+            toLocationId,
+            reference: null,
+          },
+          { acceptCapacity: input.acceptCapacity === true },
+        );
+        // WMS-30-0 (ADR 0068), WMS-52: what is available again in a place
+        // «de paso» gets its put-away task when the company works that way
+        // (what was received in inspection and is released, above all).
+        if (data.to !== "AVAILABLE" || !done.baseQuantity) return done;
+        const putaway = await createPutawayTasks(tx, actor, [
+          {
+            productId: productId ?? "",
+            locationId: toLocationId,
+            lotId: data.lotId,
+            quantity: dec(done.baseQuantity),
+            status: "AVAILABLE",
+          },
+        ]);
+        return putaway.note
+          ? { ...done, summary: `${done.summary} ${putaway.note}` }
+          : done;
+      }, LOCKING_TRANSACTION);
+    } catch (error) {
+      if (isTaskNumberClash(error) && attempt < 4) continue;
+      if (error instanceof StatusChangeRejected) return error.result;
+      if (error instanceof CapacityNotice) return error.result;
+      if (
+        (error as { code?: string }).code === "P2002" &&
+        JSON.stringify((error as { meta?: unknown }).meta ?? "").includes(
+          "idempotencyKey",
+        )
+      ) {
         return {
-          ok: true as const,
-          movementId: replay.id,
-          repeated: true as const,
-          summary: `Este cambio ya estaba registrado: ${formatStock(out.baseQuantity.toString(), out.unitCode)} de ${STOCK_STATUS_LABELS[data.from]} a ${STOCK_STATUS_LABELS[data.to]}. No se registró de nuevo.`,
+          ok: false,
+          reason: "not_allowed",
+          fieldErrors: {},
+          formError: KEY_REUSED,
         };
       }
-
-      return await writeStatusChange(
-        tx,
-        actor,
-        {
-          ...data,
-          productId: productId ?? "",
-          locationId: locationId ?? "",
-          toLocationId,
-          reference: null,
-        },
-        { acceptCapacity: input.acceptCapacity === true },
-      );
-    }, LOCKING_TRANSACTION);
-  } catch (error) {
-    if (error instanceof StatusChangeRejected) return error.result;
-    if (error instanceof CapacityNotice) return error.result;
-    if (
-      (error as { code?: string }).code === "P2002" &&
-      JSON.stringify((error as { meta?: unknown }).meta ?? "").includes(
-        "idempotencyKey",
-      )
-    ) {
-      return {
-        ok: false,
-        reason: "not_allowed",
-        fieldErrors: {},
-        formError: KEY_REUSED,
-      };
+      throw error;
     }
-    throw error;
   }
 }

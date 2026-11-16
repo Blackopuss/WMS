@@ -108,15 +108,3 @@ export async function pendingUnits(
     .map((move) => move.serialUnitId)
     .filter((id) => !decided.has(id));
 }
-
-/** The sentence when what someone wants to take is held by a return. */
-export function heldMessage(
-  free: Decimal,
-  hold: ReturnHold,
-  freeText: string,
-): string {
-  const number = hold.firstNumberText ?? "una devolución";
-  return free.greaterThan(0)
-    ? `Solo ${freeText} en inspección aquí no son de una devolución; lo demás es de la devolución ${number}: decídelo desde la devolución.`
-    : `Lo que está en inspección aquí es de la devolución ${number}: decídelo desde la devolución.`;
-}

@@ -633,6 +633,8 @@ async function receiveOnce(
             quantity: line.baseQuantity.toString(),
             unitCode: line.unitCode,
             damaged: line.status === "DAMAGED",
+            // WMS-30-0: AVAILABLE, DAMAGED or INSPECTION.
+            status: line.status,
           })),
         },
       });
@@ -663,6 +665,19 @@ async function receiveOnce(
                   `${inTermsOf(item.quantity, item.line.presentation, item.line.unitCode)} de ${item.line.product.name}`,
               )
               .join(", ")}.`;
+      // WMS-30-0 (ADR 0068): what waits for inspection, said once.
+      const inspected = entry.lines.filter(
+        (line) => line.status === "INSPECTION",
+      );
+      const inspectionNote =
+        inspected.length === 0
+          ? ""
+          : ` Quedó en inspección: ${inspected
+              .map((line) => {
+                const item = pending[entry.lines.indexOf(line)]!;
+                return `${inTermsOf(item.quantity, item.line.presentation, item.line.unitCode)} de ${item.line.product.name}`;
+              })
+              .join(", ")}.`;
       return {
         ok: true as const,
         receiptId,
@@ -671,7 +686,7 @@ async function receiveOnce(
           missing === 0
             ? "La orden quedó recibida."
             : `La orden quedó recibida en parte: ${missing === 1 ? "falta 1 producto" : `faltan ${missing} productos`}.`
-        }${damagedNote}${entry.notes.map((note) => ` ${note}`).join("")}`,
+        }${damagedNote}${inspectionNote}${entry.notes.map((note) => ` ${note}`).join("")}`,
         ...(entry.crossDock.length > 0 ? { crossDock: entry.crossDock } : {}),
       };
     }, LOCKING_TRANSACTION);
@@ -779,7 +794,12 @@ function sameReceipt(
       (line) =>
         line.orderLineId === item.orderLineId &&
         item.quantity.equals(line.capturedQuantity.toString()) &&
-        line.status === item.status &&
+        // WMS-30-0: what arrived healthy is stored available or, for a
+        // product inspected on receipt, in inspection (the rule may have
+        // changed since: it is still the same receipt).
+        (item.status === "DAMAGED"
+          ? line.status === "DAMAGED"
+          : line.status !== "DAMAGED") &&
         (!item.where || item.where === line.locationId) &&
         (line.lot?.code ?? null) === item.lotCode,
     );

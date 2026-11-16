@@ -1048,6 +1048,26 @@ beforeAll(async () => {
         serialUnitId,
       },
     });
+    // A hold of stock that is not available, with its unit (WMS-30-0).
+    const holdId = newId();
+    await db.stockHold.create({
+      data: {
+        id: holdId,
+        organizationId,
+        productId: serialProductId,
+        locationId: location.id,
+        status: "INSPECTION",
+        quantity: "1",
+        remaining: "1",
+        sourceType: "test",
+        sourceId: newId(),
+        sourceText: "T-1",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
+    await db.stockHoldUnit.create({
+      data: { id: newId(), organizationId, holdId, serialUnitId },
+    });
     // A pallet holding that unit, and its history (WMS-53).
     const containerId = newId();
     await db.container.create({

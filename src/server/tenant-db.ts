@@ -71,6 +71,8 @@ export const TENANT_MODELS = [
   "SerialMove",
   "WarehouseTaskSerial",
   "StockReservation",
+  "StockHold",
+  "StockHoldUnit",
   "OutboundOrder",
   "OutboundOrderLine",
   "OutboundImport",
