@@ -1,4 +1,4 @@
-import { ChevronLeft, Forklift } from "lucide-react";
+import { ChevronLeft, Wrench } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -12,7 +12,7 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib";
+import { formatDateTime, newId } from "@/lib";
 import { getEquipment, listEquipmentTypes } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
@@ -92,7 +92,7 @@ export default async function EquipoPage({
       <PageContainer>
         {back}
         <EmptyState
-          icon={Forklift}
+          icon={Wrench}
           title="Este equipo no existe"
           description="Puede que la dirección esté incompleta o que sea de otro almacén."
         />
@@ -192,6 +192,21 @@ export default async function EquipoPage({
             </div>
           )}
         </dl>
+        {equipment.openTasks
+          .filter((task) => task.personGone)
+          .map((task) => (
+            <p
+              key={task.id}
+              className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm [overflow-wrap:anywhere]"
+            >
+              Ocupado por la tarea{" "}
+              <Link href={`/tareas/${task.id}`} className={linkClass}>
+                {task.numberText}
+              </Link>{" "}
+              de una persona desactivada. Mientras nadie la libere o la cancele,
+              el equipo no se puede tomar.
+            </p>
+          ))}
         {equipment.status === "OUT_OF_SERVICE" &&
           equipment.outOfServiceReason && (
             <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm [overflow-wrap:anywhere]">
@@ -249,6 +264,7 @@ export default async function EquipoPage({
               <MaintenanceForm
                 equipmentId={equipment.id}
                 today={todayIn(timeZone)}
+                idempotencyKey={newId()}
               />
             </div>
           </details>

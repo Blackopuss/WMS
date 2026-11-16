@@ -371,6 +371,7 @@ describe("maintenance", () => {
   it("records what was done (immutable) and sets the next one", async () => {
     const next = dayFromToday(30);
     const done = await recordMaintenance(supervisor, mc2, {
+      idempotencyKey: key(),
       performedOn: dayFromToday(-1),
       description: "Cambio de aceite y filtros",
       performedBy: "Taller del norte",
@@ -387,6 +388,7 @@ describe("maintenance", () => {
     });
     expect(
       await recordMaintenance(supervisor, mc2, {
+        idempotencyKey: key(),
         performedOn: dayFromToday(3),
         description: "Todavía no",
       }),
@@ -396,6 +398,7 @@ describe("maintenance", () => {
     });
     expect(
       await recordMaintenance(supervisor, mc2, {
+        idempotencyKey: key(),
         performedOn: dayFromToday(-1),
         description: "Siguiente antes",
         nextDueOn: dayFromToday(-2),
@@ -470,6 +473,7 @@ describe("maintenance", () => {
     );
     // Recording the maintenance clears it.
     await recordMaintenance(owner, pt1, {
+      idempotencyKey: key(),
       performedOn: dayFromToday(0),
       description: "Revisión general",
     });
@@ -792,5 +796,89 @@ describe("incidents that name a piece of equipment", () => {
         (row) => row.code,
       ),
     ).toEqual(["VJ-01"]);
+  });
+});
+
+describe("review of WMS-42", () => {
+  it("a maintenance sent twice is recorded once; an older one does not move the next day", async () => {
+    const confirmation = key();
+    const input = {
+      performedOn: dayFromToday(-2),
+      description: "Engrase",
+      nextDueOn: dayFromToday(40),
+      idempotencyKey: confirmation,
+    };
+    expect(await recordMaintenance(owner, mc1, input)).toMatchObject({
+      ok: true,
+    });
+    expect(await recordMaintenance(owner, mc1, input)).toMatchObject({
+      ok: true,
+      repeated: true,
+    });
+    // The same confirmation by someone else is not theirs.
+    expect(await recordMaintenance(supervisor, mc1, input)).toMatchObject({
+      ok: false,
+      reason: "not_allowed",
+    });
+    expect(
+      await db.equipmentMaintenance.count({
+        where: { idempotencyKey: confirmation },
+      }),
+    ).toBe(1);
+    const older = await recordMaintenance(owner, mc1, {
+      performedOn: dayFromToday(-20),
+      description: "Revisión anterior que faltaba",
+      idempotencyKey: key(),
+    });
+    expect(older).toMatchObject({ ok: true });
+    if (older.ok) expect(older.summary).toContain("no cambió");
+    expect((await getEquipment(owner, mc1))!.maintenanceDueOn).toBe(
+      dayFromToday(40),
+    );
+  });
+
+  it("types are of the whole company: who is limited reads them and counts only their warehouses", async () => {
+    expect(
+      await saveEquipmentType(supervisorB, { name: "Tipo de B" }),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect(
+      await setEquipmentTypeArchived(supervisorB, forkliftType, true),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+    const limited = await listEquipmentTypes(supervisorB);
+    const whole = await listEquipmentTypes(owner);
+    const count = (list: typeof whole) =>
+      list.find((type) => type.id === forkliftType)!.equipmentCount;
+    // Only MC-B1 is in B; the company has more.
+    expect(count(limited)).toBe(1);
+    expect(count(whole)).toBeGreaterThan(1);
+  });
+
+  it("retiring the last piece of a type asked by pending tasks warns first; the task says nobody can take it", async () => {
+    const lone = await saveEquipmentType(owner, { name: "Escalera móvil" });
+    if (!lone.ok) throw new Error(JSON.stringify(lone));
+    const only = await equipment("EM-01", lone.typeId);
+    const pending = await task(lone.typeId);
+    const warned = await retireEquipment(supervisor, only, {
+      reason: "Se rompió",
+    });
+    expect(warned).toMatchObject({ ok: false, reason: "pending_tasks" });
+    if (!warned.ok) expect(warned.formError).toContain("1 tarea pendiente");
+    expect((await getEquipment(supervisor, only))!.retired).toBe(false);
+    // The type can not change either without accepting it.
+    expect(
+      await updateEquipment(supervisor, only, {
+        code: "EM-01",
+        name: "Equipo EM-01",
+        typeId: jackType,
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_tasks" });
+    expect(
+      await retireEquipment(supervisor, only, {
+        reason: "Se rompió",
+        acceptPendingTasks: true,
+      }),
+    ).toMatchObject({ ok: true });
+    const view = await getTask(supervisor, pending);
+    expect(view!.equipmentUnavailable).toBe(true);
   });
 });

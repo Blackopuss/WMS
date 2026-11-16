@@ -780,6 +780,7 @@ export {
   hasEquipmentHere,
   listEquipment,
   listEquipmentTypes,
+  mayEditEquipmentTypes,
   recordMaintenance,
   retireEquipment,
   returnEquipmentToService,

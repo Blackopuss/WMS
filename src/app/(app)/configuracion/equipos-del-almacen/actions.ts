@@ -50,6 +50,12 @@ export type EquipmentFormState = {
   message?: string;
   error?: string;
   fieldErrors?: Partial<Record<EquipmentField, string>>;
+  /**
+   * The last piece of its type in its warehouse and pending tasks ask for
+   * the type (ADR 0065): nothing changed; the button that accepts it sends
+   * `acceptPendingTasks`.
+   */
+  pendingTasks?: string;
   /** What was typed, kept when it is refused. */
   values: Record<string, string>;
   /** Counts answers: remounts the form with what was sent. */
@@ -62,6 +68,9 @@ function answer(
   result: EquipmentResult | EquipmentTypeResult,
 ): EquipmentFormState {
   const answers = previous.answers + 1;
+  if (!result.ok && result.reason === "pending_tasks") {
+    return { pendingTasks: result.formError, values, answers };
+  }
   if (!result.ok) {
     return {
       error: result.formError,
@@ -108,7 +117,10 @@ export async function updateEquipmentAction(
   const id = idPath(equipmentId);
   const values = equipmentValues(formData);
   try {
-    const result = await updateEquipment(await actor(), id, values);
+    const result = await updateEquipment(await actor(), id, {
+      ...values,
+      acceptPendingTasks: formData.get("acceptPendingTasks") === "1",
+    });
     if (result.ok) {
       revalidatePath(BASE);
       revalidatePath(`${BASE}/${id}`);
@@ -139,7 +151,10 @@ export async function equipmentStepAction(
         : bound.step === "in"
           ? await returnEquipmentToService(who, id)
           : bound.step === "retire"
-            ? await retireEquipment(who, id, values)
+            ? await retireEquipment(who, id, {
+                ...values,
+                acceptPendingTasks: formData.get("acceptPendingTasks") === "1",
+              })
             : null;
     if (!result) {
       return {
@@ -175,7 +190,10 @@ export async function maintenanceAction(
     nextDueOn: text(formData, "nextDueOn", 20),
   };
   try {
-    const result = await recordMaintenance(await actor(), id, values);
+    const result = await recordMaintenance(await actor(), id, {
+      ...values,
+      idempotencyKey: text(formData, "idempotencyKey", 64),
+    });
     if (result.ok) {
       revalidatePath(BASE);
       revalidatePath(`${BASE}/${id}`);

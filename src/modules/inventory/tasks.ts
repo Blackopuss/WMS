@@ -811,7 +811,12 @@ async function takeEquipment(
     },
     orderBy: { number: "asc" },
     take: 20,
-    select: { assignedToUserId: true, number: true },
+    select: {
+      assignedToUserId: true,
+      number: true,
+      fromLocationId: true,
+      toLocationId: true,
+    },
   });
   const other = equipmentHolder(
     holders.map((row) => ({
@@ -821,9 +826,20 @@ async function takeEquipment(
     actor.userId,
   );
   if (other) {
+    // WMS-20: a task outside the person's scope is not named, nor who has it.
+    const theirs = holders.find((row) => row.number === other.taskNumber)!;
+    const visible =
+      (
+        await locationsOutOfScope(tx, actor.userId, [
+          theirs.fromLocationId,
+          theirs.toLocationId,
+        ])
+      ).length === 0;
     return stop(
       "invalid",
-      `${equipment.code} lo está usando ${await memberName(tx, other.userId)} en ${formatTaskNumber(other.taskNumber)}. Elige otro.`,
+      visible
+        ? `${equipment.code} lo está usando ${await memberName(tx, other.userId)} en ${formatTaskNumber(other.taskNumber)}. Elige otro.`
+        : `${equipment.code} lo está usando otra persona. Elige otro.`,
       "equipmentCode",
     );
   }
@@ -2439,6 +2455,11 @@ export type TaskView = TaskSummary & {
    * load is not picked up with it (the person changes it).
    */
   equipmentStopped: boolean;
+  /**
+   * WMS-42: it asks for a type and is not taken yet, but its warehouse has
+   * no piece of that type left (retired or changed): nobody can take it.
+   */
+  equipmentUnavailable: boolean;
 };
 
 /** «mine»: what this person has; «available»: what anyone may take. */
@@ -2851,6 +2872,8 @@ export async function getTask(
       equipment: {
         select: { code: true, name: true, status: true, retiredAt: true },
       },
+      equipmentTypeId: true,
+      fromLocation: { select: { ...LOCATION_NAMES.select, facilityId: true } },
       serials: {
         orderBy: { id: "asc" },
         take: 1_000,
@@ -2904,6 +2927,16 @@ export async function getTask(
       ? row.equipment.status !== "IN_SERVICE" ||
         row.equipment.retiredAt !== null
       : false,
+    equipmentUnavailable:
+      row.equipmentTypeId !== null &&
+      (row.status === "PENDING" || row.status === "ASSIGNED") &&
+      (await client.equipment.count({
+        where: {
+          typeId: row.equipmentTypeId,
+          facilityId: row.fromLocation.facilityId,
+          retiredAt: null,
+        },
+      })) === 0,
   };
 }
 

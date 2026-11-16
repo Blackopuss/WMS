@@ -1,4 +1,4 @@
-import { ChevronLeft, Forklift } from "lucide-react";
+import { ChevronLeft, Wrench } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -10,7 +10,11 @@ import {
   PageHeader,
   ReadOnlyNotice,
 } from "@/components";
-import { EQUIPMENT_TYPES_MAX, listEquipmentTypes } from "@/modules/inventory";
+import {
+  EQUIPMENT_TYPES_MAX,
+  listEquipmentTypes,
+  mayEditEquipmentTypes,
+} from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
 import { ArchiveTypeButton, TypeNameForm } from "./type-forms";
@@ -51,12 +55,16 @@ export default async function TiposDeEquipoPage() {
       </PageContainer>
     );
   }
-  const types = await listEquipmentTypes({
+  const actor = {
     organizationId: access.organization.id,
     userId: access.user.id,
-  });
-  const canManage =
-    state === "active" && access.allows("inventory.equipment.manage");
+  };
+  // Types are of the whole company: who is limited to warehouses reads them.
+  const [types, editable] = await Promise.all([
+    listEquipmentTypes(actor),
+    mayEditEquipmentTypes(actor),
+  ]);
+  const canManage = state === "active" && editable;
   const inUse = types.filter((type) => !type.archived).length;
 
   return (
@@ -76,9 +84,9 @@ export default async function TiposDeEquipoPage() {
       )}
       {types.length === 0 ? (
         <EmptyState
-          icon={Forklift}
+          icon={Wrench}
           title="Sin tipos de equipo"
-          description="Agrega los que tu equipo usa para mover mercancía: montacargas, patín eléctrico, báscula…"
+          description="Agrega un tipo por cada clase de equipo que usa tu almacén."
         />
       ) : (
         <ul className="max-w-3xl divide-y rounded-xl border bg-card">

@@ -2,11 +2,15 @@ import "server-only";
 
 import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import { isAllowed, seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import {
   activeFacilityOf,
   assertWholeFacilityInScope,
   isFacilityInScope,
+  isLimited,
+  locationScopeWhere,
+  locationsOutOfScope,
 } from "@/platform/locations";
 import { notify } from "@/platform/notifications";
 import { readSetting } from "@/platform/settings";
@@ -37,7 +41,7 @@ import {
   lotDayToDate,
   parseCalendarDay,
 } from "./lot-rules";
-import type { InventoryActor } from "./movements";
+import { IDEMPOTENCY_KEY, type InventoryActor } from "./movements";
 import {
   EQUIPMENT_MAINTENANCE_NOTICE_TYPE,
   EQUIPMENT_OUT_OF_SERVICE_NOTICE,
@@ -83,7 +87,12 @@ export type EquipmentField =
 
 type Failure = {
   ok: false;
-  reason: "invalid" | "not_found" | "not_allowed";
+  /**
+   * `pending_tasks`: it was the last piece of its type in its warehouse and
+   * pending tasks ask for that type; nothing was written, and it goes ahead
+   * only with `acceptPendingTasks` (ADR 0065).
+   */
+  reason: "invalid" | "not_found" | "not_allowed" | "pending_tasks";
   fieldErrors?: Partial<Record<EquipmentField, string>>;
   formError?: string;
 };
@@ -169,9 +178,48 @@ export type EquipmentTypeView = {
   id: string;
   name: string;
   archived: boolean;
-  /** Pieces not retired, in the whole company. */
+  /**
+   * Pieces not retired: in the whole company, or only in the warehouses
+   * of who is limited to some (WMS-20).
+   */
   equipmentCount: number;
 };
+
+const TYPES_WHOLE_COMPANY =
+  "Los tipos de equipo son de toda la empresa: los cambia quien no está limitado a almacenes.";
+
+/**
+ * Types are of the whole company (ADR 0065): only who is not limited to
+ * warehouses writes them, one after the other under the lock of the main
+ * warehouse (the company-wide lock of this table: the limit of types in
+ * use is counted under it). Nothing locks a type and then a warehouse.
+ */
+async function lockTypes(tx: Tx, userId: string): Promise<void> {
+  if (!(await seesWholeCompany(tx, userId))) {
+    stop("not_allowed", TYPES_WHOLE_COMPANY);
+  }
+  const main = await tx.facility.findFirst({
+    where: { isDefault: true },
+    select: { id: true },
+  });
+  if (main) await lockRows(tx, "facility", [main.id]);
+}
+
+/** Whether this person may add, rename or archive types (for screens). */
+export async function mayEditEquipmentTypes(
+  actor: InventoryActor,
+): Promise<boolean> {
+  if (
+    !(await isAllowed(
+      actor.organizationId,
+      actor.userId,
+      "inventory.equipment.manage",
+    ))
+  ) {
+    return false;
+  }
+  return seesWholeCompany(forOrganization(actor.organizationId), actor.userId);
+}
 
 /** The types of the company, in use first, by name. */
 export async function listEquipmentTypes(
@@ -182,16 +230,22 @@ export async function listEquipmentTypes(
     actor.userId,
     "inventory.equipment.read",
   );
-  const rows = await forOrganization(
-    actor.organizationId,
-  ).equipmentType.findMany({
+  const client = forOrganization(actor.organizationId);
+  // WMS-20: who is limited counts only the warehouses they reach.
+  const scoped = await locationScopeWhere(client, actor.userId);
+  const reach = isLimited(scoped)
+    ? { facility: { locations: { some: scoped } } }
+    : {};
+  const rows = await client.equipmentType.findMany({
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: 200,
     select: {
       id: true,
       name: true,
       archivedAt: true,
-      _count: { select: { equipment: { where: { retiredAt: null } } } },
+      _count: {
+        select: { equipment: { where: { retiredAt: null, ...reach } } },
+      },
     },
   });
   return rows
@@ -226,6 +280,7 @@ export async function saveEquipmentType(
   const id = String(input.id ?? "").slice(0, 36);
   try {
     return await inTransaction(organizationId, async (tx) => {
+      await lockTypes(tx, userId);
       if (id) {
         const [locked] = await lockRows(tx, "equipmentType", [id]);
         const type = locked
@@ -320,6 +375,7 @@ export async function setEquipmentTypeArchived(
     "inventory.equipment.manage",
   );
   return inTransaction(organizationId, async (tx) => {
+    await lockTypes(tx, userId);
     const [locked] = await lockRows(tx, "equipmentType", [
       String(typeId ?? "").slice(0, 36),
     ]);
@@ -561,11 +617,64 @@ async function openTasksOf(tx: Tx | Client, equipmentId: string) {
   });
 }
 
+/**
+ * WMS-20: tasks and incidents a person reaches. A task is theirs to see
+ * when where it leaves from and where it goes are inside their scope (as
+ * in tasks.ts); an incident, when it has no location or its location is.
+ */
+async function readerScope(client: Client | Tx, userId: string) {
+  const scoped = await locationScopeWhere(client, userId);
+  const limited = isLimited(scoped);
+  return {
+    tasks: limited ? { fromLocation: scoped, toLocation: scoped } : {},
+    incidents: limited
+      ? { OR: [{ locationId: null }, { location: scoped }] }
+      : {},
+  };
+}
+
+/** Who has it in an open task is named only inside the reader's scope. */
+const SOMEONE_ELSE = "Otra persona";
+
+/**
+ * Tasks not taken yet (inside the scope of who reads) that ask for the type
+ * of this piece in its warehouse and would be left with none of that type
+ * if it stops counting there (retired, or of another type). 0 when another
+ * piece of the type remains.
+ */
+async function tasksLeftWithout(
+  tx: Tx,
+  userId: string,
+  equipment: { id: string; facilityId: string; typeId: string },
+): Promise<number> {
+  const others = await tx.equipment.count({
+    where: {
+      facilityId: equipment.facilityId,
+      typeId: equipment.typeId,
+      retiredAt: null,
+      NOT: { id: equipment.id },
+    },
+  });
+  if (others > 0) return 0;
+  const scoped = await locationScopeWhere(tx, userId);
+  return tx.warehouseTask.count({
+    where: {
+      equipmentTypeId: equipment.typeId,
+      status: { in: ["PENDING", "ASSIGNED"] },
+      fromLocation: { facilityId: equipment.facilityId, ...scoped },
+      ...(isLimited(scoped) ? { toLocation: scoped } : {}),
+    },
+  });
+}
+
+const pendingTasksText = (count: number, typeName: string) =>
+  `${count === 1 ? "1 tarea pendiente pide" : `${count} tareas pendientes piden`} ${typeName} en este almacén y ya no quedaría ninguno para tomarlas. Si sigues, cancélalas y créalas sin equipo.`;
+
 /** Changes code, name, type or next maintenance. */
 export async function updateEquipment(
   actor: InventoryActor,
   equipmentId: string,
-  input: EquipmentInput,
+  input: EquipmentInput & { acceptPendingTasks?: boolean },
 ): Promise<EquipmentResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -597,6 +706,16 @@ export async function updateEquipment(
           "Este equipo está en una tarea abierta: cambia su tipo cuando la terminen.",
           "typeId",
         );
+      }
+      if (typeChanges && input.acceptPendingTasks !== true) {
+        const left = await tasksLeftWithout(tx, userId, equipment);
+        if (left > 0) {
+          return {
+            ok: false as const,
+            reason: "pending_tasks" as const,
+            formError: pendingTasksText(left, equipment.type.name),
+          };
+        }
       }
       const due = lotDayOf(equipment.maintenanceDueOn);
       const same =
@@ -816,7 +935,7 @@ export async function returnEquipmentToService(
 export async function retireEquipment(
   actor: InventoryActor,
   equipmentId: string,
-  input: { reason?: unknown },
+  input: { reason?: unknown; acceptPendingTasks?: boolean },
 ): Promise<EquipmentResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -849,6 +968,16 @@ export async function retireEquipment(
         `Este equipo está en ${open.length === 1 ? `la tarea ${formatTaskNumber(open[0]!.number)}` : `${open.length} tareas abiertas`}: dalo de baja cuando las terminen o las liberen. Mientras, déjalo fuera de servicio.`,
       );
     }
+    if (input?.acceptPendingTasks !== true) {
+      const left = await tasksLeftWithout(tx, userId, equipment);
+      if (left > 0) {
+        return {
+          ok: false as const,
+          reason: "pending_tasks" as const,
+          formError: pendingTasksText(left, equipment.type.name),
+        };
+      }
+    }
     await tx.equipment.update({
       where: { id: equipment.id },
       data: {
@@ -879,11 +1008,18 @@ export type MaintenanceInput = {
   performedBy?: unknown;
   /** The next maintenance; empty leaves none. */
   nextDueOn?: unknown;
+  /** The confirmation of the form: a retry finds the same record. */
+  idempotencyKey: unknown;
 };
 
+const KEY_REUSED =
+  "Esta confirmación ya se usó para otro registro. Recarga la página para registrar otro.";
+
 /**
- * A maintenance done (immutable). Its next day becomes the equipment's
- * next maintenance, in the same transaction.
+ * A maintenance done (immutable). When it is the most recent one of the
+ * equipment, its next day becomes the equipment's next maintenance (empty:
+ * none), in the same transaction; an older one recorded late changes
+ * nothing of it. A retry with the same confirmation answers `repeated`.
  */
 export async function recordMaintenance(
   actor: InventoryActor,
@@ -928,8 +1064,35 @@ export async function recordMaintenance(
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, reason: "invalid", fieldErrors };
   }
+  const key = String(input.idempotencyKey ?? "");
+  if (!IDEMPOTENCY_KEY.test(key)) {
+    return {
+      ok: false,
+      reason: "invalid",
+      formError: "Recarga la página e inténtalo de nuevo.",
+    };
+  }
   return inTransaction(organizationId, async (tx) => {
     const equipment = await lockEquipment(tx, equipmentId, userId);
+    // After the lock: two sends of the same form go one after the other.
+    const known = await tx.equipmentMaintenance.findFirst({
+      where: { idempotencyKey: key },
+      select: { equipmentId: true, recordedByUserId: true },
+    });
+    if (known) {
+      if (
+        known.equipmentId !== equipment.id ||
+        known.recordedByUserId !== userId
+      ) {
+        return stop("not_allowed", KEY_REUSED);
+      }
+      return {
+        ok: true as const,
+        equipmentId: equipment.id,
+        repeated: true as const,
+        summary: "Ese mantenimiento ya estaba registrado.",
+      };
+    }
     if (equipment.retiredAt) return stop("not_allowed", RETIRED);
     if (performedOn! > (await today(tx))) {
       return stop(
@@ -948,15 +1111,26 @@ export async function recordMaintenance(
         description: (description as { text: string }).text,
         performedBy: (by as { text: string | null }).text,
         nextDueOn: nextDueOn ? lotDayToDate(nextDueOn) : null,
+        idempotencyKey: key,
         recordedByUserId: userId,
       },
     });
-    await tx.equipment.update({
-      where: { id: equipment.id },
-      data: {
-        maintenanceDueOn: nextDueOn ? lotDayToDate(nextDueOn) : null,
+    // Only the most recent maintenance says when the next one is.
+    const later = await tx.equipmentMaintenance.count({
+      where: {
+        equipmentId: equipment.id,
+        performedOn: { gt: lotDayToDate(performedOn!) },
       },
     });
+    const latest = later === 0;
+    if (latest) {
+      await tx.equipment.update({
+        where: { id: equipment.id },
+        data: {
+          maintenanceDueOn: nextDueOn ? lotDayToDate(nextDueOn) : null,
+        },
+      });
+    }
     await recordAuditEvent(tx, {
       organizationId,
       actorUserId: userId,
@@ -971,9 +1145,11 @@ export async function recordMaintenance(
     return {
       ok: true as const,
       equipmentId: equipment.id,
-      summary: nextDueOn
-        ? `Se registró el mantenimiento. El siguiente es el ${formatLotDay(nextDueOn)}.`
-        : "Se registró el mantenimiento.",
+      summary: !latest
+        ? "Se registró el mantenimiento. Hay uno más reciente: el próximo mantenimiento no cambió."
+        : nextDueOn
+          ? `Se registró el mantenimiento. El siguiente es el ${formatLotDay(nextDueOn)}.`
+          : "Se registró el mantenimiento.",
     };
   });
 }
@@ -1233,18 +1409,41 @@ export async function listEquipment(
         where: { status: { in: [...EQUIPMENT_HOLDING_STATUSES] } },
         orderBy: { number: "asc" },
         take: 1,
-        select: { assignedToUserId: true },
+        select: {
+          assignedToUserId: true,
+          fromLocationId: true,
+          toLocationId: true,
+        },
       },
     },
   });
+  // WMS-20: a person in a task outside the reader's scope is not named.
+  const outside = new Set(
+    await locationsOutOfScope(
+      client,
+      actor.userId,
+      rows.flatMap((row) =>
+        row.tasks.flatMap((task) => [task.fromLocationId, task.toLocationId]),
+      ),
+    ),
+  );
+  const named = (task: {
+    assignedToUserId: string | null;
+    fromLocationId: string;
+    toLocationId: string;
+  }) =>
+    outside.has(task.fromLocationId) || outside.has(task.toLocationId)
+      ? null
+      : task.assignedToUserId;
   const names = await namesOf(
     client,
-    rows.map((row) => row.tasks[0]?.assignedToUserId ?? null),
+    rows.map((row) => (row.tasks[0] ? named(row.tasks[0]) : null)),
   );
   return {
     rows: rows.map((row) => {
       const due = lotDayOf(row.maintenanceDueOn);
-      const holder = row.tasks[0]?.assignedToUserId ?? null;
+      const first = row.tasks[0];
+      const holder = first ? named(first) : null;
       return {
         id: row.id,
         code: row.code,
@@ -1259,7 +1458,11 @@ export async function listEquipment(
         maintenancePhase: row.retiredAt
           ? "ok"
           : maintenancePhase(due, day, noticeDays),
-        inUseBy: holder ? (names.get(holder) ?? "Alguien") : null,
+        inUseBy: first
+          ? holder
+            ? (names.get(holder) ?? "Alguien")
+            : SOMEONE_ELSE
+          : null,
       };
     }),
     total,
@@ -1302,8 +1505,17 @@ export type EquipmentDetail = EquipmentSummary & {
   retiredAt: Date | null;
   retiredReason: string | null;
   createdAt: Date;
-  /** The open tasks that use it now. */
-  openTasks: { id: string; numberText: string; personName: string | null }[];
+  /**
+   * The open tasks that use it now, inside the reader's scope; `personGone`
+   * when who has it is no longer active in the company (the equipment stays
+   * busy until someone releases or cancels the task).
+   */
+  openTasks: {
+    id: string;
+    numberText: string;
+    personName: string | null;
+    personGone: boolean;
+  }[];
   maintenance: {
     id: string;
     performedOn: string;
@@ -1351,6 +1563,7 @@ export async function getEquipment(
     "inventory.equipment.read",
   );
   const client = forOrganization(actor.organizationId);
+  const scope = await readerScope(client, actor.userId);
   const row = await client.equipment.findFirst({
     where: { id: String(equipmentId ?? "").slice(0, 36) },
     select: {
@@ -1382,6 +1595,7 @@ export async function getEquipment(
         },
       },
       incidents: {
+        where: scope.incidents,
         orderBy: [{ number: "desc" }, { id: "desc" }],
         take: 20,
         select: {
@@ -1400,10 +1614,20 @@ export async function getEquipment(
   ) {
     return null;
   }
-  const [open, recent] = await Promise.all([
+  const [allOpen, open, recent] = await Promise.all([
     openTasksOf(client, row.id),
     client.warehouseTask.findMany({
-      where: { equipmentId: row.id },
+      where: {
+        equipmentId: row.id,
+        status: { in: [...EQUIPMENT_HOLDING_STATUSES] },
+        ...scope.tasks,
+      },
+      orderBy: { number: "asc" },
+      take: 50,
+      select: { id: true, number: true, assignedToUserId: true },
+    }),
+    client.warehouseTask.findMany({
+      where: { equipmentId: row.id, ...scope.tasks },
       orderBy: { number: "desc" },
       take: 20,
       select: {
@@ -1430,6 +1654,21 @@ export async function getEquipment(
   ]);
   const due = lotDayOf(row.maintenanceDueOn);
   const holder = open[0]?.assignedToUserId ?? null;
+  const holders = [
+    ...new Set(
+      open
+        .map((task) => task.assignedToUserId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const active = new Set(
+    (
+      await client.membership.findMany({
+        where: { userId: { in: holders }, status: "ACTIVE" },
+        select: { userId: true },
+      })
+    ).map((member) => member.userId),
+  );
   return {
     id: row.id,
     code: row.code,
@@ -1445,7 +1684,11 @@ export async function getEquipment(
     maintenancePhase: row.retiredAt
       ? "ok"
       : maintenancePhase(due, day, noticeDays),
-    inUseBy: holder ? (names.get(holder) ?? "Alguien") : null,
+    inUseBy: holder
+      ? (names.get(holder) ?? "Alguien")
+      : allOpen.length > 0
+        ? SOMEONE_ELSE
+        : null,
     facilityName: row.facility.name,
     outOfServiceReason: row.outOfServiceReason,
     outOfServiceAt: row.outOfServiceAt,
@@ -1461,6 +1704,8 @@ export async function getEquipment(
       personName: task.assignedToUserId
         ? (names.get(task.assignedToUserId) ?? null)
         : null,
+      personGone:
+        task.assignedToUserId !== null && !active.has(task.assignedToUserId),
     })),
     maintenance: row.maintenance.map((item) => ({
       id: item.id,
@@ -1495,8 +1740,8 @@ export async function getEquipment(
 
 // ── Round ────────────────────────────────────────────────────────────────
 
-/** Equipment one round looks at, at most (the rest waits for the next). */
-const ROUND_MAX = 500;
+/** Equipment one transaction of the round looks at (it goes on by pages). */
+const ROUND_PAGE = 500;
 
 /**
  * The maintenance notice (WMS-42, ADR 0065), every hour for each company:
@@ -1512,42 +1757,59 @@ export async function runEquipmentMaintenanceRound(
   const noticeDays = await noticeDaysOf(client);
   const limit = new Date(`${day}T00:00:00Z`);
   limit.setUTCDate(limit.getUTCDate() + noticeDays);
-  const due = await client.equipment.findMany({
-    where: { retiredAt: null, maintenanceDueOn: { lte: limit } },
-    orderBy: [{ maintenanceDueOn: "asc" }, { id: "asc" }],
-    take: ROUND_MAX,
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      facilityId: true,
-      maintenanceDueOn: true,
-    },
-  });
-  if (due.length === 0) return { notified: 0 };
   let notified = 0;
-  await client.$transaction(async (tx) => {
-    for (const equipment of due) {
-      const dueOn = lotDayOf(equipment.maintenanceDueOn)!;
-      const phase = maintenancePhase(dueOn, day, noticeDays);
-      if (phase === "ok") continue;
-      const sent = await notify(tx, EQUIPMENT_MAINTENANCE_NOTICE_TYPE, {
-        organizationId,
-        // Nobody caused it: the round notices a day.
-        actorUserId: null,
-        to: {
-          permissions: ["inventory.equipment.manage"],
-          facilityId: equipment.facilityId,
-        },
-        text:
-          phase === "overdue"
-            ? `Se pasó el mantenimiento de ${equipmentLabel(equipment)} (era el ${formatLotDay(dueOn)}).`
-            : `El mantenimiento de ${equipmentLabel(equipment)} es el ${formatLotDay(dueOn)}.`,
-        href: `/configuracion/equipos-del-almacen/${equipment.id}`,
-        key: `equipment:${equipment.id}:maintenance:${dueOn}:${phase}`,
-      });
-      notified += sent.sent;
-    }
-  });
+  // By pages in id order, every page its own transaction: none is left out
+  // however many are due (notify skips who already heard that phase).
+  let after: string | null = null;
+  for (;;) {
+    const due: {
+      id: string;
+      code: string;
+      name: string;
+      facilityId: string;
+      maintenanceDueOn: Date | null;
+    }[] = await client.equipment.findMany({
+      where: {
+        retiredAt: null,
+        maintenanceDueOn: { lte: limit },
+        ...(after ? { id: { gt: after } } : {}),
+      },
+      orderBy: { id: "asc" },
+      take: ROUND_PAGE,
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        facilityId: true,
+        maintenanceDueOn: true,
+      },
+    });
+    if (due.length === 0) break;
+    after = due.at(-1)!.id;
+    await client.$transaction(async (tx) => {
+      for (const equipment of due) {
+        const dueOn = lotDayOf(equipment.maintenanceDueOn)!;
+        const phase = maintenancePhase(dueOn, day, noticeDays);
+        if (phase === "ok") continue;
+        const sent = await notify(tx, EQUIPMENT_MAINTENANCE_NOTICE_TYPE, {
+          organizationId,
+          // Nobody caused it: the round notices a day.
+          actorUserId: null,
+          to: {
+            permissions: ["inventory.equipment.manage"],
+            facilityId: equipment.facilityId,
+          },
+          text:
+            phase === "overdue"
+              ? `Se pasó el mantenimiento de ${equipmentLabel(equipment)} (era el ${formatLotDay(dueOn)}).`
+              : `El mantenimiento de ${equipmentLabel(equipment)} es el ${formatLotDay(dueOn)}.`,
+          href: `/configuracion/equipos-del-almacen/${equipment.id}`,
+          key: `equipment:${equipment.id}:maintenance:${dueOn}:${phase}`,
+        });
+        notified += sent.sent;
+      }
+    });
+    if (due.length < ROUND_PAGE) break;
+  }
   return { notified };
 }

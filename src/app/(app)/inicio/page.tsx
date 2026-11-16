@@ -12,7 +12,7 @@ import {
   Undo2,
   ClipboardCheck,
   MessageSquareWarning,
-  Forklift,
+  Wrench,
   ShieldCheck,
   ShoppingCart,
   type LucideIcon,
@@ -231,7 +231,7 @@ export default async function InicioPage() {
             href: "/configuracion/equipos-del-almacen?ver=atencion",
             label: "Equipos que piden atención",
             count: equipmentAttention,
-            icon: Forklift,
+            icon: Wrench,
             alert: true,
           },
         ]

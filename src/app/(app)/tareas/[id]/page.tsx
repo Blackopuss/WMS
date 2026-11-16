@@ -365,6 +365,19 @@ export default async function TareaPage({
         )}
       </section>
 
+      {task.equipmentUnavailable && (
+        <p
+          role="status"
+          className="max-w-xl rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+        >
+          Este almacén ya no tiene ningún {task.equipmentTypeName}: nadie puede
+          tomar esta tarea.
+          {canCancel
+            ? " Cancélala y créala otra vez sin equipo."
+            : " Pide a tu supervisor que la cancele y la cree sin equipo."}
+        </p>
+      )}
+
       {task.equipmentStopped && task.status === "ACCEPTED" && (
         <p
           role="status"

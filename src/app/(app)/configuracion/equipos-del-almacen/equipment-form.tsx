@@ -131,9 +131,28 @@ export function EquipmentForm({
           />
         )}
       </FormField>
-      <Button type="submit" className="min-h-11" disabled={pending}>
+      {state.pendingTasks && (
+        <p
+          role="alert"
+          className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+        >
+          {state.pendingTasks}
+        </p>
+      )}
+      <Button
+        type="submit"
+        className="min-h-11"
+        disabled={pending}
+        // Only this button says the person saw the warning (ADR 0065).
+        name={state.pendingTasks ? "acceptPendingTasks" : undefined}
+        value={state.pendingTasks ? "1" : undefined}
+      >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-        {equipmentId ? "Guardar cambios" : "Registrar equipo"}
+        {state.pendingTasks
+          ? "Guardar de todos modos"
+          : equipmentId
+            ? "Guardar cambios"
+            : "Registrar equipo"}
       </Button>
     </form>
   );

@@ -3977,10 +3977,13 @@ model EquipmentMaintenance {
   performedBy      String?      @db.VarChar(120)
   /// The next maintenance it set, if any.
   nextDueOn        DateTime?    @db.Date
+  /// The confirmation of the form: a retry finds the same record.
+  idempotencyKey   String?      @db.VarChar(64)
   recordedByUserId String       @db.Char(36)
   createdAt        DateTime     @default(now()) @db.DateTime(3)
 
   @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
   @@index([organizationId, equipmentId, performedOn, id])
   @@map("equipment_maintenance")
 }

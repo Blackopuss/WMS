@@ -181,6 +181,42 @@ pantalla y no en Operación.
 - **API:** sin cambios (las respuestas de tareas pasan por su esquema y no
   agregan campos).
 
+## Revisión (2026-11-16)
+
+Lo que cambió tras la revisión independiente:
+
+- **Ficha dentro del alcance.** Quien está limitado a zonas ve en la ficha
+  de un equipo solo las incidencias sin ubicación o de su zona, y solo las
+  tareas cuyo origen y destino alcanza; si el equipo está ocupado en una
+  tarea de fuera, la ficha y la lista dicen «Otra persona», sin nombre ni
+  número. Lo mismo al tomar una tarea con un equipo ocupado fuera de su
+  zona: «lo está usando otra persona».
+- **Los tipos son de toda la empresa.** Agregarlos, renombrarlos o
+  archivarlos exige ver toda la empresa (`seesWholeCompany`); quien está
+  limitado a almacenes los lee y su conteo de equipos es solo de los
+  almacenes que alcanza. Los cambios de tipos van uno tras otro bajo el
+  candado de la fila del almacén principal (es el candado de empresa de esta
+  tabla; ahí se cuenta el tope de 50 tipos en uso). Nada bloquea un tipo y
+  después un almacén.
+- **Tareas que se quedarían sin equipo.** Dar de baja o cambiar de tipo el
+  último equipo de un tipo en su almacén, con tareas pendientes (disponibles
+  o asignadas) que piden ese tipo, se detiene con un aviso («2 tareas
+  pendientes piden…») y solo sigue con la aceptación explícita
+  (`acceptPendingTasks`, botón «… de todos modos»), como el aviso de entrada
+  repetida (WMS-71). La ficha de una tarea así dice que nadie puede tomarla y
+  ofrece cancelarla y crearla sin equipo.
+- **Mantenimiento con clave de confirmación** (`equipment_maintenance.
+  idempotencyKey`, única por empresa; migración aparte): un doble envío
+  responde `repeated`. El próximo mantenimiento del equipo solo lo cambia el
+  registro más reciente; uno más viejo capturado tarde no lo toca.
+- **La ronda de mantenimiento va por páginas** (500 equipos por
+  transacción, en orden de id): ninguno se queda sin aviso por haber muchos
+  vencidos.
+- **Persona desactivada.** Si quien tiene una tarea con el equipo se
+  desactiva, la ficha del equipo lo dice («Ocupado por la tarea … de una
+  persona desactivada») con el enlace a la tarea; liberarla o cancelarla
+  sigue siendo de supervisión.
+
 ## Pendientes
 
 - Mantenimiento por uso (horas, kilómetros).
@@ -191,5 +227,7 @@ pantalla y no en Operación.
   qué).
 - Fotos en el mantenimiento y en la incidencia (WMS-37).
 - Capacidad de carga del equipo frente al peso de lo que se mueve.
+- Liberar sola la tarea (y su equipo) de una persona que se desactiva:
+  hoy solo se ve en la ficha del equipo.
 - Trasladar un equipo a otro almacén (hoy su almacén no cambia: disparador
   y llave compuesta de la incidencia).

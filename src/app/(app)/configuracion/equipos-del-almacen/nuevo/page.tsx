@@ -1,4 +1,4 @@
-import { ChevronLeft, Forklift } from "lucide-react";
+import { ChevronLeft, Wrench } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -66,9 +66,9 @@ export default async function RegistrarEquipoPage() {
       />
       {inUse.length === 0 ? (
         <EmptyState
-          icon={Forklift}
+          icon={Wrench}
           title="Primero define sus tipos"
-          description="Un tipo es lo que tu equipo llama a cada máquina: montacargas, patín, báscula…"
+          description="Un tipo es el nombre que tu empresa le da a cada clase de equipo."
           action={
             <Link href={`${BASE}/tipos`} className={linkClass}>
               Tipos de equipo

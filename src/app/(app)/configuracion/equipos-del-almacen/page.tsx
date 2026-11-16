@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Forklift, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Wrench, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -153,7 +153,7 @@ export default async function EquiposPage({
 
       {list.total === 0 ? (
         <EmptyState
-          icon={Forklift}
+          icon={Wrench}
           title={
             filter === "attention"
               ? "Ningún equipo pide atención"
@@ -163,7 +163,7 @@ export default async function EquiposPage({
           }
           description={
             filter === "active"
-              ? `En ${list.facilityName}. Registra montacargas, patines o lo que tu equipo use para mover mercancía; primero define sus tipos.`
+              ? `En ${list.facilityName}. Registra los equipos que usa tu almacén; primero define sus tipos.`
               : `En ${list.facilityName}.`
           }
         />

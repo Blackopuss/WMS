@@ -308,7 +308,7 @@ const REVIEWED: Record<string, Review> = {
   },
   maintenanceAction: {
     input:
-      "id del equipo (fijado por la página), día, qué se hizo, quién lo hizo y el siguiente mantenimiento",
+      "id del equipo (fijado por la página), día, qué se hizo, quién lo hizo, el siguiente mantenimiento y la clave de confirmación",
     identity:
       "sesión y empresa activa (requireOrganizationContext); el equipo se bloquea solo en esa empresa y en un almacén que la persona alcanza entero; exige inventory.equipment.manage",
     coveredBy: "tests/inventory/equipment.int.test.ts",
@@ -317,13 +317,13 @@ const REVIEWED: Record<string, Review> = {
     input:
       "id del tipo (fijado por la página, vacío para uno nuevo) y su nombre",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); el tipo se bloquea solo en esa empresa; exige inventory.equipment.manage",
+      "sesión y empresa activa (requireOrganizationContext); el tipo se bloquea solo en esa empresa; exige inventory.equipment.manage y que la persona vea toda la empresa (seesWholeCompany)",
     coveredBy: "tests/inventory/equipment.int.test.ts",
   },
   archiveEquipmentTypeAction: {
     input: "id del tipo y si se archiva (fijados por la página)",
     identity:
-      "sesión y empresa activa (requireOrganizationContext); el tipo se bloquea solo en esa empresa; exige inventory.equipment.manage",
+      "sesión y empresa activa (requireOrganizationContext); el tipo se bloquea solo en esa empresa; exige inventory.equipment.manage y que la persona vea toda la empresa (seesWholeCompany)",
     coveredBy: "tests/inventory/equipment.int.test.ts",
   },
   pickUpSerialsAction: {

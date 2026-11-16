@@ -2510,10 +2510,11 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `description` | `String · VarChar(500)` |  |  |
 | `performedBy` | `String? · VarChar(120)` |  | Who did it when it was not the person recording it (a workshop). |
 | `nextDueOn` | `DateTime? · Date` |  | The next maintenance it set, if any. |
+| `idempotencyKey` | `String? · VarChar(64)` |  | The confirmation of the form: a retry finds the same record. |
 | `recordedByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
-- Únicas: (`organizationId`, `id`).
+- Únicas: (`organizationId`, `id`); (`organizationId`, `idempotencyKey`).
 - Índices: (`organizationId`, `equipmentId`, `performedOn`, `id`).
 - Relaciones: `equipment` → `Equipment` por (`organizationId`, `equipmentId`) (al borrar: Restrict).
 

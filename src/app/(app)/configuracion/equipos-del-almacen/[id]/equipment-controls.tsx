@@ -79,14 +79,25 @@ export function EquipmentStepForm({
           {error}
         </p>
       )}
+      {state.pendingTasks && (
+        <p
+          role="alert"
+          className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+        >
+          {state.pendingTasks}
+        </p>
+      )}
       <Button
         type="submit"
         variant={destructive ? "destructive" : "default"}
         className="min-h-11 w-full sm:w-auto"
         disabled={pending}
+        // Only this button says the person saw the warning (ADR 0065).
+        name={state.pendingTasks ? "acceptPendingTasks" : undefined}
+        value={state.pendingTasks ? "1" : undefined}
       >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-        {label}
+        {state.pendingTasks ? `${label} de todos modos` : label}
       </Button>
     </form>
   );
@@ -103,8 +114,11 @@ const MAINTENANCE_FIELDS = [
 export function MaintenanceForm({
   equipmentId,
   today,
+  idempotencyKey,
 }: {
   equipmentId: string;
+  /** Painted by the server: a retry finds the same record. */
+  idempotencyKey: string;
   /** «2026-11-16», the company's today, as the default day. */
   today: string;
 }) {
@@ -127,6 +141,7 @@ export function MaintenanceForm({
       key={state.answers}
       className="max-w-xl space-y-4"
     >
+      <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
       {state.error && (
         <p role="alert" className="text-sm text-destructive">
           {state.error}

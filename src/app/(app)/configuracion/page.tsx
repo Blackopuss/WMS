@@ -1,7 +1,6 @@
 import {
   Bell,
   ChevronRight,
-  Forklift,
   Gauge,
   History,
   KeyRound,
@@ -13,6 +12,7 @@ import {
   SlidersHorizontal,
   Users,
   Warehouse,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -109,9 +109,9 @@ export default async function ConfiguracionPage() {
           {showEquipment && (
             <SettingsLink
               href="/configuracion/equipos-del-almacen"
-              icon={Forklift}
+              icon={Wrench}
               title="Equipos del almacén"
-              description="Montacargas y demás equipos, su mantenimiento y sus fallas."
+              description="Equipos, su mantenimiento y sus fallas."
             />
           )}
           {access.can("platform.team.read") && (
