@@ -644,6 +644,8 @@ sin escribir aquí su flujo (regla 15).
 
 **WMS-37B hecho (2026-11-16, ADR 0076):** foto de evidencia al entregar una tarea, atada a su tarea, con ajuste por empresa. Pendiente: foto al reportar un problema de la tarea; la foto de quien reporta lo producido (WMS-29) y la de Calidad (WMS-30B) reutilizan el mecanismo `boundToOwner`.
 
+**WMS-78A y WMS-78B hechos (2026-11-16):** revisión visual de la app (144 pantallas, axe en cero). Pendiente: Lighthouse de la app (con WMS-78C), el conteo de «Embarques» que no cuadra con «Armar embarque», la barra inferior con tres secciones, y lo listado en `docs/ux/REVISION_VISUAL_*.md`.
+
 ### WMS-79 · Pedido del cliente ligado a producción y embarque (anotado el 2026-11-16, sin abrir)
 
 **Depende de:** WMS-29 (reporte de producción) y WMS-31 (cierre). **Corazón** (toca reservas y existencias): revisor independiente.
