@@ -150,6 +150,9 @@ de lugar opcional en el mismo almacén). No hay movimiento nuevo.
   versión anterior por el error 1213 y pasa con esta en cuatro corridas
   seguidas: siempre pasa exactamente uno de los dos y nunca queda
   disponible dentro.
+- **Nota (ADR 0074, WMS-76):** la causa se quitó en `lockRows`, que ahora
+  va siempre por la llave primaria; `refuseAvailableInside` volvió a
+  bloquear la rama en una sola llamada.
 - **Pendiente:** la revisión limita la profundidad pero no el número de
   filas; una zona con miles de ubicaciones toma miles de candados (uno por
   consulta). Es aceptable para algo que se hace rara vez; no se puso un

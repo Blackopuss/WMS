@@ -193,6 +193,12 @@ compartido en dos formas, según la operación:
   exclusivo cuando cuenta las órdenes abiertas del área, y la orden espera
   (o al revés: si la orden se guardó primero, `changeTree` la ve y
   rechaza; si el área cambió primero, `areaOf` lo ve y rechaza).
+- **Nota (ADR 0074, WMS-76):** `byTenantKey` se quitó. `changeTree` ya no
+  bloquea los almacenes con un `UPDATE … WHERE organizationId` sino con
+  `lockRows` por la llave primaria, y el almacén compartido de crear,
+  guardar y cambiar personas va también por la llave primaria; siguen
+  chocando entre sí. La llave foránea de la orden ya no espera a
+  `changeTree`.
 - **El área no se bloquea.** Mientras tenga órdenes abiertas (borradores
   incluidos) no cambia de uso, no se archiva ni queda bajo un uso que no
   admite existencias disponibles (`refuseOpenProductionOrders` en

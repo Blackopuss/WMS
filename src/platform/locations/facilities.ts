@@ -15,6 +15,7 @@ import {
 } from "@/server";
 
 import { createDefaultLevels } from "./bootstrap";
+import { lockAllFacilities } from "./facility-lock";
 import type { LocationActor } from "./locations";
 import { FACILITY_OUT_OF_SCOPE_MESSAGE, facilityInScope } from "./scope";
 
@@ -242,10 +243,7 @@ async function inFacilities(
 ): Promise<FacilityResult> {
   try {
     return await forOrganization(organizationId).$transaction(async (tx) => {
-      await tx.facility.updateMany({
-        where: {},
-        data: { updatedAt: new Date() },
-      });
+      await lockAllFacilities(tx);
       return work(tx);
     }, LOCKING_TRANSACTION);
   } catch (error) {

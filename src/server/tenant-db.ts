@@ -383,11 +383,26 @@ export const LOCKABLE = {
  * Locks rows of the company until the transaction ends (`SELECT … FOR
  * UPDATE`), always in id order so two transactions never wait for each
  * other in a circle. Returns the ids that exist in this company: rows of
- * another one are neither locked nor reported.
+ * another one are neither kept locked nor reported.
  *
  * Use it to make everything that changes the same thing happen one after
  * the other (e.g. every stock movement of a product), instead of hoping two
  * requests do not arrive together.
+ *
+ * Always through the primary key, whatever the number of ids (WMS-76, ADR
+ * 0074). Left to itself MySQL reads one id by the primary key but several
+ * through the unique index (organizationId, id), locking that index entry
+ * before the primary key. A composite foreign key checks the same unique
+ * index of the row it points to (a shared lock, taken by every insert of a
+ * stock line, a reservation, a task…), so one transaction holding the
+ * primary key and asking for the index, and another holding the index and
+ * asking for the primary key, waited for each other. Through the primary
+ * key nobody locks that index in exclusive mode, and the shared locks of
+ * the foreign keys never wait. The rows are read in id order, one range
+ * per id: the same cost as before, in one statement. A row of another
+ * company with one of these ids is locked only while its company is
+ * compared (READ COMMITTED releases it at once), as a single id always
+ * was.
  */
 export async function lockRows(
   tx: object,
@@ -399,18 +414,7 @@ export async function lockRows(
    * Never take it and then write the same rows (two holders would wait for
    * each other).
    */
-  options: {
-    mode?: "update" | "share";
-    /**
-     * WMS-28 (ADR 0073): reach the rows through the unique index
-     * (organizationId, id) first and the primary key after, the order an
-     * UPDATE by `organizationId` takes them in (changing locations locks
-     * every warehouse that way) and the index a composite foreign key
-     * checks. Without it one id goes by the primary key first, and a
-     * shared lock taken that way deadlocked with that UPDATE.
-     */
-    byTenantKey?: boolean;
-  } = {},
+  options: { mode?: "update" | "share" } = {},
 ): Promise<string[]> {
   const scope = (tx as Record<symbol, unknown>)[TRANSACTION] as
     { client: RawTransaction; organizationId: string } | undefined;
@@ -427,9 +431,21 @@ export async function lockRows(
   if (unique.length === 0) return [];
   // The table comes from the fixed list above; every value is a parameter.
   const rows = await scope.client.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM \`${table}\`${options.byTenantKey ? ` FORCE INDEX (\`${table}_organizationId_id_key\`)` : ""} WHERE organizationId = ? AND id IN (${unique.map(() => "?").join(", ")}) ORDER BY id FOR ${options.mode === "share" ? "SHARE" : "UPDATE"}`,
+    lockStatement(table, unique.length, options.mode ?? "update"),
     scope.organizationId,
     ...unique,
   );
   return rows.map((row) => row.id);
+}
+
+/**
+ * The statement of `lockRows`; exported for its test. `FORCE INDEX
+ * (PRIMARY)` is what keeps every lock on the primary key (ADR 0074).
+ */
+export function lockStatement(
+  table: string,
+  count: number,
+  mode: "update" | "share",
+): string {
+  return `SELECT id FROM \`${table}\` FORCE INDEX (PRIMARY) WHERE organizationId = ? AND id IN (${Array.from({ length: count }, () => "?").join(", ")}) ORDER BY id FOR ${mode === "share" ? "SHARE" : "UPDATE"}`;
 }
