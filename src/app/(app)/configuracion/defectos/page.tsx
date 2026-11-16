@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -10,6 +10,7 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   DEFECT_SEVERITIES,
   MAX_ACTIVE_DEFECTS,
@@ -36,7 +37,9 @@ const SEVERITIES = DEFECT_SEVERITIES.map((value) => ({
  * Defects the company recognizes (WMS-30A, ADR 0067): what Calidad names
  * when it rejects something. Archived, never deleted.
  */
-export default async function DefectosPage() {
+export default async function DefectosPage({
+  searchParams,
+}: PageProps<"/configuracion/defectos">) {
   const access = await getModuleAccess();
   const back = (
     <Link
@@ -64,14 +67,24 @@ export default async function DefectosPage() {
       </PageContainer>
     );
   }
-  const defects = await listDefects({
-    organizationId: access.organization.id,
-    userId: access.user.id,
-  });
+  const { pagina } = await searchParams;
+  const defects = await listDefects(
+    { organizationId: access.organization.id, userId: access.user.id },
+    {
+      page:
+        typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+          ? Number(pagina)
+          : undefined,
+    },
+  );
   const writable =
     moduleState === "active" && access.allows("quality.plan.manage");
-  const inUse = defects.filter((defect) => !defect.archived);
-  const archived = defects.filter((defect) => defect.archived);
+  const inUse = defects.inUse;
+  const archived = defects.archived;
+  const pageHref = (page: number) =>
+    page > 1
+      ? `/configuracion/defectos?pagina=${page}`
+      : "/configuracion/defectos";
 
   return (
     <PageContainer>
@@ -146,13 +159,13 @@ export default async function DefectosPage() {
         )}
       </section>
 
-      {archived.length > 0 && (
-        <details className="rounded-xl border bg-card">
+      {archived.total > 0 && (
+        <details className="rounded-xl border bg-card" open={archived.page > 1}>
           <summary className="flex min-h-11 cursor-pointer items-center p-4 font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-5">
-            Archivados ({archived.length})
+            Archivados ({archived.total})
           </summary>
           <ul className="divide-y border-t">
-            {archived.map((defect) => (
+            {archived.items.map((defect) => (
               <li
                 key={defect.id}
                 className="flex flex-wrap items-center gap-3 p-4 sm:px-5"
@@ -177,6 +190,36 @@ export default async function DefectosPage() {
               </li>
             ))}
           </ul>
+          {archived.pageCount > 1 && (
+            <nav
+              aria-label="Páginas de defectos archivados"
+              className="flex items-center justify-between gap-3 border-t p-4 sm:px-5"
+            >
+              {archived.page > 1 ? (
+                <Button asChild variant="outline">
+                  <Link href={pageHref(archived.page - 1)} rel="prev">
+                    <ChevronLeft aria-hidden="true" data-icon="inline-start" />
+                    Anterior
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+              <p className="text-sm text-muted-foreground tabular-nums">
+                Página {archived.page} de {archived.pageCount}
+              </p>
+              {archived.page < archived.pageCount ? (
+                <Button asChild variant="outline">
+                  <Link href={pageHref(archived.page + 1)} rel="next">
+                    Siguiente
+                    <ChevronRight aria-hidden="true" data-icon="inline-end" />
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+            </nav>
+          )}
         </details>
       )}
     </PageContainer>

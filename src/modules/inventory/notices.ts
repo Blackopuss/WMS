@@ -81,6 +81,26 @@ export const DAILY_DIGEST_NOTICE: NotificationType = {
   visibleWith: ["inventory.stock.read", "inventory.minimum.read"],
 };
 
+export const EQUIPMENT_MAINTENANCE_NOTICE_TYPE: NotificationType = {
+  key: "inventory.equipment_maintenance",
+  module: "inventory",
+  label: "Un equipo necesita mantenimiento",
+  description:
+    "Cuando se acerca o se pasa el mantenimiento de un equipo de tu almacén.",
+  defaultEnabled: true,
+  visibleWith: ["inventory.equipment.manage"],
+};
+
+export const EQUIPMENT_OUT_OF_SERVICE_NOTICE: NotificationType = {
+  key: "inventory.equipment_out_of_service",
+  module: "inventory",
+  label: "El equipo de tu tarea quedó fuera de servicio",
+  description:
+    "Cuando el equipo con que haces una tarea queda fuera de servicio o se da de baja.",
+  defaultEnabled: true,
+  visibleWith: ["inventory.task.execute"],
+};
+
 export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   TASK_ASSIGNED_NOTICE,
   TASK_BLOCKED_NOTICE,
@@ -90,4 +110,6 @@ export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   INCIDENT_REPORTED_NOTICE,
   INCIDENT_CHANGED_NOTICE,
   DAILY_DIGEST_NOTICE,
+  EQUIPMENT_MAINTENANCE_NOTICE_TYPE,
+  EQUIPMENT_OUT_OF_SERVICE_NOTICE,
 ];

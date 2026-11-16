@@ -110,6 +110,9 @@ export const TENANT_MODELS = [
   "DailyDigest",
   "Incident",
   "IncidentNote",
+  "EquipmentType",
+  "Equipment",
+  "EquipmentMaintenance",
   "CustomField",
   "CustomFieldOption",
   "CustomFieldValue",
@@ -125,6 +128,7 @@ export const TENANT_MODELS = [
   "QualityPlanPoint",
   "QualityPlanPointOption",
   "QualityDefect",
+  "QualityDefectCatalog",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -338,11 +342,14 @@ const LOCKABLE = {
   pickWave: "pick_wave",
   purchaseRequest: "purchase_request",
   incident: "incident",
+  equipment: "equipment",
+  equipmentType: "equipment_type",
   webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
   qualityPlan: "quality_plan",
   qualityDefect: "quality_defect",
+  qualityDefectCatalog: "quality_defect_catalog",
 } as const;
 
 /**

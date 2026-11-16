@@ -165,6 +165,23 @@ export default async function IncidenciaPage({
               </dd>
             </div>
           )}
+          {incident.equipment && (
+            <div>
+              <dt className="text-muted-foreground">Equipo</dt>
+              <dd className="[overflow-wrap:anywhere]">
+                {access.can("inventory.equipment.read") ? (
+                  <Link
+                    href={`/configuracion/equipos-del-almacen/${incident.equipment.id}`}
+                    className={linkClass}
+                  >
+                    {incident.equipment.text}
+                  </Link>
+                ) : (
+                  incident.equipment.text
+                )}
+              </dd>
+            </div>
+          )}
           {incident.order && (
             <div>
               <dt className="text-muted-foreground">Pedido</dt>

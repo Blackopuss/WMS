@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   Users,
   Warehouse,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -43,6 +44,10 @@ export default async function ConfiguracionPage() {
   // WMS-30A: the defects of Calidad, set up once like the custom fields.
   const showDefects =
     access.moduleState("quality") !== "none" && access.can("quality.plan.read");
+  // WMS-42: equipment is registered rarely, so it lives here too.
+  const showEquipment =
+    access.moduleState("inventory") !== "none" &&
+    access.can("inventory.equipment.read");
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
@@ -63,6 +68,7 @@ export default async function ConfiguracionPage() {
       <PageHeader title="Configuración" />
       {(showLocations ||
         showDefects ||
+        showEquipment ||
         access.can("platform.team.read") ||
         access.can("platform.terminal.read") ||
         access.can("platform.plan.read") ||
@@ -111,6 +117,14 @@ export default async function ConfiguracionPage() {
               icon={ListChecks}
               title="Defectos"
               description="Lo que Calidad anota al rechazar algo."
+            />
+          )}
+          {showEquipment && (
+            <SettingsLink
+              href="/configuracion/equipos-del-almacen"
+              icon={Wrench}
+              title="Equipos del almacén"
+              description="Equipos, su mantenimiento y sus fallas."
             />
           )}
           {access.can("platform.team.read") && (
@@ -258,6 +272,12 @@ export default async function ConfiguracionPage() {
               }
             />
           )}
+          <SettingsLink
+            href="/configuracion/accesos"
+            icon={History}
+            title="Historial de accesos"
+            description="Tus entradas, los intentos fallidos y las alertas."
+          />
           <SessionsPanel
             sessions={sessions.map((s) => ({
               ...s,
@@ -289,6 +309,7 @@ function SettingsLink({
     | "/configuracion/operacion"
     | "/configuracion/campos"
     | "/configuracion/defectos"
+    | "/configuracion/equipos-del-almacen"
     | "/configuracion/equipo"
     | "/configuracion/avisos"
     | "/configuracion/plan"
@@ -296,6 +317,7 @@ function SettingsLink({
     | "/configuracion/pin"
     | "/configuracion/api"
     | "/configuracion/bitacora"
+    | "/configuracion/accesos"
     | "/aprobaciones"
     | "/configuracion/aprobaciones";
   icon: LucideIcon;

@@ -5,7 +5,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import { isAllowed } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getUnit, parseQuantity } from "@/platform/catalog";
-import { readSetting } from "@/platform/settings";
+import { parseSettingValue, readSetting } from "@/platform/settings";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -93,11 +93,20 @@ async function run(
   } catch (error) {
     if (error instanceof Rejected) return error.result;
     if ((error as { code?: string }).code === "P2002") {
-      return {
-        ok: false,
-        error: "Ese punto ya está en el plan. Usa otro nombre.",
-        field: "label",
-      };
+      // Two names the database compares as equal (the collation folds
+      // more than foldText, «ß» and «ss»): say which list it was.
+      const target = JSON.stringify((error as { meta?: unknown }).meta ?? "");
+      return target.includes("option") || target.includes("pointId")
+        ? {
+            ok: false,
+            error: "Dos opciones de la lista se leen igual. Cambia una.",
+            field: "options",
+          }
+        : {
+            ok: false,
+            error: "Ese punto ya está en el plan. Usa otro nombre.",
+            field: "label",
+          };
     }
     throw error;
   }
@@ -205,19 +214,17 @@ const VERSION_SELECT = {
   },
 } as const;
 
-/** Versions of a plan, newest first, as screens read them. */
-function readVersions(
+/** One version of a plan with what screens show of it. */
+function readVersion(
   client: Pick<Tx, "qualityPlanVersion">,
-  productId: string,
+  where: { planId: string; status: "ACTIVE" | "DRAFT" },
 ) {
-  return client.qualityPlanVersion.findMany({
-    where: { plan: { productId } },
-    orderBy: { number: "desc" },
-    take: 50,
+  return client.qualityPlanVersion.findFirst({
+    where,
     select: VERSION_SELECT,
   });
 }
-type VersionRow = Awaited<ReturnType<typeof readVersions>>[number];
+type VersionRow = NonNullable<Awaited<ReturnType<typeof readVersion>>>;
 type PointRow = {
   id: string;
   label: string;
@@ -382,6 +389,9 @@ function viewOf(
   };
 }
 
+/** Versions listed per page under «Versiones anteriores». */
+export const PLAN_HISTORY_PAGE_SIZE = 10;
+
 export type ProductInspection = {
   productId: string;
   productName: string;
@@ -392,19 +402,30 @@ export type ProductInspection = {
   active: PlanVersionView | null;
   /** The draft being prepared; only for who may configure. */
   draft: PlanVersionView | null;
-  /** Retired and discarded versions, newest first. */
-  history: PlanVersionView[];
+  /**
+   * Earlier versions, newest first, one page: retired ones for everybody,
+   * discarded drafts only for who may configure.
+   */
+  history: {
+    items: PlanVersionView[];
+    page: number;
+    pageCount: number;
+    total: number;
+  };
   /** What rules without a plan (`quality.sampling.default`). */
   defaultSamplingText: string;
 };
 
 /**
- * The inspection plan of a product, for its card and its screen. Null when
- * the product is not of the company.
+ * The inspection plan of a product, for its card and its screen. The
+ * version in force and the draft are read on their own; the history is
+ * paged in the database (INV-10), a page out of range shows the last one.
+ * Null when the product is not of the company.
  */
 export async function getProductInspection(
   actor: Actor,
   productId: string,
+  options: { page?: number } = {},
 ): Promise<ProductInspection | null> {
   await assertModulePermission(actor.organizationId, actor.userId, READ);
   const client = forOrganization(actor.organizationId);
@@ -416,33 +437,65 @@ export async function getProductInspection(
       status: true,
       unitCode: true,
       quantityStep: true,
+      qualityPlans: { select: { id: true } },
     },
   });
   if (!product) return null;
-  const [rows, setting, mayManage] = await Promise.all([
-    readVersions(client, product.id),
+  const [setting, mayManage] = await Promise.all([
     readSetting(client, SAMPLING_DEFAULT),
     isAllowed(actor.organizationId, actor.userId, MANAGE),
   ]);
+  const planId = product.qualityPlans[0]?.id ?? null;
+  // A discarded draft is a draft: only for who may configure.
+  const statuses: ("RETIRED" | "DISCARDED")[] = mayManage
+    ? ["RETIRED", "DISCARDED"]
+    : ["RETIRED"];
+  const total = planId
+    ? await client.qualityPlanVersion.count({
+        where: { planId, status: { in: statuses } },
+      })
+    : 0;
+  const pageCount = Math.max(1, Math.ceil(total / PLAN_HISTORY_PAGE_SIZE));
+  const page =
+    options.page === undefined || !Number.isSafeInteger(options.page)
+      ? 1
+      : Math.min(Math.max(options.page, 1), pageCount);
+  const [active, draft, history] = planId
+    ? await Promise.all([
+        readVersion(client, { planId, status: "ACTIVE" }),
+        mayManage ? readVersion(client, { planId, status: "DRAFT" }) : null,
+        client.qualityPlanVersion.findMany({
+          where: { planId, status: { in: statuses } },
+          // The number is unique in the plan: a stable order on its index.
+          orderBy: [{ number: "desc" }, { id: "desc" }],
+          skip: (page - 1) * PLAN_HISTORY_PAGE_SIZE,
+          take: PLAN_HISTORY_PAGE_SIZE,
+          select: VERSION_SELECT,
+        }),
+      ])
+    : [null, null, []];
+  const rows = [active, draft, ...history].filter(
+    (row): row is VersionRow => row !== null,
+  );
   const names = await namesOf(
     client,
     rows.flatMap((row) => [row.createdByUserId, row.publishedByUserId]),
   );
   const unit = unitText(product.unitCode);
-  const views = rows.map((row) => viewOf(row, names, unit));
   return {
     productId: product.id,
     productName: product.name,
     productActive: product.status === "ACTIVE",
     unitCode: product.unitCode,
     quantityStep: product.quantityStep.toString(),
-    active: views.find((view) => view.status === "ACTIVE") ?? null,
-    draft: mayManage
-      ? (views.find((view) => view.status === "DRAFT") ?? null)
-      : null,
-    history: views.filter(
-      (view) => view.status === "RETIRED" || view.status === "DISCARDED",
-    ),
+    active: active ? viewOf(active, names, unit) : null,
+    draft: draft ? viewOf(draft, names, unit) : null,
+    history: {
+      items: history.map((row) => viewOf(row, names, unit)),
+      page,
+      pageCount,
+      total,
+    },
     defaultSamplingText: setting === "sample" ? "Por muestra" : "Completa",
   };
 }
@@ -802,6 +855,26 @@ export async function publishPlanDraft(
     if (version._count.points === 0) {
       fail("Agrega al menos un punto de revisión antes de publicar.");
     }
+    // The rule of quantities of the product may have changed since the
+    // draft was saved: the sample is checked again with the one in force.
+    const rule = {
+      unitCode: product.unitCode,
+      quantityStep: product.quantityStep.toString(),
+    };
+    for (const [value, field] of [
+      [version.sampleQuantity, "sampleQuantity"],
+      [version.sampleMin, "sampleMin"],
+      [version.sampleMax, "sampleMax"],
+    ] as const) {
+      if (value === null) continue;
+      const parsed = parseQuantity(rule, dec(value.toString()).toString());
+      if (!parsed.ok) {
+        fail(
+          `El tamaño de la muestra ya no sirve para este producto: ${parsed.error} Corrígelo y guarda el borrador.`,
+          field,
+        );
+      }
+    }
     const now = new Date();
     const current = await tx.qualityPlanVersion.findFirst({
       where: { planId: found!.planId, status: "ACTIVE" },
@@ -825,7 +898,7 @@ export async function publishPlanDraft(
         publishedByUserId: actor.userId,
       },
     });
-    const rule = ruleOf(version);
+    const sample = ruleOf(version);
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -837,7 +910,7 @@ export async function publishPlanDraft(
         reemplaza: current?.number ?? null,
         revision: samplingText(
           version.sampling,
-          rule,
+          sample,
           unitText(product.unitCode),
         ),
         aplicaA: originsOf(version)
@@ -919,20 +992,44 @@ export type InspectionPlan = {
   points: PlanPoint[];
 };
 
+/** The sampling setting of the company, read with its id in the filter. */
+async function samplingSettingOf(
+  tx: Pick<Tx, "organizationSetting">,
+  organizationId: string,
+): Promise<string> {
+  const row = await tx.organizationSetting.findFirst({
+    where: {
+      organizationId: String(organizationId),
+      key: SAMPLING_DEFAULT.key,
+    },
+    select: { value: true },
+  });
+  if (!row) return SAMPLING_DEFAULT.defaultValue;
+  const parsed = parseSettingValue(SAMPLING_DEFAULT, row.value);
+  return parsed.ok ? parsed.value : SAMPLING_DEFAULT.defaultValue;
+}
+
 /**
  * The plan in force of a product for what comes from `origin`, with its
  * sampling resolved, or null when there is none for that origin (then
  * `samplingWithoutPlan` says how the quality is checked). Call it inside
  * the transaction of the inspection, after its locks; it checks no
- * permission: the service that calls it already did.
+ * permission: the service that calls it already did. Every query names
+ * the company, whatever client it gets.
  */
 export async function inspectionPlanFor(
   tx: PlanReader,
+  organizationId: string,
   productId: string,
   origin: InspectionOrigin,
 ): Promise<InspectionPlan | null> {
+  const company = String(organizationId);
   const row = await tx.qualityPlanVersion.findFirst({
-    where: { status: "ACTIVE", plan: { productId: String(productId) } },
+    where: {
+      organizationId: company,
+      status: "ACTIVE",
+      plan: { organizationId: company, productId: String(productId) },
+    },
     select: {
       id: true,
       number: true,
@@ -946,13 +1043,21 @@ export async function inspectionPlanFor(
       forReceived: true,
       forReturned: true,
       points: {
+        where: { organizationId: company },
         orderBy: { position: "asc" },
-        select: POINT_SELECT,
+        select: {
+          ...POINT_SELECT,
+          options: {
+            where: { organizationId: company },
+            orderBy: { position: "asc" },
+            select: { id: true, label: true, acceptable: true },
+          },
+        },
       },
     },
   });
   if (!row || !originsOf(row).includes(origin)) return null;
-  const setting = await readSetting(tx, SAMPLING_DEFAULT);
+  const setting = await samplingSettingOf(tx, company);
   return {
     versionId: row.id,
     number: row.number,
@@ -967,6 +1072,7 @@ export async function inspectionPlanFor(
 /** How the quality is checked when there is no plan for that origin. */
 export async function samplingWithoutPlan(
   tx: Pick<Tx, "organizationSetting">,
+  organizationId: string,
 ): Promise<Sampling> {
-  return resolveSampling(null, await readSetting(tx, SAMPLING_DEFAULT));
+  return resolveSampling(null, await samplingSettingOf(tx, organizationId));
 }

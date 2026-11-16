@@ -216,6 +216,9 @@ model Organization {
   webhookEvents                WebhookEvent[]
   webhookDeliveries            WebhookDelivery[]
   incidentNotes                IncidentNote[]
+  equipmentTypes               EquipmentType[]
+  equipment                    Equipment[]
+  equipmentMaintenance         EquipmentMaintenance[]
   /// Shared terminals and PINs (WMS-38).
   sharedTerminals              SharedTerminal[]
   sharedTerminalSecrets        SharedTerminalSecret[]
@@ -232,6 +235,7 @@ model Organization {
   qualityPlanPoints            QualityPlanPoint[]
   qualityPlanPointOptions      QualityPlanPointOption[]
   qualityDefects               QualityDefect[]
+  qualityDefectCatalogs        QualityDefectCatalog[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -273,6 +277,8 @@ model Facility {
   approvalRequests ApprovalRequest[]
   /// Incidents reported in it (WMS-39).
   incidents        Incident[]
+  /// Its equipment (WMS-42).
+  equipment        Equipment[]
   /// Shared terminals of its floor (WMS-38).
   sharedTerminals  SharedTerminal[]
   /// Its picking waves (WMS-25).
@@ -650,14 +656,22 @@ model AuditEvent {
 
 /// Account security events (password, MFA, sessions), not tied to a company.
 model SecurityEvent {
-  id        String   @id @db.Char(36)
+  id                  String   @id @db.Char(36)
   /// No foreign key: the history outlives accounts.
-  userId    String   @db.Char(36)
-  action    String   @db.VarChar(80)
-  metadata  Json?
-  ipAddress String?  @db.VarChar(64)
-  createdAt DateTime @default(now()) @db.DateTime(3)
+  userId              String   @db.Char(36)
+  action              String   @db.VarChar(80)
+  metadata            Json?
+  ipAddress           String?  @db.VarChar(64)
+  /// Company of the event when it happens inside one (terminal, team);
+  /// null for account events (WMS-68, ADR 0064). No foreign key.
+  eventOrganizationId String?  @db.Char(36)
+  /// «phone|Chrome|Android» from describeUserAgent; never the raw text.
+  deviceKey           String?  @db.VarChar(80)
+  /// Something that must happen once per person (an alert, a lock).
+  dedupeKey           String?  @db.VarChar(120)
+  createdAt           DateTime @default(now()) @db.DateTime(3)
 
+  @@unique([userId, dedupeKey])
   @@index([userId, createdAt])
   @@map("security_event")
 }
@@ -2449,6 +2463,13 @@ model WarehouseTask {
   /// it takes straight to its order (cross-docking); never changes.
   crossDockMovementId String?               @db.Char(36)
   crossDockMovement   StockMovement?        @relation("TaskCrossDock", fields: [organizationId, crossDockMovementId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// WMS-42 (ADR 0065): the type of equipment it asks for (never changes)
+  /// and the equipment whoever took it said they use (set when taking it,
+  /// cleared when released; fixed once the task is closed).
+  equipmentTypeId     String?               @db.Char(36)
+  equipmentType       EquipmentType?        @relation(fields: [organizationId, equipmentTypeId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  equipmentId         String?               @db.Char(36)
+  equipment           Equipment?            @relation(fields: [organizationId, equipmentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   updatedAt           DateTime              @updatedAt @db.DateTime(3)
   /// Units by serial the person took (WMS-21B): scanned when picking or
   /// picking up, moved by the delivery.
@@ -2466,6 +2487,8 @@ model WarehouseTask {
   @@index([organizationId, outboundLineId])
   @@index([organizationId, placedLocationId])
   @@index([organizationId, crossDockMovementId])
+  @@index([organizationId, equipmentId, status])
+  @@index([organizationId, equipmentTypeId])
   @@map("warehouse_task")
 }
 
@@ -3842,6 +3865,9 @@ model Incident {
   task             WarehouseTask? @relation(fields: [organizationId, taskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   outboundOrderId  String?        @db.Char(36)
   outboundOrder    OutboundOrder? @relation(fields: [organizationId, outboundOrderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The equipment it is about (WMS-42), of its warehouse.
+  equipmentId      String?        @db.Char(36)
+  equipment        Equipment?     @relation(fields: [organizationId, facilityId, equipmentId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The confirmation of the form: a retry finds the same incident.
   idempotencyKey   String         @db.VarChar(64)
   reportedByUserId String         @db.Char(36)
@@ -3865,6 +3891,7 @@ model Incident {
   @@index([organizationId, productId])
   @@index([organizationId, taskId])
   @@index([organizationId, outboundOrderId])
+  @@index([organizationId, equipmentId, number])
   @@map("incident")
 }
 
@@ -3882,6 +3909,99 @@ model IncidentNote {
   @@unique([organizationId, id])
   @@index([organizationId, incidentId, createdAt, id])
   @@map("incident_note")
+}
+
+// ── Equipos del almacén (WMS-42, ADR 0065) ─────────────────────────────
+
+/// A type of equipment, named by each company («Montacargas», «Patín
+/// eléctrico»…). Never deleted: archived, it is no longer offered.
+model EquipmentType {
+  id              String          @id @db.Char(36)
+  organizationId  String          @db.Char(36)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Unique in the company without case or accents (the collation).
+  name            String          @db.VarChar(60)
+  archivedAt      DateTime?       @db.DateTime(3)
+  createdByUserId String          @db.Char(36)
+  createdAt       DateTime        @default(now()) @db.DateTime(3)
+  updatedAt       DateTime        @updatedAt @db.DateTime(3)
+  equipment       Equipment[]
+  tasks           WarehouseTask[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
+  @@map("equipment_type")
+}
+
+enum EquipmentStatus {
+  IN_SERVICE
+  OUT_OF_SERVICE
+}
+
+/// A piece of equipment of a warehouse (WMS-42): what is scanned is its
+/// code, unique in the company. Never deleted: retired (`retiredAt`).
+model Equipment {
+  id                   String                 @id @db.Char(36)
+  organizationId       String                 @db.Char(36)
+  organization         Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  facilityId           String                 @db.Char(36)
+  facility             Facility               @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  typeId               String                 @db.Char(36)
+  type                 EquipmentType          @relation(fields: [organizationId, typeId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// «MC-01»: upper case, what its label says.
+  code                 String                 @db.VarChar(30)
+  name                 String                 @db.VarChar(120)
+  status               EquipmentStatus        @default(IN_SERVICE)
+  /// Why, who and when it went out of service (while OUT_OF_SERVICE).
+  outOfServiceReason   String?                @db.VarChar(300)
+  outOfServiceAt       DateTime?              @db.DateTime(3)
+  outOfServiceByUserId String?                @db.Char(36)
+  /// The next maintenance, a day of the company's calendar.
+  maintenanceDueOn     DateTime?              @db.Date
+  /// Retired: no longer used nor offered; kept for the trace.
+  retiredAt            DateTime?              @db.DateTime(3)
+  retiredReason        String?                @db.VarChar(300)
+  retiredByUserId      String?                @db.Char(36)
+  createdByUserId      String                 @db.Char(36)
+  createdAt            DateTime               @default(now()) @db.DateTime(3)
+  updatedAt            DateTime               @updatedAt @db.DateTime(3)
+  maintenance          EquipmentMaintenance[]
+  tasks                WarehouseTask[]
+  incidents            Incident[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@unique([organizationId, facilityId, id])
+  @@index([organizationId, facilityId, retiredAt, code])
+  @@index([organizationId, typeId])
+  @@index([organizationId, maintenanceDueOn])
+  @@map("equipment")
+}
+
+/// A maintenance done to a piece of equipment (WMS-42): never changed or
+/// deleted (trigger).
+model EquipmentMaintenance {
+  id               String       @id @db.Char(36)
+  organizationId   String       @db.Char(36)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  equipmentId      String       @db.Char(36)
+  equipment        Equipment    @relation(fields: [organizationId, equipmentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The day it was done (company calendar).
+  performedOn      DateTime     @db.Date
+  description      String       @db.VarChar(500)
+  /// Who did it when it was not the person recording it (a workshop).
+  performedBy      String?      @db.VarChar(120)
+  /// The next maintenance it set, if any.
+  nextDueOn        DateTime?    @db.Date
+  /// The confirmation of the form: a retry finds the same record.
+  idempotencyKey   String?      @db.VarChar(64)
+  recordedByUserId String       @db.Char(36)
+  createdAt        DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, equipmentId, performedOn, id])
+  @@map("equipment_maintenance")
 }
 
 /// A device registered as a shared terminal of a warehouse (WMS-38,
@@ -4247,4 +4367,18 @@ model QualityDefect {
   @@unique([organizationId, name])
   @@index([organizationId, archivedAt, name])
   @@map("quality_defect")
+}
+
+/// One row per company, locked by whoever changes how many defects are in
+/// use (adding or bringing one back), so the cap holds with requests at
+/// once (WMS-30A). Created the first time it is needed; never deleted.
+model QualityDefectCatalog {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId])
+  @@map("quality_defect_catalog")
 }

@@ -80,6 +80,10 @@ const SCREENS = [
   // WMS-58: custom fields of products, locations and suppliers.
   "/configuracion/campos",
   "/configuracion/almacenes",
+  // WMS-42: equipment of the warehouse, its types and registering one.
+  "/configuracion/equipos-del-almacen",
+  "/configuracion/equipos-del-almacen/tipos",
+  "/configuracion/equipos-del-almacen/nuevo",
   "/compras",
   "/compras/proveedores",
   "/compras/ordenes/nueva",

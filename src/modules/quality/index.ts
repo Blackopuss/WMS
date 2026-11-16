@@ -4,12 +4,18 @@
 export { qualityModule } from "./contract";
 export { qualityOpenWork } from "./deactivation";
 export {
+  ARCHIVED_DEFECTS_PAGE_SIZE,
   createDefect,
   listDefects,
   setDefectArchived,
   updateDefect,
 } from "./defects";
-export type { DefectInput, DefectResult, DefectView } from "./defects";
+export type {
+  DefectInput,
+  DefectList,
+  DefectResult,
+  DefectView,
+} from "./defects";
 export {
   DEFECT_SEVERITIES,
   INSPECTION_ORIGINS,
@@ -42,6 +48,7 @@ export {
   discardPlanDraft,
   getProductInspection,
   inspectionPlanFor,
+  PLAN_HISTORY_PAGE_SIZE,
   publishPlanDraft,
   removePlanPoint,
   samplingWithoutPlan,

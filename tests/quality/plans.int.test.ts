@@ -249,10 +249,10 @@ describe("drafting and publishing a plan", () => {
     const view = await getProductInspection(owner, productId);
     expect(view?.active).toMatchObject({ id: second, number: 2 });
     expect(view?.active?.points.map((point) => point.label)).toEqual(["Peso"]);
-    expect(view?.history).toMatchObject([
+    expect(view?.history.items).toMatchObject([
       { id: first, number: 1, status: "RETIRED" },
     ]);
-    expect(view?.history[0]?.points.map((point) => point.label)).toEqual([
+    expect(view?.history.items[0]?.points.map((point) => point.label)).toEqual([
       "Sin golpes",
     ]);
     // A third draft discarded stays readable.
@@ -263,7 +263,7 @@ describe("drafting and publishing a plan", () => {
       repeated: true,
     });
     const after = await getProductInspection(owner, productId);
-    expect(after?.history.map((version) => version.status)).toEqual([
+    expect(after?.history.items.map((version) => version.status)).toEqual([
       "DISCARDED",
       "RETIRED",
     ]);
@@ -435,13 +435,13 @@ describe("what WMS-30B reads", () => {
     // Only a published version is read.
     expect(
       await insideTx(owner.organizationId, (tx) =>
-        inspectionPlanFor(tx, productId, "produced"),
+        inspectionPlanFor(tx, owner.organizationId, productId, "produced"),
       ),
     ).toBeNull();
     ok(await publishPlanDraft(owner, versionId));
 
     const produced = await insideTx(owner.organizationId, (tx) =>
-      inspectionPlanFor(tx, productId, "produced"),
+      inspectionPlanFor(tx, owner.organizationId, productId, "produced"),
     );
     expect(produced).toMatchObject({
       versionId,
@@ -452,7 +452,7 @@ describe("what WMS-30B reads", () => {
     // Not marked for returns: there is no plan for them.
     expect(
       await insideTx(owner.organizationId, (tx) =>
-        inspectionPlanFor(tx, productId, "returned"),
+        inspectionPlanFor(tx, owner.organizationId, productId, "returned"),
       ),
     ).toBeNull();
 
@@ -467,10 +467,14 @@ describe("what WMS-30B reads", () => {
     ).toMatchObject({ ok: true });
     expect(
       await insideTx(owner.organizationId, (tx) =>
-        inspectionPlanFor(tx, productId, "received"),
+        inspectionPlanFor(tx, owner.organizationId, productId, "received"),
       ),
     ).toMatchObject({ sampling: { mode: "sample", rule: null } });
-    expect(await insideTx(owner.organizationId, samplingWithoutPlan)).toEqual({
+    expect(
+      await insideTx(owner.organizationId, (tx) =>
+        samplingWithoutPlan(tx, owner.organizationId),
+      ),
+    ).toEqual({
       mode: "sample",
       rule: null,
     });
@@ -483,9 +487,28 @@ describe("what WMS-30B reads", () => {
     await publishedPlan(owner, productId);
     expect(
       await insideTx(other.organizationId, (tx) =>
-        inspectionPlanFor(tx, productId, "produced"),
+        inspectionPlanFor(tx, other.organizationId, productId, "produced"),
       ),
     ).toBeNull();
+    // The company it is given decides, whatever client comes: even the
+    // unscoped one does not cross companies.
+    const unscoped = db as unknown as Parameters<typeof inspectionPlanFor>[0];
+    expect(
+      await inspectionPlanFor(
+        unscoped,
+        other.organizationId,
+        productId,
+        "produced",
+      ),
+    ).toBeNull();
+    expect(
+      await inspectionPlanFor(
+        unscoped,
+        owner.organizationId,
+        productId,
+        "produced",
+      ),
+    ).toMatchObject({ number: 1 });
   });
 });
 
@@ -581,5 +604,104 @@ describe("who sees and who changes plans", () => {
         "1 plan de inspección tiene cambios sin publicar",
       ),
     ]);
+  });
+});
+
+describe("findings of the review (WMS-30A)", () => {
+  it("the version in force shows up after many discarded drafts; history is paged", async () => {
+    const owner = await company();
+    const productId = await product(owner);
+    const active = await publishedPlan(owner, productId);
+    for (let i = 0; i < 12; i++) {
+      ok(await discardPlanDraft(owner, await draftOf(owner, productId)));
+    }
+    const first = await getProductInspection(owner, productId);
+    expect(first?.active?.id).toBe(active);
+    expect(first?.history).toMatchObject({ total: 12, page: 1, pageCount: 2 });
+    expect(first?.history.items).toHaveLength(10);
+    expect(first?.history.items[0]?.number).toBe(13);
+    const last = await getProductInspection(owner, productId, { page: 99 });
+    expect(last?.history).toMatchObject({ page: 2 });
+    expect(last?.history.items.map((version) => version.number)).toEqual([
+      3, 2,
+    ]);
+    // Discarded drafts are drafts: who only reads sees retired versions.
+    const inspector = await member(owner.organizationId, "quality_inspector");
+    const read = await getProductInspection(inspector, productId);
+    expect(read?.active?.id).toBe(active);
+    expect(read?.history.total).toBe(0);
+  });
+
+  it("publishing checks the sample again with the rule of the product today", async () => {
+    const owner = await company();
+    const productId = await product(owner, { unit: "kg", step: "0.01" });
+    const versionId = await draftOf(owner, productId);
+    ok(
+      await updatePlanDraft(owner, versionId, {
+        sampling: "SAMPLE",
+        sampleRule: "FIXED",
+        sampleQuantity: "2.5",
+        forProduced: true,
+      }),
+    );
+    ok(await addPlanPoint(owner, versionId, { label: "Peso", kind: "CHECK" }));
+    // The product goes to whole units after the draft was saved.
+    await db.product.update({
+      where: { id: productId },
+      data: { quantityStep: "1" },
+    });
+    expect(await publishPlanDraft(owner, versionId)).toMatchObject({
+      ok: false,
+      field: "sampleQuantity",
+    });
+  });
+
+  it("a draft of an archived product can still be discarded", async () => {
+    const owner = await company();
+    const productId = await product(owner);
+    const draft = await draftOf(owner, productId);
+    expect(await archiveProduct(owner, productId)).toEqual({ ok: true });
+    expect(await publishPlanDraft(owner, draft)).toMatchObject({ ok: false });
+    expect(await discardPlanDraft(owner, draft)).toMatchObject({ ok: true });
+    expect(await moduleOpenWork("quality", owner.organizationId)).toEqual([]);
+  });
+
+  it("two options the database reads as equal are reported on the options", async () => {
+    const owner = await company();
+    const productId = await product(owner);
+    const versionId = await draftOf(owner, productId);
+    expect(
+      await addPlanPoint(owner, versionId, {
+        label: "Grosor",
+        kind: "CHOICE",
+        passOptions: "Strasse",
+        failOptions: "Straße",
+      }),
+    ).toMatchObject({ ok: false, field: "options" });
+    expect(await db.qualityPlanPoint.count({ where: { versionId } })).toBe(0);
+  });
+
+  it("the stamps of a version follow its state in the database", async () => {
+    const owner = await company();
+    const productId = await product(owner);
+    const draft = await draftOf(owner, productId);
+    await expect(
+      db.qualityPlanVersion.update({
+        where: { id: draft },
+        data: { publishedAt: new Date(), publishedByUserId: owner.userId },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.qualityPlanVersion.update({
+        where: { id: draft },
+        data: { closedAt: new Date() },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.qualityPlanVersion.update({
+        where: { id: draft },
+        data: { status: "ACTIVE" },
+      }),
+    ).rejects.toThrow();
   });
 });

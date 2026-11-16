@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -11,6 +11,7 @@ import {
   ReadOnlyNotice,
 } from "@/components";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
   INSPECTION_ORIGINS,
@@ -51,6 +52,7 @@ const ORIGIN_FIELDS = {
  */
 export default async function InspeccionPage({
   params,
+  searchParams,
 }: PageProps<"/inventario/[id]/inspeccion">) {
   const access = await getModuleAccess();
   const { id } = await params;
@@ -84,14 +86,23 @@ export default async function InspeccionPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const plan = await getProductInspection(actor, id);
+  const { pagina } = await searchParams;
+  const plan = await getProductInspection(actor, id, {
+    page:
+      typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+        ? Number(pagina)
+        : undefined,
+  });
   if (!plan) notFound();
-  const writable =
-    moduleState === "active" &&
-    access.allows("quality.plan.manage") &&
-    plan.productActive;
+  const manages =
+    moduleState === "active" && access.allows("quality.plan.manage");
+  // An archived product keeps its plan; a draft of it can only be dropped.
+  const writable = manages && plan.productActive;
   const unit = getUnit(plan.unitCode).plural;
-  const draft = writable ? plan.draft : null;
+  const draft = manages ? plan.draft : null;
+  const base = `/inventario/${encodeURIComponent(plan.productId)}/inspeccion`;
+  const pageHref = (page: number) =>
+    page > 1 ? `${base}?pagina=${page}` : base;
 
   return (
     <PageContainer>
@@ -141,87 +152,102 @@ export default async function InspeccionPage({
               No rige hasta publicarlo. Una versión publicada ya no se cambia.
             </p>
           </div>
-          <DraftForm
-            action={updateDraftAction.bind(null, plan.productId, draft.id)}
-            draft={{
-              sampling: draft.sampling,
-              sampleRule: draft.rule?.kind ?? "",
-              sampleQuantity:
-                draft.rule?.kind === "FIXED" ? draft.rule.quantity : "",
-              samplePercent:
-                draft.rule?.kind === "PERCENT"
-                  ? String(draft.rule.percent)
-                  : "",
-              sampleMin: draft.rule?.kind === "PERCENT" ? draft.rule.min : "",
-              sampleMax:
-                draft.rule?.kind === "PERCENT" ? (draft.rule.max ?? "") : "",
-              forProduced: draft.origins.includes("produced"),
-              forReceived: draft.origins.includes("received"),
-              forReturned: draft.origins.includes("returned"),
-            }}
-            samplings={SAMPLINGS.map((value) => ({
-              value,
-              label:
-                value === "DEFAULT"
-                  ? `${SAMPLING_LABELS.DEFAULT} (hoy: ${plan.defaultSamplingText.toLowerCase()})`
-                  : SAMPLING_LABELS[value],
-            }))}
-            origins={INSPECTION_ORIGINS.map((origin) => ({
-              name: ORIGIN_FIELDS[origin],
-              label: ORIGIN_LABELS[origin],
-            }))}
-            unit={unit}
-          />
+          {!plan.productActive && (
+            <p className="text-sm">
+              El producto está archivado: este borrador ya no se puede publicar.
+              Descártalo para cerrarlo.
+            </p>
+          )}
+          {plan.productActive && (
+            <>
+              <DraftForm
+                action={updateDraftAction.bind(null, plan.productId, draft.id)}
+                draft={{
+                  sampling: draft.sampling,
+                  sampleRule: draft.rule?.kind ?? "",
+                  sampleQuantity:
+                    draft.rule?.kind === "FIXED" ? draft.rule.quantity : "",
+                  samplePercent:
+                    draft.rule?.kind === "PERCENT"
+                      ? String(draft.rule.percent)
+                      : "",
+                  sampleMin:
+                    draft.rule?.kind === "PERCENT" ? draft.rule.min : "",
+                  sampleMax:
+                    draft.rule?.kind === "PERCENT"
+                      ? (draft.rule.max ?? "")
+                      : "",
+                  forProduced: draft.origins.includes("produced"),
+                  forReceived: draft.origins.includes("received"),
+                  forReturned: draft.origins.includes("returned"),
+                }}
+                samplings={SAMPLINGS.map((value) => ({
+                  value,
+                  label:
+                    value === "DEFAULT"
+                      ? `${SAMPLING_LABELS.DEFAULT} (hoy: ${plan.defaultSamplingText.toLowerCase()})`
+                      : SAMPLING_LABELS[value],
+                }))}
+                origins={INSPECTION_ORIGINS.map((origin) => ({
+                  name: ORIGIN_FIELDS[origin],
+                  label: ORIGIN_LABELS[origin],
+                }))}
+                unit={unit}
+              />
 
-          <div className="space-y-3">
-            <h3 className="font-medium">Puntos de revisión</h3>
-            {draft.points.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Todavía no hay puntos. Agrega al menos uno para publicar.
-              </p>
-            ) : (
-              <ol className="divide-y rounded-lg border">
-                {draft.points.map((point) => (
-                  <li
-                    key={point.id}
-                    className="flex flex-wrap items-center gap-3 p-3 sm:px-4"
-                  >
-                    <PointText point={point} />
-                    <PlanButton
-                      action={removePointAction.bind(
-                        null,
-                        plan.productId,
-                        point.id,
-                      )}
-                      pendingText="Quitando…"
-                    >
-                      Quitar
-                    </PlanButton>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+              <div className="space-y-3">
+                <h3 className="font-medium">Puntos de revisión</h3>
+                {draft.points.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Todavía no hay puntos. Agrega al menos uno para publicar.
+                  </p>
+                ) : (
+                  <ol className="divide-y rounded-lg border">
+                    {draft.points.map((point) => (
+                      <li
+                        key={point.id}
+                        className="flex flex-wrap items-center gap-3 p-3 sm:px-4"
+                      >
+                        <PointText point={point} />
+                        <PlanButton
+                          action={removePointAction.bind(
+                            null,
+                            plan.productId,
+                            point.id,
+                          )}
+                          pendingText="Quitando…"
+                        >
+                          Quitar
+                        </PlanButton>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
 
-          <div className="space-y-3 border-t pt-4">
-            <h3 className="font-medium">Agregar punto</h3>
-            <AddPointForm
-              action={addPointAction.bind(null, plan.productId, draft.id)}
-              kinds={POINT_KINDS.map((value) => ({
-                value,
-                label: POINT_KIND_LABELS[value],
-              }))}
-            />
-          </div>
+              <div className="space-y-3 border-t pt-4">
+                <h3 className="font-medium">Agregar punto</h3>
+                <AddPointForm
+                  action={addPointAction.bind(null, plan.productId, draft.id)}
+                  kinds={POINT_KINDS.map((value) => ({
+                    value,
+                    label: POINT_KIND_LABELS[value],
+                  }))}
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex flex-wrap gap-2 border-t pt-4">
-            <PlanButton
-              action={publishDraftAction.bind(null, plan.productId, draft.id)}
-              pendingText="Publicando…"
-              variant="default"
-            >
-              {`Publicar versión ${draft.number}`}
-            </PlanButton>
+            {plan.productActive && (
+              <PlanButton
+                action={publishDraftAction.bind(null, plan.productId, draft.id)}
+                pendingText="Publicando…"
+                variant="default"
+              >
+                {`Publicar versión ${draft.number}`}
+              </PlanButton>
+            )}
             <PlanButton
               action={discardDraftAction.bind(null, plan.productId, draft.id)}
               pendingText="Descartando…"
@@ -232,7 +258,7 @@ export default async function InspeccionPage({
         </section>
       )}
 
-      {plan.history.length > 0 && (
+      {plan.history.total > 0 && (
         <section
           aria-labelledby="anteriores"
           className="rounded-xl border bg-card"
@@ -241,7 +267,7 @@ export default async function InspeccionPage({
             Versiones anteriores
           </h2>
           <ul className="divide-y">
-            {plan.history.map((version) => (
+            {plan.history.items.map((version) => (
               <li key={version.id} className="p-4 sm:px-5">
                 <details>
                   <summary className="flex min-h-11 cursor-pointer flex-wrap items-center gap-2 rounded outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
@@ -264,6 +290,36 @@ export default async function InspeccionPage({
               </li>
             ))}
           </ul>
+          {plan.history.pageCount > 1 && (
+            <nav
+              aria-label="Páginas de versiones anteriores"
+              className="flex items-center justify-between gap-3 border-t p-4 sm:px-5"
+            >
+              {plan.history.page > 1 ? (
+                <Button asChild variant="outline">
+                  <Link href={pageHref(plan.history.page - 1)} rel="prev">
+                    <ChevronLeft aria-hidden="true" data-icon="inline-start" />
+                    Anterior
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+              <p className="text-sm text-muted-foreground tabular-nums">
+                Página {plan.history.page} de {plan.history.pageCount}
+              </p>
+              {plan.history.page < plan.history.pageCount ? (
+                <Button asChild variant="outline">
+                  <Link href={pageHref(plan.history.page + 1)} rel="next">
+                    Siguiente
+                    <ChevronRight aria-hidden="true" data-icon="inline-end" />
+                  </Link>
+                </Button>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+            </nav>
+          )}
         </section>
       )}
     </PageContainer>

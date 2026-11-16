@@ -159,9 +159,10 @@ código»):
 | Devoluciones de clientes | `customer-returns.ts`, `customer-return-states.ts`, `return-holds.ts` | `receiveCustomerReturn` (entra en inspección), `decideCustomerReturn` (disponible, dañado o rechazado), `findReturnableOrders` (`PS-…` o `EM-…`), `getReturnableOrder` (lo que salió y lo que puede regresar), `listReturnPlaces`, `returnsWithoutOrderAllowed`, `listCustomerReturns`, `getCustomerReturn`, `countReturnsToReview`, `returnsOfOrder`, `findCustomerReturnByKey`; `heldForReturns` (lo retenido en inspección); transiciones `CUSTOMER_RETURN_TRANSITIONS`. El núcleo del cambio de estado, `writeStatusChange` (`status-change.ts`), lo comparten «Cambiar estado» y las decisiones |
 | Verificación y empaque | `packing.ts` | `startPacking` (PICKED → PACKING), `packScan` (un escaneo al bulto abierto: serie, clave o código de barras, o lote), `unpackFromPackage`, `sealPackage` (tipo y peso), `reopenPackage`, `reportPackShortage` (faltante con motivo), `finishPacking` (→ PACKED); lecturas `getPackingView`, `countOrdersToPack`, `packingEnabled`; `TO_PACK` en `listOutboundOrders` |
 | Incidencias (WMS-39) | `incidents.ts`, `incident-states.ts` | `reportIncident` (del almacén activo; ubicación y producto escaneados; tarea o pedido opcionales; clave de confirmación), `startIncident` («Atender»), `resolveIncident` (qué se hizo), `dismissIncident` (motivo), `addIncidentNote`, `listIncidents` (`open`, `closed`, `mine`), `getIncident`, `countOpenIncidents` (Inicio, para quien atiende); transiciones `INCIDENT_TRANSITIONS`, tipos `INCIDENT_KINDS`, número `INC-0001`. No tocan existencias |
+| Equipos (WMS-42) | `equipment.ts`, `equipment-rules.ts` | Tipos (`listEquipmentTypes`, `saveEquipmentType`, `setEquipmentTypeArchived` y `mayEditEquipmentTypes`: solo quien ve toda la empresa los escribe), registro (`createEquipment`, `updateEquipment`), estado (`setEquipmentOutOfService`, `returnEquipmentToService`, `retireEquipment`), `recordMaintenance` (con clave de confirmación; solo el registro más reciente cambia el próximo mantenimiento); dar de baja o cambiar de tipo el último equipo de un tipo pedido por tareas pendientes responde `pending_tasks` hasta `acceptPendingTasks`; lecturas (`listEquipment`: en uso, piden atención, dados de baja; `getEquipment`: mantenimientos, incidencias y últimas tareas), `countEquipmentAttention` (Inicio), `equipmentTypesForTasks` y `hasEquipmentHere` (para mostrar los campos solo si hay equipos), `runEquipmentMaintenanceRound` (ronda). En `tasks.ts`: `acceptTask` con `equipmentCode`, `changeTaskEquipment`, `taskEquipmentChoices`; `pickUpTask` y `confirmPick` rechazan con el equipo fuera de servicio. En `incidents.ts`: `equipment` escaneado; «Equipo descompuesto» lo deja fuera de servicio según `inventory.equipment.on_broken_report`. Candados: tarea → equipo; lo que cambia un equipo bloquea solo el equipo y lee sus tareas sin bloquearlas (ADR 0065) |
 | Avisos (WMS-39) | `notices.ts` | `INVENTORY_NOTIFICATION_TYPES`: los tipos que este módulo manda con `notify` (ver «Avisos») y `DAILY_DIGEST_NOTICE` (solo por correo) |
 | Resumen diario por correo (WMS-39B) | `daily-digest.ts` | `runDailyDigestRound` (ronda), `sendDailyDigest` y `dailyDigestJobHandlers` (worker), `digestSections` (lee con `listExpiringLots` por almacén alcanzado y `listLowStock`, como la persona; `DIGEST_LINES` por sección) |
-| Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido y embarque, con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
+| Etiquetas | `labels.ts` | `buildLabels` (PDF de etiquetas de ubicaciones, producto, lotes, series, tarima o bulto, bultos de un pedido, pedido, embarque y equipo (WMS-42), con Code 128 y QR; lee con los servicios de cada ficha y su alcance; tope `LABELS_MAX` y `LABEL_COPIES_MAX`), `previewLocationLabels` (cuántas salen y cuáles no tienen código), `productLabelOptions`, `labelDefaults`; `LABEL_KINDS` (WMS-26) |
 | Importar pedidos | `outbound-import.ts` | `startOutboundImport` → `reviewOutboundImport` → `confirmOutboundImport` / `cancelOutboundImport` |
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar; los campos personalizados de productos (WMS-58) se reconocen por título (`customImportColumns`), se revisan con las reglas del formulario y se aplican con `prepareCustomValues`/`writeCustomValues`; la plantilla trae sus columnas |
 | Importar salidas | `exit-import.ts`, `exit-import-apply.ts` | `startExitImport` → `reviewExitImport` → `confirmExitImport` → `applyExitImport` (worker); `getExitCoverage` |
@@ -204,10 +205,14 @@ Todos los `inventory.*` del catálogo, por grupo:
   que no llegó; WMS-19B: PDF).
 - Incidencias (WMS-39): `incident.read|create|manage` (ver las del almacén,
   reportar y comentar, atender y cerrar).
+- Equipos (WMS-42): `equipment.read|manage` (ver; registrar, cambiar, dejar
+  fuera de servicio, dar de baja, tipos y mantenimientos). Elegir equipo al
+  tomar una tarea va con `task.execute` y reportar una falla con
+  `incident.create`.
 - Archivos: `import.create|read|confirm|cancel`, `export.create`.
 - Etiquetas (WMS-26): sin permiso propio; imprimir pide la lectura de lo que
   se etiqueta (`location.read`, `product.read`, `stock.read`,
-  `outbound.read`, `shipment.read`, y `purchasing.receipt.read` para las
+  `outbound.read`, `shipment.read`, `equipment.read`, y `purchasing.receipt.read` para las
   series de una recepción).
 
 Los de productos, presentaciones y ubicaciones los comprueban los servicios de
@@ -229,6 +234,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `facility_transfer_line`, `facility_transfer_receipt`,
 `facility_transfer_receipt_line`,
 `incident`, `incident_note`,
+`equipment_type`, `equipment`, `equipment_maintenance`,
 `product_import`,
 `product_import_item`, `exit_import`, `exit_import_row`, `outbound_import`.
 Detalle en [modelo-de-datos.md](../modelo-de-datos.md).
@@ -264,8 +270,12 @@ la transacción que decide:
 | `inventory.adjustment.approval_threshold` | **`any`**, `10`, `25`, `50` (% de lo que hay en la ubicación que, con la regla de `inventory.adjustment` encendida, hace esperar una corrección; WMS-41) |
 | `inventory.digest.hour` | `6`, **`7`**, `8`, `9`, `12`, `17` (hora del calendario de la empresa a la que sale el resumen diario por correo; WMS-39B) |
 
+| `inventory.equipment.maintenance_notice` | `3`, **`7`**, `15`, `30` (días antes del mantenimiento de un equipo en que pide atención; WMS-42) |
+| `inventory.equipment.on_broken_report` | **`stop`** (queda fuera de servicio), `notify` (solo se avisa) (WMS-42) |
+
 `inventory.count.review_threshold` e `inventory.adjustment.approval_threshold` se muestran en Configuración › Reglas de aprobación, junto a la
-regla de su tipo, y no en Operación.
+regla de su tipo, y no en Operación. Los de equipos (`EQUIPMENT_SETTINGS`), en
+Configuración › Equipos del almacén.
 
 ## Aprobaciones
 
@@ -292,6 +302,8 @@ Tipos en `notices.ts` (`INVENTORY_NOTIFICATION_TYPES`), registrados en
 | `inventory.transfer_differences` | `receiveFacilityTransfer` (con algo dañado), `resolveFacilityTransfer` (`LOST`) | quien lo envió |
 | `inventory.incident_reported` | `reportIncident` | `inventory.incident.manage` que alcance su ubicación o su almacén |
 | `inventory.incident_changed` | atender, resolver, descartar, nota | quien la reportó |
+| `inventory.equipment_maintenance` | la ronda `inventory.equipment_maintenance` | `inventory.equipment.manage` del almacén del equipo (una vez al entrar en la ventana y otra al pasarse) |
+| `inventory.equipment_out_of_service` | fuera de servicio a mano o por una incidencia «Equipo descompuesto» | quien tiene el equipo en una tarea abierta |
 
 Cualquiera de estos puede salir también por correo a quien lo pidió (WMS-39B,
 ADR 0060): lo decide `notify`, el módulo no hace nada más.
@@ -338,6 +350,7 @@ Rondas (`scheduledRounds` de `src/modules/registry/rounds.ts`, cada hora):
 | --- | --- | --- |
 | `inventory.replenishment` | `runReplenishmentRound` (`replenishment.ts`) | Con `inventory.replenishment.mode = round` y el módulo con escritura, crea en cada almacén activo las tareas de reposición que hacen falta, como el titular; repetirla o correrla dos veces a la vez no duplica (ADR 0051) |
 | `inventory.cycle_counts` | `runCycleCountRound` (`cycle-counts.ts`) | Genera los conteos de hoy de cada programa activo; repetirla no duplica (programa bloqueado, cupo del día contado bajo el candado y llave única programa + día + ubicación). |
+| `inventory.equipment_maintenance` | `runEquipmentMaintenanceRound` (`equipment.ts`) | Avisa del mantenimiento por vencer o vencido de cada equipo no dado de baja; repetirla no duplica (llave por equipo, día y fase) |
 | `inventory.daily_digest` | `runDailyDigestRound` (`daily-digest.ts`) | A partir de la hora de la empresa, aparta el resumen de hoy de quien lo pidió y encola su envío; repetirla o correrla dos veces a la vez no duplica (llave única persona + día). Borra los resúmenes terminados de más de 90 días. |
 
 ## ADR
@@ -351,7 +364,7 @@ contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
-0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario).
+0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén).
 
 ## Pruebas
 
@@ -363,7 +376,7 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en
-`facility-transfers.int.test.ts`. Casos de alcance en
+`facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`. Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara

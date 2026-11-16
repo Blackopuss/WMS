@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-117 tablas en 29 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+121 tablas en 30 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -32,9 +32,10 @@
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
 | Inventario › Incidencias | 2 | [inventory](modulos/inventory.md) |
+| Inventario › Equipos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
-| Calidad | 5 | [quality](modulos/quality.md) |
+| Calidad | 6 | [quality](modulos/quality.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -633,8 +634,12 @@ No es de una empresa (sin `organizationId`).
 | `action` | `String · VarChar(80)` |  |  |
 | `metadata` | `Json?` |  |  |
 | `ipAddress` | `String? · VarChar(64)` |  |  |
+| `eventOrganizationId` | `String? · Char(36)` |  | Company of the event when it happens inside one (terminal, team); null for account events (WMS-68, ADR 0064). No foreign key. |
+| `deviceKey` | `String? · VarChar(80)` |  | «phone\|Chrome\|Android» from describeUserAgent; never the raw text. |
+| `dedupeKey` | `String? · VarChar(120)` |  | Something that must happen once per person (an alert, a lock). |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
+- Únicas: (`userId`, `dedupeKey`).
 - Índices: (`userId`, `createdAt`).
 
 ## Plataforma › Aceptación de documentos
@@ -1879,11 +1884,13 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `cancelReason` | `String? · VarChar(300)` |  |  |
 | `movementId` | `String? · Char(36)` |  | The transfer its delivery wrote. |
 | `crossDockMovementId` | `String? · Char(36)` |  | PICK only (WMS-54, ADR 0052): the entry (RECEIPT or ENTRY) whose goods it takes straight to its order (cross-docking); never changes. |
+| `equipmentTypeId` | `String? · Char(36)` |  | WMS-42 (ADR 0065): the type of equipment it asks for (never changes) and the equipment whoever took it said they use (set when taking it, cleared when released; fixed once the task is closed). |
+| `equipmentId` | `String? · Char(36)` |  |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
-- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`); (`organizationId`, `crossDockMovementId`).
-- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `crossDockMovement` → `StockMovement` por (`organizationId`, `crossDockMovementId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`); (`organizationId`, `crossDockMovementId`); (`organizationId`, `equipmentId`, `status`); (`organizationId`, `equipmentTypeId`).
+- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `crossDockMovement` → `StockMovement` por (`organizationId`, `crossDockMovementId`) (al borrar: Restrict); `equipmentType` → `EquipmentType` por (`organizationId`, `equipmentTypeId`) (al borrar: Restrict); `equipment` → `Equipment` por (`organizationId`, `equipmentId`) (al borrar: Restrict).
 
 ### WarehouseTaskSerial · `warehouse_task_serial`
 
@@ -2400,6 +2407,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `productId` | `String? · Char(36)` |  |  |
 | `taskId` | `String? · Char(36)` |  |  |
 | `outboundOrderId` | `String? · Char(36)` |  |  |
+| `equipmentId` | `String? · Char(36)` |  | The equipment it is about (WMS-42), of its warehouse. |
 | `idempotencyKey` | `String · VarChar(64)` |  | The confirmation of the form: a retry finds the same incident. |
 | `reportedByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
@@ -2411,8 +2419,8 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `idempotencyKey`).
-- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `reportedByUserId`, `number`); (`organizationId`, `locationId`); (`organizationId`, `productId`); (`organizationId`, `taskId`); (`organizationId`, `outboundOrderId`).
-- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `facilityId`, `locationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `task` → `WarehouseTask` por (`organizationId`, `taskId`) (al borrar: Restrict); `outboundOrder` → `OutboundOrder` por (`organizationId`, `outboundOrderId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `reportedByUserId`, `number`); (`organizationId`, `locationId`); (`organizationId`, `productId`); (`organizationId`, `taskId`); (`organizationId`, `outboundOrderId`); (`organizationId`, `equipmentId`, `number`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `facilityId`, `locationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `task` → `WarehouseTask` por (`organizationId`, `taskId`) (al borrar: Restrict); `outboundOrder` → `OutboundOrder` por (`organizationId`, `outboundOrderId`) (al borrar: Restrict); `equipment` → `Equipment` por (`organizationId`, `facilityId`, `equipmentId`) (al borrar: Restrict).
 
 ### IncidentNote · `incident_note`
 
@@ -2437,6 +2445,87 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `IncidentKind`: `DAMAGED_GOODS`, `MISPLACED`, `UNSAFE_LOCATION`, `BROKEN_EQUIPMENT`, `OTHER`.
 - `IncidentStatus`: `OPEN`, `IN_PROGRESS`, `RESOLVED`, `DISMISSED`.
+
+## Inventario › Equipos
+
+Equipos de cada almacén (montacargas, patines, básculas; el tipo lo nombra cada empresa), su estado en servicio o fuera de servicio, su baja y los mantenimientos hechos; las tareas que piden un tipo dicen con cuál se hicieron (WMS-42).
+
+Documento: [modulos/inventory.md](modulos/inventory.md).
+
+### EquipmentType · `equipment_type`
+
+A type of equipment, named by each company («Montacargas», «Patín eléctrico»…). Never deleted: archived, it is no longer offered.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(60)` |  | Unique in the company without case or accents (the collation). |
+| `archivedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `name`).
+
+### Equipment · `equipment`
+
+A piece of equipment of a warehouse (WMS-42): what is scanned is its code, unique in the company. Never deleted: retired (`retiredAt`).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `typeId` | `String · Char(36)` |  |  |
+| `code` | `String · VarChar(30)` |  | «MC-01»: upper case, what its label says. |
+| `name` | `String · VarChar(120)` |  |  |
+| `status` | `EquipmentStatus` | `IN_SERVICE` |  |
+| `outOfServiceReason` | `String? · VarChar(300)` |  | Why, who and when it went out of service (while OUT_OF_SERVICE). |
+| `outOfServiceAt` | `DateTime? · DateTime(3)` |  |  |
+| `outOfServiceByUserId` | `String? · Char(36)` |  |  |
+| `maintenanceDueOn` | `DateTime? · Date` |  | The next maintenance, a day of the company's calendar. |
+| `retiredAt` | `DateTime? · DateTime(3)` |  | Retired: no longer used nor offered; kept for the trace. |
+| `retiredReason` | `String? · VarChar(300)` |  |  |
+| `retiredByUserId` | `String? · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `code`); (`organizationId`, `facilityId`, `id`).
+- Índices: (`organizationId`, `facilityId`, `retiredAt`, `code`); (`organizationId`, `typeId`); (`organizationId`, `maintenanceDueOn`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `type` → `EquipmentType` por (`organizationId`, `typeId`) (al borrar: Restrict).
+
+### EquipmentMaintenance · `equipment_maintenance`
+
+A maintenance done to a piece of equipment (WMS-42): never changed or deleted (trigger).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `equipmentId` | `String · Char(36)` |  |  |
+| `performedOn` | `DateTime · Date` |  | The day it was done (company calendar). |
+| `description` | `String · VarChar(500)` |  |  |
+| `performedBy` | `String? · VarChar(120)` |  | Who did it when it was not the person recording it (a workshop). |
+| `nextDueOn` | `DateTime? · Date` |  | The next maintenance it set, if any. |
+| `idempotencyKey` | `String? · VarChar(64)` |  | The confirmation of the form: a retry finds the same record. |
+| `recordedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `idempotencyKey`).
+- Índices: (`organizationId`, `equipmentId`, `performedOn`, `id`).
+- Relaciones: `equipment` → `Equipment` por (`organizationId`, `equipmentId`) (al borrar: Restrict).
+
+#### Enumeraciones de Inventario › Equipos
+
+- `EquipmentStatus`: `IN_SERVICE`, `OUT_OF_SERVICE`.
 
 ## Inventario › Importaciones
 
@@ -2995,6 +3084,20 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `name`).
 - Índices: (`organizationId`, `archivedAt`, `name`).
+
+### QualityDefectCatalog · `quality_defect_catalog`
+
+One row per company, locked by whoever changes how many defects are in use (adding or bringing one back), so the cap holds with requests at once (WMS-30A). Created the first time it is needed; never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); `organizationId`.
 
 #### Enumeraciones de Calidad
 

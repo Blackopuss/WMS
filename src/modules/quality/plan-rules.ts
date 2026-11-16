@@ -106,13 +106,20 @@ export function sampleSize(
 ): Decimal {
   const total = dec(quantity);
   if (total.lte(0)) return dec(0);
+  const increment = dec(step);
+  // Every amount goes up to the step of the product as it is today: a
+  // rule saved with another step never asks for «2.5 piezas».
   let size: Decimal;
   if (rule.kind === "FIXED") {
-    size = dec(rule.quantity);
+    size = ceilToStep(dec(rule.quantity), increment);
   } else {
-    size = ceilToStep(total.times(rule.percent).div(100), dec(step));
-    if (size.lt(rule.min)) size = dec(rule.min);
-    if (rule.max !== null && size.gt(rule.max)) size = dec(rule.max);
+    size = ceilToStep(total.times(rule.percent).div(100), increment);
+    const min = ceilToStep(dec(rule.min), increment);
+    if (size.lt(min)) size = min;
+    if (rule.max !== null) {
+      const max = ceilToStep(dec(rule.max), increment);
+      if (size.gt(max)) size = max;
+    }
   }
   return Decimal.min(size, total);
 }
@@ -131,19 +138,30 @@ export function foldText(text: string): string {
 
 /** Decimals kept for the range of a number point. */
 const RANGE_SCALE = 4;
+/** Decimals accepted in an answer (what an instrument shows). */
+const ANSWER_SCALE = 10;
 const RANGE_MAX = new Decimal("999999999999999");
 
-/** A number typed by a person for a range, or null when empty. */
-export function parseRangeValue(
+/**
+ * A number typed by a person, or null when empty. The decimal separator is
+ * the point; a comma is refused instead of guessed («0,500» could be half
+ * or five hundred).
+ */
+function parseNumber(
   raw: unknown,
+  scale: number,
 ): { ok: true; value: string | null } | { ok: false; error: string } {
   const text = cleanText(raw);
   if (text === "") return { ok: true, value: null };
+  if (text.includes(",")) {
+    return {
+      ok: false,
+      error:
+        "Usa punto para los decimales y sin separar miles, por ejemplo 1250.5.",
+    };
+  }
   try {
-    const value = parseDecimal(text, {
-      maxScale: RANGE_SCALE,
-      allowNegative: true,
-    });
+    const value = parseDecimal(text, { maxScale: scale, allowNegative: true });
     if (value.abs().gt(RANGE_MAX)) {
       return { ok: false, error: "El número es demasiado grande." };
     }
@@ -154,10 +172,15 @@ export function parseRangeValue(
       ok: false,
       error:
         error.code === "decimal.too_many_decimals"
-          ? `Usa como máximo ${RANGE_SCALE} decimales.`
+          ? `Usa como máximo ${scale} decimales.`
           : "Escribe un número, por ejemplo 12.5 o -4.",
     };
   }
+}
+
+/** A limit of the range of a number point, or null when empty. */
+export function parseRangeValue(raw: unknown) {
+  return parseNumber(raw, RANGE_SCALE);
 }
 
 export type PointInput = {
@@ -266,18 +289,29 @@ export function parsePoint(
   }
   if (kind === "CHOICE") {
     const seen = new Set<string>();
+    const passing = new Set<string>();
+    let both: string | null = null;
     const add = (raw: unknown, acceptable: boolean) => {
       for (const option of lines(raw)) {
         if (option.length > 60) return option;
         const key = foldText(option);
+        if (!acceptable && passing.has(key)) both ??= option;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (acceptable) passing.add(key);
         point.options.push({ label: option, acceptable });
       }
       return null;
     };
     const tooLong =
       add(input.passOptions, true) ?? add(input.failOptions, false);
+    if (!tooLong && both) {
+      return {
+        ok: false,
+        field: "options",
+        error: `«${both}» está en las dos listas: déjalo solo en una.`,
+      };
+    }
     if (tooLong) {
       return {
         ok: false,
@@ -323,19 +357,27 @@ export type PlanPoint = {
   options: { id: string; label: string; acceptable: boolean }[];
 };
 
-export type Judgement = "pass" | "fail" | "noted";
+/** «skipped»: an optional point left without answer. */
+export type Judgement = "pass" | "fail" | "noted" | "skipped";
 
 /**
  * Whether an answer to a point passes: yes-or-no passes with «yes», a
- * number inside its range, an option marked as passing. A text answer is
- * only noted. The answer comes as typed: «yes»/«no», a number, the id of
- * an option or a note.
+ * number inside its range (ends included), an option marked as passing; a
+ * text answer is only noted. An empty answer is refused when the point is
+ * required and skipped when it is not. The answer comes as typed:
+ * «yes»/«no», a number with a point for decimals (up to 10), the id of an
+ * option or a note.
  */
 export function judgeAnswer(
   point: PlanPoint,
   raw: string,
 ): { ok: true; result: Judgement } | { ok: false; error: string } {
   const answer = cleanText(raw);
+  if (answer === "") {
+    return point.required
+      ? { ok: false, error: "Este punto es obligatorio." }
+      : { ok: true, result: "skipped" };
+  }
   switch (point.kind) {
     case "CHECK":
       if (answer !== "yes" && answer !== "no") {
@@ -343,11 +385,9 @@ export function judgeAnswer(
       }
       return { ok: true, result: answer === "yes" ? "pass" : "fail" };
     case "NUMBER": {
-      const parsed = parseRangeValue(answer);
+      const parsed = parseNumber(answer, ANSWER_SCALE);
       if (!parsed.ok) return parsed;
-      if (parsed.value === null)
-        return { ok: false, error: "Escribe un número." };
-      const value = dec(parsed.value);
+      const value = dec(parsed.value!);
       const below = point.minValue !== null && value.lt(point.minValue);
       const above = point.maxValue !== null && value.gt(point.maxValue);
       return { ok: true, result: below || above ? "fail" : "pass" };

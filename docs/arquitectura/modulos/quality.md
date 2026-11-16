@@ -21,11 +21,11 @@ todavía.
 | Qué | Para qué |
 | --- | --- |
 | `qualityModule` | Contrato, para `src/modules/registry` |
-| `getProductInspection` | Plan de un producto para su ficha y su pantalla: vigente, borrador (solo para quien administra) y versiones anteriores (`quality.plan.read`) |
+| `getProductInspection` | Plan de un producto para su ficha y su pantalla: vigente, borrador (solo para quien administra) y versiones anteriores paginadas (`quality.plan.read`) |
 | `startPlanDraft`, `updatePlanDraft`, `addPlanPoint`, `removePlanPoint`, `publishPlanDraft`, `discardPlanDraft` | Borrador de la versión siguiente, sus puntos y su publicación (`quality.plan.manage`; candados producto → plan) |
 | `listDefects`, `createDefect`, `updateDefect`, `setDefectArchived` | Catálogo de defectos (leer `quality.plan.read`; cambiar `quality.plan.manage`) |
-| `inspectionPlanFor(tx, productId, origin)` | Para WMS-30B, dentro de su transacción: versión vigente para ese origen (`produced`, `received`, `returned`) con sus puntos y la revisión ya resuelta con el ajuste, o `null`. No pide permiso |
-| `samplingWithoutPlan(tx)` | Revisión cuando no hay plan para ese origen |
+| `inspectionPlanFor(tx, organizationId, productId, origin)` | Para WMS-30B, dentro de su transacción: versión vigente para ese origen (`produced`, `received`, `returned`) con sus puntos y la revisión ya resuelta con el ajuste, o `null`. No pide permiso |
+| `samplingWithoutPlan(tx, organizationId)` | Revisión cuando no hay plan para ese origen |
 | `sampleSize`, `resolveSampling`, `judgeAnswer` | Reglas puras (`plan-rules.ts`): tamaño de la muestra, revisión con el ajuste, si una respuesta cumple |
 | `qualityOpenWork` | Trabajo a medias al quitar el módulo (borradores sin publicar), para la consola |
 | `QUALITY_SETTINGS`, `SAMPLING_DEFAULT`, `EVIDENCE_PHOTO` | Ajustes de operación |
@@ -50,6 +50,7 @@ Calidad no da nada.
 | `quality_plan_point` | Puntos de revisión (sí o no, número con rango, opción de una lista, texto), obligatorio, pide foto; solo cambian en borrador |
 | `quality_plan_point_option` | Opciones de un punto de lista y si cumplen; solo cambian en borrador |
 | `quality_defect` | Defectos de la empresa con gravedad (Menor, Mayor, Crítica); se archivan, no se borran |
+| `quality_defect_catalog` | Una fila por empresa: candado común de agregar o volver a usar un defecto (tope de 100 en uso) |
 
 ## Ajustes, trabajos y pantallas
 

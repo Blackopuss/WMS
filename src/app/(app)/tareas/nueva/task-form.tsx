@@ -24,6 +24,7 @@ export function TaskForm({
   sourceLabel,
   destinations,
   people,
+  equipmentTypes,
 }: {
   productId: string;
   /** «piezas», so the quantity says what it counts. */
@@ -34,6 +35,8 @@ export function TaskForm({
   sourceLabel?: string;
   destinations: Option[];
   people: Option[];
+  /** WMS-42: types the task may ask for; empty, the field is not shown. */
+  equipmentTypes: Option[];
 }) {
   const [state, formAction, pending] = useActionState(createTaskAction, {
     values: {
@@ -45,6 +48,7 @@ export function TaskForm({
       priority: "NORMAL",
       assignToUserId: "",
       note: "",
+      equipmentTypeId: "",
     },
     answers: 0,
   } satisfies CreateTaskState);
@@ -154,6 +158,31 @@ export function TaskForm({
           </NativeSelect>
         )}
       </FormField>
+      {equipmentTypes.length > 0 && (
+        <FormField
+          id="equipmentTypeId"
+          label="Pide equipo"
+          error={errors.equipmentTypeId}
+        >
+          {(control) => (
+            <NativeSelect
+              {...control}
+              name="equipmentTypeId"
+              defaultValue={state.values.equipmentTypeId}
+              key={key("equipment")}
+            >
+              <option key="" value="">
+                No pide equipo
+              </option>
+              {equipmentTypes.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+        </FormField>
+      )}
       <FormField id="note" label="Indicaciones (opcional)" error={errors.note}>
         {(control) => (
           <Input

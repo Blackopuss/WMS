@@ -40,6 +40,8 @@ export async function updateSettingAction(
     revalidatePath("/configuracion/aprobaciones");
     // WMS-38: the settings of shared terminals are shown on their screen.
     revalidatePath("/configuracion/terminales");
+    // WMS-42: and those of equipment on theirs.
+    revalidatePath("/configuracion/equipos-del-almacen");
     return { ok: true, message: result.summary, answers };
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {

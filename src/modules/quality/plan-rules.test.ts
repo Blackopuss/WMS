@@ -165,7 +165,7 @@ describe("check points as typed", () => {
         label: "Acabado",
         kind: "CHOICE",
         passOptions: "Bueno\n\nbueno\nRegular",
-        failOptions: "Malo\nRÉGULAR",
+        failOptions: "Malo\nmalo",
       }),
     ).toMatchObject({
       ok: true,
@@ -232,5 +232,74 @@ describe("judging an answer (for WMS-30B)", () => {
       ok: true,
       result: "noted",
     });
+  });
+});
+
+describe("findings of the review (WMS-30A)", () => {
+  const point = (over: Partial<PlanPoint>): PlanPoint => ({
+    id: "p",
+    label: "Punto",
+    kind: "CHECK",
+    required: true,
+    photo: false,
+    minValue: null,
+    maxValue: null,
+    unitLabel: null,
+    options: [],
+    ...over,
+  });
+
+  it("a fixed sample and the minimum go up to the step of the product", () => {
+    expect(
+      sampleSize({ kind: "FIXED", quantity: "2.5" }, "100", "1").toString(),
+    ).toBe("3");
+    expect(
+      sampleSize(
+        { kind: "PERCENT", percent: 1, min: "1.5", max: "4.2" },
+        "100",
+        "1",
+      ).toString(),
+    ).toBe("2");
+    expect(
+      sampleSize(
+        { kind: "PERCENT", percent: 100, min: "1", max: "4.2" },
+        "100",
+        "1",
+      ).toString(),
+    ).toBe("5");
+  });
+
+  it("an empty answer: refused when required, skipped when not", () => {
+    for (const kind of ["CHECK", "NUMBER", "CHOICE", "TEXT"] as const) {
+      expect(judgeAnswer(point({ kind }), "  "), kind).toEqual({
+        ok: false,
+        error: "Este punto es obligatorio.",
+      });
+      expect(judgeAnswer(point({ kind, required: false }), ""), kind).toEqual({
+        ok: true,
+        result: "skipped",
+      });
+    }
+  });
+
+  it("answers keep up to 10 decimals and never read a comma", () => {
+    const range = point({ kind: "NUMBER", minValue: "0.5", maxValue: "0.5" });
+    expect(judgeAnswer(range, "0.50000001")).toEqual({
+      ok: true,
+      result: "fail",
+    });
+    expect(judgeAnswer(range, "0,500")).toMatchObject({ ok: false });
+    expect(parseRangeValue("1,250")).toMatchObject({ ok: false });
+  });
+
+  it("the same option in both lists is refused", () => {
+    expect(
+      parsePoint({
+        label: "Color",
+        kind: "CHOICE",
+        passOptions: "Azul\nVerde",
+        failOptions: "AZUL",
+      }),
+    ).toMatchObject({ ok: false, field: "options" });
   });
 });

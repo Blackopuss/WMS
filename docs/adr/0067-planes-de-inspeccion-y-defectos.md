@@ -71,19 +71,28 @@ ve y no se cambia.
 4. **«Publicar versión N»** valida que el producto siga activo y que haya al
    menos un punto, retira la vigente y deja la nueva como vigente, en una
    transacción con el plan bloqueado. Dos publicaciones a la vez: una
-   publica y la otra responde «ya estaba publicada». **«Descartar
-   borrador»** la deja descartada (no se borra).
+   publica y la otra responde «ya estaba publicada». Publicar vuelve a
+   validar la cantidad fija, el mínimo y el tope de la muestra con la regla
+   de cantidad **vigente** del producto (pudo cambiar después de guardar el
+   borrador). **«Descartar borrador»** la deja descartada (no se borra); se
+   puede descartar también cuando el producto ya se archivó (ahí no se
+   publica ni se edita).
 5. Una versión publicada **no se edita** (servicio y disparador): cambiar el
-   plan es publicar la siguiente. Las versiones retiradas y descartadas se
-   siguen viendo en «Versiones anteriores». Una inspección (WMS-30B) guarda
+   plan es publicar la siguiente. Las versiones retiradas se siguen viendo
+   en «Versiones anteriores», paginadas en la base (diez por página); los
+   borradores descartados también, pero solo para quien administra, porque
+   un borrador nunca rigió. La vigente y el borrador se leen aparte, así
+   que ningún historial largo los esconde. Una inspección (WMS-30B) guarda
    la versión con la que se hizo, así que lo ya inspeccionado sigue
    explicándose con su versión.
 
 **Valida:** producto activo de la empresa para abrir borrador o publicar;
 nombre del punto de 1 a 80 caracteres sin repetir dentro de la versión;
-números con `parseDecimal` (hasta 4 decimales, negativos admitidos para
-temperaturas), mínimo ≤ máximo; opciones de 1 a 60 caracteres sin repetir;
-cantidad fija y mínimo con `parseQuantity` del producto. **Rastro:**
+números del rango con punto decimal (hasta 4 decimales, negativos admitidos
+para temperaturas; una coma se rechaza en vez de adivinar si separa miles o
+decimales), mínimo ≤ máximo; opciones de 1 a 60 caracteres sin repetir, y
+la misma opción no puede estar en «cumplen» y en «no cumplen»; cantidad
+fija, mínimo y tope con `parseQuantity` del producto. **Rastro:**
 bitácora `quality.plan_published` (producto, versión, resumen) y
 `quality.plan_discarded`; las ediciones de un borrador no van a la bitácora
 (no rigen nada hasta publicarse; la versión guarda quién la creó y quién la
@@ -98,7 +107,8 @@ publicó).
 2. Agregar, renombrar, cambiar la gravedad, archivar y volver a usar.
    **Nunca se borra** (disparador): una inspección de WMS-30B que nombró un
    defecto lo sigue nombrando aunque se archive. Hasta 100 en uso; nombre
-   único por empresa sin distinguir mayúsculas ni acentos.
+   único por empresa sin distinguir mayúsculas ni acentos. Los archivados
+   se listan por páginas.
 3. Bitácora `quality.defect_created`, `quality.defect_changed`,
    `quality.defect_archived` y `quality.defect_restored`.
 
@@ -123,30 +133,44 @@ cambiar si prefiere un tamaño por omisión.
 | Tabla | Qué guarda | Reglas en la base |
 | --- | --- | --- |
 | `quality_plan` | Uno por producto (`organizationId` + `productId` único) | No se borra; el producto no cambia |
-| `quality_plan_version` | Número, estado (`DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`), revisión (`DEFAULT`, `FULL`, `SAMPLE`), regla de muestra (`FIXED` + cantidad, o `PERCENT` + porcentaje, mínimo y tope), a qué aplica, quién la creó y la publicó | `CHECK` de la regla de muestra y de «al menos un origen»; `draftPlanId`/`activePlanId` únicos (uno de cada por plan) y fijados por disparador al estado; transiciones `DRAFT → ACTIVE → RETIRED` y `DRAFT → DISCARDED`; fuera de borrador solo cambia el estado al retirarse; no se borra |
+| `quality_plan_version` | Número, estado (`DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`), revisión (`DEFAULT`, `FULL`, `SAMPLE`), regla de muestra (`FIXED` + cantidad, o `PERCENT` + porcentaje, mínimo y tope), a qué aplica, quién la creó y la publicó | `CHECK` de la regla de muestra, de «al menos un origen» y de los sellos (un borrador no tiene publicación ni cierre, la vigente fue publicada, la retirada fue publicada y cerrada, la descartada se cerró sin publicarse); `draftPlanId`/`activePlanId` únicos (uno de cada por plan) y fijados por disparador al estado; transiciones `DRAFT → ACTIVE → RETIRED` y `DRAFT → DISCARDED`; fuera de borrador solo cambia el estado al retirarse; no se borra |
 | `quality_plan_point` | Puntos de una versión: posición, nombre, tipo, obligatorio, pide foto, mínimo, máximo, unidad | Solo se escriben o quitan mientras su versión es borrador |
 | `quality_plan_point_option` | Opciones de un punto «opción de una lista», con «cumple» | Igual que los puntos |
 | `quality_defect` | Nombre, gravedad, archivado | No se borra |
+| `quality_defect_catalog` | Una fila por empresa: el candado de cuántos defectos hay en uso | Se crea la primera vez; no se borra |
 
 Candados: producto → plan (`lockRows(tx, "product", …)` y luego
-`lockRows(tx, "qualityPlan", …)`), con `LOCKING_TRANSACTION`. Los defectos
-bloquean su fila al cambiar; el nombre repetido lo impide la base (dos altas
-a la vez con el mismo nombre: una se queda). El tope de 100 en uso es un
-límite de la pantalla, no un cupo del plan: dos altas exactamente a la vez
-podrían pasarlo por una.
+`lockRows(tx, "qualityPlan", …)`), con `LOCKING_TRANSACTION`. Los defectos:
+agregar uno o volver a usarlo bloquea primero la fila de la empresa en
+`quality_defect_catalog` y cuenta bajo ese candado (catálogo → defecto), así
+el tope de 100 en uso se cumple aunque lleguen varias a la vez; renombrar y
+archivar bloquean solo el defecto. No se usa `lockOrganization`: lo toman el
+equipo y las altas de empresa, y una fila propia de Calidad no se cruza con
+ellos. El nombre repetido lo impide la base (dos altas a la vez con el mismo
+nombre: una se queda; dos opciones que la intercalación iguala, como «ß» y
+«ss», se reportan en el campo de opciones).
 
 ## Cómo lo lee WMS-30B
 
-- `inspectionPlanFor(tx, productId, origin)` (`origin`: `produced`,
+- `inspectionPlanFor(tx, organizationId, productId, origin)` (`origin`: `produced`,
   `received` o `returned`), **dentro de la transacción de la inspección y
   después de sus candados**: devuelve la versión vigente si aplica a ese
   origen (id, número, puntos con sus opciones) y la revisión **ya resuelta**
   con el ajuste (`{ mode: "full" }` o `{ mode: "sample", rule }`, con `rule`
   nula si el ajuste dice muestra sin regla), o `null` si no hay plan para
-  ese origen (entonces `sampling` sale del ajuste con `samplingWithoutPlan`).
-  No pide permiso: corre dentro de un servicio que ya lo comprobó.
-- Reglas puras: `sampleSize(rule, cantidad, paso)` (tamaño de la muestra) y
-  `judgeAnswer(punto, respuesta)` (`pass`, `fail` o `noted` para texto).
+  ese origen (entonces `sampling` sale del ajuste con
+  `samplingWithoutPlan(tx, organizationId)`). No pide permiso: corre dentro
+  de un servicio que ya lo comprobó. Recibe la empresa y la pone en cada
+  consulta (plan, versión, puntos, opciones y ajuste), así su aislamiento no
+  depende del cliente que le pasen.
+- Reglas puras: `sampleSize(rule, cantidad, paso)` (tamaño de la muestra:
+  porcentaje, cantidad fija, mínimo y tope suben al paso del producto, nunca
+  más de lo que hay) y `judgeAnswer(punto, respuesta)`: `pass` o `fail`
+  (sí o no; número dentro del rango, extremos incluidos, con punto decimal y
+  hasta 10 decimales, sin coma; opción que cumple), `noted` para texto, y
+  ante una respuesta vacía, error «Este punto es obligatorio.» si el punto es
+  obligatorio o `skipped` si es opcional. Qué hace la inspección con un
+  `fail` (rechazar, cuarentena, defecto) lo decide WMS-30B.
 - La inspección guarda el id de la versión, de los puntos y de los defectos
   que usó; nada de eso se borra.
 

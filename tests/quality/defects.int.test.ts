@@ -58,15 +58,19 @@ describe("the defects of a company", () => {
       ok: true,
       repeated: true,
     });
-    expect(await listDefects(owner)).toEqual([
+    const listed = await listDefects(owner);
+    expect(listed.inUse).toEqual([
       expect.objectContaining({
         name: "Golpe",
         severity: "CRITICAL",
         severityLabel: "Crítica",
         archived: false,
       }),
-      expect.objectContaining({ name: "Rayón", archived: true }),
     ]);
+    expect(listed.archived).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ name: "Rayón", archived: true })],
+    });
     expect(await setDefectArchived(owner, defectId, false)).toMatchObject({
       ok: true,
     });
@@ -120,11 +124,70 @@ describe("the defects of a company", () => {
     });
   });
 
+  it("with 99 in use, additions and restorations at once leave exactly 100", async () => {
+    const owner = await company();
+    await db.qualityDefect.createMany({
+      data: Array.from({ length: MAX_ACTIVE_DEFECTS - 1 }, (_, index) => ({
+        id: crypto.randomUUID(),
+        organizationId: owner.organizationId,
+        name: `En uso ${index}`,
+        createdByUserId: owner.userId,
+      })),
+    });
+    const archivedIds = Array.from({ length: 3 }, () => crypto.randomUUID());
+    await db.qualityDefect.createMany({
+      data: archivedIds.map((id, index) => ({
+        id,
+        organizationId: owner.organizationId,
+        name: `Archivado ${index}`,
+        archivedAt: new Date(),
+        createdByUserId: owner.userId,
+      })),
+    });
+    const results = await Promise.all([
+      ...Array.from({ length: 4 }, (_, index) =>
+        createDefect(owner, { name: `Nuevo ${index}` }),
+      ),
+      ...archivedIds.map((id) => setDefectArchived(owner, id, false)),
+    ]);
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(
+      await db.qualityDefect.count({
+        where: { organizationId: owner.organizationId, archivedAt: null },
+      }),
+    ).toBe(MAX_ACTIVE_DEFECTS);
+  });
+
+  it("archived defects are listed by page", async () => {
+    const owner = await company();
+    await db.qualityDefect.createMany({
+      data: Array.from({ length: 30 }, (_, index) => ({
+        id: crypto.randomUUID(),
+        organizationId: owner.organizationId,
+        name: `Viejo ${String(index).padStart(2, "0")}`,
+        archivedAt: new Date(),
+        createdByUserId: owner.userId,
+      })),
+    });
+    const first = await listDefects(owner);
+    expect(first.archived).toMatchObject({ total: 30, page: 1, pageCount: 2 });
+    expect(first.archived.items).toHaveLength(25);
+    const last = await listDefects(owner, { page: 7 });
+    expect(last.archived.page).toBe(2);
+    expect(last.archived.items.map((defect) => defect.name)).toEqual([
+      "Viejo 25",
+      "Viejo 26",
+      "Viejo 27",
+      "Viejo 28",
+      "Viejo 29",
+    ]);
+  });
+
   it("the inspector reads them and does not change them; the floor does not see them", async () => {
     const owner = await company();
     await createDefect(owner, { name: "Fisura" });
     const inspector = await member(owner.organizationId, "quality_inspector");
-    expect((await listDefects(inspector)).map((d) => d.name)).toEqual([
+    expect((await listDefects(inspector)).inUse.map((d) => d.name)).toEqual([
       "Fisura",
     ]);
     await expect(
@@ -147,7 +210,10 @@ describe("the defects of a company", () => {
     const other = await company();
     const created = await createDefect(owner, { name: "Oxidado" });
     const defectId = created.ok ? created.defectId! : "";
-    expect(await listDefects(other)).toEqual([]);
+    expect(await listDefects(other)).toMatchObject({
+      inUse: [],
+      archived: { total: 0 },
+    });
     expect(await updateDefect(other, defectId, { name: "Mío" })).toMatchObject({
       ok: false,
       error: "Ese defecto no existe.",
@@ -165,7 +231,7 @@ describe("the defects of a company", () => {
     const owner = await company();
     await createDefect(owner, { name: "Hueco" });
     await expirePlan(owner.organizationId);
-    expect(await listDefects(owner)).toHaveLength(1);
+    expect((await listDefects(owner)).inUse).toHaveLength(1);
     await expect(createDefect(owner, { name: "Tarde" })).rejects.toMatchObject({
       code: "module_read_only",
     });

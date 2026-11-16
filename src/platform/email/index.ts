@@ -15,6 +15,7 @@ export type {
   StoredEmail,
 } from "./send";
 export {
+  accessAlertEmail,
   backupCodeUsedEmail,
   backupCodesRegeneratedEmail,
   dailyDigestEmail,
@@ -29,3 +30,4 @@ export {
   purchaseOrderEmail,
   verificationEmail,
 } from "./templates";
+export type { AccessAlertKind } from "./templates";

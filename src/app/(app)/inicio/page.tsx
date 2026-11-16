@@ -12,6 +12,7 @@ import {
   Undo2,
   ClipboardCheck,
   MessageSquareWarning,
+  Wrench,
   ShieldCheck,
   ShoppingCart,
   type LucideIcon,
@@ -26,6 +27,7 @@ import { formatDateTime } from "@/lib";
 import {
   countMyTasks,
   countOpenIncidents,
+  countEquipmentAttention,
   countOrdersToPack,
   countOrdersToShip,
   countReturnsToReview,
@@ -168,6 +170,12 @@ export default async function InicioPage() {
     moduleState === "active" && access.allows("inventory.incident.manage")
       ? await countOpenIncidents(actor)
       : 0;
+  // WMS-42: equipment out of service or with maintenance due or near, for
+  // who manages equipment, only if any.
+  const equipmentAttention =
+    moduleState === "active" && access.allows("inventory.equipment.manage")
+      ? await countEquipmentAttention(actor)
+      : 0;
   const canReport =
     moduleState === "active" && access.allows("inventory.incident.create");
   const executes = access.can("inventory.task.execute");
@@ -213,6 +221,17 @@ export default async function InicioPage() {
             label: "Incidencias abiertas",
             count: incidents,
             icon: MessageSquareWarning,
+            alert: true,
+          },
+        ]
+      : []),
+    ...(equipmentAttention > 0
+      ? [
+          {
+            href: "/configuracion/equipos-del-almacen?ver=atencion",
+            label: "Equipos que piden atención",
+            count: equipmentAttention,
+            icon: Wrench,
             alert: true,
           },
         ]

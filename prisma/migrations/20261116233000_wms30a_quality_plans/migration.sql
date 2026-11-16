@@ -98,6 +98,20 @@ CREATE TABLE `quality_defect` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `quality_defect_catalog` (
+    `id` CHAR(36) NOT NULL,
+    `organizationId` CHAR(36) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `quality_defect_catalog_organizationId_id_key`(`organizationId`, `id`),
+    UNIQUE INDEX `quality_defect_catalog_organizationId_key`(`organizationId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `quality_defect_catalog` ADD CONSTRAINT `quality_defect_catalog_organizationId_fkey` FOREIGN KEY (`organizationId`) REFERENCES `organization`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
 -- AddForeignKey
 ALTER TABLE `quality_plan` ADD CONSTRAINT `quality_plan_organizationId_fkey` FOREIGN KEY (`organizationId`) REFERENCES `organization`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -144,6 +158,20 @@ ALTER TABLE `quality_plan_version` ADD CONSTRAINT `quality_plan_version_sample` 
 -- A plan applies to something, and versions count from 1.
 ALTER TABLE `quality_plan_version` ADD CONSTRAINT `quality_plan_version_applies` CHECK (
     (`forProduced` OR `forReceived` OR `forReturned`) AND `number` >= 1
+);
+
+-- Who published and who closed it go with the state: a draft has neither,
+-- a version in force was published, a retired one was published and
+-- closed, a discarded one was closed without being published.
+ALTER TABLE `quality_plan_version` ADD CONSTRAINT `quality_plan_version_stamps` CHECK (
+    (`status` = 'DRAFT' AND `publishedAt` IS NULL AND `publishedByUserId` IS NULL
+        AND `closedAt` IS NULL AND `closedByUserId` IS NULL)
+    OR (`status` = 'ACTIVE' AND `publishedAt` IS NOT NULL AND `publishedByUserId` IS NOT NULL
+        AND `closedAt` IS NULL AND `closedByUserId` IS NULL)
+    OR (`status` = 'RETIRED' AND `publishedAt` IS NOT NULL AND `publishedByUserId` IS NOT NULL
+        AND `closedAt` IS NOT NULL AND `closedByUserId` IS NOT NULL)
+    OR (`status` = 'DISCARDED' AND `publishedAt` IS NULL AND `publishedByUserId` IS NULL
+        AND `closedAt` IS NOT NULL AND `closedByUserId` IS NOT NULL)
 );
 
 -- Only a number has a range and a unit; a number has at least one end.
@@ -278,4 +306,9 @@ END;
 CREATE TRIGGER `quality_defect_no_delete` BEFORE DELETE ON `quality_defect` FOR EACH ROW
 BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'quality_defect: a defect is never deleted';
+END;
+
+CREATE TRIGGER `quality_defect_catalog_no_delete` BEFORE DELETE ON `quality_defect_catalog` FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'quality_defect_catalog: never deleted';
 END;

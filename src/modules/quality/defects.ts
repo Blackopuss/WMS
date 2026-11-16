@@ -86,31 +86,118 @@ export type DefectView = {
   archived: boolean;
 };
 
-/** The defects of the company: in use first by name, then the archived. */
-export async function listDefects(actor: Actor): Promise<DefectView[]> {
-  await assertModulePermission(
-    actor.organizationId,
-    actor.userId,
-    "quality.plan.read",
-  );
-  const rows = await forOrganization(
-    actor.organizationId,
-  ).qualityDefect.findMany({
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-    take: 1_000,
-    select: { id: true, name: true, severity: true, archivedAt: true },
-  });
-  const view = (row: (typeof rows)[number]) => ({
+/** Archived defects listed per page. */
+export const ARCHIVED_DEFECTS_PAGE_SIZE = 25;
+
+export type DefectList = {
+  /** In use, by name (at most MAX_ACTIVE_DEFECTS). */
+  inUse: DefectView[];
+  /** Archived, by name, one page (INV-10). */
+  archived: {
+    items: DefectView[];
+    page: number;
+    pageCount: number;
+    total: number;
+  };
+};
+
+const DEFECT_SELECT = {
+  id: true,
+  name: true,
+  severity: true,
+  archivedAt: true,
+} as const;
+
+function viewOf(row: {
+  id: string;
+  name: string;
+  severity: DefectSeverity;
+  archivedAt: Date | null;
+}): DefectView {
+  return {
     id: row.id,
     name: row.name,
     severity: row.severity,
     severityLabel: SEVERITY_LABELS[row.severity],
     archived: row.archivedAt !== null,
+  };
+}
+
+/**
+ * The defects of the company: those in use (never more than the cap) and
+ * one page of the archived; a page out of range shows the last one.
+ */
+export async function listDefects(
+  actor: Actor,
+  options: { page?: number } = {},
+): Promise<DefectList> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "quality.plan.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  const archivedWhere = { archivedAt: { not: null } };
+  const [inUse, total] = await Promise.all([
+    client.qualityDefect.findMany({
+      where: { archivedAt: null },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: MAX_ACTIVE_DEFECTS,
+      select: DEFECT_SELECT,
+    }),
+    client.qualityDefect.count({ where: archivedWhere }),
+  ]);
+  const pageCount = Math.max(1, Math.ceil(total / ARCHIVED_DEFECTS_PAGE_SIZE));
+  const page =
+    options.page === undefined || !Number.isSafeInteger(options.page)
+      ? 1
+      : Math.min(Math.max(options.page, 1), pageCount);
+  const archived = total
+    ? await client.qualityDefect.findMany({
+        where: archivedWhere,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        skip: (page - 1) * ARCHIVED_DEFECTS_PAGE_SIZE,
+        take: ARCHIVED_DEFECTS_PAGE_SIZE,
+        select: DEFECT_SELECT,
+      })
+    : [];
+  return {
+    inUse: inUse.map(viewOf),
+    archived: { items: archived.map(viewOf), page, pageCount, total },
+  };
+}
+
+/**
+ * The row of the company that whoever changes how many defects are in use
+ * locks first (catalog → defect), so the cap holds with requests at once.
+ * Created outside the transaction the first time; two at once keep one.
+ */
+async function catalogOf(organizationId: string): Promise<string> {
+  const client = forOrganization(organizationId);
+  const found = await client.qualityDefectCatalog.findFirst({
+    select: { id: true },
   });
-  return [
-    ...rows.filter((row) => !row.archivedAt).map(view),
-    ...rows.filter((row) => row.archivedAt).map(view),
-  ];
+  if (found) return found.id;
+  try {
+    const created = await client.qualityDefectCatalog.create({
+      data: { id: newId(), organizationId },
+      select: { id: true },
+    });
+    return created.id;
+  } catch (error) {
+    if ((error as { code?: string }).code !== "P2002") throw error;
+    return (
+      await client.qualityDefectCatalog.findFirstOrThrow({
+        select: { id: true },
+      })
+    ).id;
+  }
+}
+
+async function assertRoomFor(tx: Tx, catalogId: string, message: string) {
+  await lockRows(tx, "qualityDefectCatalog", [catalogId]);
+  const inUse = await tx.qualityDefect.count({ where: { archivedAt: null } });
+  if (inUse >= MAX_ACTIVE_DEFECTS) fail(message);
 }
 
 /** Adds a defect to the list of the company. */
@@ -123,14 +210,14 @@ export async function createDefect(
     actor.userId,
     "quality.plan.manage",
   );
+  const catalogId = await catalogOf(actor.organizationId);
   return run(actor.organizationId, async (tx) => {
     const { name, severity } = parseDefect(input);
-    const inUse = await tx.qualityDefect.count({ where: { archivedAt: null } });
-    if (inUse >= MAX_ACTIVE_DEFECTS) {
-      fail(
-        `Tu empresa ya tiene ${MAX_ACTIVE_DEFECTS} defectos en uso. Archiva alguno antes de agregar otro.`,
-      );
-    }
+    await assertRoomFor(
+      tx,
+      catalogId,
+      `Tu empresa ya tiene ${MAX_ACTIVE_DEFECTS} defectos en uso. Archiva alguno antes de agregar otro.`,
+    );
     const taken = await tx.qualityDefect.findFirst({
       where: { name },
       select: { id: true },
@@ -221,7 +308,13 @@ export async function setDefectArchived(
     actor.userId,
     "quality.plan.manage",
   );
+  // Bringing one back adds to those in use: the catalog first (catalog →
+  // defect), as when adding one.
+  const catalogId = archived ? null : await catalogOf(actor.organizationId);
   return run(actor.organizationId, async (tx) => {
+    if (catalogId) {
+      await lockRows(tx, "qualityDefectCatalog", [catalogId]);
+    }
     const defect = await lockDefect(tx, defectId);
     if ((defect.archivedAt !== null) === archived) {
       return {
@@ -232,7 +325,7 @@ export async function setDefectArchived(
           : `«${defect.name}» ya estaba en uso.`,
       };
     }
-    if (!archived) {
+    if (catalogId) {
       const inUse = await tx.qualityDefect.count({
         where: { archivedAt: null },
       });
