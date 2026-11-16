@@ -760,9 +760,21 @@ export async function acceptProductionRequest(
   // force, to lock those products first.
   const first = await client.productionRequest.findFirst({
     where: { id: idOf(requestId) },
-    select: { productId: true, quantity: true, requestedByUserId: true },
+    select: {
+      productId: true,
+      quantity: true,
+      requestedByUserId: true,
+      areaLocationId: true,
+    },
   });
-  if (!first) return { ok: false, reason: "not_found", formError: NOT_FOUND };
+  // Out of reach it does not exist: before saying anything about the input.
+  if (
+    !first ||
+    (await locationsOutOfScope(client, userId, [first.areaLocationId])).length >
+      0
+  ) {
+    return { ok: false, reason: "not_found", formError: NOT_FOUND };
+  }
   const version = await client.recipeVersion.findFirst({
     where: { status: "ACTIVE", recipe: { productId: first.productId } },
     select: { inputs: { select: { productId: true } } },

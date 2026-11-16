@@ -2091,6 +2091,12 @@ describe("PC-12: production requests (WMS-28B)", () => {
     expect(
       await acceptProductionRequest(limited, asked.requestId),
     ).toMatchObject({ ok: false, reason: "not_found" });
+    // Not even a wrong quantity says it exists.
+    expect(
+      await acceptProductionRequest(limited, asked.requestId, {
+        quantity: "abc",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
     expect(
       await rejectProductionRequest(limited, asked.requestId, "No hace falta"),
     ).toMatchObject({ ok: false, reason: "not_found" });
