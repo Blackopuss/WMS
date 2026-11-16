@@ -11,6 +11,7 @@ import {
   PACKING_MODE,
   SHIPMENT_DETAILS,
   CUSTOMER_RETURN_WITHOUT_ORDER,
+  REPAIR_RELEASE,
   INCIDENT_PHOTO,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,
@@ -215,6 +216,8 @@ describe("operation settings", () => {
         value: "allow",
         defaultValue: "allow",
       },
+      // WMS-75: what was restored goes straight back unless the company says.
+      { key: REPAIR_RELEASE.key, value: "direct", defaultValue: "direct" },
       // WMS-37: a photo is optional when reporting an incident.
       {
         key: INCIDENT_PHOTO.key,
@@ -276,6 +279,7 @@ describe("operation settings", () => {
       { key: PACKING_MODE.key, value: "off" },
       { key: SHIPMENT_DETAILS.key, value: "optional" },
       { key: CUSTOMER_RETURN_WITHOUT_ORDER.key, value: "allow" },
+      { key: REPAIR_RELEASE.key, value: "direct" },
       { key: INCIDENT_PHOTO.key, value: "optional" },
       { key: LABEL_FORMAT.key, value: "letter_10" },
       { key: LABEL_CODES_SETTING.key, value: "both" },
