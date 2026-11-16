@@ -55,8 +55,9 @@ de los materiales (de una vez) → la orden (`lockRows(tx,
 "productionOrder", …)`) → capacidad → progreso del proceso; **una
 operación que bloquea productos nunca toma el almacén antes que ellos**
 (también WMS-29 y WMS-31). Crear, guardar y cambiar personas no bloquean
-productos y toman primero el almacén en compartido por el índice
-`(organizationId, id)` (`byTenantKey`), como `changeTree`. El área no se
+productos y toman primero el almacén en compartido (`lockRows` con `mode:
+"share"`, por la llave primaria, como todo candado: ADR 0074), y chocan con
+`changeTree`, que lo tiene en exclusivo. El área no se
 bloquea: con órdenes abiertas no cambia de uso, no se archiva ni queda bajo
 Cuarentena o Restauración (`hierarchy.ts` lo lee de la tabla), y liberar la
 vuelve a leer. Una tarea `ISSUE` la ejecuta Inventario:

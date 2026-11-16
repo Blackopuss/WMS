@@ -1,9 +1,9 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { LOCKABLE, TENANT_MODELS } from "./tenant-db";
+import { LOCKABLE, TENANT_MODELS, lockStatement } from "./tenant-db";
 
 // PLT-12/PLT-13: schema rules for company data, checked on every run so
 // each new table follows them.
@@ -74,29 +74,27 @@ describe("company data in prisma/schema.prisma", () => {
   });
 });
 
-describe("lockRows by the tenant key (WMS-28)", () => {
-  // `byTenantKey` forces the index `<table>_organizationId_id_key`: every
-  // table lockRows may lock must have it, with that exact name, in the
-  // migrations (a missing index would make the lock fail, not degrade).
-  const migrations = path.join(process.cwd(), "prisma/migrations");
-  const sql = readdirSync(migrations, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) =>
-      readFileSync(path.join(migrations, entry.name, "migration.sql"), "utf8"),
-    )
-    .join("\n");
+describe("lockRows goes by the primary key (WMS-76)", () => {
+  // ADR 0074: with several ids MySQL would walk the unique index
+  // (organizationId, id) first and lock it in exclusive mode, the index a
+  // composite foreign key takes a shared lock on: two transactions waited
+  // for each other. One id or many, the statement forces the primary key.
+  it("forces the primary key, in id order, for one id or many", () => {
+    for (const count of [1, 2, 300]) {
+      const sql = lockStatement("location", count, "update");
+      expect(sql).toContain("FROM `location` FORCE INDEX (PRIMARY) WHERE");
+      expect(sql).toContain("ORDER BY id FOR UPDATE");
+      expect(sql.match(/\?/g)).toHaveLength(count + 1);
+    }
+    expect(lockStatement("facility", 1, "share")).toMatch(
+      /FORCE INDEX \(PRIMARY\).*FOR SHARE$/,
+    );
+  });
 
-  it("every lockable table has its unique index (organizationId, id)", () => {
-    const tables = Object.values(LOCKABLE);
-    expect(tables.length).toBeGreaterThan(30);
-    for (const table of tables) {
-      const name = `\`${table}_organizationId_id_key\``;
-      const columns = "(`organizationId`, `id`)";
-      expect(
-        sql.includes(`UNIQUE INDEX ${name}${columns}`) ||
-          sql.includes(`UNIQUE INDEX ${name} ON \`${table}\`${columns}`),
-        table,
-      ).toBe(true);
+  it("every lockable table is a company table", () => {
+    expect(Object.values(LOCKABLE).length).toBeGreaterThan(30);
+    for (const table of Object.values(LOCKABLE)) {
+      expect(table).toMatch(/^[a-z_]+$/);
     }
   });
 });

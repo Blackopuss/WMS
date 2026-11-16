@@ -40,6 +40,7 @@ import {
   type CapacityLimits,
 } from "./limits";
 import { getActiveFacility } from "./facilities";
+import { lockAllFacilities } from "./facility-lock";
 import {
   assertFacilityInScope,
   assertLocationsInScope,
@@ -175,9 +176,7 @@ const ROW = {
 } as const;
 
 /**
- * Runs a change to the tree with the facility locked. Touching its row is
- * the lock: the scoped client has no raw SQL, and an update keeps the row
- * until the transaction ends.
+ * Runs a change to the tree with every warehouse locked (`lockAllFacilities`).
  */
 async function changeTree(
   organizationId: string,
@@ -189,11 +188,8 @@ async function changeTree(
     const locationId = await forOrganization(organizationId).$transaction(
       async (tx) => {
         // Every warehouse of the company: the same lock as creating or
-        // archiving a warehouse.
-        await tx.facility.updateMany({
-          where: {},
-          data: { updatedAt: new Date() },
-        });
+        // archiving a warehouse (by the primary key, ADR 0074).
+        await lockAllFacilities(tx);
         const facility = await tx.facility.findFirst({
           where: facilityId
             ? { id: facilityId, archivedAt: null }
@@ -231,12 +227,10 @@ const NO_AVAILABLE_USES: ReadonlySet<string> = new Set([
  * Whoever edits a location reaches it, and the scope is by zone, so they
  * reach everything inside it too.
  *
- * The rows are locked one at a time, in id order (ADR 0072): with one id
- * MySQL locks the row by its primary key and then the unique index
- * (organizationId, id), the same order as a movement; with many ids at
- * once it walks the unique index first and then the primary key, and a
- * movement into one of those rows (primary key first, then a shared lock
- * on the unique index for its foreign key) deadlocked with it.
+ * All the rows in one call: `lockRows` takes them by the primary key, in
+ * id order, the same way a movement locks its location (ADR 0074; WMS-75
+ * had to lock them one at a time while several ids went through the
+ * unique index first).
  */
 async function refuseAvailableInside(
   tx: Tx,
@@ -258,9 +252,7 @@ async function refuseAvailableInside(
     frontier = children.map((child) => child.id);
     ids.push(...frontier);
   }
-  for (const id of [...new Set(ids)].sort()) {
-    await lockRows(tx, "location", [id]);
-  }
+  await lockRows(tx, "location", ids);
   const products = await tx.stockBalance.groupBy({
     by: ["productId"],
     where: {

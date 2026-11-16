@@ -13,9 +13,15 @@ Los usos «Cuarentena» y «Restauración» (WMS-75) no admiten existencias
 disponibles, ni en ellos ni en lo que contienen: `editLocation` rechaza
 cambiar a uno de esos usos, y `moveLocation` meter algo dentro de uno de
 ellos, mientras la ubicación o algo dentro tenga saldo disponible (bloquea
-antes las filas de toda la rama, **una por una en orden de id**: bloquearlas
-de una vez recorre el índice único y se interbloquea con los movimientos,
-ADR 0072); lo que llega después lo detiene `checkPlacement` de Inventario.
+antes las filas de toda la rama en una llamada de `lockRows`, que va por la
+llave primaria como los movimientos, ADR 0072 y 0074); lo que llega después
+lo detiene `checkPlacement` de Inventario.
+
+Los cambios de almacenes y del árbol de ubicaciones (`inFacilities` y
+`changeTree`) bloquean todos los almacenes con `lockAllFacilities`
+(`facility-lock.ts`), por la llave primaria; «Preparación» y «En tránsito»
+bloquean solo su almacén, después de los productos. Detalle en
+[../candados.md](../candados.md).
 
 ## Servicios públicos (`index.ts`)
 
