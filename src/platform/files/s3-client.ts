@@ -58,6 +58,12 @@ const BUCKET = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
 const PREFIX = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REGION = /^[a-z0-9-]{1,30}$/;
 const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * Longest wait per attempt. With 3 attempts and their pauses a call ends in
+ * about 3 minutes at most, far below the 15 minutes after which the cleanup
+ * round may claim an upload (`STORAGE_CLEANUP_AFTER_MS`, ADR 0070).
+ */
+export const MAX_TIMEOUT_MS = 60_000;
 
 /** Largest object read (the largest purpose is 50 MB). */
 export const MAX_OBJECT_BYTES = 64 * 1024 * 1024;
@@ -120,8 +126,14 @@ export function readS3Config(
   }
   const timeout = value("TIMEOUT_MS");
   const timeoutMs = timeout ? Number(timeout) : DEFAULT_TIMEOUT_MS;
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 300_000) {
-    throw new StorageConfigError(`${prefix}TIMEOUT_MS must be 100–300000`);
+  if (
+    !Number.isInteger(timeoutMs) ||
+    timeoutMs < 100 ||
+    timeoutMs > MAX_TIMEOUT_MS
+  ) {
+    throw new StorageConfigError(
+      `${prefix}TIMEOUT_MS must be 100–${MAX_TIMEOUT_MS}`,
+    );
   }
   return {
     endpoint,

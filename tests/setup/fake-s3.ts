@@ -71,6 +71,7 @@ function canonicalOf(
     .split("/")
     .map((segment) => encode(decodeURIComponent(segment)))
     .join("/");
+  // Sorted by key and then by value, as S3 does (not as whole «k=v» text).
   const pairs = rawQuery
     .split("&")
     .filter(Boolean)
@@ -78,9 +79,15 @@ function canonicalOf(
       const equal = pair.indexOf("=");
       const key = equal < 0 ? pair : pair.slice(0, equal);
       const value = equal < 0 ? "" : pair.slice(equal + 1);
-      return `${encode(decodeURIComponent(key))}=${encode(decodeURIComponent(value))}`;
+      return [
+        encode(decodeURIComponent(key)),
+        encode(decodeURIComponent(value)),
+      ] as const;
     })
-    .sort();
+    .sort(([a, av], [b, bv]) =>
+      a !== b ? (a < b ? -1 : 1) : av < bv ? -1 : av > bv ? 1 : 0,
+    )
+    .map(([key, value]) => `${key}=${value}`);
   const values = new Map<string, string[]>();
   for (let i = 0; i < request.rawHeaders.length; i += 2) {
     const name = request.rawHeaders[i]!.toLowerCase();
@@ -129,7 +136,11 @@ function verify(
     return "RequestTimeTooSkewed";
   }
   const signed = parts[2]!.split(";");
-  if (!signed.includes("host") || !signed.includes("x-amz-date")) {
+  if (
+    !signed.includes("host") ||
+    !signed.includes("x-amz-date") ||
+    !signed.includes("x-amz-content-sha256")
+  ) {
     return "AccessDenied";
   }
   const payloadHash = String(request.headers["x-amz-content-sha256"] ?? "");

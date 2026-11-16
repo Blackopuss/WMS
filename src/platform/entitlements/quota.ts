@@ -59,8 +59,27 @@ async function limitOf(
   if (key !== "file_storage_kib") {
     return readLimit(client, organizationId, key);
   }
-  const gb = await readLimit(client, organizationId, FILE_STORAGE_LIMIT_KEY);
-  return storageLimitGb(gb) * KIB_PER_GB;
+  return (await storageGbOf(client, organizationId)) * KIB_PER_GB;
+}
+
+/**
+ * GB of files of a company: what its plan says now; when nothing is in
+ * force (a plan that ended), the last value it had, so a renewal or «Mi
+ * plan» never shows less in silence; the default only for a company that
+ * never had one (ADR 0070, review B2).
+ */
+export async function storageGbOf(
+  client: Pick<TenantDb, "entitlement">,
+  organizationId: string,
+): Promise<number> {
+  const now = await readLimit(client, organizationId, FILE_STORAGE_LIMIT_KEY);
+  if (now !== null) return storageLimitGb(now);
+  const last = await client.entitlement.findFirst({
+    where: { organizationId, kind: "LIMIT", key: FILE_STORAGE_LIMIT_KEY },
+    orderBy: [{ validFrom: "desc" }, { id: "desc" }],
+    select: { value: true },
+  });
+  return storageLimitGb(last?.value ?? null);
 }
 
 /** A company client or one of its transactions. */
@@ -303,7 +322,8 @@ export async function getQuotaUsage(
   ]);
   const limit =
     key === "file_storage_kib"
-      ? storageLimitGb(entitlements.limit(FILE_STORAGE_LIMIT_KEY)) * KIB_PER_GB
+      ? (await storageGbOf(forOrganization(organizationId), organizationId)) *
+        KIB_PER_GB
       : entitlements.limit(key);
   const taken = row?.taken ?? 0;
   const reserved = row?.reserved ?? 0;

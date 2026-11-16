@@ -3,7 +3,7 @@ import "server-only";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { formatStorageSize, log, newId } from "@/lib";
-import { assertModulePermission } from "@/platform/billing";
+import { CONTACT_EMAIL, assertModulePermission } from "@/platform/billing";
 import {
   consumeQuota,
   releaseQuota,
@@ -47,6 +47,9 @@ export { FILE_PURPOSES } from "./purposes";
 /** A photo over the limit of photos waiting: its transaction goes back. */
 class TooManyPending extends Error {}
 
+/** The cleanup round took this upload for dead: its transaction goes back. */
+class UploadClaimed extends Error {}
+
 /** Over the storage of the plan (WMS-67): its transaction goes back. */
 class OverStorage extends Error {
   constructor(readonly limitKib: number | null) {
@@ -71,6 +74,14 @@ function cleanName(name: string): string {
 const megabytes = (bytes: number) =>
   `${(bytes / MB).toLocaleString("es-MX", { maximumFractionDigits: 1 })} MB`;
 
+/** A key of the storage always starts with its own company. */
+function assertOwnKey(organizationId: string, storageKey: string): void {
+  if (!storageKey.startsWith(`${organizationId}/`)) {
+    log.error("file_storage_key_mismatch", undefined, { organizationId });
+    throw new Error("Storage key of another company");
+  }
+}
+
 /**
  * An upload that did not end in a row: its bytes are taken back and its
  * note removed. If the storage does not answer, the note stays for the
@@ -81,16 +92,31 @@ async function abandonUpload(
   storageKey: string,
   noteId: string,
 ): Promise<void> {
+  const notes = forOrganization(organizationId).storageCleanup;
   try {
     await removeBytes(storageKey);
-    await forOrganization(organizationId).storageCleanup.deleteMany({
-      where: { id: noteId },
-    });
+    await notes.deleteMany({ where: { id: noteId } });
   } catch (error) {
     log.warn("file_storage_abandon_failed", {
       organizationId,
       reason: error instanceof Error ? error.message : "unknown",
     });
+    // The round may have taken the note already (an upload that took too
+    // long) while these bytes were still on their way: a key with bytes
+    // always keeps a note.
+    try {
+      const kept = await notes.findFirst({
+        where: { storageKey },
+        select: { id: true },
+      });
+      if (!kept) {
+        await notes.create({
+          data: { id: newId(), organizationId, storageKey, reason: "UPLOAD" },
+        });
+      }
+    } catch {
+      // Nothing else to do here; `storage:copy --audit` lists it.
+    }
   }
 }
 
@@ -104,6 +130,9 @@ export async function noteRemoval(
   organizationId: string,
   file: { storageKey: string; size: number },
 ): Promise<string> {
+  // The row was read for this company; a key of another one is a defect
+  // and nothing of it is removed (the whole transaction goes back).
+  assertOwnKey(organizationId, file.storageKey);
   if (!(await releaseQuota(tx, "file_storage_kib", storageKib(file.size)))) {
     // A counter below what it should be (it should not happen): the file
     // is removed all the same and the drift is said.
@@ -130,6 +159,7 @@ export async function removeNoted(
   storageKey: string,
   noteId: string,
 ): Promise<boolean> {
+  assertOwnKey(organizationId, storageKey);
   try {
     await removeBytes(storageKey);
   } catch (error) {
@@ -340,7 +370,13 @@ export async function storeFile(
         storageKib(row.size),
       );
       if (!quota.ok) throw new OverStorage(quota.limit);
-      await tx.storageCleanup.deleteMany({ where: { id: noteId } });
+      // The note goes only while the cleanup round has not claimed it
+      // (an upload that took too long): then the round owns those bytes
+      // and this file is not born (ADR 0070, review M1).
+      const note = await tx.storageCleanup.deleteMany({
+        where: { id: noteId, claimedAt: null },
+      });
+      if (note.count !== 1) throw new UploadClaimed();
     }, LOCKING_TRANSACTION);
   } catch (error) {
     await abandonUpload(organizationId, storageKey, noteId);
@@ -358,7 +394,14 @@ export async function storeFile(
         error:
           error.limitKib === null
             ? "Tu plan no incluye espacio para archivos."
-            : `Tu plan incluye ${formatStorageSize(error.limitKib)} para archivos y ya están en uso. Borra archivos que no necesites o pide más espacio.`,
+            : `Tu plan incluye ${formatStorageSize(error.limitKib)} para archivos y ya están en uso. Para subir más, pide más espacio escribiéndonos a ${CONTACT_EMAIL}.`,
+      };
+    }
+    if (error instanceof UploadClaimed) {
+      return {
+        ok: false,
+        reason: "unavailable",
+        error: `No se pudo guardar ${purpose.evidence ? "la foto" : "el archivo"}. Intenta de nuevo en un momento.`,
       };
     }
     throw error;

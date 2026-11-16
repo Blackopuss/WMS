@@ -64,6 +64,24 @@ trap 'ESTADO=$?; docker exec --env-file "$MYSQL_ENV" almacen-mysql mysql -uroot 
 
 sql() { docker exec -i --env-file "$MYSQL_ENV" almacen-mysql mysql -uroot -h127.0.0.1 -N -B "$@"; }
 
+# Archivos en R2 (WMS-67, ADR 0070): se copian al bucket de respaldo los
+# que la base referencia, sin borrar ni reemplazar nada allá, y se vuelve a
+# leer lo copiado. Corre como la cuenta «almacen», pero el token del bucket
+# de respaldo no vive en la configuración de la app: está en
+# $ARCHIVOS_ENV (solo root) y llega al copiador por la entrada estándar.
+# Si algo falta o no coincide, el respaldo queda fallido y se avisa.
+ARCHIVOS_ENV=/etc/almacen/archivos-respaldo.env
+copiar_archivos() {
+  echo "Copiando los archivos al bucket de respaldo…"
+  /usr/local/bin/almacen storage:copy --from s3 --to backup --verify --backup-env-stdin < "$ARCHIVOS_ENV"
+}
+if [[ "$ARCHIVOS" == "externo" ]]; then
+  [[ -r "$ARCHIVOS_ENV" ]] || { echo "Falta $ARCHIVOS_ENV (credenciales del bucket de respaldo)" >&2; exit 1; }
+  # Antes del volcado: lo que la base va a referenciar ya está copiado,
+  # aunque se borre mientras se vuelca.
+  copiar_archivos
+fi
+
 echo "Volcado de la base…"
 # Los disparadores de una sola sentencia quedaron guardados con un «;» al
 # final, y mysqldump lo deja dentro de su comentario de versión
@@ -97,13 +115,9 @@ gzip -c "$TRABAJO/almacen.sql" | age -r "$AGE_RECIPIENT" -o "$DESTINO/almacen-$F
 if [[ "$ARCHIVOS" == "disco" ]]; then
   tar -C "$BASE/shared" -czf - storage | age -r "$AGE_RECIPIENT" -o "$DESTINO/archivos-$FECHA.tar.gz.age"
 else
-  # Los archivos viven en R2 (WMS-67, ADR 0070): se copian al bucket de
-  # respaldo los que la base referencia, sin borrar ni reemplazar nada allá,
-  # y se vuelven a leer para comprobarlos. Corre como la cuenta «almacen»
-  # (sus credenciales están en su configuración, no aquí). Si algo falta o
-  # no coincide, el respaldo queda fallido y se avisa.
-  echo "Copiando los archivos al bucket de respaldo…"
-  /usr/local/bin/almacen storage:copy --from s3 --to backup --verify
+  # Otra vez después del volcado: lo subido mientras se volcaba también
+  # queda en el respaldo (la primera copia fue antes del volcado).
+  copiar_archivos
 fi
 
 if [[ -n "${RCLONE_DESTINO:-}" ]]; then

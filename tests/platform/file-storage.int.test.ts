@@ -13,7 +13,11 @@ import {
 
 import { newId } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
-import { getCompanyPlan, provisionCompany } from "@/platform/billing";
+import {
+  CONTACT_EMAIL,
+  getCompanyPlan,
+  provisionCompany,
+} from "@/platform/billing";
 import { getQuotaUsage, invalidateEntitlements } from "@/platform/entitlements";
 import {
   createFileLink,
@@ -31,7 +35,11 @@ import {
   StorageError,
   readS3Config,
 } from "@/platform/files/s3-client";
-import { auditStorage, copyStoredFiles } from "@/platform/files/storage-copy";
+import {
+  auditStorage,
+  copyStoredFiles,
+  recountStorage,
+} from "@/platform/files/storage-copy";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -396,7 +404,7 @@ describe("storage quota (file_storage_kib)", () => {
     expect(result).toMatchObject({ ok: false, reason: "storage_full" });
     if (!result.ok) {
       expect(result.error).toBe(
-        "Tu plan incluye 1 GB para archivos y ya están en uso. Borra archivos que no necesites o pide más espacio.",
+        `Tu plan incluye 1 GB para archivos y ya están en uso. Para subir más, pide más espacio escribiéndonos a ${CONTACT_EMAIL}.`,
       );
     }
     // The transaction went back: no row, the object taken back, no note.
@@ -488,7 +496,9 @@ describe("cleanup of what was left (platform.storage_cleanup)", () => {
       attempts: 1,
       lastError: expect.stringContaining("503"),
     });
-    expect(await processStorageCleanup(owner.organizationId, later)).toEqual({
+    // After its wait (15 minutes after the failure) it is tried again.
+    const due = { now: new Date(later.now.getTime() + 15 * 60 * 1000) };
+    expect(await processStorageCleanup(owner.organizationId, due)).toEqual({
       removed: 1,
       kept: 0,
       failed: 0,
@@ -661,5 +671,232 @@ describe("pingStorage", () => {
     expect(failed.error).not.toContain("otro-secreto");
     process.env.FILE_STORAGE_DRIVER = "disk";
     expect(await pingStorage()).toMatchObject({ ok: true, driver: "disk" });
+  });
+});
+
+describe("review of WMS-67", () => {
+  it("M1: an upload the round took for dead never ends in a row without bytes", async () => {
+    const owner = await company();
+    const files = () =>
+      db.storedFile.count({ where: { organizationId: owner.organizationId } });
+    const before = await files();
+    // The upload is slow; meanwhile the round runs with its clock 16
+    // minutes ahead, so the note looks abandoned.
+    s3.delay(700);
+    const upload = storeFile(owner, {
+      purpose: "import_source",
+      name: "productos.csv",
+      bytes: csv(),
+    });
+    await new Promise((done) => setTimeout(done, 200));
+    await processStorageCleanup(owner.organizationId, {
+      now: new Date(Date.now() + 16 * 60 * 1000),
+    });
+    const result = await upload;
+    expect(result).toMatchObject({ ok: false, reason: "unavailable" });
+    expect(await files()).toBe(before);
+    expect(
+      [...s3.objects.keys()].filter((k) => k.startsWith(owner.organizationId)),
+    ).toEqual([]);
+    expect(await notes(owner.organizationId)).toEqual([]);
+  });
+
+  it("M1: the transaction that creates the row and the round, at once", async () => {
+    const owner = await company();
+    const key = `${owner.organizationId}/${newId()}`;
+    const noteId = newId();
+    await db.storageCleanup.create({
+      data: {
+        id: noteId,
+        organizationId: owner.organizationId,
+        storageKey: key,
+        reason: "UPLOAD",
+      },
+    });
+    s3.objects.set(key, {
+      bytes: csv(),
+      sha256: null,
+      lastModified: new Date(),
+    });
+    // The round claims first; the transaction then finds the note claimed.
+    await db.storageCleanup.updateMany({
+      where: { id: noteId, claimedAt: null },
+      data: { claimedAt: new Date() },
+    });
+    const removed = await db.storageCleanup.deleteMany({
+      where: { id: noteId, claimedAt: null },
+    });
+    expect(removed.count).toBe(0);
+    expect(
+      await processStorageCleanup(owner.organizationId, {
+        now: new Date(Date.now() + 16 * 60 * 1000),
+      }),
+    ).toMatchObject({ removed: 1 });
+    expect(s3.objects.has(key)).toBe(false);
+  });
+
+  it("M1: the wait per attempt cannot reach the window of the round", () => {
+    expect(() =>
+      readS3Config("FILE_STORAGE_S3_", {
+        ...s3.env(),
+        FILE_STORAGE_S3_TIMEOUT_MS: "300000",
+      } as unknown as NodeJS.ProcessEnv),
+    ).toThrow(/60000/);
+  });
+
+  it("M2: a second backup reads back only what it copied", async () => {
+    const owner = await company();
+    await upload(owner);
+    await upload(owner);
+    const run = () =>
+      copyStoredFiles({
+        from: "s3",
+        to: "backup",
+        verify: true,
+        organizationIds: [owner.organizationId],
+      });
+    expect(await run()).toMatchObject({ copied: 2, problems: 0 });
+    const from = backup.requests.length;
+    expect(await run()).toMatchObject({ copied: 0, skipped: 2, problems: 0 });
+    expect(
+      backup.requests.slice(from).filter((r) => r.method === "GET"),
+    ).toEqual([]);
+    // Reading everything again is a separate option.
+    const again = backup.requests.length;
+    await copyStoredFiles({
+      from: "s3",
+      to: "backup",
+      verifyAll: true,
+      organizationIds: [owner.organizationId],
+    });
+    expect(
+      backup.requests.slice(again).filter((r) => r.method === "GET"),
+    ).toHaveLength(2);
+  });
+
+  it("B1: removing never touches the key of another company", async () => {
+    const fileId = await upload(actor);
+    const key = `${actor.organizationId}/${fileId}`;
+    const forged = newId();
+    await db.storedFile.create({
+      data: {
+        id: forged,
+        organizationId: other.organizationId,
+        purpose: "import_source",
+        name: "ajeno.csv",
+        contentType: "text/csv; charset=utf-8",
+        size: 10,
+        sha256: "0".repeat(64),
+        storageKey: key,
+        createdByUserId: other.userId,
+      },
+    });
+    await expect(deleteFile(other, forged)).rejects.toThrow(/another company/);
+    expect(s3.objects.has(key)).toBe(true);
+    expect(
+      (await db.storedFile.findUniqueOrThrow({ where: { id: forged } }))
+        .deletedAt,
+    ).toBeNull();
+  });
+
+  it("B2: a plan that ended keeps saying the storage it had", async () => {
+    const owner = await company(100);
+    await db.entitlement.updateMany({
+      where: { organizationId: owner.organizationId },
+      data: {
+        validFrom: new Date(Date.now() - 2 * 86_400_000),
+        validUntil: new Date(Date.now() - 1000),
+      },
+    });
+    invalidateEntitlements(owner.organizationId);
+    expect(await getCompanyPlan(owner.organizationId)).toMatchObject({
+      storageGb: 100,
+    });
+    expect(
+      (await getQuotaUsage(owner.organizationId, "file_storage_kib")).limit,
+    ).toBe(100 * 1024 * 1024);
+  });
+
+  it("B5: the disk is not emptied while the app still reads it", async () => {
+    process.env.FILE_STORAGE_DRIVER = "disk";
+    await expect(
+      copyStoredFiles({
+        from: "disk",
+        to: "s3",
+        verify: true,
+        removeSource: true,
+        organizationIds: [],
+      }),
+    ).rejects.toThrow(/FILE_STORAGE_DRIVER/);
+  });
+
+  it("B6: what keeps failing waits longer and does not hold back what is new", async () => {
+    const owner = await company();
+    const stuck = `${owner.organizationId}/${newId()}`;
+    await db.storageCleanup.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        storageKey: stuck,
+        reason: "DELETE",
+      },
+    });
+    const later = new Date(Date.now() + 16 * 60 * 1000);
+    s3.fail(503, 3);
+    expect(
+      await processStorageCleanup(owner.organizationId, { now: later }),
+    ).toMatchObject({ failed: 1 });
+    const [note] = await notes(owner.organizationId);
+    expect(note!.nextAttemptAt!.getTime()).toBe(
+      later.getTime() + 15 * 60 * 1000,
+    );
+    // Not again in the same round time; a new note is.
+    const fresh = `${owner.organizationId}/${newId()}`;
+    await db.storageCleanup.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        storageKey: fresh,
+        reason: "DELETE",
+        createdAt: new Date(Date.now() - 20 * 60 * 1000),
+      },
+    });
+    expect(
+      await processStorageCleanup(owner.organizationId, { now: later }),
+    ).toEqual({ removed: 1, kept: 0, failed: 0 });
+    // Once due, it is tried again.
+    expect(
+      await processStorageCleanup(owner.organizationId, {
+        now: new Date(later.getTime() + 16 * 60 * 1000),
+      }),
+    ).toEqual({ removed: 1, kept: 0, failed: 0 });
+    expect(await notes(owner.organizationId)).toEqual([]);
+  });
+
+  it("B7: the recount shows a counter apart from the files, without fixing it", async () => {
+    const owner = await company();
+    await upload(owner, Buffer.alloc(5000, 97));
+    expect(await recountStorage([owner.organizationId])).toEqual([]);
+    await db.quotaUsage.updateMany({
+      where: { organizationId: owner.organizationId, key: "file_storage_kib" },
+      data: { taken: 1 },
+    });
+    expect(await recountStorage([owner.organizationId])).toEqual([
+      { organizationId: owner.organizationId, counted: 1, actual: 5 },
+    ]);
+    expect(await usedKib(owner.organizationId)).toBe(1);
+  });
+
+  it("B4: every company has its storage counter from its plan", async () => {
+    const owner = await company();
+    expect(
+      await db.quotaUsage.findFirst({
+        where: {
+          organizationId: owner.organizationId,
+          key: "file_storage_kib",
+        },
+        select: { taken: true },
+      }),
+    ).toEqual({ taken: 0 });
   });
 });

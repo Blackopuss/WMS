@@ -2,7 +2,7 @@
 
 Fecha: 2026-11-16. Complementa `REVISION_IMP.md` (archivos privados, ADR
 0014), `REVISION_FOTOS.md` (WMS-37) y el ADR 0070. Hecha por la misma IA que
-implementó el paso; falta la revisión independiente.
+implementó el paso y corregida tras la revisión independiente (ver «Hallazgos»).
 
 ## Qué se agregó
 
@@ -41,9 +41,25 @@ implementó el paso; falta la revisión independiente.
 | Root ejecuta algo plantado por la app | `respaldo` y `restaurar` leen `ARCHIVOS` de `/etc/almacen/respaldo.env` como `CLAVE=VALOR`; la copia corre como la cuenta `almacen` con `almacen storage:copy` | `bash -n`; flujo «Despliegue de prueba» con `ARCHIVOS=disco` |
 | Qué ve Cloudflare | Bytes, tamaños, fechas y llaves de UUID; ni nombres, ni empresas, ni personas; cifrado en reposo de R2. Cifrado del lado de la app: fuera de este paso | — |
 
+## Hallazgos de la revisión independiente (2026-11-16) y su corrección
+
+| Hallazgo | Corrección | Prueba |
+| --- | --- | --- |
+| M1: la ronda podía borrar los bytes de una subida que confirmaba después | La ronda reclama la anotación (`claimedAt`) antes de tocar bytes; la transacción de `storeFile` borra su anotación solo sin reclamar y aborta si no borró 1; tiempo por intento acotado a 60 s; si al abandonar no se pueden quitar los bytes, la anotación se recrea | «M1: an upload the round took for dead…», «M1: the transaction… and the round, at once», «M1: the wait per attempt…» |
+| M2: el respaldo diario descargaba todo el bucket | `--verify` lee solo lo copiado en la corrida; lo saltado lo confirma el `sha256` del `HEAD`; `--verify-all` aparte | «M2: a second backup reads back only what it copied» |
+| M3: el token del respaldo vivía en la configuración de la app | `/etc/almacen/archivos-respaldo.env` (root, 0600), pasado por la entrada estándar (`--backup-env-stdin`, solo `FILE_BACKUP_S3_*`); Bucket Lock recomendado en el bucket de respaldo | `bash -n`; «Despliegue de prueba» con `ARCHIVOS=disco` |
+| B1: borrar no comprobaba la empresa de la llave | `noteRemoval` y `removeNoted` rechazan una llave de otra empresa (la transacción se revierte) | «B1: removing never touches the key of another company» |
+| B2: con el plan vencido la consola ofrecía 5 GB | El límite usa el último valor que tuvo la empresa | «B2: a plan that ended…» |
+| B3: el aviso pedía borrar lo que no se puede borrar | Pide más espacio al contacto; el ADR dice qué se detiene | «over the limit nothing is kept…» |
+| B4: contador creado dentro de la subida | Migración que crea el contador en 0 para todas; `ensureQuotaRows` para las nuevas | «B4: every company has its storage counter…» |
+| B5: `--remove-source` con la app aún en disco | Se rechaza; la vuelta atrás repite la copia | «B5: the disk is not emptied…» |
+| B6: lo atorado detenía lo nuevo, sin aviso | Espera creciente hasta un día, primero lo de menos intentos; `storage` en `falla` con anotaciones de más de un día | «B6: what keeps failing…», `health.int.test.ts` |
+| B7: desfase del contador y ventana del respaldo | `--recount` (muestra, no corrige); copia antes y después del volcado | «B7: the recount…» |
+| Notas | Token con permiso de listar (documentado); ayuda por tipo de problema en el copiador; `listCompanyKeys` falla en vez de cortar; servidor falso exige `x-amz-content-sha256` firmada y ordena la consulta por llave y valor | `file-storage.int.test.ts` |
+
 ## Pendiente
 
 - Probar contra una cuenta real de R2 (firma con región `auto`, `HEAD` con
   el metadato `x-amz-meta-sha256`, `ListObjectsV2`, tiempos reales).
 - Purgar del bucket de respaldo lo borrado en la app hace más de N días.
-- Revisión independiente.
+- Una segunda lectura de las correcciones.

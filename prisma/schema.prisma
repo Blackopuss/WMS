@@ -1741,6 +1741,12 @@ model StorageCleanup {
   attempts       Int                  @default(0)
   /// Why the last one failed, without secrets: «delete (503)».
   lastError      String?              @db.VarChar(200)
+  /// Set once by the round before it touches the bytes: from then on the
+  /// upload of this key can no longer end in a row (its transaction
+  /// removes the note only while unclaimed).
+  claimedAt      DateTime?            @db.DateTime(3)
+  /// After a failure, not before this (growing wait, at most a day).
+  nextAttemptAt  DateTime?            @db.DateTime(3)
   createdAt      DateTime             @default(now()) @db.DateTime(3)
   updatedAt      DateTime             @updatedAt @db.DateTime(3)
 

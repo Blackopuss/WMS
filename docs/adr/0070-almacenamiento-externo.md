@@ -109,8 +109,10 @@ Reglas del cliente:
   fragmento. Direccionamiento por ruta (`https://<cuenta>.r2.cloudflarestorage.com/<bucket>/<llave>`)
   y región `auto` por omisión.
 - **Sin redirecciones** (una respuesta 3xx es un error), tiempo de espera por
-  intento (`FILE_STORAGE_S3_TIMEOUT_MS`, 30 s por omisión: un archivo de 50 MB
-  sube en segundos en un servidor), cuerpo de respuesta acotado (64 MB para
+  intento (`FILE_STORAGE_S3_TIMEOUT_MS`, 30 s por omisión y **60 s como
+  máximo**: con 3 intentos una llamada termina en unos 3 minutos, muy por
+  debajo de los 15 de la ronda de limpieza; un archivo de 50 MB sube en
+  segundos en un servidor), cuerpo de respuesta acotado (64 MB para
   leer; 1 MB para listar y para errores) y como máximo 3 intentos con espera
   creciente, solo ante error de red, tiempo agotado, 429 o 5xx. Un 4xx no se
   reintenta.
@@ -131,9 +133,11 @@ llave, motivo, intentos y último error sin secretos):
 
 - **Subir:** (1) se anota la llave en `storage_cleanup` (motivo `upload`);
   (2) se suben los bytes; (3) en **una** transacción se crea la fila del
-  archivo, se toma el cupo y se borra la anotación. Si (2) o (3) fallan, se
-  intenta quitar el objeto y la anotación; si eso también falla, la anotación
-  queda. Si el proceso se cae en medio, la anotación queda. **Nunca hay una
+  archivo, se toma el cupo y se borra la anotación **solo si la ronda no la
+  reclamó** (`claimedAt` vacío; si no borra exactamente 1, todo se revierte y
+  la persona ve «Intenta de nuevo»). Si (2) o (3) fallan, se intenta quitar
+  el objeto y la anotación; si quitar el objeto falla, queda una anotación
+  (se vuelve a crear si la ronda ya la había tomado). Si el proceso se cae en medio, la anotación queda. **Nunca hay una
   fila sin bytes** (la fila nace después de subir) y todo objeto sin fila
   tiene su anotación.
 - **Borrar** (`deleteFile`, purga de fotos): en la misma transacción que marca
@@ -141,12 +145,20 @@ llave, motivo, intentos y último error sin secretos):
   confirmar se quita el objeto y la anotación. Si quitar falla, queda
   anotado.
 - **Ronda `platform.storage_cleanup`** (cada hora, para todas las empresas;
-  sin anotaciones es una sola lectura por índice): toma anotaciones con más de 15 minutos (para no pisar una
-  subida en curso, que tarda a lo más 3 intentos de 30 s), y si no hay una
-  fila **viva** con esa llave quita el objeto y la anotación; si la hay (la
-  subida sí terminó), solo borra la anotación. Quitar un objeto que no existe
-  cuenta como hecho. Cada fallo suma un intento con el error sin secretos; se
-  sigue intentando en la siguiente ronda.
+  sin anotaciones es una sola lectura por índice): toma anotaciones con más
+  de 15 minutos que ya toca reintentar, primero las de menos intentos. A
+  cada una la **reclama** (`claimedAt`, confirmado antes de tocar bytes):
+  desde ahí esa subida ya no puede terminar en una fila viva, así que quitar
+  sus bytes es seguro aunque la subida haya tardado más de la cuenta o el
+  proceso se haya congelado (revisión, M1). Si la anotación ya no está (la
+  subida terminó antes) no hace nada; si hay una fila viva con esa llave (de
+  antes de los reclamos), solo borra la anotación; si no, quita el objeto y la
+  anotación. Quitar un objeto que no existe cuenta como hecho. Cada fallo
+  suma un intento con el error sin secretos y una espera creciente (15 min,
+  30, 1 h… hasta un día), así lo atorado no detiene lo nuevo; nunca se
+  descarta. Una anotación de más de un día pone `storage` en `falla` en
+  `/api/salud` (un token sin permiso de borrar, un Bucket Lock en el bucket
+  principal).
 - **Leer un objeto que falta** (o cuyo `sha256` no coincide): el archivo «no
   está» (`readStoredFile` → `null`, la descarga → 404) y queda
   `log.error("file_bytes_missing")`, que cuenta en los errores de `/api/salud`.
@@ -168,8 +180,22 @@ llave, motivo, intentos y último error sin secretos):
   `releaseQuota` dentro de la que la marca borrada. El contador cabe en el
   `INT` de la tabla hasta 2,000 GB.
 - La migración llena el contador de cada empresa con lo que ya tiene guardado
-  (filas sin borrar). Si una empresa ya estuviera por encima de su límite, lo
-  que tiene sigue igual y solo no puede subir más hasta liberar espacio.
+  (filas sin borrar) y lo crea en 0 para las que no tienen archivos; las
+  nuevas lo reciben al asignarles un plan (`ensureQuotaRows`), nunca dentro
+  de la transacción de una subida (IMP-S13).
+- Con el plan vencido, el límite que se muestra y con el que se compara es
+  el **último** que tuvo la empresa (5 GB solo si nunca tuvo uno): al
+  renovar, la consola sale prellenada con ese valor y nunca baja en
+  silencio (revisión, B2).
+- **Con el cupo lleno** (decisión que el fundador puede cambiar): se detiene
+  **todo lo que sube un archivo**: importar productos, salidas o pedidos, y
+  tomar fotos de evidencia (y con ellas reportar una incidencia si la foto
+  es obligatoria por `inventory.incident.photo`). Lo demás sigue igual. Lo
+  que ya está no se borra ni se oculta. La persona no puede liberar espacio
+  por su cuenta (las hojas de importación y las fotos ligadas no se borran
+  desde la app), así que el aviso le dice que pida más espacio al contacto
+  de siempre (`CONTACT_EMAIL`). Una empresa que el día de la migración ya
+  rebase su límite queda sin poder subir hasta que se le asigne más.
 - «Mi plan» muestra el cupo «Archivos» («1.2 GB de 5 GB») junto a productos
   y usuarios, y la consola lo dice en la ficha de la empresa.
 
@@ -182,16 +208,28 @@ empresa por empresa, en orden de id) de un almacenamiento a otro: `disk`,
 `FILE_BACKUP_S3_*`). Es repetible: lo que ya está en el destino con el mismo
 `sha256` (metadato, por `HEAD`) se salta. Comprueba cada objeto leído contra el
 `sha256` de su fila antes de subirlo y, con `--verify`, vuelve a leer del
-destino y compara. Nunca borra en el destino. `--remove-source` solo existe con
-origen `disk`, exige `--verify` y borra un archivo local únicamente después de
-comprobar su copia. Sale con código 1 si algo faltó o no coincidió, y lo lista.
+destino **lo que copió en esa corrida** (lo saltado ya lo confirmó el
+metadato: el respaldo diario no descarga el bucket entero, revisión M2);
+`--verify-all` vuelve a leer todo, para una revisión ocasional. Nunca borra
+ni reemplaza en el bucket de respaldo; en otro destino, lo que no coincide se
+reescribe una vez. `--remove-source` solo existe con origen `disk`, exige
+`--verify`, se niega mientras la app siga en disco (`FILE_STORAGE_DRIVER`)
+y borra un archivo local únicamente después de leer su copia. Sale con código
+1 si algo faltó o no coincidió, lo lista y dice cómo arreglar cada tipo de
+problema. `--recount` compara el contador de cada empresa con sus archivos
+vivos y muestra la diferencia sin corregirla (un despliegue o un `volver`
+mientras la versión anterior sube o borra archivos puede separarlos,
+revisión B7). El token debe poder **listar** el bucket: en AWS S3, sin
+`s3:ListBucket` lo que no existe responde 403 en vez de 404 y todo lo nuevo
+saldría «failed»; el permiso «Object Read & Write» de R2 ya lo incluye.
 
 - **Migrar:** `storage:copy -- --from disk --to s3 --verify`, cambiar
   `FILE_STORAGE_DRIVER=s3`, reiniciar, volver a correr la copia (lo subido
   entre la primera corrida y el reinicio) y, días después,
   `--remove-source`.
-- **Volver atrás:** `storage:copy -- --from s3 --to disk --verify` y
-  `FILE_STORAGE_DRIVER=disk`.
+- **Volver atrás:** `storage:copy -- --from s3 --to disk --verify`,
+  `FILE_STORAGE_DRIVER=disk`, reiniciar y volver a correr la misma copia (lo
+  subido a R2 entre la copia y el reinicio).
 - `--audit` lista los objetos del destino que no tienen fila viva (ni
   anotación); no borra nada.
 
@@ -201,7 +239,8 @@ comprobar su copia. Sale con código 1 si algo faltó o no coincidió, y lo list
   lee y borra un objeto de prueba `salud/<id>`, fuera de las llaves de las
   empresas) y deja el resultado en `almacenamiento.json` junto al latido.
   `checkHealth` lo lee: `storage` es `falla` si la última prueba falló o tiene
-  más de 15 minutos, `sin_configurar` si nunca se probó. **No se revisa en
+  más de 15 minutos, o si hay anotaciones de limpieza de más de un día;
+  `sin_configurar` si nunca se probó. **No se revisa en
   cada petición**. La alerta (PIL-04) dice «El almacenamiento de archivos no
   responde.» al fallar dos rondas seguidas y avisa al recuperarse.
 
@@ -212,17 +251,29 @@ comprobar su copia. Sale con código 1 si algo faltó o no coincidió, y lo list
   robada lo afectan). Lo que se configura:
   1. Bucket principal **privado**, sin dominio público ni `r2.dev`, con
      cifrado en reposo (R2 cifra todos los objetos con AES-256 siempre; no
-     se configura). Opcional: un **bloqueo de bucket** (Bucket Lock) con
-     retención de N días evita que un objeto se borre antes de tiempo, a
-     costa de que borrar una foto no la quite hasta que venza.
+     se configura). **Sin** bloqueo de bucket ni reglas de ciclo de vida: la
+     app borra lo que se borra y un bloqueo haría fallar cada borrado
+     durante días.
   2. Un **segundo bucket** de respaldo, de preferencia en otra cuenta de
-     Cloudflare o en otro proveedor compatible con S3, con un token que solo
-     escribe y lee ahí. `respaldo` (con `ARCHIVOS=externo` en
-     `/etc/almacen/respaldo.env`) corre `storage:copy -- --from s3 --to
-     backup --verify` como la cuenta `almacen` después de verificar la base;
-     si falla, el respaldo queda fallido y se avisa. La copia nunca borra ni
-     sobrescribe en el respaldo (las llaves no se repiten: un objeto
-     cambiado en el principal no reemplaza el bueno).
+     Cloudflare o en otro proveedor compatible con S3, con un token propio
+     de leer y escribir ahí, y con un **bloqueo de bucket** (Bucket Lock, o
+     retención de objetos en otro proveedor) de N días: aunque alguien tenga
+     ese token, no puede borrar ni reemplazar lo respaldado antes de tiempo.
+     **El token del respaldo no vive en la configuración de la app** (quien
+     comprometa el proceso web no lo tiene, revisión M3): está en
+     `/etc/almacen/archivos-respaldo.env` (solo root, `CLAVE=VALOR`) y
+     `respaldo` se lo pasa al copiador por la entrada estándar
+     (`--backup-env-stdin`), que solo acepta claves `FILE_BACKUP_S3_*`.
+     `respaldo` (con `ARCHIVOS=externo` en `/etc/almacen/respaldo.env`)
+     corre `storage:copy --from s3 --to backup --verify` como la cuenta
+     `almacen` **antes y después** del volcado de la base: la primera deja
+     copiado lo que el volcado va a referenciar aunque se borre mientras se
+     vuelca; la segunda, lo subido durante el volcado. Queda una ventana de
+     minutos (un archivo subido después de la primera copia, incluido en el
+     volcado y borrado antes de la segunda); se acepta. Si algo falla, el
+     respaldo queda fallido y se avisa. La copia nunca borra ni sobrescribe
+     en el respaldo (las llaves no se repiten: un objeto cambiado en el
+     principal no reemplaza el bueno).
   3. Una regla de ciclo de vida en el bucket de respaldo no se recomienda:
      borraría archivos vivos. Lo borrado en la app sigue en el respaldo
      (pendiente: purgar del respaldo lo borrado hace más de N días).
@@ -234,7 +285,7 @@ comprobar su copia. Sale con código 1 si algo faltó o no coincidió, y lo list
 
 | Amenaza | Mitigación |
 | --- | --- |
-| Robo de credenciales de R2 | Token con permiso solo de objetos de **ese** bucket (no de la cuenta); solo en `.env.local` (0600, cuenta `almacen`); nunca en registros, errores ni la base; respaldo en otra cuenta con otro token. |
+| Robo de credenciales de R2 | Token con permiso solo de objetos de **ese** bucket (no de la cuenta); solo en `.env.local` (0600, cuenta `almacen`); nunca en registros, errores ni la base; el del respaldo, en otra cuenta, solo en `/etc/almacen` (root) y con bloqueo de bucket. Mientras corre la copia vive en la memoria de ese proceso de la cuenta `almacen`. |
 | SSRF por el extremo configurable | El extremo lo pone el operador, no un cliente; aun así solo `https`, sin credenciales en la URL, sin redirecciones y con llaves hechas de UUID (la petición no puede apuntar a otra ruta). |
 | Mezcla entre empresas | Llave `<empresa>/<archivo>` armada por el servidor; la fila se busca por empresa y la llave se compara con la empresa antes de leer; sin listados para servir; sin enlaces prefirmados. |
 | Objetos huérfanos | Anotación antes de subir y en la transacción del borrado; ronda de limpieza; `--audit` para verlos. |

@@ -70,7 +70,8 @@ fi
 
 if [[ "$ARCHIVOS_EN" == "externo" ]]; then
   echo "Regresando los archivos desde el bucket de respaldo…"
-  /usr/local/bin/almacen storage:copy --from backup --to s3 --verify ||
+  /usr/local/bin/almacen storage:copy --from backup --to s3 --verify --backup-env-stdin \
+    < /etc/almacen/archivos-respaldo.env ||
     echo "Algunos archivos no se pudieron regresar (arriba la lista); la base ya quedó restaurada." >&2
 fi
 

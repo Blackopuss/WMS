@@ -39,6 +39,8 @@ export const BACKUP_STALE_AFTER_MS = 26 * 60 * 60 * 1000;
 export const STORAGE_CHECK_EVERY_MS = 5 * 60 * 1000;
 /** A probe older than this does not say the storage answers. */
 export const STORAGE_CHECK_STALE_AFTER_MS = 15 * 60 * 1000;
+/** A cleanup note older than this says the storage does not clean up. */
+export const STORAGE_CLEANUP_STUCK_MS = 24 * 60 * 60 * 1000;
 /** Errors in 15 minutes from which the server counts as failing. */
 export const ERROR_ALERT_THRESHOLD = 20;
 
@@ -163,7 +165,21 @@ export async function checkHealth(now = Date.now()): Promise<Health> {
   const errors: CheckState =
     recentErrorCount(now) >= ERROR_ALERT_THRESHOLD ? "falla" : "ok";
 
-  const storage = await storageState(now);
+  let storage = await storageState(now);
+  // Bytes waiting to be removed for more than a day (ADR 0070, review B6):
+  // the storage answers the probe but does not clean up (a bucket lock, a
+  // token without delete). A small table, read across companies.
+  if (storage === "ok" && database === "ok") {
+    try {
+      const stuck = await db.storageCleanup.findFirst({
+        where: { createdAt: { lt: new Date(now - STORAGE_CLEANUP_STUCK_MS) } },
+        select: { id: true },
+      });
+      if (stuck) storage = "falla";
+    } catch {
+      storage = "falla";
+    }
+  }
 
   const checks = { database, worker, queue, backup, errors, storage };
   return {

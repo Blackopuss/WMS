@@ -42,8 +42,11 @@ prefirmados ni bucket público.
 misma transacción, se toma el cupo y se borra la anotación. Borrar marca la
 fila, devuelve el cupo y anota la llave en una transacción; los bytes se
 quitan después. Lo que queda anotado (una subida que no terminó, unos bytes
-que no se pudieron quitar) lo resuelve la ronda `platform.storage_cleanup`.
-Nunca hay una fila sin bytes; todo objeto sin fila tiene su anotación.
+que no se pudieron quitar) lo resuelve la ronda `platform.storage_cleanup`,
+que **reclama** cada anotación (`claimedAt`) antes de tocar bytes: la
+transacción de `storeFile` borra la suya solo si sigue sin reclamar y, si no,
+se revierte. Lo que falla espera cada vez más (hasta un día). Nunca hay una
+fila sin bytes; todo objeto sin fila tiene su anotación.
 
 ## Permisos
 
@@ -78,9 +81,12 @@ minutos sin archivo vivo. El worker prueba el almacenamiento cada 5 minutos
 
 Variables: `FILE_STORAGE_DRIVER`, `FILE_STORAGE_DIR`, `FILE_STORAGE_S3_*`
 (extremo, bucket, región `auto`, llaves, prefijo opcional, tiempo por intento)
-y `FILE_BACKUP_S3_*` (bucket de respaldo). Script `scripts/storage-copy.mts`
+y `FILE_BACKUP_S3_*` (bucket de respaldo; en el servidor solo en
+`/etc/almacen/archivos-respaldo.env`, nunca en la configuración de la app,
+y llegan al copiador por `--backup-env-stdin`). Script `scripts/storage-copy.mts`
 (`storage:copy`): copiar de disco a R2, volver, respaldar y restaurar;
-`--audit` lista sobrantes.
+`--audit` lista sobrantes, `--recount` compara el cupo con los archivos y
+`--verify-all` vuelve a leer todo.
 
 ## Agregar fotos a otro registro
 

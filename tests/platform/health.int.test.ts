@@ -90,6 +90,30 @@ describe("checkHealth", () => {
       (await checkHealth(Date.now() + STORAGE_CHECK_STALE_AFTER_MS + 1000))
         .checks.storage,
     ).toBe("falla");
+    // A note of the storage waiting more than a day: it does not clean up.
+    const user = await db.user.create({
+      data: {
+        id: newId(),
+        name: "Salud",
+        email: `salud.almacenamiento.${Date.now()}@example.test`,
+        emailVerified: true,
+      },
+    });
+    const organization = await createTestOrganization({
+      data: { id: newId(), name: "Empresa Salud", ownerUserId: user.id },
+    });
+    const note = await db.storageCleanup.create({
+      data: {
+        id: newId(),
+        organizationId: organization.id,
+        storageKey: `${organization.id}/${newId()}`,
+        reason: "DELETE",
+        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      },
+    });
+    expect((await checkHealth()).checks.storage).toBe("falla");
+    await db.storageCleanup.delete({ where: { id: note.id } });
+    expect((await checkHealth()).checks.storage).toBe("ok");
     await writeStorageCheck({ ok: false, driver: "s3", ms: 30_000 });
     const health = await checkHealth();
     expect(health.checks.storage).toBe("falla");

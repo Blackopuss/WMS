@@ -1180,6 +1180,8 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `reason` | `StorageCleanupReason` |  |  |
 | `attempts` | `Int` | `0` | Rounds that tried and failed. |
 | `lastError` | `String? · VarChar(200)` |  | Why the last one failed, without secrets: «delete (503)». |
+| `claimedAt` | `DateTime? · DateTime(3)` |  | Set once by the round before it touches the bytes: from then on the upload of this key can no longer end in a row (its transaction removes the note only while unclaimed). |
+| `nextAttemptAt` | `DateTime? · DateTime(3)` |  | After a failure, not before this (growing wait, at most a day). |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 

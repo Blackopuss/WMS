@@ -176,6 +176,8 @@ export async function removeBytes(key: string): Promise<void> {
   await storageDriver().remove(checkKey(key));
 }
 
+const LIST_PAGES_MAX = 10_000;
+
 /** For operations: the keys a company holds in a driver. */
 export async function listCompanyKeys(
   driver: StorageDriver,
@@ -184,7 +186,11 @@ export async function listCompanyKeys(
   if (!COMPANY.test(organizationId)) throw new Error("Invalid company id");
   const all: { key: string; lastModified: Date | null }[] = [];
   let next: string | undefined;
-  for (let page = 0; page < 10_000; page++) {
+  for (let page = 0; ; page++) {
+    // 10 million keys of one company: say it instead of cutting short.
+    if (page >= LIST_PAGES_MAX) {
+      throw new Error(`More than ${LIST_PAGES_MAX} pages of keys`);
+    }
     const result = await driver.list(organizationId, next);
     all.push(...result.keys);
     if (!result.next) break;
