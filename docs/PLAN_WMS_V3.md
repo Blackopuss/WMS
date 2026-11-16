@@ -621,6 +621,8 @@ sin escribir aquí su flujo (regla 15).
 
 ### WMS-27..31 · Producción y calidad
 
+**Pendiente antes de WMS-29 (2026-11-16):** corregir el interbloqueo de `registerTransfer` (y de toda llamada de `lockRows` con varios ids sobre tablas que los movimientos bloquean de una en una) contra salidas, liberación de pedidos y cambios de estado en el mismo estante. Paso «corazón», con pruebas `Promise.all` y revisor independiente; se abre al unirse WMS-28.
+
 **WMS-75 hecho (2026-11-16, ADR 0072):** estado «En restauración», decisión «A restauración» en devoluciones, lista derivada, uso de ubicación y ajuste de liberación. Pendiente: la decisión de Calidad «A restauración» (WMS-30B), la orden de reproceso (WMS-29B), filtro por estado en Inventario, `verify:ui`/`verify:a11y` de la pantalla nueva.
 
 **WMS-74B hecho (2026-11-16, ADR 0071):** procesos en embarques (primer documento del motor). Pendiente: «Seguimiento» por etapa, tiempos por etapa (WMS-33), procesos en pedidos, traslados y compras, y las decisiones del fundador anotadas en el ADR (esperar siempre, forzar una salida, Montacarguista y Comprador).
