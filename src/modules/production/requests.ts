@@ -84,10 +84,10 @@ import { LOW_MARGIN, RELEASE_SHORT } from "./settings";
  * THIS order only; cancelling, releasing a draft or closing it stays with
  * who holds the permissions of orders.
  *
- * Locks: asking → membership of who asks; accepting → products of the
- * materials → the request (conditional update) → warehouse (shared, by its
- * unique index) → the new order → progress; rejecting and cancelling → the
- * request only.
+ * Locks: asking → the company (shared) → membership of who asks → the
+ * new row; accepting → products of the materials → the request
+ * (conditional update) → warehouse (shared) → the new order → progress;
+ * rejecting and cancelling → the request only.
  */
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];

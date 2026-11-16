@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-76** Orden de candados: `lockRows` siempre por la llave primaria, una
+  sola puerta para bloquear almacenes y reintento por clave del motor de
+  procesos ligado a su proceso. Quita los interbloqueos de reubicar, del primer
+  pedido de un almacén y de cambiar de almacén. ADR 0074.
 - **WMS-28** Órdenes de producción: copian la receta vigente, apartan sus
   materiales al liberar, tareas «Surtir a producción», área de producción y
   proceso de la orden. ADR 0073.

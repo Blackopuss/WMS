@@ -224,8 +224,8 @@ nunca toma el almacén antes que ellos.**
   actualización condicionada (`UPDATE … WHERE status = 'SUBMITTED'`, la
   misma técnica de «actualización usada como candado» de INV-19B; así no
   se agrega la tabla a `lockRows`, que otro paso está cambiando) → el
-  almacén **compartido por el índice único** (el mismo de crear una orden,
-  después de los productos) → la orden nueva → el núcleo de liberar
+  almacén **compartido** (`shareFacility`, el mismo de crear una orden,
+  por la llave primaria desde WMS-76, ADR 0074; después de los productos) → la orden nueva → el núcleo de liberar
   (productos ya tomados → orden → capacidad → progreso). Si la receta
   cambió entre la lectura y los candados (otros materiales), responde que
   se intente de nuevo sin escribir nada.

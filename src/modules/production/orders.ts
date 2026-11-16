@@ -223,21 +223,20 @@ async function lockOrder(tx: Tx, orderId: string, userId: string) {
 /**
  * The warehouse of an order, read before its transaction (it never
  * changes). Creating, saving and changing the people of an order take a
- * shared lock of its row FIRST, through the unique index (organizationId,
- * id): those steps lock no product, and changing locations (changeTree:
- * editing, moving, archiving) locks every warehouse that way before a
- * location and counts the open orders of an area under that lock. So an
- * order is never created or saved with an area that is being archived or
- * changing its use (one waits for the other), and the area need not be
- * locked itself.
+ * shared lock of its row FIRST (by the primary key, like every lock, ADR
+ * 0074): those steps lock no product, and changing locations (changeTree:
+ * editing, moving, archiving) locks every warehouse in exclusive mode
+ * before a location and counts the open orders of an area under that
+ * lock. So an order is never created or saved with an area that is being
+ * archived or changing its use (one waits for the other), and the area
+ * need not be locked itself.
  *
- * The rule (review of WMS-28): an operation that locks products NEVER
- * takes the warehouse before them. Releasing and cancelling lock products
- * → order and let the foreign key of the order take the warehouse
- * (shared) when its state is written, like an outbound order; taking it
- * first closed a cycle with another document holding a product and
- * waiting for the warehouse behind changeTree. WMS-29 and WMS-31 follow
- * the same rule.
+ * The rule (review of WMS-28, ADR 0074): an operation that locks products
+ * NEVER takes the warehouse before them (products → warehouse → location).
+ * Releasing and cancelling lock products → order and take no warehouse:
+ * the foreign key of the order checks it when its state is written, a
+ * shared lock on the unique index that no exclusive lock competes for.
+ * WMS-29 and WMS-31 follow the same rule.
  */
 async function facilityOfOrder(
   organizationId: string,
@@ -252,10 +251,7 @@ async function facilityOfOrder(
 
 export const shareFacility = (tx: Tx, facilityId: string | null) =>
   facilityId
-    ? lockRows(tx, "facility", [facilityId], {
-        mode: "share",
-        byTenantKey: true,
-      })
+    ? lockRows(tx, "facility", [facilityId], { mode: "share" })
     : Promise.resolve([]);
 
 // ── Header ───────────────────────────────────────────────────────────────

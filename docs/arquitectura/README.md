@@ -9,6 +9,7 @@ decisiones, en `docs/adr/`.
 | --- | --- |
 | Este archivo | Capas, qué importa a qué, petición, multiempresa, permisos, alcance, worker y base de datos |
 | [modelo-de-datos.md](modelo-de-datos.md) | Cada tabla por área (generado del esquema: `node scripts/data-model.mjs`) |
+| [candados.md](candados.md) | Orden de candados, `lockRows` siempre por la llave primaria y la puerta a los almacenes (WMS-76) |
 | [modulos/](modulos/) | Un documento por módulo y por área de plataforma |
 | [modulos/approvals.md](modulos/approvals.md) | Motor de aprobaciones: reglas por empresa, solicitudes, decidir (WMS-56) |
 | [modulos/notifications.md](modulos/notifications.md) | Avisos dentro de la app: `notify` en la transacción del hecho, campana, preferencias (WMS-39) |
@@ -103,7 +104,8 @@ Ejemplo: liberar un pedido de salida.
    para los fallos esperados; lanza `AppError` solo ante lo inesperado.
 5. Dentro, una transacción de `forOrganization(organizationId).$transaction(…,
    LOCKING_TRANSACTION)`: primero los candados (`lockRows`, orden fijo:
-   productos → ubicaciones → documento → tarea), después leer, decidir y
+   productos → almacén → ubicaciones → documento → tarea, ver
+   [candados.md](candados.md)), después leer, decidir y
    escribir (saldo, movimiento, reserva, bitácora) en la misma transacción.
 
 **La API (WMS-60, ADR 0058).** `/api/v1/*` no usa la cookie de sesión: el
@@ -141,7 +143,8 @@ que la pantalla y el servidor no distinguen la cámara de un lector.
 - `forOrganization(id)` agrega la empresa a cada filtro, comprueba cada alta,
   rechaza mover filas de empresa y prohíbe SQL directo. La única excepción es
   `lockRows(tx, modelo, ids)`, que hace `SELECT … FOR UPDATE` con el filtro de
-  empresa, siempre en orden de id.
+  empresa, siempre por la llave primaria y en orden de id (orden de
+  candados en [candados.md](candados.md), ADR 0074).
 - La empresa activa vive en la sesión (`session.activeOrganizationId`) y
   `requireOrganizationContext()` la revalida contra una membresía activa en
   cada petición. Un trabajo del worker recibe la empresa de su fila, nunca del
