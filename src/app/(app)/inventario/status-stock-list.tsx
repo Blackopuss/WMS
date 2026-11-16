@@ -42,7 +42,7 @@ export function StatusStockList({
   const headingId = `lista-${status.toLowerCase()}`;
   return (
     <>
-    {list.total === 0 ? (
+      {list.total === 0 ? (
         <EmptyState
           icon={CircleCheck}
           title={emptyTitle}
