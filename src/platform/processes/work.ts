@@ -234,7 +234,13 @@ async function act(
     if (error instanceof Refused) return error.result;
     // The key is unique in the company: the same confirmation used at the
     // same moment on another process meets it here (B2).
-    if (key && (error as { code?: string }).code === "P2002") {
+    if (
+      key &&
+      (error as { code?: string }).code === "P2002" &&
+      JSON.stringify((error as { meta?: unknown }).meta ?? "").includes(
+        "idempotencyKey",
+      )
+    ) {
       return {
         ok: false,
         reason: "key_reused",
@@ -806,6 +812,47 @@ export function processStepReach(documents: readonly ProcessDocument[]) {
   };
 }
 
+/**
+ * The same rule for many steps at once (`ReachesMany` of the files): one
+ * query for the steps and their processes, one for the person.
+ */
+export function processStepsReach(documents: readonly ProcessDocument[]) {
+  return async (
+    actor: Actor,
+    stepIds: readonly string[],
+  ): Promise<ReadonlySet<string>> => {
+    const ids = stepIds.map((id) => String(id).slice(0, 36));
+    if (ids.length === 0) return new Set();
+    const steps = await forOrganization(
+      actor.organizationId,
+    ).processStep.findMany({
+      where: { id: { in: ids } },
+      take: 1000,
+      select: {
+        id: true,
+        progress: { select: { documentKey: true, facilityId: true } },
+      },
+    });
+    if (steps.length === 0) return new Set();
+    const subject = await loadSubject(actor.organizationId, actor.userId);
+    return new Set(
+      steps
+        .filter((step) => {
+          const document = documents.find(
+            (each) => each.key === step.progress.documentKey,
+          );
+          return (
+            document !== undefined &&
+            readsDocument(subject, document, {
+              facilityId: step.progress.facilityId,
+            })
+          );
+        })
+        .map((step) => step.id),
+    );
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Reading
 
@@ -1073,6 +1120,7 @@ export async function getProcessView(
     actor,
     "process_step",
     steps.filter((step) => step._count.photos > 0).map((step) => step.id),
+    processStepsReach(documents),
   );
   const stepViews: ProcessStepView[] = [];
   for (const step of steps) {

@@ -99,6 +99,14 @@ Pasos del ADR 0063 («Cómo agrega su propósito un paso futuro»): columna en
 del dueño en `src/modules/registry/evidence.ts`, `attachEvidencePhotos` en
 la transacción del registro y `PhotoCapture`/`PhotoGallery` en la pantalla.
 
+
+Para las fotos de **varios registros de una vez** (el historial de un
+proceso, WMS-74) está `evidencePhotoLinksOf(actor, clase, ids, reaches)`:
+una sola consulta, pero solo firma enlaces de los registros que la función
+`reaches` del dueño (`ReachesMany`, por lote) confirma que la persona
+alcanza; sin esa función no devuelve nada. Se usa solo desde el servicio
+dueño de esos registros, nunca para fotos de registros de otro dueño.
+
 ## ADR
 
 0014 (archivos privados), 0019 (PDF propio), 0047 (etiquetas e impresión),

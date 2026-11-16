@@ -26,7 +26,11 @@ export {
   evidencePhotoLinksOf,
   purgeOrphanPhotos,
 } from "./evidence";
-export type { AttachPhotosResult, EvidencePhotoLink } from "./evidence";
+export type {
+  AttachPhotosResult,
+  EvidencePhotoLink,
+  ReachesMany,
+} from "./evidence";
 export { EVIDENCE_OWNER_KINDS } from "./purposes";
 export type {
   EvidenceOwner,

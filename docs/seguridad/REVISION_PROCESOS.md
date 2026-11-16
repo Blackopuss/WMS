@@ -57,6 +57,13 @@ que implementó el paso y corregida tras la revisión independiente (ver abajo).
 | N5: terminal leída dentro de la transacción | Se lee antes de abrirla | — |
 | N6: un administrador limitado a un almacén configuraba procesos | Exige `seesWholeCompany` | «who is limited to a warehouse…» |
 
+Segunda vuelta (2026-11-16): `process_progress` con transiciones en la
+base (nace activo, termina una vez, no se reabre); regresar solo etapas
+manuales también en el disparador; `evidencePhotoLinksOf` firma solo lo
+que el dueño confirma (`ReachesMany`, falla cerrado); el choque de clave
+responde `key_reused` solo si chocó el índice de la clave. Pruebas en
+`processes.int.test.ts` y `rules.test.ts`.
+
 ## Riesgos aceptados y pendientes
 
 - «App instalada» del rastro lo dice el navegador: es informativo.

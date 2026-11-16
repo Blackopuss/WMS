@@ -275,3 +275,12 @@ sigue con su versión).
 - Pendiente: autorización por etapa, avisos a otros roles, tiempos, vista
   de cadena, «Seguimiento» con filtro por etapa, un ajuste por empresa para
   que el Montacarguista o el Comprador hagan etapas.
+- Pendiente (segunda revisión, 2026-11-16): `getProcessView` lee el equipo
+  (`eligiblePeople`) en cada vista con etapas pendientes, un costo que
+  crece con el equipo; quien solo hace etapas ve en `/tareas` los textos
+  vacíos de traslados y el aviso de solo lectura de Inventario; quien está
+  limitado a otra zona ve la etapa en la vista pero recibe «no existe» al
+  actuar; el aviso de reasignación va por `userIds` y no revalida el
+  alcance (el mismo pendiente de WMS-39B); el aislamiento del contrato
+  (transacción con `LOCKING_TRANSACTION`) está escrito pero el motor no lo
+  impone.

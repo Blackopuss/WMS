@@ -42,11 +42,42 @@ export const STAGE_STATE_TRANSITIONS: Record<
   SKIPPED: ["WAITING"],
 };
 
+/**
+ * True when a stage of work may go from one state to the other. Going back
+ * (DONE | SKIPPED → WAITING) is only for a manual stage: an operation that
+ * happened is never reopened. The trigger checks the same.
+ */
 export function canStageTransition(
   from: StageStateStatus,
   to: StageStateStatus,
+  kind: "MANUAL" | "OPERATION",
 ): boolean {
-  return from === to || STAGE_STATE_TRANSITIONS[from].includes(to);
+  if (from === to) return true;
+  if (!STAGE_STATE_TRANSITIONS[from].includes(to)) return false;
+  return !(to === "WAITING" && from !== "READY" && kind !== "MANUAL");
+}
+
+/**
+ * States of the process of a document. The trigger
+ * `process_progress_keep` repeats this table: change both together. A
+ * process starts ACTIVE and, once it ended, never opens again.
+ */
+export type ProgressStatus = "ACTIVE" | "DONE" | "CLOSED";
+
+export const PROGRESS_TRANSITIONS: Record<
+  ProgressStatus,
+  readonly ProgressStatus[]
+> = {
+  ACTIVE: ["DONE", "CLOSED"],
+  DONE: [],
+  CLOSED: [],
+};
+
+export function canProgressTransition(
+  from: ProgressStatus,
+  to: ProgressStatus,
+): boolean {
+  return from === to || PROGRESS_TRANSITIONS[from].includes(to);
 }
 
 export const STAGE_STATE_LABELS = {

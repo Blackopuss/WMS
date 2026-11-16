@@ -347,6 +347,9 @@ BEGIN
                       AND `status` = 'PUBLISHED') THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_progress: only a published version starts';
     END IF;
+    IF NEW.`status` <> 'ACTIVE' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_progress: a process starts active';
+    END IF;
 END;
 
 CREATE TRIGGER `process_progress_keep` BEFORE UPDATE ON `process_progress` FOR EACH ROW
@@ -354,6 +357,14 @@ BEGIN
     IF NEW.`documentKey` <> OLD.`documentKey` OR NEW.`documentId` <> OLD.`documentId`
        OR NEW.`versionId` <> OLD.`versionId` THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_progress: document and version never change';
+    END IF;
+    -- PROGRESS_TRANSITIONS of src/platform/processes/states.ts (change both
+    -- together): ACTIVE → DONE | CLOSED, and a process that ended never
+    -- opens again.
+    IF OLD.`status` <> NEW.`status` AND NOT (
+        OLD.`status` = 'ACTIVE' AND NEW.`status` IN ('DONE', 'CLOSED')
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_progress: transition not allowed';
     END IF;
 END;
 
@@ -377,7 +388,8 @@ END;
 
 -- The states of a stage of work (STAGE_STATE_TRANSITIONS of
 -- src/platform/processes/states.ts; change both together): WAITING ↔ READY,
--- READY → DONE | SKIPPED, and DONE | SKIPPED → WAITING when going back.
+-- READY → DONE | SKIPPED, and DONE | SKIPPED → WAITING when going back
+-- (only a manual stage: an operation that happened is never reopened).
 -- Nothing changes once its process is over.
 CREATE TRIGGER `process_stage_state_keep` BEFORE UPDATE ON `process_stage_state` FOR EACH ROW
 BEGIN
@@ -392,7 +404,7 @@ BEGIN
     IF OLD.`status` <> NEW.`status` AND NOT (
         (OLD.`status` = 'WAITING' AND NEW.`status` = 'READY')
         OR (OLD.`status` = 'READY' AND NEW.`status` IN ('WAITING', 'DONE', 'SKIPPED'))
-        OR (OLD.`status` IN ('DONE', 'SKIPPED') AND NEW.`status` = 'WAITING')
+        OR (OLD.`status` IN ('DONE', 'SKIPPED') AND NEW.`status` = 'WAITING' AND NEW.`kind` = 'MANUAL')
     ) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'process_stage_state: transition not allowed';
     END IF;

@@ -14,8 +14,12 @@ export type {
 export {
   PROCESS_VERSION_STATUSES,
   PROCESS_VERSION_TRANSITIONS,
+  PROGRESS_TRANSITIONS,
   STAGE_STATE_LABELS,
+  STAGE_STATE_TRANSITIONS,
   STEP_ACTION_LABELS,
+  canProgressTransition,
+  canStageTransition,
   canTransition,
 } from "./states";
 export type { ProcessVersionStatus } from "./states";
@@ -38,6 +42,7 @@ export {
   getProcessView,
   listProcessWork,
   processStepReach,
+  processStepsReach,
   releaseStage,
   skipStage,
   takeStage,

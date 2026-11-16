@@ -92,6 +92,17 @@ Autorización por etapa, avisos a otros roles además del área, tiempos por
 etapa (WMS-33), vista de toda la cadena, «Seguimiento» con filtro por etapa,
 embarques (WMS-74B), órdenes de compra, pedidos y traslados.
 
+De la segunda revisión (2026-11-16): la vista lee el equipo en cada visita
+con etapas pendientes (costo); quien solo hace etapas ve en `/tareas` los
+textos vacíos de traslados y el aviso de solo lectura de Inventario; quien
+está limitado a otra zona ve la etapa pero recibe «no existe» al actuar; el
+aviso de reasignación va por `userIds` y no revalida el alcance (pendiente
+de WMS-39B); el motor no comprueba que el módulo use `LOCKING_TRANSACTION`.
+
+Transiciones en la base: `PROGRESS_TRANSITIONS` (`ACTIVE → DONE | CLOSED`,
+nace `ACTIVE`, nunca se reabre) y `STAGE_STATE_TRANSITIONS` (regresar solo
+en etapas manuales), cada una con su disparador.
+
 ## ADR
 
 0069 (motor de procesos), 0057 (avisos), 0062 (roles ligados a módulos),

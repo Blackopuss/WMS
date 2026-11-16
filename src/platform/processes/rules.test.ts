@@ -9,7 +9,11 @@ import {
   workStages,
   type RuleStage,
 } from "./rules";
-import { canTransition } from "./states";
+import {
+  canProgressTransition,
+  canStageTransition,
+  canTransition,
+} from "./states";
 
 // WMS-74 (ADR 0069): the lock between stages and the relay, pure.
 
@@ -213,6 +217,20 @@ describe("checkDraft", () => {
         stages: [{ name: "x".repeat(61), kind: "MANUAL" }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("states of a stage and of a process", () => {
+  it("only a manual stage goes back; a process that ended never opens", () => {
+    expect(canStageTransition("DONE", "WAITING", "MANUAL")).toBe(true);
+    expect(canStageTransition("SKIPPED", "WAITING", "MANUAL")).toBe(true);
+    expect(canStageTransition("DONE", "WAITING", "OPERATION")).toBe(false);
+    expect(canStageTransition("READY", "WAITING", "OPERATION")).toBe(true);
+    expect(canStageTransition("WAITING", "DONE", "MANUAL")).toBe(false);
+    expect(canProgressTransition("ACTIVE", "DONE")).toBe(true);
+    expect(canProgressTransition("ACTIVE", "CLOSED")).toBe(true);
+    expect(canProgressTransition("DONE", "ACTIVE")).toBe(false);
+    expect(canProgressTransition("CLOSED", "ACTIVE")).toBe(false);
   });
 });
 

@@ -17,7 +17,7 @@ import {
   deactivateModule,
 } from "@/platform/billing";
 import { invalidateEntitlements } from "@/platform/entitlements";
-import { createFileLink } from "@/platform/files";
+import { createFileLink, evidencePhotoLinksOf } from "@/platform/files";
 import { createLocation } from "@/platform/locations";
 import {
   ProcessStagesPending,
@@ -1537,6 +1537,70 @@ describe("review of WMS-74", () => {
         data: { status: "DONE" },
       }),
     ).rejects.toThrow(/process is over/);
+  });
+
+  it("an ended process never opens again, and an operation is never reopened (second review)", async () => {
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, {
+      stages: [
+        {
+          name: "Verificado",
+          kind: "OPERATION",
+          operationKey: "test.verified",
+        },
+        {
+          name: "Cierre",
+          kind: "MANUAL",
+          milestone: "CHECK",
+          roles: ["operator"],
+        },
+      ],
+    });
+    const doc = await start(owner, facilityId);
+    await forOrganization(owner.organizationId).$transaction(async (tx) => {
+      await reachMilestone(tx, DOC, owner, doc.documentId, "CHECK");
+      await completeOperationStage(
+        tx,
+        DOC,
+        owner,
+        doc.documentId,
+        "test.verified",
+      );
+    }, LOCKING_TRANSACTION);
+    const verified = await stateOf(
+      owner.organizationId,
+      doc.progressId!,
+      "Verificado",
+    );
+    await expect(
+      db.processStageState.update({
+        where: { id: verified.id },
+        data: { status: "WAITING" },
+      }),
+    ).rejects.toThrow(/transition not allowed/);
+    const worker = await member(owner.organizationId, ["operator"]);
+    await completeStage(worker, DOCUMENTS, {
+      stateId: (await stateOf(owner.organizationId, doc.progressId!, "Cierre"))
+        .id,
+    });
+    await expect(
+      db.processProgress.update({
+        where: { id: doc.progressId! },
+        data: { status: "ACTIVE" },
+      }),
+    ).rejects.toThrow(/transition not allowed/);
+  });
+
+  it("photos of many steps are signed only for what their owner confirms", async () => {
+    const { owner } = await newCompany();
+    const someStep = newId();
+    expect(
+      await evidencePhotoLinksOf(owner, "process_step", [someStep], undefined),
+    ).toEqual(new Map());
+    const none = async () => new Set<string>();
+    expect(
+      await evidencePhotoLinksOf(owner, "process_step", [someStep], none),
+    ).toEqual(new Map());
   });
 
   it("who is limited to a warehouse does not configure processes (N6)", async () => {

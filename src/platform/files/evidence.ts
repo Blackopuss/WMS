@@ -187,20 +187,34 @@ export async function evidencePhotoLinks(
 }
 
 /**
+ * Which of these records of one kind the person reaches, asked of their
+ * owner all at once (the engine of processes reads the steps of one
+ * process in one query). Only what it returns gets links.
+ */
+export type ReachesMany = (
+  actor: FileActor,
+  ownerIds: readonly string[],
+) => Promise<ReadonlySet<string>>;
+
+/**
  * The photos of several records of one kind, in one query, each with its
- * link for this person (WMS-74, B6 of the review). For the owner of those
- * records, **after it decided that the person reaches every one of them**
- * (the engine of processes, for the steps of one process it already
- * checked); still asks the permission to read each purpose.
+ * link for this person (WMS-74). The owner of the records says which ones
+ * the person reaches (`reaches`); only those get links, and without the
+ * function nothing does (fails closed, like `EvidenceOwners`). Still asks
+ * the permission to read each purpose.
  */
 export async function evidencePhotoLinksOf(
   actor: FileActor,
   kind: EvidenceOwnerKind,
   ownerIds: readonly string[],
+  reaches: ReachesMany | undefined,
   options: { now?: Date } = {},
 ): Promise<Map<string, EvidencePhotoLink[]>> {
   const result = new Map<string, EvidencePhotoLink[]>();
-  const ids = [...new Set(ownerIds.map((id) => String(id).slice(0, 36)))];
+  const asked = [...new Set(ownerIds.map((id) => String(id).slice(0, 36)))];
+  if (asked.length === 0 || !reaches) return result;
+  const reached = await reaches(actor, asked);
+  const ids = asked.filter((id) => reached.has(id));
   if (ids.length === 0) return result;
   const column = EVIDENCE_OWNER_KINDS[kind];
   const rows = await forOrganization(
