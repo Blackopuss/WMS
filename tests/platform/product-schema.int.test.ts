@@ -173,6 +173,8 @@ describe("product", () => {
       "createdAt",
       "description",
       "id",
+      // WMS-30-0: whether it enters in inspection, not how much there is.
+      "inspectOnReceipt",
       // WMS-21: how it is controlled (by lot or not), not how much there is.
       "lotExpiry",
       "name",
