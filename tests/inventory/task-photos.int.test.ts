@@ -648,6 +648,73 @@ describe("which photos serve", () => {
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   }, 120_000);
 
+  it("a photo taken for one task does not serve another (review)", async () => {
+    const { owner, worker, task } = await scene();
+    await setting(owner, TASK_PHOTO.key, "required");
+    const first = await task();
+    const second = await task();
+    const third = await task();
+    // Three photos while delivering the first task.
+    const shots = [
+      await photo(worker, first),
+      await photo(worker, first),
+      await photo(worker, first),
+    ];
+    const movements = await db.stockMovement.count({
+      where: { organizationId: owner.organizationId },
+    });
+    for (const [id, fileId] of [
+      [second, shots[1]!],
+      [third, shots[2]!],
+    ] as const) {
+      expect(await deliverTask(worker, id, { photoIds: [fileId] })).toEqual({
+        ok: false,
+        reason: "invalid",
+        fieldErrors: {
+          photos:
+            "Una de las fotos ya no está disponible. Quítala y tómala otra vez.",
+        },
+      });
+      expect(await statusOf(id)).toBe("PICKED_UP");
+    }
+    expect(
+      await db.stockMovement.count({
+        where: { organizationId: owner.organizationId },
+      }),
+    ).toBe(movements);
+    // Its own task takes it; the others need their own photo.
+    ok(await deliverTask(worker, first, { photoIds: [shots[0]!] }));
+    ok(
+      await deliverTask(worker, second, {
+        photoIds: [await photo(worker, second)],
+      }),
+    );
+    expect(
+      (await db.storedFile.findUniqueOrThrow({ where: { id: shots[0]! } }))
+        .pendingOwnerId,
+    ).toBe(first);
+    // At once: a photo of the first task offered to two deliveries.
+    const fourth = await task();
+    const fifth = await task();
+    const proof = await photo(worker, fourth);
+    const both = await Promise.all([
+      deliverTask(worker, fifth, { photoIds: [proof] }),
+      deliverTask(worker, fourth, { photoIds: [proof] }),
+    ]);
+    expect(both[0]).toMatchObject({ ok: false });
+    expect(both[1]).toMatchObject({ ok: true });
+    expect(await statusOf(fifth)).toBe("PICKED_UP");
+    expect(await photosOf(fourth)).toHaveLength(1);
+    // What a photo was taken for never changes.
+    await expect(
+      db.storedFile.update({
+        where: { id: shots[1]! },
+        data: { pendingOwnerId: third },
+      }),
+    ).rejects.toThrow(/never changes/);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 60_000);
+
   it("a photo is uploaded only for one's own task, picked up", async () => {
     const { owner, worker, other, task } = await scene();
     const theirs = await task(other);
@@ -742,6 +809,22 @@ describe("which photos serve", () => {
     await expect(row(worker.userId, open)).rejects.toThrow(/not delivered/);
     ok(await deliverTask(worker, open));
     await expect(row(other.userId, open)).rejects.toThrow(/another person/);
+    // A photo taken for another task, inserted by hand: refused too.
+    const elsewhere = await task();
+    const strayPhoto = await photo(worker, elsewhere);
+    await expect(
+      db.evidencePhoto.create({
+        data: {
+          id: newId(),
+          organizationId: worker.organizationId,
+          fileId: strayPhoto,
+          purpose: "task_photo",
+          warehouseTaskId: open,
+          position: 1,
+          createdByUserId: worker.userId,
+        },
+      }),
+    ).rejects.toThrow(/another record/);
     // Of another purpose's owner column: refused by the CHECK.
     await expect(
       db.evidencePhoto.create({

@@ -92,15 +92,24 @@ export async function attachEvidencePhotos(
       purpose: true,
       createdByUserId: true,
       deletedAt: true,
+      pendingOwnerId: true,
       evidencePhoto: { select: { id: true } },
     },
   });
+  // WMS-37B: a photo taken for a record serves only that record; one of a
+  // purpose bound to its owner always names it.
+  const ownerId = String(input.owner.id).slice(0, 36);
+  const forThisOwner = (pendingOwnerId: string | null) =>
+    evidence.boundToOwner
+      ? pendingOwnerId === ownerId
+      : pendingOwnerId === null || pendingOwnerId === ownerId;
   const usable = files.filter(
     (file) =>
       file.purpose === input.purpose &&
       file.createdByUserId === actor.userId &&
       !file.deletedAt &&
-      !file.evidencePhoto,
+      !file.evidencePhoto &&
+      forThisOwner(file.pendingOwnerId),
   );
   if (usable.length !== ids.length) return { ok: false, error: PHOTO_GONE };
   const where = ownerWhere(input.owner);

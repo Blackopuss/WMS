@@ -37,14 +37,19 @@ del almacén.
    `task_photo`), con las mismas comprobaciones de contenido de ADR 0063.
    Antes de guardarla el servidor vuelve a comprobar que la tarea existe
    para esa persona (empresa y alcance), es suya, está «Por entregar» y la
-   empresa no apagó las fotos; si no, no guarda nada. Mientras no se liga,
-   solo la ve quien la tomó; «Quitar» la borra.
+   empresa no apagó las fotos; si no, no guarda nada. **La foto queda
+   atada a esa tarea** (`stored_file.pendingOwnerId`, que no cambia): solo
+   sirve para entregar esa misma tarea, nunca otra (revisión
+   independiente: sin esto, con una tarea en curso se podían juntar fotos
+   y usarlas para entregar otras tareas sin fotografiarlas). Mientras no
+   se liga, solo la ve quien la tomó; «Quitar» la borra.
 4. **Entregar.** El botón manda los ids. `deliverTask` (traslado, acomodo,
    reposición, tarima, surtido y surtir a producción: todas las entregas de
    una tarea pasan por ahí) hace lo de siempre y, **al final de su
    transacción, después de escribir el movimiento y el estado**, liga las
    fotos con `attachEvidencePhotos`. Si una foto no sirve (de otra persona,
-   de otro propósito, ya ligada, borrada, de otra empresa) o pasa del tope,
+   de otro propósito, tomada para otra tarea, ya ligada, borrada, de otra
+   empresa) o pasa del tope,
    se revierte todo: no se mueve nada y la persona lo lee junto a la foto.
 5. **Foto obligatoria.** Con el ajuste en «Obligatoria», entregar sin foto
    se rechaza con «Toma una foto de dónde la dejaste.» **antes de mover
@@ -123,6 +128,21 @@ por foto, y las 30 fotos sin ligar por persona en 24 horas de ADR 0063.
   una foto de tarea solo se liga a una tarea `DELIVERED` y la liga quien la
   tenía asignada. Así ni un error del servicio ni una escritura directa
   dejan una foto en una tarea abierta o a nombre de otra persona.
+- **Foto atada al registro para el que se tomó (genérico).** Un propósito
+  cuyo registro ya existe al tomar la foto se declara `boundToOwner` en su
+  `evidence`; `storeFile` exige entonces `pendingOwnerId` (y lo rechaza en
+  los demás) y lo guarda en `stored_file.pendingOwnerId`, y
+  `attachEvidencePhotos` solo liga la foto a ese mismo registro. El
+  disparador `evidence_photo_owner_rules` lo repite en la base (una foto
+  con dueño pendiente solo se liga a él; una `task_photo` siempre lo
+  lleva) y además compara quién subió el archivo con quién lo liga;
+  `stored_file_pending_owner_keep` impide cambiar el dueño pendiente.
+  **Incidencias y pasos de proceso siguen igual** (sin dueño pendiente):
+  su registro nace en la misma transacción que liga las fotos, así que al
+  subir no hay a qué atarlas; un paso de proceso ya exige al subir una
+  etapa por hacer que la persona puede hacer. WMS-29 y WMS-30B, cuyo
+  reporte o inspección pueden existir antes de la foto, deciden en su
+  paso si son `boundToOwner` (lo natural para una inspección abierta).
 - **Dueño en `EvidenceOwners`:** `reachesTask` (`tasks.ts`), registrado en
   `src/modules/registry/evidence.ts`: la tarea es de la empresa y su origen
   y destino están dentro del alcance de la persona (`taskScope`, la misma
@@ -166,11 +186,21 @@ aquí:
 | Ligar la foto de otra persona, de otra empresa, de otro propósito o ya ligada | `attachEvidencePhotos` (misma persona, mismo propósito, sin ligar, sin borrar) bajo el candado del archivo; único por empresa; disparador de ADR 0063 |
 | Ligar una foto a una tarea ajena o abierta | Solo `deliverTask`/su transacción liga, después de comprobar que la tarea es de quien entrega; disparador `evidence_photo_task_rules` (tarea `DELIVERED` y de quien liga) |
 | Dos entregas a la vez con la misma foto | Candado de la tarea (la segunda ve `DELIVERED` y responde `repeated`); en tareas distintas, el candado del archivo y la unicidad: la segunda se revierte entera |
+| Juntar fotos con una tarea en curso y usarlas para entregar otras | La foto queda atada a su tarea al subirla (`pendingOwnerId`, inmutable); `attachEvidencePhotos` y el disparador `evidence_photo_owner_rules` solo la ligan a esa tarea |
 | Subir fotos sin tarea (llenar el disco) | `uploadTaskPhoto` exige la tarea propia «Por entregar», en alcance, y el ajuste encendido; tope de 30 sin ligar por persona y limpieza a las 24 h |
 | Ver la foto de una tarea fuera del alcance | `reachesTask` con `taskScope`; sin él la foto «no existe» (404 igual), también con el enlace armado a mano |
 | Terminal compartida | La sesión de PIN sube y entrega con `inventory.task.execute`; ve solo lo que ve; sin caché (ADR 0063) |
 | Saltarse la foto obligatoria | Se lee el ajuste bajo los candados de la entrega y se rechaza antes de escribir; la entrega en grupo se rechaza con el ajuste en «Obligatoria» |
 | Reintento que pida otra foto o duplique | `repeated` antes de mirar fotos |
+
+## Riesgos que quedan (revisión independiente, bajos)
+
+- El ajuste se lee sin candado frente a `updateOperationSetting`: una
+  entrega que empieza justo antes de que la empresa cambie a «Obligatoria»
+  puede terminar sin foto. Es igual para todos los ajustes (ADR 0034).
+- Con el código anterior a este paso (por ejemplo, al volver una versión
+  atrás) las fotos `task_photo` sin ligar no se purgan hasta volver a esta
+  versión, porque ese código no conoce el propósito.
 
 ## Consecuencias
 

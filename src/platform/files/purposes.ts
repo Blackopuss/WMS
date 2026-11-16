@@ -63,6 +63,14 @@ type Purpose = {
     perRecord: number;
     /** Photos a record can hold in all. */
     perOwner: number;
+    /**
+     * WMS-37B (ADR 0076): the record already exists when the photo is
+     * taken, so the photo is uploaded for it (`stored_file.pendingOwnerId`)
+     * and is linked only to it. Without this (incidents, steps of a
+     * process: their record is born with the photos), a photo is linked to
+     * whatever record of its kind the same person saves.
+     */
+    boundToOwner?: boolean;
   };
 };
 
@@ -127,7 +135,12 @@ export const FILE_PURPOSES = {
     read: "inventory.task.read",
     maxBytes: 5 * MB,
     extensions: PHOTO_EXTENSIONS,
-    evidence: { owner: "warehouse_task", perRecord: 3, perOwner: 3 },
+    evidence: {
+      owner: "warehouse_task",
+      perRecord: 3,
+      perOwner: 3,
+      boundToOwner: true,
+    },
   },
 } as const satisfies Record<string, Purpose>;
 

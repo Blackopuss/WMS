@@ -1753,6 +1753,10 @@ model StoredFile {
   /// Pixels of an image (WMS-37), read from its header; null otherwise.
   width           Int?
   height          Int?
+  /// WMS-37B (ADR 0076): the record a photo of evidence was taken for
+  /// (its owner kind is the one of its purpose). When set, the photo is
+  /// linked only to that record; never changes.
+  pendingOwnerId  String?          @db.Char(36)
   productImports  ProductImport[]
   exitImports     ExitImport[]
   outboundImports OutboundImport[]

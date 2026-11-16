@@ -1323,6 +1323,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `deletedAt` | `DateTime? · DateTime(3)` |  | Set when it was removed; the bytes are gone, the row stays as a trace. |
 | `width` | `Int?` |  | Pixels of an image (WMS-37), read from its header; null otherwise. |
 | `height` | `Int?` |  |  |
+| `pendingOwnerId` | `String? · Char(36)` |  | WMS-37B (ADR 0076): the record a photo of evidence was taken for (its owner kind is the one of its purpose). When set, the photo is linked only to that record; never changes. |
 
 - Únicas: (`organizationId`, `id`).
 - Índices: (`organizationId`, `purpose`, `createdAt`); (`organizationId`, `createdByUserId`, `purpose`, `createdAt`).

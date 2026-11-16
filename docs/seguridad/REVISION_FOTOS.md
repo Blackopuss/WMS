@@ -107,7 +107,19 @@ propósito `task_photo`: escribe `inventory.task.execute`, lee
   la tenía asignada; el `CHECK` ata la columna a su propósito.
 - **Subir sin estar entregando.** `uploadTaskPhoto` exige la tarea propia,
   en alcance (`taskScope`) y «Por entregar», y el ajuste distinto de «Sin
-  foto»; si no, no guarda nada.
+  foto»; si no, no guarda nada. Esto solo limita **cuándo** se sube.
+- **Usar las fotos de una tarea para entregar otra (hallazgo medio de la
+  revisión independiente, corregido).** Antes, con una tarea en curso se
+  podían subir fotos de cualquier cosa y usarlas durante 24 horas para
+  entregar otras tareas sin fotografiar dónde quedó la mercancía. Ahora
+  la foto queda atada al subirla a la tarea para la que se tomó
+  (`stored_file.pendingOwnerId`, propósito `boundToOwner`, inmutable por
+  disparador) y solo se liga a esa tarea (`attachEvidencePhotos` y el
+  disparador `evidence_photo_owner_rules`). Probado: tres fotos de T1
+  ofrecidas a T2 y T3 se rechazan y revierten la entrega; las dos
+  entregas a la vez con la foto de una solo pasan en la suya; insertar el
+  vínculo a mano también se rechaza. Incidencias y pasos de proceso no
+  cambian (su registro nace con las fotos).
 - **Ver la foto fuera del alcance.** `reachesTask` (en `evidenceOwners`)
   usa la misma condición que `getTask`; con el enlace armado a mano la
   ruta `/ver` responde 404 igual que un archivo que no existe. Probado con
@@ -121,7 +133,16 @@ propósito `task_photo`: escribe `inventory.task.execute`, lee
 - **Terminal con PIN.** El Montacarguista sube y entrega con su sesión de
   PIN (`inventory.task.execute` se conserva en la terminal) y ve la foto.
 
-Riesgo que queda: las fotos de una entrega repetida (respuesta perdida y
+Bajos de la revisión, corregidos: `discardTaskPhotoAction` atrapa el plan
+vencido como la subida; el error de la foto se muestra junto al campo y
+lleva el foco ahí; el disparador nuevo compara quién subió el archivo con
+quién lo liga (antes solo lo hacía el servicio, también para incidencias y
+procesos).
+
+Riesgos que quedan: el ajuste se lee sin candado frente a un cambio de
+ajuste simultáneo (como todos los ajustes); con el código anterior a este
+paso las fotos `task_photo` sin ligar no se purgan hasta volver a esta
+versión. Las fotos de una entrega repetida (respuesta perdida y
 reintento con fotos nuevas) quedan sin ligar hasta que la ronda de limpieza
 las borra a las 24 horas, y cuentan mientras tanto en el tope de 30 fotos
 sin ligar por persona.

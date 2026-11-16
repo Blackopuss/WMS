@@ -117,7 +117,9 @@ export async function createTaskAction(
 }
 
 export type TaskStepState =
-  { ok: true; summary: string } | { ok: false; error: string };
+  | { ok: true; summary: string }
+  /** `photos`: the refusal is about the photos (WMS-37B). */
+  | { ok: false; error: string; field?: "photos" };
 
 /** What a step answers: a task result, or a capacity warning (WMS-22B). */
 type StepAnswer =
@@ -145,6 +147,9 @@ async function run(
           result.formError ??
           Object.values(result.fieldErrors ?? {})[0] ??
           "No se pudo cambiar la tarea.",
+        ...(result.fieldErrors && "photos" in result.fieldErrors
+          ? { field: "photos" as const }
+          : {}),
       };
     }
     revalidatePath("/tareas");
@@ -239,10 +244,16 @@ export async function discardTaskPhotoAction(
   fileId: string,
 ): Promise<{ ok: boolean }> {
   const { user, organization } = await requireOrganizationContext();
-  return discardTaskPhoto(
-    { organizationId: organization.id, userId: user.id },
-    String(fileId ?? "").slice(0, 36),
-  );
+  try {
+    return await discardTaskPhoto(
+      { organizationId: organization.id, userId: user.id },
+      String(fileId ?? "").slice(0, 36),
+    );
+  } catch (error) {
+    // The plan expired meanwhile: nothing goes; the round removes it later.
+    if (isAppError(error) && error.kind === "forbidden") return { ok: false };
+    throw error;
+  }
 }
 
 /**

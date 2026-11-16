@@ -1860,7 +1860,7 @@ export async function uploadTaskPhoto(
       id: String(taskId ?? "").slice(0, 36),
       ...(await taskScope(client, userId)),
     },
-    select: { status: true, assignedToUserId: true },
+    select: { id: true, status: true, assignedToUserId: true },
   });
   if (
     !task ||
@@ -1875,10 +1875,12 @@ export async function uploadTaskPhoto(
       error: "Esta empresa no pide fotos al entregar una tarea.",
     };
   }
+  // WMS-37B: taken for this task, it serves only this task.
   const stored: StoreFileResult = await storeFile(actor, {
     purpose: "task_photo",
     name: input.name,
     bytes: input.bytes,
+    pendingOwnerId: task.id,
   });
   return stored.ok
     ? { ok: true, fileId: stored.fileId }

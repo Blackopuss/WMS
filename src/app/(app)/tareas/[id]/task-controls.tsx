@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
+  useRef,
   useState,
   useTransition,
   type Dispatch,
@@ -445,8 +446,8 @@ export function TaskPhotoField({
 /**
  * The last step: left where it was going, with the photo of where it was
  * left when the company asks for it — the same big button, no extra
- * screen (WMS-37B). With the photo required, the button says first what
- * is missing instead of sending.
+ * screen (WMS-37B). A refusal about the photos is said next to the photo
+ * field, which takes the focus.
  */
 export function DeliverStep({
   taskId,
@@ -459,45 +460,65 @@ export function DeliverStep({
   photoMode: "off" | "optional" | "required";
   maxPhotos: number;
 }) {
-  const { pending, error, run } = useTaskAction();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
-  const [missing, setMissing] = useState(false);
+  const [problem, setProblem] = useState<{
+    error: string;
+    photos: boolean;
+  } | null>(null);
+  const field = useRef<HTMLDivElement>(null);
+  const refuse = (error: string, aboutPhotos: boolean) => {
+    setProblem({ error, photos: aboutPhotos });
+    if (aboutPhotos) field.current?.focus();
+  };
+  const deliver = () => {
+    if (photoMode === "required" && photos.length === 0) {
+      refuse("Toma una foto de dónde la dejaste.", true);
+      return;
+    }
+    setProblem(null);
+    startTransition(async () => {
+      const result = await deliverTaskAction(
+        taskId,
+        photos.map((photo) => photo.fileId),
+      );
+      if (result.ok) {
+        toast.success(result.summary);
+        router.refresh();
+      } else {
+        refuse(result.error, result.field === "photos");
+      }
+    });
+  };
+  const photoError = problem?.photos ? problem.error : undefined;
   return (
     <div className="space-y-3">
       {photoMode !== "off" && (
-        <TaskPhotoField
-          taskId={taskId}
-          mode={photoMode}
-          max={maxPhotos}
-          photos={photos}
-          onPhotosChange={setPhotos}
-        />
+        <div ref={field} tabIndex={-1} className="rounded-lg outline-none">
+          <TaskPhotoField
+            taskId={taskId}
+            mode={photoMode}
+            max={maxPhotos}
+            photos={photos}
+            onPhotosChange={setPhotos}
+            error={photoError}
+          />
+        </div>
       )}
       <Button
         type="button"
         size="lg"
         className="min-h-14 w-full text-base sm:w-auto sm:min-w-72"
         disabled={pending}
-        onClick={() => {
-          if (photoMode === "required" && photos.length === 0) {
-            setMissing(true);
-            return;
-          }
-          setMissing(false);
-          run(() =>
-            deliverTaskAction(
-              taskId,
-              photos.map((photo) => photo.fileId),
-            ),
-          );
-        }}
+        onClick={deliver}
       >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         {pending ? "Guardando…" : label}
       </Button>
-      {(error || (missing && photos.length === 0)) && (
+      {problem && (
         <p role="alert" className="text-sm text-destructive">
-          {error ?? "Toma una foto de dónde la dejaste."}
+          {problem.photos ? "Revisa la foto antes de entregar." : problem.error}
         </p>
       )}
     </div>
