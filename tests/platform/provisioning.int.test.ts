@@ -7,6 +7,8 @@ import { isMfaRequired } from "@/platform/auth";
 import { createInvitation } from "@/platform/authorization";
 import {
   assertModulePermission,
+  createModuleRegistry,
+  defineModule,
   getCompanyPlan,
   isPlatformStaff,
   listCompaniesForStaff,
@@ -18,6 +20,23 @@ import { createOrganization } from "@/platform/tenancy";
 import { db, forOrganization } from "@/server";
 
 // MOD-09: platform staff assign tier, modules and validity, with audit.
+
+// A module announced but not sold: nothing can activate it. Today no real
+// module is in that state, so the rule is proved with a made-up one.
+const withAnnounced = createModuleRegistry([
+  ...moduleRegistry.all,
+  defineModule({
+    id: "announced",
+    name: "Anunciado",
+    version: "0.1.0",
+    availability: "unavailable",
+    required: false,
+    dependsOn: [],
+    uses: [],
+    permissions: [],
+    limits: [],
+  }),
+]);
 
 const stamp = Date.now();
 let counter = 0;
@@ -245,12 +264,12 @@ describe("provisionCompany", () => {
   it.each([
     [["purchasing"], "Compras necesita Inventario."],
     [[], "Inventario es la base y siempre va incluido."],
-    [["inventory", "crm"], "CRM todavía no está disponible."],
+    [["inventory", "announced"], "Anunciado todavía no está disponible."],
     [["inventory", "payroll"], "Uno de los módulos no existe."],
   ])("rejects the modules %j", async (modules, message) => {
     const { org } = await newCompany();
     expect(
-      await provisionCompany(moduleRegistry, staff, org, plan({ modules })),
+      await provisionCompany(withAnnounced, staff, org, plan({ modules })),
     ).toEqual({ ok: false, fieldErrors: { modules: message } });
     expect(await db.entitlement.count({ where: { organizationId: org } })).toBe(
       0,

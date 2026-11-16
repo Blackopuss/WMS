@@ -8,7 +8,7 @@ import { requireOrganizationContext } from "@/platform/tenancy";
 
 export type MinimumFormState = {
   error?: string;
-  /** «Mínimo de Tornillo: 20 piezas.» after a change that went through. */
+  /** «Mínimo de Guante: 20 piezas.» after a change that went through. */
   saved?: string;
   /** What the box shows: what was typed, or what was stored. */
   value: string;

@@ -6,13 +6,11 @@ import { PERMISSIONS } from "@/platform/authorization";
 import { moduleRegistry } from "./index";
 
 // MOD-02: the real registry starts, with Inventario, Compras, Producción
-// and Calidad (WMS-30A) available and CRM announced but not contractable
-// (Ventas was removed, WMS-02).
+// and Calidad (WMS-30A) available (Ventas was removed, WMS-02; CRM, WMS-81).
 
 describe("installed modules", () => {
-  it("starts with the five modules installed today", () => {
+  it("starts with the four modules installed today", () => {
     expect(moduleRegistry.all.map((m) => m.id).sort()).toEqual([
-      "crm",
       "inventory",
       "production",
       "purchasing",
@@ -43,13 +41,6 @@ describe("installed modules", () => {
       "purchasing",
       "quality",
     ]);
-  });
-
-  it("CRM cannot be contracted yet", () => {
-    expect(moduleRegistry.get("crm")).toMatchObject({
-      availability: "unavailable",
-    });
-    expect(moduleRegistry.get("crm")?.permissions).toEqual([]);
   });
 
   it("Compras needs Inventario; removing it would break it", () => {

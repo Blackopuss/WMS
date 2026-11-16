@@ -191,7 +191,7 @@ export function CloseOrder({
 }: {
   orderId: string;
   numberText: string;
-  /** «40 piezas de Tornillo», one per product still pending. */
+  /** «40 piezas de Guante», one per product still pending. */
   missing: string[];
 }) {
   const [open, setOpen] = useState(false);

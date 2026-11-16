@@ -322,7 +322,7 @@ export type CaptureResult =
   | {
       ok: true;
       captureId: string;
-      /** «Tornillo: 2 cajas × 100 = 200 piezas. Van 230 piezas contadas.» */
+      /** «Guante: 2 cajas × 100 = 200 piezas. Van 230 piezas contadas.» */
       summary: string;
       /** Everything counted of the product so far, in its unit: "230". */
       counted: string;

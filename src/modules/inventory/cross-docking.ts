@@ -107,7 +107,7 @@ export type CrossDockSent = {
   orderId: string;
   /** «PS-0004». */
   orderNumber: string;
-  /** «12 piezas de Tornillo». */
+  /** «12 piezas de Guante». */
   text: string;
   /** «T-0031». */
   taskNumbers: string[];
@@ -117,7 +117,7 @@ export type CrossDockResult = {
   /** What went to orders of each arrival, by its position (0 if nothing). */
   sent: Decimal[];
   orders: CrossDockSent[];
-  /** «12 piezas de Tornillo van directo al pedido PS-0004 (tarea T-0031).» */
+  /** «12 piezas de Guante van directo al pedido PS-0004 (tarea T-0031).» */
   notes: string[];
 };
 

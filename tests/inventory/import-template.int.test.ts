@@ -236,7 +236,7 @@ describe("import template", () => {
     expect(sheet).toContain(">metro<");
     expect(sheet).toContain(">kilogramo<");
     expect(sheet).toContain(">250.5<");
-    expect(sheet).toContain(">Martillo de uña 16 oz<");
+    expect(sheet).toContain(">Cinta métrica 5 m<");
 
     const instructions = cells(parts["xl/worksheets/sheet2.xml"]!);
     const text = instructions.flat();

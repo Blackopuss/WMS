@@ -157,7 +157,9 @@ export default function TermsPage() {
               </li>
               <li>
                 La usamos solo para prestarte el servicio: no la vendemos ni la
-                compartimos. Hacemos respaldos cifrados periódicos.
+                compartimos, salvo con los proveedores que nos ayudan a operarlo
+                (almacenamiento de archivos y envío de correo), como explica el
+                aviso de privacidad. Hacemos respaldos cifrados periódicos.
               </li>
               <li>
                 Los datos personales se tratan conforme al{" "}
@@ -165,6 +167,23 @@ export default function TermsPage() {
                   aviso de privacidad
                 </Link>
                 .
+              </li>
+            </ul>
+          ),
+        },
+        {
+          id: "integraciones",
+          title: "API, webhooks y fotos",
+          body: (
+            <ul>
+              <li>
+                Si tu empresa usa la API o los webhooks, es responsable de las
+                llaves que crea y de los destinos a los que manda información.
+              </li>
+              <li>
+                Las fotos de evidencia que tu equipo sube deben ser de la
+                operación; tu empresa responde de que no contengan datos que no
+                deba tener.
               </li>
             </ul>
           ),
