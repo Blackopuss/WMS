@@ -98,7 +98,9 @@ compara la tabla con la base).
 
 ## Modelo
 
-- `production_order`: número por empresa, almacén (`facilityId`, el del
+- `production_order` (`CHECK`: `startedAt` presente en `IN_PROGRESS` y
+  `CLOSED` y ausente en los demás; `closedAt` y `closedByUserId` en
+  `CLOSED`; liberada con quién y cuándo; cancelada con motivo): número por empresa, almacén (`facilityId`, el del
   área; nunca cambia), área (`areaLocationId`), producto, versión de la
   receta (`recipeVersionId`), cantidad y su unidad, día compromiso
   (`DATE`), prioridad (`NORMAL`/`URGENT`, la de las tareas), notas, estado,
@@ -133,11 +135,16 @@ compara la tabla con la base).
 
 ## Cantidades
 
-Factor = cantidad de la orden ÷ «para cuánto» de la versión (decimal
-exacto). Cada material = cantidad de la receta × factor **redondeada hacia
-arriba al paso de ese material** (no se aparta un tercio de pija); cada
-salida = cantidad de la receta × factor **redondeada hacia abajo** a su paso
-(lo esperado nunca promete de más). Es la única excepción a «nunca se
+Cada línea = (cantidad de la receta × cantidad de la orden) ÷ «para
+cuánto» de la versión: **primero se multiplica y se divide una sola vez**,
+así un resultado que es exacto sale exacto (dividir primero arrastraba el
+error del último dígito al redondeo: una receta para 6 con 6 piezas
+apartaba 8 para una orden de 7; revisión independiente). Cada material se
+**redondea hacia arriba al paso de ese material** (no se aparta un tercio
+de pija); cada salida **hacia abajo** a su paso (lo esperado nunca promete
+de más). **No se crea una orden de la que no sale nada**: si el producto de
+la orden está entre lo que sale y queda en 0 (receta para 3 que hace 1,
+orden de 1), o si ninguna salida pasa de 0, se rechaza («produce más»). Es la única excepción a «nunca se
 redondea» (INV-06), porque no es una captura: la orden muestra lo que
 aparta. Un material que redondeado pasa del máximo se rechaza. Regla pura
 `scaleRecipe` (`order-rules.ts`).
@@ -162,14 +169,30 @@ comprobar:
 
 ## Candados
 
-Orden global: productos → ubicaciones → documento → contenedor → tareas →
-capacidad → progreso del proceso.
+Orden global: **almacén (compartido)** → productos → ubicaciones →
+documento → contenedor → tareas → capacidad → progreso del proceso.
 
-- **Liberar:** productos de los materiales (de una vez, ordenados) →
-  ubicaciones (el área) → orden → (reservas y tareas nuevas) → progreso.
-- **Cancelar:** productos de los materiales → orden → tareas `ISSUE` →
-  progreso.
-- **Crear y guardar el borrador:** área (lectura) → orden → progreso.
+- **Regla para toda escritura de una orden (también WMS-29 y WMS-31):**
+  el primer candado es uno **compartido de la fila del almacén de la
+  orden**, tomado por el índice único `(organizationId, id)`
+  (`lockRows(tx, "facility", [id], { mode: "share", byTenantKey: true })`).
+  Escribir una orden hace que InnoDB revise su llave foránea al almacén
+  por ese índice, y cambiar ubicaciones (`changeTree`: editar, mover,
+  archivar) bloquea primero todos los almacenes por ese índice y después
+  una ubicación (INV-19B: almacén → ubicación). Sin este candado, liberar
+  (área → orden → revisión del almacén) se interbloqueaba con editar,
+  mover o archivar su área (revisión independiente, 6 de 6 rondas). Tomado
+  por la llave primaria también se interbloqueaba: el índice debe ir
+  primero, como en `changeTree` (la misma lección de WMS-75).
+- **Liberar:** almacén → productos de los materiales (de una vez,
+  ordenados) → el área → orden → capacidad del área (con tareas) →
+  progreso (`assertStagesDone`) → escrituras (estado, reservas y tareas
+  nuevas, que no esperan a nadie) → `reachMilestone` y
+  `completeOperationStage` sobre el mismo progreso.
+- **Cancelar:** almacén → productos de los materiales → orden → tareas
+  `ISSUE` → progreso.
+- **Crear y guardar el borrador:** almacén → área → orden (nueva o
+  bloqueada) → progreso. **Personas:** almacén → orden.
 - **Tarea `ISSUE`** (Inventario): cada paso bloquea producto (si mueve) →
   ubicaciones → **orden de producción** → tarea, como el surtido bloquea su
   pedido. La entrega comprueba bajo el candado de la orden que siga liberada
@@ -189,6 +212,25 @@ capacidad → progreso del proceso.
   (5.3).
 - La ficha muestra lo apartado por material como total, sin ubicaciones;
   las tareas `ISSUE` se ven en «Tareas» con las reglas de siempre.
+
+## El área mientras haya órdenes abiertas
+
+- Liberar vuelve a exigir, bajo candado, que el área siga siendo de uso
+  «Producción», del almacén de la orden, sin archivar y dentro del alcance
+  (un borrador guardado antes de que el área cambiara no se libera).
+- Mientras un área tenga órdenes `DRAFT`, `RELEASED` o `IN_PROGRESS`, no
+  se le cambia el uso ni se archiva: `editLocation` y `archiveLocation`
+  responden cuántas órdenes abiertas la usan (quien la edita la alcanza,
+  así que no cuenta nada de otra zona). Lo leen de la tabla, como ya
+  leían las tarimas: plataforma no importa el módulo. Mover el área dentro
+  de su almacén sí se permite (entre almacenes no se mueve una ubicación).
+- Con tareas al área, liberar pregunta antes, con `checkPlacement` en modo
+  `report` y todas las llegadas, si el área admite cada material (sus
+  restricciones de producto o categoría); si no, no libera y dice cuál.
+  La capacidad no detiene: la entrega la dice.
+- Una tarea `ISSUE` reportada después de recogerse (`BLOCKED` con
+  `pickedUpAt`) cuenta como carga en manos de alguien: cancelar la orden
+  la espera, igual que a una recogida.
 
 ## Proceso de la orden
 
@@ -248,10 +290,25 @@ de la ficha del producto agrega el área de producción.
 
 ## Quitar el módulo
 
-`productionOpenWork` agrega «N órdenes de producción abiertas» (borrador,
-liberadas o en proceso). Nada se cancela: queda en solo lectura; lo apartado
-sigue apartado (la propuesta ofrecerá «Liberar lo apartado por órdenes
-abiertas» después).
+`productionOpenWork` agrega «N órdenes de producción abiertas» y cuántas de
+ellas tienen materiales apartados, que seguirán apartados. Nada se cancela:
+queda en solo lectura, y lo apartado sigue bloqueando salidas y surtido sin
+que nadie pueda cancelar esas órdenes (pregunta abierta, abajo).
+
+## Preguntas abiertas al fundador
+
+Anotadas en la revisión; no cambian nada de este paso:
+
+1. Lo libre en un área de producción, ¿debe poder surtir pedidos de
+   salida, reponerse o contarse como cualquier existencia? Hoy sí.
+2. Quitar Producción, ¿debe liberar lo apartado por órdenes abiertas? Hoy
+   no: queda apartado y en solo lectura.
+3. ¿Puede el Encargado liberar y cancelar órdenes desde una terminal
+   compartida con PIN? Hoy sí (solo recetas y planes son de escritorio).
+4. ¿Hacen falta etapas de proceso después de cerrar la orden? Hoy
+   «Cerrada» cierra el proceso.
+5. El redondeo hacia arriba de los materiales, ¿debe ser un ajuste de la
+   empresa? Hoy es fijo.
 
 ## Fuera de este paso
 

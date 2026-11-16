@@ -136,6 +136,7 @@ type Tx = Pick<
   | "stockBalance"
   | "stockCount"
   | "container"
+  | "productionOrder"
   | "locationCapacity"
   | "locationRestriction"
   | "product"
@@ -278,6 +279,38 @@ async function refuseAvailableInside(
       (field === "type"
         ? `, y una ubicación ${use} no admite existencias disponibles. Cámbialas de estado o muévelas antes.`
         : `, y ahí va dentro de una ubicación ${use}, que no admite existencias disponibles. Cámbialas de estado o muévelas antes.`),
+    field,
+  );
+}
+
+/**
+ * WMS-28 (ADR 0073): a production area with open production orders keeps
+ * its use and is not archived; their materials go there and their tasks
+ * deliver there. Read like the pallets of a location (the table, not the
+ * module: platform never imports modules). Whoever edits it reaches it, so
+ * counting its orders tells nothing of another zone. Called under the lock
+ * of every warehouse (changeTree), which creating, releasing or cancelling
+ * an order also takes (shared), so none changes while this decides.
+ */
+async function refuseOpenProductionOrders(
+  tx: Tx,
+  locationId: string,
+  doing: string,
+  field?: LocationField,
+): Promise<void> {
+  const open = await tx.productionOrder.count({
+    where: {
+      areaLocationId: locationId,
+      status: { in: ["DRAFT", "RELEASED", "IN_PROGRESS"] },
+    },
+  });
+  if (open === 0) return;
+  reject(
+    "not_allowed",
+    (open === 1
+      ? "Una orden de producción abierta usa esta área"
+      : `${open} órdenes de producción abiertas usan esta área`) +
+      `: termínalas, cancélalas o cámbiales el área antes de ${doing}.`,
     field,
   );
 }
@@ -909,6 +942,14 @@ export async function editLocation(
     if (type !== location.type && NO_AVAILABLE_USES.has(type)) {
       await refuseAvailableInside(tx, location.id, type);
     }
+    if (location.type === "PRODUCTION" && type !== location.type) {
+      await refuseOpenProductionOrders(
+        tx,
+        location.id,
+        "cambiarle el uso",
+        "type",
+      );
+    }
     const code =
       input.code === undefined
         ? location.code
@@ -1271,6 +1312,7 @@ export async function archiveLocation(
           : `Aquí hay ${boxes} tarimas o cajas armadas. Muévelas o desármalas antes de archivarla.`,
       );
     }
+    await refuseOpenProductionOrders(tx, location.id, "archivarla");
     const inside = await tx.location.count({
       where: { parentId: location.id, archivedAt: null },
     });

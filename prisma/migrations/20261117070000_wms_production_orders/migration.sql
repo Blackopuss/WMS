@@ -165,7 +165,14 @@ ALTER TABLE `production_order`
     (`status` = 'CANCELLED') = (`cancelledAt` IS NOT NULL)
     AND (`status` <> 'CANCELLED' OR (`cancelReason` IS NOT NULL AND `cancelledByUserId` IS NOT NULL))),
   ADD CONSTRAINT `production_order_closed` CHECK (
-    (`status` = 'CLOSED') = (`closedAt` IS NOT NULL));
+    (`status` = 'CLOSED') = (`closedAt` IS NOT NULL)
+    AND (`status` <> 'CLOSED' OR `closedByUserId` IS NOT NULL)),
+  -- WMS-29 starts it (first report) and WMS-31 closes it: in progress and
+  -- closed always say when it started; a cancelled one never started.
+  ADD CONSTRAINT `production_order_started` CHECK (
+    `status` NOT IN ('IN_PROGRESS', 'CLOSED') OR `startedAt` IS NOT NULL),
+  ADD CONSTRAINT `production_order_not_started` CHECK (
+    `status` NOT IN ('DRAFT', 'RELEASED', 'CANCELLED') OR `startedAt` IS NULL);
 
 -- Una orden no se borra: se cancela o se cierra.
 CREATE TRIGGER `production_order_no_delete` BEFORE DELETE ON `production_order` FOR EACH ROW

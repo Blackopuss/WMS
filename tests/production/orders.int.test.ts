@@ -3,6 +3,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { dec, newId } from "@/lib";
 import {
   acceptTask,
+  blockTask,
   cancelTask,
   deliverTask,
   formatIssueOrderNumber,
@@ -28,6 +29,7 @@ import {
   setProductionOrderAssignees,
   setRecipeArea,
   setRecipeInput,
+  setRecipeOutput,
   startRecipeChange,
   updateProductionOrder,
   type ProductionActor,
@@ -41,7 +43,13 @@ import type { Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { archiveProduct, createProduct } from "@/platform/catalog";
 import { invalidateEntitlements } from "@/platform/entitlements";
-import { createLocation } from "@/platform/locations";
+import {
+  archiveLocation,
+  createLocation,
+  editLocation,
+  moveLocation,
+  setLocationLimits,
+} from "@/platform/locations";
 import {
   completeStage,
   publishProcess,
@@ -1236,5 +1244,233 @@ describe("the database as the application user", () => {
         },
       }),
     ).rejects.toThrow(/order is closed/);
+  });
+});
+
+describe("review of WMS-28", () => {
+  it("scales exactly when the base does not divide, and refuses an order that makes nothing", async () => {
+    const { owner } = await company();
+    const area = await place(owner, "Línea", { type: "PRODUCTION" });
+    const box = await product(owner, "Caja");
+    const sheet = await product(owner, "Lámina");
+    // For 6 boxes, 6 sheets: 7 boxes need 7 sheets (not 8).
+    await recipe(owner, box, [[sheet, "6"]], "6");
+    const seven = await order(owner, box, area, "7");
+    expect((await linesOf(seven))[0]?.quantity.toString()).toBe("7");
+    expect(
+      (
+        await db.productionOrderOutput.findFirstOrThrow({
+          where: { orderId: seven },
+        })
+      ).quantity.toString(),
+    ).toBe("7");
+    // For 3 kits that make only 1 of the product: 1 kit makes nothing.
+    const kit = await product(owner, "Kit");
+    const created = await createRecipe(owner, kit, { baseQuantity: "3" });
+    if (!created.ok) throw new Error(JSON.stringify(created));
+    await setRecipeInput(owner, created.versionId, {
+      productId: sheet,
+      quantity: "1",
+    });
+    await setRecipeOutput(owner, created.versionId, {
+      productId: kit,
+      quantity: "1",
+      costShare: "100",
+    });
+    expect(await activateRecipeVersion(owner, created.versionId)).toMatchObject(
+      { ok: true },
+    );
+    expect(
+      await createProductionOrder(owner, {
+        productId: kit,
+        quantity: "1",
+        areaLocationId: area,
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { quantity: expect.stringContaining("no sale nada") },
+    });
+    const ten = await order(owner, kit, area, "9");
+    expect(
+      (
+        await db.productionOrderOutput.findFirstOrThrow({
+          where: { orderId: ten },
+        })
+      ).quantity.toString(),
+    ).toBe("3");
+  });
+
+  it("releasing never deadlocks with editing, moving or archiving its area", async () => {
+    const { owner, crate, board, screw } = await workshop();
+    const zoneA = await place(owner, "Zona A");
+    const zoneB = await place(owner, "Zona B");
+    const area = await place(owner, "Línea móvil", {
+      type: "PRODUCTION",
+      parentId: zoneA,
+      level: 2,
+    });
+    expect(board && screw).toBeTruthy();
+    for (let round = 0; round < 6; round++) {
+      const id = await order(owner, crate, area, "1");
+      const results = await Promise.all([
+        releaseProductionOrder(owner, id),
+        editLocation(owner, area, { name: `Línea móvil ${round}` }),
+        moveLocation(owner, area, {
+          parentId: round % 2 === 0 ? zoneB : zoneA,
+        }),
+        archiveLocation(owner, area),
+        editLocation(owner, area, { type: "STORAGE" }),
+      ]);
+      // Every answer is a result, never a raw database error.
+      for (const result of results) expect(result).toHaveProperty("ok");
+      expect(results[0]).toMatchObject({ ok: true });
+      expect(results[3]).toMatchObject({
+        ok: false,
+        formError: expect.stringContaining("orden de producción abierta"),
+      });
+      expect(results[4]).toMatchObject({
+        ok: false,
+        fieldErrors: {
+          type: expect.stringContaining("orden de producción abierta"),
+        },
+      });
+      expect(await cancelProductionOrder(owner, id, "Ronda")).toMatchObject({
+        ok: true,
+      });
+    }
+    await balanced(owner.organizationId);
+  }, 60_000);
+
+  it("an area stops being one only without open orders, and a draft does not release in an area that is no longer one", async () => {
+    const { owner, crate } = await workshop();
+    const area = await place(owner, "Línea", { type: "PRODUCTION" });
+    const id = await order(owner, crate, area, "1");
+    expect(await editLocation(owner, area, { type: "STORAGE" })).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        type: expect.stringContaining("Una orden de producción abierta"),
+      },
+    });
+    expect(await archiveLocation(owner, area)).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("Una orden de producción abierta"),
+    });
+    // Changed straight in the database (as if before this rule), the
+    // release still refuses.
+    await db.location.update({
+      where: { id: area },
+      data: { type: "STORAGE" },
+    });
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("no es un área de producción"),
+    });
+    await db.location.update({
+      where: { id: area },
+      data: { type: "PRODUCTION", archivedAt: new Date() },
+    });
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("archivada"),
+    });
+    await db.location.update({
+      where: { id: area },
+      data: { archivedAt: null },
+    });
+    expect(await cancelProductionOrder(owner, id, "Ya no va")).toMatchObject({
+      ok: true,
+    });
+    // Without open orders its use changes.
+    expect(await editLocation(owner, area, { type: "STORAGE" })).toMatchObject({
+      ok: true,
+    });
+  });
+
+  it("with tasks to the area, the release asks whether the area admits each material", async () => {
+    const { owner, area, crate, board } = await workshop();
+    await setting(owner, "production.materials.mode", "issue");
+    const boardSku = (
+      await db.product.findUniqueOrThrow({ where: { id: board } })
+    ).sku;
+    // The area only admits boards: the screws could never be delivered.
+    expect(
+      await setLocationLimits(owner, area, { products: boardSku }),
+    ).toMatchObject({ ok: true });
+    const id = await order(owner, crate, area, "1");
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("restricciones"),
+    });
+    expect(
+      await db.stockReservation.count({
+        where: { organizationId: owner.organizationId },
+      }),
+    ).toBe(0);
+    expect((await getProductionOrder(owner, id))?.status).toBe("DRAFT");
+    // Direct consumption needs no delivery: it releases.
+    await setting(owner, "production.materials.mode", "direct");
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+  });
+
+  it("a task reported after picking it up is a load in hand: the order waits", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.materials.mode", "issue");
+    const id = await order(owner, crate, area, "1");
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({ ok: true });
+    const [task] = await db.warehouseTask.findMany({
+      where: { kind: "ISSUE", productionOrderLine: { orderId: id } },
+      orderBy: { number: "asc" },
+    });
+    expect(await acceptTask(owner, task!.id)).toMatchObject({ ok: true });
+    expect(await pickUpTask(owner, task!.id)).toMatchObject({ ok: true });
+    expect(
+      await blockTask(owner, task!.id, "Se atoró el montacargas"),
+    ).toMatchObject({ ok: true });
+    expect(await cancelProductionOrder(owner, id, "Ya no va")).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("en camino"),
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("the database asks when it started and who closed it", async () => {
+    const { owner, area, crate } = await workshop();
+    const id = await order(owner, crate, area, "1");
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({ ok: true });
+    await expect(
+      db.productionOrder.update({
+        where: { id },
+        data: { status: "IN_PROGRESS" },
+      }),
+    ).rejects.toThrow(/production_order_started/);
+    await db.productionOrder.update({
+      where: { id },
+      data: { status: "IN_PROGRESS", startedAt: new Date() },
+    });
+    await expect(
+      db.productionOrder.update({
+        where: { id },
+        data: { status: "CLOSED", closedAt: new Date() },
+      }),
+    ).rejects.toThrow(/production_order_closed/);
+    await db.productionOrder.update({
+      where: { id },
+      data: {
+        status: "CLOSED",
+        closedAt: new Date(),
+        closedByUserId: owner.userId,
+      },
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("the open work says when open orders keep materials set aside", async () => {
+    const { owner, area, crate } = await workshop();
+    const id = await order(owner, crate, area, "1");
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({ ok: true });
+    expect(await productionOpenWork(owner.organizationId)).toContain(
+      "1 orden de producción abierta; 1 tiene materiales apartados, que seguirán apartados.",
+    );
   });
 });

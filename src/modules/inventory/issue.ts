@@ -9,6 +9,7 @@ import {
   type InventoryActor,
 } from "./movements";
 import type { PickSource } from "./picking";
+import { checkPlacement } from "./placement";
 import { PRODUCTION_ORDER_LINE_SOURCE } from "./reservation-sources";
 import { consumeReservation, reserveStock } from "./reservations";
 import { formatTaskNumber } from "./task-states";
@@ -86,6 +87,35 @@ export async function setAsideForProduction(
     tasks += 1;
   }
   return { nextNumber: number, tasks };
+}
+
+/**
+ * Before releasing with tasks: whether the area admits what they will bring
+ * (its restrictions of products or categories, WMS-22B), asked once with
+ * every arrival, in `report` mode (a capacity is said at delivery, never
+ * stops it). The message of the first refusal, or null.
+ */
+export async function issuePlacementProblem(
+  tx: Tx,
+  input: {
+    areaId: string;
+    inArea: ReadonlySet<string>;
+    lines: readonly { productId: string; sources: readonly PickSource[] }[];
+  },
+): Promise<string | null> {
+  const arrivals = input.lines.flatMap((line) =>
+    line.sources
+      .filter((source) => !input.inArea.has(source.locationId))
+      .map((source) => ({
+        productId: line.productId,
+        quantity: source.quantity,
+        toLocationId: input.areaId,
+        fromLocationId: source.locationId,
+        status: "AVAILABLE" as const,
+      })),
+  );
+  const result = await checkPlacement(tx, arrivals, { mode: "report" });
+  return result.ok ? null : result.message;
 }
 
 /** The reservation an ISSUE task carries: its line in its origin and lot. */

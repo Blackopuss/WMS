@@ -1631,10 +1631,35 @@ export async function productionOpenWork(
     );
   }
   if (orders > 0) {
+    // ADR 0073 (review): what open orders set aside keeps blocking exits
+    // and picking after the module is removed; whether removing it should
+    // let it go is a question for the founder.
+    const holding = await client.stockReservation.findMany({
+      where: { sourceType: "production_order_line", state: "ACTIVE" },
+      select: { sourceId: true },
+      distinct: ["sourceId"],
+    });
+    const withStock = holding.length
+      ? (
+          await client.productionOrderLine.findMany({
+            where: {
+              id: { in: holding.map((row) => row.sourceId) },
+              order: { status: { in: ["RELEASED", "IN_PROGRESS"] } },
+            },
+            select: { orderId: true },
+            distinct: ["orderId"],
+          })
+        ).length
+      : 0;
     work.push(
-      orders === 1
-        ? "1 orden de producción abierta."
-        : `${orders} órdenes de producción abiertas.`,
+      (orders === 1
+        ? "1 orden de producción abierta"
+        : `${orders} órdenes de producción abiertas`) +
+        (withStock === 0
+          ? "."
+          : withStock === 1
+            ? "; 1 tiene materiales apartados, que seguirán apartados."
+            : `; ${withStock} tienen materiales apartados, que seguirán apartados.`),
     );
   }
   return work;

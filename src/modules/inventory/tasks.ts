@@ -1858,9 +1858,19 @@ async function fixedOf(organizationId: string, ids: string[]) {
       fromLocationId: true,
       toLocationId: true,
       outboundLine: { select: { orderId: true } },
+      productionOrderLine: { select: { orderId: true } },
     },
   });
 }
+
+/** WMS-28: the production orders of ISSUE tasks, locked before the tasks. */
+const productionOrderIdsOf = (fixed: Awaited<ReturnType<typeof fixedOf>>) => [
+  ...new Set(
+    fixed
+      .map((task) => task.productionOrderLine?.orderId)
+      .filter((id): id is string => Boolean(id)),
+  ),
+];
 
 const orderIdsOf = (fixed: Awaited<ReturnType<typeof fixedOf>>) => [
   ...new Set(
@@ -2110,6 +2120,7 @@ export async function takeTasks(
   const fixed = await fixedOf(organizationId, ids);
   return inGroup(organizationId, async (tx) => {
     await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    await lockRows(tx, "productionOrder", productionOrderIdsOf(fixed));
     const locked = await lockRows(tx, "warehouseTask", ids);
     let changed = 0;
     let withEquipment = 0;
@@ -2197,6 +2208,7 @@ export async function assignTasks(
   const fixed = await fixedOf(organizationId, ids);
   return inGroup(organizationId, async (tx) => {
     await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    await lockRows(tx, "productionOrder", productionOrderIdsOf(fixed));
     const locked = await lockRows(tx, "warehouseTask", ids);
     const tasks = [];
     for (const id of locked) {

@@ -61,7 +61,7 @@ export {
   productionTransitionProblem,
   type ProductionOrderStatus,
 } from "./order-states";
-export { fitsLine, recipeFactor, scaleInput, scaleOutput } from "./order-rules";
+export { fitsLine, scaleInput, scaleOutput } from "./order-rules";
 export {
   PRODUCTION_ORDER_PROCESS,
   PRODUCTION_ORDER_RELEASED_OPERATION,

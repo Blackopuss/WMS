@@ -6,6 +6,7 @@ import { dec, newId, type Decimal } from "@/lib";
 import {
   PRODUCTION_ORDER_LINE_SOURCE,
   formatStock,
+  issuePlacementProblem,
   nextTaskNumber,
   pickSources,
   setAsideForProduction,
@@ -44,7 +45,7 @@ import {
   PRODUCTION_ORDER_PROCESS,
   PRODUCTION_ORDER_RELEASED_OPERATION,
 } from "./order-process";
-import { fitsLine, recipeFactor, scaleInput, scaleOutput } from "./order-rules";
+import { fitsLine, scaleInput, scaleOutput } from "./order-rules";
 import {
   OPEN_PRODUCTION_STATUSES,
   PRODUCTION_ORDER_STATUS_LABELS,
@@ -212,6 +213,34 @@ async function lockOrder(tx: Tx, orderId: string, userId: string) {
   }
   return order;
 }
+
+/**
+ * The warehouse of an order, read before its transaction (it never
+ * changes), and a shared lock of its row as the first lock: writing an
+ * order makes InnoDB check its foreign key to the warehouse, and changing
+ * locations locks every warehouse first and then a location (INV-19B:
+ * warehouse → location). Taking the warehouse first keeps that order
+ * (review of WMS-28: releasing deadlocked with editing its area). WMS-29
+ * and WMS-31, which also change the order, follow the same rule.
+ */
+async function facilityOfOrder(
+  organizationId: string,
+  orderId: string,
+): Promise<string | null> {
+  const row = await forOrganization(organizationId).productionOrder.findFirst({
+    where: { id: idOf(orderId) },
+    select: { facilityId: true },
+  });
+  return row?.facilityId ?? null;
+}
+
+const shareFacility = (tx: Tx, facilityId: string | null) =>
+  facilityId
+    ? lockRows(tx, "facility", [facilityId], {
+        mode: "share",
+        byTenantKey: true,
+      })
+    : Promise.resolve([]);
 
 // ── Header ───────────────────────────────────────────────────────────────
 
@@ -511,7 +540,7 @@ async function copyRecipe(
       })
     ).map((row) => [row.id, row]),
   );
-  const factor = recipeFactor(parsed.quantity, version.baseQuantity.toString());
+  const base = version.baseQuantity.toString();
   const lineProblem = (
     line: { productId: string; unitCode: string },
     what: string,
@@ -532,7 +561,8 @@ async function copyRecipe(
     const item = products.get(line.productId)!;
     const quantity = scaleInput(
       line.baseQuantity.toString(),
-      factor,
+      parsed.quantity,
+      base,
       item.quantityStep.toString(),
     );
     if (!fitsLine(quantity)) {
@@ -556,7 +586,8 @@ async function copyRecipe(
     const item = products.get(line.productId)!;
     const quantity = scaleOutput(
       line.quantity.toString(),
-      factor,
+      parsed.quantity,
+      base,
       item.quantityStep.toString(),
     );
     if (!fitsLine(quantity)) {
@@ -573,6 +604,20 @@ async function copyRecipe(
       costShare: line.costShare.toString(),
     };
   });
+  // What the order makes must come out: the product itself when it is an
+  // output, or at least something when the recipe takes it apart.
+  const main = outputs.find((line) => line.productId === product.id);
+  if (
+    main
+      ? main.quantity.isZero()
+      : outputs.every((line) => line.quantity.isZero())
+  ) {
+    return stop(
+      "invalid",
+      `Con esa cantidad no sale nada de la receta (es para ${formatStock(base, version.unitCode)}): produce más.`,
+      "quantity",
+    );
+  }
   return {
     versionId: version.id,
     versionNumber: version.number,
@@ -653,6 +698,8 @@ export async function createProductionOrder(
     userId,
   );
   return inOrder(organizationId, async (tx) => {
+    await shareFacility(tx, facility.id);
+    await lockRows(tx, "location", [idOf(data.areaLocationId)]);
     const area = await areaOf(tx, userId, facility.id, data.areaLocationId);
     await assigneesReachArea(tx, data.assigneeIds, area.id);
     const copy = await copyRecipe(tx, idOf(input.productId), data.quantity);
@@ -739,7 +786,10 @@ export async function updateProductionOrder(
       fieldErrors: { assigneeIds: people.message },
     };
   }
+  const facilityId = await facilityOfOrder(organizationId, orderId);
   return inOrder(organizationId, async (tx) => {
+    await shareFacility(tx, facilityId);
+    await lockRows(tx, "location", [idOf(data.areaLocationId)]);
     const order = await lockOrder(tx, orderId, userId);
     const problem = productionTransitionProblem(order.status, "DRAFT");
     if (order.status !== "DRAFT") {
@@ -826,7 +876,9 @@ export async function setProductionOrderAssignees(
       fieldErrors: { assigneeIds: people.message },
     };
   }
+  const facilityId = await facilityOfOrder(organizationId, orderId);
   return inOrder(organizationId, async (tx) => {
+    await shareFacility(tx, facilityId);
     const order = await lockOrder(tx, orderId, userId);
     if (!OPEN_PRODUCTION_STATUSES.includes(order.status)) {
       return stop(
@@ -908,6 +960,7 @@ export async function releaseProductionOrder(
     {
       where: { id: idOf(orderId) },
       select: {
+        facilityId: true,
         areaLocationId: true,
         lines: { select: { productId: true } },
       },
@@ -916,6 +969,7 @@ export async function releaseProductionOrder(
   if (!draft) return { ok: false, reason: "not_found", formError: NOT_FOUND };
   const productIds = draft.lines.map((line) => line.productId);
   return inOrder(organizationId, async (tx) => {
+    await shareFacility(tx, draft.facilityId);
     await lockRows(tx, "product", productIds);
     await lockRows(tx, "location", [draft.areaLocationId]);
     const order = await lockOrder(tx, orderId, userId);
@@ -937,14 +991,17 @@ export async function releaseProductionOrder(
       return stop("not_allowed", CHANGED);
     }
     await checkStillValid(tx, order);
-    // WMS-74: the stages the company put before releasing.
-    const stages = await assertStagesDone(
-      tx,
-      PRODUCTION_ORDER_PROCESS,
-      order.id,
-      PRODUCTION_ORDER_RELEASED_OPERATION,
-    );
-    if (!stages.ok) return stop("not_allowed", stages.message);
+    // The area is still a production area of its warehouse, active and in
+    // reach (review of WMS-28: its use or its state may have changed).
+    try {
+      await areaOf(tx, userId, order.facilityId, order.areaLocationId);
+    } catch (error) {
+      if (!(error instanceof Rejected)) throw error;
+      return stop(
+        "not_allowed",
+        `${error.result.fieldErrors?.areaLocationId ?? "El área ya no sirve."} Cambia el área de la orden antes de liberarla.`,
+      );
+    }
 
     const [mode, short] = await Promise.all([
       readSetting(tx, MATERIALS_MODE),
@@ -1000,6 +1057,38 @@ export async function releaseProductionOrder(
         "No hay nada libre de los materiales de esta orden: no se apartó nada.",
       );
     }
+    const withTasks = mode === "issue";
+    const inArea = withTasks
+      ? await insideArea(tx, order.facilityId, order.areaLocationId)
+      : new Set<string>();
+    // With tasks to the area, the area must admit each material (its
+    // restrictions, WMS-22B): asked once, before writing (lock: capacity
+    // after the order).
+    if (withTasks) {
+      const refused = await issuePlacementProblem(tx, {
+        areaId: order.areaLocationId,
+        inArea,
+        lines: plan.map((step) => ({
+          productId: step.line.productId,
+          sources: step.sources,
+        })),
+      });
+      if (refused) {
+        return stop(
+          "not_allowed",
+          `${refused} Cambia el área de la orden o sus restricciones antes de liberarla.`,
+        );
+      }
+    }
+    // WMS-74: the stages the company put before releasing (lock: progress
+    // last).
+    const stages = await assertStagesDone(
+      tx,
+      PRODUCTION_ORDER_PROCESS,
+      order.id,
+      PRODUCTION_ORDER_RELEASED_OPERATION,
+    );
+    if (!stages.ok) return stop("not_allowed", stages.message);
     // Released first: an ISSUE task only comes from a released order
     // (trigger).
     await tx.productionOrder.update({
@@ -1010,10 +1099,6 @@ export async function releaseProductionOrder(
         releasedByUserId: userId,
       },
     });
-    const withTasks = mode === "issue";
-    const inArea = withTasks
-      ? await insideArea(tx, order.facilityId, order.areaLocationId)
-      : new Set<string>();
     let nextNumber = withTasks ? await nextTaskNumber(tx) : 0;
     let tasks = 0;
     for (const step of plan) {
@@ -1163,11 +1248,12 @@ export async function cancelProductionOrder(
   const draft = await forOrganization(organizationId).productionOrder.findFirst(
     {
       where: { id: idOf(orderId) },
-      select: { lines: { select: { productId: true } } },
+      select: { facilityId: true, lines: { select: { productId: true } } },
     },
   );
   const productIds = draft?.lines.map((line) => line.productId) ?? [];
   return inOrder(organizationId, async (tx) => {
+    await shareFacility(tx, draft?.facilityId ?? null);
     await lockRows(tx, "product", productIds);
     const order = await lockOrder(tx, orderId, userId);
     if (order.status === "CANCELLED") {
@@ -1196,9 +1282,16 @@ export async function cancelProductionOrder(
     );
     const tasks = await tx.warehouseTask.findMany({
       where: { id: { in: locked } },
-      select: { id: true, number: true, status: true },
+      select: { id: true, number: true, status: true, pickedUpAt: true },
     });
-    const carried = tasks.find((task) => task.status === "PICKED_UP");
+    // A load in someone's hands: picked up, or reported after picking it
+    // up (blocked with its pick-up written). It is delivered or resolved
+    // first; cancelling would free what it carries in the origin.
+    const carried = tasks.find(
+      (task) =>
+        task.status === "PICKED_UP" ||
+        (task.status === "BLOCKED" && task.pickedUpAt !== null),
+    );
     if (carried) {
       return stop(
         "not_allowed",

@@ -89,7 +89,6 @@ const NOT_SERVICES = new Set([
   "isProductionOrderStatus",
   "productionTransitionProblem",
   "fitsLine",
-  "recipeFactor",
   "scaleInput",
   "scaleOutput",
 ]);

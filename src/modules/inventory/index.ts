@@ -264,7 +264,7 @@ export {
 } from "./task-states";
 // WMS-28 (ADR 0073): «Surtir a producción»; Producción sets its materials
 // aside and creates the tasks when it releases an order.
-export { setAsideForProduction } from "./issue";
+export { issuePlacementProblem, setAsideForProduction } from "./issue";
 export { nextTaskNumber, pickSources, type PickSource } from "./picking";
 export {
   OUTBOUND_LINE_SOURCE,
