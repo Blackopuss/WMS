@@ -3,10 +3,11 @@ import "server-only";
 import {
   DEVICE_KIND_LABELS,
   describeUserAgent,
+  deviceKeyOf,
   formatIp,
   type DeviceKind,
 } from "@/lib";
-import { recordAuditEvent } from "@/platform/audit";
+import { recordAuditEvent, recordSecurityEvent } from "@/platform/audit";
 import { notify, type NotifyTx } from "@/platform/notifications";
 import { db, forOrganization } from "@/server";
 
@@ -254,6 +255,17 @@ export async function revokeMemberSession(
       }
       const deleted = await tx.session.deleteMany({ where });
       closed = deleted.count;
+      // WMS-68: in the person's access history, of this company.
+      await recordSecurityEvent(
+        {
+          userId: target.userId,
+          action: "session.closed_by_team",
+          organizationId,
+          deviceKey: deviceKeyOf(session.userAgent),
+          metadata: { scope: "one", sessions: closed },
+        },
+        tx,
+      );
       const device = describeUserAgent(session.userAgent).label;
       await tellPerson(
         tx,
@@ -309,6 +321,15 @@ export async function revokeAllMemberSessions(
         where: companySessions(organizationId, target.userId),
       });
       closed = deleted.count;
+      await recordSecurityEvent(
+        {
+          userId: target.userId,
+          action: "session.closed_by_team",
+          organizationId,
+          metadata: { scope: "all", sessions: closed },
+        },
+        tx,
+      );
       await recordAuditEvent(tx, {
         organizationId,
         actorUserId,

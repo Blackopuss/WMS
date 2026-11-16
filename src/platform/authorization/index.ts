@@ -150,4 +150,5 @@ export type {
   MemberSessionsView,
   SessionRevokeResult,
 } from "./team-sessions";
+export { listMemberAccessHistory } from "./team-access-history";
 export { SESSIONS_CLOSED_NOTICE, TEAM_NOTIFICATION_TYPES } from "./notices";

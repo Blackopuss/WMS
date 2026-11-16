@@ -1,12 +1,14 @@
 import "server-only";
 
-import { log } from "@/lib";
+import { deviceKeyOf, log } from "@/lib";
 import { recordAuditEvent, recordSecurityEvent } from "@/platform/audit";
 import {
+  alertPinLocked,
   blockedFor,
   clearAttempts,
   clientIp,
   countInWindow,
+  noteSignIn,
   openTerminalSession,
   pinCandidates,
   refundAttempt,
@@ -254,6 +256,8 @@ export async function pinSignIn(
           action: "pin_sign_in.failed",
           metadata: { terminalId: terminal.id },
           ipAddress: ip,
+          organizationId: terminal.organizationId,
+          deviceKey: deviceKeyOf(headers.get("user-agent")),
         });
         const everywhere = (await blockedFor([userKey])) > 0;
         if (everywhere || (await blockedFor([hereKey])) > 0) {
@@ -262,8 +266,13 @@ export async function pinSignIn(
             action: "pin.locked",
             metadata: { terminalId: terminal.id, everywhere },
             ipAddress: ip,
+            organizationId: terminal.organizationId,
+            deviceKey: deviceKeyOf(headers.get("user-agent")),
           });
           await reportBlock(terminal, { userId: candidate.userId, everywhere });
+          // WMS-68: the owner learns it by email, once a day and only if
+          // they have a PIN (anyone at a terminal can pick a name).
+          await alertPinLocked(candidate.userId, Boolean(stored));
         }
       }
       if ((await blockedFor([terminalKey])) > 0) {
@@ -300,11 +309,11 @@ export async function pinSignIn(
       idleSeconds: idleMinutes * 60,
       headers,
     });
-    await recordSecurityEvent({
+    await noteSignIn({
       userId,
       action: "pin_sign_in.succeeded",
-      metadata: { terminalId: terminal.id },
-      ipAddress: ip,
+      headers,
+      terminal: { id: terminal.id, organizationId: terminal.organizationId },
     });
     return { ok: true };
   } catch (error) {

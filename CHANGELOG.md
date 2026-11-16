@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-68** Historial de accesos por persona y alertas por correo de accesos
+  sospechosos (dispositivo nuevo, muchos intentos, bloqueo de PIN), sin país
+  por IP. ADR 0064.
 - **WMS-42** Equipos del almacén: registro con tipos libres por empresa,
   mantenimiento con aviso, incidencias ligadas a un equipo y tareas que piden
   un tipo de equipo. ADR 0065.

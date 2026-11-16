@@ -6,10 +6,10 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { z } from "zod";
 
-import { recordSecurityEvent } from "@/platform/audit";
 import { pendingLegalDocuments } from "@/platform/legal";
 import { db } from "@/server";
 
+import { noteFailedSignIn, noteSignIn } from "./access-history";
 import { VERIFY_EMAIL_COOKIE, auth } from "./auth";
 import { isMfaRequired } from "./mfa-policy";
 import { resendVerification } from "./register";
@@ -245,11 +245,12 @@ export async function signIn(
     // The password proves who it is: a PIN blocked after wrong tries works
     // again (WMS-38, ADR 0061 §6).
     await clearPinAttempts(result.user.id);
-    await recordSecurityEvent({
+    // WMS-68: the entry, its device, and an alert for a new one.
+    await noteSignIn({
       userId: result.user.id,
       action: "sign_in.succeeded",
       metadata: { mfa: false },
-      ipAddress: ip,
+      headers: requestHeaders,
     });
     return { ok: true };
   } catch (error) {
@@ -278,6 +279,9 @@ export async function signIn(
       }
       if (error.status === "UNAUTHORIZED" || error.statusCode === 401) {
         await settleFailure(keys);
+        // WMS-68: the history of an account that exists, and the alert
+        // when its counter blocked it, all after the response.
+        noteFailedSignIn(email, requestHeaders);
         return { ok: false, reason: "invalid" };
       }
     }
