@@ -1,6 +1,6 @@
 "use client";
 
-import { animate, onScroll, stagger, utils } from "animejs";
+import { animate, stagger, utils } from "animejs";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
@@ -16,6 +16,10 @@ import { formatCount } from "./site-shared";
  * Pages stay Server Components and their content is visible without
  * JavaScript: only what is still below the screen is hidden, right before
  * it is animated. With reduced motion nothing moves.
+ *
+ * Each animation starts once its element shows up and always runs to the
+ * end: tied to the scroll position (anime.js onScroll), a fast scroll or a
+ * jump to an anchor left text half transparent (WMS-77).
  */
 export function SiteMotion() {
   const pathname = usePathname();
@@ -23,6 +27,18 @@ export function SiteMotion() {
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const cleanups: (() => void)[] = [];
+    const starts = new Map<Element, () => void>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        observer.unobserve(entry.target);
+        starts.get(entry.target)?.();
+      }
+    });
+    const whenSeen = (element: Element, start: () => void) => {
+      starts.set(element, start);
+      observer.observe(element);
+    };
     const fold = window.innerHeight * 0.95;
     const below = (element: Element) =>
       element.getBoundingClientRect().top > fold;
@@ -42,8 +58,9 @@ export function SiteMotion() {
         duration: 750,
         delay: stagger(90),
         ease: "outQuint",
-        autoplay: onScroll({ target: element, repeat: false }),
+        autoplay: false,
       });
+      whenSeen(element, () => animation.play());
       cleanups.push(() => animation.revert());
     }
 
@@ -62,8 +79,9 @@ export function SiteMotion() {
         onUpdate: () => {
           element.textContent = formatCount(Math.round(counter.value));
         },
-        autoplay: onScroll({ target: element, repeat: false }),
+        autoplay: false,
       });
+      whenSeen(element, () => animation.play());
       cleanups.push(() => {
         animation.revert();
         element.textContent = final;
@@ -71,6 +89,7 @@ export function SiteMotion() {
     }
 
     return () => {
+      observer.disconnect();
       for (const cleanup of cleanups) cleanup();
     };
   }, [pathname]);

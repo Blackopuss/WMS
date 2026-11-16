@@ -2,9 +2,13 @@ import {
   ArrowRight,
   Boxes,
   ClipboardCheck,
+  Factory,
   FileSpreadsheet,
+  ListChecks,
   MapPinned,
+  PackageOpen,
   PackageSearch,
+  ScanBarcode,
   ShieldCheck,
   ShoppingCart,
   TrendingDown,
@@ -29,7 +33,7 @@ import { CtaBand, Eyebrow, Section } from "./sections";
 export const metadata: Metadata = {
   title: { absolute: "WMS · Gestión de almacenes para tu negocio" },
   description:
-    "Sabe cuánto tienes, dónde está y qué falta pedir. Inventario por cajas y piezas, ubicaciones, conteos y órdenes de compra, en español.",
+    "Sabe cuánto tienes, dónde está y qué sigue. Recepción, acomodo, surtido, embarques, conteos, compras y producción en un solo sistema, en español.",
 };
 
 const QUESTIONS = [
@@ -53,6 +57,37 @@ const QUESTIONS = [
   },
 ];
 
+const OUTBOUND_STEPS = ["Liberado", "Surtido", "Empacado", "Despachado"];
+
+/** The day of a warehouse, in the order it happens (all in Inventario). */
+const FLOW = [
+  {
+    icon: PackageOpen,
+    title: "Recibir",
+    text: "Contra la orden de compra, en partes, por lote o serie, con lo dañado aparte.",
+  },
+  {
+    icon: MapPinned,
+    title: "Acomodar",
+    text: "El sistema recomienda el lugar según capacidad y lo que ya hay ahí.",
+  },
+  {
+    icon: ListChecks,
+    title: "Surtir",
+    text: "Tareas por pedido o por olas; lo que caduca antes sale antes.",
+  },
+  {
+    icon: ScanBarcode,
+    title: "Empacar",
+    text: "Cada pieza se escanea al empacar: lo que sale es lo que se pidió.",
+  },
+  {
+    icon: Truck,
+    title: "Despachar",
+    text: "Embarques con hoja impresa, transportista y rastreo hasta el pedido.",
+  },
+];
+
 const STEPS = [
   {
     icon: FileSpreadsheet,
@@ -62,7 +97,7 @@ const STEPS = [
   {
     icon: Boxes,
     title: "Registra lo que entra y sale",
-    text: "Por caja, por pieza o con el lector de código de barras. El saldo se actualiza solo.",
+    text: "Por caja o por pieza, con un lector de código de barras o la cámara del teléfono. El saldo se actualiza solo.",
   },
   {
     icon: Truck,
@@ -82,14 +117,15 @@ export default function LandingPage() {
           className="pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_1px_1px,var(--scene-rack)_1px,transparent_0)] [mask-image:radial-gradient(ellipse_at_70%_40%,black,transparent_70%)] [background-size:24px_24px] opacity-[0.08]"
         />
         <div className="relative mx-auto grid max-w-6xl items-center gap-6 px-4 pt-10 pb-16 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:gap-4 lg:pt-16 lg:pb-24">
-          <div className="space-y-6 motion-safe:animate-in motion-safe:duration-700 motion-safe:fade-in motion-safe:slide-in-from-bottom-3">
+          <div className="space-y-6 motion-safe:animate-in motion-safe:duration-700 motion-safe:slide-in-from-bottom-3">
             <Eyebrow>WMS modular para almacenes</Eyebrow>
             <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
               Tu almacén, <span className="text-primary">bajo control</span>.
             </h1>
             <p className="max-w-lg text-lg text-pretty text-muted-foreground">
               Sabe cuánto tienes de cada producto, en qué estante está y qué
-              falta pedir. Sin hojas de cálculo que nadie actualiza.
+              sigue: recibir, acomodar, surtir y despachar, con tareas para tu
+              equipo. Sin hojas de cálculo que nadie actualiza.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg">
@@ -178,8 +214,46 @@ export default function LandingPage() {
         </div>
       </Section>
 
-      {/* Features bento */}
+      {/* Warehouse flow */}
       <Section>
+        <div className="mx-auto max-w-2xl text-center" data-reveal>
+          <Eyebrow>Todo el recorrido</Eyebrow>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+            Del muelle de recepción al camión
+          </h2>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Cada paso es una tarea para alguien de tu equipo, en la computadora
+            o en el teléfono.
+          </p>
+        </div>
+        <ol
+          data-reveal="stagger"
+          className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
+        >
+          {FLOW.map(({ icon: Icon, title, text }, index) => (
+            <li
+              key={title}
+              className="rounded-2xl border bg-card p-5 shadow-sm"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
+                  <Icon className="size-5" aria-hidden="true" />
+                </span>
+                <h3 className="font-semibold">
+                  <span className="text-muted-foreground tabular-nums">
+                    {index + 1}.
+                  </span>{" "}
+                  {title}
+                </h3>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">{text}</p>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      {/* Features bento */}
+      <Section className="bg-card/60">
         <div className="max-w-2xl" data-reveal>
           <Eyebrow>Hecho para mercancía real</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
@@ -196,8 +270,8 @@ export default function LandingPage() {
           </FeatureCard>
           <FeatureCard
             className="md:col-span-2"
-            title="Lector de código"
-            text="Funciona con cualquier lector USB o Bluetooth que escriba como teclado."
+            title="Lector o cámara"
+            text="Con cualquier lector USB o Bluetooth que escriba como teclado, o con la cámara de un teléfono Android."
           >
             <ScanDemo />
           </FeatureCard>
@@ -210,24 +284,24 @@ export default function LandingPage() {
           </FeatureCard>
           <FeatureCard
             className="md:col-span-4"
-            title="Órdenes de compra"
-            text="Del borrador al pedido recibido: PDF para el proveedor, envío por correo y recepciones parciales con faltantes claros."
+            title="Del pedido al camión"
+            text="Libera el pedido y el sistema arma las tareas de surtido; luego se verifica al empacar y sale en un embarque con su hoja."
           >
-            <OrderDemo />
+            <OrderDemo steps={OUTBOUND_STEPS} />
           </FeatureCard>
         </div>
       </Section>
 
       {/* Numbers */}
-      <Section className="bg-card/60">
+      <Section>
         <dl
           data-reveal="stagger"
           className="grid gap-8 text-center sm:grid-cols-2 lg:grid-cols-4"
         >
           <Stat value={10000} label="productos activos en el plan más grande" />
           <Stat
-            value={4}
-            label="roles listos: administración, almacén, compras y consulta"
+            value={11}
+            label="roles listos, del piso de almacén a la gerencia"
           />
           <Stat
             value={50}
@@ -238,7 +312,7 @@ export default function LandingPage() {
       </Section>
 
       {/* Modules */}
-      <Section>
+      <Section className="bg-card/60">
         <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:items-center">
           <div data-reveal>
             <Eyebrow>Módulos</Eyebrow>
@@ -246,9 +320,9 @@ export default function LandingPage() {
               Paga solo por lo que usas
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              Inventario es la base. Compras se agrega cuando lo necesites, y se
-              quitan sin perder nada: tus datos quedan para consultar y
-              exportar.
+              Inventario es la base y trae todo el almacén. Compras, Producción
+              y Calidad se agregan cuando los necesites, y se quitan sin perder
+              nada: tus datos quedan para consultar y exportar.
             </p>
             <Button asChild variant="outline" className="mt-6">
               <Link href="/precios">
@@ -258,19 +332,29 @@ export default function LandingPage() {
             </Button>
           </div>
           <ul data-reveal="stagger" className="grid gap-3 sm:grid-cols-2">
-            <ModuleCard icon={Boxes} name="Inventario" state="Incluido" />
-            <ModuleCard icon={ShoppingCart} name="Compras" state="Disponible" />
             <ModuleCard
-              icon={ClipboardCheck}
-              name="Producción y calidad"
-              state="Próximamente"
-              soon
+              icon={Boxes}
+              name="Inventario"
+              state="Incluido"
+              text="Almacenes, ubicaciones, tareas y todo el recorrido"
             />
             <ModuleCard
-              icon={PackageSearch}
-              name="Tareas de almacén"
-              state="Próximamente"
-              soon
+              icon={ShoppingCart}
+              name="Compras"
+              state="Disponible"
+              text="Proveedores, órdenes y recepciones"
+            />
+            <ModuleCard
+              icon={Factory}
+              name="Producción"
+              state="Disponible"
+              text="Recetas y órdenes que apartan materiales"
+            />
+            <ModuleCard
+              icon={ClipboardCheck}
+              name="Calidad"
+              state="Disponible con Producción"
+              text="Planes de inspección y defectos"
             />
           </ul>
         </div>
@@ -323,29 +407,22 @@ function ModuleCard({
   icon: Icon,
   name,
   state,
-  soon = false,
+  text,
 }: {
   icon: typeof Boxes;
   name: string;
   state: string;
-  soon?: boolean;
+  text: string;
 }) {
   return (
-    <li
-      className={`flex items-center gap-4 rounded-2xl border p-5 ${soon ? "border-dashed bg-transparent" : "bg-card shadow-sm"}`}
-    >
-      <span
-        className={`grid size-11 shrink-0 place-items-center rounded-xl ${soon ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"}`}
-      >
+    <li className="flex items-start gap-4 rounded-2xl border bg-card p-5 shadow-sm">
+      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
         <Icon className="size-5" aria-hidden="true" />
       </span>
       <div>
         <p className="font-semibold">{name}</p>
-        <p
-          className={`text-sm ${soon ? "text-muted-foreground" : "text-success"}`}
-        >
-          {state}
-        </p>
+        <p className="text-sm text-success">{state}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{text}</p>
       </div>
     </li>
   );

@@ -35,10 +35,18 @@ const BOXES: Box[] = [
   { x: 378, y: 236, w: 44, h: 34 },
 ];
 
-function Crate({ box, index }: { box: Box; index: number }) {
+function Crate({
+  box,
+  index,
+  still,
+}: {
+  box: Box;
+  index: number;
+  still: boolean;
+}) {
   return (
     <motion.g
-      initial={{ opacity: 0, y: -24 }}
+      initial={still ? false : { opacity: 0, y: -24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
         delay: 0.15 + index * 0.07,
@@ -175,7 +183,14 @@ function ForkliftShape() {
  * Chosen with CSS (motion-reduce) so server and client render the same
  * markup (no hydration mismatch).
  */
-function Forklift() {
+function Forklift({ still }: { still: boolean }) {
+  if (still) {
+    return (
+      <g transform="translate(150 0)">
+        <ForkliftShape />
+      </g>
+    );
+  }
   return (
     <>
       <motion.g
@@ -202,16 +217,18 @@ function Forklift() {
 function FloatingCard({
   className,
   delay,
+  still,
   children,
 }: {
   className: string;
   delay: number;
+  still: boolean;
   children: React.ReactNode;
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12, scale: 0.96 }}
-      animate={{ opacity: 1, y: [0, -6, 0], scale: 1 }}
+      initial={still ? false : { opacity: 0, y: 12, scale: 0.96 }}
+      animate={still ? undefined : { opacity: 1, y: [0, -6, 0], scale: 1 }}
       transition={{
         opacity: { delay, duration: 0.4 },
         scale: { delay, duration: 0.4 },
@@ -232,9 +249,23 @@ function FloatingCard({
   );
 }
 
-export function WarehouseScene({ className }: { className?: string }) {
+/**
+ * `still` draws the finished scene with nothing moving: for places where it
+ * stands in for something else (the 3D hero of the public site) and should
+ * not keep the main thread busy.
+ */
+export function WarehouseScene({
+  className,
+  still = false,
+}: {
+  className?: string;
+  still?: boolean;
+}) {
   return (
-    <div aria-hidden="true" className={cn("relative select-none", className)}>
+    <div
+      aria-hidden="true"
+      className={cn("@container relative select-none", className)}
+    >
       <svg viewBox="0 0 480 340" className="h-full w-full" role="presentation">
         <defs>
           <linearGradient id="scene-floor-fade" x1="0" y1="0" x2="0" y2="1">
@@ -266,13 +297,17 @@ export function WarehouseScene({ className }: { className?: string }) {
           <Rack key={x} x={x} />
         ))}
         {BOXES.map((box, i) => (
-          <Crate key={i} box={box} index={i} />
+          <Crate key={i} box={box} index={i} still={still} />
         ))}
-        <Forklift />
+        <Forklift still={still} />
       </svg>
 
       <>
-        <FloatingCard className="top-[6%] left-[4%]" delay={1.1}>
+        <FloatingCard
+          className="top-[6%] left-[4%] @max-md:hidden"
+          delay={1.1}
+          still={still}
+        >
           <span className="grid size-8 place-items-center rounded-lg bg-success/15 text-success">
             <ArrowDownToLine className="size-4" />
           </span>
@@ -283,14 +318,14 @@ export function WarehouseScene({ className }: { className?: string }) {
             </span>
           </span>
         </FloatingCard>
-        <FloatingCard className="top-[2%] right-[2%]" delay={1.6}>
+        <FloatingCard className="top-[2%] right-[2%]" delay={1.6} still={still}>
           <span className="grid size-8 place-items-center rounded-lg bg-warning/15 text-warning">
             <TriangleAlert className="size-4" />
           </span>
           <span>
             <span className="block font-medium">Existencia baja</span>
             <span className="block text-muted-foreground tabular-nums">
-              Cable THW · 12 m
+              Artículo A-1024 · 12 pzas
             </span>
           </span>
         </FloatingCard>

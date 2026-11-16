@@ -2,51 +2,102 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { WarehouseScene } from "@/components";
+import { WarehouseScene } from "@/components/warehouse-scene";
 
 /**
- * Hero visual: the 3D warehouse (loaded after the page, so three.js never
- * delays the first paint). Without WebGL the 2D illustration takes its place.
- * Decorative, hidden from screen readers.
+ * Hero visual. The 2D warehouse illustration is painted with the page (it
+ * shows without JavaScript and keeps the space, so nothing shifts); the 3D
+ * warehouse takes its place once the page is idle, and only where WebGL runs
+ * on real graphics hardware: with software rendering (no GPU, blocked
+ * drivers) three.js would keep the main thread busy, so the illustration
+ * stays. three.js is never downloaded in that case. Decorative, hidden from
+ * screen readers.
  */
 export function HeroScene() {
   const stage = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "failed">(
-    "loading",
-  );
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     let cancelled = false;
+    let idle = 0;
 
-    import("./warehouse-3d")
-      .then(({ mountWarehouse }) => {
-        if (cancelled || !stage.current) return;
-        cleanup = mountWarehouse(stage.current, {
-          onReady: () => setStatus("ready"),
+    const start = () => {
+      if (cancelled || !hasHardwareWebGL()) return;
+      import("./warehouse-3d")
+        .then(({ mountWarehouse }) => {
+          if (cancelled || !stage.current) return;
+          cleanup = mountWarehouse(stage.current, {
+            onReady: () => setReady(true),
+          });
+        })
+        .catch(() => {
+          // Without WebGL the illustration simply stays.
         });
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("failed");
-      });
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const whenIdle = () => {
+      if (typeof window.requestIdleCallback === "function") {
+        idle = window.requestIdleCallback(start, { timeout: 2500 });
+      } else {
+        timer = setTimeout(start, 1200);
+      }
+    };
+
+    if (document.readyState === "complete") whenIdle();
+    else window.addEventListener("load", whenIdle, { once: true });
 
     return () => {
       cancelled = true;
+      window.removeEventListener("load", whenIdle);
+      if (idle) window.cancelIdleCallback(idle);
+      clearTimeout(timer);
       cleanup?.();
     };
   }, []);
 
-  if (status === "failed") {
-    return <WarehouseScene className="aspect-[48/34] w-full" />;
-  }
-
   return (
     <div aria-hidden="true" className="relative aspect-[5/4] w-full">
       <div
+        className="absolute inset-0 grid place-items-center transition-opacity duration-700 data-[ready=true]:opacity-0 motion-reduce:transition-none"
+        data-ready={ready}
+      >
+        <WarehouseScene className="aspect-[48/34] w-full" still />
+      </div>
+      <div
         ref={stage}
-        className="absolute inset-0 transition-opacity duration-700 data-[status=loading]:opacity-0 motion-reduce:transition-none"
-        data-status={status}
+        className="absolute inset-0 opacity-0 transition-opacity duration-700 data-[ready=true]:opacity-100 motion-reduce:transition-none"
+        data-ready={ready}
       />
     </div>
   );
+}
+
+/** Renderers that draw on the CPU (no graphics hardware, blocked drivers). */
+const SOFTWARE_RENDERER =
+  /swiftshader|llvmpipe|softpipe|software|basic render/i;
+
+/**
+ * Whether WebGL runs on graphics hardware: the browser refuses the context
+ * when it knows it would be slow, and ANGLE over SwiftShader (no GPU) says
+ * so in its renderer name.
+ */
+function hasHardwareWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const context =
+      canvas.getContext("webgl2", { failIfMajorPerformanceCaveat: true }) ??
+      canvas.getContext("webgl", { failIfMajorPerformanceCaveat: true });
+    if (!context) return false;
+    const debug = context.getExtension("WEBGL_debug_renderer_info");
+    const renderer = String(
+      context.getParameter(
+        debug ? debug.UNMASKED_RENDERER_WEBGL : context.RENDERER,
+      ),
+    );
+    context.getExtension("WEBGL_lose_context")?.loseContext();
+    return !SOFTWARE_RENDERER.test(renderer);
+  } catch {
+    return false;
+  }
 }

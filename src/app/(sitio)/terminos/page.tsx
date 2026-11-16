@@ -28,8 +28,9 @@ export default function TermsPage() {
       intro={
         <p>
           Estos términos regulan el uso de {SITE.name}, un servicio en línea
-          para llevar el inventario y las compras de un negocio. Al crear una
-          cuenta los aceptas a nombre propio y de la empresa que registras.
+          para gestionar los almacenes, el inventario, las compras y la
+          producción de una empresa. Al crear una cuenta los aceptas a nombre
+          propio y de la empresa que registras.
         </p>
       }
       sections={[
@@ -44,15 +45,25 @@ export default function TermsPage() {
               </p>
               <ul>
                 <li>
-                  <strong>Inventario</strong> (siempre incluido): productos y
-                  sus presentaciones, ubicaciones, entradas, salidas, ajustes,
-                  conteos, existencias mínimas, e importación y exportación en
-                  Excel.
+                  <strong>Inventario</strong> (siempre incluido): almacenes,
+                  ubicaciones, productos y sus presentaciones, lotes y series,
+                  entradas, salidas, ajustes y conteos, tareas del almacén,
+                  pedidos de salida, surtido, empaque, embarques, devoluciones
+                  de clientes, traslados, e importación y exportación en Excel.
                 </li>
                 <li>
-                  <strong>Compras</strong> (opcional): proveedores, órdenes de
-                  compra en PDF y por correo, recepción de mercancía,
-                  devoluciones, sugerencias de qué pedir y reportes.
+                  <strong>Compras</strong> (opcional): proveedores, solicitudes
+                  y órdenes de compra en PDF y por correo, recepción de
+                  mercancía, devoluciones, sugerencias de qué pedir y reportes.
+                </li>
+                <li>
+                  <strong>Producción</strong> (opcional): recetas con versiones
+                  y órdenes de producción que apartan sus materiales.
+                </li>
+                <li>
+                  <strong>Calidad</strong> (opcional, solo junto con
+                  Producción): planes de inspección por producto y catálogo de
+                  defectos.
                 </li>
               </ul>
               <p>

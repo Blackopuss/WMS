@@ -138,7 +138,7 @@ export function ScanDemo() {
         className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"
       >
         <ScanBarcode className="size-4 text-primary" />
-        <span className="font-medium">Pija 8 × 1&quot;</span>
+        <span className="font-medium">Artículo A-1024</span>
         <span className="ml-auto text-muted-foreground">+1 pza</span>
       </p>
     </div>
@@ -147,8 +147,12 @@ export function ScanDemo() {
 
 const ORDER_STEPS = ["Borrador", "Enviada", "Parcial", "Recibida"];
 
-/** A purchase order moves through its states. */
-export function OrderDemo() {
+/** A document (a purchase order by default) moves through its states. */
+export function OrderDemo({
+  steps = ORDER_STEPS,
+}: {
+  steps?: readonly string[];
+} = {}) {
   const root = useRef<HTMLDivElement>(null);
   useLoop(root, (element) => {
     const dots = element.querySelectorAll("[data-dot]");
@@ -185,7 +189,7 @@ export function OrderDemo() {
         className="absolute top-[18px] right-8 left-8 h-0.5 origin-left bg-primary"
       />
       <ol className="relative flex justify-between">
-        {ORDER_STEPS.map((step) => (
+        {steps.map((step) => (
           <li key={step} className="flex w-16 flex-col items-center gap-2">
             <span
               data-dot

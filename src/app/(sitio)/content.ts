@@ -1,7 +1,8 @@
 /**
  * Content of the public site (landing, prices, about, legal). One place for
  * the data the founder still has to confirm: legal name and launch prices
- * (FUN-06, PIL-08). The capacity tiers come from the plan
+ * (FUN-06, PIL-08; Producción and Calidad at 3,000 pesos each, a
+ * placeholder set by the founder on 2026-11-16). The capacity tiers come from the plan
  * (PROPOSED_TIERS); the prices below are a proposal, not an approved list.
  */
 
@@ -52,4 +53,6 @@ export const TIER_PRICES = PLAN_TIERS.map(({ prices }) => ({
   // Whole pesos, for display only.
   inventory: Number(prices.inventory),
   purchasing: Number(prices.purchasing),
+  production: Number(prices.production),
+  quality: Number(prices.quality),
 }));
