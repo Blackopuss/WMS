@@ -20,6 +20,7 @@ para arrancar sin releer la conversación anterior.
   avisarle. Lo implementa un chat nuevo de Opus en la rama
   `wms-59-roles-produccion-calidad`; quien coordina revisa, manda a un revisor
   independiente y une.
+- **También en curso: WMS-37 (fotos)**, rama `wms-37-fotos-evidencia`. **Pasos en paralelo (fundador, 2026-11-16, más tarde):** con la misma forma de trabajo, se abren a la vez los pasos cuyas dependencias ya están implementadas, cada uno en su chat y su rama independiente, y se unen a `pruebas` de uno en uno; esto reemplaza «un paso a la vez» (quien coordina avisa al abrir cada uno). Abierto por eso WMS-37 (fotos, rama `wms-37-fotos-evidencia`), que no depende de nada; al unirse WMS-59 se abren WMS-27, WMS-30A y WMS-30-0, y al unirse WMS-37, WMS-74. Los pasos «corazón» siguen yendo uno tras otro.
 - **Cerrado antes:** WMS-38 (terminales compartidas con PIN, ADR 0061) quedó
   unido el 2026-11-14 tras tres vueltas de revisión de seguridad, y la
   propuesta de producción y calidad está unida en su sexta versión
