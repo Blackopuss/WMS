@@ -9,7 +9,11 @@ import {
   PageHeader,
 } from "@/components";
 import { newId } from "@/lib";
-import { INCIDENT_KINDS, INCIDENT_KIND_LABELS } from "@/modules/inventory";
+import {
+  INCIDENT_KINDS,
+  INCIDENT_KIND_LABELS,
+  hasEquipmentHere,
+} from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 
 import { ReportForm } from "./report-form";
@@ -54,6 +58,11 @@ export default async function ReportarProblemaPage({
     );
   }
   const { tarea, pedido } = await searchParams;
+  // WMS-42: the equipment field exists only where there is equipment.
+  const withEquipment = await hasEquipmentHere({
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  });
   return (
     <PageContainer>
       {back}
@@ -66,6 +75,7 @@ export default async function ReportarProblemaPage({
           value: kind,
           label: INCIDENT_KIND_LABELS[kind],
         }))}
+        withEquipment={withEquipment}
       />
     </PageContainer>
   );

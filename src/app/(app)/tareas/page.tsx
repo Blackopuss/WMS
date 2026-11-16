@@ -270,6 +270,13 @@ export default async function TareasPage({
                       <ArrowRight aria-label="a" className="size-4 shrink-0" />
                       <span>{task.toPath}</span>
                     </span>
+                    {task.equipmentTypeName && (
+                      <span className="block text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                        {task.equipmentText
+                          ? `Con ${task.equipmentText}`
+                          : `Pide ${task.equipmentTypeName}`}
+                      </span>
+                    )}
                     {view !== "mine" && task.assignedToName && (
                       <span className="block text-sm text-muted-foreground">
                         La tiene {task.assignedToName}
