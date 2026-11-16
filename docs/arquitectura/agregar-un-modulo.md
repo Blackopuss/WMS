@@ -72,7 +72,10 @@ dependencias).
    `NEGATIVE_CASES` en `tests/platform/negative-by-role.int.test.ts`.
 5. Un rol nuevo es otra cosa: matriz + catálogo + migración del `CHECK` de
    `membership_role` + `team-rules.test.ts` y `navigation.int.test.ts`; si el
-   rol solo tiene sentido con el módulo, `ROLE_MODULE`.
+   rol solo tiene sentido con el módulo, `ROLE_MODULE`: sin el módulo no da
+   nada (tampoco sus lecturas de Inventario), con el módulo en solo lectura
+   solo lecturas y exportaciones, y no se asigna ni se invita sin él
+   (ADR 0062). Decidir también si entra a `PIN_ROLE_SETS` (terminales).
 
 ## 4. Tablas
 

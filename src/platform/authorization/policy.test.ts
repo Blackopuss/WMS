@@ -26,8 +26,23 @@ import {
 // USR-02: one decision function, tested for every role and every action,
 // denying by default.
 
-const member = (...roles: string[]) => ({ isOwner: false, roles });
-const owner = (...roles: string[]) => ({ isOwner: true, roles });
+// Every module contracted, so each role gives its whole list (WMS-59).
+const EVERY_MODULE = new Map([
+  ["inventory", "active"],
+  ["purchasing", "active"],
+  ["production", "active"],
+  ["quality", "active"],
+] as const);
+const member = (...roles: string[]): Subject => ({
+  isOwner: false,
+  roles,
+  modules: EVERY_MODULE,
+});
+const owner = (...roles: string[]): Subject => ({
+  isOwner: true,
+  roles,
+  modules: EVERY_MODULE,
+});
 
 describe("can: every role against every permission", () => {
   for (const role of ROLES) {
@@ -217,6 +232,86 @@ describe("shared terminal (WMS-38)", () => {
     expect(can({ ...titular, terminal: true }, "platform.api.manage")).toBe(
       false,
     );
+  });
+});
+
+describe("roles tied to a module (WMS-59, ADR 0062)", () => {
+  const tied = [
+    "production_operator",
+    "production_supervisor",
+    "quality_inspector",
+  ] as const;
+  const withModules = (
+    roles: string[],
+    modules?: Subject["modules"],
+  ): Subject => ({ isOwner: false, roles, ...(modules ? { modules } : {}) });
+
+  it("give nothing without their module, not even Inventario reads", () => {
+    for (const role of tied) {
+      expect(permissionsOf(withModules([role])).size, role).toBe(0);
+      expect(
+        permissionsOf(
+          withModules([role], new Map([["inventory", "active"]] as const)),
+        ).size,
+        role,
+      ).toBe(0);
+      expect(can(withModules([role]), "inventory.stock.read")).toBe(false);
+    }
+  });
+
+  it("Calidad alone does not wake up the production roles", () => {
+    const onlyQuality = new Map([["quality", "active"]] as const);
+    expect(
+      permissionsOf(withModules(["production_supervisor"], onlyQuality)).size,
+    ).toBe(0);
+  });
+
+  it("with the module in read-only they keep only reads and exports", () => {
+    const readOnly = new Map([
+      ["inventory", "active"],
+      ["production", "read_only"],
+    ] as const);
+    const granted = permissionsOf(
+      withModules(["production_supervisor"], readOnly),
+    );
+    expect(granted.size).toBeGreaterThan(0);
+    for (const permission of granted) expect(permission).toMatch(/\.read$/);
+    expect(granted.has("production.order.create")).toBe(false);
+  });
+
+  it("with the module active they give their list", () => {
+    const active = new Map([["production", "active"]] as const);
+    expect(
+      new Set(permissionsOf(withModules(["production_operator"], active))),
+    ).toEqual(new Set(ROLE_PERMISSIONS.production_operator));
+  });
+
+  it("other roles do not depend on the modules of the subject", () => {
+    expect(new Set(permissionsOf(withModules(["warehouse"])))).toEqual(
+      new Set(ROLE_PERMISSIONS.warehouse),
+    );
+  });
+
+  it("an API key, support and a terminal still cut a tied role", () => {
+    const active = new Map([["production", "active"]] as const);
+    const role = ["production_supervisor"];
+    expect(
+      permissionsOf({
+        ...withModules(role, active),
+        limit: { permissions: new Set(), scope: null },
+      }).size,
+    ).toBe(0);
+    for (const permission of permissionsOf({
+      ...withModules(role, active),
+      support: true,
+    })) {
+      expect(permission).toMatch(/\.read$/);
+    }
+    expect(
+      permissionsOf({ ...withModules(role, active), terminal: true }).has(
+        "production.request.decide",
+      ),
+    ).toBe(true);
   });
 });
 

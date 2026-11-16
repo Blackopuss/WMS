@@ -6,15 +6,33 @@ import { PERMISSIONS } from "@/platform/authorization";
 import { moduleRegistry } from "./index";
 
 // MOD-02: the real registry starts, with Inventario and Compras available
-// and CRM announced but not contractable (Ventas was removed, WMS-02).
+// and Producción, Calidad (WMS-59) and CRM announced but not contractable
+// (Ventas was removed, WMS-02).
 
 describe("installed modules", () => {
-  it("starts with the three modules installed today", () => {
+  it("starts with the five modules installed today", () => {
     expect(moduleRegistry.all.map((m) => m.id).sort()).toEqual([
       "crm",
       "inventory",
+      "production",
       "purchasing",
+      "quality",
     ]);
+  });
+
+  it("Calidad needs Producción, which needs Inventario (D9, ADR 0062)", () => {
+    expect(moduleRegistry.dependenciesOf("quality").map((m) => m.id)).toEqual([
+      "inventory",
+      "production",
+    ]);
+    expect(moduleRegistry.dependentsOf("production").map((m) => m.id)).toEqual([
+      "quality",
+    ]);
+    // Announced until their first step leaves something to use.
+    for (const id of ["production", "quality"]) {
+      expect(moduleRegistry.get(id).availability, id).toBe("unavailable");
+      expect(moduleRegistry.get(id).permissions.length, id).toBeGreaterThan(0);
+    }
   });
 
   it("Inventario is the base; Inventario and Compras can be contracted", () => {

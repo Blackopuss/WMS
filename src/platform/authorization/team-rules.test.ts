@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ROLES } from "./catalog";
+import { ROLES, ROLE_MODULE } from "./catalog";
 import {
   assignableRoles,
   checkInvitationRoles,
@@ -16,6 +16,13 @@ const person = (
   roles: string[],
   isOwner = false,
 ): TeamPerson => ({ userId, roles, isOwner });
+
+const EVERY_MODULE = new Map([
+  ["inventory", "active"],
+  ["purchasing", "active"],
+  ["production", "active"],
+  ["quality", "active"],
+] as const);
 
 const titular = person("titular", [], true);
 const admin = person("admin", ["administrator"]);
@@ -149,7 +156,13 @@ describe("the titular manages everyone else", () => {
     expect(checkTeamChange(titular, admin, { kind: "disable" })).toEqual({
       ok: true,
     });
-    expect(assignableRoles(titular)).toEqual([...ROLES]);
+    // Without Producción or Calidad, their roles are not offered (WMS-59).
+    expect(assignableRoles(titular)).toEqual(
+      ROLES.filter((role) => !(role in ROLE_MODULE)),
+    );
+    expect(assignableRoles({ ...titular, modules: EVERY_MODULE })).toEqual([
+      ...ROLES,
+    ]);
   });
 
   it("cannot disable or demote themselves", () => {
@@ -275,6 +288,100 @@ describe("closing a person's sessions", () => {
   it("supervision, management and the floor cannot close sessions", () => {
     for (const actor of [supervisor, manager, operator, viewer, warehouse]) {
       expect(checkTeamChange(actor, operator, change)).toEqual({
+        ok: false,
+        reason: "forbidden",
+      });
+    }
+  });
+});
+
+// WMS-59 (ADR 0062): roles tied to a module.
+describe("roles of Producción and Calidad", () => {
+  const withProduction = new Map([
+    ["inventory", "active"],
+    ["production", "active"],
+  ] as const);
+  const adminWith = { ...admin, modules: withProduction };
+  const titularWith = { ...titular, modules: withProduction };
+
+  it("are not handed out while the company lacks their module", () => {
+    for (const actor of [admin, titular]) {
+      expect(
+        checkTeamChange(actor, viewer, {
+          kind: "assign_roles",
+          roles: ["production_operator"],
+        }),
+      ).toEqual({ ok: false, reason: "module_missing" });
+      expect(checkInvitationRoles(actor, ["production_supervisor"])).toEqual({
+        ok: false,
+        reason: "module_missing",
+      });
+    }
+  });
+
+  it("an administrator and the titular hand them out with the module", () => {
+    for (const actor of [adminWith, titularWith]) {
+      expect(
+        checkTeamChange(actor, viewer, {
+          kind: "assign_roles",
+          roles: ["production_operator", "production_supervisor"],
+        }),
+      ).toEqual({ ok: true });
+      expect(
+        checkInvitationRoles(actor, ["production_operator", "viewer"]),
+      ).toEqual({ ok: true });
+    }
+    expect(assignableRoles(adminWith)).toEqual([
+      "warehouse",
+      "buyer",
+      "viewer",
+      "supervisor",
+      "operator",
+      "forklift",
+      "manager",
+      "production_operator",
+      "production_supervisor",
+    ]);
+  });
+
+  it("Calidad needs its own module, not only Producción", () => {
+    expect(
+      checkTeamChange(adminWith, viewer, {
+        kind: "assign_roles",
+        roles: ["quality_inspector"],
+      }),
+    ).toEqual({ ok: false, reason: "module_missing" });
+  });
+
+  it("a role the person already has may stay when the module is gone", () => {
+    const worker = person("operario", ["production_operator"]);
+    expect(
+      checkTeamChange(admin, worker, {
+        kind: "assign_roles",
+        roles: ["production_operator", "viewer"],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("nobody else hands them out, not even who holds them", () => {
+    const boss = {
+      ...person("encargado", ["production_supervisor"]),
+      modules: withProduction,
+    };
+    for (const actor of [
+      boss,
+      {
+        ...person("almacen", ["warehouse", "supervisor"]),
+        modules: withProduction,
+      },
+    ]) {
+      expect(
+        checkTeamChange(actor, viewer, {
+          kind: "assign_roles",
+          roles: ["production_operator"],
+        }),
+      ).toEqual({ ok: false, reason: "forbidden" });
+      expect(checkInvitationRoles(actor, ["production_operator"])).toEqual({
         ok: false,
         reason: "forbidden",
       });

@@ -17,6 +17,7 @@ export {
   keptAtTerminal,
   buildScope,
   can,
+  companyModules,
   canAll,
   canAny,
   isOwnerOnly,
@@ -26,7 +27,13 @@ export {
   permissionsOf,
   scopeOf,
 } from "./policy";
-export type { Place, Scope, Subject, SubjectLimit } from "./policy";
+export type {
+  CompanyModuleState,
+  Place,
+  Scope,
+  Subject,
+  SubjectLimit,
+} from "./policy";
 export { loadScope, seesWholeCompany } from "./scope";
 export type { ScopeReader } from "./scope";
 export {
