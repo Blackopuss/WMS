@@ -21,6 +21,7 @@ import {
   listMovements,
   receiveCustomerReturn,
   reconcileStock,
+  reconcileValue,
   registerEntry,
   registerExit,
   releaseOutboundOrder,
@@ -760,6 +761,94 @@ describe("customer returns (WMS-17)", () => {
       }),
     ).toBe(1);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("«A restauración» (WMS-75): leaves inspection into restoration, with a reason, held from nothing else", async () => {
+    const owner = await company();
+    lastActor = owner;
+    const dock = await place(owner, "Recepción", "RECEIVING");
+    const bench = await place(owner, "Taller", "REPAIR");
+    const item = await product(owner);
+    await enter(owner, item, dock, "5", { unitCost: "10" });
+    const orderId = await shipped(owner, [{ productId: item, quantity: "4" }]);
+    const received = await receive(owner, {
+      orderId,
+      locationId: dock,
+      lines: [{ key: await keyOf(orderId, item), quantity: "4" }],
+    });
+    if (!received.ok) throw new Error(JSON.stringify(received));
+    const card = (await getCustomerReturn(owner, received.returnId))!;
+    const lineId = card.lines[0]!.id;
+    const valueBefore = (
+      await db.productCost.findFirstOrThrow({ where: { productId: item } })
+    ).stockValue.toString();
+    // The reason is required, as for damaged or rejected.
+    expect(
+      await decideCustomerReturn(owner, {
+        returnId: received.returnId,
+        lineId,
+        outcome: "REPAIR",
+        quantity: "3",
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { reason: "Escribe qué hay que restaurar." },
+    });
+    // The floor does not send to restoration (R3).
+    const operator = await member(owner.organizationId, "operator");
+    await expect(
+      decideCustomerReturn(operator, {
+        returnId: received.returnId,
+        lineId,
+        outcome: "REPAIR",
+        quantity: "3",
+        reason: "Rayado",
+        idempotencyKey: newId(),
+      }),
+    ).rejects.toMatchObject({ code: "permission_denied" });
+    const decided = await decideCustomerReturn(owner, {
+      returnId: received.returnId,
+      lineId,
+      outcome: "REPAIR",
+      quantity: "3",
+      reason: "Rayado, se pule",
+      toLocationId: bench,
+      idempotencyKey: newId(),
+    });
+    expect(decided).toMatchObject({
+      ok: true,
+      summary: expect.stringMatching(/pasa a restauración/),
+    });
+    expect(await balance(item, bench, "REPAIR")).toBe("3");
+    expect(await balance(item, dock, "INSPECTION")).toBe("1");
+    const decision = await db.customerReturnDecision.findFirstOrThrow({
+      where: { returnId: received.returnId },
+    });
+    expect(decision.outcome).toBe("REPAIR");
+    // What was decided is no longer held by the return: it may leave
+    // restoration with «Cambiar estado» (to a place that takes it).
+    const general = (await getDefaultLocation(owner))!.id;
+    expect(
+      await changeStockStatus(owner, {
+        productId: item,
+        locationId: bench,
+        toLocationId: general,
+        from: "REPAIR",
+        to: "AVAILABLE",
+        quantity: "3",
+        reason: "Restaurado",
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({ ok: true });
+    // The value never moved: restored stock is back at the average cost.
+    expect(
+      (
+        await db.productCost.findFirstOrThrow({ where: { productId: item } })
+      ).stockValue.toString(),
+    ).toBe(valueBefore);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    expect(await reconcileValue(owner.organizationId)).toEqual([]);
   });
 
   it("who receives is not who decides; another company sees nothing", async () => {

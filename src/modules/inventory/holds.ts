@@ -182,6 +182,8 @@ export const HOLDABLE_STATUSES: readonly StockStatus[] = [
   "DAMAGED",
   "REJECTED",
   "BLOCKED",
+  /** WMS-75 (ADR 0072): what a repair order (WMS-29B) works on. */
+  "REPAIR",
 ];
 
 export type HoldResult =

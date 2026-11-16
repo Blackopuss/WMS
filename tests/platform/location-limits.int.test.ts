@@ -12,9 +12,12 @@ import {
   unitWeightOf,
   updateProduct,
 } from "@/platform/catalog";
+import { changeStockStatus, registerEntry } from "@/modules/inventory";
 import {
   createLocation,
+  editLocation,
   getDefaultLocation,
+  moveLocation,
   listLocations,
   setLocationLimits,
 } from "@/platform/locations";
@@ -415,4 +418,211 @@ describe("weight and volume of a product", () => {
     expect(unitVolumeOf(oil)?.toString()).toBe("1");
     expect(unitWeightOf(oil)?.toString()).toBe("0.92");
   });
+});
+
+describe("a use that takes nothing available (WMS-75 review)", () => {
+  async function enter(actor: Actor, productId: string, locationId: string) {
+    const done = await registerEntry(actor, {
+      productId,
+      locationId,
+      quantity: "3",
+      acceptRepeat: true,
+      acceptCapacity: true,
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+  }
+
+  it("a place, or a zone with something inside, with available stock does not become quarantine or restoration", async () => {
+    const actor = await company();
+    for (const type of ["QUARANTINE", "REPAIR"] as const) {
+      const n = ++counter;
+      const item = await product(actor, `USO-${n}`);
+      // Available right there.
+      const bench = await shelf(actor, `Banco ${n}`);
+      await enter(actor, item, bench);
+      expect(await editLocation(actor, bench, { type })).toMatchObject({
+        ok: false,
+        reason: "not_allowed",
+        fieldErrors: {
+          type: expect.stringMatching(
+            /existencias disponibles de un producto.*Cámbialas de estado o muévelas antes/,
+          ),
+        },
+      });
+      // Available inside: the zone does not change either.
+      const zone = await createLocation(actor, { level: 1, name: `Zona ${n}` });
+      if (!zone.ok) throw new Error(JSON.stringify(zone));
+      const inner = await createLocation(actor, {
+        level: 3,
+        name: `Estante ${n}`,
+        parentId: zone.locationId,
+      });
+      if (!inner.ok) throw new Error(JSON.stringify(inner));
+      await enter(actor, item, inner.locationId);
+      expect(
+        await editLocation(actor, zone.locationId, { type }),
+      ).toMatchObject({ ok: false, reason: "not_allowed" });
+      // Once it is not available, it may.
+      const changed = await changeStockStatus(actor, {
+        productId: item,
+        locationId: bench,
+        from: "AVAILABLE",
+        to: "DAMAGED",
+        quantity: "3",
+        reason: "Golpeado",
+        idempotencyKey: newId(),
+      });
+      expect(changed).toMatchObject({ ok: true });
+      expect(await editLocation(actor, bench, { type })).toMatchObject({
+        ok: true,
+      });
+      // An empty place may too.
+      const empty = await shelf(actor, `Vacío ${n}`);
+      expect(await editLocation(actor, empty, { type })).toMatchObject({
+        ok: true,
+      });
+      expect(
+        (await db.location.findUniqueOrThrow({ where: { id: bench } })).type,
+      ).toBe(type);
+    }
+  }, 60_000);
+
+  const available = async (locationId: string) =>
+    (
+      await db.stockBalance.aggregate({
+        where: { locationId, status: "AVAILABLE" },
+        _sum: { quantity: true },
+      })
+    )._sum.quantity?.toString() ?? "0";
+
+  async function zoneWithShelf(actor: Actor, n: number) {
+    const zone = await createLocation(actor, { level: 1, name: `Z${n}` });
+    if (!zone.ok) throw new Error(JSON.stringify(zone));
+    const inner = await createLocation(actor, {
+      level: 3,
+      name: `E${n}`,
+      parentId: zone.locationId,
+    });
+    if (!inner.ok) throw new Error(JSON.stringify(inner));
+    return { zone: zone.locationId, shelf: inner.locationId };
+  }
+
+  it("a place with available stock does not move under one; an empty one does", async () => {
+    const actor = await company();
+    const n = ++counter;
+    const item = await product(actor, `MOV-${n}`);
+    const bench = await createLocation(actor, {
+      level: 1,
+      name: `Taller ${n}`,
+      type: "REPAIR",
+    });
+    if (!bench.ok) throw new Error(JSON.stringify(bench));
+    const aisle = await createLocation(actor, { level: 2, name: `P${n}` });
+    if (!aisle.ok) throw new Error(JSON.stringify(aisle));
+    const inner = await createLocation(actor, {
+      level: 3,
+      name: `E${n}`,
+      parentId: aisle.locationId,
+    });
+    if (!inner.ok) throw new Error(JSON.stringify(inner));
+    await enter(actor, item, inner.locationId);
+    expect(
+      await moveLocation(actor, aisle.locationId, {
+        parentId: bench.locationId,
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: "not_allowed",
+      fieldErrors: { parentId: expect.stringMatching(/de restauración/) },
+    });
+    const empty = await createLocation(actor, { level: 2, name: `V${n}` });
+    if (!empty.ok) throw new Error(JSON.stringify(empty));
+    expect(
+      await moveLocation(actor, empty.locationId, {
+        parentId: bench.locationId,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await available(inner.locationId)).toBe("3");
+  }, 60_000);
+
+  it("changing the use while stock arrives never deadlocks nor leaves anything available inside", async () => {
+    const actor = await company();
+    const item = await product(actor, `CON-${++counter}`);
+    for (let round = 0; round < 8; round++) {
+      const n = ++counter;
+      const { zone, shelf } = await zoneWithShelf(actor, n);
+      // Something not available already there, to release in some rounds.
+      await enter(actor, item, shelf);
+      await changeStockStatus(actor, {
+        productId: item,
+        locationId: shelf,
+        from: "AVAILABLE",
+        to: "DAMAGED",
+        quantity: "3",
+        reason: "Golpeado",
+        idempotencyKey: newId(),
+      });
+      const arrival =
+        round % 2 === 0
+          ? registerEntry(actor, {
+              productId: item,
+              locationId: shelf,
+              quantity: "2",
+              acceptRepeat: true,
+              acceptCapacity: true,
+            })
+          : changeStockStatus(actor, {
+              productId: item,
+              locationId: shelf,
+              from: "DAMAGED",
+              to: "AVAILABLE",
+              quantity: "1",
+              reason: "Estaba bien",
+              idempotencyKey: newId(),
+            });
+      const [edited, arrived] = await Promise.all([
+        editLocation(actor, zone, {
+          type: round % 4 < 2 ? "REPAIR" : "QUARANTINE",
+        }),
+        arrival,
+      ]);
+      // Exactly one of the two went through.
+      expect([edited.ok, arrived.ok].filter(Boolean)).toHaveLength(1);
+      if (edited.ok) expect(await available(shelf)).toBe("0");
+    }
+  }, 120_000);
+
+  it("moving under one while stock arrives never deadlocks nor leaves anything available inside", async () => {
+    const actor = await company();
+    const item = await product(actor, `CMV-${++counter}`);
+    const bench = await createLocation(actor, {
+      level: 1,
+      name: `Taller ${++counter}`,
+      type: "QUARANTINE",
+    });
+    if (!bench.ok) throw new Error(JSON.stringify(bench));
+    for (let round = 0; round < 6; round++) {
+      const n = ++counter;
+      const aisle = await createLocation(actor, { level: 2, name: `P${n}` });
+      if (!aisle.ok) throw new Error(JSON.stringify(aisle));
+      const inner = await createLocation(actor, {
+        level: 3,
+        name: `E${n}`,
+        parentId: aisle.locationId,
+      });
+      if (!inner.ok) throw new Error(JSON.stringify(inner));
+      const [moved, arrived] = await Promise.all([
+        moveLocation(actor, aisle.locationId, { parentId: bench.locationId }),
+        registerEntry(actor, {
+          productId: item,
+          locationId: inner.locationId,
+          quantity: "2",
+          acceptRepeat: true,
+          acceptCapacity: true,
+        }),
+      ]);
+      expect([moved.ok, arrived.ok].filter(Boolean)).toHaveLength(1);
+      if (moved.ok) expect(await available(inner.locationId)).toBe("0");
+    }
+  }, 120_000);
 });

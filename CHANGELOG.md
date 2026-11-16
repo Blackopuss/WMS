@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-75** Estado «En restauración» (nunca disponible), decisión «A
+  restauración» en devoluciones de clientes, lista derivada, uso de ubicación
+  «Restauración» y ajuste de cómo se libera lo restaurado. ADR 0072.
 - **WMS-74B** Procesos en embarques: el embarque es el primer documento del
   motor de procesos, con etapas antes y después del despacho que no mueven
   existencias. ADR 0071.

@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, TriangleAlert } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import { FormField, SerialsField } from "@/components";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export function StatusForm({
   initialSource,
   targets,
   destinations,
+  repairTargets,
   bySerial = false,
 }: {
   productId: string;
@@ -43,6 +44,11 @@ export function StatusForm({
    * relocate: then it always stays where it is.
    */
   destinations: Option[];
+  /**
+   * WMS-75: the states stock in restoration may go to in this company
+   * (`inventory.repair.release`); the service checks it again.
+   */
+  repairTargets: string[];
   /** WMS-21B: a product by serial names each unit that changes. */
   bySerial?: boolean;
 }) {
@@ -66,6 +72,17 @@ export function StatusForm({
     ? `${state.values.locationId}|${state.values.from}${state.values.lotId ? `|${state.values.lotId}` : ""}`
     : (initialSource ?? sources[0]?.id ?? "");
   const key = (name: string) => `${name}-${state.answers}`;
+  // What the person picked since the last answer (only to filter the
+  // states offered; the form still sends the select itself).
+  const [picked, setPicked] = useState<{ answers: number; id: string }>();
+  const current =
+    picked && picked.answers === state.answers ? picked.id : source;
+  const fromRepair = current.split("|")[1] === "REPAIR";
+  const shownTargets = fromRepair
+    ? targets.filter(
+        (option) => option.id !== "REPAIR" && repairTargets.includes(option.id),
+      )
+    : targets;
   return (
     <form action={formAction} noValidate className="max-w-xl space-y-4">
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
@@ -90,6 +107,9 @@ export function StatusForm({
             name="source"
             defaultValue={source}
             key={key("source")}
+            onChange={(event) =>
+              setPicked({ answers: state.answers, id: event.target.value })
+            }
           >
             {sources.map((option) => (
               <option key={option.id} value={option.id}>
@@ -105,9 +125,9 @@ export function StatusForm({
             {...control}
             name="to"
             defaultValue={state.values.to}
-            key={key("to")}
+            key={`${key("to")}-${fromRepair ? "repair" : "any"}`}
           >
-            {targets.map((option) => (
+            {shownTargets.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.label}
               </option>

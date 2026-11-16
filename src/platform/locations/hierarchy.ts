@@ -216,6 +216,93 @@ async function changeTree(
 
 const GONE = "Esta ubicación ya no existe.";
 
+/** Uses of a location that take no available stock (WMS-22B, WMS-75). */
+const NO_AVAILABLE_USES: ReadonlySet<string> = new Set([
+  "QUARANTINE",
+  "REPAIR",
+]);
+
+/**
+ * Refuses turning a location into one that takes nothing available (or
+ * putting it under one) while it, or anything inside it, still has
+ * available stock. Locks the rows of the whole subtree first: a movement
+ * into any of them locks its row, so none arrives while this decides.
+ * Whoever edits a location reaches it, and the scope is by zone, so they
+ * reach everything inside it too.
+ *
+ * The rows are locked one at a time, in id order (ADR 0072): with one id
+ * MySQL locks the row by its primary key and then the unique index
+ * (organizationId, id), the same order as a movement; with many ids at
+ * once it walks the unique index first and then the primary key, and a
+ * movement into one of those rows (primary key first, then a shared lock
+ * on the unique index for its foreign key) deadlocked with it.
+ */
+async function refuseAvailableInside(
+  tx: Tx,
+  locationId: string,
+  type: string,
+  field: "type" | "parentId" = "type",
+): Promise<void> {
+  const ids = [locationId];
+  let frontier = [locationId];
+  for (
+    let depth = 0;
+    depth <= MAX_LOCATION_LEVELS && frontier.length;
+    depth++
+  ) {
+    const children = await tx.location.findMany({
+      where: { parentId: { in: frontier } },
+      select: { id: true },
+    });
+    frontier = children.map((child) => child.id);
+    ids.push(...frontier);
+  }
+  for (const id of [...new Set(ids)].sort()) {
+    await lockRows(tx, "location", [id]);
+  }
+  const products = await tx.stockBalance.groupBy({
+    by: ["productId"],
+    where: {
+      locationId: { in: ids },
+      status: "AVAILABLE",
+      quantity: { gt: 0 },
+    },
+  });
+  if (products.length === 0) return;
+  const use = type === "REPAIR" ? "de restauración" : "de cuarentena";
+  reject(
+    "not_allowed",
+    (products.length === 1
+      ? "Aquí hay existencias disponibles de un producto"
+      : `Aquí hay existencias disponibles de ${products.length} productos`) +
+      (field === "type"
+        ? `, y una ubicación ${use} no admite existencias disponibles. Cámbialas de estado o muévelas antes.`
+        : `, y ahí va dentro de una ubicación ${use}, que no admite existencias disponibles. Cámbialas de estado o muévelas antes.`),
+    field,
+  );
+}
+
+/**
+ * The use that takes nothing available of `parentId` or of any location
+ * it is inside of (WMS-75); null when there is none.
+ */
+async function closedUseOf(
+  tx: Tx,
+  parentId: string | null,
+): Promise<string | null> {
+  let id = parentId;
+  for (let level = 0; id && level <= MAX_LOCATION_LEVELS; level++) {
+    const row = await tx.location.findFirst({
+      where: { id },
+      select: { type: true, parentId: true },
+    });
+    if (!row) return null;
+    if (NO_AVAILABLE_USES.has(row.type)) return row.type;
+    id = row.parentId;
+  }
+  return null;
+}
+
 /**
  * The custom fields of a location (WMS-58), checked in the transaction of
  * the change; the change is refused with their problems.
@@ -816,6 +903,12 @@ export async function editLocation(
         "type",
       );
     }
+    // WMS-75 (ADR 0072): a quarantine or repair place takes nothing
+    // available, it and everything inside it; a place that already holds
+    // available stock does not become one.
+    if (type !== location.type && NO_AVAILABLE_USES.has(type)) {
+      await refuseAvailableInside(tx, location.id, type);
+    }
     const code =
       input.code === undefined
         ? location.code
@@ -1020,6 +1113,12 @@ export async function moveLocation(
       location.facilityId,
       location.id,
     );
+    // WMS-75 (ADR 0072): under a quarantine or repair place, what it holds
+    // available would end up where nothing available is admitted.
+    const closed = await closedUseOf(tx, parent?.id ?? null);
+    if (closed) {
+      await refuseAvailableInside(tx, location.id, closed, "parentId");
+    }
     const before = await pathOf(tx, location);
     await tx.location.updateMany({
       where: { id: location.id },

@@ -535,6 +535,7 @@ export {
   INVENTORY_SETTINGS,
   PICKING_STRATEGY,
   PUTAWAY_MODE,
+  REPAIR_RELEASE,
   PUTAWAY_PREFERENCE,
   CONTAINERS_MODE,
   PACKING_MODE,
@@ -851,9 +852,16 @@ export {
   type DisposalResult,
 } from "./disposal";
 export {
+  REPAIR_EXITS_THROUGH_INSPECTION,
+  REPAIR_THROUGH_INSPECTION,
+  repairExitsOf,
+} from "./repair-release";
+export {
   INSPECTION_PAGE_SIZE,
   countAwaitingInspection,
+  countInRepair,
   listAwaitingInspection,
+  listInRepair,
   type AwaitingInspectionItem,
   type AwaitingInspectionPage,
 } from "./inspection";

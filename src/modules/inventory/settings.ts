@@ -306,6 +306,32 @@ export const CUSTOMER_RETURN_WITHOUT_ORDER = {
 } as const satisfies SettingDefinition;
 
 /**
+ * WMS-75 (ADR 0072, R2): whether what was restored goes straight back to
+ * available or through inspection first. Read in `writeStatusChange`
+ * under its locks: with `inspection`, nothing leaves «En restauración»
+ * for available (neither by hand nor by reversing a change).
+ */
+export const REPAIR_RELEASE = {
+  key: "inventory.repair.release",
+  module: "inventory",
+  area: "Restauración",
+  label: "Lo que se restauró",
+  options: [
+    {
+      value: "direct",
+      label: "Vuelve directo al inventario",
+      help: "Quien libera lo pasa de «En restauración» a disponible.",
+    },
+    {
+      value: "inspection",
+      label: "Pasa antes por inspección",
+      help: "De «En restauración» no pasa directo a disponible: va a «En inspección» (o a dañado o rechazado si no se pudo restaurar).",
+    },
+  ],
+  defaultValue: "direct",
+} as const satisfies SettingDefinition;
+
+/**
  * WMS-37 (ADR 0063): whether reporting an incident demands a photo. Optional
  * by default: not every device of the floor has a camera, and some problems
  * (equipment, an unsafe place) are told better in words.
@@ -711,6 +737,7 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PACKING_MODE,
   SHIPMENT_DETAILS,
   CUSTOMER_RETURN_WITHOUT_ORDER,
+  REPAIR_RELEASE,
   INCIDENT_PHOTO,
   LABEL_FORMAT,
   LABEL_CODES_SETTING,

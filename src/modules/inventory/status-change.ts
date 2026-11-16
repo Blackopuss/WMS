@@ -39,6 +39,7 @@ import { lineCost, openCostBook } from "./valuation";
 import { holdProblem, type HoldSource } from "./holds";
 import { createPutawayTasks, isTaskNumberClash } from "./putaway";
 import { SERIALS_FIELD } from "./movements";
+import { repairReleaseProblem } from "./repair-release";
 import {
   hasSerials,
   ofSerials,
@@ -66,6 +67,9 @@ import {
  * - `inventory.status.change`: any manual change that does not end in
  *   available (quarantine, inspection, damaged, rejected, blocked).
  * - `inventory.status.release`: back to available.
+ * WMS-75 (ADR 0072): «En restauración» is one more manual state; the floor
+ * never sends there (it only reports damage), and what leaves it for
+ * available obeys `inventory.repair.release` (`repairReleaseProblem`).
  * In transit and receiving belong to their own operations (WMS-17, WMS-19).
  */
 
@@ -77,6 +81,7 @@ export const MANUAL_STOCK_STATUSES: readonly StockStatus[] = [
   "DAMAGED",
   "REJECTED",
   "BLOCKED",
+  "REPAIR",
 ];
 
 const REASON_MIN = 3;
@@ -322,6 +327,8 @@ export async function writeStatusChange(
   );
   if (!quantity.ok) return refuse("invalid", "quantity", quantity.error);
   const base = quantity.quantity;
+  const repairRule = await repairReleaseProblem(tx, data.from, data.to);
+  if (repairRule) return refuse("not_allowed", "to", repairRule);
 
   // WMS-21: the same lot before and after; only its state changes.
   const lotAnswer = await lotForTake(tx, product, data.lotId);

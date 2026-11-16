@@ -67,6 +67,7 @@ import { containedAt, containedMessage } from "./contained";
 import { createPutawayTasks, isTaskNumberClash } from "./putaway";
 import { lockCrossDockOrders, sendToWaitingOrders } from "./cross-docking";
 import { holdProblem } from "./holds";
+import { repairReleaseProblem } from "./repair-release";
 import {
   TASK_HOLD,
   freeToMoveFrom,
@@ -3164,6 +3165,16 @@ export async function reverseMovement(
           fromLocationId: pair?.locationId ?? null,
           status: line.status,
         }));
+      // WMS-75 (ADR 0072): undoing «disponible → en restauración» takes
+      // what is in restoration back to available; where the company asks
+      // that what was restored goes through inspection, it does not.
+      if (original.type === "STATUS_CHANGE" && pair) {
+        const out = original.lines.find((line) => line.direction === "OUT");
+        const rule = out
+          ? await repairReleaseProblem(tx, pair.status, out.status)
+          : null;
+        if (rule) return stop("not_allowed", `No se puede reversar. ${rule}`);
+      }
       const placed = await checkPlacement(tx, returning, { mode: "report" });
       if (!placed.ok) {
         return stop("not_allowed", `No se puede reversar: ${placed.message}`);

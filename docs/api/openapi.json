@@ -248,6 +248,7 @@
                                     "QUARANTINE",
                                     "DAMAGED",
                                     "REJECTED",
+                                    "REPAIR",
                                     "IN_TRANSIT",
                                     "BLOCKED"
                                   ]
@@ -1449,6 +1450,7 @@
                               "QUARANTINE",
                               "DAMAGED",
                               "REJECTED",
+                              "REPAIR",
                               "IN_TRANSIT",
                               "BLOCKED"
                             ]

@@ -9,6 +9,14 @@ tránsito» (WMS-19), los límites de una
 ubicación (capacidad y restricciones) y el alcance por almacén y zona aplicado
 a ubicaciones.
 
+Los usos «Cuarentena» y «Restauración» (WMS-75) no admiten existencias
+disponibles, ni en ellos ni en lo que contienen: `editLocation` rechaza
+cambiar a uno de esos usos, y `moveLocation` meter algo dentro de uno de
+ellos, mientras la ubicación o algo dentro tenga saldo disponible (bloquea
+antes las filas de toda la rama, **una por una en orden de id**: bloquearlas
+de una vez recorre el índice único y se interbloquea con los movimientos,
+ADR 0072); lo que llega después lo detiene `checkPlacement` de Inventario.
+
 ## Servicios públicos (`index.ts`)
 
 | Grupo | Archivo | Qué ofrece |
@@ -50,4 +58,5 @@ de [inventory](inventory.md), que es quien mete existencias.
 
 0056 (campos personalizados), 0010 (ubicación inicial), 0011 (jerarquía), 0035 (varios almacenes), 0036
 (niveles), 0038 (alcance), 0039 (capacidad y restricciones), 0048
-(traslados entre almacenes).
+(traslados entre almacenes), 0072 (uso «Restauración» y cambio de uso con
+existencias disponibles).
