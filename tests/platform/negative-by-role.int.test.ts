@@ -481,6 +481,8 @@ const NEGATIVE_CASES: Record<string, { tests?: string[]; waitsFor?: string }> =
       tests: [
         "tests/platform/production-roles.int.test.ts",
         "src/platform/authorization/catalog.test.ts",
+        // WMS-27: the Operario reads the recipe and cannot change it.
+        "tests/production/recipes.int.test.ts",
       ],
     },
     "NEG-28": {

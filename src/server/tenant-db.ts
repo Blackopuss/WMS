@@ -104,6 +104,11 @@ export const TENANT_MODELS = [
   "PickWaveOrder",
   "PurchaseRequest",
   "PurchaseRequestLine",
+  "Recipe",
+  "RecipeVersion",
+  "RecipeInput",
+  "RecipeOutput",
+  "RecipeLock",
   "Notification",
   "NotificationPreference",
   "NotificationEmail",
@@ -336,6 +341,8 @@ const LOCKABLE = {
   webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
+  recipe: "recipe",
+  recipeLock: "recipe_lock",
 } as const;
 
 /**
