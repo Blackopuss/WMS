@@ -1,0 +1,132 @@
+import type { Permission } from "@/platform/authorization";
+
+import type { ImageExtension } from "./images";
+
+/**
+ * What files exist and who handles them (IMP-02, ADR 0014; photos WMS-37,
+ * ADR 0063). A new kind of file is added here, with the permissions of the
+ * matrix that govern it.
+ */
+
+export const MB = 1024 * 1024;
+
+export const SHEET_CONTENT_TYPES = {
+  csv: "text/csv; charset=utf-8",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+} as const;
+
+export type SheetExtension = keyof typeof SHEET_CONTENT_TYPES;
+export type Extension = SheetExtension | ImageExtension;
+
+/**
+ * Records a photo can be evidence of, and the column of `evidence_photo`
+ * that points to each. A step that adds a kind adds its column (with its
+ * composite key and the CHECK of one owner) and its entry here.
+ */
+export const EVIDENCE_OWNER_KINDS = {
+  incident: "incidentId",
+} as const;
+
+export type EvidenceOwnerKind = keyof typeof EVIDENCE_OWNER_KINDS;
+
+/** The record a photo belongs to. */
+export type EvidenceOwner = { kind: EvidenceOwnerKind; id: string };
+
+/** Who acts; always taken from the session. */
+export type FileActor = { organizationId: string; userId: string };
+
+/**
+ * Whether a person reaches a record (its warehouse, its zone…). The module
+ * that owns the record decides; the platform receives these functions and,
+ * without one, a linked photo «does not exist» (fails closed).
+ */
+export type EvidenceOwners = Partial<
+  Record<
+    EvidenceOwnerKind,
+    (actor: FileActor, ownerId: string) => Promise<boolean>
+  >
+>;
+
+type Purpose = {
+  /** Permission to add a file of this kind. */
+  write: Permission;
+  /** Permission to download or see it. */
+  read: Permission;
+  maxBytes: number;
+  extensions: readonly Extension[];
+  /** Photos that are evidence of a record (WMS-37). */
+  evidence?: {
+    owner: EvidenceOwnerKind;
+    /** Photos added at once (with the record or with a note). */
+    perRecord: number;
+    /** Photos a record can hold in all. */
+    perOwner: number;
+  };
+};
+
+const PHOTO_EXTENSIONS = ["jpg", "jpeg", "png", "webp"] as const;
+
+export const FILE_PURPOSES = {
+  /** What a company uploads to import (IMP-04 on). */
+  import_source: {
+    write: "inventory.import.create",
+    read: "inventory.import.read",
+    maxBytes: 10 * MB,
+    extensions: ["csv", "xlsx"],
+  },
+  /** A file of outbound orders (WMS-13B): who writes orders uploads it. */
+  outbound_source: {
+    write: "inventory.outbound.create",
+    read: "inventory.outbound.read",
+    maxBytes: 10 * MB,
+    extensions: ["csv", "xlsx"],
+  },
+  /** What is generated for a company to download (IMP-03, IMP-11). */
+  export: {
+    write: "inventory.export.create",
+    read: "inventory.export.create",
+    maxBytes: 50 * MB,
+    extensions: ["csv", "xlsx"],
+  },
+  /**
+   * WMS-37 (ADR 0063): photos of an incident (WMS-39), when it is reported
+   * and with its follow-up notes. Who reports takes them; who sees the
+   * incident sees them.
+   */
+  incident_photo: {
+    write: "inventory.incident.create",
+    read: "inventory.incident.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: { owner: "incident", perRecord: 5, perOwner: 30 },
+  },
+} as const satisfies Record<string, Purpose>;
+
+export type FilePurpose = keyof typeof FILE_PURPOSES;
+
+export const isPurpose = (value: string): value is FilePurpose =>
+  Object.hasOwn(FILE_PURPOSES, value);
+
+export const purposeOf = (purpose: FilePurpose): Purpose =>
+  FILE_PURPOSES[purpose];
+
+/** The purposes whose files are photos of evidence. */
+export const EVIDENCE_PURPOSES: readonly FilePurpose[] = (
+  Object.keys(FILE_PURPOSES) as FilePurpose[]
+).filter((purpose) => purposeOf(purpose).evidence);
+
+/** `where` of the evidence rows of a record. */
+export function ownerWhere(owner: EvidenceOwner) {
+  switch (owner.kind) {
+    case "incident":
+      return { incidentId: String(owner.id).slice(0, 36) };
+  }
+}
+
+/** The record an evidence row points to. */
+export function ownerOfLink(link: {
+  incidentId: string | null;
+}): EvidenceOwner | null {
+  if (link.incidentId) return { kind: "incident", id: link.incidentId };
+  return null;
+}

@@ -151,8 +151,8 @@ almacén, tipo, descripción, a qué se refiere, quién) no cambia.
 - ~~**Correo** como segundo canal~~ y ~~**resumen diario** de lotes por
   caducar y existencias bajas~~: hechos en WMS-39B, ver
   [ADR 0060](0060-avisos-por-correo.md).
-- **Evidencia con fotos** (WMS-37): la incidencia tendrá sus archivos con
-  `storeFile`; la ficha deja el lugar.
+- ~~**Evidencia con fotos** (WMS-37)~~: hecho, al reportar y en las notas,
+  ver [ADR 0063](0063-fotos-de-evidencia.md).
 - Avisar a calidad o a quien libera cuando exista ese módulo («calidad ya
   liberó»): declarará sus tipos; el motor no cambia.
 - Tipos de incidencia configurables por empresa (hoy la lista es fija y

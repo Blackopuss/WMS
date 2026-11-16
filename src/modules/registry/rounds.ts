@@ -4,11 +4,12 @@ import {
   runEquipmentMaintenanceRound,
   runReplenishmentRound,
 } from "@/modules/inventory";
-import type { ScheduledRound } from "@/platform/jobs";
+import { allOrganizations, type ScheduledRound } from "@/platform/jobs";
 import {
   organizationsWithWebhookHistory,
   purgeWebhookHistory,
 } from "@/platform/api";
+import { purgeOrphanPhotos } from "@/platform/files";
 import {
   purgeFinishedNoticeEmails,
   purgeReadNotifications,
@@ -40,6 +41,15 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     run: async (organizationId) => ({
       notices: await purgeReadNotifications(organizationId),
       mails: await purgeFinishedNoticeEmails(organizationId),
+    }),
+  },
+  // WMS-37 (ADR 0063): photos taken and never linked to a record, a day
+  // after, for every company that has any (whatever its modules or plan).
+  {
+    name: "platform.photo_orphans_cleanup",
+    organizations: allOrganizations,
+    run: async (organizationId) => ({
+      photos: await purgeOrphanPhotos(organizationId),
     }),
   },
   // WMS-39B (ADR 0060): the daily summary by mail of who asked for it.

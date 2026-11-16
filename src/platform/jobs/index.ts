@@ -18,5 +18,9 @@ export type {
   RunOutcome,
   SettleOutcome,
 } from "./queue";
-export { organizationsWithModule, runScheduledRounds } from "./rounds";
+export {
+  allOrganizations,
+  organizationsWithModule,
+  runScheduledRounds,
+} from "./rounds";
 export type { ScheduledRound } from "./rounds";

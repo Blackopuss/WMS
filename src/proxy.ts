@@ -1,7 +1,11 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { contentSecurityPolicy, newNonce } from "@/lib";
+import {
+  FILE_CONTENT_SECURITY_POLICY,
+  contentSecurityPolicy,
+  newNonce,
+} from "@/lib";
 
 /**
  * Optimistic auth check (PLT-04): sends people without a session cookie to
@@ -58,12 +62,16 @@ export default function proxy(request: NextRequest) {
   // from the request's CSP header and puts it on its own scripts; the root
   // layout passes it to the theme script.
   const nonce = newNonce();
-  const policy = contentSecurityPolicy(nonce, {
-    development: process.env.NODE_ENV === "development",
-    https:
-      request.nextUrl.protocol === "https:" ||
-      process.env.BETTER_AUTH_URL?.startsWith("https://") === true,
-  });
+  // WMS-37 (ADR 0063): a private file (a photo shown inside the page, or a
+  // download) runs nothing, whatever it pretends to be.
+  const policy = pathname.startsWith("/api/archivos/")
+    ? FILE_CONTENT_SECURITY_POLICY
+    : contentSecurityPolicy(nonce, {
+        development: process.env.NODE_ENV === "development",
+        https:
+          request.nextUrl.protocol === "https:" ||
+          process.env.BETTER_AUTH_URL?.startsWith("https://") === true,
+      });
   const headers = new Headers(request.headers);
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", policy);

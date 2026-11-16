@@ -1,19 +1,25 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
-import { FormField } from "@/components";
+import { FormField, PhotoCapture, type CapturedPhoto } from "@/components";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { reportIncidentAction, type ReportState } from "../actions";
+import {
+  reportIncidentAction,
+  discardIncidentPhotoAction,
+  uploadIncidentPhotoAction,
+  type ReportState,
+} from "../actions";
 
 const FIELDS = [
   "kind",
   "description",
   "location",
   "product",
+  "photos",
   "equipment",
 ] as const;
 
@@ -30,15 +36,21 @@ export function ReportForm({
   taskId,
   orderId,
   kinds,
+  photoRequired,
+  maxPhotos,
   withEquipment,
 }: {
   idempotencyKey: string;
   taskId: string | null;
   orderId: string | null;
   kinds: { value: string; label: string }[];
+  photoRequired: boolean;
+  maxPhotos: number;
   /** WMS-42: the warehouse has equipment, so the report may name one. */
   withEquipment: boolean;
 }) {
+  // Outside the form, which is rebuilt on each answer: what was taken stays.
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [state, formAction, pending] = useActionState(
     reportIncidentAction.bind(null, { taskId, orderId }),
     {
@@ -60,6 +72,8 @@ export function ReportForm({
     const first = FIELDS.find((field) => errors[field]);
     if (first === "kind") {
       root.current?.querySelector<HTMLElement>('input[name="kind"]')?.focus();
+    } else if (first === "photos") {
+      root.current?.querySelector<HTMLElement>("#photos-group button")?.focus();
     } else if (first) {
       root.current?.querySelector<HTMLElement>(`#${first}`)?.focus();
     }
@@ -204,7 +218,18 @@ export function ReportForm({
           )}
         </FormField>
       )}
-      {/* WMS-37 will add photos here. */}
+      <div id="photos-group">
+        <PhotoCapture
+          id="photos"
+          label={photoRequired ? "Fotos" : "Fotos (opcional)"}
+          error={errors.photos}
+          photos={photos}
+          onPhotosChange={setPhotos}
+          upload={uploadIncidentPhotoAction}
+          discard={discardIncidentPhotoAction}
+          max={maxPhotos}
+        />
+      </div>
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
         {pending ? "Enviando…" : "Reportar"}
       </Button>

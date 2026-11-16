@@ -41,6 +41,18 @@ export async function organizationsWithModule(
 }
 
 /**
+ * Every company, whatever its modules or plan: for a round of the platform
+ * that must keep running after a plan ends (WMS-37: photos never linked).
+ */
+export async function allOrganizations(): Promise<string[]> {
+  const rows = await db.organization.findMany({
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  return rows.map((row) => row.id);
+}
+
+/**
  * Runs every round once for each company. One company that fails does not
  * stop the others; `onError` hears about it.
  */

@@ -110,6 +110,7 @@ export const TENANT_MODELS = [
   "DailyDigest",
   "Incident",
   "IncidentNote",
+  "EvidencePhoto",
   "EquipmentType",
   "Equipment",
   "EquipmentMaintenance",
@@ -341,6 +342,8 @@ const LOCKABLE = {
   webhookEndpoint: "webhook_endpoint",
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
+  storedFile: "stored_file",
+  membership: "membership",
 } as const;
 
 /**

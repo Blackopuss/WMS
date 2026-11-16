@@ -38,6 +38,10 @@ export {
 export type { DeviceInfo, DeviceKind } from "./user-agent";
 export { formatIp, isLoopbackHost } from "./ip";
 export { contentSecurityPolicy, newNonce } from "./csp";
+export {
+  FILE_CONTENT_SECURITY_POLICY,
+  fileResponseHeaders,
+} from "./file-response";
 export { log, pathWithoutQuery, recentErrorCount } from "./log";
 export type { LogFields } from "./log";
 export {
