@@ -37,7 +37,11 @@ import type { Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import { invalidateEntitlements } from "@/platform/entitlements";
-import { disableMember } from "@/platform/authorization";
+import {
+  assignRoles,
+  disableMember,
+  setMemberScope,
+} from "@/platform/authorization";
 import { createLocation, editLocation } from "@/platform/locations";
 import {
   publishProcess,
@@ -1183,41 +1187,103 @@ describe("the database", () => {
 });
 
 describe("review of WMS-28B", () => {
-  it("asking while the titular disables who asks never deadlocks (company → membership)", async () => {
-    for (let round = 0; round < 2; round++) {
-      const w = await workshop();
-      // Another connection holds the area so the request waits inside its
-      // transaction while the team change starts.
-      const sql = await migratorConnection();
-      try {
-        await sql.query("START TRANSACTION");
-        await sql.query("SELECT id FROM location WHERE id = ? FOR UPDATE", [
-          w.area,
-        ]);
-        const asking = submitProductionRequest(w.operator, {
-          productId: w.crate,
-          quantity: "5",
-        });
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const disabling = disableMember(
-          w.owner.organizationId,
-          w.owner.userId,
-          {
-            userId: w.operator.userId,
-          },
-        );
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        await sql.query("COMMIT");
-        const [asked, disabled] = await Promise.all([asking, disabling]);
-        expect(disabled).toEqual({ ok: true });
-        // Either it went in before the change, or it saw the person out.
-        if (!asked.ok) {
-          expect(asked).toMatchObject({ reason: "not_allowed" });
+  it("asking while the team changes who asks never deadlocks (company → membership)", async () => {
+    const changes = [
+      (w: Awaited<ReturnType<typeof workshop>>) =>
+        disableMember(w.owner.organizationId, w.owner.userId, {
+          userId: w.operator.userId,
+        }),
+      (w: Awaited<ReturnType<typeof workshop>>) =>
+        assignRoles(w.owner.organizationId, w.owner.userId, {
+          userId: w.operator.userId,
+          roles: ["production_operator", "viewer"],
+        }),
+      (w: Awaited<ReturnType<typeof workshop>>) =>
+        setMemberScope(w.owner.organizationId, w.owner.userId, {
+          userId: w.operator.userId,
+          facilities: [{ facilityId: w.facilityId }],
+        }),
+    ];
+    for (const change of changes) {
+      for (let round = 0; round < 2; round++) {
+        const w = await workshop();
+        // Another connection holds the area so the request waits inside
+        // its transaction (after its locks) while the team change starts.
+        const sql = await migratorConnection();
+        try {
+          await sql.query("START TRANSACTION");
+          await sql.query("SELECT id FROM location WHERE id = ? FOR UPDATE", [
+            w.area,
+          ]);
+          const asking = submitProductionRequest(w.operator, {
+            productId: w.crate,
+            quantity: "5",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const changing = change(w);
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          await sql.query("COMMIT");
+          const [asked, changed] = await Promise.all([asking, changing]);
+          expect(changed).toEqual({ ok: true });
+          // Either it went in before the change, or it saw the person out.
+          if (!asked.ok) {
+            expect(asked).toMatchObject({ reason: "not_allowed" });
+          }
+        } finally {
+          await sql.end();
         }
-      } finally {
-        await sql.end();
       }
     }
+  });
+
+  it("four requests of the same person at once: one request, no deadlock", async () => {
+    for (let round = 0; round < 4; round++) {
+      const w = await workshop();
+      const results = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          submitProductionRequest(w.operator, {
+            productId: w.crate,
+            quantity: "5",
+          }),
+        ),
+      );
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      for (const result of results.filter((each) => !each.ok)) {
+        expect(result).toMatchObject({
+          ok: false,
+          fieldErrors: { productId: expect.stringContaining("Ya pediste") },
+        });
+      }
+      expect(
+        await db.productionRequest.count({
+          where: { organizationId: w.owner.organizationId },
+        }),
+      ).toBe(1);
+    }
+  });
+
+  it("requests of different people at once all go in, numbered once each", async () => {
+    const w = await workshop();
+    const people = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        member(w.owner.organizationId, ["production_operator"]),
+      ),
+    );
+    const results = await Promise.all(
+      people.map((person) =>
+        submitProductionRequest(person, { productId: w.crate, quantity: "2" }),
+      ),
+    );
+    expect(results.every((result) => result.ok)).toBe(true);
+    const numbers = (
+      await db.productionRequest.findMany({
+        where: { organizationId: w.owner.organizationId },
+        select: { number: true },
+      })
+    )
+      .map((row) => row.number)
+      .sort();
+    expect(numbers).toEqual([1, 2, 3, 4]);
   });
 
   it("who decides without permissions over orders accepts at most what was asked", async () => {

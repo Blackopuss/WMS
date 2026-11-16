@@ -201,16 +201,24 @@ Orden global de ADR 0073: productos → ubicaciones → documento → contenedor
 → tareas → capacidad → progreso. **Una operación que bloquea productos
 nunca toma el almacén antes que ellos.**
 
-- **Pedir:** lecturas sin candado (las tres condiciones) → **la solicitud
-  nueva**, cuya llave foránea toma la empresa en compartido → la
-  membresía de quien pide (`lockRows(tx, "membership", …)`) → otra vez
-  «sigue activa», «nada a su nombre» y «no tiene otra por atender del
-  mismo producto» → aviso; si algo falla, la fila se revierte. Es el
-  orden empresa → membresía de un cambio de equipo (`withTeamChange`) y de
-  las fotos pendientes (`files.ts`). La primera versión bloqueaba la
-  membresía antes de insertar y se interbloqueaba con desactivar a quien
-  pide (revisión, reproducido; prueba «never deadlocks»). No bloquea
-  productos ni el almacén: no aparta nada.
+- **Pedir:** la empresa en compartido (`shareOrganization`, `SELECT …
+  FOR SHARE` de su fila por la llave primaria, la misma fila e índice que
+  `lockOrganization` toma en exclusivo) → la membresía de quien pide
+  (`lockRows(tx, "membership", …)`) → «sigue activa», «nada a su nombre»,
+  las condiciones 2 y 3 y «no tiene otra por atender del mismo producto» →
+  la solicitud nueva → aviso. Empresa → membresía es el orden de un cambio
+  de equipo (`withTeamChange`), así que desactivar, cambiar roles o el
+  alcance de quien pide no se interbloquea con la solicitud; y las
+  solicitudes de una misma persona esperan una a otra **antes** de
+  insertar, así no chocan en el consecutivo. Historia (revisión): la
+  primera versión bloqueaba la membresía antes de insertar sin tomar la
+  empresa y se interbloqueaba con desactivar a quien pide; la segunda
+  insertaba primero y se interbloqueaba con cuatro solicitudes de la misma
+  persona a la vez. Pruebas «never deadlocks» (desactivar, roles y
+  alcance) y «four requests of the same person at once». No bloquea
+  productos ni el almacén: no aparta nada. `shareOrganization` es una
+  función nueva de `src/server/tenant-db.ts` (el cliente de empresa no
+  admite SQL directo).
 - **Aceptar:** lee la solicitud y la receta vigente sin candado; bloquea
   los productos de los materiales (ordenados) → **la solicitud**, con una
   actualización condicionada (`UPDATE … WHERE status = 'SUBMITTED'`, la

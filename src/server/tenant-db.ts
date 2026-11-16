@@ -434,3 +434,27 @@ export async function lockRows(
   );
   return rows.map((row) => row.id);
 }
+
+/**
+ * WMS-28B (ADR 0075, review): a shared lock on the row of the company of
+ * this transaction (`SELECT … FOR SHARE` by its primary key, the same row
+ * and index `lockOrganization` takes in exclusive and every foreign key to
+ * the company checks). For who must keep the order company → membership
+ * of a change of the team (`withTeamChange`) BEFORE locking a membership
+ * and writing: inserting first leaves who waits for the same membership
+ * unordered. Never write the company row after taking it.
+ */
+export async function shareOrganization(tx: object): Promise<boolean> {
+  const scope = (tx as Record<symbol, unknown>)[TRANSACTION] as
+    { client: RawTransaction; organizationId: string } | undefined;
+  if (!scope) {
+    throw new TenantScopeError(
+      "shareOrganization necesita el cliente de una transacción de empresa.",
+    );
+  }
+  const rows = await scope.client.$queryRawUnsafe<{ id: string }[]>(
+    "SELECT id FROM `organization` WHERE id = ? FOR SHARE",
+    scope.organizationId,
+  );
+  return rows.length === 1;
+}

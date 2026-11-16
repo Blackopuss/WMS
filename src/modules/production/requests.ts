@@ -28,6 +28,7 @@ import {
   LOCKING_TRANSACTION,
   forOrganization,
   lockRows,
+  shareOrganization,
   type TenantDb,
 } from "@/server";
 
@@ -453,7 +454,29 @@ export async function submitProductionRequest(
     userId,
   );
   return inRequest(organizationId, async (tx) => {
-    // Checked here once without locks and again after the lock below.
+    // Locks: the company (shared) → the person's membership → the new row.
+    // Company → membership is the order of a change of the team
+    // (`withTeamChange`, which takes the company in exclusive first), so
+    // disabling the person while they ask never deadlocks; and the
+    // requests of the same person wait for one another BEFORE inserting,
+    // so they never collide on the consecutive number (review of WMS-28B:
+    // locking the membership first deadlocked with the team change, and
+    // inserting first deadlocked four requests of one person at once).
+    await shareOrganization(tx);
+    const membership = await tx.membership.findFirst({
+      where: { userId },
+      select: { id: true },
+    });
+    if (membership) await lockRows(tx, "membership", [membership.id]);
+    const member = membership
+      ? await tx.membership.findFirst({
+          where: { id: membership.id },
+          select: { status: true },
+        })
+      : null;
+    if (member?.status !== "ACTIVE") {
+      return stop("not_allowed", "Ya no eres parte del equipo.");
+    }
     const busy = await assignedWork(tx, userId);
     if (busy) return stop("busy", busy);
     const margin = await readSetting(tx, LOW_MARGIN);
@@ -487,6 +510,21 @@ export async function submitProductionRequest(
       data.quantity,
     );
     if (!quantity.ok) return stop("invalid", quantity.error, "quantity");
+    const open = await tx.productionRequest.findFirst({
+      where: {
+        requestedByUserId: userId,
+        productId: product.id,
+        status: "SUBMITTED",
+      },
+      select: { number: true },
+    });
+    if (open) {
+      return stop(
+        "not_allowed",
+        `Ya pediste ${product.name} (${formatProductionRequestNumber(open.number)}): espera la respuesta.`,
+        "productId",
+      );
+    }
     const last = await tx.productionRequest.findFirst({
       orderBy: { number: "desc" },
       select: { number: true },
@@ -508,45 +546,6 @@ export async function submitProductionRequest(
         requestedByUserId: userId,
       },
     });
-    // Locks: the row is written first — its key to the company takes a
-    // shared lock on the company, as every insert does — and then the
-    // person's membership is locked, so two requests of the same person go
-    // one after the other. Company → membership is the order of a change of
-    // the team (`withTeamChange`) and of pending photos (files.ts): taking
-    // the membership first deadlocked with disabling the person (review of
-    // WMS-28B). Whatever fails from here rolls the row back.
-    const membership = await tx.membership.findFirst({
-      where: { userId },
-      select: { id: true },
-    });
-    if (membership) await lockRows(tx, "membership", [membership.id]);
-    const member = membership
-      ? await tx.membership.findFirst({
-          where: { id: membership.id },
-          select: { status: true },
-        })
-      : null;
-    if (member?.status !== "ACTIVE") {
-      return stop("not_allowed", "Ya no eres parte del equipo.");
-    }
-    const stillBusy = await assignedWork(tx, userId);
-    if (stillBusy) return stop("busy", stillBusy);
-    const open = await tx.productionRequest.findFirst({
-      where: {
-        requestedByUserId: userId,
-        productId: product.id,
-        status: "SUBMITTED",
-        id: { not: id },
-      },
-      select: { number: true },
-    });
-    if (open) {
-      return stop(
-        "not_allowed",
-        `Ya pediste ${product.name} (${formatProductionRequestNumber(open.number)}): espera la respuesta.`,
-        "productId",
-      );
-    }
     const quantityText = formatStock(
       quantity.quantity.toString(),
       product.unitCode,
