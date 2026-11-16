@@ -265,7 +265,7 @@ describe("production and quality roles (WMS-59, ADR 0062)", () => {
       for (const p of of(role)) {
         expect(p, role).not.toMatch(/\.cost\./);
         expect(p, role).toMatch(
-          /^(platform\.(organization|module)\.read|inventory\.[a-z_]+\.read|inventory\.(task\.execute|incident\.create)|production\.|quality\.)/,
+          /^(platform\.(organization|module)\.read|platform\.process\.(work|assign)|inventory\.[a-z_]+\.read|inventory\.(task\.execute|incident\.create)|production\.|quality\.)/,
         );
       }
       expect(of(role).has("inventory.adjustment.create")).toBe(false);
@@ -359,6 +359,38 @@ describe("production and quality roles (WMS-59, ADR 0062)", () => {
         expect(of(role).has(p), `${role} ${p}`).toBe(p.endsWith(".read"));
       }
     }
+  });
+});
+
+describe("process stages (WMS-74, ADR 0069)", () => {
+  it("who works stages and who assigns them", () => {
+    const works = [
+      "administrator",
+      "warehouse",
+      "supervisor",
+      "operator",
+      "production_operator",
+      "production_supervisor",
+      "quality_inspector",
+    ] as const;
+    for (const role of ROLES) {
+      expect(of(role).has("platform.process.work"), role).toBe(
+        (works as readonly string[]).includes(role),
+      );
+    }
+    const assigns = [
+      "administrator",
+      "warehouse",
+      "supervisor",
+      "production_supervisor",
+    ];
+    for (const role of ROLES) {
+      expect(of(role).has("platform.process.assign"), role).toBe(
+        assigns.includes(role),
+      );
+    }
+    expect(OWNER_PERMISSIONS).toContain("platform.process.work");
+    expect(OWNER_PERMISSIONS).toContain("platform.process.assign");
   });
 });
 

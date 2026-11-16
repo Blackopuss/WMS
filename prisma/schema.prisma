@@ -223,6 +223,14 @@ model Organization {
   equipmentTypes               EquipmentType[]
   equipment                    Equipment[]
   equipmentMaintenance         EquipmentMaintenance[]
+  /// Processes of the company (WMS-74, ADR 0069).
+  processDefinitions           ProcessDefinition[]
+  processVersions              ProcessVersion[]
+  processStages                ProcessStage[]
+  processStageRoles            ProcessStageRole[]
+  processProgress              ProcessProgress[]
+  processStageStates           ProcessStageState[]
+  processSteps                 ProcessStep[]
   /// Shared terminals and PINs (WMS-38).
   sharedTerminals              SharedTerminal[]
   sharedTerminalSecrets        SharedTerminalSecret[]
@@ -286,6 +294,8 @@ model Facility {
   approvalRequests ApprovalRequest[]
   /// Incidents reported in it (WMS-39).
   incidents        Incident[]
+  /// Processes of documents of this warehouse (WMS-74).
+  processProgress  ProcessProgress[]
   /// Its equipment (WMS-42).
   equipment        Equipment[]
   /// Shared terminals of its floor (WMS-38).
@@ -366,6 +376,8 @@ model Location {
   approvalRequests    ApprovalRequest[]
   /// Incidents about this location (WMS-39).
   incidents           Incident[]
+  /// Processes of documents in this location (WMS-74).
+  processProgress     ProcessProgress[]
   exitImportRows      ExitImportRow[]
   receiptLines        PurchaseReceiptLine[]
   returnLines         PurchaseReturnLine[]
@@ -4060,6 +4072,9 @@ model EvidencePhoto {
   /// The follow-up note it came with, if any (of the same incident).
   incidentNoteId  String?       @db.Char(36)
   incidentNote    IncidentNote? @relation(fields: [organizationId, incidentNoteId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// A step of a process (WMS-74, ADR 0069).
+  processStepId   String?       @db.Char(36)
+  processStep     ProcessStep?  @relation(fields: [organizationId, processStepId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Order inside its owner (0, 1, 2…).
   position        Int
   createdByUserId String        @db.Char(36)
@@ -4069,6 +4084,7 @@ model EvidencePhoto {
   @@unique([organizationId, fileId])
   @@index([organizationId, incidentId, position])
   @@index([organizationId, incidentNoteId])
+  @@index([organizationId, processStepId, position])
   @@map("evidence_photo")
 }
 
@@ -4361,6 +4377,236 @@ model WebhookDelivery {
   @@index([organizationId, endpointId, createdAt])
   @@index([organizationId, eventId])
   @@map("webhook_delivery")
+}
+
+// ── Procesos de la empresa (WMS-74, ADR 0069) ──────────────────────────
+
+/// States of a version of a process (PROCESS_VERSION_TRANSITIONS).
+enum ProcessVersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum ProcessStageKind {
+  MANUAL
+  OPERATION
+}
+
+enum ProcessChildOrder {
+  IN_ORDER
+  ANY
+}
+
+enum ProcessEvidence {
+  NONE
+  OPTIONAL
+  REQUIRED
+}
+
+enum ProcessProgressStatus {
+  ACTIVE
+  DONE
+  CLOSED
+}
+
+/// Derived by `settleStates`; never written by hand.
+enum ProcessStageStateStatus {
+  WAITING
+  READY
+  DONE
+  SKIPPED
+}
+
+enum ProcessStepAction {
+  COMPLETED
+  OPERATION
+  SKIPPED
+  BACK
+  TAKEN
+  RELEASED
+  ASSIGNED
+}
+
+/// The process of one kind of document in a company («production.batch»).
+model ProcessDefinition {
+  id              String           @id @db.Char(36)
+  organizationId  String           @db.Char(36)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  documentKey     String           @db.VarChar(80)
+  createdByUserId String           @db.Char(36)
+  createdAt       DateTime         @default(now()) @db.DateTime(3)
+  versions        ProcessVersion[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, documentKey])
+  @@map("process_definition")
+}
+
+/// A version of a process. Published, it never changes (triggers).
+model ProcessVersion {
+  id                String               @id @db.Char(36)
+  organizationId    String               @db.Char(36)
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  definitionId      String               @db.Char(36)
+  definition        ProcessDefinition    @relation(fields: [organizationId, definitionId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  number            Int
+  status            ProcessVersionStatus @default(DRAFT)
+  /// The definition while DRAFT (one draft per definition), else null.
+  draftKey          String?              @db.Char(36)
+  /// The definition while PUBLISHED (one in force), else null.
+  currentKey        String?              @db.Char(36)
+  createdByUserId   String               @db.Char(36)
+  createdAt         DateTime             @default(now()) @db.DateTime(3)
+  updatedAt         DateTime             @updatedAt @db.DateTime(3)
+  publishedByUserId String?              @db.Char(36)
+  publishedAt       DateTime?            @db.DateTime(3)
+  retiredAt         DateTime?            @db.DateTime(3)
+  stages            ProcessStage[]
+  progress          ProcessProgress[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, definitionId, number])
+  @@unique([organizationId, draftKey])
+  @@unique([organizationId, currentKey])
+  @@map("process_version")
+}
+
+/// A stage or a sub-stage (`parentStageId`) of a version.
+model ProcessStage {
+  id               String              @id @db.Char(36)
+  organizationId   String              @db.Char(36)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versionId        String              @db.Char(36)
+  version          ProcessVersion      @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  parentStageId    String?             @db.Char(36)
+  parent           ProcessStage?       @relation("ProcessSubStages", fields: [organizationId, parentStageId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  children         ProcessStage[]      @relation("ProcessSubStages")
+  position         Int
+  name             String              @db.VarChar(60)
+  kind             ProcessStageKind
+  /// The operation of the module that completes it (OPERATION only).
+  operationKey     String?             @db.VarChar(80)
+  /// The fixed state of the document it belongs to.
+  milestoneKey     String              @db.VarChar(40)
+  /// How its sub-stages are done (only with sub-stages).
+  childOrder       ProcessChildOrder   @default(IN_ORDER)
+  noteEvidence     ProcessEvidence     @default(NONE)
+  photoEvidence    ProcessEvidence     @default(NONE)
+  quantityEvidence ProcessEvidence     @default(NONE)
+  allowSkip        Boolean             @default(false)
+  allowBack        Boolean             @default(false)
+  /// The area works only inside the zone of the document.
+  zoneOnly         Boolean             @default(false)
+  createdAt        DateTime            @default(now()) @db.DateTime(3)
+  roles            ProcessStageRole[]
+  states           ProcessStageState[]
+  steps            ProcessStep[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, versionId, position])
+  @@map("process_stage")
+}
+
+/// A role of the area of a stage.
+model ProcessStageRole {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  stageId        String       @db.Char(36)
+  stage          ProcessStage @relation(fields: [organizationId, stageId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  role           String       @db.VarChar(40)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, stageId, role])
+  @@map("process_stage_role")
+}
+
+/// The process of one document, fixed to its version (P11).
+model ProcessProgress {
+  id             String                @id @db.Char(36)
+  organizationId String                @db.Char(36)
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  documentKey    String                @db.VarChar(80)
+  documentId     String                @db.Char(36)
+  versionId      String                @db.Char(36)
+  version        ProcessVersion        @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Where the document is (scope and zone of its area, WMS-20).
+  facilityId     String                @db.Char(36)
+  facility       Facility              @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  locationId     String?               @db.Char(36)
+  location       Location?             @relation(fields: [organizationId, facilityId, locationId], references: [organizationId, facilityId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The fixed state the document is in.
+  milestoneKey   String                @db.VarChar(40)
+  /// What people read: «LP-0001».
+  label          String                @db.VarChar(80)
+  status         ProcessProgressStatus @default(ACTIVE)
+  createdAt      DateTime              @default(now()) @db.DateTime(3)
+  updatedAt      DateTime              @updatedAt @db.DateTime(3)
+  finishedAt     DateTime?             @db.DateTime(3)
+  states         ProcessStageState[]
+  steps          ProcessStep[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, documentKey, documentId])
+  @@index([organizationId, status, facilityId])
+  @@map("process_progress")
+}
+
+/// Where one stage of work of a document is, and who has it.
+model ProcessStageState {
+  id               String                  @id @db.Char(36)
+  organizationId   String                  @db.Char(36)
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  progressId       String                  @db.Char(36)
+  progress         ProcessProgress         @relation(fields: [organizationId, progressId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  stageId          String                  @db.Char(36)
+  stage            ProcessStage            @relation(fields: [organizationId, stageId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Copied from the stage, to list pending work without a join.
+  kind             ProcessStageKind
+  status           ProcessStageStateStatus @default(WAITING)
+  takenByUserId    String?                 @db.Char(36)
+  takenAt          DateTime?               @db.DateTime(3)
+  assignedByUserId String?                 @db.Char(36)
+  readyAt          DateTime?               @db.DateTime(3)
+  doneAt           DateTime?               @db.DateTime(3)
+  doneByUserId     String?                 @db.Char(36)
+  updatedAt        DateTime                @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, progressId, stageId])
+  @@index([organizationId, status, kind, takenByUserId, readyAt, id])
+  @@map("process_stage_state")
+}
+
+/// The trail of a process: never changes, never goes away (triggers).
+model ProcessStep {
+  id             String            @id @db.Char(36)
+  organizationId String            @db.Char(36)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  progressId     String            @db.Char(36)
+  progress       ProcessProgress   @relation(fields: [organizationId, progressId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  stageId        String            @db.Char(36)
+  stage          ProcessStage      @relation(fields: [organizationId, stageId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  action         ProcessStepAction
+  /// Null when the system did it.
+  actorUserId    String?           @db.Char(36)
+  /// Who received it (ASSIGNED).
+  assigneeUserId String?           @db.Char(36)
+  /// Who had it before (ASSIGNED, RELEASED), if somebody did.
+  previousUserId String?           @db.Char(36)
+  note           String?           @db.VarChar(500)
+  quantity       Decimal?          @db.Decimal(18, 3)
+  /// «Chrome en Android» (describeUserAgent, never the raw text).
+  device         String?           @db.VarChar(120)
+  idempotencyKey String?           @db.VarChar(64)
+  createdAt      DateTime          @default(now()) @db.DateTime(3)
+  photos         EvidencePhoto[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, progressId, createdAt, id])
+  @@map("process_step")
 }
 
 // ---------------------------------------------------------------------------

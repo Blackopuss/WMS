@@ -161,6 +161,7 @@ function requirementOf(value: unknown): NoticeRequirement {
     permissions: strings(raw.permissions) as Permission[] | undefined,
     match: raw.match === "any" ? "any" : "all",
     roles: strings(raw.roles),
+    ...(raw.ownerByRole === false ? { ownerByRole: false } : {}),
     facilityId: typeof raw.facilityId === "string" ? raw.facilityId : null,
     locationId: typeof raw.locationId === "string" ? raw.locationId : null,
   };

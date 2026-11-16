@@ -1357,6 +1357,33 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); exige inventory.incident.create; solo borra una foto de esa empresa, subida por esa persona y sin ligar, bajo el candado del archivo",
     coveredBy: "tests/inventory/incident-photos.int.test.ts",
   },
+  stageAction: {
+    input:
+      "etapa de un proceso (id de su estado), qué hacer (tomar, terminar, liberar, asignar, saltar, regresar), nota, cantidad, motivo, ids de fotos ya subidas, persona a asignar y clave de confirmación",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el motor bloquea el proceso solo en esa empresa y lo da por inexistente si la persona no lee el documento o no alcanza su almacén; exige platform.process.work y un rol del área (asignar: platform.process.assign)",
+    coveredBy: "tests/platform/processes.int.test.ts",
+  },
+  uploadProcessPhotoAction: {
+    input:
+      "una foto (FormData «photo»); nombre y bytes, el tipo lo decide el servidor por el contenido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige platform.process.work; la foto queda en esa empresa a nombre de la persona y sin ligar, visible solo para ella",
+    coveredBy: "tests/platform/processes.int.test.ts",
+  },
+  discardProcessPhotoAction: {
+    input: "id de una foto que la persona tomó y quitó del formulario",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo borra una foto de esa empresa, subida por esa persona y sin ligar",
+    coveredBy: "tests/platform/processes.int.test.ts",
+  },
+  saveProcessAction: {
+    input:
+      "clave del documento, sus etapas como JSON (hasta 100 000 caracteres) y si se publica",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige platform.organization.update y el módulo del documento activo; el borrador y la versión se escriben solo en esa empresa",
+    coveredBy: "tests/platform/processes.int.test.ts",
+  },
   createFieldAction: {
     input:
       "entidad (producto, ubicación o proveedor), nombre, tipo, obligatorio y opciones de una lista",

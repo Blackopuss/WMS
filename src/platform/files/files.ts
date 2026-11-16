@@ -426,7 +426,7 @@ const FILE_SELECT = {
   sha256: true,
   storageKey: true,
   createdByUserId: true,
-  evidencePhoto: { select: { incidentId: true } },
+  evidencePhoto: { select: { incidentId: true, processStepId: true } },
 } as const;
 
 type FileRow = {
@@ -438,7 +438,10 @@ type FileRow = {
   sha256: string;
   storageKey: string;
   createdByUserId: string;
-  evidencePhoto: { incidentId: string | null } | null;
+  evidencePhoto: {
+    incidentId: string | null;
+    processStepId: string | null;
+  } | null;
 };
 
 /** The row of a file of this company that still exists, or null. */

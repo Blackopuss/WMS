@@ -25,7 +25,13 @@ import {
   wavesEnabled,
   type TaskListView,
 } from "@/modules/inventory";
+import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
+import {
+  countProcessWork,
+  listProcessWork,
+  type ProcessWorkPage,
+} from "@/platform/processes";
 
 export const metadata: Metadata = { title: "Tareas" };
 
@@ -49,7 +55,16 @@ export default async function TareasPage({
   searchParams,
 }: PageProps<"/tareas">) {
   const access = await getModuleAccess();
-  if (!access.can("inventory.task.read")) {
+  // WMS-74: who works stages of processes (Inspector, Encargado de
+  // producción…) sees their part here even without warehouse tasks; only
+  // while an active module declares documents with processes.
+  const readsTasks = access.can("inventory.task.read");
+  const worksStages =
+    access.can("platform.process.work") &&
+    processDocuments.some(
+      (document) => access.moduleState(document.module) === "active",
+    );
+  if (!readsTasks && !worksStages) {
     return (
       <PageContainer>
         <NoAccessState />
@@ -57,7 +72,7 @@ export default async function TareasPage({
     );
   }
   const moduleState = access.moduleState("inventory");
-  if (moduleState === "none") {
+  if (readsTasks && moduleState === "none") {
     return (
       <PageContainer>
         <NoModuleState module="Inventario" />
@@ -68,43 +83,70 @@ export default async function TareasPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const supervises = access.can("inventory.task.create");
-  const executes = access.can("inventory.task.execute");
+  const supervises = readsTasks && access.can("inventory.task.create");
+  const executes = readsTasks && access.can("inventory.task.execute");
+  const ownTabs = executes || worksStages;
   const { vista, pagina, dia } = await searchParams;
   const asked = typeof vista === "string" ? vista : "";
   // Who does not execute tasks starts with every open one.
   const view: TaskListView =
-    asked === "available" || asked === "open" || asked === "closed"
+    (asked === "open" || asked === "closed") && readsTasks
       ? asked
-      : asked === "mine" || executes
-        ? "mine"
-        : "open";
-  const [list, counts, waves] = await Promise.all([
-    listTasks(actor, {
-      view,
-      day: typeof dia === "string" ? dia : undefined,
-      page:
-        typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
-          ? Number(pagina)
-          : undefined,
-    }),
-    countMyTasks(actor),
+      : asked === "available" && ownTabs
+        ? asked
+        : ownTabs || !readsTasks
+          ? "mine"
+          : "open";
+  // WMS-74: the stages of processes that are the person's or their area's,
+  // in the same tabs (without processes, nothing is queried nor shown).
+  const noWork: ProcessWorkPage = {
+    items: [],
+    total: 0,
+    page: 1,
+    pageCount: 1,
+  };
+  const [list, counts, waves, processWork, processCounts] = await Promise.all([
+    readsTasks
+      ? listTasks(actor, {
+          view,
+          day: typeof dia === "string" ? dia : undefined,
+          page:
+            typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+              ? Number(pagina)
+              : undefined,
+        })
+      : { items: [], total: 0, page: 1, pageCount: 1, day: null },
+    readsTasks ? countMyTasks(actor) : { mine: 0, available: 0, blocked: 0 },
     // WMS-25: open waves with work here, when the company picks in waves.
-    wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : [])),
+    readsTasks
+      ? wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : []))
+      : [],
+    view === "mine" || view === "available"
+      ? listProcessWork(actor, processDocuments, { view })
+      : noWork,
+    countProcessWork(actor, processDocuments),
   ]);
   const tabs: { id: TaskListView; label: string; count?: number }[] = [
-    ...(executes
+    ...(ownTabs
       ? [
-          { id: "mine" as const, label: "Mis tareas", count: counts.mine },
+          {
+            id: "mine" as const,
+            label: "Mis tareas",
+            count: counts.mine + processCounts.mine,
+          },
           {
             id: "available" as const,
             label: "Disponibles",
-            count: counts.available,
+            count: counts.available + processCounts.available,
           },
         ]
       : []),
-    { id: "open", label: "Abiertas" },
-    { id: "closed", label: "Terminadas" },
+    ...(readsTasks
+      ? [
+          { id: "open" as const, label: "Abiertas" },
+          { id: "closed" as const, label: "Terminadas" },
+        ]
+      : []),
   ];
   // The day only travels between the pages of the same narrowed list.
   const href = (target: TaskListView, page = 1, day: string | null = null) => {
@@ -205,7 +247,54 @@ export default async function TareasPage({
         </p>
       )}
 
-      {list.total === 0 ? (
+      {processWork.total > 0 && (
+        <section
+          aria-label="Etapas de procesos"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <ul className="divide-y">
+            {processWork.items.map((item) => (
+              <li key={item.stateId}>
+                <Link
+                  href={`/procesos/${item.progressId}?etapa=${item.stateId}`}
+                  className="flex min-h-20 items-center gap-3 p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <span className="min-w-0 flex-1 space-y-1.5">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Badge variant="secondary">Etapa</Badge>
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        {item.documentLabel} {item.label}
+                      </span>
+                    </span>
+                    <span className="block text-base font-medium [overflow-wrap:anywhere]">
+                      {item.parentName
+                        ? `${item.parentName}: ${item.stageName}`
+                        : item.stageName}
+                    </span>
+                    <span className="block text-sm text-muted-foreground">
+                      {view !== "mine" && item.takenByName
+                        ? `La tiene ${item.takenByName}`
+                        : item.area}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {processWork.total > processWork.items.length && (
+            <p className="border-t p-4 text-sm text-muted-foreground sm:px-5">
+              Se muestran las {processWork.items.length} que llevan más tiempo
+              esperando, de {processWork.total}.
+            </p>
+          )}
+        </section>
+      )}
+
+      {list.total === 0 && processWork.total > 0 ? null : list.total === 0 ? (
         <EmptyState
           icon={ClipboardList}
           title={list.day ? "Ninguna tarea se entregó ese día" : empty.title}

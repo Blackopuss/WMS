@@ -23,6 +23,7 @@ export {
   canAny,
   isOwnerOnly,
   knownRoles,
+  activeRoles,
   inScope,
   intersectScopes,
   permissionsOf,
@@ -46,6 +47,7 @@ export {
   isAllowed,
   limitOf,
   loadSubject,
+  modulesOf,
   requireOwnerAction,
   requirePermission,
 } from "./access";

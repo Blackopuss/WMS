@@ -673,6 +673,52 @@ describe("notices (WMS-39)", () => {
     expect(gone!.text).toContain("Venció lo que pediste autorizar");
   });
 
+  it("a tied role without its module neither decides nor hears it (WMS-74, B5)", async () => {
+    // A rule that names Operario de producción, left from when the company
+    // had Producción (written straight: the screen would not offer it).
+    const fresh = await company();
+    const asker = await member(fresh.organizationId, "warehouse", "Pide");
+    // Supervisor gives the permission of the operation; the rule names only
+    // the tied role, which counts for nothing without Producción.
+    const userId = (await member(fresh.organizationId, "supervisor", "Mixto"))
+      .userId;
+    const membership = await db.membership.findFirstOrThrow({
+      where: { organizationId: fresh.organizationId, userId },
+      select: { id: true },
+    });
+    await db.membershipRole.create({
+      data: {
+        id: newId(),
+        organizationId: fresh.organizationId,
+        membershipId: membership.id,
+        role: "production_operator",
+      },
+    });
+    const mixed = { organizationId: fresh.organizationId, userId };
+    await db.approvalRule.create({
+      data: {
+        id: newId(),
+        organizationId: fresh.organizationId,
+        typeKey: THING.key,
+        enabled: true,
+        approverRoles: "production_operator",
+        updatedByUserId: fresh.userId,
+      },
+    });
+    const id = await ask(asker);
+    expect(await noticesOf(mixed, "approvals.pending", id)).toHaveLength(0);
+    expect(
+      await decideApproval(mixed, TYPES, id, { decision: "approve" }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    // With a role in force in the rule, the same person hears and decides.
+    await rule(fresh, THING.key, ["supervisor"]);
+    const second = await ask(asker);
+    expect(await noticesOf(mixed, "approvals.pending", second)).toHaveLength(1);
+    expect(
+      await decideApproval(mixed, TYPES, second, { decision: "approve" }),
+    ).toMatchObject({ ok: true });
+  });
+
   it("nothing is notified if asking rolls back", async () => {
     const before = await db.notification.count({
       where: {
