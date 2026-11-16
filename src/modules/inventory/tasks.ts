@@ -38,11 +38,13 @@ import {
 import {
   OPEN_TASK_STATUSES,
   WAREHOUSE_TASK_STATUS_LABELS,
+  formatIssueOrderNumber,
   formatTaskNumber,
   taskTransitionProblem,
   type WarehouseTaskStatus,
 } from "./task-states";
 import { formatOutboundNumber } from "./outbound-states";
+import { deliverIssue, lockIssueOrder, releaseIssueReservation } from "./issue";
 import { CapacityNotice, checkPlacement, type OverCapacity } from "./placement";
 import { availableOfLot } from "./stock-status";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
@@ -200,6 +202,11 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
           lotId: true,
           lot: { select: { code: true } },
           outboundLine: { select: { orderId: true } },
+          // WMS-28 (ADR 0073): the production order an ISSUE task serves.
+          productionOrderLineId: true,
+          productionOrderLine: {
+            select: { orderId: true, order: { select: { number: true } } },
+          },
           product: {
             select: {
               name: true,
@@ -246,12 +253,19 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
 async function pickOrderOf(
   organizationId: string,
   taskId: string,
-): Promise<string | null> {
+): Promise<{ outbound: string | null; production: string | null }> {
   const row = await forOrganization(organizationId).warehouseTask.findFirst({
     where: { id: String(taskId ?? "") },
-    select: { outboundLine: { select: { orderId: true } } },
+    select: {
+      outboundLine: { select: { orderId: true } },
+      // WMS-28: an ISSUE task locks its production order the same way.
+      productionOrderLine: { select: { orderId: true } },
+    },
   });
-  return row?.outboundLine?.orderId ?? null;
+  return {
+    outbound: row?.outboundLine?.orderId ?? null,
+    production: row?.productionOrderLine?.orderId ?? null,
+  };
 }
 
 /**
@@ -707,7 +721,7 @@ async function step(
   options: { lockProduct?: boolean } = {},
 ): Promise<TaskResult> {
   await assertModulePermission(actor.organizationId, actor.userId, permission);
-  const orderId = await pickOrderOf(actor.organizationId, taskId);
+  const orders = await pickOrderOf(actor.organizationId, taskId);
   const productId = options.lockProduct
     ? ((
         await forOrganization(actor.organizationId).warehouseTask.findFirst({
@@ -718,7 +732,8 @@ async function step(
     : null;
   return inTask(actor.organizationId, async (tx) => {
     if (productId) await lockRows(tx, "product", [productId]);
-    await lockPickOrder(tx, orderId);
+    await lockPickOrder(tx, orders.outbound);
+    await lockIssueOrder(tx, orders.production);
     return work(tx, await lockTask(tx, taskId, actor.userId));
   });
 }
@@ -1242,6 +1257,7 @@ export async function deliverTask(
       toLocationId: true,
       fromLocation: { select: { facilityId: true } },
       outboundLine: { select: { orderId: true } },
+      productionOrderLine: { select: { orderId: true } },
     },
   });
   if (!fixed) {
@@ -1285,6 +1301,7 @@ export async function deliverTask(
         await lockRows(tx, "product", [fixed.productId ?? ""]);
         await lockRows(tx, "location", [fixed.fromLocationId, destination]);
         await lockPickOrder(tx, fixed.outboundLine?.orderId ?? null);
+        await lockIssueOrder(tx, fixed.productionOrderLine?.orderId ?? null);
       }
       const task = await lockTask(tx, taskId, userId);
       if (task.assignedToUserId !== userId) {
@@ -1310,6 +1327,9 @@ export async function deliverTask(
       }
       if (task.kind === "REPLENISH") {
         return deliverReplenish(tx, actor, ofProduct(task));
+      }
+      if (task.kind === "ISSUE") {
+        return deliverIssueTask(tx, actor, ofProduct(task));
       }
       const product = ofProduct(task);
       const moved = await postTaskTransfer(tx, actor, {
@@ -1563,6 +1583,54 @@ async function deliverPutaway(
  * leave their hold and move with the transfer of every task; the capacity
  * only reports (it was asked when the task was decided).
  */
+/**
+ * WMS-28 (ADR 0073): a «Surtir a producción» task leaves the material in
+ * the area of its production order, still set aside for the same line.
+ */
+async function deliverIssueTask(
+  tx: Tx,
+  actor: InventoryActor,
+  task: ProductTask,
+): Promise<TaskResult> {
+  const quantity = dec(task.quantity.toString());
+  const delivered = await deliverIssue(tx, actor, {
+    id: task.id,
+    number: task.number,
+    productionOrderLineId: task.productionOrderLineId!,
+    productId: task.productId,
+    fromLocationId: task.fromLocationId,
+    toLocationId: task.toLocationId,
+    lotId: task.lotId,
+    quantity,
+    unitCode: task.unitCode,
+    serials: await taskSerials(tx, task.id),
+  });
+  if (!delivered.ok) {
+    return stop(
+      "not_allowed",
+      `${delivered.error} Si no puedes entregarla, reporta el problema.`,
+    );
+  }
+  await tx.warehouseTask.update({
+    where: { id: task.id },
+    data: {
+      status: "DELIVERED",
+      deliveredAt: new Date(),
+      movementId: delivered.movementId,
+    },
+  });
+  return {
+    ok: true,
+    taskId: task.id,
+    summary:
+      `Dejaste ${formatStock(quantity.toString(), task.unitCode)} de ${task.product.name}${ofLot(task.lot)} en ${task.toLocation.name}` +
+      (task.productionOrderLine
+        ? ` para ${formatIssueOrderNumber(task.productionOrderLine.order.number)}.`
+        : ".") +
+      delivered.notes.map((note) => ` ${note}`).join(""),
+  };
+}
+
 async function deliverReplenish(
   tx: Tx,
   actor: InventoryActor,
@@ -1790,9 +1858,19 @@ async function fixedOf(organizationId: string, ids: string[]) {
       fromLocationId: true,
       toLocationId: true,
       outboundLine: { select: { orderId: true } },
+      productionOrderLine: { select: { orderId: true } },
     },
   });
 }
+
+/** WMS-28: the production orders of ISSUE tasks, locked before the tasks. */
+const productionOrderIdsOf = (fixed: Awaited<ReturnType<typeof fixedOf>>) => [
+  ...new Set(
+    fixed
+      .map((task) => task.productionOrderLine?.orderId)
+      .filter((id): id is string => Boolean(id)),
+  ),
+];
 
 const orderIdsOf = (fixed: Awaited<ReturnType<typeof fixedOf>>) => [
   ...new Set(
@@ -2042,6 +2120,7 @@ export async function takeTasks(
   const fixed = await fixedOf(organizationId, ids);
   return inGroup(organizationId, async (tx) => {
     await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    await lockRows(tx, "productionOrder", productionOrderIdsOf(fixed));
     const locked = await lockRows(tx, "warehouseTask", ids);
     let changed = 0;
     let withEquipment = 0;
@@ -2129,6 +2208,7 @@ export async function assignTasks(
   const fixed = await fixedOf(organizationId, ids);
   return inGroup(organizationId, async (tx) => {
     await lockRows(tx, "outboundOrder", orderIdsOf(fixed));
+    await lockRows(tx, "productionOrder", productionOrderIdsOf(fixed));
     const locked = await lockRows(tx, "warehouseTask", ids);
     const tasks = [];
     for (const id of locked) {
@@ -2355,6 +2435,16 @@ export function cancelTask(
       );
       await settlePickedOrder(tx, task.outboundLine.orderId);
     }
+    // WMS-28: what an ISSUE task held for its production order is free
+    // again in its origin (like a picking task's).
+    if (task.kind === "ISSUE" && task.productionOrderLineId) {
+      await releaseIssueReservation(tx, {
+        productionOrderLineId: task.productionOrderLineId,
+        fromLocationId: task.fromLocationId,
+        lotId: task.lotId,
+        quantity: dec(task.quantity!.toString()),
+      });
+    }
     // WMS-52/24: what a put-away or a replenishment held in its place is
     // free again.
     if (task.kind === "PUTAWAY" || task.kind === "REPLENISH") {
@@ -2389,9 +2479,11 @@ export type TaskSummary = {
    * «PUTAWAY» (what waits in «General» or receiving, WMS-52) or
    * «REPLENISH» (fills a picking location from storage, WMS-24).
    */
-  kind: "TRANSFER" | "PICK" | "PUTAWAY" | "REPLENISH";
+  kind: "TRANSFER" | "PICK" | "PUTAWAY" | "REPLENISH" | "ISSUE";
   /** PICK: the order it picks for. */
   order: { id: string; numberText: string; recipient: string } | null;
+  /** ISSUE (WMS-28): the production order it takes a material to. */
+  productionOrder: { id: string; numberText: string } | null;
   /**
    * WMS-53: the container it moves whole, instead of a product; then
    * `productName` is its name («Tarima C-0001») and `sku` is empty.
@@ -2487,6 +2579,9 @@ const SUMMARY_SELECT = {
       order: { select: { id: true, number: true, recipient: true } },
     },
   },
+  productionOrderLine: {
+    select: { order: { select: { id: true, number: true } } },
+  },
   quantity: true,
   unitCode: true,
   assignedToUserId: true,
@@ -2508,10 +2603,11 @@ type SummaryRow = {
   number: number;
   status: WarehouseTaskStatus;
   priority: TaskPriority;
-  kind: "TRANSFER" | "PICK" | "PUTAWAY" | "REPLENISH";
+  kind: "TRANSFER" | "PICK" | "PUTAWAY" | "REPLENISH" | "ISSUE";
   outboundLine: {
     order: { id: string; number: number; recipient: string };
   } | null;
+  productionOrderLine: { order: { id: string; number: number } } | null;
   quantity: { toString(): string } | null;
   unitCode: string | null;
   assignedToUserId: string | null;
@@ -2571,6 +2667,14 @@ const summaryOf = (
         id: row.outboundLine.order.id,
         numberText: formatOutboundNumber(row.outboundLine.order.number),
         recipient: row.outboundLine.order.recipient,
+      }
+    : null,
+  productionOrder: row.productionOrderLine
+    ? {
+        id: row.productionOrderLine.order.id,
+        numberText: formatIssueOrderNumber(
+          row.productionOrderLine.order.number,
+        ),
       }
     : null,
   container: row.container

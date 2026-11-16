@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   getProductRecipe,
   getRecipeVersion,
+  listProductionAreas,
   type RecipeVersionView,
 } from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
@@ -29,6 +30,7 @@ import {
   StartRecipeChange,
   type CaptureChoice,
 } from "./recipe-forms";
+import { RecipeAreaForm } from "./recipe-area-form";
 import { RecipeLines } from "./recipe-view";
 
 export const metadata: Metadata = { title: "Receta" };
@@ -85,6 +87,13 @@ export default async function RecetaPage({
       ? await getRecipeVersion(actor, recipe.draft.id)
       : null;
   const unit = getUnit(product.unitCode).plural;
+  // WMS-28: the area its orders propose, among those the person reaches.
+  const areas =
+    recipe.recipeId && access.can("production.order.read")
+      ? await listProductionAreas(actor)
+      : [];
+  const areaPath =
+    areas.find((area) => area.id === recipe.areaLocationId)?.path ?? null;
 
   return (
     <PageContainer>
@@ -138,6 +147,26 @@ export default async function RecetaPage({
             <p className="text-sm text-muted-foreground">
               Quien encarga la producción la agrega desde aquí.
             </p>
+          )}
+        </section>
+      )}
+
+      {recipe.recipeId && (manage ? areas.length > 0 : areaPath) && (
+        <section
+          aria-labelledby="area-produccion"
+          className="space-y-3 rounded-xl border bg-card p-4 sm:p-5"
+        >
+          <h2 id="area-produccion" className="font-medium">
+            Dónde se produce
+          </h2>
+          {manage ? (
+            <RecipeAreaForm
+              productId={product.id}
+              areas={areas}
+              current={areaPath ? recipe.areaLocationId : null}
+            />
+          ) : (
+            <p className="text-sm">{areaPath}</p>
           )}
         </section>
       )}

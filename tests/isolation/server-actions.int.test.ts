@@ -130,6 +130,38 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
     coveredBy: "tests/inventory/outbound-orders.int.test.ts",
   },
+  // WMS-28 (ADR 0073): production orders.
+  saveProductionOrderAction: {
+    input:
+      "id del producto o de la orden (fijado por la página), cantidad, id del área, día, prioridad, notas e ids de personas",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); producto, receta, área y personas se buscan solo en esa empresa y en el alcance de la persona",
+    coveredBy: "tests/production/orders.int.test.ts",
+  },
+  releaseProductionOrderAction: {
+    input: "id de la orden y si se libera con lo que hay",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos y orden se bloquean solo en esa empresa; aparta solo de ubicaciones de su alcance",
+    coveredBy: "tests/production/orders.int.test.ts",
+  },
+  cancelProductionOrderAction: {
+    input: "id de la orden y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la orden y sus tareas se bloquean solo en esa empresa",
+    coveredBy: "tests/production/orders.int.test.ts",
+  },
+  setProductionPeopleAction: {
+    input: "id de la orden e ids de personas",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo miembros activos de esa empresa que pueden reportar y alcanzan el área",
+    coveredBy: "tests/production/orders.int.test.ts",
+  },
+  setRecipeAreaAction: {
+    input: "id del producto e id del área (o vacío)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); receta y área se buscan solo en esa empresa y en el alcance de la persona",
+    coveredBy: "tests/production/orders.int.test.ts",
+  },
   releaseOutboundAction: {
     input: "id del pedido y si se libera con lo que hay",
     identity:

@@ -83,6 +83,14 @@ const NOT_SERVICES = new Set([
   "recipeTransitionProblem",
   "activeRecipeOf",
   "productionOpenWork",
+  // WMS-28: pure rules of orders, and the count of the open work.
+  "canProductionTransition",
+  "formatProductionNumber",
+  "isProductionOrderStatus",
+  "productionTransitionProblem",
+  "fitsLine",
+  "scaleInput",
+  "scaleOutput",
 ]);
 
 const services = Object.entries(production).filter(
@@ -108,6 +116,18 @@ describe("Producción without the module (MOD-05)", () => {
         "setRecipeOutput",
         "startRecipeChange",
         "updateRecipeDraft",
+        // WMS-28 (ADR 0073).
+        "cancelProductionOrder",
+        "createProductionOrder",
+        "getProductionOrder",
+        "listProducibleProducts",
+        "listProductionAreas",
+        "listProductionOrders",
+        "listProductionPeople",
+        "releaseProductionOrder",
+        "setProductionOrderAssignees",
+        "setRecipeArea",
+        "updateProductionOrder",
       ].sort(),
     );
   });

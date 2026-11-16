@@ -25,6 +25,8 @@ export const LOCATION_TYPES = [
   "DOCK",
   /** WMS-75 (ADR 0072): where things are restored; takes nothing available. */
   "REPAIR",
+  /** WMS-28 (ADR 0073): a production area, where orders make things. */
+  "PRODUCTION",
 ] as const;
 export type LocationType = (typeof LOCATION_TYPES)[number];
 
@@ -36,6 +38,7 @@ export const LOCATION_TYPE_LABELS: Record<LocationType, string> = {
   QUARANTINE: "Cuarentena",
   DOCK: "Andén",
   REPAIR: "Restauración",
+  PRODUCTION: "Producción",
 };
 
 export function isLocationType(value: unknown): value is LocationType {

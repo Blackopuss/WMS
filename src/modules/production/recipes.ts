@@ -1385,6 +1385,11 @@ export type ProductRecipe = {
   /** Products whose recipe in force uses this one as a material. */
   usedIn: { productId: string; name: string; sku: string }[];
   usedInMore: boolean;
+  /**
+   * WMS-28: the production area its orders propose (an id: the screen
+   * names it only among the areas the person reaches).
+   */
+  areaLocationId: string | null;
 };
 
 /**
@@ -1408,6 +1413,7 @@ export async function getProductRecipe(
       where: { productId: id },
       select: {
         id: true,
+        areaLocationId: true,
         _count: { select: { versions: true } },
         versions: {
           where: { status: "DRAFT" },
@@ -1452,6 +1458,7 @@ export async function getProductRecipe(
     versions: recipe?._count.versions ?? 0,
     usedIn,
     usedInMore: uses.length > RECIPE_USED_IN_MAX,
+    areaLocationId: recipe?.areaLocationId ?? null,
   };
 }
 
@@ -1601,18 +1608,59 @@ export async function activeRecipeOf(
 
 /**
  * What would stay halfway if the company stopped having Producción
- * (CMP-17): drafts of recipes not activated. Nothing is cancelled.
+ * (CMP-17): drafts of recipes not activated and open production orders.
+ * Nothing is cancelled.
  */
 export async function productionOpenWork(
   organizationId: string,
 ): Promise<string[]> {
-  const drafts = await forOrganization(organizationId).recipeVersion.count({
-    where: { status: "DRAFT" },
-  });
-  if (drafts === 0) return [];
-  return [
-    drafts === 1
-      ? "1 receta con cambios sin activar."
-      : `${drafts} recetas con cambios sin activar.`,
-  ];
+  const client = forOrganization(organizationId);
+  const [drafts, orders] = await Promise.all([
+    client.recipeVersion.count({ where: { status: "DRAFT" } }),
+    // WMS-28 (ADR 0073): orders still open (what they set aside stays).
+    client.productionOrder.count({
+      where: { status: { in: ["DRAFT", "RELEASED", "IN_PROGRESS"] } },
+    }),
+  ]);
+  const work: string[] = [];
+  if (drafts > 0) {
+    work.push(
+      drafts === 1
+        ? "1 receta con cambios sin activar."
+        : `${drafts} recetas con cambios sin activar.`,
+    );
+  }
+  if (orders > 0) {
+    // ADR 0073 (review): what open orders set aside keeps blocking exits
+    // and picking after the module is removed; whether removing it should
+    // let it go is a question for the founder.
+    const holding = await client.stockReservation.findMany({
+      where: { sourceType: "production_order_line", state: "ACTIVE" },
+      select: { sourceId: true },
+      distinct: ["sourceId"],
+    });
+    const withStock = holding.length
+      ? (
+          await client.productionOrderLine.findMany({
+            where: {
+              id: { in: holding.map((row) => row.sourceId) },
+              order: { status: { in: ["RELEASED", "IN_PROGRESS"] } },
+            },
+            select: { orderId: true },
+            distinct: ["orderId"],
+          })
+        ).length
+      : 0;
+    work.push(
+      (orders === 1
+        ? "1 orden de producción abierta"
+        : `${orders} órdenes de producción abiertas`) +
+        (withStock === 0
+          ? "."
+          : withStock === 1
+            ? "; 1 tiene materiales apartados, que seguirán apartados."
+            : `; ${withStock} tienen materiales apartados, que seguirán apartados.`),
+    );
+  }
+  return work;
 }

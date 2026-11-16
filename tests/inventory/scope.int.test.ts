@@ -114,6 +114,15 @@ import {
   takeWaveTasks,
 } from "@/modules/inventory";
 import {
+  activateRecipeVersion,
+  createProductionOrder,
+  createRecipe,
+  getProductionOrder,
+  listProductionOrders,
+  releaseProductionOrder,
+  setRecipeInput,
+} from "@/modules/production";
+import {
   addOrderLine,
   createPurchaseOrder,
   generateSuggestedOrders,
@@ -245,7 +254,7 @@ beforeAll(async () => {
       productLimit: 20,
       users: 10,
       facilities: 3,
-      modules: ["inventory", "purchasing"],
+      modules: ["inventory", "purchasing", "production"],
       validUntil: null,
       reason: "Prueba de alcance",
     },
@@ -1970,6 +1979,71 @@ describe("PC-12: what is in restoration (WMS-75)", () => {
         where: { productId, locationId: shelfA, status: "REPAIR", quantity: 1 },
       }),
     ).toBe(1);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: production orders (WMS-28)", () => {
+  it("an order of A does not exist from B, nor its «Surtir a producción» tasks", async () => {
+    await updateOperationSetting(
+      owner,
+      operationSettings,
+      "production.materials.mode",
+      "issue",
+    );
+    const area = await createLocation(owner, {
+      level: 1,
+      name: "Línea A",
+      type: "PRODUCTION",
+    });
+    if (!area.ok) throw new Error(JSON.stringify(area));
+    const kit = await createProduct(owner, { sku: "ALC-KIT", name: "Kit" });
+    if (!kit.ok) throw new Error(JSON.stringify(kit));
+    const recipe = await createRecipe(owner, kit.productId, {
+      baseQuantity: "1",
+    });
+    if (!recipe.ok) throw new Error(JSON.stringify(recipe));
+    await setRecipeInput(owner, recipe.versionId, {
+      productId,
+      quantity: "1",
+    });
+    expect(await activateRecipeVersion(owner, recipe.versionId)).toMatchObject({
+      ok: true,
+    });
+    const made = await createProductionOrder(owner, {
+      productId: kit.productId,
+      quantity: "2",
+      areaLocationId: area.locationId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect(await releaseProductionOrder(owner, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    expect(await getProductionOrder(limited, made.orderId)).toBeNull();
+    expect((await listProductionOrders(limited)).items).toEqual([]);
+    expect(await releaseProductionOrder(limited, made.orderId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    // From B its area cannot be chosen either.
+    expect(
+      await createProductionOrder(limited, {
+        productId: kit.productId,
+        quantity: "1",
+        areaLocationId: area.locationId,
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { areaLocationId: expect.any(String) },
+    });
+    const task = await db.warehouseTask.findFirstOrThrow({
+      where: { kind: "ISSUE", productionOrderLine: { orderId: made.orderId } },
+    });
+    expect(await acceptTask(limited, task.id)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(await getProductionOrder(free, made.orderId)).not.toBeNull();
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

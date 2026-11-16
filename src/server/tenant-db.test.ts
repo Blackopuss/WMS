@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { TENANT_MODELS } from "./tenant-db";
+import { LOCKABLE, TENANT_MODELS } from "./tenant-db";
 
 // PLT-12/PLT-13: schema rules for company data, checked on every run so
 // each new table follows them.
@@ -70,6 +70,33 @@ describe("company data in prisma/schema.prisma", () => {
         expect(relation.references[0], label).toBe("organizationId");
         expect(relation.fields.length, label).toBeGreaterThan(1);
       }
+    }
+  });
+});
+
+describe("lockRows by the tenant key (WMS-28)", () => {
+  // `byTenantKey` forces the index `<table>_organizationId_id_key`: every
+  // table lockRows may lock must have it, with that exact name, in the
+  // migrations (a missing index would make the lock fail, not degrade).
+  const migrations = path.join(process.cwd(), "prisma/migrations");
+  const sql = readdirSync(migrations, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) =>
+      readFileSync(path.join(migrations, entry.name, "migration.sql"), "utf8"),
+    )
+    .join("\n");
+
+  it("every lockable table has its unique index (organizationId, id)", () => {
+    const tables = Object.values(LOCKABLE);
+    expect(tables.length).toBeGreaterThan(30);
+    for (const table of tables) {
+      const name = `\`${table}_organizationId_id_key\``;
+      const columns = "(`organizationId`, `id`)";
+      expect(
+        sql.includes(`UNIQUE INDEX ${name}${columns}`) ||
+          sql.includes(`UNIQUE INDEX ${name} ON \`${table}\`${columns}`),
+        table,
+      ).toBe(true);
     }
   });
 });

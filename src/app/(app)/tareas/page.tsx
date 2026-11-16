@@ -349,6 +349,9 @@ export default async function TareasPage({
                         {task.order ? ` · Surtir ${task.order.numberText}` : ""}
                         {task.kind === "PUTAWAY" ? " · Acomodar" : ""}
                         {task.kind === "REPLENISH" ? " · Reponer" : ""}
+                        {task.productionOrder
+                          ? ` · Surtir a producción ${task.productionOrder.numberText}`
+                          : ""}
                       </span>
                     </span>
                     <span className="block text-base font-medium [overflow-wrap:anywhere]">

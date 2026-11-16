@@ -110,6 +110,10 @@ export const TENANT_MODELS = [
   "RecipeVersion",
   "RecipeInput",
   "RecipeOutput",
+  "ProductionOrder",
+  "ProductionOrderLine",
+  "ProductionOrderOutput",
+  "ProductionOrderAssignee",
   "RecipeLock",
   "Notification",
   "NotificationPreference",
@@ -337,7 +341,7 @@ export function forOrganization(organizationId: string): TenantDb {
 export const LOCKING_TRANSACTION = { isolationLevel: "ReadCommitted" } as const;
 
 /** Tables whose rows a business rule may lock, by their model name. */
-const LOCKABLE = {
+export const LOCKABLE = {
   container: "container",
   facility: "facility",
   location: "location",
@@ -372,6 +376,7 @@ const LOCKABLE = {
   processProgress: "process_progress",
   recipe: "recipe",
   recipeLock: "recipe_lock",
+  productionOrder: "production_order",
 } as const;
 
 /**
@@ -394,7 +399,18 @@ export async function lockRows(
    * Never take it and then write the same rows (two holders would wait for
    * each other).
    */
-  options: { mode?: "update" | "share" } = {},
+  options: {
+    mode?: "update" | "share";
+    /**
+     * WMS-28 (ADR 0073): reach the rows through the unique index
+     * (organizationId, id) first and the primary key after, the order an
+     * UPDATE by `organizationId` takes them in (changing locations locks
+     * every warehouse that way) and the index a composite foreign key
+     * checks. Without it one id goes by the primary key first, and a
+     * shared lock taken that way deadlocked with that UPDATE.
+     */
+    byTenantKey?: boolean;
+  } = {},
 ): Promise<string[]> {
   const scope = (tx as Record<symbol, unknown>)[TRANSACTION] as
     { client: RawTransaction; organizationId: string } | undefined;
@@ -411,7 +427,7 @@ export async function lockRows(
   if (unique.length === 0) return [];
   // The table comes from the fixed list above; every value is a parameter.
   const rows = await scope.client.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM \`${table}\` WHERE organizationId = ? AND id IN (${unique.map(() => "?").join(", ")}) ORDER BY id FOR ${options.mode === "share" ? "SHARE" : "UPDATE"}`,
+    `SELECT id FROM \`${table}\`${options.byTenantKey ? ` FORCE INDEX (\`${table}_organizationId_id_key\`)` : ""} WHERE organizationId = ? AND id IN (${unique.map(() => "?").join(", ")}) ORDER BY id FOR ${options.mode === "share" ? "SHARE" : "UPDATE"}`,
     scope.organizationId,
     ...unique,
   );

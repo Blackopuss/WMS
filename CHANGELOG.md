@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-28** Órdenes de producción: copian la receta vigente, apartan sus
+  materiales al liberar, tareas «Surtir a producción», área de producción y
+  proceso de la orden. ADR 0073.
 - **WMS-75** Estado «En restauración» (nunca disponible), decisión «A
   restauración» en devoluciones de clientes, lista derivada, uso de ubicación
   «Restauración» y ajuste de cómo se libera lo restaurado. ADR 0072.

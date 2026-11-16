@@ -75,7 +75,15 @@ export async function pickSources(
   productId: string,
   quantity: Decimal,
   /** Only from the order's warehouse (WMS-18), never its staging location. */
-  scope: { stagingId: string; facilityId: string },
+  scope: {
+    stagingId: string;
+    facilityId: string;
+    /**
+     * WMS-28 (ADR 0073): only locations that also match this filter (the
+     * scope of who releases a production order, `locationScopeWhere`).
+     */
+    within?: object;
+  },
 ): Promise<PickSource[]> {
   let wanted = minOf(quantity, await freeToTake(tx, productId, null));
   if (!wanted.greaterThan(0)) return [];
@@ -84,7 +92,11 @@ export async function pickSources(
       productId,
       quantity: { gt: 0 },
       locationId: { not: scope.stagingId },
-      location: { archivedAt: null, facilityId: scope.facilityId },
+      location: {
+        archivedAt: null,
+        facilityId: scope.facilityId,
+        ...(scope.within ?? {}),
+      },
       ...AVAILABLE_ANY_LOT,
     },
     select: {
