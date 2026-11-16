@@ -187,11 +187,20 @@ async function act(
       if (key) {
         const step = await tx.processStep.findFirst({
           where: { idempotencyKey: key },
-          select: { actorUserId: true, stageId: true, action: true },
+          select: {
+            actorUserId: true,
+            progressId: true,
+            stageId: true,
+            action: true,
+          },
         });
         if (step) {
+          // A retry is the same person, process, stage and action (WMS-76):
+          // two processes of one published version share their stages, so
+          // the stage alone took a step of another document for this one.
           if (
             step.actorUserId === actor.userId &&
+            step.progressId === graph.progress.id &&
             step.stageId === stage.id &&
             step.action === action
           ) {

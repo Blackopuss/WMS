@@ -1417,6 +1417,74 @@ describe("review of WMS-74", () => {
     });
   });
 
+  it("a confirmation already used on one process is not a retry on another of the same version (WMS-76)", async () => {
+    // Both processes share the stages of the published version: the step
+    // of the first was taken as a retry of the second («Ya quedó
+    // registrado.») when it was already committed, two `ok` for one key.
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, ONE);
+    const worker = await member(owner.organizationId, ["operator"]);
+    const first = await start(owner, facilityId);
+    const second = await start(owner, facilityId);
+    const confirmation = key();
+    const stateIn = async (doc: { progressId?: string | null }) =>
+      (await stateOf(owner.organizationId, doc.progressId!, "Paso")).id;
+    expect(
+      await takeStage(worker, DOCUMENTS, {
+        stateId: await stateIn(first),
+        idempotencyKey: confirmation,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await takeStage(worker, DOCUMENTS, {
+        stateId: await stateIn(second),
+        idempotencyKey: confirmation,
+      }),
+    ).toMatchObject({ ok: false, reason: "key_reused" });
+    // The real retry, on the first process, still is one.
+    expect(
+      await takeStage(worker, DOCUMENTS, {
+        stateId: await stateIn(first),
+        idempotencyKey: confirmation,
+      }),
+    ).toMatchObject({ ok: true, repeated: true });
+    expect(
+      (await stateOf(owner.organizationId, second.progressId!, "Paso"))
+        .takenByUserId,
+    ).toBeNull();
+  });
+
+  it("the same confirmation on two processes at once gives one `ok`, every round (WMS-76)", async () => {
+    const { owner, facilityId } = await newCompany();
+    await publish(owner, ONE);
+    const worker = await member(owner.organizationId, ["operator"]);
+    for (let round = 0; round < 50; round++) {
+      const docs = [
+        await start(owner, facilityId),
+        await start(owner, facilityId),
+      ];
+      const states = await Promise.all(
+        docs.map(
+          async (doc) =>
+            (await stateOf(owner.organizationId, doc.progressId!, "Paso")).id,
+        ),
+      );
+      const confirmation = key();
+      const results = await Promise.all(
+        states.map((stateId) =>
+          takeStage(worker, DOCUMENTS, {
+            stateId,
+            idempotencyKey: confirmation,
+          }),
+        ),
+      );
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.find((result) => !result.ok)).toMatchObject({
+        reason: "key_reused",
+      });
+    }
+  }, 180_000);
+
   it("who assigns is limited by zone too (B3)", async () => {
     const { owner, facilityId } = await newCompany();
     const zoneA = await createLocation(owner, { level: 1, name: "Zona A" });

@@ -640,6 +640,8 @@ sin escribir aquí su flujo (regla 15).
 
 **WMS-28 hecho (2026-11-16, ADR 0073):** órdenes de producción con materiales apartados, tareas «Surtir a producción», área de producción y proceso de la orden. Pendiente: reporte y consumo (WMS-29), solicitudes (WMS-28B), cierre (WMS-31), «Materiales surtidos» como etapa, avisos, revisar las pantallas en navegador y las preguntas abiertas del ADR.
 
+**WMS-76 hecho (2026-11-16, ADR 0074):** `lockRows` siempre por la llave primaria, `lockAllFacilities`, y el reintento por clave del motor de procesos compara el proceso. Pendiente, paso propio: un almacén archivado no debe recibir existencias ni documentos nuevos (los movimientos revisan `facility.archivedAt` bajo su candado; cada documento con `facilityId` toma su almacén compartido antes de crearse); `lockAllFacilities` con ids fuera de orden (varias instancias). Lo que sigue es el encargo original:
+
 **WMS-76, antes de WMS-29 (abierto el 2026-11-16):** corregir el interbloqueo de `registerTransfer` (y de toda llamada de `lockRows` con varios ids sobre tablas que los movimientos bloquean de una en una) contra salidas, liberación de pedidos y cambios de estado en el mismo estante. Paso «corazón», con pruebas `Promise.all` y revisor independiente; se abre al unirse WMS-28.
 
 **WMS-75 hecho (2026-11-16, ADR 0072):** estado «En restauración», decisión «A restauración» en devoluciones, lista derivada, uso de ubicación y ajuste de liberación. Pendiente: la decisión de Calidad «A restauración» (WMS-30B), la orden de reproceso (WMS-29B), filtro por estado en Inventario, `verify:ui`/`verify:a11y` de la pantalla nueva.

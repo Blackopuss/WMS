@@ -29,7 +29,7 @@ id de sesión para que reporten ahí**):
 | WMS-74 motor de procesos (ADR 0069) | — | `wms-74-motor-procesos` | **Cerrado y unido el 2026-11-16.** |
 | WMS-75 estado «En restauración» (ADR 0072) | — | `wms-75-en-restauracion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-28 órdenes de producción (ADR 0073) | — | `wms-28-ordenes-produccion` | **Cerrado y unido el 2026-11-16.** |
-| WMS-76 interbloqueo de `lockRows` con varios ids (ADR 0074) | `session_01QMjUPUs2bD9T4LHx3KGrg9` | `wms-76-candados-varios-ids` | Abierto el 2026-11-16 al unirse WMS-28. **Corazón**, va antes de WMS-29: revisor independiente con pruebas `Promise.all`. |
+| WMS-76 orden de candados (ADR 0074) | — | `wms-76-candados-varios-ids` | **Cerrado y unido el 2026-11-16.** |
 | WMS-28B solicitudes de producción (ADR 0075) | `session_01QMjUPV2Rdkrbb81NuhoPw8` | `wms-28b-solicitudes-produccion` | Abierto el 2026-11-16 al unirse WMS-28 (no es corazón; toca permisos: lleva revisor). Migraciones desde `20261117090000`. |
 | WMS-77 sitio público: módulos nuevos, precios de Producción y Calidad (3,000 c/u) y calificación 100 | `session_01QMjUPXiL3tNVyJP3uzprks` | `wms-77-sitio-publico` | Abierto el 2026-11-16. Solo interfaz y textos; cambia `prices.ts` y quizá la versión de términos. Reporte en `docs/ux/REVISION_VISUAL_SITIO.md`. |
 | WMS-78A revisión visual: acceso, Configuración, `AppShell`, avisos, aprobaciones, consola interna | `session_01QMjUPX1twkxfXtZd3AwZm1` | `wms-78a-revision-acceso-configuracion` | Abierto el 2026-11-16. Solo interfaz. Dueño de `app-shell` y del criterio de `verify-a11y`. Reporte en `docs/ux/REVISION_VISUAL_ACCESO_CONFIGURACION.md`. |
