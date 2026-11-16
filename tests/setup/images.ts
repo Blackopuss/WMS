@@ -46,3 +46,73 @@ export const TEST_WEBP = decode(
 );
 
 export const TEST_IMAGE_SIZE = { width: 24, height: 16 } as const;
+
+/**
+ * A real Exif block as a camera writes it (big-endian TIFF): IFD0 with a
+ * GPSInfo pointer and a GPS IFD with latitude «N 19° 25′ 57.36″». The
+ * rational 5736/100 is easy to look for in a file (`GPS_MARK`).
+ */
+export function exifWithGps(): Uint8Array {
+  const tiff = Buffer.alloc(80);
+  tiff.write("MM", 0, "latin1");
+  tiff.writeUInt16BE(42, 2);
+  tiff.writeUInt32BE(8, 4); // IFD0 at 8
+  tiff.writeUInt16BE(1, 8); // one entry
+  tiff.writeUInt16BE(0x8825, 10); // GPSInfo
+  tiff.writeUInt16BE(4, 12); // LONG
+  tiff.writeUInt32BE(1, 14);
+  tiff.writeUInt32BE(26, 18); // GPS IFD at 26
+  tiff.writeUInt32BE(0, 22); // no next IFD
+  tiff.writeUInt16BE(2, 26); // two entries
+  tiff.writeUInt16BE(0x0001, 28); // GPSLatitudeRef
+  tiff.writeUInt16BE(2, 30); // ASCII
+  tiff.writeUInt32BE(2, 32);
+  tiff.write("N\u0000", 36, "latin1");
+  tiff.writeUInt16BE(0x0002, 40); // GPSLatitude
+  tiff.writeUInt16BE(5, 42); // RATIONAL
+  tiff.writeUInt32BE(3, 44);
+  tiff.writeUInt32BE(56, 48); // its values at 56
+  tiff.writeUInt32BE(0, 52);
+  tiff.writeUInt32BE(19, 56);
+  tiff.writeUInt32BE(1, 60);
+  tiff.writeUInt32BE(25, 64);
+  tiff.writeUInt32BE(1, 68);
+  tiff.writeUInt32BE(5736, 72);
+  tiff.writeUInt32BE(100, 76);
+  return new Uint8Array(tiff);
+}
+
+/** Bytes of the GPS rational above (5736/100): absent from a clean file. */
+export const GPS_MARK = new Uint8Array([0, 0, 0x16, 0x68, 0, 0, 0, 100]);
+
+/** A JPEG segment: marker, length and payload. */
+export function jpegSegment(marker: number, payload: Uint8Array): Uint8Array {
+  const length = payload.length + 2;
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([0xff, marker, length >> 8, length & 0xff]),
+      Buffer.from(payload),
+    ]),
+  );
+}
+
+/** A photo as a phone leaves it: Exif with GPS right after the start. */
+export function cameraJpeg(): Uint8Array {
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from(TEST_JPEG.subarray(0, 2)),
+      Buffer.from(
+        jpegSegment(
+          0xe1,
+          new Uint8Array(
+            Buffer.concat([
+              Buffer.from("Exif\u0000\u0000", "latin1"),
+              Buffer.from(exifWithGps()),
+            ]),
+          ),
+        ),
+      ),
+      Buffer.from(TEST_JPEG.subarray(2)),
+    ]),
+  );
+}

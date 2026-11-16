@@ -747,6 +747,7 @@ export {
   INCIDENT_PAGE_SIZE,
   addIncidentNote,
   countOpenIncidents,
+  discardIncidentPhoto,
   dismissIncident,
   getIncident,
   incidentPhotoRequired,

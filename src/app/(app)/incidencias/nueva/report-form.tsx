@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 
 import {
   reportIncidentAction,
+  discardIncidentPhotoAction,
   uploadIncidentPhotoAction,
   type ReportState,
 } from "../actions";
@@ -192,6 +193,7 @@ export function ReportForm({
           photos={photos}
           onPhotosChange={setPhotos}
           upload={uploadIncidentPhotoAction}
+          discard={discardIncidentPhotoAction}
           max={maxPhotos}
         />
       </div>

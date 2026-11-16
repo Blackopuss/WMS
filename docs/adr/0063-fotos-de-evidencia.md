@@ -38,7 +38,8 @@ ya existe.
    computadora, el selector de archivos). El navegador la **reduce** (lado
    mayor de 1,600 px) y la **vuelve a codificar** como JPEG con un `canvas`,
    sin dependencias; así viaja poco (≈ 200–400 KB) y ya sin metadatos. Se
-   ve en miniatura con «Quitar».
+   ve en miniatura con «Quitar», que también la borra del servidor si aún
+   no se guardó (deja de contar para el tope de fotos sin guardar).
 3. **Subir antes de guardar.** Cada foto se sube sola, al tomarla, con una
    Server Action del registro («Las fotos se suben antes de guardar y el
    reporte guarda sus ids», propuesta 5.4). El servidor **comprueba el
@@ -52,8 +53,11 @@ ya existe.
    y que no se pasa del tope. Si algo falla, nada se guarda.
 5. **Ver.** La ficha del registro muestra la galería: miniaturas que abren
    la foto completa. Cada enlace es por persona y vence en 5 minutos, como
-   las descargas de hoy; quien no alcanza el registro no recibe enlace y, si
-   lo arma a mano, la foto «no existe».
+   las descargas de hoy, así que las miniaturas se cargan de inmediato (sin
+   carga diferida); abrir la foto completa pasa por `/api/archivos/<id>/ver`,
+   que hace un enlace nuevo en ese momento con las mismas comprobaciones,
+   así funciona aunque la ficha lleve rato abierta. Quien no alcanza el
+   registro no recibe enlace y, si lo arma a mano, la foto «no existe».
 6. **Qué deja de rastro.** La fila del archivo (`stored_file`: quién, cuándo,
    tamaño, `sha256`, ancho y alto) y la fila del vínculo (`evidence_photo`:
    qué registro, qué nota, en qué orden, quién). Las dos son permanentes para
@@ -86,26 +90,39 @@ ya existe.
 - **El servidor no confía en que el navegador quitó los metadatos: los quita
   él, reconstruyendo el archivo.** `sanitizeImage` recorre la estructura con
   índices y longitudes (sin expresiones regulares sobre el contenido,
-  convención «Lectores de archivos de clientes») y arma un archivo nuevo solo
-  con lo necesario para dibujarlo:
-  - **JPEG:** SOI, tablas (DQT, DHT, DRI), un solo SOF baseline, extendido o
-    progresivo, cada SOS con sus datos y EOI. Se quitan **todos** los APPn
-    (Exif con GPS, XMP, IPTC, miniaturas JFIF) salvo el perfil de color
-    (`APP2 ICC_PROFILE`) y `APP14 Adobe`, que cambia cómo se decodifica; se
-    quitan los comentarios. Otros SOF (aritméticos, sin pérdida,
-    jerárquicos) y marcas desconocidas se rechazan.
-  - **PNG:** firma, IHDR primero, solo los fragmentos que dibujan (PLTE,
-    IDAT, IEND, tRNS, gAMA, cHRM, sRGB, iCCP, sBIT, bKGD, pHYs), cada uno con
-    su CRC comprobado. Se quitan tEXt, zTXt, iTXt, eXIf, tIME, la animación
-    (acTL, fcTL, fdAT) y todo lo auxiliar desconocido; un fragmento crítico
-    desconocido se rechaza.
-  - **WebP:** RIFF con VP8, VP8L o VP8X (+ ALPH e ICCP). Se quitan EXIF y
-    XMP y se apagan sus banderas en VP8X; la animación se rechaza.
+  convención «Lectores de archivos de clientes») y arma un archivo nuevo.
+  **Se quitan todos los metadatos conocidos** (Exif con GPS, XMP, IPTC, MPF
+  y la segunda imagen que describe, perfiles ICC, miniaturas, comentarios,
+  textos) y **se conserva** solo lo que sigue, cada parte con el tamaño que
+  su formato admite:
+  - **JPEG:** SOI, tablas de cuantización (al menos 67 bytes), Huffman (al
+    menos 20) y de reinicio (exactamente 4), hasta 32 en total; un solo SOF
+    baseline, extendido o progresivo con su tamaño exacto; hasta 64 SOS,
+    cada uno con su tamaño exacto y sus datos; `APP14 Adobe` una vez y con
+    su tamaño fijo (cambia cómo se decodifican los colores); EOI. Todos los
+    demás APPn y los comentarios se quitan. Otros SOF (aritméticos, sin
+    pérdida, jerárquicos) y marcas desconocidas se rechazan. Se recorren a
+    lo más 1,024 segmentos.
+  - **PNG:** firma, IHDR primero, y solo PLTE, IDAT, IEND, tRNS, gAMA, cHRM,
+    sRGB, sBIT, bKGD y pHYs, cada uno con su CRC y el tamaño que el formato
+    admite, todos una sola vez salvo IDAT. Se quitan iCCP, tEXt, zTXt, iTXt,
+    eXIf, tIME, la animación y todo lo auxiliar desconocido; un fragmento
+    crítico desconocido se rechaza. Se recorren a lo más 4,096 fragmentos.
+  - **WebP:** RIFF con VP8, VP8L o VP8X de exactamente 10 bytes cuyo lienzo
+    coincide con el de la imagen (+ ALPH una vez). Se quitan ICCP, EXIF y
+    XMP y se apagan sus banderas; la animación se rechaza.
+  - Lo conservado (tablas, la marca de Adobe) puede llevar bytes arbitrarios
+    acotados; no se ejecutan (tipo del servidor, `nosniff`, CSP `sandbox`) y
+    una cámara no guarda ahí su ubicación.
+  - Un archivo hostil (millones de segmentos diminutos) se rechaza antes de
+    gastar memoria: cuesta lo que una foto (revisión independiente, M1).
   - **Todo lo que viene después del final** (EOI, IEND o el tamaño RIFF) se
     descarta: un polyglot pierde la parte que no es imagen.
-- **Dimensiones** leídas de la cabecera: de 1 a 8,000 px por lado y hasta
-  40 megapíxeles. El servidor nunca decodifica píxeles (no hay librería de
-  imágenes); el tope protege al navegador que la dibuja.
+- **Dimensiones** leídas de la cabecera: de 1 a 2,048 px por lado y hasta
+  2,048 × 2,048. El navegador sube como mucho 1,600 px; el tope deja ese
+  margen y acota lo que decodifica quien ve la ficha (unos 16 MB por foto)
+  aunque alguien llame a la Server Action a mano. El servidor nunca
+  decodifica píxeles (no hay librería de imágenes).
 - **5 MB** por foto (la foto reducida pesa mucho menos; el tope cubre una
   computadora que sube un archivo sin reducir).
 - Lo guardado son los bytes reconstruidos; `sha256`, tamaño, ancho y alto
@@ -113,7 +130,9 @@ ya existe.
 - No se recodifica en el servidor (haría falta una librería nativa o un
   decodificador propio). Lo que se acepta es lo que el navegador ya sabe
   dibujar y la orientación ya la aplicó el `canvas` al recodificar; una foto
-  subida sin recodificar (sin JavaScript) pierde su orientación Exif.
+  subida sin recodificar (sin JavaScript) pierde su orientación Exif, y una
+  con perfil de color distinto de sRGB se ve con colores un poco distintos
+  (el perfil se quita).
 
 ### Servir la foto
 
@@ -136,9 +155,11 @@ ya existe.
   referencia por clase de registro** y llave compuesta (como
   `custom_field_value`, ADR 0056): hoy `incidentId` y, para una foto que
   llegó con una nota, `incidentNoteId`. Un `CHECK` exige exactamente un
-  dueño; un disparador exige que la nota sea de esa incidencia y que el
-  archivo exista, sin borrar, del mismo propósito. Un archivo se liga una
-  sola vez (único por empresa).
+  dueño y otro ata cada columna de dueño a su propósito
+  (`incidentId` → `incident_photo`; cada propósito nuevo extiende los dos);
+  un disparador exige que la nota sea de esa incidencia y que el archivo
+  exista, sin borrar, del mismo propósito. Un archivo se liga una sola vez
+  (único por empresa).
 - **Inmutable:** el vínculo no se cambia ni se borra, y un archivo ligado no
   se marca borrado ni se cambia (disparadores; `deleteFile` lo rechaza antes).
 - **El dueño decide quién ve.** El propósito dice el permiso de lectura; el
@@ -150,7 +171,14 @@ ya existe.
   subió. La plataforma no importa módulos: recibe las funciones.
 - **Topes por propósito:** fotos por registro (5 por incidencia y 5 por
   nota) y por dueño (30 por incidencia). Fotos sin ligar por persona: 30 en
-  24 horas (quien sube sin guardar no llena el disco).
+  24 horas, contadas bajo el candado de la membresía de la persona, así que
+  subidas simultáneas no pasan del tope (quien sube sin guardar no llena el
+  disco); «Quitar» libera el lugar.
+- **Borrar** una foto sin ligar (`deleteFile`) bloquea su fila, la vuelve a
+  leer y borra los bytes solo si marcó esa fila: una foto que se está
+  ligando en ese momento no se pierde.
+- **La limpieza corre para todas las empresas** (`allOrganizations`), sin
+  importar módulos ni plan: una empresa con el plan vencido también limpia.
 
 ### Dónde se usa en este paso
 
@@ -178,8 +206,9 @@ Producción (`production_report_photo`), calidad (`quality_inspection_photo`)
 y procesos (`process_step_photo`) hacen, cada uno en su paso:
 
 1. Una migración que agrega la columna de su registro a `evidence_photo`
-   (llave compuesta hacia su tabla) y rehace el `CHECK` de un solo dueño
-   sumando esa columna (expansión: nada existente cambia).
+   (llave compuesta hacia su tabla), rehace el `CHECK` de un solo dueño
+   sumando esa columna y agrega el `CHECK` que la ata a su propósito
+   (expansión: nada existente cambia).
 2. Su dueño en `EVIDENCE_OWNER_KINDS` (`src/platform/files/evidence.ts`:
    clase → columna).
 3. Su propósito en `FILE_PURPOSES` con extensiones de imagen, 5 MB, sus
@@ -197,14 +226,15 @@ y procesos (`process_step_photo`) hacen, cada uno en su paso:
 | --- | --- |
 | Archivo que dice ser imagen y no lo es (HTML, script, ejecutable) | Extensión de imagen **y** firma y estructura válidas; si no, se rechaza (`type`/`broken`) |
 | SVG con scripts | SVG no se acepta |
-| Polyglot (JPEG + ZIP/HTML al final o en un comentario) | El archivo se reconstruye: lo que no dibuja (comentarios, APPn, fragmentos auxiliares, cola) no se guarda; `nosniff` y CSP `sandbox` al servir |
-| Imagen enorme (bomba de descompresión en el navegador) | 5 MB y tope de dimensiones leídas de la cabecera |
+| Polyglot (JPEG + ZIP/HTML al final o en un comentario) | El archivo se reconstruye: los metadatos conocidos (comentarios, APPn, perfiles, fragmentos auxiliares) y la cola no se guardan; lo conservado tiene tamaños acotados; `nosniff` y CSP `sandbox` al servir |
+| Imagen enorme (bomba de descompresión en el navegador) | 5 MB y 2,048 px por lado leídos de la cabecera |
+| Archivo hostil que agota memoria o CPU del servidor (miles de segmentos diminutos) | Mínimos de tamaño por segmento, cada parte auxiliar una sola vez y tope de segmentos, tablas y escaneos |
 | Metadatos (GPS, modelo, fecha, miniatura con otra imagen) | Se quitan en el navegador y, sin confiar en él, en el servidor al reconstruir |
 | Adivinar ids o reutilizar un enlace | UUIDv7 + enlace firmado por persona, empresa y vencimiento (5 min); la ruta exige sesión |
 | Foto de otra empresa o fuera del alcance | Toda lectura filtra por empresa; el dueño responde si la persona alcanza el registro; si no, «no existe» (404 igual) |
 | Ligar la foto de otra persona o de otro registro | Solo se liga lo que subió la misma persona, sin ligar y del mismo propósito; único por empresa |
 | Borrar o cambiar evidencia | Vínculo y archivo ligado inmutables (disparadores) |
-| Llenar el disco subiendo sin guardar | 30 fotos sin ligar por persona en 24 h; ronda que borra lo no ligado a las 24 h |
+| Llenar el disco subiendo sin guardar | 30 fotos sin ligar por persona en 24 h, bajo candado; «Quitar» las borra; ronda que borra lo no ligado a las 24 h en todas las empresas. Sin cupo total de fotos ligadas (pendiente, WMS-67) |
 | Terminal compartida | Sin caché (`no-store`), el service worker no guarda imágenes, las miniaturas `blob:` se liberan al quitar o salir; la sesión de PIN sube con el permiso del piso y no ve más de lo que ve |
 | Soporte de plataforma | Solo permisos `.read`: ve las fotos de lo que puede ver, nunca sube |
 | Llaves de la API | No hay ruta de la API para fotos; `/api/archivos` exige la cookie de sesión, que la API nunca lee |
@@ -214,6 +244,9 @@ y procesos (`process_step_photo`) hacen, cada uno en su paso:
 
 - Las fotos crecen rápido: antes de operar en producción con fotos hace
   falta el almacenamiento externo y respaldos independientes (WMS-67).
+- **Pendiente para WMS-67:** no hay cupo total de fotos ligadas por empresa
+  (30 por incidencia sin límite de incidencias). Se decidirá con el
+  almacenamiento externo, junto con su precio por plan.
 - `stored_file` gana `width` y `height` (opcionales: solo imágenes).
 - Una prueba que necesite una foto usa las de `tests/setup/images.ts`
   (JPEG, PNG y WebP reales hechos con Chromium).

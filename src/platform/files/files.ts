@@ -4,7 +4,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import { newId } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
-import { forOrganization } from "@/server";
+import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { IMAGE_EXTENSIONS, isImageExtension, sanitizeImage } from "./images";
 import {
@@ -128,48 +128,60 @@ export async function storeFile(
   }
 
   const client = forOrganization(organizationId);
-  if (purpose.evidence) {
-    // Whoever uploads without saving does not fill the disk.
-    const since = new Date(Date.now() - PENDING_PHOTOS_HOURS * 3600 * 1000);
-    const pending = await client.storedFile.count({
-      where: {
-        createdByUserId: userId,
-        purpose: { in: [...EVIDENCE_PURPOSES] },
-        deletedAt: null,
-        createdAt: { gte: since },
-        evidencePhoto: { is: null },
-      },
-    });
-    if (pending >= PENDING_PHOTOS_MAX) {
-      return {
-        ok: false,
-        reason: "too_many",
-        error: `Tienes ${PENDING_PHOTOS_MAX} fotos tomadas sin guardar. Termina lo que estabas reportando; las que no se usen se borran solas al día siguiente.`,
-      };
-    }
-  }
-
   const fileId = newId();
   const storageKey = `${organizationId}/${fileId}`;
-  // Bytes first: a row always has its file. If the row fails, the bytes
-  // are taken back.
+  const row = {
+    id: fileId,
+    organizationId,
+    purpose: input.purpose,
+    name,
+    contentType,
+    size: bytes.byteLength,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    storageKey,
+    createdByUserId: userId,
+    width: dimensions?.width ?? null,
+    height: dimensions?.height ?? null,
+  };
+  // Bytes first: a row always has its file. If the row is not written,
+  // the bytes are taken back.
   await putBytes(storageKey, bytes);
   try {
-    await client.storedFile.create({
-      data: {
-        id: fileId,
-        organizationId,
-        purpose: input.purpose,
-        name,
-        contentType,
-        size: bytes.byteLength,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-        storageKey,
-        createdByUserId: userId,
-        width: dimensions?.width ?? null,
-        height: dimensions?.height ?? null,
-      },
-    });
+    if (!purpose.evidence) {
+      await client.storedFile.create({ data: row });
+    } else {
+      // Whoever uploads without saving does not fill the disk: counted
+      // under the lock of the person's membership, so uploads at the same
+      // time wait for each other.
+      const created = await client.$transaction(async (tx) => {
+        const membership = await tx.membership.findFirst({
+          where: { userId },
+          select: { id: true },
+        });
+        if (membership) await lockRows(tx, "membership", [membership.id]);
+        const since = new Date(Date.now() - PENDING_PHOTOS_HOURS * 3600 * 1000);
+        const pending = await tx.storedFile.count({
+          where: {
+            createdByUserId: userId,
+            purpose: { in: [...EVIDENCE_PURPOSES] },
+            deletedAt: null,
+            createdAt: { gte: since },
+            evidencePhoto: { is: null },
+          },
+        });
+        if (pending >= PENDING_PHOTOS_MAX) return false;
+        await tx.storedFile.create({ data: row });
+        return true;
+      }, LOCKING_TRANSACTION);
+      if (!created) {
+        await removeBytes(storageKey).catch(() => {});
+        return {
+          ok: false,
+          reason: "too_many",
+          error: `Tienes ${PENDING_PHOTOS_MAX} fotos tomadas sin guardar. Quita las que no vayas a usar o termina lo que estabas reportando; las que no se usen se borran solas al día siguiente.`,
+        };
+      }
+    }
   } catch (error) {
     await removeBytes(storageKey).catch(() => {});
     throw error;
@@ -280,15 +292,31 @@ export async function deleteFile(
     actor.userId,
     purpose.write,
   );
-  // A photo not linked yet: only who took it removes it.
-  if (purpose.evidence && file.createdByUserId !== actor.userId) {
-    return { ok: false };
-  }
-  await forOrganization(actor.organizationId).storedFile.updateMany({
-    where: { id: file.id, evidencePhoto: { is: null } },
-    data: { deletedAt: new Date() },
-  });
-  await removeBytes(file.storageKey);
+  // Under the lock of the file and read again: a photo being linked right
+  // now is not removed, and the bytes go only if this call marked it.
+  const storageKey = await forOrganization(actor.organizationId).$transaction(
+    async (tx) => {
+      const [id] = await lockRows(tx, "storedFile", [file.id]);
+      if (!id) return null;
+      const current = await tx.storedFile.findFirst({
+        where: { id, deletedAt: null, evidencePhoto: { is: null } },
+        select: { storageKey: true, createdByUserId: true },
+      });
+      if (!current) return null;
+      // A photo not linked yet: only who took it removes it.
+      if (purpose.evidence && current.createdByUserId !== actor.userId) {
+        return null;
+      }
+      const marked = await tx.storedFile.updateMany({
+        where: { id, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+      return marked.count === 1 ? current.storageKey : null;
+    },
+    LOCKING_TRANSACTION,
+  );
+  if (!storageKey) return { ok: false };
+  await removeBytes(storageKey);
   return { ok: true };
 }
 

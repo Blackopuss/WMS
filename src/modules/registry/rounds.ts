@@ -3,7 +3,7 @@ import {
   runDailyDigestRound,
   runReplenishmentRound,
 } from "@/modules/inventory";
-import type { ScheduledRound } from "@/platform/jobs";
+import { allOrganizations, type ScheduledRound } from "@/platform/jobs";
 import {
   organizationsWithWebhookHistory,
   purgeWebhookHistory,
@@ -43,11 +43,10 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     }),
   },
   // WMS-37 (ADR 0063): photos taken and never linked to a record, a day
-  // after. Photos are a platform table; every company of the WMS has
-  // Inventario, whose incidents carry them today.
+  // after, for every company that has any (whatever its modules or plan).
   {
     name: "platform.photo_orphans_cleanup",
-    module: "inventory",
+    organizations: allOrganizations,
     run: async (organizationId) => ({
       photos: await purgeOrphanPhotos(organizationId),
     }),

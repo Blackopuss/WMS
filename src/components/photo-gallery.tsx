@@ -1,8 +1,10 @@
 /**
  * Photos of a record (WMS-37, ADR 0063): thumbnails that open the whole
- * photo. Each address is a link made for this person that works for a few
- * minutes; the screen makes new ones every time it is painted. Nothing is
- * kept by the browser (the file answers `no-store`).
+ * photo. A thumbnail's address is a link made for this person that works
+ * for a few minutes, so all of them load right away (no lazy loading);
+ * opening the whole photo goes through `/api/archivos/<id>/ver`, which
+ * makes a fresh link, so it works however long the screen stayed open.
+ * Nothing is kept by the browser (the file answers `no-store`).
  */
 
 export type GalleryPhoto = {
@@ -26,7 +28,7 @@ export function PhotoGallery({
       {photos.map((photo, index) => (
         <li key={photo.fileId}>
           <a
-            href={photo.url}
+            href={`/api/archivos/${photo.fileId}/ver`}
             target="_blank"
             rel="noopener noreferrer"
             className="block rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -38,7 +40,6 @@ export function PhotoGallery({
               alt={`Foto ${index + 1} de ${photos.length} de ${label} (abre la foto completa)`}
               width={photo.width ?? undefined}
               height={photo.height ?? undefined}
-              loading="lazy"
               decoding="async"
               className="size-24 rounded-lg border bg-muted object-cover"
             />

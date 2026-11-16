@@ -338,6 +338,7 @@ const LOCKABLE = {
   customField: "custom_field",
   sharedTerminal: "shared_terminal",
   storedFile: "stored_file",
+  membership: "membership",
 } as const;
 
 /**

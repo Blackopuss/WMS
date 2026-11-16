@@ -1174,6 +1174,12 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); exige inventory.incident.create; la foto queda en esa empresa a nombre de la persona y sin ligar, visible solo para ella",
     coveredBy: "tests/inventory/incident-photos.int.test.ts",
   },
+  discardIncidentPhotoAction: {
+    input: "id de una foto que la persona tomó y quitó del formulario",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige inventory.incident.create; solo borra una foto de esa empresa, subida por esa persona y sin ligar, bajo el candado del archivo",
+    coveredBy: "tests/inventory/incident-photos.int.test.ts",
+  },
   createFieldAction: {
     input:
       "entidad (producto, ubicación o proveedor), nombre, tipo, obligatorio y opciones de una lista",

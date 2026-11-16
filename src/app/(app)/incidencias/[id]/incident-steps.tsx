@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 
 import {
   incidentStepAction,
+  discardIncidentPhotoAction,
   uploadIncidentPhotoAction,
   type StepState,
 } from "../actions";
@@ -194,6 +195,7 @@ export function IncidentSteps({
             photos={photos}
             onPhotosChange={setPhotos}
             upload={uploadIncidentPhotoAction}
+            discard={discardIncidentPhotoAction}
             max={maxPhotos}
           />
           <Button type="submit" variant="outline" disabled={noting}>

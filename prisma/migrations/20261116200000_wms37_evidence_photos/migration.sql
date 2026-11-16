@@ -43,6 +43,10 @@ ALTER TABLE `evidence_photo` ADD CONSTRAINT `evidence_photo_one_owner`
     CHECK ((`incidentId` IS NOT NULL) = 1);
 ALTER TABLE `evidence_photo` ADD CONSTRAINT `evidence_photo_note_of_incident`
     CHECK (`incidentNoteId` IS NULL OR `incidentId` IS NOT NULL);
+-- Each kind of record takes only its own purpose of photo; a step that
+-- adds a kind adds its pair here.
+ALTER TABLE `evidence_photo` ADD CONSTRAINT `evidence_photo_purpose_of_owner`
+    CHECK (`incidentId` IS NULL OR `purpose` = 'incident_photo');
 ALTER TABLE `evidence_photo` ADD CONSTRAINT `evidence_photo_position`
     CHECK (`position` >= 0);
 ALTER TABLE `stored_file` ADD CONSTRAINT `stored_file_image_size`

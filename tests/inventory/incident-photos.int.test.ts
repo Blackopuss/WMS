@@ -1,9 +1,12 @@
+import { createHmac } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
   INCIDENT_PHOTO,
   addIncidentNote,
+  discardIncidentPhoto,
   getIncident,
   reportIncident,
   uploadIncidentPhoto,
@@ -14,8 +17,10 @@ import {
   moduleRegistry,
   operationSettings,
 } from "@/modules/registry";
-import { setMemberScope, type Role } from "@/platform/authorization";
+import { scheduledRounds } from "@/modules/registry/rounds";
+import { can, setMemberScope, type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
+import { invalidateEntitlements } from "@/platform/entitlements";
 import {
   PENDING_PHOTOS_MAX,
   createFileLink,
@@ -33,7 +38,13 @@ import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
-import { TEST_IMAGE_SIZE, TEST_JPEG, TEST_PNG } from "../setup/images";
+import {
+  GPS_MARK,
+  TEST_IMAGE_SIZE,
+  TEST_JPEG,
+  TEST_PNG,
+  cameraJpeg,
+} from "../setup/images";
 
 // WMS-37 (ADR 0063): photos as evidence of an incident. A fake file is
 // refused, what is kept has no GPS, a photo exists only for who reaches
@@ -96,21 +107,20 @@ async function member(
   return { organizationId, userId };
 }
 
-/** A photo as a phone camera leaves it: Exif with where it was taken. */
-function cameraPhoto(): Uint8Array {
-  const exif = Buffer.from(
-    "Exif\u0000\u0000MM\u0000*GPSLatitude 19.4326 N GPSLongitude 99.1332 W",
-    "latin1",
-  );
-  const length = exif.length + 2;
-  return new Uint8Array(
-    Buffer.concat([
-      Buffer.from(TEST_JPEG.subarray(0, 2)),
-      Buffer.from([0xff, 0xe1, length >> 8, length & 0xff]),
-      exif,
-      Buffer.from(TEST_JPEG.subarray(2)),
-    ]),
-  );
+/**
+ * A link signed the way the platform signs them (ADR 0014), for any
+ * company: to show that a valid signature is not enough to reach a file of
+ * another company.
+ */
+function signedFor(actor: InventoryActor, fileId: string) {
+  const key = createHmac("sha256", process.env.BETTER_AUTH_SECRET!)
+    .update("almacen:file-link:v1")
+    .digest();
+  const expires = String(Math.floor(Date.now() / 1000) + 120);
+  const signature = createHmac("sha256", key)
+    .update(`${fileId}|${actor.organizationId}|${actor.userId}|${expires}`)
+    .digest("base64url");
+  return { fileId, expires, signature };
 }
 
 async function photo(
@@ -196,7 +206,7 @@ describe("subir una foto", () => {
   });
 
   it("guarda la foto sin la ubicación GPS, con su tamaño", async () => {
-    const fileId = await photo(operator, cameraPhoto());
+    const fileId = await photo(operator, cameraJpeg());
     const row = await db.storedFile.findUniqueOrThrow({
       where: { id: fileId },
     });
@@ -206,8 +216,12 @@ describe("subir una foto", () => {
       ...TEST_IMAGE_SIZE,
     });
     const stored = await readStoredFile(owner.organizationId, fileId);
-    expect(stored!.bytes.includes(Buffer.from("GPS"))).toBe(false);
+    expect(cameraJpeg().length).toBeGreaterThan(stored!.bytes.length);
+    expect(stored!.bytes.includes(Buffer.from(GPS_MARK))).toBe(false);
     expect(stored!.bytes.includes(Buffer.from("Exif"))).toBe(false);
+    expect(stored!.bytes.includes(Buffer.from("MM\u0000*", "latin1"))).toBe(
+      false,
+    );
     expect(stored!.size).toBe(stored!.bytes.length);
   });
 
@@ -299,18 +313,22 @@ describe("ligar fotos a una incidencia", () => {
       ok: false,
       fieldErrors: { photos: expect.any(String) },
     });
-    // A link made in one company does not open in another.
-    const link = await createFileLink(operator, fileId, {
-      owners: evidenceOwners,
-    });
-    if (!link.ok) throw new Error("link");
+    // A link correctly signed for a person of the other company still
+    // finds nothing: the file is looked for only in that company.
+    const outsider = await member(other.organizationId, "supervisor", "Otto");
+    expect(
+      await openFileLink(outsider, signedFor(outsider, fileId), {
+        owners: evidenceOwners,
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
+    // And the signature of one company does not open in the other.
     expect(
       await openFileLink(
         { organizationId: other.organizationId, userId: operator.userId },
-        linkParts(link.url),
+        signedFor(operator, fileId),
         { owners: evidenceOwners },
       ),
-    ).toMatchObject({ ok: false });
+    ).toEqual({ ok: false, reason: "invalid" });
   });
 
   it("fuera del alcance de la persona la foto no existe", async () => {
@@ -589,5 +607,192 @@ describe("fotos que nunca se ligaron", () => {
     });
     expect(result).toMatchObject({ ok: false });
     if (!result.ok) expect(result.error).toContain(String(PENDING_PHOTOS_MAX));
+  }, 60_000);
+});
+
+describe("quitar, zonas, terminal, soporte y plan vencido", () => {
+  it("«Quitar» borra la foto propia sin ligar y libera su lugar", async () => {
+    const mine = await photo(operator);
+    expect(await discardIncidentPhoto(supervisor, mine)).toEqual({
+      ok: false,
+    });
+    expect(await discardIncidentPhoto(operator, mine)).toEqual({ ok: true });
+    expect(await readStoredFile(owner.organizationId, mine)).toBeNull();
+    // It cannot be linked afterwards.
+    expect(
+      await reportIncident(operator, {
+        kind: "OTHER",
+        description: "Con una foto quitada",
+        photoIds: [mine],
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: false, fieldErrors: { photos: expect.any(String) } });
+    // A linked one is never removed this way.
+    const linked = await photo(operator);
+    const reported = await reportIncident(operator, {
+      kind: "OTHER",
+      description: "Con foto ligada",
+      photoIds: [linked],
+      idempotencyKey: key(),
+    });
+    expect(reported.ok).toBe(true);
+    expect(await discardIncidentPhoto(operator, linked)).toEqual({ ok: false });
+    expect(await readStoredFile(owner.organizationId, linked)).not.toBeNull();
+  });
+
+  it("una nota de solo espacios no entra, ni en la base", async () => {
+    const reported = await reportIncident(operator, {
+      kind: "OTHER",
+      description: "Para la regla de las notas",
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    const note = (text: string) =>
+      db.incidentNote.create({
+        data: {
+          id: newId(),
+          organizationId: owner.organizationId,
+          incidentId: reported.incidentId,
+          text,
+          createdByUserId: operator.userId,
+        },
+      });
+    await expect(note("   ")).rejects.toThrow();
+    await expect(note("")).resolves.toBeTruthy();
+    await expect(note("Revisado")).resolves.toBeTruthy();
+  });
+
+  it("limitado a otra zona del mismo almacén, la foto no existe", async () => {
+    const north = await createLocation(owner, {
+      level: 1,
+      name: "Zona norte",
+      code: "ZN",
+    });
+    const south = await createLocation(owner, {
+      level: 1,
+      name: "Zona sur",
+      code: "ZS",
+    });
+    if (!north.ok || !south.ok) throw new Error("zones");
+    const shelf = await createLocation(owner, {
+      level: 3,
+      name: "Estante N1",
+      code: "N-01",
+      parentId: north.locationId,
+    });
+    if (!shelf.ok) throw new Error(JSON.stringify(shelf));
+    const fileId = await photo(operator);
+    const reported = await reportIncident(operator, {
+      kind: "DAMAGED_GOODS",
+      description: "Daño en la zona norte",
+      location: "N-01",
+      photoIds: [fileId],
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    const facility = (await listFacilities(owner)).find(
+      (each) => each.isDefault,
+    )!;
+    const southern = await member(owner.organizationId, "supervisor", "Susi");
+    const northern = await member(owner.organizationId, "supervisor", "Nico");
+    for (const [who, zone] of [
+      [southern, south.locationId],
+      [northern, north.locationId],
+    ] as const) {
+      const scoped = await setMemberScope(owner.organizationId, owner.userId, {
+        userId: who.userId,
+        facilities: [{ facilityId: facility.id, zoneIds: [zone] }],
+      });
+      if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    }
+    expect(
+      await createFileLink(southern, fileId, { owners: evidenceOwners }),
+    ).toEqual({ ok: false, reason: "not_found" });
+    expect(
+      await openFileLink(southern, signedFor(southern, fileId), {
+        owners: evidenceOwners,
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
+    const seen = await getIncident(northern, reported.incidentId);
+    expect(seen!.photos.map((each) => each.fileId)).toEqual([fileId]);
+  });
+
+  it("en una terminal con PIN se toman y se ven; soporte solo las ve", () => {
+    const floor = { isOwner: false, roles: ["operator"], terminal: true };
+    expect(can(floor, "inventory.incident.create")).toBe(true);
+    expect(can(floor, "inventory.incident.read")).toBe(true);
+    const support = { isOwner: false, roles: ["administrator"], support: true };
+    expect(can(support, "inventory.incident.read")).toBe(true);
+    expect(can(support, "inventory.incident.create")).toBe(false);
+  });
+
+  it("con el plan vencido no se suben fotos, pero se siguen viendo", async () => {
+    const expired = await company();
+    const shift = await member(expired.organizationId, "operator", "Pau");
+    const fileId = await photo(shift);
+    const reported = await reportIncident(shift, {
+      kind: "OTHER",
+      description: "Antes de vencer",
+      photoIds: [fileId],
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    await db.entitlement.updateMany({
+      where: { organizationId: expired.organizationId },
+      data: {
+        validFrom: new Date(Date.now() - 2 * 86_400_000),
+        validUntil: new Date(Date.now() - 86_400_000),
+      },
+    });
+    invalidateEntitlements(expired.organizationId);
+    await expect(photo(shift)).rejects.toThrow();
+    const detail = await getIncident(shift, reported.incidentId);
+    expect(detail!.photos).toHaveLength(1);
+    expect(
+      await openFileLink(shift, linkParts(detail!.photos[0]!.url), {
+        owners: evidenceOwners,
+      }),
+    ).toMatchObject({ ok: true, inline: true });
+    // Its unlinked photos are still cleaned, whatever the plan.
+    const later = new Date(Date.now() + 25 * 3600 * 1000);
+    const orphan = await db.storedFile.create({
+      data: {
+        id: newId(),
+        organizationId: expired.organizationId,
+        purpose: "incident_photo",
+        name: "foto.jpg",
+        contentType: "image/jpeg",
+        size: 1,
+        sha256: "0".repeat(64),
+        storageKey: `${expired.organizationId}/${newId()}`,
+        createdByUserId: shift.userId,
+      },
+    });
+    const round = scheduledRounds.find(
+      (each) => each.name === "platform.photo_orphans_cleanup",
+    )!;
+    expect(round.module).toBeUndefined();
+    expect(await round.organizations!()).toContain(expired.organizationId);
+    await purgeOrphanPhotos(expired.organizationId, { now: later });
+    expect(
+      (await db.storedFile.findUniqueOrThrow({ where: { id: orphan.id } }))
+        .deletedAt,
+    ).not.toBeNull();
+  });
+
+  it("subidas a la vez no pasan del tope de fotos sin guardar", async () => {
+    const hurried = await member(owner.organizationId, "operator", "Toño");
+    for (let i = 0; i < PENDING_PHOTOS_MAX - 2; i++) await photo(hurried);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        uploadIncidentPhoto(hurried, { name: "foto.jpg", bytes: TEST_JPEG }),
+      ),
+    );
+    expect(results.filter((each) => each.ok)).toHaveLength(2);
+    expect(
+      await db.storedFile.count({
+        where: { createdByUserId: hurried.userId, deletedAt: null },
+      }),
+    ).toBe(PENDING_PHOTOS_MAX);
   }, 60_000);
 });

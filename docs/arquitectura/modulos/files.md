@@ -13,7 +13,7 @@ dato (Inventario, `labels.ts`); aquí solo se dibuja.
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
 | Archivos | `files.ts`, `storage.ts` | `storeFile` (con un propósito de `FILE_PURPOSES`), `readStoredFile`, `createFileLink`, `openFileLink`, `deleteFile` |
-| Fotos de evidencia | `images.ts`, `evidence.ts`, `purposes.ts` | `sanitizeImage` (comprueba JPEG, PNG o WebP y reconstruye el archivo sin metadatos ni cola; `IMAGE_LIMITS`), `attachEvidencePhotos` (liga fotos subidas por la misma persona dentro de la transacción del registro), `evidencePhotoLinks` (fotos de un registro con su enlace), `purgeOrphanPhotos` (ronda), `EVIDENCE_OWNER_KINDS`, `EvidenceOwners` |
+| Fotos de evidencia | `images.ts`, `evidence.ts`, `purposes.ts` | `sanitizeImage` (comprueba JPEG, PNG o WebP y reconstruye el archivo sin los metadatos conocidos ni cola, con tamaños y cuentas de segmentos acotados; `IMAGE_LIMITS`: 2,048 px), `attachEvidencePhotos` (liga fotos subidas por la misma persona dentro de la transacción del registro), `evidencePhotoLinks` (fotos de un registro con su enlace), `purgeOrphanPhotos` (ronda); `deleteFile` borra bajo el candado del archivo, `EVIDENCE_OWNER_KINDS`, `EvidenceOwners` |
 | Escribir hojas | `spreadsheet.ts` | `buildCsv`, `buildXlsx` (neutralizan fórmulas), `neutralizeFormula` |
 | Leer hojas | `spreadsheet-reader.ts` | `readSpreadsheet` (con `READ_LIMITS`; nunca evalúa fórmulas) |
 | PDF | `pdf.ts` | `PdfPageWriter` (carta u otro tamaño de página; `text`, `line`, `box`, `fillRects`), `buildPdf`, `textWidth`, `wrapText` |
@@ -23,7 +23,9 @@ dato (Inventario, `labels.ts`); aquí solo se dibuja.
 Nunca se escribe en disco desde otro lugar ni se usa el nombre del archivo
 como ruta. Una imagen se sirve `inline` (todo lo demás, `attachment`), con
 `nosniff`, `no-store` y la política de contenido estricta que `src/proxy.ts`
-pone a `/api/archivos`. Una foto de evidencia ligada solo se abre si la
+pone a `/api/archivos` (cabeceras y política en `src/lib/file-response.ts`). La
+galería abre la foto completa por `/api/archivos/<id>/ver`, que hace un
+enlace nuevo con las mismas comprobaciones. Una foto de evidencia ligada solo se abre si la
 persona alcanza su registro: `createFileLink` y `openFileLink` reciben las
 funciones del dueño (`evidenceOwners` de `src/modules/registry/evidence.ts`)
 y, sin ellas, la foto no existe; una sin ligar solo existe para quien la
@@ -49,8 +51,9 @@ registro, hoy `incidentId` e `incidentNoteId`).
 ## Ajustes y trabajos
 
 Ronda `platform.photo_orphans_cleanup` (registrada en
-`src/modules/registry/rounds.ts`): borra las fotos que nunca se ligaron a
-las 24 horas. Si una foto es obligatoria lo decide el módulo del registro
+`src/modules/registry/rounds.ts`, para todas las empresas con
+`allOrganizations` de `platform/jobs`): borra las fotos que nunca se ligaron
+a las 24 horas. Si una foto es obligatoria lo decide el módulo del registro
 (`inventory.incident.photo`).
 
 ## Agregar fotos a otro registro

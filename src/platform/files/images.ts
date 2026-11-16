@@ -4,11 +4,15 @@ import { crc32 } from "node:zlib";
  * Images a person uploads as evidence (WMS-37, ADR 0063). The server never
  * trusts what the browser says nor that the browser removed the metadata:
  * it walks the structure of the file with offsets and lengths (no regular
- * expressions over the content) and builds a NEW file with only what is
- * needed to draw the picture. Everything else — Exif with the GPS
- * position, XMP, comments, thumbnails, text chunks, whatever comes after
- * the end — is not kept. A file that is not a well formed JPEG, PNG or
- * WebP is refused.
+ * expressions over the content) and builds a NEW file that keeps only the
+ * parts that draw the picture: in a JPEG its frame, tables, scans and the
+ * Adobe marker; in a PNG its header, palette, data and the colour and
+ * density chunks; in a WebP its canvas, image and alpha. Every known
+ * metadata block — Exif with the GPS position, XMP, IPTC, MPF, ICC
+ * profiles, comments, thumbnails, texts — and whatever comes after the end
+ * is not kept. Each kept part has the size its format allows and the count
+ * of parts is bounded, so a hostile file costs as little as a photo. A file
+ * that is not a well formed JPEG, PNG or WebP is refused.
  *
  * Pixels are never decoded: the size of the picture is read from its
  * header and bounded, so a browser that draws it is not overwhelmed.
@@ -35,11 +39,17 @@ export type ImageExtension = keyof typeof IMAGE_EXTENSIONS;
 export const isImageExtension = (value: string): value is ImageExtension =>
   Object.hasOwn(IMAGE_EXTENSIONS, value);
 
+/**
+ * Size of a photo of evidence. The browser uploads at most 1,600 px on the
+ * longest side; these bounds leave room for that and keep what a viewer's
+ * browser decodes small (2048 × 2048 × 4 bytes ≈ 16 MB at most), even for
+ * a file sent by hand to the Server Action (review of WMS-37, M2).
+ */
 export const IMAGE_LIMITS = {
   /** Longest side, in pixels. */
-  maxSide: 8000,
+  maxSide: 2048,
   /** Width × height. */
-  maxPixels: 40_000_000,
+  maxPixels: 2048 * 2048,
 } as const;
 
 export type SanitizedImage =
@@ -195,17 +205,26 @@ function concat(parts: Uint8Array[]): Uint8Array {
 
 // ── JPEG ─────────────────────────────────────────────────────────────────
 
+/**
+ * Bounds of the walk: a 5 MB file made of thousands of tiny segments must
+ * cost as little as a photo (review of WMS-37, M1). A browser's JPEG has a
+ * handful of tables and up to ~10 scans.
+ */
+const JPEG_LIMITS = { segments: 1024, tables: 32, scans: 64 } as const;
+
 /** Baseline, extended and progressive: what every browser draws. */
 const JPEG_FRAMES = new Set([0xc0, 0xc1, 0xc2]);
-/** Tables needed to decode. */
-const JPEG_TABLES = new Set([0xc4, 0xdb, 0xdd]);
 
 function cleanJpeg(bytes: Uint8Array) {
   const parts: Uint8Array[] = [Uint8Array.of(0xff, 0xd8)];
   let at = 2;
   let size: { width: number; height: number } | null = null;
   let scans = 0;
+  let tables = 0;
+  let segments = 0;
+  let adobe = false;
   for (;;) {
+    if (++segments > JPEG_LIMITS.segments) throw new Broken();
     need(bytes, at + 2);
     if (bytes[at] !== 0xff) throw new Broken();
     // Fill bytes before a marker are allowed.
@@ -213,7 +232,7 @@ function cleanJpeg(bytes: Uint8Array) {
     need(bytes, at + 2);
     const marker = bytes[at + 1]!;
     if (marker === 0xd9) {
-      // End of image: what follows is not kept (polyglots lose it).
+      // End of image: what follows (a second picture, a ZIP…) is not kept.
       if (!size || scans === 0) throw new Broken();
       parts.push(Uint8Array.of(0xff, 0xd9));
       return { ...size, bytes: concat(parts) };
@@ -235,6 +254,10 @@ function cleanJpeg(bytes: Uint8Array) {
 
     if (JPEG_FRAMES.has(marker)) {
       if (size || length < 8) throw new Broken();
+      const components = bytes[data + 5]!;
+      if (components < 1 || components > 4 || length !== 8 + 3 * components) {
+        throw new Broken();
+      }
       const height = u16be(bytes, data + 1);
       const width = u16be(bytes, data + 3);
       if (height === 0 || width === 0) throw new Broken();
@@ -249,17 +272,35 @@ function cleanJpeg(bytes: Uint8Array) {
     ) {
       // Lossless, hierarchical or arithmetic frames: not accepted.
       throw new BrokenType();
-    } else if (JPEG_TABLES.has(marker)) {
+    } else if (marker === 0xdb || marker === 0xc4 || marker === 0xdd) {
+      // Quantization (one 8-bit table at least: 1 + 64), Huffman (class
+      // and id, 16 counts and one code at least) and restart interval
+      // (exactly 2 bytes).
+      const fits =
+        marker === 0xdb
+          ? length >= 2 + 65
+          : marker === 0xc4
+            ? length >= 2 + 18
+            : length === 4;
+      if (!fits || ++tables > JPEG_LIMITS.tables) throw new Broken();
       parts.push(segment);
-    } else if (marker === 0xe2) {
-      if (startsWith(bytes, data, end, "ICC_PROFILE\u0000"))
-        parts.push(segment);
     } else if (marker === 0xee) {
-      if (startsWith(bytes, data, end, "Adobe")) parts.push(segment);
+      // Adobe's marker changes how colours are decoded: kept once, with
+      // its fixed size and nothing else in it.
+      if (!adobe && length === 14 && startsWith(bytes, data, end, "Adobe")) {
+        adobe = true;
+        parts.push(segment);
+      }
     } else if ((marker >= 0xe0 && marker <= 0xef) || marker === 0xfe) {
-      // Exif (GPS), XMP, IPTC, JFIF thumbnails, comments: dropped.
+      // Exif (GPS), XMP, IPTC, MPF (second pictures), ICC profiles, JFIF
+      // thumbnails, comments: dropped.
     } else if (marker === 0xda) {
       if (!size) throw new Broken();
+      const components = bytes[data]!;
+      if (components < 1 || components > 4 || length !== 6 + 2 * components) {
+        throw new Broken();
+      }
+      if (++scans > JPEG_LIMITS.scans) throw new Broken();
       parts.push(segment);
       // Entropy-coded data up to the next marker that is not a stuffed
       // byte (FF 00) or a restart (FF D0..D7).
@@ -277,7 +318,6 @@ function cleanJpeg(bytes: Uint8Array) {
         scan++;
       }
       parts.push(bytes.subarray(end, scan));
-      scans++;
       at = scan;
       continue;
     } else {
@@ -289,28 +329,36 @@ function cleanJpeg(bytes: Uint8Array) {
 
 // ── PNG ──────────────────────────────────────────────────────────────────
 
-/** Chunks needed to draw the picture; any other ancillary one is dropped. */
-const PNG_KEEP = new Set([
-  "IHDR",
-  "PLTE",
-  "IDAT",
-  "IEND",
-  "tRNS",
-  "gAMA",
-  "cHRM",
-  "sRGB",
-  "iCCP",
-  "sBIT",
-  "bKGD",
-  "pHYs",
-]);
+/**
+ * Chunks kept, with the sizes the format allows; all but IDAT once. Any
+ * other ancillary chunk (texts, eXIf, tIME, ICC profiles, animation…) is
+ * dropped.
+ */
+const PNG_KEEP: Record<string, { min: number; max: number; once: boolean }> = {
+  IHDR: { min: 13, max: 13, once: true },
+  PLTE: { min: 3, max: 768, once: true },
+  IDAT: { min: 1, max: 0x7fffffff, once: false },
+  IEND: { min: 0, max: 0, once: true },
+  tRNS: { min: 1, max: 256, once: true },
+  gAMA: { min: 4, max: 4, once: true },
+  cHRM: { min: 32, max: 32, once: true },
+  sRGB: { min: 1, max: 1, once: true },
+  sBIT: { min: 1, max: 4, once: true },
+  bKGD: { min: 1, max: 6, once: true },
+  pHYs: { min: 9, max: 9, once: true },
+};
+
+/** Chunks walked in all (a browser writes a few; libpng one per 8 KB). */
+const PNG_MAX_CHUNKS = 4096;
 
 function cleanPng(bytes: Uint8Array) {
   const parts: Uint8Array[] = [bytes.subarray(0, 8)];
+  const seen = new Set<string>();
   let at = 8;
   let size: { width: number; height: number } | null = null;
   let hasData = false;
-  for (;;) {
+  for (let count = 0; ; count++) {
+    if (count >= PNG_MAX_CHUNKS) throw new Broken();
     need(bytes, at + 12);
     const length = u32be(bytes, at);
     if (length > 0x7fffffff) throw new Broken();
@@ -328,12 +376,16 @@ function cleanPng(bytes: Uint8Array) {
       throw new Broken();
     }
     if (!size && type !== "IHDR") throw new Broken();
-    if (type === "IHDR") {
-      if (size || length !== 13) throw new Broken();
-      size = { width: u32be(bytes, at + 8), height: u32be(bytes, at + 12) };
-    }
-    if (type === "IDAT") hasData = true;
-    if (PNG_KEEP.has(type)) {
+    const rule = Object.hasOwn(PNG_KEEP, type) ? PNG_KEEP[type]! : null;
+    if (rule) {
+      if (length < rule.min || length > rule.max) throw new Broken();
+      if (rule.once && seen.has(type)) throw new Broken();
+      if (type === "PLTE" && length % 3 !== 0) throw new Broken();
+      seen.add(type);
+      if (type === "IHDR") {
+        size = { width: u32be(bytes, at + 8), height: u32be(bytes, at + 12) };
+      }
+      if (type === "IDAT") hasData = true;
       parts.push(bytes.subarray(at, end));
     } else if (type.charCodeAt(0) < 0x61) {
       // An unknown critical chunk: the picture cannot be drawn without it.
@@ -350,17 +402,22 @@ function cleanPng(bytes: Uint8Array) {
 
 // ── WebP ─────────────────────────────────────────────────────────────────
 
+/** Chunks walked in all: a still WebP has three at most. */
+const WEBP_MAX_CHUNKS = 64;
+
 function cleanWebp(bytes: Uint8Array) {
   const riffEnd = 8 + u32le(bytes, 4);
   need(bytes, riffEnd);
   if (riffEnd < 20) throw new Broken();
   const chunks: Uint8Array[] = [];
   let at = 12;
+  let canvas: { width: number; height: number } | null = null;
   let extended: Uint8Array | null = null;
   let size: { width: number; height: number } | null = null;
-  let hasImage = false;
+  let alpha = false;
   let first = true;
-  while (at < riffEnd) {
+  for (let count = 0; at < riffEnd; count++) {
+    if (count >= WEBP_MAX_CHUNKS) throw new Broken();
     need(bytes, at + 8);
     const type = ascii(bytes, at, 4);
     const length = u32le(bytes, at + 4);
@@ -374,17 +431,18 @@ function cleanWebp(bytes: Uint8Array) {
     }
     first = false;
     if (type === "VP8X") {
-      if (extended || length < 10) throw new Broken();
+      // Exactly its 10 bytes: flags, reserved and the canvas.
+      if (extended || length !== 10) throw new Broken();
       if (bytes[data]! & 0x02) throw new BrokenType(); // animation
       extended = bytes.slice(at, padded);
-      // No Exif (0x08) nor XMP (0x04) in the clean file.
-      extended[8] = extended[8]! & ~0x0c;
-      size = {
+      // No ICC (0x20), Exif (0x08) nor XMP (0x04) in the clean file.
+      extended[8] = extended[8]! & ~0x2c;
+      canvas = {
         width: 1 + u24le(bytes, data + 4),
         height: 1 + u24le(bytes, data + 7),
       };
     } else if (type === "VP8 ") {
-      if (hasImage || length < 10) throw new Broken();
+      if (size || length < 10) throw new Broken();
       if (
         bytes[data + 3] !== 0x9d ||
         bytes[data + 4] !== 0x01 ||
@@ -392,33 +450,36 @@ function cleanWebp(bytes: Uint8Array) {
       ) {
         throw new Broken();
       }
-      const own = {
+      size = {
         width: u16le(bytes, data + 6) & 0x3fff,
         height: u16le(bytes, data + 8) & 0x3fff,
       };
-      size ??= own;
-      hasImage = true;
       chunks.push(bytes.subarray(at, padded));
     } else if (type === "VP8L") {
-      if (hasImage || length < 5 || bytes[data] !== 0x2f) throw new Broken();
+      if (size || length < 5 || bytes[data] !== 0x2f) throw new Broken();
       const bits = u32le(bytes, data + 1);
-      const own = {
+      size = {
         width: 1 + (bits & 0x3fff),
         height: 1 + ((bits >>> 14) & 0x3fff),
       };
-      size ??= own;
-      hasImage = true;
       chunks.push(bytes.subarray(at, padded));
-    } else if (type === "ALPH" || type === "ICCP") {
-      if (!extended) throw new Broken();
+    } else if (type === "ALPH") {
+      if (!extended || alpha || size || length < 1) throw new Broken();
+      alpha = true;
       chunks.push(bytes.subarray(at, padded));
     } else if (type === "ANIM" || type === "ANMF") {
       throw new BrokenType();
     }
-    // EXIF, XMP and anything unknown: dropped.
+    // ICCP, EXIF, XMP and anything unknown: dropped.
     at = padded;
   }
-  if (!hasImage || !size) throw new Broken();
+  if (!size) throw new Broken();
+  if (
+    canvas &&
+    (canvas.width !== size.width || canvas.height !== size.height)
+  ) {
+    throw new Broken();
+  }
   const body = concat([...(extended ? [extended] : []), ...chunks]);
   const header = new Uint8Array(12);
   header.set([0x52, 0x49, 0x46, 0x46], 0);

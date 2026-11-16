@@ -10,6 +10,7 @@ import {
   reportIncident,
   resolveIncident,
   startIncident,
+  discardIncidentPhoto,
   uploadIncidentPhoto,
   type IncidentField,
   type IncidentPhotoResult,
@@ -183,4 +184,15 @@ export async function uploadIncidentPhotoAction(
     if (!message) throw error;
     return { ok: false, error: message };
   }
+}
+
+/**
+ * «Quitar» a photo taken and not saved (WMS-37): it is removed so it stops
+ * counting against the limit of photos waiting. Only a photo of the
+ * person, of this company and not linked; anything else does nothing.
+ */
+export async function discardIncidentPhotoAction(
+  fileId: string,
+): Promise<{ ok: boolean }> {
+  return discardIncidentPhoto(await actor(), idPath(fileId));
 }

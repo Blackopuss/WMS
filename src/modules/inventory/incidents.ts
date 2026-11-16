@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
   attachEvidencePhotos,
+  deleteFile,
   evidencePhotoLinks,
   storeFile,
   type EvidenceOwners,
@@ -729,6 +730,32 @@ export async function uploadIncidentPhoto(
   return stored.ok
     ? { ok: true, fileId: stored.fileId }
     : { ok: false, error: stored.error };
+}
+
+/**
+ * Removes a photo the person took and did not save (WMS-37): it stops
+ * counting against the photos waiting. A linked photo, or one of somebody
+ * else, is not touched.
+ */
+export async function discardIncidentPhoto(
+  actor: InventoryActor,
+  fileId: string,
+): Promise<{ ok: boolean }> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.incident.create",
+  );
+  const file = await forOrganization(actor.organizationId).storedFile.findFirst(
+    {
+      where: {
+        id: String(fileId ?? "").slice(0, 36),
+        purpose: "incident_photo",
+      },
+      select: { id: true },
+    },
+  );
+  return file ? deleteFile(actor, file.id) : { ok: false };
 }
 
 /**

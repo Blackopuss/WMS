@@ -68,6 +68,7 @@ export function PhotoCapture({
   photos,
   onPhotosChange,
   upload,
+  discard,
   max,
 }: {
   id: string;
@@ -79,6 +80,8 @@ export function PhotoCapture({
   photos: CapturedPhoto[];
   onPhotosChange: Dispatch<SetStateAction<CapturedPhoto[]>>;
   upload: (formData: FormData) => Promise<PhotoUploadResult>;
+  /** Removes a photo taken and not saved, so it stops counting. */
+  discard: (fileId: string) => Promise<unknown>;
   max: number;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -154,9 +157,13 @@ export function PhotoCapture({
       return list.filter((photo) => photo.fileId !== fileId);
     });
     setStatus(`Se quitó la foto ${position}.`);
+    // Not saved yet: it goes from the server too. If that fails, it goes
+    // away by itself the next day.
+    void discard(fileId).catch(() => {});
   }
 
-  const shown = error ?? problem;
+  // What the browser found and what the server said, both if there are.
+  const shown = [problem, error].filter(Boolean).join(" ");
   const describedBy =
     [hint && `${id}-hint`, shown && `${id}-error`].filter(Boolean).join(" ") ||
     undefined;

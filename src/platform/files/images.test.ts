@@ -3,29 +3,28 @@ import { crc32 } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import {
+  GPS_MARK,
   TEST_IMAGE_SIZE,
   TEST_JPEG,
   TEST_PNG,
   TEST_WEBP,
+  cameraJpeg,
+  exifWithGps,
+  jpegSegment,
 } from "../../../tests/setup/images";
 import { IMAGE_LIMITS, detectImageFormat, sanitizeImage } from "./images";
 
 const bytesOf = (text: string) => new Uint8Array(Buffer.from(text, "latin1"));
 const join = (...parts: Uint8Array[]) =>
   new Uint8Array(Buffer.concat(parts.map((part) => Buffer.from(part))));
-const has = (haystack: Uint8Array, needle: string) =>
-  Buffer.from(haystack).includes(Buffer.from(needle, "latin1"));
-
-/** A JPEG segment with its marker and length. */
-function segment(marker: number, payload: Uint8Array) {
-  const length = payload.length + 2;
-  return join(Uint8Array.of(0xff, marker, length >> 8, length & 0xff), payload);
-}
-
-/** An Exif block that says where the photo was taken. */
-const EXIF_WITH_GPS = bytesOf(
-  "Exif\u0000\u0000MM\u0000*\u0000\u0000\u0000\bGPSLatitude 19.4326 N GPSLongitude 99.1332 W",
-);
+const has = (haystack: Uint8Array, needle: string | Uint8Array) =>
+  Buffer.from(haystack).includes(
+    typeof needle === "string"
+      ? Buffer.from(needle, "latin1")
+      : Buffer.from(needle),
+  );
+const clean = (bytes: Uint8Array) =>
+  Buffer.from((sanitizeImage(bytes) as { bytes: Uint8Array }).bytes);
 
 /** A PNG chunk with its length and checksum. */
 function pngChunk(type: string, data: Uint8Array) {
@@ -37,14 +36,71 @@ function pngChunk(type: string, data: Uint8Array) {
   return join(head, data, crc);
 }
 
+/** A WebP chunk with its length and padding. */
+function webpChunk(type: string, data: Uint8Array) {
+  const head = Buffer.alloc(8);
+  head.write(type, 0, "latin1");
+  head.writeUInt32BE(0, 4);
+  head.writeUInt32LE(data.length, 4);
+  return join(
+    head,
+    data,
+    data.length % 2 ? Uint8Array.of(0) : new Uint8Array(0),
+  );
+}
+
+function riff(body: Uint8Array) {
+  const size = Buffer.alloc(4);
+  size.writeUInt32LE(body.length, 0);
+  return join(bytesOf("RIFF"), size, body);
+}
+
+/** The chunks of the browser's WebP: VP8X, ICCP and VP8. */
+function webpChunks() {
+  const out: { type: string; bytes: Uint8Array }[] = [];
+  let at = 12;
+  while (at < TEST_WEBP.length) {
+    const type = Buffer.from(TEST_WEBP.subarray(at, at + 4)).toString("latin1");
+    const length = Buffer.from(TEST_WEBP).readUInt32LE(at + 4);
+    const end = at + 8 + length + (length % 2);
+    out.push({ type, bytes: TEST_WEBP.subarray(at, end) });
+    at = end;
+  }
+  return out;
+}
+
+/** Time and memory of one call: a hostile file must cost like a photo. */
+function cost(bytes: Uint8Array) {
+  globalThis.gc?.();
+  const heap = process.memoryUsage().heapUsed;
+  const start = performance.now();
+  const result = sanitizeImage(bytes);
+  return {
+    result,
+    ms: performance.now() - start,
+    mb: (process.memoryUsage().heapUsed - heap) / 1024 / 1024,
+  };
+}
+
+const FIVE_MB = 5 * 1024 * 1024;
+
+/** A JPEG start followed by the same segment until it fills 5 MB. */
+function jpegFilledWith(segment: Uint8Array) {
+  const times = Math.floor((FIVE_MB - 4) / segment.length);
+  const out = new Uint8Array(2 + times * segment.length + 2);
+  out.set([0xff, 0xd8], 0);
+  for (let i = 0; i < times; i++) out.set(segment, 2 + i * segment.length);
+  out.set([0xff, 0xd9], out.length - 2);
+  return out;
+}
+
 describe("sanitizeImage", () => {
   it.each([
     ["jpeg", TEST_JPEG, "image/jpeg"],
     ["png", TEST_PNG, "image/png"],
     ["webp", TEST_WEBP, "image/webp"],
   ] as const)("acepta una foto %s y lee su tamaño", (format, bytes, type) => {
-    const result = sanitizeImage(bytes, format);
-    expect(result).toMatchObject({
+    expect(sanitizeImage(bytes, format)).toMatchObject({
       ok: true,
       format,
       contentType: type,
@@ -93,28 +149,33 @@ describe("sanitizeImage", () => {
     }
   });
 
-  it("quita el Exif con la ubicación GPS de un JPEG y conserva la foto", () => {
+  it("quita el Exif con GPS de un JPEG, el perfil, los comentarios y la segunda imagen (MPF)", () => {
     const withGps = join(
-      TEST_JPEG.subarray(0, 2),
-      segment(0xe1, EXIF_WITH_GPS),
-      segment(0xfe, bytesOf("Tomada en la bodega de Juan")),
-      TEST_JPEG.subarray(2),
+      cameraJpeg(),
+      // What MPF describes: a second picture after the end, with its own GPS.
+      cameraJpeg(),
     );
-    expect(has(withGps, "GPSLatitude")).toBe(true);
-    const result = sanitizeImage(withGps, "jpeg");
+    const withMpf = join(
+      withGps.subarray(0, 2),
+      jpegSegment(0xe2, join(bytesOf("MPF\u0000"), exifWithGps())),
+      jpegSegment(0xfe, bytesOf("Tomada en la bodega de Juan")),
+      withGps.subarray(2),
+    );
+    expect(has(withMpf, GPS_MARK)).toBe(true);
+    const result = sanitizeImage(withMpf, "jpeg");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(has(result.bytes, "GPS")).toBe(false);
+    expect(has(result.bytes, GPS_MARK)).toBe(false);
+    expect(has(result.bytes, "MM\u0000*")).toBe(false);
     expect(has(result.bytes, "Exif")).toBe(false);
+    expect(has(result.bytes, "MPF")).toBe(false);
+    expect(has(result.bytes, "ICC_PROFILE")).toBe(false);
     expect(has(result.bytes, "Juan")).toBe(false);
-    // The colour profile stays: it changes how the photo looks.
-    expect(has(result.bytes, "ICC_PROFILE")).toBe(true);
-    // Same picture as the one without metadata.
-    expect(Buffer.from(result.bytes)).toEqual(
-      Buffer.from((sanitizeImage(TEST_JPEG) as { bytes: Uint8Array }).bytes),
-    );
-    // Starts and ends as a JPEG.
-    expect([...result.bytes.subarray(0, 2)]).toEqual([0xff, 0xd8]);
+    // Only one picture: one start and one end.
+    expect(
+      Buffer.from(result.bytes).indexOf(Buffer.from([0xff, 0xd8]), 2),
+    ).toBe(-1);
+    expect(Buffer.from(result.bytes)).toEqual(clean(TEST_JPEG));
     expect([...result.bytes.subarray(-2)]).toEqual([0xff, 0xd9]);
   });
 
@@ -127,74 +188,89 @@ describe("sanitizeImage", () => {
     }
   });
 
-  it("quita textos, Exif y fecha de un PNG", () => {
+  it("quita textos, eXIf con GPS, fecha y perfil de un PNG", () => {
     const withText = join(
       TEST_PNG.subarray(0, 33),
-      pngChunk("tEXt", bytesOf("Comment\u0000GPS 19.43 -99.13")),
-      pngChunk("eXIf", EXIF_WITH_GPS),
+      pngChunk("tEXt", bytesOf("Comment\u0000Bodega de Juan")),
+      pngChunk("eXIf", exifWithGps()),
       pngChunk("tIME", Uint8Array.of(7, 234, 11, 16, 9, 0, 0)),
+      pngChunk("iCCP", bytesOf("perfil\u0000\u0000xyz")),
       TEST_PNG.subarray(33),
     );
     const result = sanitizeImage(withText, "png");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(has(result.bytes, "GPS")).toBe(false);
-    expect(has(result.bytes, "tIME")).toBe(false);
-    expect(Buffer.from(result.bytes)).toEqual(
-      Buffer.from((sanitizeImage(TEST_PNG) as { bytes: Uint8Array }).bytes),
-    );
+    expect(has(result.bytes, GPS_MARK)).toBe(false);
+    for (const gone of ["Juan", "tIME", "eXIf", "iCCP"]) {
+      expect(has(result.bytes, gone)).toBe(false);
+    }
+    expect(Buffer.from(result.bytes)).toEqual(clean(TEST_PNG));
   });
 
-  it("rechaza un PNG con un fragmento alterado (CRC)", () => {
+  it("rechaza un PNG con un fragmento alterado (CRC) o repetido", () => {
     const altered = new Uint8Array(TEST_PNG);
     altered[20] = altered[20]! ^ 0xff; // inside IHDR
     expect(sanitizeImage(altered)).toMatchObject({
       ok: false,
       reason: "broken",
     });
+    const twice = join(
+      TEST_PNG.subarray(0, 33),
+      pngChunk("gAMA", Uint8Array.of(0, 0, 0xb1, 0x8f)),
+      pngChunk("gAMA", Uint8Array.of(0, 0, 0xb1, 0x8f)),
+      TEST_PNG.subarray(33),
+    );
+    expect(sanitizeImage(twice)).toMatchObject({ ok: false, reason: "broken" });
   });
 
-  it("quita el EXIF y el XMP de un WebP y apaga sus banderas", () => {
-    // The browser's file has an extended header (VP8X) and a colour
-    // profile; here it also announces Exif and XMP and carries both.
-    const chunk = (type: string, data: Uint8Array) => {
-      const head = Buffer.alloc(8);
-      head.write(type, 0, "latin1");
-      head.writeUInt32LE(data.length, 4);
-      return join(
-        head,
-        data,
-        data.length % 2 ? Uint8Array.of(0) : new Uint8Array(0),
-      );
-    };
-    const original = TEST_WEBP.subarray(12);
-    const announced = new Uint8Array(original);
-    expect(Buffer.from(announced.subarray(0, 4)).toString("latin1")).toBe(
+  it("quita EXIF con GPS, XMP y perfil de un WebP y apaga sus banderas", () => {
+    const [vp8x, iccp, image] = webpChunks();
+    expect([vp8x!.type, iccp!.type, image!.type]).toEqual([
       "VP8X",
+      "ICCP",
+      "VP8 ",
+    ]);
+    const announced = new Uint8Array(vp8x!.bytes);
+    announced[8] = announced[8]! | 0x2c;
+    const withExif = riff(
+      join(
+        bytesOf("WEBP"),
+        announced,
+        iccp!.bytes,
+        image!.bytes,
+        webpChunk("EXIF", exifWithGps()),
+        webpChunk("XMP ", bytesOf("<x:xmpmeta>Bodega de Juan</x:xmpmeta>")),
+      ),
     );
-    announced[8] = announced[8]! | 0x0c;
-    const body = join(
-      bytesOf("WEBP"),
-      announced,
-      chunk("EXIF", EXIF_WITH_GPS),
-      chunk("XMP ", bytesOf("<x:xmpmeta>GPS 19.43</x:xmpmeta>")),
-    );
-    const size = Buffer.alloc(4);
-    size.writeUInt32LE(body.length, 0);
-    const withExif = join(bytesOf("RIFF"), size, body);
     const result = sanitizeImage(withExif, "webp");
     expect(result).toMatchObject({ ok: true, ...TEST_IMAGE_SIZE });
     if (!result.ok) return;
-    expect(has(result.bytes, "GPS")).toBe(false);
-    expect(has(result.bytes, "EXIF")).toBe(false);
-    expect(has(result.bytes, "XMP")).toBe(false);
-    expect(result.bytes[20]! & 0x0c).toBe(0);
-    expect(Buffer.from(result.bytes)).toEqual(
-      Buffer.from((sanitizeImage(TEST_WEBP) as { bytes: Uint8Array }).bytes),
-    );
+    expect(has(result.bytes, GPS_MARK)).toBe(false);
+    for (const gone of ["EXIF", "XMP", "ICCP", "Juan"]) {
+      expect(has(result.bytes, gone)).toBe(false);
+    }
+    expect(result.bytes[20]! & 0x2c).toBe(0);
+    expect(Buffer.from(result.bytes)).toEqual(clean(TEST_WEBP));
     expect(Buffer.from(result.bytes).readUInt32LE(4)).toBe(
       result.bytes.length - 8,
     );
+  });
+
+  it("rechaza un VP8X de otro tamaño o con un lienzo que no es el de la imagen", () => {
+    const [vp8x, , image] = webpChunks();
+    const longer = join(
+      webpChunk("VP8X", join(vp8x!.bytes.subarray(8), bytesOf("texto oculto"))),
+      image!.bytes,
+    );
+    expect(sanitizeImage(riff(join(bytesOf("WEBP"), longer)))).toMatchObject({
+      ok: false,
+      reason: "broken",
+    });
+    const other = new Uint8Array(vp8x!.bytes);
+    other[12] = other[12]! + 5; // canvas wider than the picture
+    expect(
+      sanitizeImage(riff(join(bytesOf("WEBP"), other, image!.bytes))),
+    ).toMatchObject({ ok: false, reason: "broken" });
   });
 
   it("rechaza una foto más grande de lo que un navegador debe dibujar", () => {
@@ -209,5 +285,64 @@ describe("sanitizeImage", () => {
       ok: false,
       reason: "dimensions",
     });
+    // The bound leaves room for what the browser uploads (1,600 px).
+    expect(IMAGE_LIMITS.maxSide).toBeGreaterThanOrEqual(1600);
+  });
+});
+
+describe("un archivo hostil cuesta lo que una foto", () => {
+  const BOUNDS = { ms: 150, mb: 25 };
+
+  it.each([
+    ["tablas Huffman vacías", Uint8Array.of(0xff, 0xc4, 0x00, 0x02)],
+    ["tablas de cuantización vacías", Uint8Array.of(0xff, 0xdb, 0x00, 0x02)],
+    [
+      "tablas Huffman mínimas repetidas",
+      jpegSegment(0xc4, new Uint8Array(18).fill(1)),
+    ],
+    ["segmentos APP vacíos", Uint8Array.of(0xff, 0xef, 0x00, 0x02)],
+    [
+      "perfiles ICC repetidos",
+      jpegSegment(0xe2, bytesOf("ICC_PROFILE\u0000\u0001\u0001")),
+    ],
+  ])("JPEG de 5 MB con %s", (_name, segment) => {
+    const { result, ms, mb } = cost(jpegFilledWith(segment));
+    expect(result).toMatchObject({ ok: false });
+    expect(ms).toBeLessThan(BOUNDS.ms);
+    expect(mb).toBeLessThan(BOUNDS.mb);
+  });
+
+  it("PNG de 5 MB con cientos de miles de pHYs", () => {
+    const phys = pngChunk("pHYs", new Uint8Array(9));
+    const head = TEST_PNG.subarray(0, 33);
+    const times = Math.floor((FIVE_MB - head.length) / phys.length);
+    const out = new Uint8Array(
+      head.length + times * phys.length + TEST_PNG.length - 33,
+    );
+    out.set(head, 0);
+    for (let i = 0; i < times; i++)
+      out.set(phys, head.length + i * phys.length);
+    out.set(TEST_PNG.subarray(33), head.length + times * phys.length);
+    const { result, ms, mb } = cost(out);
+    expect(result).toMatchObject({ ok: false });
+    expect(ms).toBeLessThan(BOUNDS.ms);
+    expect(mb).toBeLessThan(BOUNDS.mb);
+  });
+
+  it("PNG de 5 MB con miles de fragmentos auxiliares desconocidos", () => {
+    const junk = pngChunk("zzZz", new Uint8Array(0));
+    const head = TEST_PNG.subarray(0, 33);
+    const times = Math.floor((FIVE_MB - head.length) / junk.length);
+    const out = new Uint8Array(
+      head.length + times * junk.length + TEST_PNG.length - 33,
+    );
+    out.set(head, 0);
+    for (let i = 0; i < times; i++)
+      out.set(junk, head.length + i * junk.length);
+    out.set(TEST_PNG.subarray(33), head.length + times * junk.length);
+    const { result, ms, mb } = cost(out);
+    expect(result).toMatchObject({ ok: false });
+    expect(ms).toBeLessThan(BOUNDS.ms);
+    expect(mb).toBeLessThan(BOUNDS.mb);
   });
 });

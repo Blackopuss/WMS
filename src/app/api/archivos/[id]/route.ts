@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { fileResponseHeaders } from "@/lib";
 import { evidenceOwners } from "@/modules/registry";
 import { openFileLink } from "@/platform/files";
 import { requireOrganizationContext } from "@/platform/tenancy";
@@ -43,20 +44,12 @@ export async function GET(
       },
     );
   }
-  // Only plain characters in the fallback name; the real one goes encoded.
-  const fallback = result.name.replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(result.bytes), {
     status: 200,
-    headers: {
-      "content-type": result.contentType,
-      "content-length": String(result.bytes.byteLength),
-      // A download, never shown inside the application's origin; only an
-      // image (its type decided by the server from its content) is shown.
-      "content-disposition": `${result.inline ? "inline" : "attachment"}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(result.name)}`,
-      "x-content-type-options": "nosniff",
-      "cross-origin-resource-policy": "same-origin",
-      // Nothing kept by the browser: a shared device keeps no copy.
-      "cache-control": "private, no-store",
-    },
+    headers: fileResponseHeaders({
+      name: result.name,
+      contentType: result.contentType,
+      size: result.bytes.byteLength,
+    }),
   });
 }
