@@ -104,6 +104,11 @@ export const TENANT_MODELS = [
   "PickWaveOrder",
   "PurchaseRequest",
   "PurchaseRequestLine",
+  "Recipe",
+  "RecipeVersion",
+  "RecipeInput",
+  "RecipeOutput",
+  "RecipeLock",
   "Notification",
   "NotificationPreference",
   "NotificationEmail",
@@ -344,6 +349,8 @@ const LOCKABLE = {
   sharedTerminal: "shared_terminal",
   storedFile: "stored_file",
   membership: "membership",
+  recipe: "recipe",
+  recipeLock: "recipe_lock",
 } as const;
 
 /**

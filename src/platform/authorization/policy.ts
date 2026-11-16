@@ -226,6 +226,15 @@ export const TERMINAL_COST_PERMISSIONS: readonly Permission[] = [
   "purchasing.cost.read",
 ];
 
+/**
+ * Work that belongs at a desk, not at a shared device of the floor: the
+ * standard recipe of a product (WMS-27, ADR 0066) is read there, never
+ * changed.
+ */
+export const TERMINAL_DESK_ONLY: readonly Permission[] = [
+  "production.recipe.manage",
+];
+
 /** True when a PIN session keeps this permission of its roles. */
 export function keptAtTerminal(permission: Permission): boolean {
   if (permission.startsWith("platform.")) {
@@ -234,7 +243,10 @@ export function keptAtTerminal(permission: Permission): boolean {
   if (permission.endsWith(".export") || permission.endsWith(".export.create")) {
     return TERMINAL_EXPORT_KEEP.includes(permission);
   }
-  return !TERMINAL_COST_PERMISSIONS.includes(permission);
+  return (
+    !TERMINAL_COST_PERMISSIONS.includes(permission) &&
+    !TERMINAL_DESK_ONLY.includes(permission)
+  );
 }
 
 /** Known roles of the subject, without repeats, in catalog order. */

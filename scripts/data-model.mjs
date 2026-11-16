@@ -349,6 +349,20 @@ export const AREAS = [
       "PurchaseRequestLine",
     ],
   },
+  {
+    id: "production",
+    title: "Producción",
+    doc: "production",
+    summary:
+      "Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones.",
+    models: [
+      "Recipe",
+      "RecipeVersion",
+      "RecipeInput",
+      "RecipeOutput",
+      "RecipeLock",
+    ],
+  },
 ];
 
 // ── Parser ───────────────────────────────────────────────────────────────

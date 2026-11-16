@@ -48,6 +48,7 @@ import {
 import { getCustomValues } from "@/platform/custom-fields";
 
 import { MinimumForm } from "./minimum-form";
+import { RecipeSection } from "./receta/recipe-section";
 
 export const metadata: Metadata = { title: "Producto" };
 
@@ -650,6 +651,12 @@ export default async function ProductoPage({
           )}
         </dl>
       </section>
+
+      {/* WMS-27: its recipe, only with Producción (the block decides). */}
+      <RecipeSection
+        access={access}
+        product={{ id: product.id, unitCode: product.unitCode, active }}
+      />
 
       {suppliers && suppliers.total > 0 && (
         <section

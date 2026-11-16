@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-27** Receta en la ficha del producto: una por producto, con versiones
+  inmutables, materiales, lo que sale con su parte del costo y sin ciclos;
+  Producción queda disponible para contratar. ADR 0066.
 - **WMS-37** Fotos de evidencia sobre los archivos privados: imágenes
   comprobadas y limpiadas en el servidor (sin ubicación), ligadas a su
   registro e inmutables, vistas dentro de la página con enlace por persona;
