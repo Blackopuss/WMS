@@ -852,6 +852,11 @@ export {
   type DisposalResult,
 } from "./disposal";
 export {
+  REPAIR_EXITS_THROUGH_INSPECTION,
+  REPAIR_THROUGH_INSPECTION,
+  repairExitsOf,
+} from "./repair-release";
+export {
   INSPECTION_PAGE_SIZE,
   countAwaitingInspection,
   countInRepair,

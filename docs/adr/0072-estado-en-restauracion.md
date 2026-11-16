@@ -75,10 +75,23 @@ de lugar opcional en el mismo almacén). No hay movimiento nuevo.
 
 - `direct` (por omisión, propuesta de la sección 10 que el fundador no
   corrigió): lo restaurado puede pasar directo a disponible.
-- `inspection`: lo que sale de restauración hacia disponible se rechaza con
-  «La empresa pide que lo restaurado pase por inspección: cámbialo a «En
-  inspección»». Desde inspección lo libera quien tiene
+- `inspection`: lo que está en restauración **no pasa directo a
+  disponible**. Solo sale hacia «En inspección», o hacia «Dañado» o
+  «Rechazado» si no se pudo restaurar (para desecharlo o devolverlo):
+  `REPAIR_EXITS_THROUGH_INSPECTION` de `repair-release.ts`. Disponible,
+  cuarentena y bloqueado se rechazan, porque pasar por cuarentena o
+  bloqueado sería una forma de saltarse la inspección (revisión
+  independiente, hallazgo medio 1). Desde inspección lo libera quien tiene
   `inventory.status.release` (y, con WMS-30B, el inspector).
+- Lo que se mandó a dañado o rechazado se libera después con el permiso de
+  siempre (`inventory.status.release`): las piezas del mismo producto,
+  lote, ubicación y estado son intercambiables y el sistema no guarda de
+  dónde vino cada una, así que no se intenta saber si esa pieza estuvo en
+  restauración (no se aproxima con el historial).
+- «Cambiar estado» arma en el servidor los estados que ofrece cuando el
+  origen está en restauración con `repairExitsOf` (la misma regla pura,
+  `breaksRepairRule`, que usa el servicio), así la pantalla no ofrece lo
+  que se rechazaría; el servicio lo decide otra vez bajo sus candados.
 - Se lee con `readSetting` **dentro de `writeStatusChange`**, después de los
   candados, así vale para «Cambiar estado» y para cualquier llamador futuro
   (WMS-30B, WMS-29B).
@@ -99,6 +112,18 @@ de lugar opcional en el mismo almacén). No hay movimiento nuevo.
 - No es lugar de almacenaje para acomodo (`STORE_PLACE` sigue siendo
   almacenamiento y surtido) ni de paso (`WAITING_PLACE`), ni origen de
   reposición.
+- **Cambiar el uso** de una ubicación a «Cuarentena» o «Restauración»
+  (`editLocation`) se rechaza mientras ella o algo dentro de ella tenga
+  existencias disponibles («Aquí hay existencias disponibles de N
+  productos… Cámbialas de estado o muévelas antes»). Antes de este paso la
+  cuarentena tenía el mismo hueco: la regla solo detenía lo que llegaba
+  después, y lo disponible que ya estaba ahí se seguía sacando y surtiendo
+  (revisión independiente, hallazgo medio 2). Se bloquean primero las filas
+  de toda la rama (un movimiento hacia cualquiera de ellas bloquea la suya,
+  así nada llega mientras se decide) y se cuenta con `groupBy`, sin cargar
+  saldos. Quien edita una ubicación la alcanza, y el alcance es por zona,
+  así que alcanza todo lo que contiene: el conteo nunca nombra algo de
+  fuera de su alcance.
 
 ### 5. Lista derivada «En restauración»
 
@@ -140,7 +165,7 @@ de lugar opcional en el mismo almacén). No hay movimiento nuevo.
 | Retención (`HOLDABLE_STATUSES`, `stock_hold_status`) | Se puede retener (la orden de reproceso, WMS-29B). `heldStock` lo cuenta como cualquier otro estado. |
 | Reversas | Una reversa que saca de restauración pasa por `heldStock`; con `inspection`, la de disponible → restauración se rechaza (punto 3). |
 | Traslados entre almacenes | No lo envían (solo disponible); recibir sigue siendo disponible o dañado. |
-| Tarimas y contenedores | No se arma con él (solo disponible); un contenedor no lo contiene. |
+| Tarimas y contenedores | No se arma con él (solo disponible). La base lo exige desde este paso: `container_item_available` (`CHECK (status = 'AVAILABLE')`, migración `20261117060100`; lo único que escribe ahí es `putIn`, y escribe disponible). |
 | Capacidad | Cuenta como cualquier existencia en la ocupación. El uso «Restauración» no admite disponible. |
 | Uso «Cuarentena» | Admite restauración (no es disponible). |
 | API (`/api/v1`) | `status` admite `REPAIR` en existencias y lotes; `docs/api/openapi.json` regenerado. |
@@ -169,6 +194,21 @@ derivada no bloquea nada.
 - La orden de reproceso que consume desde restauración: WMS-29B.
 - Un filtro por estado en la lista de Inventario (no existe para ningún
   estado).
+
+## Decisiones que el fundador puede cambiar
+
+- `inventory.repair.release` va en `direct` por omisión.
+- El motivo al liberar de restauración es obligatorio, como en todo cambio
+  de estado (la 5.10 decía «motivo opcional»).
+- La opción «En restauración» no se oculta tras un ajuste.
+- Desechar y devolver al proveedor no salen directo de restauración.
+- Con `inspection`, la reversa de un cambio hacia restauración se rechaza.
+- El aviso va en Inventario y no en Inicio.
+- En «Por inspeccionar» (y «En restauración») el origen de lo que entró por
+  un cambio de estado dice «Desde <estado> · referencia» en vez de «Cambio
+  de estado».
+- El nombre «En restauración» (la sección 11 de la propuesta lo dejaba
+  abierto).
 
 ## Consecuencias
 

@@ -325,7 +325,7 @@ export const REPAIR_RELEASE = {
     {
       value: "inspection",
       label: "Pasa antes por inspección",
-      help: "De «En restauración» solo pasa a «En inspección»; de ahí se libera.",
+      help: "De «En restauración» no pasa directo a disponible: va a «En inspección» (o a dañado o rechazado si no se pudo restaurar).",
     },
   ],
   defaultValue: "direct",

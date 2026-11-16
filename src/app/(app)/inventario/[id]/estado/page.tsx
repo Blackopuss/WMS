@@ -17,6 +17,7 @@ import {
   getProductStock,
   listStockLocations,
   permissionForStatusChange,
+  repairExitsOf,
   type StockStatus,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
@@ -117,6 +118,11 @@ export default async function CambiarEstadoPage({
     id: status,
     label: STOCK_STATUS_LABELS[status],
   }));
+  // WMS-75: what stock in restoration may become in this company.
+  const repairTargets = await repairExitsOf(
+    actor.organizationId,
+    MANUAL_STOCK_STATUSES,
+  );
   // WMS-21: a product by lot changes state lot by lot: the choice says
   // location, state and lot («ubicación|estado|lote»).
   const lotSources = stock.lots
@@ -169,6 +175,7 @@ export default async function CambiarEstadoPage({
               : undefined
           }
           targets={targets}
+          repairTargets={repairTargets}
           bySerial={product.tracking === "SERIAL"}
           destinations={places.map((place) => ({
             id: place.id,

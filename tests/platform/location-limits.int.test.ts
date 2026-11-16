@@ -12,8 +12,10 @@ import {
   unitWeightOf,
   updateProduct,
 } from "@/platform/catalog";
+import { changeStockStatus, registerEntry } from "@/modules/inventory";
 import {
   createLocation,
+  editLocation,
   getDefaultLocation,
   listLocations,
   setLocationLimits,
@@ -415,4 +417,72 @@ describe("weight and volume of a product", () => {
     expect(unitVolumeOf(oil)?.toString()).toBe("1");
     expect(unitWeightOf(oil)?.toString()).toBe("0.92");
   });
+});
+
+describe("a use that takes nothing available (WMS-75 review)", () => {
+  async function enter(actor: Actor, productId: string, locationId: string) {
+    const done = await registerEntry(actor, {
+      productId,
+      locationId,
+      quantity: "3",
+      acceptRepeat: true,
+      acceptCapacity: true,
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+  }
+
+  it("a place, or a zone with something inside, with available stock does not become quarantine or restoration", async () => {
+    const actor = await company();
+    for (const type of ["QUARANTINE", "REPAIR"] as const) {
+      const n = ++counter;
+      const item = await product(actor, `USO-${n}`);
+      // Available right there.
+      const bench = await shelf(actor, `Banco ${n}`);
+      await enter(actor, item, bench);
+      expect(await editLocation(actor, bench, { type })).toMatchObject({
+        ok: false,
+        reason: "not_allowed",
+        fieldErrors: {
+          type: expect.stringMatching(
+            /existencias disponibles de un producto.*Cámbialas de estado o muévelas antes/,
+          ),
+        },
+      });
+      // Available inside: the zone does not change either.
+      const zone = await createLocation(actor, { level: 1, name: `Zona ${n}` });
+      if (!zone.ok) throw new Error(JSON.stringify(zone));
+      const inner = await createLocation(actor, {
+        level: 3,
+        name: `Estante ${n}`,
+        parentId: zone.locationId,
+      });
+      if (!inner.ok) throw new Error(JSON.stringify(inner));
+      await enter(actor, item, inner.locationId);
+      expect(
+        await editLocation(actor, zone.locationId, { type }),
+      ).toMatchObject({ ok: false, reason: "not_allowed" });
+      // Once it is not available, it may.
+      const changed = await changeStockStatus(actor, {
+        productId: item,
+        locationId: bench,
+        from: "AVAILABLE",
+        to: "DAMAGED",
+        quantity: "3",
+        reason: "Golpeado",
+        idempotencyKey: newId(),
+      });
+      expect(changed).toMatchObject({ ok: true });
+      expect(await editLocation(actor, bench, { type })).toMatchObject({
+        ok: true,
+      });
+      // An empty place may too.
+      const empty = await shelf(actor, `Vacío ${n}`);
+      expect(await editLocation(actor, empty, { type })).toMatchObject({
+        ok: true,
+      });
+      expect(
+        (await db.location.findUniqueOrThrow({ where: { id: bench } })).type,
+      ).toBe(type);
+    }
+  }, 60_000);
 });

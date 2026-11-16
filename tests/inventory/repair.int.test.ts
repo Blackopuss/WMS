@@ -14,6 +14,7 @@ import {
   listLowStock,
   reconcileStock,
   reconcileValue,
+  repairExitsOf,
   registerEntry,
   registerExit,
   releaseOutboundOrder,
@@ -468,11 +469,45 @@ describe("`inventory.repair.release` (R2)", () => {
       ok: false,
       error: expect.stringMatching(/pase por inspección/),
     });
+    // Nor around it, through quarantine or blocked (review, MEDIO 1).
+    for (const to of ["QUARANTINE", "BLOCKED"]) {
+      expect(
+        await change(owner, at, {
+          from: "REPAIR",
+          to,
+          quantity: "1",
+          reason: "Por si acaso",
+        }),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: { to: expect.stringMatching(/pase por inspección/) },
+      });
+    }
+    // The screen offers only what the service takes.
+    expect(
+      await repairExitsOf(owner.organizationId, [
+        "AVAILABLE",
+        "INSPECTION",
+        "QUARANTINE",
+        "DAMAGED",
+        "REJECTED",
+        "BLOCKED",
+      ]),
+    ).toEqual(["INSPECTION", "DAMAGED", "REJECTED"]);
+    // What could not be restored still goes to damaged.
+    expect(
+      await change(owner, at, {
+        from: "REPAIR",
+        to: "DAMAGED",
+        quantity: "1",
+        reason: "No tuvo arreglo",
+      }),
+    ).toMatchObject({ ok: true });
     expect(
       await change(owner, at, {
         from: "REPAIR",
         to: "INSPECTION",
-        quantity: "5",
+        quantity: "4",
         reason: "Restaurado, a revisión",
       }),
     ).toMatchObject({ ok: true });
@@ -480,12 +515,12 @@ describe("`inventory.repair.release` (R2)", () => {
       await change(owner, at, {
         from: "INSPECTION",
         to: "AVAILABLE",
-        quantity: "5",
+        quantity: "4",
         reason: "Revisado",
       }),
     ).toMatchObject({ ok: true });
     expect(await getProductStock(owner, productId)).toMatchObject({
-      available: "20",
+      available: "19",
     });
 
     // Directly (the default), the reversal undoes it.
@@ -503,8 +538,11 @@ describe("`inventory.repair.release` (R2)", () => {
       }),
     ).toMatchObject({ ok: true });
     expect(await getProductStock(owner, productId)).toMatchObject({
-      available: "20",
+      available: "19",
     });
+    expect(await repairExitsOf(owner.organizationId, ["AVAILABLE"])).toEqual([
+      "AVAILABLE",
+    ]);
     await balanced(owner.organizationId);
   });
 });
@@ -742,5 +780,11 @@ describe("the database", () => {
       WHERE CONSTRAINT_NAME = 'purchase_receipt_line_status'
         AND CONSTRAINT_SCHEMA = DATABASE()`;
     expect(receiptChecks[0]?.clause).not.toMatch(/REPAIR/);
+    // A pallet or a package only holds available stock.
+    const containerChecks = await db.$queryRaw<{ clause: string }[]>`
+      SELECT CHECK_CLAUSE AS clause FROM information_schema.CHECK_CONSTRAINTS
+      WHERE CONSTRAINT_NAME = 'container_item_available'
+        AND CONSTRAINT_SCHEMA = DATABASE()`;
+    expect(containerChecks[0]?.clause).toMatch(/AVAILABLE/);
   });
 });

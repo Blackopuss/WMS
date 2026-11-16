@@ -216,6 +216,59 @@ async function changeTree(
 
 const GONE = "Esta ubicación ya no existe.";
 
+/** Uses of a location that take no available stock (WMS-22B, WMS-75). */
+const NO_AVAILABLE_USES: ReadonlySet<string> = new Set([
+  "QUARANTINE",
+  "REPAIR",
+]);
+
+/**
+ * Refuses turning a location into one that takes nothing available while
+ * it, or anything inside it, still has available stock. Locks the rows of
+ * the whole subtree first: a movement into any of them locks its row, so
+ * none arrives while this decides. Whoever edits a location reaches it,
+ * and the scope is by zone, so they reach everything inside it too.
+ */
+async function refuseAvailableInside(
+  tx: Tx,
+  locationId: string,
+  type: string,
+): Promise<void> {
+  const ids = [locationId];
+  let frontier = [locationId];
+  for (
+    let depth = 0;
+    depth <= MAX_LOCATION_LEVELS && frontier.length;
+    depth++
+  ) {
+    const children = await tx.location.findMany({
+      where: { parentId: { in: frontier } },
+      select: { id: true },
+    });
+    frontier = children.map((child) => child.id);
+    ids.push(...frontier);
+  }
+  await lockRows(tx, "location", ids);
+  const products = await tx.stockBalance.groupBy({
+    by: ["productId"],
+    where: {
+      locationId: { in: ids },
+      status: "AVAILABLE",
+      quantity: { gt: 0 },
+    },
+  });
+  if (products.length === 0) return;
+  const use = type === "REPAIR" ? "de restauración" : "de cuarentena";
+  reject(
+    "not_allowed",
+    (products.length === 1
+      ? "Aquí hay existencias disponibles de un producto"
+      : `Aquí hay existencias disponibles de ${products.length} productos`) +
+      `, y una ubicación ${use} no admite existencias disponibles. Cámbialas de estado o muévelas antes.`,
+    "type",
+  );
+}
+
 /**
  * The custom fields of a location (WMS-58), checked in the transaction of
  * the change; the change is refused with their problems.
@@ -815,6 +868,12 @@ export async function editLocation(
         "La ubicación de preparación se elige en Configuración › Operación.",
         "type",
       );
+    }
+    // WMS-75 (ADR 0072): a quarantine or repair place takes nothing
+    // available, it and everything inside it; a place that already holds
+    // available stock does not become one.
+    if (type !== location.type && NO_AVAILABLE_USES.has(type)) {
+      await refuseAvailableInside(tx, location.id, type);
     }
     const code =
       input.code === undefined
