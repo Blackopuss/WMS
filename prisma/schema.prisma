@@ -2781,7 +2781,8 @@ model StockHold {
   product         Product               @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   locationId      String                @db.Char(36)
   location        Location              @relation(fields: [organizationId, locationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  /// Never AVAILABLE: what is available is reserved, not held (CHECK).
+  /// Only INSPECTION, QUARANTINE, DAMAGED, REJECTED or BLOCKED (CHECK):
+  /// what is available is reserved, not held.
   status          StockStatus
   lotId           String?               @db.Char(36)
   lot             Lot?                  @relation(fields: [organizationId, lotId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)

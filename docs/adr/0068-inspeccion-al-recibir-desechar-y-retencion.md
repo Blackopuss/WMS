@@ -100,10 +100,23 @@ con estado por línea (WMS-54), `postReturnExit` (CMP-12), `openCostBook`
 
 - Cada renglón de una devolución puede decir **de qué estado sale**
   (`status`): `AVAILABLE`, `INSPECTION`, `DAMAGED` o `REJECTED`. Por omisión,
-  el estado en que llegó su línea de recepción (como hoy). En pantalla el
-  selector «Sale de» aparece solo cuando ese producto tiene existencias de
-  esa recepción en más de uno de esos estados, o en uno distinto del que
-  llegó.
+  el estado en que llegó su línea de recepción (como hoy). **Regla
+  conservadora (revisión independiente; el fundador puede cambiarla),
+  `returnStatesFor` en `return-states.ts`:**
+  - lo que llegó dañado se devuelve solo desde `DAMAGED`, como antes;
+  - lo que llegó en inspección, desde `INSPECTION` o desde lo que se decidió
+    (`AVAILABLE`, `REJECTED`, `DAMAGED`);
+  - lo que llegó disponible, desde `AVAILABLE` y, desde `DAMAGED` o
+    `REJECTED`, solo si ese producto (y lote) cambió a ese estado en ese
+    almacén después de la recepción (un `STATUS_CHANGE` posterior);
+  - lo que una línea que **no** llegó dañada saca de `DAMAGED` nunca se come
+    lo que otras líneas de recepción del mismo producto, lote y ubicación
+    recibieron dañado y aún no devuelven (`damagedOwed`: recibido − devuelto,
+    leído bajo el candado del producto). Se acota a esa ubicación: si una
+    línea dañada se devolvió desde otro lugar, lo que debe se sigue contando
+    donde llegó (más estricto, nunca menos).
+  La pantalla («Estado») ofrece exactamente lo que esta regla acepta, armado
+  en el servidor; aparece solo con más de una opción.
 - Lo demás no cambia: nunca más de lo recibido (sumado bajo el candado de la
   orden), su lote y sus series (las que llegaron con esa línea), el factor y
   el costo de la línea de recepción. Desde un estado no disponible no hay
@@ -148,19 +161,32 @@ con estado por línea (WMS-54), `postReturnExit` (CMP-12), `openCostBook`
 - **Autorización: pendiente.** El motor de aprobaciones (ADR 0053) podría
   pedirla con una regla apagada por omisión; no se agrega en este paso
   porque ninguna decisión del fundador la pide y el efecto (volver a validar
-  lo desechado bajo candado) merece su propio paso.
+  lo desechado bajo candado) merece su propio paso. **Consecuencia que hay
+  que saber:** hoy lo disponible puede pasar a «Dañado» y desecharse sin
+  autorización aunque la regla de ajustes esté encendida (las salidas ya lo
+  permitían). El fundador puede pedir que se cierre.
+- **Terminal con PIN:** `inventory.disposal.create` se trata igual que
+  `inventory.adjustment.create`, que hoy se conserva en una sesión de
+  terminal: Desechar también se puede hacer ahí (caso en `policy.test.ts`).
+  El fundador puede cambiarlo agregándolo a `TERMINAL_DESK_ONLY`.
 
 ### 5. Retención genérica (`stock_hold`)
 
 Se eligió **una tabla propia más las fuentes derivadas que ya existían**:
 
-- `stock_hold`: producto, ubicación, **estado no disponible** (`CHECK`
-  `status <> 'AVAILABLE'`), lote (`lotKey`), cantidad (inmutable), `remaining`
+- `stock_hold`: producto, ubicación, **estado retenible** (`CHECK`: solo
+  `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED` o `BLOCKED`; nunca
+  disponible, que se reserva, ni en tránsito o en recepción, que son de sus
+  operaciones; `HOLDABLE_STATUSES`), lote (`lotKey`), cantidad (inmutable), `remaining`
   (solo baja, nunca bajo 0), `ACTIVE` → `CLOSED` al llegar a 0, documento
   (`sourceType` + `sourceId`), quién y cuándo. `stock_hold_unit`: las
   unidades por serie que retiene, con `releasedAt` que se escribe una vez.
-  Disparadores: ni una ni otra se borran; de una retención solo cambian
-  `remaining`, `state` y `closedAt`, en ese sentido.
+  Disparadores y `CHECK`: ni una ni otra se borran; de una retención solo
+  cambian `remaining`, `state` y `closedAt`, en ese sentido, y `closedAt`
+  existe solo si está cerrada; una unidad solo se agrega a una retención
+  activa del mismo producto. Soltar parte de una retención por serie exige
+  nombrar exactamente esas unidades. Qué ubicaciones puede retener un
+  documento (su alcance) lo comprueba quien llama, como en toda operación.
 - La escriben **solo** `holdStock(tx, actor, …)` y `releaseHold(tx, …)` de
   `holds.ts`, **dentro de la transacción del documento y después de sus
   candados** (productos → ubicaciones → documento): el candado del producto
@@ -182,7 +208,8 @@ Se eligió **una tabla propia más las fuentes derivadas que ya existían**:
   mismo saldo.
 - `reconcileStock` agrega `source: "holds"`: por cada producto + ubicación +
   estado + lote, lo retenido (retenciones activas y devoluciones abiertas)
-  nunca pasa del saldo, y cada serie retenida sigue en ese lugar y estado.
+  nunca pasa del saldo, cada serie retenida sigue en ese lugar y estado, y
+  una retención por serie tiene tantas unidades sin soltar como le quedan.
 - **Cómo la usará WMS-30B.** «Iniciar verificación» llama `holdStock` con
   `sourceType = "quality_inspection"` en la transacción que crea `IN-0001`;
   cada decisión escribe sus `STATUS_CHANGE` con `writeStatusChange(…, {
@@ -222,6 +249,13 @@ Se eligió **una tabla propia más las fuentes derivadas que ya existían**:
   recepciones (`GET /api/v1/purchase-orders/{id}/receipts`) agrega
   `inspection` a cada línea.
 - **Migración:** `20261117040000_wms30_inspection_disposal_holds`.
+
+- **Volver a una versión anterior del código:** una vez escrito un
+  `DISPOSAL`, el cliente viejo no conoce ese valor del ENUM (igual que pasó
+  con `FACILITY_TRANSFER`); la migración sigue siendo solo de expansión.
+- `getOrderReceipts` consulta saldos para `returnStates` sin filtro de zona,
+  pero solo expone estados de las ubicaciones de recepción que la pantalla
+  ya muestra.
 
 ## Consecuencias
 

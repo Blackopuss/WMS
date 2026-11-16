@@ -330,10 +330,7 @@ export async function releaseHold(
   const named = [...new Set(release.unitIds ?? [])];
   if (held.length > 0 && release.quantity !== undefined) {
     const ids = new Set(held.map((unit) => unit.serialUnitId));
-    if (
-      !quantity.equals(named.length) ||
-      named.some((id) => !ids.has(id))
-    ) {
+    if (!quantity.equals(named.length) || named.some((id) => !ids.has(id))) {
       throw new Error(`Hold ${holdId} releases units by name`);
     }
   }

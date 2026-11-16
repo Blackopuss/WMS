@@ -755,13 +755,118 @@ describe("«Desechar» (WMS-30-0)", () => {
   });
 });
 
+describe("return states by how a line arrived (WMS-30-0, review)", () => {
+  it("a healthy line never takes what another receipt received damaged", async () => {
+    const owner = await company();
+    const productId = await product(owner, { inspect: false });
+    const orderId = await sentOrder(owner, [{ productId, quantity: "10" }]);
+    const orderLineId = await lineIdOf(owner, orderId);
+    const first = await receivePurchaseOrder(owner, orderId, {
+      idempotencyKey: newId(),
+      lines: [{ orderLineId, quantity: "5" }],
+    });
+    const second = await receivePurchaseOrder(owner, orderId, {
+      idempotencyKey: newId(),
+      lines: [{ orderLineId, quantity: "5", damaged: "5" }],
+    });
+    if (!first.ok || !second.ok) throw new Error("receipts");
+    const view = await getOrderReceipts(owner, orderId);
+    const healthy = view!.receipts.find((r) => r.id === first.receiptId)!
+      .lines[0]!;
+    const damaged = view!.receipts.find((r) => r.id === second.receiptId)!
+      .lines[0]!;
+    // Nothing changed to damaged after the first receipt: only available.
+    expect(healthy.returnStates).toEqual([]);
+    const fromDamaged = await returnToSupplier(owner, first.receiptId, {
+      reason: "Se regresa",
+      idempotencyKey: newId(),
+      lines: [
+        {
+          receiptLineId: healthy.receiptLineId,
+          quantity: "5",
+          status: "DAMAGED",
+        },
+      ],
+    });
+    expect(fromDamaged).toMatchObject({ ok: false });
+    // What arrived damaged goes back only from «Dañado».
+    expect(
+      await returnToSupplier(owner, second.receiptId, {
+        reason: "Se regresa",
+        idempotencyKey: newId(),
+        lines: [
+          {
+            receiptLineId: damaged.receiptLineId,
+            quantity: "1",
+            status: "AVAILABLE",
+          },
+        ],
+      }),
+    ).toMatchObject({ ok: false });
+
+    // 2 of the healthy ones get damaged here: those may go back from
+    // «Dañado», never the 5 of the second receipt.
+    await changeStockStatus(owner, {
+      productId,
+      locationId: healthy.locationId,
+      from: "AVAILABLE",
+      to: "DAMAGED",
+      quantity: "2",
+      reason: "Se golpearon",
+      idempotencyKey: newId(),
+    });
+    const again = await getOrderReceipts(owner, orderId);
+    expect(
+      again!.receipts
+        .find((r) => r.id === first.receiptId)!
+        .lines[0]!.returnStates.map((state) => state.id),
+    ).toEqual(["AVAILABLE", "DAMAGED"]);
+    expect(
+      await returnToSupplier(owner, first.receiptId, {
+        reason: "Se regresa",
+        idempotencyKey: newId(),
+        lines: [
+          {
+            receiptLineId: healthy.receiptLineId,
+            quantity: "3",
+            status: "DAMAGED",
+          },
+        ],
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await returnToSupplier(owner, first.receiptId, {
+        reason: "Se golpearon",
+        idempotencyKey: newId(),
+        lines: [
+          {
+            receiptLineId: healthy.receiptLineId,
+            quantity: "2",
+            status: "DAMAGED",
+          },
+        ],
+      }),
+    ).toMatchObject({ ok: true });
+    // The second receipt still returns all of its own.
+    expect(
+      await returnToSupplier(owner, second.receiptId, {
+        reason: "Llegó roto",
+        idempotencyKey: newId(),
+        lines: [{ receiptLineId: damaged.receiptLineId, quantity: "5" }],
+      }),
+    ).toMatchObject({ ok: true });
+    expect(plain(await balances(productId))).toEqual(["AVAILABLE 3"]);
+    await balanced(owner.organizationId);
+  });
+});
+
 describe("generic hold (WMS-30-0)", () => {
   async function hold(
     owner: InventoryActor,
     slot: {
       productId: string;
       locationId: string;
-      status: "INSPECTION" | "REJECTED";
+      status: "INSPECTION" | "REJECTED" | "IN_TRANSIT";
     },
     quantity: string,
     unitIds?: string[],
@@ -979,6 +1084,135 @@ describe("generic hold (WMS-30-0)", () => {
     });
     expect(await reconcileStock(owner.organizationId)).toEqual([
       expect.objectContaining({ source: "holds", fromMovements: "5" }),
+    ]);
+  });
+
+  it("lets go of units by name and the database keeps holds consistent", async () => {
+    const owner = await company();
+    const productId = await product(owner, { tracking: "SERIAL" });
+    const other = await product(owner, { tracking: "SERIAL" });
+    await received(owner, productId, "2", { serials: "C-1\nC-2" });
+    await received(owner, other, "1", { serials: "D-1" });
+    const [row] = await balances(productId);
+    const units = await db.serialUnit.findMany({
+      where: { productId },
+      orderBy: { serial: "asc" },
+    });
+    const foreign = await db.serialUnit.findFirstOrThrow({
+      where: { productId: other },
+    });
+    const slot = {
+      productId,
+      locationId: row!.locationId,
+      status: "INSPECTION" as const,
+    };
+    const held = await hold(
+      owner,
+      slot,
+      "2",
+      units.map((unit) => unit.id),
+    );
+    if (!held.ok) throw new Error("hold");
+    // Part of a hold by serial is let go only naming its units.
+    await expect(
+      forOrganization(owner.organizationId).$transaction(
+        (tx) => releaseHold(tx, held.holdId, { quantity: "1" }),
+        LOCKING_TRANSACTION,
+      ),
+    ).rejects.toThrow();
+    await forOrganization(owner.organizationId).$transaction(
+      (tx) =>
+        releaseHold(tx, held.holdId, {
+          quantity: "1",
+          unitIds: [units[0]!.id],
+        }),
+      LOCKING_TRANSACTION,
+    );
+    expect(
+      (
+        await heldStock(forOrganization(owner.organizationId), {
+          ...slot,
+          lotId: null,
+        })
+      ).unitIds,
+    ).toEqual(new Set([units[1]!.id]));
+    // Behind the services, as the app's user: closedAt goes with the
+    // state, a unit belongs to an active hold of its product.
+    await expect(
+      db.$executeRawUnsafe(
+        "UPDATE stock_hold SET closedAt = NOW(3) WHERE id = ?",
+        held.holdId,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      db.$executeRawUnsafe(
+        "INSERT INTO stock_hold_unit (id, organizationId, holdId, serialUnitId) VALUES (?, ?, ?, ?)",
+        newId(),
+        owner.organizationId,
+        held.holdId,
+        foreign.id,
+      ),
+    ).rejects.toThrow();
+    // In transit or receiving is never held.
+    await expect(
+      hold(owner, { ...slot, status: "IN_TRANSIT" }, "1"),
+    ).rejects.toThrow();
+    await expect(
+      db.stockHold.create({
+        data: {
+          id: newId(),
+          organizationId: owner.organizationId,
+          productId,
+          locationId: row!.locationId,
+          status: "RECEIVING",
+          quantity: "1",
+          remaining: "1",
+          sourceType: "test",
+          sourceId: newId(),
+          sourceText: "X",
+          createdByUserId: owner.userId,
+        },
+      }),
+    ).rejects.toThrow();
+    await balanced(owner.organizationId);
+  });
+
+  it("a hold by serial with fewer units than it says is reported", async () => {
+    const owner = await company();
+    const productId = await product(owner, { tracking: "SERIAL" });
+    await received(owner, productId, "2", { serials: "E-1\nE-2" });
+    const [row] = await balances(productId);
+    const unit = await db.serialUnit.findFirstOrThrow({ where: { productId } });
+    const holdId = newId();
+    await db.stockHold.create({
+      data: {
+        id: holdId,
+        organizationId: owner.organizationId,
+        productId,
+        locationId: row!.locationId,
+        status: "INSPECTION",
+        quantity: "2",
+        remaining: "2",
+        sourceType: "test",
+        sourceId: newId(),
+        sourceText: "X",
+        createdByUserId: owner.userId,
+      },
+    });
+    await db.stockHoldUnit.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        holdId,
+        serialUnitId: unit.id,
+      },
+    });
+    expect(await reconcileStock(owner.organizationId)).toEqual([
+      expect.objectContaining({
+        source: "holds",
+        fromMovements: "2",
+        balance: "1",
+      }),
     ]);
   });
 
