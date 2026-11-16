@@ -9,10 +9,10 @@ el personal de plataforma ya puede activarlo; antes estaba anunciado (ADR
 
 ## Responsabilidad
 
-Recetas en la ficha del producto (WMS-27) y órdenes de producción
-(WMS-28, ADR 0073); después, solicitudes del piso y reportes de lo
-producido (propuesta `docs/flujos/PRODUCCION_CALIDAD.md`, pasos WMS-28B,
-WMS-29 y WMS-31). Desde WMS-28 **aparta** existencias (reservas de los
+Recetas en la ficha del producto (WMS-27), órdenes de producción
+(WMS-28, ADR 0073) y solicitudes de producción desde el piso (WMS-28B,
+ADR 0075); después, reportes de lo producido y cierre (propuesta
+`docs/flujos/PRODUCCION_CALIDAD.md`, pasos WMS-29 y WMS-31). Desde WMS-28 **aparta** existencias (reservas de los
 materiales de una orden liberada) y crea tareas «Surtir a producción»; no
 escribe movimientos ni saldos por sí mismo (las tareas los escribe
 Inventario al entregarse).
@@ -38,9 +38,15 @@ Inventario al entregarse).
 | `setProductionOrderAssignees` | Personas de una orden abierta (miembros que pueden reportar producción y alcanzan el área) |
 | `getProductionOrder`, `listProductionOrders`, `listProductionAreas`, `listProductionPeople`, `listProducibleProducts` | Lecturas (ficha con lo apartado por material, lista paginada del almacén activo, áreas, personas, productos con receta vigente) |
 | `PRODUCTION_ORDER_PROCESS` | La orden como documento del motor de procesos (operación «Orden liberada») |
-| `productionOpenWork` | Trabajo a medias al quitar el módulo (borradores sin activar, órdenes abiertas) |
+| `listRequestableProducts` | «Queda poco»: lo que la persona puede pedir (solo id, nombre y unidad; nunca existencias), o por qué no puede (algo a su nombre) (WMS-28B) |
+| `submitProductionRequest` | «Pedir producción»: revisa las tres condiciones bajo el candado de su membresía y guarda la solicitud; avisa a quien decide (WMS-28B) |
+| `acceptProductionRequest` | Nace la orden a nombre de quien acepta y queda liberada (o en borrador); `short`/`take`/`draft`; `repeated` (WMS-28B) |
+| `rejectProductionRequest`, `cancelProductionRequest` | Rechazar con motivo; cancelar (solo quien pidió) (WMS-28B) |
+| `getProductionRequest`, `listProductionRequests`, `countProductionRequestsToDecide` | Lecturas: la solicitud con la pantalla de decisión (existencias del producto y de sus materiales dentro del alcance de quien decide), lista paginada, cuántas esperan (WMS-28B) |
+| `productionOpenWork` | Trabajo a medias al quitar el módulo (borradores sin activar, órdenes abiertas, solicitudes por atender) |
 | `recipe-rules.ts`, `recipe-states.ts` | Reglas puras: porcentajes, partes del costo, qué impide activar, ciclos (`findRecipeCycle`), estados (`RECIPE_VERSION_TRANSITIONS`) |
 | `order-rules.ts`, `order-states.ts` | Reglas puras de la orden: escalar la receta (materiales hacia arriba, salidas hacia abajo), estados (`PRODUCTION_ORDER_TRANSITIONS`), `formatProductionNumber` |
+| `request-rules.ts`, `request-states.ts` | Reglas puras de la solicitud: cerca del mínimo (`isNearMinimum`), para cuánto alcanza el material (`reachableQuantity`), estados (`PRODUCTION_REQUEST_TRANSITIONS`), `formatProductionRequestNumber` |
 
 Cada servicio empieza con `assertModulePermission` (`production.recipe.*`
 o `production.order.*`). Candados: un cambio del borrador bloquea su
@@ -68,6 +74,22 @@ si la receta cambió, no se libera hasta «Usar la receta vigente» (guardar
 el borrador). Las reservas llevan la fuente `production_order_line` + id de
 la línea (`PRODUCTION_ORDER_LINE_SOURCE` de Inventario).
 
+**Solicitudes (WMS-28B, ADR 0075).** Pedir exige no tener nada a su nombre
+(órdenes `RELEASED`/`IN_PROGRESS` asignadas, etapas de proceso tomadas,
+tareas de almacén asignadas y abiertas; lo disponible sin tomar no cuenta),
+un producto con receta vigente cuya área está en su alcance y en su almacén
+activo, y su disponible de toda la empresa en o debajo de mínimo × (1 +
+margen) (`productsNearMinimum` de Inventario, que no devuelve cantidades).
+Decide quien tiene `production.request.decide` y alcanza el área. **Aceptar
+no da permisos sobre órdenes**: corre los núcleos internos de `orders.ts`
+(`createOrderUnderLock`, `releaseUnderLock`, no exportados en `index.ts`)
+solo para la orden de esa solicitud. Candados al aceptar: productos de los
+materiales → la solicitud (actualización condicionada `status =
+'SUBMITTED'`, que decide entre dos personas a la vez) → almacén compartido
+por su índice único → la orden nueva → progreso. `production_order.requestId`
+(único, inmutable) liga la orden a su solicitud; quien aprobó es quien
+decidió la solicitud.
+
 ## Permisos
 
 `production.recipe.read|manage`, `production.order.read|create|release|cancel|close`,
@@ -76,7 +98,8 @@ la línea (`PRODUCTION_ORDER_LINE_SOURCE` de Inventario).
 `production.output.verify`. Quién recibe cada uno: `docs/MATRIZ_ROLES_PERMISOS.md`
 (sección «Producción») y ADR 0062. WMS-27 usa los de recetas; WMS-28,
 `production.order.read|create|release|cancel` (`close` llega con WMS-31) y
-`production.report.create` solo para saber a quién se puede asignar.
+`production.report.create` solo para saber a quién se puede asignar;
+WMS-28B, `production.request.read|create|decide`.
 
 Roles ligados (`ROLE_MODULE`): `production_operator` (Operario de
 producción) y `production_supervisor` (Encargado de producción). Sin el
@@ -95,6 +118,7 @@ módulo no dan nada.
 | `production_order_line` | Material de la orden: cantidad escalada (hacia arriba al paso del material), su unidad, lo de la receta y la merma esperada |
 | `production_order_output` | Lo que sale: cantidad esperada (hacia abajo) y parte del costo |
 | `production_order_assignee` | Personas asignadas (cambian hasta cerrar o cancelar) |
+| `production_request` | Solicitud `SP-0001`: almacén, área, producto, cantidad pedida y su unidad, motivo, estado (`SUBMITTED → ACCEPTED | REJECTED | CANCELLED`, disparador `production_request_transition`), quién pidió, decidió (con motivo si rechazó) o canceló. Lo pedido no cambia y no se borra |
 
 Materiales y salidas de una receta solo cambian mientras su versión es
 borrador; los de una orden, mientras la orden es borrador (disparadores);
@@ -109,25 +133,33 @@ Bloque «Receta» de la ficha del producto (`/inventario/[id]`, componente
 `/inventario/[id]/receta/versiones` (historial). Sección **«Producción»**
 del menú (WMS-28): `/produccion` (lista), `/produccion/nueva`,
 `/produccion/[id]` (ficha, liberar, cancelar, personas, proceso) y
-`/produccion/[id]/editar` (borrador).
+`/produccion/[id]/editar` (borrador). Solicitudes (WMS-28B): bloque «Queda
+poco» en «Mis tareas» (`/tareas`), `/produccion/solicitudes` (lista),
+`/produccion/solicitudes/nueva` (pedir) y `/produccion/solicitudes/[id]`
+(ficha y pantalla de decisión).
 
 ## Ajustes y trabajos
 
 Ajustes (Operación › Producción): `production.materials.mode` (`direct` por
 omisión, `issue`) y `production.release.short` (`ask` por omisión,
-`block`). Sin trabajos en segundo plano.
+`block`), y `production.request.low_margin` (`0`, `10`, `25` por omisión,
+`50` %; WMS-28B). Sin trabajos en segundo plano. Avisos (WMS-28B,
+`notices.ts`): `production.request_to_decide`,
+`production.request_answered`, `production.order_from_request`.
 
 ## Bitácora
 
 `production.recipe_created`, `production.recipe_activated`,
 `production.recipe_discarded`, `production.recipe_area_changed`,
 `production.order_created`, `production.order_changed`,
-`production.order_released`, `production.order_cancelled`.
+`production.order_released`, `production.order_cancelled`,
+`production.request_created`, `production.request_accepted`,
+`production.request_rejected`, `production.request_cancelled`.
 
 ## ADR
 
 0062 (roles y permisos de producción y calidad), 0066 (recetas), 0073
-(órdenes de producción).
+(órdenes de producción), 0075 (solicitudes de producción).
 
 ## Pruebas
 
@@ -138,4 +170,9 @@ activaciones simultáneas, roles, solo lectura, entre empresas) y
 `tests/production/orders.int.test.ts` (órdenes: escalar la receta,
 disparadores, liberar con faltante, PC-2 con liberaciones simultáneas,
 lotes y series, surtir al área de punta a punta, cancelar, receta cambiada,
-proceso, roles, solo lectura, alcance y entre empresas).
+proceso, roles, solo lectura, alcance y entre empresas) y
+`tests/production/requests.int.test.ts` (solicitudes: las tres
+condiciones, margen, forma de la lista sin cantidades, quién decide,
+pantalla de decisión dentro del alcance, aceptar con y sin material,
+Almacén sin permisos de órdenes, decisiones simultáneas, avisos, solo
+lectura, entre empresas, disparadores).

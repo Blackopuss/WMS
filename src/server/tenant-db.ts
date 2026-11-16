@@ -114,6 +114,7 @@ export const TENANT_MODELS = [
   "ProductionOrderLine",
   "ProductionOrderOutput",
   "ProductionOrderAssignee",
+  "ProductionRequest",
   "RecipeLock",
   "Notification",
   "NotificationPreference",

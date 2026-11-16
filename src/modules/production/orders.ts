@@ -55,6 +55,7 @@ import {
   type ProductionOrderStatus,
 } from "./order-states";
 import { formatRecipeVersion } from "./recipe-states";
+import { formatProductionRequestNumber } from "./request-states";
 import type { ProductionActor } from "./recipes";
 import { MATERIALS_MODE, RELEASE_SHORT } from "./settings";
 
@@ -113,7 +114,12 @@ export type ProductionOrderResult =
 
 type Failure = Extract<ProductionOrderResult, { ok: false }>;
 
-class Rejected extends Error {
+/**
+ * A failure inside the transaction of an order: everything rolls back.
+ * Exported inside the module for WMS-28B (accepting a request runs the
+ * same cores in its transaction); never from index.ts.
+ */
+export class Rejected extends Error {
   constructor(readonly result: Failure) {
     super("production order rejected");
   }
@@ -133,10 +139,10 @@ const stop = (
 
 const NOT_FOUND = "Esta orden de producción no existe.";
 const CHANGED = "La orden cambió mientras la liberabas. Inténtalo de nuevo.";
-const idOf = (value: unknown) => String(value ?? "").slice(0, 36);
+export const idOf = (value: unknown) => String(value ?? "").slice(0, 36);
 
 /** Retry-safe clash of a consecutive number (orders or tasks). */
-const isNumberClash = (error: unknown) =>
+export const isNumberClash = (error: unknown) =>
   (error as { code?: string }).code === "P2002" &&
   JSON.stringify((error as { meta?: unknown }).meta ?? "").includes("number");
 
@@ -244,7 +250,7 @@ async function facilityOfOrder(
   return row?.facilityId ?? null;
 }
 
-const shareFacility = (tx: Tx, facilityId: string | null) =>
+export const shareFacility = (tx: Tx, facilityId: string | null) =>
   facilityId
     ? lockRows(tx, "facility", [facilityId], {
         mode: "share",
@@ -298,8 +304,9 @@ const headerSchema = z.object({
 });
 
 export type ProductionOrderInput = z.input<typeof headerSchema>;
+export type ProductionOrderHeader = z.output<typeof headerSchema>;
 
-function readHeader(input: ProductionOrderInput) {
+export function readHeader(input: ProductionOrderInput) {
   const parsed = headerSchema.safeParse({
     ...input,
     quantity: String(input.quantity ?? ""),
@@ -357,7 +364,7 @@ async function areaOf(
  * transaction (permissions read the database on their own) and the scope
  * inside it.
  */
-async function assignable(
+export async function assignable(
   organizationId: string,
   ids: string[],
 ): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -709,61 +716,108 @@ export async function createProductionOrder(
   );
   return inOrder(organizationId, async (tx) => {
     await shareFacility(tx, facility.id);
-    const area = await areaOf(tx, userId, facility.id, data.areaLocationId);
-    await assigneesReachArea(tx, data.assigneeIds, area.id);
-    const copy = await copyRecipe(tx, idOf(input.productId), data.quantity);
-    const last = await tx.productionOrder.findFirst({
-      orderBy: { number: "desc" },
-      select: { number: true },
-    });
-    const id = newId();
-    const number = (last?.number ?? 0) + 1;
-    await tx.productionOrder.create({
-      data: {
-        id,
-        organizationId,
-        number,
-        facilityId: facility.id,
-        areaLocationId: area.id,
-        productId: idOf(input.productId),
-        recipeVersionId: copy.versionId,
-        quantity: copy.quantity.toString(),
-        unitCode: copy.unitCode,
-        dueOn: dayOf(data.dueOn),
-        priority: data.priority,
-        note: data.note,
-        createdByUserId: userId,
-      },
-    });
-    await writeCopy(tx, organizationId, id, copy);
-    await writeAssignees(tx, actor, id, data.assigneeIds);
-    // The process of the company, if it has one (lock: progress after the
-    // order).
-    await startProcess(tx, PRODUCTION_ORDER_PROCESS, actor, {
-      documentId: id,
+    const made = await createOrderUnderLock(tx, actor, {
       facilityId: facility.id,
-      locationId: area.id,
-      label: formatProductionNumber(number),
-      milestone: "DRAFT",
-    });
-    await recordAuditEvent(tx, {
-      organizationId,
-      actorUserId: userId,
-      action: "production.order_created",
-      target: { type: "production_order", id },
-      metadata: {
-        orden: formatProductionNumber(number),
-        producto: copy.productName,
-        cantidad: formatStock(copy.quantity.toString(), copy.unitCode),
-        receta: formatRecipeVersion(copy.versionNumber),
-      },
+      productId: idOf(input.productId),
+      header: data,
     });
     return {
       ok: true,
-      orderId: id,
-      summary: `Se creó la orden ${formatProductionNumber(number)}: ${formatStock(copy.quantity.toString(), copy.unitCode)} de ${copy.productName}.`,
+      orderId: made.id,
+      summary: `Se creó la orden ${made.numberText}: ${made.quantityText} de ${made.productName}.`,
     };
   });
+}
+
+/**
+ * The core of «Nueva orden», under the locks of its caller (the warehouse
+ * shared through its unique index, and — when accepting a request — the
+ * products of the materials and the request before it): a draft in the
+ * warehouse with the recipe in force copied for the quantity, its people,
+ * its process and its audit line. It checks no permission: only
+ * `createProductionOrder` and accepting a production request (WMS-28B,
+ * `production.request.decide`) call it; never exported from index.ts.
+ */
+export async function createOrderUnderLock(
+  tx: Tx,
+  actor: ProductionActor,
+  input: {
+    facilityId: string;
+    productId: string;
+    header: ProductionOrderHeader;
+    /** WMS-28B: the accepted request it is born from. */
+    request?: { id: string; numberText: string };
+  },
+): Promise<{
+  id: string;
+  number: number;
+  numberText: string;
+  areaLocationId: string;
+  productName: string;
+  quantityText: string;
+}> {
+  const { organizationId, userId } = actor;
+  const data = input.header;
+  const area = await areaOf(tx, userId, input.facilityId, data.areaLocationId);
+  await assigneesReachArea(tx, data.assigneeIds, area.id);
+  const copy = await copyRecipe(tx, input.productId, data.quantity);
+  const last = await tx.productionOrder.findFirst({
+    orderBy: { number: "desc" },
+    select: { number: true },
+  });
+  const id = newId();
+  const number = (last?.number ?? 0) + 1;
+  await tx.productionOrder.create({
+    data: {
+      id,
+      organizationId,
+      number,
+      facilityId: input.facilityId,
+      areaLocationId: area.id,
+      productId: input.productId,
+      recipeVersionId: copy.versionId,
+      quantity: copy.quantity.toString(),
+      unitCode: copy.unitCode,
+      dueOn: dayOf(data.dueOn),
+      priority: data.priority,
+      note: data.note,
+      createdByUserId: userId,
+      requestId: input.request?.id ?? null,
+    },
+  });
+  await writeCopy(tx, organizationId, id, copy);
+  await writeAssignees(tx, actor, id, data.assigneeIds);
+  // The process of the company, if it has one (lock: progress after the
+  // order).
+  await startProcess(tx, PRODUCTION_ORDER_PROCESS, actor, {
+    documentId: id,
+    facilityId: input.facilityId,
+    locationId: area.id,
+    label: formatProductionNumber(number),
+    milestone: "DRAFT",
+  });
+  await recordAuditEvent(tx, {
+    organizationId,
+    actorUserId: userId,
+    action: "production.order_created",
+    target: { type: "production_order", id },
+    metadata: {
+      orden: formatProductionNumber(number),
+      producto: copy.productName,
+      cantidad: formatStock(copy.quantity.toString(), copy.unitCode),
+      receta: formatRecipeVersion(copy.versionNumber),
+      // P7d: the request it was born from; who approved it is the actor.
+      ...(input.request ? { solicitud: input.request.numberText } : {}),
+    },
+  });
+  return {
+    id,
+    number,
+    numberText: formatProductionNumber(number),
+    areaLocationId: area.id,
+    productName: copy.productName,
+    quantityText: formatStock(copy.quantity.toString(), copy.unitCode),
+  };
 }
 
 /**
@@ -988,184 +1042,229 @@ export async function releaseProductionOrder(
         summary: `La orden ${formatProductionNumber(order.number)} ya estaba liberada.`,
       };
     }
-    const problem = productionTransitionProblem(order.status, "RELEASED");
-    if (problem) return stop("not_allowed", problem);
-    if (
-      order.areaLocationId !== draft.areaLocationId ||
-      order.lines.length !== productIds.length ||
-      order.lines.some((line) => !productIds.includes(line.productId))
-    ) {
-      return stop("not_allowed", CHANGED);
-    }
-    await checkStillValid(tx, order);
-    // The area is still a production area of its warehouse, active and in
-    // reach (review of WMS-28: its use or its state may have changed).
-    try {
-      await areaOf(tx, userId, order.facilityId, order.areaLocationId);
-    } catch (error) {
-      if (!(error instanceof Rejected)) throw error;
-      return stop(
-        "not_allowed",
-        `${error.result.fieldErrors?.areaLocationId ?? "El área ya no sirve."} Cambia el área de la orden antes de liberarla.`,
-      );
-    }
-
-    const [mode, short] = await Promise.all([
-      readSetting(tx, MATERIALS_MODE),
-      readSetting(tx, RELEASE_SHORT),
-    ]);
-    const within = await locationScopeWhere(tx, userId);
-    const staging = await tx.location.findFirst({
-      where: { facilityId: order.facilityId, isStaging: true },
-      select: { id: true },
+    const done = await releaseUnderLock(tx, actor, order, {
+      areaLocationId: draft.areaLocationId,
+      productIds,
+      takeWhatThereIs: options.takeWhatThereIs,
     });
-    const plan: {
-      line: (typeof order.lines)[number];
-      sources: PickSource[];
-    }[] = [];
-    const shortages: ProductionShortage[] = [];
-    for (const line of order.lines) {
-      const needed = dec(line.quantity.toString());
-      const sources = await pickSources(tx, line.productId, needed, {
-        stagingId: staging?.id ?? "",
-        facilityId: order.facilityId,
-        ...(isLimited(within) ? { within } : {}),
-      });
-      const take = sources.reduce(
-        (sum, source) => sum.plus(source.quantity),
-        dec(0),
-      );
-      if (take.lessThan(needed)) {
-        shortages.push({
-          lineId: line.id,
-          productName: line.product.name,
-          needed: formatStock(needed.toString(), line.unitCode),
-          free: formatStock(take.toString(), line.unitCode),
-        });
-      }
-      plan.push({ line, sources });
-    }
-    const mayTake = short !== "block";
-    if (shortages.length > 0 && !(options.takeWhatThereIs && mayTake)) {
+    if (!done.released) {
       throw new Rejected({
         ok: false,
         reason: "short",
         formError:
-          shortages.length === 1
+          done.shortages.length === 1
             ? "Un material no alcanza: no se apartó nada."
-            : `${shortages.length} materiales no alcanzan: no se apartó nada.`,
-        shortages,
-        mayTakeWhatThereIs: mayTake,
+            : `${done.shortages.length} materiales no alcanzan: no se apartó nada.`,
+        shortages: done.shortages,
+        mayTakeWhatThereIs: done.mayTakeWhatThereIs,
       });
     }
-    if (plan.every((step) => step.sources.length === 0)) {
+    return { ok: true, orderId: order.id, summary: done.summary };
+  });
+}
+
+export type LockedOrder = Awaited<ReturnType<typeof lockOrder>>;
+
+/** The order under its lock (WMS-28B: accepting a request releases it). */
+export const lockProductionOrder = (tx: Tx, orderId: string, userId: string) =>
+  lockOrder(tx, orderId, userId);
+
+/**
+ * The core of «Liberar orden», under the locks of its caller (the products
+ * of the materials, then the order, `lockOrder`). Answers what was set
+ * aside, or — writing nothing — what does not reach when the company or
+ * the caller does not take what there is. Any other problem rolls back
+ * (`Rejected`). It checks no permission: only `releaseProductionOrder` and
+ * accepting a production request (WMS-28B) call it; never exported from
+ * index.ts.
+ */
+export async function releaseUnderLock(
+  tx: Tx,
+  actor: ProductionActor,
+  order: LockedOrder,
+  expected: {
+    /** What the caller locked: the area and the products it read. */
+    areaLocationId: string;
+    productIds: readonly string[];
+    takeWhatThereIs?: boolean;
+  },
+): Promise<
+  | { released: true; summary: string; shortages: ProductionShortage[] }
+  | {
+      released: false;
+      shortages: ProductionShortage[];
+      mayTakeWhatThereIs: boolean;
+    }
+> {
+  const { organizationId, userId } = actor;
+  const problem = productionTransitionProblem(order.status, "RELEASED");
+  if (problem) return stop("not_allowed", problem);
+  if (
+    order.areaLocationId !== expected.areaLocationId ||
+    order.lines.length !== expected.productIds.length ||
+    order.lines.some((line) => !expected.productIds.includes(line.productId))
+  ) {
+    return stop("not_allowed", CHANGED);
+  }
+  await checkStillValid(tx, order);
+  // The area is still a production area of its warehouse, active and in
+  // reach (review of WMS-28: its use or its state may have changed).
+  try {
+    await areaOf(tx, userId, order.facilityId, order.areaLocationId);
+  } catch (error) {
+    if (!(error instanceof Rejected)) throw error;
+    return stop(
+      "not_allowed",
+      `${error.result.fieldErrors?.areaLocationId ?? "El área ya no sirve."} Cambia el área de la orden antes de liberarla.`,
+    );
+  }
+
+  const [mode, short] = await Promise.all([
+    readSetting(tx, MATERIALS_MODE),
+    readSetting(tx, RELEASE_SHORT),
+  ]);
+  const within = await locationScopeWhere(tx, userId);
+  const staging = await tx.location.findFirst({
+    where: { facilityId: order.facilityId, isStaging: true },
+    select: { id: true },
+  });
+  const plan: {
+    line: (typeof order.lines)[number];
+    sources: PickSource[];
+  }[] = [];
+  const shortages: ProductionShortage[] = [];
+  for (const line of order.lines) {
+    const needed = dec(line.quantity.toString());
+    const sources = await pickSources(tx, line.productId, needed, {
+      stagingId: staging?.id ?? "",
+      facilityId: order.facilityId,
+      ...(isLimited(within) ? { within } : {}),
+    });
+    const take = sources.reduce(
+      (sum, source) => sum.plus(source.quantity),
+      dec(0),
+    );
+    if (take.lessThan(needed)) {
+      shortages.push({
+        lineId: line.id,
+        productName: line.product.name,
+        needed: formatStock(needed.toString(), line.unitCode),
+        free: formatStock(take.toString(), line.unitCode),
+      });
+    }
+    plan.push({ line, sources });
+  }
+  const mayTake = short !== "block";
+  if (shortages.length > 0 && !(expected.takeWhatThereIs && mayTake)) {
+    return { released: false, shortages, mayTakeWhatThereIs: mayTake };
+  }
+  if (plan.every((step) => step.sources.length === 0)) {
+    return stop(
+      "not_allowed",
+      "No hay nada libre de los materiales de esta orden: no se apartó nada.",
+    );
+  }
+  const withTasks = mode === "issue";
+  const inArea = withTasks
+    ? await insideArea(tx, order.facilityId, order.areaLocationId)
+    : new Set<string>();
+  // With tasks to the area, the area must admit each material (its
+  // restrictions, WMS-22B): asked once, before writing (lock: capacity
+  // after the order).
+  if (withTasks) {
+    const refused = await issuePlacementProblem(tx, {
+      areaId: order.areaLocationId,
+      inArea,
+      lines: plan.map((step) => ({
+        productId: step.line.productId,
+        sources: step.sources,
+      })),
+    });
+    if (refused) {
       return stop(
         "not_allowed",
-        "No hay nada libre de los materiales de esta orden: no se apartó nada.",
+        `${refused} Cambia el área de la orden o sus restricciones antes de liberarla.`,
       );
     }
-    const withTasks = mode === "issue";
-    const inArea = withTasks
-      ? await insideArea(tx, order.facilityId, order.areaLocationId)
-      : new Set<string>();
-    // With tasks to the area, the area must admit each material (its
-    // restrictions, WMS-22B): asked once, before writing (lock: capacity
-    // after the order).
-    if (withTasks) {
-      const refused = await issuePlacementProblem(tx, {
-        areaId: order.areaLocationId,
-        inArea,
-        lines: plan.map((step) => ({
-          productId: step.line.productId,
-          sources: step.sources,
-        })),
-      });
-      if (refused) {
-        return stop(
-          "not_allowed",
-          `${refused} Cambia el área de la orden o sus restricciones antes de liberarla.`,
-        );
-      }
-    }
-    // WMS-74: the stages the company put before releasing (lock: progress
-    // last).
-    const stages = await assertStagesDone(
-      tx,
-      PRODUCTION_ORDER_PROCESS,
-      order.id,
-      PRODUCTION_ORDER_RELEASED_OPERATION,
-    );
-    if (!stages.ok) return stop("not_allowed", stages.message);
-    // Released first: an ISSUE task only comes from a released order
-    // (trigger).
-    await tx.productionOrder.update({
-      where: { id: order.id },
-      data: {
-        status: "RELEASED",
-        releasedAt: new Date(),
-        releasedByUserId: userId,
-      },
-    });
-    let nextNumber = withTasks ? await nextTaskNumber(tx) : 0;
-    let tasks = 0;
-    for (const step of plan) {
-      const done = await setAsideForProduction(tx, actor, {
-        order: { priority: order.priority },
-        line: {
-          id: step.line.id,
-          productId: step.line.productId,
-          unitCode: step.line.unitCode,
-        },
-        sources: step.sources,
-        areaId: order.areaLocationId,
-        inArea,
-        withTasks,
-        nextNumber,
-      });
-      nextNumber = done.nextNumber;
-      tasks += done.tasks;
-    }
-    // WMS-74: the order reached «Liberada» and its operation is done.
-    await reachMilestone(
-      tx,
-      PRODUCTION_ORDER_PROCESS,
-      actor,
-      order.id,
-      "RELEASED",
-    );
-    await completeOperationStage(
-      tx,
-      PRODUCTION_ORDER_PROCESS,
-      actor,
-      order.id,
-      PRODUCTION_ORDER_RELEASED_OPERATION,
-    );
-    await recordAuditEvent(tx, {
-      organizationId,
-      actorUserId: userId,
-      action: "production.order_released",
-      target: { type: "production_order", id: order.id },
-      metadata: {
-        orden: formatProductionNumber(order.number),
-        incompletos: shortages.length,
-        tareas: tasks,
-      },
-    });
-    const number = formatProductionNumber(order.number);
-    return {
-      ok: true,
-      orderId: order.id,
-      summary:
-        (shortages.length === 0
-          ? `Se liberó la orden ${number}: todos los materiales quedaron apartados`
-          : `Se liberó la orden ${number} con lo que hay (${shortages.length === 1 ? "1 material quedó incompleto" : `${shortages.length} materiales quedaron incompletos`})`) +
-        (tasks === 0
-          ? "."
-          : tasks === 1
-            ? " y hay 1 tarea para surtirlos al área."
-            : ` y hay ${tasks} tareas para surtirlos al área.`),
-    };
+  }
+  // WMS-74: the stages the company put before releasing (lock: progress
+  // last).
+  const stages = await assertStagesDone(
+    tx,
+    PRODUCTION_ORDER_PROCESS,
+    order.id,
+    PRODUCTION_ORDER_RELEASED_OPERATION,
+  );
+  if (!stages.ok) return stop("not_allowed", stages.message);
+  // Released first: an ISSUE task only comes from a released order
+  // (trigger).
+  await tx.productionOrder.update({
+    where: { id: order.id },
+    data: {
+      status: "RELEASED",
+      releasedAt: new Date(),
+      releasedByUserId: userId,
+    },
   });
+  let nextNumber = withTasks ? await nextTaskNumber(tx) : 0;
+  let tasks = 0;
+  for (const step of plan) {
+    const done = await setAsideForProduction(tx, actor, {
+      order: { priority: order.priority },
+      line: {
+        id: step.line.id,
+        productId: step.line.productId,
+        unitCode: step.line.unitCode,
+      },
+      sources: step.sources,
+      areaId: order.areaLocationId,
+      inArea,
+      withTasks,
+      nextNumber,
+    });
+    nextNumber = done.nextNumber;
+    tasks += done.tasks;
+  }
+  // WMS-74: the order reached «Liberada» and its operation is done.
+  await reachMilestone(
+    tx,
+    PRODUCTION_ORDER_PROCESS,
+    actor,
+    order.id,
+    "RELEASED",
+  );
+  await completeOperationStage(
+    tx,
+    PRODUCTION_ORDER_PROCESS,
+    actor,
+    order.id,
+    PRODUCTION_ORDER_RELEASED_OPERATION,
+  );
+  await recordAuditEvent(tx, {
+    organizationId,
+    actorUserId: userId,
+    action: "production.order_released",
+    target: { type: "production_order", id: order.id },
+    metadata: {
+      orden: formatProductionNumber(order.number),
+      incompletos: shortages.length,
+      tareas: tasks,
+    },
+  });
+  const number = formatProductionNumber(order.number);
+  return {
+    released: true,
+    shortages,
+    summary:
+      (shortages.length === 0
+        ? `Se liberó la orden ${number}: todos los materiales quedaron apartados`
+        : `Se liberó la orden ${number} con lo que hay (${shortages.length === 1 ? "1 material quedó incompleto" : `${shortages.length} materiales quedaron incompletos`})`) +
+      (tasks === 0
+        ? "."
+        : tasks === 1
+          ? " y hay 1 tarea para surtirlos al área."
+          : ` y hay ${tasks} tareas para surtirlos al área.`),
+  };
 }
 
 /**
@@ -1525,6 +1624,16 @@ export type ProductionOrderView = ProductionOrderSummary & {
    * paint; the release decides again under its locks).
    */
   releaseWaits: string | null;
+  /**
+   * WMS-28B (P7d): the request it was born from and who approved it (who
+   * executed it comes from the reports, WMS-29).
+   */
+  request: {
+    id: string;
+    numberText: string;
+    requestedBy: string;
+    approvedBy: string;
+  } | null;
 };
 
 async function namesOf(client: Client, ids: (string | null)[]) {
@@ -1593,6 +1702,14 @@ export async function getProductionOrder(
         },
       },
       assignees: { select: { userId: true } },
+      request: {
+        select: {
+          id: true,
+          number: true,
+          requestedByUserId: true,
+          decidedByUserId: true,
+        },
+      },
     },
   });
   if (!row) return null;
@@ -1621,6 +1738,8 @@ export async function getProductionOrder(
       row.createdByUserId,
       row.releasedByUserId,
       row.cancelledByUserId,
+      row.request?.requestedByUserId ?? null,
+      row.request?.decidedByUserId ?? null,
       ...row.assignees.map((person) => person.userId),
     ]),
     row.status === "DRAFT"
@@ -1705,6 +1824,14 @@ export async function getProductionOrder(
     cancelledAt: row.cancelledAt,
     cancelReason: row.cancelReason,
     releaseWaits,
+    request: row.request
+      ? {
+          id: row.request.id,
+          numberText: formatProductionRequestNumber(row.request.number),
+          requestedBy: nameOf(row.request.requestedByUserId)!,
+          approvedBy: nameOf(row.request.decidedByUserId)!,
+        }
+      : null,
   };
 }
 

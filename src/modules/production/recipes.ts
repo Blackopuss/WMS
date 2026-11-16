@@ -1662,5 +1662,16 @@ export async function productionOpenWork(
             : `; ${withStock} tienen materiales apartados, que seguirán apartados.`),
     );
   }
+  // WMS-28B (ADR 0075): requests from the floor nobody answered yet.
+  const requests = await client.productionRequest.count({
+    where: { status: "SUBMITTED" },
+  });
+  if (requests > 0) {
+    work.push(
+      requests === 1
+        ? "1 solicitud de producción por atender."
+        : `${requests} solicitudes de producción por atender.`,
+    );
+  }
   return work;
 }

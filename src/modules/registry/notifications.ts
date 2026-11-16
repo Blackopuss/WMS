@@ -1,4 +1,5 @@
 import { INVENTORY_NOTIFICATION_TYPES } from "@/modules/inventory";
+import { PRODUCTION_NOTIFICATION_TYPES } from "@/modules/production";
 import { PURCHASING_NOTIFICATION_TYPES } from "@/modules/purchasing";
 import { API_NOTIFICATION_TYPES } from "@/platform/api";
 import { APPROVAL_NOTIFICATION_TYPES } from "@/platform/approvals";
@@ -25,6 +26,7 @@ export const notificationTypes: readonly NotificationType[] = [
   ...PROCESS_NOTIFICATION_TYPES,
   ...INVENTORY_NOTIFICATION_TYPES,
   ...PURCHASING_NOTIFICATION_TYPES,
+  ...PRODUCTION_NOTIFICATION_TYPES,
 ];
 
 assertValidNotificationTypes(notificationTypes);

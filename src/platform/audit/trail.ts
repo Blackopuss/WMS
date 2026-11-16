@@ -85,6 +85,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "production.order_released":
     "Liberó una orden de producción y apartó sus materiales",
   "production.order_cancelled": "Canceló una orden de producción",
+  "production.request_created": "Pidió producción",
+  "production.request_accepted":
+    "Aceptó una solicitud de producción y nació su orden",
+  "production.request_rejected": "Rechazó una solicitud de producción",
+  "production.request_cancelled": "Canceló una solicitud de producción",
   "customer.created": "Registró un cliente",
   "customer.email_updated": "Cambió el correo de un cliente",
   "purchase_order.delivery_requested":

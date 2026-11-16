@@ -4,7 +4,12 @@ import { dec, newId } from "@/lib";
 import { seesWholeCompany } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
-import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
+import {
+  LOCKING_TRANSACTION,
+  forOrganization,
+  lockRows,
+  type TenantDb,
+} from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
 import { PRODUCT_HOLDS } from "./reservations";
@@ -19,6 +24,13 @@ import { AVAILABLE_ANY_LOT } from "./stock-status";
  */
 
 export const LOW_STOCK_PAGE_SIZE = 25;
+
+type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
+/** What reading available totals needs: the company client or a transaction. */
+export type StockTotalsReader = Pick<
+  Tx,
+  "stockMinimum" | "stockBalance" | "stockReservation"
+>;
 
 /** Products with a minimum that are looked at in one go. */
 const MAX_MINIMUMS = 5_000;
@@ -165,33 +177,17 @@ export type LowStockPage = {
   limited: boolean;
 };
 
-/** Every low product of the company, the most urgent first. */
-async function lowStock(
-  actor: InventoryActor,
-): Promise<{ items: LowStockItem[]; withMinimum: number; limited: boolean }> {
-  await assertModulePermission(
-    actor.organizationId,
-    actor.userId,
-    "inventory.minimum.read",
-  );
-  const client = forOrganization(actor.organizationId);
-  // A minimum is compared with everything the company has: someone
-  // limited to some warehouses or zones would read stock of the others.
-  if (!(await seesWholeCompany(client, actor.userId))) {
-    return { items: [], withMinimum: 0, limited: true };
-  }
-  const minimums = await client.stockMinimum.findMany({
-    // An archived product is not bought again: it is never «low».
-    where: { product: { status: "ACTIVE" } },
-    take: MAX_MINIMUMS,
-    select: {
-      productId: true,
-      quantity: true,
-      product: { select: { name: true, sku: true, unitCode: true } },
-    },
-  });
+/**
+ * What is available of each product, every location of the company added
+ * up, minus what is set aside for documents (WMS-12; what a put-away task
+ * holds is still the product's, WMS-52): the total a minimum is compared
+ * with. A product without balance is missing from the map.
+ */
+async function availableTotals(
+  client: StockTotalsReader,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
   const totals = new Map<string, string>();
-  const ids = minimums.map((minimum) => minimum.productId);
   for (let start = 0; start < ids.length; start += 1_000) {
     const sums = await client.stockBalance.groupBy({
       by: ["productId"],
@@ -227,6 +223,39 @@ async function lowStock(
       );
     }
   }
+
+  return totals;
+}
+
+/** Every low product of the company, the most urgent first. */
+async function lowStock(
+  actor: InventoryActor,
+): Promise<{ items: LowStockItem[]; withMinimum: number; limited: boolean }> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.minimum.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  // A minimum is compared with everything the company has: someone
+  // limited to some warehouses or zones would read stock of the others.
+  if (!(await seesWholeCompany(client, actor.userId))) {
+    return { items: [], withMinimum: 0, limited: true };
+  }
+  const minimums = await client.stockMinimum.findMany({
+    // An archived product is not bought again: it is never «low».
+    where: { product: { status: "ACTIVE" } },
+    take: MAX_MINIMUMS,
+    select: {
+      productId: true,
+      quantity: true,
+      product: { select: { name: true, sku: true, unitCode: true } },
+    },
+  });
+  const totals = await availableTotals(
+    client,
+    minimums.map((minimum) => minimum.productId),
+  );
 
   const items = minimums.flatMap((row) => {
     const stock = dec(totals.get(row.productId) ?? 0);
@@ -293,4 +322,42 @@ export async function listLowStock(
 /** How many products are low right now. */
 export async function countLowStock(actor: InventoryActor): Promise<number> {
   return (await lowStock(actor)).items.length;
+}
+
+/**
+ * WMS-28B (ADR 0075): of these products, those with a minimum whose
+ * available stock — the same total `listLowStock` compares (every location
+ * of the company, minus what is set aside) — is at or below minimum × (1 +
+ * margin %). Only ids come back, never a quantity: who asks for production
+ * sees names, not stock (WMS-20). It checks no permission: the caller
+ * already checked its own and never shows a number from here.
+ */
+export async function productsNearMinimum(
+  client: StockTotalsReader,
+  productIds: readonly string[],
+  marginPercent: string,
+): Promise<Set<string>> {
+  if (productIds.length === 0) return new Set();
+  const margin = dec(1).plus(dec(marginPercent).dividedBy(100));
+  const minimums = await client.stockMinimum.findMany({
+    where: {
+      productId: { in: [...productIds] },
+      product: { status: "ACTIVE" },
+    },
+    select: { productId: true, quantity: true },
+  });
+  const totals = await availableTotals(
+    client,
+    minimums.map((row) => row.productId),
+  );
+  return new Set(
+    minimums
+      .filter(
+        (row) =>
+          !dec(totals.get(row.productId) ?? 0).greaterThan(
+            dec(row.quantity.toString()).times(margin),
+          ),
+      )
+      .map((row) => row.productId),
+  );
 }

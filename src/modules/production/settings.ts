@@ -51,7 +51,43 @@ export const RELEASE_SHORT = {
   defaultValue: "ask",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-28B (ADR 0075): how close to its minimum a product must be to offer it
+ * in «Queda poco» to who may ask for production (P8): available at or below
+ * minimum × (1 + margin).
+ */
+export const LOW_MARGIN = {
+  key: "production.request.low_margin",
+  module: "production",
+  area: "Producción",
+  label: "Productos que se ofrecen para pedir producción",
+  options: [
+    {
+      value: "0",
+      label: "En su mínimo o debajo",
+      help: "Solo lo que ya llegó a su mínimo.",
+    },
+    {
+      value: "10",
+      label: "Hasta 10 % arriba del mínimo",
+      help: "Lo que está en su mínimo o hasta 10 % arriba.",
+    },
+    {
+      value: "25",
+      label: "Hasta 25 % arriba del mínimo",
+      help: "Lo que está en su mínimo o hasta 25 % arriba.",
+    },
+    {
+      value: "50",
+      label: "Hasta 50 % arriba del mínimo",
+      help: "Lo que está en su mínimo o hasta la mitad arriba.",
+    },
+  ],
+  defaultValue: "25",
+} as const satisfies SettingDefinition;
+
 export const PRODUCTION_SETTINGS: readonly SettingDefinition[] = [
   MATERIALS_MODE,
   RELEASE_SHORT,
+  LOW_MARGIN,
 ];
