@@ -23,6 +23,8 @@ export type Health = {
     queue: CheckState;
     backup: CheckState;
     errors: CheckState;
+    /** Files storage (WMS-67): what the worker's last probe said. */
+    storage: CheckState;
   };
 };
 
@@ -33,6 +35,10 @@ export const WORKER_DOWN_AFTER_MS = 2 * 60 * 1000;
 export const QUEUE_STUCK_AFTER_MS = 10 * 60 * 1000;
 /** Backups run daily; a missed one shows after this. */
 export const BACKUP_STALE_AFTER_MS = 26 * 60 * 60 * 1000;
+/** The worker probes the storage of files this often (WMS-67). */
+export const STORAGE_CHECK_EVERY_MS = 5 * 60 * 1000;
+/** A probe older than this does not say the storage answers. */
+export const STORAGE_CHECK_STALE_AFTER_MS = 15 * 60 * 1000;
 /** Errors in 15 minutes from which the server counts as failing. */
 export const ERROR_ALERT_THRESHOLD = 20;
 
@@ -51,6 +57,47 @@ export async function writeWorkerHeartbeat(workerId: string): Promise<void> {
     file,
     JSON.stringify({ workerId, at: new Date().toISOString() }),
   );
+}
+
+function storageCheckFile(): string {
+  return path.join(path.dirname(heartbeatFile()), "almacenamiento.json");
+}
+
+/**
+ * Called by the worker after probing the storage (`pingStorage` of
+ * platform/files): never a request of a person. Only the state, the driver
+ * and the time; the reason goes to the log, not to /api/salud.
+ */
+export async function writeStorageCheck(probe: {
+  ok: boolean;
+  driver: string;
+  ms: number;
+}): Promise<void> {
+  const file = storageCheckFile();
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    JSON.stringify({
+      ok: probe.ok,
+      driver: probe.driver,
+      ms: probe.ms,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+async function storageState(now: number): Promise<CheckState> {
+  let saved: { ok?: unknown; at?: unknown };
+  try {
+    saved = JSON.parse(await readFile(storageCheckFile(), "utf8"));
+  } catch {
+    return "sin_configurar";
+  }
+  const at = Date.parse(String(saved.at ?? ""));
+  if (Number.isNaN(at) || now - at > STORAGE_CHECK_STALE_AFTER_MS) {
+    return "falla";
+  }
+  return saved.ok === true ? "ok" : "falla";
 }
 
 async function lastHeartbeat(): Promise<number | null> {
@@ -116,7 +163,9 @@ export async function checkHealth(now = Date.now()): Promise<Health> {
   const errors: CheckState =
     recentErrorCount(now) >= ERROR_ALERT_THRESHOLD ? "falla" : "ok";
 
-  const checks = { database, worker, queue, backup, errors };
+  const storage = await storageState(now);
+
+  const checks = { database, worker, queue, backup, errors, storage };
   return {
     ok: Object.values(checks).every((state) => state !== "falla"),
     checks,

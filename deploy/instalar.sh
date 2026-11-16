@@ -258,6 +258,10 @@ AGE_RECIPIENT=$CLAVE_RESPALDOS
 RETENER_DIAS=14
 # Copia fuera del servidor con rclone (vacío = no copiar), p. ej. b2:almacen-respaldos
 RCLONE_DESTINO=
+# Dónde viven los archivos de las empresas (WMS-67, ADR 0070): «disco» (se
+# cifran con la base) o «externo» (R2: se copian al bucket de respaldo,
+# FILE_BACKUP_S3_* en la configuración de la app).
+ARCHIVOS=disco
 EOF
 fi
 chown root:root "$RESPALDO_ENV"

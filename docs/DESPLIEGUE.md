@@ -160,6 +160,7 @@ Avisa cuando falla cualquiera de estas cosas:
 | `queue` | un trabajo lleva 10 minutos esperando |
 | `backup` | el último respaldo falló o el último correcto tiene más de 26 horas |
 | `errors` | hubo 20 errores o más en 15 minutos |
+| `storage` | la última prueba del almacenamiento de archivos (disco o R2) falló o tiene más de 15 minutos |
 
 Además, el **worker avisa por correo** (PIL-04, ADR 0025) cuando algo de esa tabla empieza a fallar, cuando la app web deja de responder y cuando se recupera. Revisa cada minuto, avisa si la falla dura dos revisiones seguidas y no repite el aviso mientras siga igual. Para recibirlo, pon tu correo en `/srv/almacen/shared/.env.local` y reinicia el worker:
 
@@ -181,6 +182,41 @@ sudo rclone config               # crea el remoto, p. ej. «b2»
 sudo nano /etc/almacen/respaldo.env          # RCLONE_DESTINO=b2:almacen-respaldos
 sudo systemctl start almacen-respaldo.service  # prueba
 ```
+
+### 8. Archivos en Cloudflare R2 (cuando se decida)
+
+Por omisión los archivos de las empresas (hojas que se importan y fotos de evidencia) viven en el disco del servidor (`FILE_STORAGE_DRIVER=disk`) y el respaldo diario los cifra junto con la base. Para pasarlos a **Cloudflare R2** (decisión del fundador, ADR 0070):
+
+**En Cloudflare (una sola vez):**
+1. En el panel, _R2 Object Storage_ → **Create bucket**. Nombre, p. ej. `wms-archivos` (solo minúsculas, números y guiones), ubicación automática. **No** actives el dominio público ni el acceso `r2.dev`: el bucket debe quedar privado; los archivos los entrega la app.
+2. _R2_ → **Manage R2 API Tokens** → **Create API token**: permiso **Object Read & Write**, aplicado **solo** al bucket `wms-archivos` (no a todos), sin vencimiento o con el que prefieras. Copia el **Access Key ID** y el **Secret Access Key** (este último se muestra una sola vez) y el extremo `https://<id de cuenta>.r2.cloudflarestorage.com`.
+3. Bucket de respaldo: de preferencia **en otra cuenta de Cloudflare** (o en otro proveedor compatible con S3, como Backblaze B2), p. ej. `wms-archivos-respaldo`, también privado, con su propio token de **Object Read & Write** solo sobre él. Así un token robado o un borrado en la cuenta principal no alcanza el respaldo.
+4. Opcional: en el bucket principal, _Settings_ → **Bucket lock rules** con una retención de N días impide borrar un objeto antes de tiempo (a cambio, borrar una foto no la quita del bucket hasta que venza). **No** pongas reglas de ciclo de vida que borren objetos en ninguno de los dos buckets: borrarían archivos vivos.
+
+R2 cifra todos los objetos en reposo (AES-256) sin configurar nada; Cloudflare ve los bytes y tamaños, pero no nombres de archivo, empresas ni personas (las llaves son UUID).
+
+**En el servidor:**
+
+```bash
+sudo nano /srv/almacen/shared/.env.local
+#   FILE_STORAGE_S3_ENDPOINT=https://<id de cuenta>.r2.cloudflarestorage.com
+#   FILE_STORAGE_S3_BUCKET=wms-archivos
+#   FILE_STORAGE_S3_ACCESS_KEY_ID=…      FILE_STORAGE_S3_SECRET_ACCESS_KEY=…
+#   FILE_BACKUP_S3_ENDPOINT=…   FILE_BACKUP_S3_BUCKET=wms-archivos-respaldo
+#   FILE_BACKUP_S3_ACCESS_KEY_ID=…       FILE_BACKUP_S3_SECRET_ACCESS_KEY=…
+#   (FILE_STORAGE_DRIVER sigue en disk por ahora)
+almacen storage:copy --from disk --to s3 --verify     # copia y comprueba; repetible
+sudo nano /srv/almacen/shared/.env.local              # FILE_STORAGE_DRIVER=s3
+sudo systemctl restart almacen-web almacen-worker
+almacen storage:copy --from disk --to s3 --verify     # lo subido mientras tanto
+sudo nano /etc/almacen/respaldo.env                   # ARCHIVOS=externo
+sudo systemctl start almacen-respaldo.service         # copia al bucket de respaldo
+curl -s localhost:3000/api/salud                      # "storage":"ok" en unos minutos
+```
+
+El comando sale con error y lista cada archivo si algo falta o no coincide. Unos días después, cuando todo funcione, libera el disco: `almacen storage:copy --from disk --to s3 --verify --remove-source` (solo borra lo que comprobó en R2). **Para volver al disco:** `almacen storage:copy --from s3 --to disk --verify`, `FILE_STORAGE_DRIVER=disk`, reinicia y `ARCHIVOS=disco`. Para ver objetos del bucket sin archivo en la base: `almacen storage:copy --audit --to s3` (no borra nada).
+
+Con `ARCHIVOS=externo`, cada respaldo copia al bucket de respaldo lo que la base referencia (nunca borra ni reemplaza nada allá) y lo vuelve a leer; si falla, el respaldo queda fallido y llega el aviso. Lo borrado en la app sigue en el respaldo.
 
 ## Operación diaria
 
@@ -222,6 +258,8 @@ sudo shred -u /root/llave.txt
 ```
 
 El script pide escribir `RESTAURAR`, detiene la app, reemplaza la base y los archivos, y la vuelve a arrancar.
+
+Con los archivos en R2 (`ARCHIVOS=externo`) no se indica el archivo `archivos-FECHA.tar.gz.age`: después de la base, el script regresa del bucket de respaldo lo que falte en el principal (`storage:copy --from backup --to s3 --verify`).
 
 ## Actualizar los scripts del servidor
 

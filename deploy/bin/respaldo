@@ -9,7 +9,8 @@
 #    coincidir con la original. Un respaldo que no se restaura no cuenta.
 # 3. Cifrado con la llave pública (age): en el servidor no queda nada
 #    legible y la llave para abrirlos vive fuera de él.
-# 4. Archivos de las empresas, también cifrados.
+# 4. Archivos de las empresas: en disco, también cifrados; en R2 (WMS-67,
+#    ARCHIVOS=externo), copiados al bucket de respaldo y comprobados.
 # 5. Copia fuera del servidor si hay destino de rclone; limpieza de viejos.
 # Solo si todo salió bien se marca el respaldo como correcto (/api/salud).
 set -euo pipefail
@@ -28,12 +29,13 @@ trap '[[ $? -eq 0 ]] || marcar_fallo' EXIT
 # La configuración que root lee vive en /etc/almacen, fuera del árbol que la
 # app puede escribir, y se lee como CLAVE=VALOR, nunca con «source»: así una
 # escritura de la cuenta «almacen» no puede plantar comandos que root ejecute
-# (auditoría 3). Solo se aceptan las tres claves conocidas.
+# (auditoría 3). Solo se aceptan las claves conocidas.
 CONFIG=/etc/almacen/respaldo.env
 [[ -r "$CONFIG" ]] || { echo "Falta $CONFIG" >&2; exit 1; }
 AGE_RECIPIENT=""
 RETENER_DIAS=14
 RCLONE_DESTINO=""
+ARCHIVOS=disco
 while IFS= read -r LINEA || [[ -n "$LINEA" ]]; do
   LINEA="${LINEA%$'\r'}"
   [[ "$LINEA" =~ ^[[:space:]]*(#|$) ]] && continue
@@ -44,10 +46,12 @@ while IFS= read -r LINEA || [[ -n "$LINEA" ]]; do
     AGE_RECIPIENT) AGE_RECIPIENT="$VALOR" ;;
     RETENER_DIAS) RETENER_DIAS="$VALOR" ;;
     RCLONE_DESTINO) RCLONE_DESTINO="$VALOR" ;;
+    ARCHIVOS) ARCHIVOS="$VALOR" ;;
   esac
 done < "$CONFIG"
 [[ "$AGE_RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]] || { echo "AGE_RECIPIENT inválido en $CONFIG" >&2; exit 1; }
 [[ "$RETENER_DIAS" =~ ^[0-9]+$ ]] || RETENER_DIAS=14
+[[ "$ARCHIVOS" == "disco" || "$ARCHIVOS" == "externo" ]] || { echo "ARCHIVOS debe ser disco o externo en $CONFIG" >&2; exit 1; }
 
 RAIZ="$(cat /root/.almacen-mysql-root)"
 FECHA="$(date -u +%Y%m%d-%H%M%S)"
@@ -90,7 +94,17 @@ echo "Copia verificada: $COPIA tablas/disparadores."
 
 echo "Cifrando…"
 gzip -c "$TRABAJO/almacen.sql" | age -r "$AGE_RECIPIENT" -o "$DESTINO/almacen-$FECHA.sql.gz.age"
-tar -C "$BASE/shared" -czf - storage | age -r "$AGE_RECIPIENT" -o "$DESTINO/archivos-$FECHA.tar.gz.age"
+if [[ "$ARCHIVOS" == "disco" ]]; then
+  tar -C "$BASE/shared" -czf - storage | age -r "$AGE_RECIPIENT" -o "$DESTINO/archivos-$FECHA.tar.gz.age"
+else
+  # Los archivos viven en R2 (WMS-67, ADR 0070): se copian al bucket de
+  # respaldo los que la base referencia, sin borrar ni reemplazar nada allá,
+  # y se vuelven a leer para comprobarlos. Corre como la cuenta «almacen»
+  # (sus credenciales están en su configuración, no aquí). Si algo falta o
+  # no coincide, el respaldo queda fallido y se avisa.
+  echo "Copiando los archivos al bucket de respaldo…"
+  /usr/local/bin/almacen storage:copy --from s3 --to backup --verify
+fi
 
 if [[ -n "${RCLONE_DESTINO:-}" ]]; then
   echo "Copiando fuera del servidor ($RCLONE_DESTINO)…"

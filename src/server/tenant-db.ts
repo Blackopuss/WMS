@@ -111,6 +111,7 @@ export const TENANT_MODELS = [
   "Incident",
   "IncidentNote",
   "EvidencePhoto",
+  "StorageCleanup",
   "EquipmentType",
   "Equipment",
   "EquipmentMaintenance",

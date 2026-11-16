@@ -112,6 +112,7 @@ describe("provisionCompany", () => {
       }),
     ).toEqual([
       { key: "active_products", taken: 0, reserved: 0 },
+      { key: "file_storage_kib", taken: 0, reserved: 0 },
       { key: "users", taken: 0, reserved: 0 },
     ]);
 
@@ -189,7 +190,8 @@ describe("provisionCompany", () => {
     const rows = await db.entitlement.findMany({
       where: { organizationId: org },
     });
-    expect(rows).toHaveLength(5);
+    // Products, users, warehouses, storage (WMS-67) and two modules.
+    expect(rows).toHaveLength(6);
     expect(rows.every((r) => r.validUntil?.getTime() === until.getTime())).toBe(
       true,
     );

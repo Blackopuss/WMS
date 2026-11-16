@@ -8,6 +8,8 @@ import { newId } from "@/lib";
 import { enqueueJob } from "@/platform/jobs";
 import {
   checkHealth,
+  STORAGE_CHECK_STALE_AFTER_MS,
+  writeStorageCheck,
   writeWorkerHeartbeat,
   WORKER_DOWN_AFTER_MS,
 } from "@/platform/ops";
@@ -80,6 +82,21 @@ describe("checkHealth", () => {
     }
   });
 
+  it("says what the worker's last probe of the storage said (WMS-67)", async () => {
+    expect((await checkHealth()).checks.storage).toBe("sin_configurar");
+    await writeStorageCheck({ ok: true, driver: "s3", ms: 40 });
+    expect((await checkHealth()).checks.storage).toBe("ok");
+    expect(
+      (await checkHealth(Date.now() + STORAGE_CHECK_STALE_AFTER_MS + 1000))
+        .checks.storage,
+    ).toBe("falla");
+    await writeStorageCheck({ ok: false, driver: "s3", ms: 30_000 });
+    const health = await checkHealth();
+    expect(health.checks.storage).toBe("falla");
+    expect(health.ok).toBe(false);
+    await rm(path.join(dir, "almacenamiento.json"));
+  });
+
   it("fails when a job waits too long for a worker", async () => {
     const user = await db.user.create({
       data: {
@@ -128,6 +145,7 @@ describe("GET /api/salud", () => {
         queue: "ok",
         backup: "sin_configurar",
         errors: "ok",
+        storage: "sin_configurar",
       },
     });
   });

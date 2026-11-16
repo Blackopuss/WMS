@@ -29,6 +29,7 @@ const LABELS: Record<AlertCheck, string> = {
     "La cola de trabajos está detenida: hay trabajos esperando más de 10 minutos.",
   backup: "El respaldo falló o el último correcto tiene más de 26 horas.",
   errors: "Hay muchos errores en el servidor (20 o más en 15 minutos).",
+  storage: "El almacenamiento de archivos no responde.",
 };
 
 function stateFile(): string {

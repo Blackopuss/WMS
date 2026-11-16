@@ -161,6 +161,7 @@ model Organization {
   stockCountCaptures           StockCountCapture[]
   jobs                         Job[]
   storedFiles                  StoredFile[]
+  storageCleanups              StorageCleanup[]
   productImports               ProductImport[]
   productImportItems           ProductImportItem[]
   exitImports                  ExitImport[]
@@ -1701,6 +1702,39 @@ model StoredFile {
   @@index([organizationId, purpose, createdAt])
   @@index([organizationId, createdByUserId, purpose, createdAt])
   @@map("stored_file")
+}
+
+enum StorageCleanupReason {
+  /// Written before the bytes are uploaded; removed in the transaction that
+  /// creates the file's row. Left behind = an upload that did not end.
+  UPLOAD
+  /// Written in the transaction that marks the file removed; gone once the
+  /// bytes are.
+  DELETE
+}
+
+/// Keys of the storage whose bytes may be left without a live file
+/// (WMS-67, ADR 0070): an upload that failed or did not end, or a file
+/// removed whose bytes could not be removed yet. The round
+/// `platform.storage_cleanup` removes the bytes when no live row of
+/// `stored_file` has the key, and then the row.
+model StorageCleanup {
+  id             String               @id @db.Char(36)
+  organizationId String               @db.Char(36)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// "<organizationId>/<fileId>", the same as `stored_file.storageKey`.
+  storageKey     String               @db.VarChar(100)
+  reason         StorageCleanupReason
+  /// Rounds that tried and failed.
+  attempts       Int                  @default(0)
+  /// Why the last one failed, without secrets: «delete (503)».
+  lastError      String?              @db.VarChar(200)
+  createdAt      DateTime             @default(now()) @db.DateTime(3)
+  updatedAt      DateTime             @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, createdAt])
+  @@map("storage_cleanup")
 }
 
 enum ProductImportStatus {

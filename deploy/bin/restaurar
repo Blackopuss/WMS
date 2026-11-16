@@ -10,6 +10,9 @@
 # La llave privada se sube solo para esto y se borra al terminar
 # (shred -u /root/llave-respaldos.txt). Detiene la app y el worker,
 # reemplaza la base (y los archivos, si se indican) y los vuelve a arrancar.
+# Con los archivos en R2 (ARCHIVOS=externo en /etc/almacen/respaldo.env,
+# WMS-67) no se indica archivo: después de la base se regresa del bucket de
+# respaldo lo que falte en el principal.
 set -euo pipefail
 umask 077
 
@@ -21,6 +24,16 @@ falla() { printf '\n\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || falla "córrelo como root."
 [[ -f "$RESPALDO" && -f "$LLAVE" ]] || falla "uso: restaurar <respaldo.sql.gz.age> <llave> [archivos.tar.gz.age]"
 [[ -z "$ARCHIVOS" || -f "$ARCHIVOS" ]] || falla "no existe $ARCHIVOS"
+
+# Solo la clave ARCHIVOS, leída como CLAVE=VALOR (nunca con «source»).
+ARCHIVOS_EN=disco
+if [[ -r /etc/almacen/respaldo.env ]]; then
+  while IFS= read -r LINEA || [[ -n "$LINEA" ]]; do
+    LINEA="${LINEA%$'\r'}"
+    [[ "$LINEA" == ARCHIVOS=externo ]] && ARCHIVOS_EN=externo
+  done < /etc/almacen/respaldo.env
+fi
+[[ "$ARCHIVOS_EN" == "disco" || -z "$ARCHIVOS" ]] || falla "los archivos viven en R2: no indiques un archivo de respaldo de archivos."
 
 RAIZ="$(cat /root/.almacen-mysql-root)"
 TRABAJO="$(mktemp -d)"
@@ -53,6 +66,12 @@ if [[ -n "$ARCHIVOS" ]]; then
   mv "$BASE/shared/storage" "$BASE/shared/storage.antes-$(date -u +%Y%m%d%H%M%S)"
   age -d -i "$LLAVE" "$ARCHIVOS" | tar -xzf - -C "$BASE/shared"
   chown -R almacen:almacen "$BASE/shared/storage"
+fi
+
+if [[ "$ARCHIVOS_EN" == "externo" ]]; then
+  echo "Regresando los archivos desde el bucket de respaldo…"
+  /usr/local/bin/almacen storage:copy --from backup --to s3 --verify ||
+    echo "Algunos archivos no se pudieron regresar (arriba la lista); la base ya quedó restaurada." >&2
 fi
 
 systemctl start almacen-web.service almacen-worker.service
