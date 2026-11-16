@@ -115,6 +115,7 @@ export default async function EditarProductoPage({
           volume: product.unitVolume ?? "",
           tracking: product.tracking,
           lotExpiry: product.lotExpiry,
+          inspectOnReceipt: product.inspectOnReceipt ? "yes" : "no",
         }}
         submitLabel="Guardar cambios"
         categories={groups.categories}

@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-30-0** Inspección al recibir por producto, lista «Por inspeccionar»,
+  devolución al proveedor por estado, movimiento «Desechar» y retención
+  genérica de existencias no disponibles. ADR 0068.
 - **WMS-74** Motor de procesos de la empresa: etapas y subetapas encima de
   los estados fijos de un documento, con candado entre etapas, relevo entre
   áreas y rastro con fotos; ningún módulo declara documentos todavía.

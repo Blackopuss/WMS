@@ -6,7 +6,8 @@ import { lockRows, type TenantDb } from "@/server";
 
 import { formatStock, type InventoryActor } from "./movements";
 import { costPerUnit, lineCost, openCostBook } from "./valuation";
-import { lotColumns } from "./stock-status";
+import { STOCK_STATUS_LABELS, lotColumns } from "./stock-status";
+import { holdProblem } from "./holds";
 import { blockedMessage, freeToTake } from "./reservations";
 import {
   serialKey,
@@ -52,12 +53,25 @@ export type ReturnExitLine = {
   serials?: unknown;
   receivedUnitIds?: ReadonlySet<string>;
   /**
-   * WMS-54 (ADR 0052): the state it leaves from — the one its receipt line
-   * came in: AVAILABLE, or DAMAGED for what arrived damaged. Absent =
-   * AVAILABLE.
+   * WMS-54 (ADR 0052), WMS-30-0 (ADR 0068): the state it leaves from. By
+   * default the one its receipt line came in; it may also be what it
+   * became after a decision (rejected, damaged). Absent = AVAILABLE.
    */
-  status?: "AVAILABLE" | "DAMAGED";
+  status?: ReturnableStatus;
 };
+
+/** States stock may go back to the supplier from (WMS-30-0, ADR 0068). */
+export const RETURNABLE_STATUSES = [
+  "AVAILABLE",
+  "INSPECTION",
+  "DAMAGED",
+  "REJECTED",
+] as const;
+export type ReturnableStatus = (typeof RETURNABLE_STATUSES)[number];
+
+export const isReturnableStatus = (value: unknown): value is ReturnableStatus =>
+  typeof value === "string" &&
+  (RETURNABLE_STATUSES as readonly string[]).includes(value);
 
 export type ReturnExitResult =
   | { ok: true; movementId: string; texts: string[] }
@@ -103,8 +117,9 @@ export async function postReturnExit(
 
   const lines = input.lines.map((line) => ({
     ...line,
-    status:
-      line.status === "DAMAGED" ? ("DAMAGED" as const) : ("AVAILABLE" as const),
+    status: isReturnableStatus(line.status)
+      ? line.status
+      : ("AVAILABLE" as const),
     baseQuantity: line.capturedQuantity.times(line.factor),
   }));
   // WMS-21: each line leaves from the lot it was received in. A product
@@ -226,11 +241,34 @@ export async function postReturnExit(
         // WMS-54: what arrived damaged leaves from «Dañado»; if somebody
         // changed its state or moved it, it is said plainly.
         error:
-          line.status === "DAMAGED"
-            ? `En ${where} solo hay ${formatStock(before.toString(), line.unitCode)} de este producto en «Dañado». Si ya cambió de estado o de lugar, elige de dónde sale o sácalo con una salida.`
+          line.status !== "AVAILABLE"
+            ? `En ${where} solo hay ${formatStock(before.toString(), line.unitCode)} de este producto en «${STOCK_STATUS_LABELS[line.status]}». Si ya cambió de estado o de lugar, elige de dónde sale o sácalo con una salida.`
             : `En ${where} solo hay ${formatStock(before.toString(), line.unitCode)}. Lo que ya salió o se movió de ahí no se puede devolver desde ahí.`,
       };
     }
+  }
+  // WMS-30-0 (ADR 0068): what an open document holds of stock that is not
+  // available (a customer return, a verification) does not go back.
+  for (const [slot, quantity] of taken) {
+    const [productId = "", locationId = "", lotKey = "", status = ""] =
+      slot.split(" ");
+    if (status === "AVAILABLE") continue;
+    const index = lines.findIndex((line) => slotOf(line) === slot);
+    const line = lines[index]!;
+    const held = await holdProblem(
+      tx,
+      {
+        productId,
+        locationId,
+        status: line.status,
+        lotId: lotKey || null,
+      },
+      dec(current.get(slot)?.quantity.toString() ?? 0),
+      quantity,
+      lines.flatMap((each, at) => (slotOf(each) === slot ? unitsOf[at]! : [])),
+      line.unitCode,
+    );
+    if (held) return { ok: false, line: index, error: held.message };
   }
   // WMS-12: what is reserved for an order is not sent back.
   const byProduct = new Map<string, Decimal>();

@@ -34,6 +34,7 @@ import {
   countTransfersToReceive,
   countTodayCounts,
   countExpiringLots,
+  countAwaitingInspection,
   countUnplacedStock,
   getDaySummary,
   getFirstSteps,
@@ -126,6 +127,14 @@ export default async function InicioPage() {
     access.can("inventory.stock.read") &&
     access.allows("inventory.transfer.create")
       ? await countUnplacedStock(actor)
+      : 0;
+  // WMS-30-0: what waits for inspection, for who decides it; only if any.
+  const inspecting =
+    inventory &&
+    access.can("inventory.stock.read") &&
+    (access.allows("inventory.status.release") ||
+      access.allows("inventory.status.change"))
+      ? await countAwaitingInspection(actor)
       : 0;
   // WMS-21: lots with stock that expired or are about to; only if any.
   const expiring =
@@ -406,6 +415,19 @@ export default async function InicioPage() {
         </Link>
       )}
 
+      {inspecting > 0 && (
+        <Link
+          href="/inventario/por-inspeccionar"
+          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="flex-1">
+            {inspecting === 1
+              ? "1 renglón por inspeccionar."
+              : `${inspecting.toLocaleString("es-MX")} renglones por inspeccionar.`}
+          </span>
+          <span className="font-medium text-primary">Ver cuáles</span>
+        </Link>
+      )}
       {unplaced > 0 && (
         <Link
           href="/inventario/sin-acomodar"

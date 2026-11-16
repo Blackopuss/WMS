@@ -136,7 +136,10 @@ código»):
 | Movimientos | `movements.ts` | `registerEntry`, `registerExit`, `registerTransfer`, `registerAdjustment` (sobre el umbral, con la regla encendida, responde `pending_approval` y no escribe nada, WMS-41), `registerInitialBalance`, `reverseMovement`; historial (`listMovements`, `listRecentMovements`, `listMovementAuthors`); lecturas de saldo (`getStockByLocation`, `getStockTotals`, `listStockLocations`, `listProductsWithoutStock`); `findConfirmation` (verificación por clave) y `formatStock` |
 | Salida rápida | `quick-exit.ts` | `registerQuickExit`: varias líneas en un movimiento |
 | Existencias de un producto | `product-stock.ts`, `stock-status.ts` | `getProductStock` («hay», «disponible», apartado); estados del saldo y filtros `availableOfLot`, `AVAILABLE_ANY_LOT` |
-| Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo), `permissionForStatusChange` |
+| Cambio de estado | `status-change.ts` | `changeStockStatus` (movimiento `STATUS_CHANGE` con motivo; lo que termina disponible en un lugar de paso crea su tarea de acomodo, WMS-30-0), `permissionForStatusChange` |
+| Inspección al recibir (WMS-30-0) | `inspection.ts` | `listAwaitingInspection` y `countAwaitingInspection` (derivadas: saldos en `INSPECTION` del almacén activo y del alcance, con su origen y lo retenido); la regla es `product.inspectOnReceipt` y la aplica `postReceiptEntry` |
+| Retención genérica (WMS-30-0) | `holds.ts` | `holdStock`, `releaseHold`, `releaseHoldsOf` (dentro de la transacción del documento, después de sus candados) y `heldStock` (la única lectura: suma `stock_hold` y lo que retienen las devoluciones de clientes); la usan «Cambiar estado» (`holdSource` en `writeStatusChange`), las reversas, «Desechar» y la devolución al proveedor. Para WMS-30B (ADR 0068) |
+| Desechar (WMS-30-0) | `disposal.ts` | `disposeStock` (de dañado o rechazado, con motivo, clave de confirmación, `repeated`), `findDisposalConfirmation`, `postDisposal` (núcleo dentro de una transacción ajena, para WMS-29 y WMS-30B; `allowedStatuses`, `holdSource`), `DISPOSABLE_STATUSES`. Movimiento `DISPOSAL` al costo promedio; no se reversa |
 | Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `releaseReservationPart`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento. `TASK_HOLD` (fuente de lo que aparta una tarea de acomodo o de reposición) y `PRODUCT_HOLDS` (filtro de lo apartado de todo un producto) |
 | Acomodo | `putaway.ts`, `putaway-rules.ts` | `putawayTarget` (la única que decide el lugar recomendado), `createPutawayTasks` (dentro de la transacción de una recepción o entrada), `createContainerPutawayTask` (una tarea por tarima, WMS-53), `createPendingPutawayTasks` («Crear tareas de acomodo», también para tarimas), `isTaskNumberClash`; orden puro `rankPutawayPlaces` |
 | Lotes | `lots.ts`, `lot-rules.ts` | lotes con existencias, ficha, por caducar (`listExpiringLots`, `countExpiringLots`), `changeLotExpiry`; reglas puras del código y la fecha del lote |
@@ -144,7 +147,7 @@ código»):
 | Tarimas y contenedores | `containers.ts`, `container-rules.ts`, `contained.ts` | `packStock` (armar o agregar), `unpackStock` (sacar), `closeContainer` (desarmar), `moveContainer` (un escaneo) y su núcleo `moveContainerWithin`, `prepareReceiptContainer`/`packReceived` (para la recepción), lecturas `listContainers`, `getContainer`, `listContainerEvents`, `findContainerByCode`, `listOpenContainersAt`, `containersEnabled`, `containersVisible`, `createContainer`; `containedAt` (lo que hay en contenedores de una llave; `storageOnly` sin bultos de empaque); reglas puras del código (`C-0001`), del tipo y del peso (`parseWeightKg`) |
 | Capacidad | `placement.ts`, `location-occupancy.ts` | `checkPlacement`, `loadPlacementRules`; `getLocationOccupancy` (ocupación derivada) |
 | Costo y valor | `average-cost.ts`, `inventory-value.ts` | `parseCost`, `getInventoryValue`, `getProductCost`, `mayReadInventoryCosts` |
-| Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`; `status` por línea para lo dañado y el reparto de cross-docking, que responde en `crossDock`) y `postReturnExit` (`RETURN`, del estado de cada línea), dentro de la transacción de la recepción o devolución |
+| Para Compras | `receipt-entry.ts`, `return-exit.ts` | `postReceiptEntry` (movimiento `RECEIPT`; `status` por línea para lo dañado y el reparto de cross-docking, que responde en `crossDock`) y `postReturnExit` (`RETURN`, del estado que diga cada línea: disponible, en inspección, dañado o rechazado, `RETURNABLE_STATUSES`; lo retenido no sale), dentro de la transacción de la recepción o devolución |
 | Cross-docking | `cross-docking.ts`, `cross-dock-rules.ts` | `planCrossDock` y `rankWaitingLines` (puras: a qué pedidos va lo que llega); `lockCrossDockOrders` y `sendToWaitingOrders` son internas (las llaman la recepción y la entrada manual); `CROSS_DOCK_MODE`; tipo `CrossDockSent` |
 | Mínimos | `minimums.ts` | `setMinimum`, `getMinimum`, `listLowStock`, `countLowStock` |
 | Reposición de surtido | `replenishment.ts`, `replenishment-rules.ts`, `stock-sources.ts` | Reglas por producto y ubicación de surtido (`saveReplenishmentRule`, `removeReplenishmentRule`, `listReplenishmentRules`, `getReplenishmentRule`, `listPickingPlaces`, `replenishmentVisible`); `replenishNow` («Reponer ahora») y `runReplenishmentRound` (la ronda del worker) crean tareas `REPLENISH`; `replenishmentPlan` (interna) es la única que decide cuánto y de dónde; piezas puras `replenishQuantity`, `largestThatFits`, `splitAmongSources`, `replenishmentStateOf` y el orden de orígenes `rankStockSources`, compartido con el surtido (WMS-23/24) |
@@ -187,6 +190,8 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Movimientos: `entry.create`, `opening.create`, `exit.create`,
   `transfer.create`, `adjustment.create`, `movement.reverse`.
 - Estados: `status.change`, `status.release`, `damage.report`.
+- Desechar (WMS-30-0): `disposal.create` (titular, Administrador, Almacén y
+  Supervisor de almacén).
 - Conteos: `count.read|create|update|apply`; programas de conteo cíclico
   `count_program.read|manage` y exactitud `count_accuracy.read` (WMS-55; el
   valor de las diferencias, solo con `cost.read`).
@@ -226,7 +231,7 @@ Los de productos, presentaciones y ubicaciones los comprueban los servicios de
 `container_item`, `container_event`,
 `product_cost`, `stock_minimum`, `stock_count`, `stock_count_line`,
 `stock_count_capture`, `count_program`, `warehouse_task`, `replenishment_rule`,
-`stock_reservation`,
+`stock_reservation`, `stock_hold`, `stock_hold_unit` (WMS-30-0),
 `outbound_order`, `outbound_order_line`, `outbound_pack_shortage`,
 `pick_wave`, `pick_wave_order`,
 `shipment`, `shipment_order`, `shipment_line`, `customer_return`,
@@ -365,7 +370,8 @@ contenedores), 0044 (verificación y empaque), 0045 (despacho y embarques),
 0046 (devoluciones de clientes), 0047 (etiquetas e impresión), 0048 (traslados
 entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
-0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén).
+0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
+(inspección al recibir, desechar y retención genérica).
 
 ## Pruebas
 
@@ -377,7 +383,10 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en
-`facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`. Casos de alcance en
+`facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;
+inspección al recibir, desechar, PC-5 y retención genérica en
+`inspection-on-receipt.int.test.ts` (`reconcileStock` agrega `source:
+"holds"`: lo retenido nunca pasa del saldo). Casos de alcance en
 `tests/inventory/scope.int.test.ts`, de capacidad en `capacity.int.test.ts` y de
 lotes en `lots.int.test.ts`; de series en `serials.int.test.ts` y de
 trazabilidad en `traceability.int.test.ts`. `reconcileStock` también compara

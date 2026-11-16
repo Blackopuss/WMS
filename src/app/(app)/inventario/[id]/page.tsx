@@ -9,6 +9,7 @@ import {
   Scale,
   ShieldAlert,
   ShoppingCart,
+  Trash2,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -26,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { dec, formatDateTime, formatDecimal } from "@/lib";
 import {
+  DISPOSABLE_STATUSES,
   formatLotDay,
   formatStock,
   getMinimum,
@@ -163,6 +165,14 @@ export default async function ProductoPage({
     dec(stock.available).lessThanOrEqualTo(minimum);
   const unit = getUnit(product.unitCode);
   const hasStock = stock !== null && stock.locations.length > 0;
+  // WMS-30-0: something damaged or rejected that may be written off.
+  const hasDisposable =
+    stock !== null &&
+    stock.locations.some((location) =>
+      location.unavailable.some((part) =>
+        DISPOSABLE_STATUSES.includes(part.status),
+      ),
+    );
 
   const action = (
     href: string,
@@ -230,6 +240,13 @@ export default async function ProductoPage({
             label: "Cambiar estado",
             icon: ShieldAlert,
           },
+        // WMS-30-0 (ADR 0068): write off what is damaged or rejected.
+        hasDisposable &&
+          access.allows("inventory.disposal.create") && {
+            href: `/inventario/${product.id}/desechar`,
+            label: "Desechar",
+            icon: Trash2,
+          },
       ].filter((item) => item !== false)
     : [];
   // WMS-26: its label, and those of its lots or serials; reading is enough.
@@ -254,6 +271,13 @@ export default async function ProductoPage({
     // WMS-21/21B: only when it is controlled by lot or by serial.
     ...(product.tracking !== "NONE"
       ? ([["Control", TRACKING_LABELS[product.tracking]]] as [string, string][])
+      : []),
+    // WMS-30-0: only when what arrives waits for inspection.
+    ...(product.inspectOnReceipt
+      ? ([["Al recibirlo", "Queda en inspección hasta revisarlo"]] as [
+          string,
+          string,
+        ][])
       : []),
     // WMS-22B: shown only when the card says them.
     ...(product.unitWeight

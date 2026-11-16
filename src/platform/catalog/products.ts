@@ -114,6 +114,14 @@ export const productSchema = z.object({
       message: "Elige si sus lotes llevan caducidad.",
     })
     .optional(),
+  /**
+   * WMS-30-0 (ADR 0068): what arrives healthy from a supplier enters in
+   * inspection. «yes» or «no»; absent = «no» for a new product, keep it on
+   * an edit.
+   */
+  inspectOnReceipt: z
+    .enum(["yes", "no"], { message: "Elige si se inspecciona al recibir." })
+    .optional(),
 });
 
 /** Names of the control of a product, for the card and the audit log. */
@@ -349,6 +357,7 @@ export async function createProduct(
           // A product without lots has no rule for their expiry.
           lotExpiry:
             data.tracking === "LOT" ? (data.lotExpiry ?? "NONE") : "NONE",
+          inspectOnReceipt: data.inspectOnReceipt === "yes",
         },
       });
       const customChanges = await writeCustomValues(
@@ -669,6 +678,8 @@ export type ProductCard = ProductSummary & {
   tracking: "NONE" | "LOT" | "SERIAL";
   /** Whether its lots carry an expiry date. */
   lotExpiry: "NONE" | "OPTIONAL" | "REQUIRED";
+  /** WMS-30-0: what arrives from a supplier enters in inspection. */
+  inspectOnReceipt: boolean;
   status: "ACTIVE" | "ARCHIVED";
   updatedAt: Date;
 };
@@ -697,6 +708,7 @@ export async function getProduct(
       unitVolume: true,
       tracking: true,
       lotExpiry: true,
+      inspectOnReceipt: true,
       status: true,
       createdAt: true,
       updatedAt: true,
@@ -723,6 +735,7 @@ export async function getProduct(
       : null,
     tracking: row.tracking,
     lotExpiry: row.lotExpiry,
+    inspectOnReceipt: row.inspectOnReceipt,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -745,6 +758,7 @@ const FIELD_LABELS: Record<ProductField, string> = {
   volume: "Volumen por unidad (litros)",
   tracking: "Control por lote o serie",
   lotExpiry: "Caducidad de sus lotes",
+  inspectOnReceipt: "Inspeccionar al recibir",
 };
 
 /**
@@ -810,6 +824,7 @@ export async function updateProduct(
           unitVolume: true,
           tracking: true,
           lotExpiry: true,
+          inspectOnReceipt: true,
           category: { select: { name: true } },
           brand: { select: { name: true } },
         },
@@ -839,6 +854,7 @@ export async function updateProduct(
           : null,
         tracking: current.tracking,
         lotExpiry: current.lotExpiry,
+        inspectOnReceipt: current.inspectOnReceipt ? "yes" : "no",
       };
       // Absent = keep how it is controlled; without lots, no expiry rule.
       const tracking = data.tracking ?? current.tracking;
@@ -848,6 +864,9 @@ export async function updateProduct(
         ...data,
         tracking,
         lotExpiry,
+        // Absent = keep it (WMS-30-0).
+        inspectOnReceipt:
+          data.inspectOnReceipt ?? (current.inspectOnReceipt ? "yes" : "no"),
         unit: rule.unitCode,
         step: Number(rule.quantityStep).toString(),
         // Absent = keep what the card says (unless the unit now says it).
@@ -1046,6 +1065,7 @@ export async function updateProduct(
           unitVolume: after.volume,
           tracking,
           lotExpiry,
+          inspectOnReceipt: after.inspectOnReceipt === "yes",
         },
       });
       const customChanges =
@@ -1072,12 +1092,17 @@ export async function updateProduct(
                       antes: TRACKING_LABELS[current.tracking],
                       ahora: TRACKING_LABELS[tracking],
                     }
-                  : field === "lotExpiry"
+                  : field === "inspectOnReceipt"
                     ? {
-                        antes: LOT_EXPIRY_LABELS[current.lotExpiry],
-                        ahora: LOT_EXPIRY_LABELS[lotExpiry],
+                        antes: before[field] === "yes" ? "Sí" : "No",
+                        ahora: after[field] === "yes" ? "Sí" : "No",
                       }
-                    : { antes: before[field], ahora: after[field] },
+                    : field === "lotExpiry"
+                      ? {
+                          antes: LOT_EXPIRY_LABELS[current.lotExpiry],
+                          ahora: LOT_EXPIRY_LABELS[lotExpiry],
+                        }
+                      : { antes: before[field], ahora: after[field] },
             ]),
             ...Object.entries(customChanges),
           ]),

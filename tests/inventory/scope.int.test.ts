@@ -78,6 +78,9 @@ import {
   openCount,
   pickUpTask,
   reconcileStock,
+  countAwaitingInspection,
+  disposeStock,
+  listAwaitingInspection,
   registerAdjustment,
   registerEntry,
   registerExit,
@@ -1860,6 +1863,56 @@ describe("PC-12: archiving a product (WMS-57B)", () => {
       error: expect.stringContaining("Todavía hay 2 piezas de este producto."),
     });
     await stillActive(product);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: inspection and write-offs (WMS-30-0)", () => {
+  it("what waits for inspection in A is not listed from B, nor is anything of A written off", async () => {
+    for (const to of ["INSPECTION", "REJECTED"] as const) {
+      const moved = await changeStockStatus(owner, {
+        productId,
+        locationId: shelfA,
+        from: "AVAILABLE",
+        to,
+        quantity: "1",
+        reason: "Revisión de alcance",
+        idempotencyKey: key(),
+      });
+      if (!moved.ok) throw new Error(JSON.stringify(moved));
+    }
+    // Other tests of this file leave stock in inspection too.
+    expect(
+      (await listAwaitingInspection(owner)).items.some(
+        (item) => item.locationId === shelfA,
+      ),
+    ).toBe(true);
+    // From B only what is in B (a customer return of another test).
+    const seen = await listAwaitingInspection(limited);
+    expect(seen.total).toBe(await countAwaitingInspection(limited));
+    expect(
+      seen.items.filter((item) => [shelfA, generalA].includes(item.locationId)),
+    ).toEqual([]);
+    await expect(
+      disposeStock(limited, {
+        productId,
+        locationId: shelfA,
+        status: "REJECTED",
+        quantity: "1",
+        reason: "Roto",
+        idempotencyKey: key(),
+      }),
+    ).rejects.toMatchObject(OUTSIDE);
+    expect(
+      await db.stockBalance.count({
+        where: {
+          productId,
+          locationId: shelfA,
+          status: "REJECTED",
+          quantity: 1,
+        },
+      }),
+    ).toBe(1);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

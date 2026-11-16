@@ -96,6 +96,9 @@ export type ReceiptEntryInput = {
   container?: ReceiptContainerInput | null;
 };
 
+/** The state a receipt line enters in (WMS-54, WMS-30-0). */
+export type ReceiptLineStatus = "AVAILABLE" | "DAMAGED" | "INSPECTION";
+
 export type ReceiptEntryLine = {
   lineNumber: number;
   productId: string;
@@ -114,8 +117,12 @@ export type ReceiptEntryLine = {
   lotCode: string | null;
   /** The units that came in, for a product by serial (WMS-21B). */
   units: SerialPick[];
-  /** AVAILABLE, or DAMAGED for the part that arrived damaged (WMS-54). */
-  status: "AVAILABLE" | "DAMAGED";
+  /**
+   * AVAILABLE, DAMAGED for the part that arrived damaged (WMS-54), or
+   * INSPECTION for what arrived healthy of a product inspected on receipt
+   * (WMS-30-0, ADR 0068).
+   */
+  status: ReceiptLineStatus;
   /** «3 cajas × 100 = 300 piezas», or «25 piezas». */
   text: string;
 };
@@ -217,13 +224,37 @@ export async function postReceiptEntry(
     };
   }
 
+  const products = await tx.product.findMany({
+    where: { id: { in: [...new Set(input.lines.map((l) => l.productId))] } },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      status: true,
+      // WMS-30-0 (ADR 0068): read under the product's lock.
+      inspectOnReceipt: true,
+      ...LOT_RULE_SELECT,
+    },
+  });
+  const byId = new Map(products.map((product) => [product.id, product]));
+  // WMS-30-0 (ADR 0068): what arrives healthy of a product inspected on
+  // receipt enters in inspection; damaged stays damaged.
+  const statusOf = (line: (typeof input.lines)[number]) =>
+    line.status === "DAMAGED"
+      ? ("DAMAGED" as const)
+      : byId.get(line.productId)?.inspectOnReceipt
+        ? ("INSPECTION" as const)
+        : ("AVAILABLE" as const);
+
   // WMS-54 (ADR 0052): the outbound orders that may wait for what arrives
   // loose and healthy are locked now — after the locations and the
   // purchase order of the caller, before the container and the capacity.
   // What arrives on a pallet goes to put-away whole.
   let crossDock: CrossDockLock = null;
   if (!input.container) {
-    const healthy = input.lines.filter((line) => line.status !== "DAMAGED");
+    const healthy = input.lines.filter(
+      (line) => statusOf(line) === "AVAILABLE",
+    );
     crossDock = await lockCrossDockOrders(tx, actor, {
       productIds: healthy.map((line) => line.productId),
       facilityIds: [
@@ -253,12 +284,13 @@ export async function postReceiptEntry(
           "Lo que llega en una tarima va a un solo lugar: recibe esta línea por separado o en el mismo lugar.",
       };
     }
-    if (input.lines.every((line) => line.status === "DAMAGED")) {
+    if (input.lines.every((line) => statusOf(line) !== "AVAILABLE")) {
       return {
         ok: false,
         line: null,
-        error:
-          "Lo que llega dañado no va en la tarima: recibe sin tarima o con algo sano.",
+        error: input.lines.some((line) => statusOf(line) === "INSPECTION")
+          ? "Lo que llega dañado o se inspecciona al recibir no va en la tarima: recibe sin tarima o con algo que quede disponible."
+          : "Lo que llega dañado no va en la tarima: recibe sin tarima o con algo sano.",
       };
     }
     const prepared = await prepareReceiptContainer(
@@ -272,18 +304,6 @@ export async function postReceiptEntry(
     }
     box = prepared;
   }
-
-  const products = await tx.product.findMany({
-    where: { id: { in: [...new Set(input.lines.map((l) => l.productId))] } },
-    select: {
-      id: true,
-      name: true,
-      sku: true,
-      status: true,
-      ...LOT_RULE_SELECT,
-    },
-  });
-  const byId = new Map(products.map((product) => [product.id, product]));
 
   const lines: ReceiptEntryLine[] = [];
   // What enters each product in each location: `<product> <location>`.
@@ -358,7 +378,7 @@ export async function postReceiptEntry(
     for (const unit of units) {
       arriving.add(`${product.id} ${serialKey(unit.serial)}`);
     }
-    const status = line.status === "DAMAGED" ? "DAMAGED" : "AVAILABLE";
+    const status = statusOf(line);
     const slot = `${product.id} ${place.id} ${lot?.id ?? ""} ${status}`;
     added.set(slot, (added.get(slot) ?? dec(0)).plus(base));
     lines.push({
@@ -513,7 +533,7 @@ export async function postReceiptEntry(
       string,
       string,
       string,
-      "AVAILABLE" | "DAMAGED",
+      ReceiptLineStatus,
     ];
     if (row) {
       await tx.stockBalance.updateMany({
@@ -542,7 +562,8 @@ export async function postReceiptEntry(
       actor,
       box,
       location.id,
-      // WMS-54: what arrived damaged stays loose, out of the pallet.
+      // WMS-54: what arrived damaged stays loose, out of the pallet; so does
+      // what waits for inspection (WMS-30-0).
       lines
         .filter((line) => line.status === "AVAILABLE")
         .map((line) => ({

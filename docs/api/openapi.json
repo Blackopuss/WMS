@@ -127,7 +127,8 @@
                 "STATUS_CHANGE",
                 "SHIPMENT",
                 "CUSTOMER_RETURN",
-                "FACILITY_TRANSFER"
+                "FACILITY_TRANSFER",
+                "DISPOSAL"
               ]
             }
           }
@@ -177,7 +178,8 @@
                               "STATUS_CHANGE",
                               "SHIPMENT",
                               "CUSTOMER_RETURN",
-                              "FACILITY_TRANSFER"
+                              "FACILITY_TRANSFER",
+                              "DISPOSAL"
                             ]
                           },
                           "createdAt": {
@@ -2034,6 +2036,9 @@
                                 },
                                 "damaged": {
                                   "type": "boolean"
+                                },
+                                "inspection": {
+                                  "type": "boolean"
                                 }
                               },
                               "required": [
@@ -2044,7 +2049,8 @@
                                 "unitCode",
                                 "locationId",
                                 "lotCode",
-                                "damaged"
+                                "damaged",
+                                "inspection"
                               ],
                               "additionalProperties": false
                             }

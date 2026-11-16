@@ -66,7 +66,7 @@ import { normalizeLotCode } from "./lot-rules";
 import { containedAt, containedMessage } from "./contained";
 import { createPutawayTasks, isTaskNumberClash } from "./putaway";
 import { lockCrossDockOrders, sendToWaitingOrders } from "./cross-docking";
-import { heldForReturns } from "./return-holds";
+import { holdProblem } from "./holds";
 import {
   TASK_HOLD,
   freeToMoveFrom,
@@ -1161,6 +1161,7 @@ export const MOVEMENT_TYPE_LABELS = {
   SHIPMENT: "Despacho",
   CUSTOMER_RETURN: "Devolución de cliente",
   FACILITY_TRANSFER: "Traslado entre almacenes",
+  DISPOSAL: "Desecho",
 } as const;
 
 export type MovementType = keyof typeof MOVEMENT_TYPE_LABELS;
@@ -2991,6 +2992,15 @@ export async function reverseMovement(
           "Este movimiento es de un traslado entre almacenes: no se reversa desde Inventario. Lo que no llegue se resuelve desde el traslado.",
         );
       }
+      // Nor a write-off (WMS-30-0, ADR 0068): what was thrown away is no
+      // longer there, and its document (a verification, a scrap report)
+      // would still say it left.
+      if (original.type === "DISPOSAL") {
+        return stop(
+          "not_allowed",
+          "Este movimiento es un desecho: no se reversa. Si se desechó por error, registra una entrada con su motivo.",
+        );
+      }
       if (original.returnDecision) {
         return stop(
           "not_allowed",
@@ -3218,24 +3228,24 @@ export async function reverseMovement(
             `No se puede reversar: habría que sacar ${formatStock(base.toString(), line.unitCode)} de ${product.name} de ${location.name} y solo hay ${formatStock(before.toString(), line.unitCode)}. Parte de esas existencias ya salió o se movió.`,
           );
         }
-        if (direction === "OUT" && line.status === "INSPECTION") {
-          // WMS-17 (PC-5): what a customer return still has to decide is
-          // decided only from it.
-          const hold = await heldForReturns(tx, {
-            productId: product.id,
-            locationId: location.id,
-            lotId: line.lotId,
-          });
-          const free = before.minus(hold.quantity);
-          const units = serialsOf.get(line.id) ?? [];
-          if (
-            free.lessThan(base) ||
-            units.some((unit) => hold.unitIds.has(unit.id))
-          ) {
-            return stop(
-              "not_allowed",
-              `No se puede reversar: lo que está en inspección en ${location.name} es de la devolución ${hold.firstNumberText ?? ""}. Decídelo desde la devolución.`,
-            );
+        if (direction === "OUT" && line.status !== "AVAILABLE") {
+          // WMS-17 (PC-5), WMS-30-0 (ADR 0068): what an open document (a
+          // customer return, a verification) holds is decided only from it.
+          const held = await holdProblem(
+            tx,
+            {
+              productId: product.id,
+              locationId: location.id,
+              status: line.status,
+              lotId: line.lotId,
+            },
+            before,
+            base,
+            serialsOf.get(line.id) ?? [],
+            line.unitCode,
+          );
+          if (held) {
+            return stop("not_allowed", `No se puede reversar. ${held.message}`);
           }
         }
         if (direction === "OUT" && line.status === "AVAILABLE") {

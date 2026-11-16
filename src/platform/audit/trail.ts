@@ -32,6 +32,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "inventory.reversed": "Reversó un movimiento",
   "inventory.task_cancelled": "Canceló una tarea de traslado",
   "inventory.status_changed": "Cambió el estado de existencias",
+  "inventory.disposed": "Desechó existencias dañadas o rechazadas",
   "inventory.lot_expiry_changed": "Corrigió la caducidad de un lote",
   "inventory.outbound_cancelled": "Canceló un pedido de salida",
   "inventory.outbound_pack_short": "Registró un faltante al empacar un pedido",

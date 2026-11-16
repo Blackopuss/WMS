@@ -33,9 +33,13 @@ export type ProductFormState = {
  * or nothing — a form without those fields keeps what the product has.
  */
 function withControl(values: ProductFormState["values"]): ProductInput {
-  const { tracking, lotExpiry, ...card } = values;
+  const { tracking, lotExpiry, inspectOnReceipt, ...card } = values;
   return {
     ...card,
+    // WMS-30-0: a form without the box keeps what the product has.
+    ...(inspectOnReceipt === "yes" || inspectOnReceipt === "no"
+      ? { inspectOnReceipt: inspectOnReceipt as "yes" | "no" }
+      : {}),
     ...(tracking === "NONE" || tracking === "LOT" || tracking === "SERIAL"
       ? { tracking: tracking as "NONE" | "LOT" | "SERIAL" }
       : {}),
@@ -45,6 +49,15 @@ function withControl(values: ProductFormState["values"]): ProductInput {
       ? { lotExpiry: lotExpiry as "NONE" | "OPTIONAL" | "REQUIRED" }
       : {}),
   };
+}
+
+/**
+ * WMS-30-0: the box «Inspeccionar al recibir» sends a hidden «no» and, when
+ * ticked, «yes»; a form without it sends nothing (keep it).
+ */
+function inspectValue(formData: FormData): string {
+  const sent = formData.getAll("inspectOnReceipt").map(String);
+  return sent.includes("yes") ? "yes" : sent.includes("no") ? "no" : "";
 }
 
 /** Creates a product. Person and company come from the session. */
@@ -67,6 +80,7 @@ export async function createProductAction(
     volume: value("volume"),
     tracking: value("tracking"),
     lotExpiry: value("lotExpiry"),
+    inspectOnReceipt: inspectValue(formData),
   };
   const custom = customFieldsFromForm(formData) as Record<string, string>;
 
@@ -118,6 +132,7 @@ export async function updateProductAction(
     volume: value("volume"),
     tracking: value("tracking"),
     lotExpiry: value("lotExpiry"),
+    inspectOnReceipt: inspectValue(formData),
   };
   const custom = customFieldsFromForm(formData) as Record<string, string>;
 

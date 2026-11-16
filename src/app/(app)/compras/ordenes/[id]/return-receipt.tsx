@@ -39,6 +39,14 @@ export type ReturnableLine = {
   locationId: string;
   /** WMS-21B: a product by serial goes back naming each unit. */
   bySerial: boolean;
+  /**
+   * WMS-30-0 (ADR 0068): the states it may go back from, when there is a
+   * choice (it was rejected, damaged after arriving…); empty = the one it
+   * came in.
+   */
+  states: { id: string; label: string }[];
+  /** The state it came in: chosen by default. */
+  receivedStatus: string;
 };
 
 const areaClass =
@@ -198,6 +206,33 @@ export function ReturnReceipt({
                           {locations.map((location) => (
                             <option key={location.id} value={location.id}>
                               {location.label}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                      </div>
+                    </div>
+                  )}
+                  {line.states.length > 1 && (
+                    <div className="flex items-center gap-2 sm:col-span-2">
+                      <label
+                        htmlFor={`${fieldId}-state`}
+                        className="shrink-0 text-sm text-muted-foreground"
+                      >
+                        Estado
+                      </label>
+                      <div className="min-w-0 flex-1">
+                        <NativeSelect
+                          key={`${line.id}-state-${answers}`}
+                          id={`${fieldId}-state`}
+                          name={`st:${line.id}`}
+                          defaultValue={
+                            state.values.states?.[line.id] ??
+                            line.receivedStatus
+                          }
+                        >
+                          {line.states.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
                             </option>
                           ))}
                         </NativeSelect>

@@ -36,9 +36,12 @@ const backClass =
  */
 export default async function CambiarEstadoPage({
   params,
+  searchParams,
 }: PageProps<"/inventario/[id]/estado">) {
   const access = await getModuleAccess();
   const { id } = await params;
+  // WMS-30-0: «Por inspeccionar» opens it with the stock chosen.
+  const { origen } = await searchParams;
   const back = (
     <Link href={`/inventario/${id}`} className={backClass}>
       <ChevronLeft aria-hidden="true" className="size-4" />
@@ -159,6 +162,12 @@ export default async function CambiarEstadoPage({
           idempotencyKey={newId()}
           unitLabel={getUnit(product.unitCode).plural}
           sources={sources}
+          initialSource={
+            typeof origen === "string" &&
+            sources.some((source) => source.id === origen)
+              ? origen
+              : undefined
+          }
           targets={targets}
           bySerial={product.tracking === "SERIAL"}
           destinations={places.map((place) => ({

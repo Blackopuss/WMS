@@ -381,6 +381,20 @@ describe("combined roles", () => {
     }
   });
 
+  it("at a terminal, writing off goes like adjusting (WMS-30-0, ADR 0068)", () => {
+    for (const role of ROLES) {
+      const atTerminal = permissionsOf({ ...member(role), terminal: true });
+      expect(atTerminal.has("inventory.disposal.create")).toBe(
+        atTerminal.has("inventory.adjustment.create"),
+      );
+    }
+    expect(
+      permissionsOf({ ...member("supervisor"), terminal: true }).has(
+        "inventory.disposal.create",
+      ),
+    ).toBe(true);
+  });
+
   it("warehouse + buyer moves stock and buys, but does not manage the team", () => {
     const subject = member("warehouse", "buyer");
     expect(can(subject, "inventory.adjustment.create")).toBe(true);

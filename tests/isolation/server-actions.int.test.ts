@@ -320,6 +320,19 @@ const REVIEWED: Record<string, Review> = {
     coveredBy:
       "tests/inventory/status-change.int.test.ts, tests/inventory/capacity.int.test.ts",
   },
+  disposeAction: {
+    input:
+      "id del producto (fijado por la página), origen «ubicación|estado|lote», cantidad, series, motivo y clave de confirmación (WMS-30-0)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); producto y ubicación se bloquean solo en esa empresa y dentro del alcance",
+    coveredBy: "tests/inventory/inspection-on-receipt.int.test.ts",
+  },
+  checkDisposalAction: {
+    input: "clave de confirmación de un desecho cuya respuesta se perdió",
+    identity:
+      "sesión y empresa activa; solo movimientos DISPOSAL de esa persona en esa empresa",
+    coveredBy: "tests/inventory/inspection-on-receipt.int.test.ts",
+  },
   createTaskAction: {
     input:
       "id del producto, ubicaciones de origen y destino, cantidad, prioridad, a quién se asigna, una nota y la aceptación del aviso de capacidad (WMS-22B)",
