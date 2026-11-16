@@ -30,6 +30,7 @@ import {
   countLowStock,
   countExpiringLots,
   containersVisible,
+  countAwaitingInspection,
   countUnplacedStock,
   formatStock,
   getInventoryValue,
@@ -174,6 +175,14 @@ export default async function InventarioPage({
   const unplacedCount =
     !showArchived && access.can("inventory.stock.read")
       ? await countUnplacedStock(actor)
+      : 0;
+  // WMS-30-0: what waits for inspection, for who decides it; only if any.
+  const inspectingCount =
+    !showArchived &&
+    access.can("inventory.stock.read") &&
+    (access.allows("inventory.status.release") ||
+      access.allows("inventory.status.change"))
+      ? await countAwaitingInspection(actor)
       : 0;
   // WMS-53: pallets and boxes, only for a company that uses them.
   const showContainers =
@@ -395,6 +404,19 @@ export default async function InventarioPage({
           <span className="font-medium underline underline-offset-4">
             Ver cuáles
           </span>
+        </Link>
+      )}
+      {inspectingCount > 0 && (
+        <Link
+          href="/inventario/por-inspeccionar"
+          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="flex-1">
+            {inspectingCount === 1
+              ? "1 renglón por inspeccionar."
+              : `${inspectingCount.toLocaleString("es-MX")} renglones por inspeccionar.`}
+          </span>
+          <span className="font-medium text-primary">Ver cuáles</span>
         </Link>
       )}
       {unplacedCount > 0 && (

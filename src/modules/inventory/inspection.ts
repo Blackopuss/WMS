@@ -173,10 +173,7 @@ export async function listAwaitingInspection(
       heldBy: heldQuantity.greaterThan(0) ? held.firstText : null,
       decidable: quantity.greaterThan(heldQuantity),
       origin: entry
-        ? [
-            MOVEMENT_TYPE_LABELS[entry.movement.type],
-            entry.movement.reference,
-          ]
+        ? [MOVEMENT_TYPE_LABELS[entry.movement.type], entry.movement.reference]
             .filter(Boolean)
             .join(" · ")
         : null,

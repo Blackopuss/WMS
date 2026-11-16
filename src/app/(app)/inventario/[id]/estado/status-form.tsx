@@ -22,6 +22,7 @@ export function StatusForm({
   idempotencyKey,
   unitLabel,
   sources,
+  initialSource,
   targets,
   destinations,
   bySerial = false,
@@ -33,6 +34,8 @@ export function StatusForm({
   unitLabel: string;
   /** «<location>|<state>» → «General · Disponible · 20 piezas». */
   sources: Option[];
+  /** The one chosen when the screen opens (WMS-30-0); else the first. */
+  initialSource?: string;
   /** States this person may set. */
   targets: Option[];
   /**
@@ -61,7 +64,7 @@ export function StatusForm({
   const errors = state.fieldErrors ?? {};
   const source = state.values.locationId
     ? `${state.values.locationId}|${state.values.from}${state.values.lotId ? `|${state.values.lotId}` : ""}`
-    : (sources[0]?.id ?? "");
+    : (initialSource ?? sources[0]?.id ?? "");
   const key = (name: string) => `${name}-${state.answers}`;
   return (
     <form action={formAction} noValidate className="max-w-xl space-y-4">

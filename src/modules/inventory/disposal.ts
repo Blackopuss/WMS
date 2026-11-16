@@ -153,9 +153,11 @@ export async function postDisposal(
     locationId: string;
     status: string;
     lotId: string | null;
-  }) => `${line.productId} ${line.locationId} ${line.lotId ?? ""} ${line.status}`;
+  }) =>
+    `${line.productId} ${line.locationId} ${line.lotId ?? ""} ${line.status}`;
   for (const [index, line] of input.lines.entries()) {
-    const fail = (field: "quantity" | "serials" | "lotId" | "source") =>
+    const fail =
+      (field: "quantity" | "serials" | "lotId" | "source") =>
       (error: string): DisposalCoreResult => ({
         ok: false,
         line: index,

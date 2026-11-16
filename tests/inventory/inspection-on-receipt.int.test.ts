@@ -16,7 +16,13 @@ import {
   reconcileStock,
   reconcileValue,
   releaseHold,
+  createOutboundOrder,
+  listLowStock,
+  registerExit,
+  releaseOutboundOrder,
   reverseMovement,
+  setMinimum,
+  setOutboundLine,
   type InventoryActor,
 } from "@/modules/inventory";
 import {
@@ -86,7 +92,8 @@ async function company(
       reason: "Prueba de inspección al recibir",
     },
   );
-  if (!result.ok) throw new Error(`provision failed: ${JSON.stringify(result)}`);
+  if (!result.ok)
+    throw new Error(`provision failed: ${JSON.stringify(result)}`);
   return { organizationId: created.organizationId, userId: owner };
 }
 
@@ -415,9 +422,9 @@ describe("inspection on receipt (WMS-30-0)", () => {
     const back = await returnToSupplier(owner, receiptId, fromRejected);
     expect(back).toMatchObject({ ok: true });
     expect(back.ok && back.summary).toContain("rechazado");
-    expect(await returnToSupplier(owner, receiptId, fromRejected)).toMatchObject(
-      { ok: true, repeated: true },
-    );
+    expect(
+      await returnToSupplier(owner, receiptId, fromRejected),
+    ).toMatchObject({ ok: true, repeated: true });
     // The same key from another state is another return.
     expect(
       await returnToSupplier(owner, receiptId, {
@@ -533,6 +540,41 @@ describe("inspection on receipt (WMS-30-0)", () => {
     });
     expect(lotDisposed).toMatchObject({ ok: true });
     expect(plain(await balances(byLot))).toEqual(["INSPECTION 4"]);
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("PC-5: what waits for inspection is never available", () => {
+  it("feeds no exit, order, minimum nor crossdock", async () => {
+    const owner = await company();
+    const productId = await product(owner);
+    await received(owner, productId, "10");
+    const [row] = await balances(productId);
+    expect(
+      await registerExit(owner, {
+        productId,
+        locationId: row!.locationId,
+        quantity: "1",
+      }),
+    ).toMatchObject({ ok: false });
+    const order = await createOutboundOrder(owner, {
+      recipient: "Cliente",
+      reference: "R-1",
+      dueOn: "2026-11-30",
+      priority: "NORMAL",
+    });
+    if (!order.ok) throw new Error(JSON.stringify(order));
+    await setOutboundLine(owner, order.orderId, { productId, quantity: "1" });
+    expect(await releaseOutboundOrder(owner, order.orderId)).toMatchObject({
+      ok: false,
+    });
+    expect(await db.stockReservation.count({ where: { productId } })).toBe(0);
+    // With a minimum, it is low: nothing available.
+    await setMinimum(owner, { productId, quantity: "5" });
+    expect(
+      (await listLowStock(owner)).items.map((item) => item.productId),
+    ).toContain(productId);
+    expect(plain(await balances(productId))).toEqual(["INSPECTION 10"]);
     await balanced(owner.organizationId);
   });
 });
@@ -787,11 +829,7 @@ describe("generic hold (WMS-30-0)", () => {
     // A reversal of that change would take rejected stock: allowed; but a
     // hold on rejected stock stops it.
     expect(
-      await hold(
-        owner,
-        { ...slot, status: "REJECTED" },
-        "2",
-      ),
+      await hold(owner, { ...slot, status: "REJECTED" }, "2"),
     ).toMatchObject({ ok: true });
     expect(
       await reverseMovement(owner, {

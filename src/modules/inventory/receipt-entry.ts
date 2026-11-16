@@ -305,7 +305,6 @@ export async function postReceiptEntry(
     box = prepared;
   }
 
-
   const lines: ReceiptEntryLine[] = [];
   // What enters each product in each location: `<product> <location>`.
   const added = new Map<string, Decimal>();

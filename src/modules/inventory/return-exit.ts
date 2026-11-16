@@ -117,7 +117,9 @@ export async function postReturnExit(
 
   const lines = input.lines.map((line) => ({
     ...line,
-    status: isReturnableStatus(line.status) ? line.status : ("AVAILABLE" as const),
+    status: isReturnableStatus(line.status)
+      ? line.status
+      : ("AVAILABLE" as const),
     baseQuantity: line.capturedQuantity.times(line.factor),
   }));
   // WMS-21: each line leaves from the lot it was received in. A product
@@ -263,9 +265,7 @@ export async function postReturnExit(
       },
       dec(current.get(slot)?.quantity.toString() ?? 0),
       quantity,
-      lines.flatMap((each, at) =>
-        slotOf(each) === slot ? unitsOf[at]! : [],
-      ),
+      lines.flatMap((each, at) => (slotOf(each) === slot ? unitsOf[at]! : [])),
       line.unitCode,
     );
     if (held) return { ok: false, line: index, error: held.message };

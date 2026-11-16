@@ -1098,11 +1098,11 @@ export async function updateProduct(
                         ahora: after[field] === "yes" ? "Sí" : "No",
                       }
                     : field === "lotExpiry"
-                    ? {
-                        antes: LOT_EXPIRY_LABELS[current.lotExpiry],
-                        ahora: LOT_EXPIRY_LABELS[lotExpiry],
-                      }
-                    : { antes: before[field], ahora: after[field] },
+                      ? {
+                          antes: LOT_EXPIRY_LABELS[current.lotExpiry],
+                          ahora: LOT_EXPIRY_LABELS[lotExpiry],
+                        }
+                      : { antes: before[field], ahora: after[field] },
             ]),
             ...Object.entries(customChanges),
           ]),

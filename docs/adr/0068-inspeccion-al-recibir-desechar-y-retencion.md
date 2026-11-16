@@ -217,8 +217,11 @@ Se eligió **una tabla propia más las fuentes derivadas que ya existían**:
 - **Exportaciones y existencias:** el desglose por estado ya incluye
   inspección. **Rastreo e historial:** `DISPOSAL` aparece como «Desecho».
   **Resumen del día** y **API:** sin cambios (la recepción sigue siendo
-  `RECEIPT`). El evento de webhook `purchase_order.received` dice ahora el
-  estado de cada línea (`status`) además de `damaged`.
+  `RECEIPT`). El evento de webhook `purchasing.receipt.confirmed` dice ahora
+  el estado de cada línea (`status`) además de `damaged`, y la API de
+  recepciones (`GET /api/v1/purchase-orders/{id}/receipts`) agrega
+  `inspection` a cada línea.
+- **Migración:** `20261117040000_wms30_inspection_disposal_holds`.
 
 ## Consecuencias
 

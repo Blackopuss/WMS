@@ -551,9 +551,7 @@ export async function returnToSupplier(
           item.line.unitCode,
         );
         const damaged =
-          item.status === "AVAILABLE"
-            ? ""
-            : ` ${STATE_WORD[item.status]}`;
+          item.status === "AVAILABLE" ? "" : ` ${STATE_WORD[item.status]}`;
         return item.line.presentation
           ? `${terms} de ${item.line.product.name}${damaged} (${exit.texts[index]})`
           : `${terms} de ${item.line.product.name}${damaged}`;

@@ -1497,8 +1497,9 @@ export async function getOrderReceipts(
     status: string;
   }) => {
     const there =
-      statesAt.get(`${line.productId} ${line.locationId} ${line.lotId ?? ""}`) ??
-      new Set<string>();
+      statesAt.get(
+        `${line.productId} ${line.locationId} ${line.lotId ?? ""}`,
+      ) ?? new Set<string>();
     const options = RETURNABLE_STATUSES.filter(
       (status) => status === line.status || there.has(status),
     );
