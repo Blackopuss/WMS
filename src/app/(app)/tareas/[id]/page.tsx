@@ -256,7 +256,7 @@ export default async function TareaPage({
             access.hasModule("production") ? (
               <Link
                 href={`/produccion/${task.productionOrder.id}`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
+                className="inline-block rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 {task.productionOrder.numberText}
               </Link>
@@ -272,7 +272,7 @@ export default async function TareaPage({
             Pedido{" "}
             <Link
               href={`/pedidos/${task.order.id}`}
-              className="font-medium text-primary underline-offset-4 hover:underline"
+              className="inline-block rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {task.order.numberText}
             </Link>{" "}

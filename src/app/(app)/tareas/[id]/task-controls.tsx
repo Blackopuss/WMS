@@ -277,15 +277,19 @@ export function AssignTask({
           </p>
         )}
       </div>
-      <Button
-        type="submit"
-        variant="outline"
-        className="min-h-11"
-        disabled={pending || chosen === (assignedToUserId ?? "")}
-      >
-        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-        Guardar
-      </Button>
+      {/* Shown once something changed: a disabled «Guardar» said nothing
+          about why (WMS-78B, KISS). */}
+      {(pending || chosen !== (assignedToUserId ?? "")) && (
+        <Button
+          type="submit"
+          variant="outline"
+          className="min-h-11"
+          disabled={pending}
+        >
+          {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+          Guardar
+        </Button>
+      )}
     </form>
   );
 }

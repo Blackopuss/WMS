@@ -433,7 +433,7 @@ export default async function MovimientosPage({
             {movements.map((movement) => (
               <li
                 key={movement.id}
-                className="flex items-start gap-3 p-4 sm:px-5"
+                className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-3 sm:px-5"
               >
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -509,7 +509,7 @@ export default async function MovimientosPage({
                   movement.type !== "DISPOSAL" &&
                   !movement.isReturnDecision &&
                   !movement.reversedByMovementId && (
-                    <div className="shrink-0">
+                    <div className="-ml-3 shrink-0 sm:ml-0">
                       <ReverseMovement
                         movementId={movement.id}
                         idempotencyKey={newId()}

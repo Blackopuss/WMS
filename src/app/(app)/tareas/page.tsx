@@ -233,7 +233,10 @@ export default async function TareasPage({
           >
             {tab.label}
             {tab.count !== undefined && tab.count > 0 && (
-              <span className="tabular-nums">{tab.count}</span>
+              <span className="tabular-nums">
+                <span className="sr-only">: </span>
+                {tab.count}
+              </span>
             )}
           </Link>
         ))}
@@ -282,7 +285,7 @@ export default async function TareasPage({
                   </span>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </Link>
               </li>
@@ -380,7 +383,7 @@ export default async function TareasPage({
                   </span>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </Link>
               </li>

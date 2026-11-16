@@ -113,6 +113,18 @@ const SCREENS = [
   "/configuracion/pin",
   // WMS-60: API keys and webhook destinations.
   "/configuracion/api",
+  // WMS-78B (operación de almacén): screens of the area not listed above.
+  "/tareas?vista=available",
+  "/tareas?vista=open",
+  "/tareas?vista=closed",
+  "/inventario/bajas",
+  "/inventario/por-inspeccionar",
+  "/inventario/en-restauracion",
+  "/inventario/importar/salidas",
+  "/movimientos/salida",
+  "/movimientos/reubicar",
+  "/movimientos/ajuste",
+  "/movimientos/saldo-inicial",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
@@ -130,6 +142,11 @@ const FORMS = [
   { path: "/inventario/nuevo", submit: "Guardar producto" },
   { path: "/compras/proveedores/nuevo", submit: "Guardar proveedor" },
   { path: "/ingresar", submit: "Iniciar sesión", signedOut: true },
+  // WMS-78B (operación de almacén): forms of the area.
+  { path: "/pedidos/nuevo", submit: "Crear pedido" },
+  { path: "/incidencias/nueva", submit: "Reportar" },
+  { path: "/conteos/programas/nuevo", submit: "Crear programa" },
+  { path: "/inventario/reposicion/nueva", submit: "Guardar regla" },
 ];
 
 let failures = 0;
@@ -342,6 +359,15 @@ try {
       ["/pedidos/olas", /^\/tareas\/olas\/[0-9a-f-]{36}$/],
       // WMS-40: a person of the team, with their sessions.
       ["/configuracion/equipo", /^\/configuracion\/equipo\/[0-9a-f-]{36}$/],
+      // WMS-78B (operación de almacén): more details of the area.
+      ["/tareas?vista=available", /^\/tareas\/[0-9a-f-]{36}$/],
+      ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/, "/editar"],
+      ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/, "/estado"],
+      ["/inventario", /^\/inventario\/[0-9a-f-]{36}$/, "/desechar"],
+      ["/incidencias", /^\/incidencias\/[0-9a-f-]{36}$/],
+      ["/conteos/programas", /^\/conteos\/programas\/[0-9a-f-]{36}$/],
+      ["/inventario/tarimas", /^\/inventario\/tarimas\/[0-9a-f-]{36}$/],
+      ["/inventario/reposicion", /^\/inventario\/reposicion\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

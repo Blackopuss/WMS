@@ -46,7 +46,7 @@ export function AddLineForm({ orderId }: { orderId: string }) {
     <form
       action={formAction}
       noValidate
-      className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end"
+      className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-start"
     >
       <FormField
         id="code"
@@ -86,7 +86,7 @@ export function AddLineForm({ orderId }: { orderId: string }) {
           />
         )}
       </FormField>
-      <Button type="submit" className="min-h-11" disabled={pending}>
+      <Button type="submit" className="min-h-11 sm:mt-5.5" disabled={pending}>
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         Agregar
       </Button>

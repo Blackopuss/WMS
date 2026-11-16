@@ -23,6 +23,7 @@ import {
   PageHeader,
   ReadOnlyNotice,
 } from "@/components";
+import { PendingNotices } from "@/components/pending-notices";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -260,7 +261,7 @@ export default async function InventarioPage({
       )}
       <ChevronRight
         aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground"
+        className="ml-auto size-4 shrink-0 text-muted-foreground"
       />
     </li>
   );
@@ -415,58 +416,39 @@ export default async function InventarioPage({
           </span>
         </Link>
       )}
-      {inspectingCount > 0 && (
-        <Link
-          href="/inventario/por-inspeccionar"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {inspectingCount === 1
-              ? "1 renglón por inspeccionar."
-              : `${inspectingCount.toLocaleString("es-MX")} renglones por inspeccionar.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
-      {repairCount > 0 && (
-        <Link
-          href="/inventario/en-restauracion"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {repairCount === 1
-              ? "1 renglón en restauración."
-              : `${repairCount.toLocaleString("es-MX")} renglones en restauración.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
-      {unplacedCount > 0 && (
-        <Link
-          href="/inventario/sin-acomodar"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {unplacedCount === 1
-              ? "1 producto sin acomodar."
-              : `${unplacedCount.toLocaleString("es-MX")} productos sin acomodar.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
-      {expiringCount > 0 && (
-        <Link
-          href="/inventario/por-caducar"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {expiringCount === 1
-              ? "1 lote por caducar."
-              : `${expiringCount.toLocaleString("es-MX")} lotes por caducar.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
+      <PendingNotices
+        label="Pendientes del inventario"
+        notices={[
+          inspectingCount > 0 && {
+            href: "/inventario/por-inspeccionar",
+            text:
+              inspectingCount === 1
+                ? "1 renglón por inspeccionar."
+                : `${inspectingCount.toLocaleString("es-MX")} renglones por inspeccionar.`,
+          },
+          repairCount > 0 && {
+            href: "/inventario/en-restauracion",
+            text:
+              repairCount === 1
+                ? "1 renglón en restauración."
+                : `${repairCount.toLocaleString("es-MX")} renglones en restauración.`,
+          },
+          unplacedCount > 0 && {
+            href: "/inventario/sin-acomodar",
+            text:
+              unplacedCount === 1
+                ? "1 producto sin acomodar."
+                : `${unplacedCount.toLocaleString("es-MX")} productos sin acomodar.`,
+          },
+          expiringCount > 0 && {
+            href: "/inventario/por-caducar",
+            text:
+              expiringCount === 1
+                ? "1 lote por caducar."
+                : `${expiringCount.toLocaleString("es-MX")} lotes por caducar.`,
+          },
+        ]}
+      />
       {(list.total > 0 || narrowed) && (
         <Form
           action="/inventario"

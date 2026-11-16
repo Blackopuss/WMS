@@ -267,7 +267,7 @@ try {
     // Team screen (USR-08): reached from Configuración; the demo account is
     // the titular, so it sees itself protected and may invite any role.
     await page.goto(`${BASE}/configuracion`, { waitUntil: "networkidle" });
-    await page.getByRole("link", { name: /Equipo/ }).click();
+    await page.getByRole("link", { name: /^Equipo\b/ }).click();
     await page.waitForURL("**/configuracion/equipo");
     await page.getByRole("heading", { name: "Equipo", level: 1 }).waitFor();
     const people = page.getByRole("region", { name: "Personas" });
@@ -908,6 +908,82 @@ try {
       (await page.getAttribute("#password", "type")) === "text",
       `${viewport.name}: password visibility toggle works`,
     );
+    await page.close();
+  }
+
+  // WMS-78B (operación de almacén): visual review of the warehouse screens.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      {
+        isMobile: true,
+        hasTouch: true,
+      },
+    );
+    for (const path of [
+      "/inicio",
+      "/tareas",
+      "/pedidos",
+      "/inventario",
+      "/movimientos",
+      "/conteos",
+      "/incidencias",
+    ]) {
+      await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `320px: ${path} fits and has one heading`,
+      );
+    }
+    // What waits in the warehouse: one card with full-width rows ≥ 44 px.
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const pending = page.getByRole("list", {
+      name: "Pendientes del inventario",
+    });
+    if (await pending.count()) {
+      const heights = await pending
+        .locator("a")
+        .evaluateAll((links) =>
+          links.map((a) => a.getBoundingClientRect().height),
+        );
+      check(
+        heights.every((height) => height >= 44),
+        "320px: pending notices of Inventario are rows ≥ 44px",
+      );
+    }
+    // The scan box keeps the focus and is never disabled (INV-29).
+    await page.goto(`${BASE}/movimientos/salida-rapida`, {
+      waitUntil: "networkidle",
+    });
+    await page.fill("#buscar-producto", "NO-EXISTE-78B");
+    await page.press("#buscar-producto", "Enter");
+    await page.waitForTimeout(1500);
+    check(
+      await page.evaluate(() => {
+        const box = document.querySelector("#buscar-producto");
+        return document.activeElement === box && !box.disabled;
+      }),
+      "320px: the scan box of «Registrar salida» keeps the focus",
+    );
+    // Dark mode: the class is on <html> before paint and the page is dark.
+    await page.evaluate(() => localStorage.setItem("almacen-tema", "dark"));
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const dark = await page.evaluate(() => {
+      const [r, g, b] = getComputedStyle(document.body)
+        .backgroundColor.match(/[\d.]+/g)
+        .map(Number);
+      return {
+        on: document.documentElement.classList.contains("dark"),
+        light: (r + g + b) / 3,
+      };
+    });
+    check(dark.on && dark.light < 60, "dark mode: Inventario is dark");
+    await page.evaluate(() => localStorage.setItem("almacen-tema", "light"));
     await page.close();
   }
 } finally {

@@ -9,6 +9,25 @@ import {
 import { Skeleton } from "./ui/skeleton";
 
 /** Page title area used by every screen. */
+/**
+ * Document numbers (PS-0004, EM-0001, INC-0002…) never break at their
+ * hyphen: on a phone «Empacar PS-0004 · Cliente» wrapped as «PS-» and
+ * «0004» (WMS-78B).
+ */
+function keepCodesTogether(text: string): React.ReactNode {
+  const parts = text.split(/(\b[A-Z]{1,4}-\d+\b)/);
+  if (parts.length === 1) return text;
+  return parts.map((part, index) =>
+    index % 2 === 1 ? (
+      <span key={index} className="whitespace-nowrap">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
 export function PageHeader({
   title,
   description,
@@ -22,7 +41,7 @@ export function PageHeader({
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-          {title}
+          {keepCodesTogether(title)}
         </h1>
         {description && (
           <p className="max-w-prose text-muted-foreground">{description}</p>
