@@ -6,6 +6,12 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-16
+
+- Revisión de la documentación: `docs/ESTADO_WMS.md`, el plan, la memoria y el
+  relevo al día; en la propuesta de producción y calidad quedan dos puntos por
+  confirmar con el fundador (P7d y P8d).
+
 ## 2026-11-15
 
 - Propuesta de flujo de producción y calidad, sexta versión

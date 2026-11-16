@@ -1,6 +1,6 @@
 # Estado del WMS: lo que hay y lo que falta
 
-Actualizado: 2026-11-15. Rama `pruebas` de `Blackopuss/WMS`, Fases 1 y 2 cerradas y parte de la
+Actualizado: 2026-11-16. Rama `pruebas` de `Blackopuss/WMS`, Fases 1 y 2 cerradas y parte de la
 Fase 3 (el detalle por paso está en `CHANGELOG.md`; el fundador retomó el trabajo el 2026-11-14 y esa tanda quedó cerrada y unida). Fuentes: `docs/INSTRUCCIONES_WMS.md` (rumbo del fundador, manda sobre todo), `docs/PLAN_WMS_V3.md` (pasos que siguen), `docs/PLAN_WMS.md` (pasos cerrados) y
 `docs/ESPECIFICACION_WMS_v5.md` (lo que pide el fundador; las secciones citadas
 abajo son de ese documento).
@@ -25,7 +25,7 @@ abajo son de ese documento).
 | Terminales compartidas con PIN | Hecho (WMS-38, ADR 0061, 2026-11-14) |
 | API y webhooks | Hecho (WMS-60, ADR 0058, 2026-11-14) |
 | Hoja de traslado en PDF y mensaje al archivar un producto según el alcance | Hecho (WMS-19B, WMS-57B; ADR 0048, 0055; 2026-11-14) |
-| Producción y calidad | Falta (WMS-27..31, WMS-59); el flujo ya está decidido (`docs/flujos/PRODUCCION_CALIDAD.md`) y espera que el fundador indique empezar, con WMS-59 primero |
+| Producción y calidad | Falta (WMS-27..31, WMS-59); el flujo ya está decidido (`docs/flujos/PRODUCCION_CALIDAD.md`) y espera que el fundador indique empezar, con WMS-59 primero (quedan dos puntos por confirmar, P7d y P8d) |
 | Analítica | Falta (WMS-32..34) |
 | Varios almacenes | Hecho (WMS-18): almacén activo por persona, cupo en el plan |
 | Niveles de ubicación por almacén, código y uso | Hecho (WMS-22A, ADR 0036) |
@@ -50,10 +50,10 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
   bloqueo progresivo por intentos fallidos, avisos por correo.
 - **MFA** obligatoria para titulares, administradores y personal de plataforma;
   opcional para los demás. Códigos de recuperación.
-- **Sesiones**: cada persona ve y cierra sus propias sesiones. El titular y la
-  administración ven además las sesiones abiertas de cada persona de la empresa
-  (dispositivo, navegador, IP, última actividad) y las cierran a distancia
-  (WMS-40, ADR 0059); desactivar a alguien solo le cierra las de esa empresa.
+- **Sesiones**: cada persona ve y cierra sus propias sesiones. El titular, la
+  administración y Gerencia ven además las sesiones abiertas de cada persona de
+  la empresa (dispositivo, navegador, IP, última actividad), y el titular y la
+  administración las cierran a distancia (WMS-40, ADR 0059); desactivar a alguien solo le cierra las de esa empresa.
 - **Terminales compartidas con PIN** (WMS-38, ADR 0061): un dispositivo del piso
   se registra como terminal de un almacén y cada persona entra ahí con su PIN a
   su propia sesión, con permisos recortados y cierre por inactividad; en una
@@ -95,8 +95,8 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
   cuenta o surte. **Cambiar de estado** (WMS-11) con motivo: cuarentena, dañado,
   bloqueado, rechazado o liberar; el Almacenista solo reporta dañado.
 - **Reservas** (WMS-12): apartan existencias para un documento sin moverlas;
-  nada que se haga a mano toma lo reservado. Las usarán los pedidos de salida
-  (WMS-13) y la producción.
+  nada que se haga a mano toma lo reservado. Las usan los pedidos de salida,
+  el surtido, el acomodo, el empaque y la reposición; las usará la producción.
 - **Pedidos de salida** (WMS-13): borrador con destinatario, día de salida,
   prioridad y productos (por clave o escaneo); liberarlo reserva sus existencias
   (o lo que haya); cancelarlo las libera. Sección «Pedidos» del menú.
@@ -145,16 +145,47 @@ producto el 2026-11-09 (ADR 0032). Su código sigue en el historial de git.
 - **Menú por tarea**: Inicio, Tareas, Recepción, Pedidos, Inventario, Movimientos,
   Conteos, Compras, Incidencias y Configuración; cada quien ve solo lo que su rol
   permite. En el teléfono, barra inferior con cuatro secciones y «Más».
-- **Traslados entre almacenes** (WMS-19): además de la pantalla, la hoja de
-  traslado en PDF (WMS-19B) con lo enviado por renglón, lote y series, lo
-  recibido y las firmas.
+- **Varios almacenes y alcance** (WMS-18, WMS-20): cada persona trabaja en un
+  almacén activo y puede limitarse a almacenes y zonas; capacidad y
+  restricciones por ubicación (WMS-22B).
+- **Lotes, caducidad y series** (WMS-21A, WMS-21B): control por lote o por
+  número de serie según el producto, «Por caducar» y rastreo por lote, serie,
+  pedido, embarque o traslado.
+- **Acomodo y tarimas** (WMS-52, WMS-53): tareas de acomodo con lugar
+  recomendado para lo que entra a un lugar de paso; tarimas y contenedores que
+  se arman, se mueven enteros y se desarman.
+- **Empaque, embarques y devoluciones** (WMS-15, WMS-16, WMS-17): verificar al
+  empacar en bultos, agrupar pedidos listos en un embarque que registra una
+  sola salida con su hoja en PDF, y devoluciones de clientes que entran a
+  inspección y esperan una decisión.
+- **Surtido por olas, cross-docking y reposición** (WMS-25, WMS-54, WMS-23/24):
+  agrupar pedidos y surtir por recorrido; mandar lo que llega directo a los
+  pedidos que lo esperan; reponer las ubicaciones de surtido con reglas de
+  mínimo y máximo. Lo dañado al recibir entra aparte, en «Dañado».
+- **Conteos cíclicos** (WMS-55): programas por zona o almacén, por frecuencia o
+  clase ABC, con exactitud por periodo.
+- **Traslados entre almacenes** (WMS-19): envío, recepción en una o varias
+  veces, diferencias (dañado, perdido, regresado) y la hoja de traslado en PDF
+  (WMS-19B) con lo enviado por renglón, lote y series, lo recibido y las firmas.
+- **Etiquetas** (WMS-26) de ubicaciones, productos, lotes, series, tarimas,
+  pedidos y embarques, con Code 128 y QR; **app instalable y escaneo** con
+  lector USB o cámara en Android (WMS-35/36).
+- **Aprobaciones, solicitudes de compra y campos personalizados** (WMS-56/41,
+  WMS-57, WMS-58): reglas de aprobación por empresa (ajustes y conteos con
+  diferencias grandes), solicitudes de compra sin costos que Compras convierte
+  en órdenes, y campos propios en productos, ubicaciones y proveedores.
+- **Incidencias** (WMS-39): cualquiera del piso reporta un problema y
+  supervisión le da seguimiento; nunca cambian existencias por sí solas.
+
+El detalle de cada uno está en su ADR (`docs/adr/`, 0033 a 0061) y en
+`docs/arquitectura/modulos/`.
 
 ### Calidad del código y operación
 
 - 2,511 pruebas automáticas (unitarias e integración contra MySQL 9.4), revisión
   de tipos, lint, límites de arquitectura y formato en cada push (CI en GitHub).
-- Accesibilidad WCAG 2.1 AA revisada con axe en las pantallas principales; las
-  nuevas (`/tareas`, `/tareas/nueva`, `/recepcion`) ya están en la lista.
+- Accesibilidad WCAG 2.1 AA revisada con axe en las pantallas principales
+  (`npm run verify:a11y`; cada pantalla nueva del menú se agrega a su lista).
 - Scripts de despliegue, respaldo cifrado, restauración, alertas y salud
   (`deploy/`), listos para cuando el WMS tenga servidor.
 

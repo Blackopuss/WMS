@@ -62,9 +62,9 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Dónde quedó (2026-11-13):** el fundador pidió detenerse al cerrar WMS-39 y WMS-58; no se empieza ningún paso nuevo hasta que lo indique. Fases 1 y 2 cerradas; de la Fase 3 están hechos WMS-56, WMS-41, WMS-57 y WMS-58; transversales hechos: WMS-35, WMS-36 y WMS-39.
 
-**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. **Toda la tanda quedó cerrada y unida ese día:** WMS-19B (PDF del traslado, ADR 0048), WMS-57B (mensaje al archivar, ADR 0055), WMS-40 (sesiones del equipo, ADR 0059), WMS-39B (avisos por correo y resumen diario, ADR 0060), WMS-60 (API y webhooks, ADR 0058) y WMS-38 (terminales compartidas con PIN, ADR 0061). La propuesta de producción y calidad va en su quinta versión y espera cinco respuestas del fundador.
+**Retomado (2026-11-14):** el fundador pidió trabajar WMS-60, los transversales de seguridad (WMS-40 y WMS-38), la propuesta de flujo de producción y calidad y pendientes de pasos cerrados. **Toda la tanda quedó cerrada y unida ese día:** WMS-19B (PDF del traslado, ADR 0048), WMS-57B (mensaje al archivar, ADR 0055), WMS-40 (sesiones del equipo, ADR 0059), WMS-39B (avisos por correo y resumen diario, ADR 0060), WMS-60 (API y webhooks, ADR 0058) y WMS-38 (terminales compartidas con PIN, ADR 0061). La propuesta de producción y calidad va en su sexta versión (2026-11-15), con todas las respuestas del fundador; quedan dos puntos por confirmar (P7d y P8d, su sección 11).
 
-**Qué sigue cuando se retome, en el orden de la tabla de fases:** producción y calidad (WMS-59, WMS-27..31; su flujo se define con el fundador antes de programar), WMS-60 (API y webhooks), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37, WMS-38, WMS-40, WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5.
+**Qué sigue cuando el fundador lo indique, en el orden de la tabla de fases:** producción y calidad (el flujo ya está decidido; el orden de pasos es el de la sección 12 de la propuesta, con WMS-59 primero, y cada paso escribe su ADR antes de programar), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37 (requisito de producción), WMS-67, WMS-42, WMS-68, WMS-47; después las Fases 4 y 5. Ya están hechos WMS-60, WMS-38 y WMS-40.
 
 **Decisiones del fundador (2026-11-13):**
 
@@ -641,9 +641,11 @@ el Supervisor de almacén también deciden las solicitudes de producción (P7c);
 tareas de almacén (P8c); estado «En restauración» para cualquier empresa y
 orden de reproceso con Producción (R1); lo restaurado vuelve directo al
 inventario o pasa por Calidad según un ajuste de la empresa (R2); y el
-Almacenista de piso no manda a restauración (R3). Ya no hay preguntas abiertas
-que detengan el trabajo. **Nada se programa hasta que el fundador indique
-empezar;** el orden de pasos es el de la sección 12 de la propuesta, con
+Almacenista de piso no manda a restauración (R3). Al revisar esa versión
+(2026-11-16) quedaron dos puntos por confirmar: P7d (a nombre de quién queda
+la orden cuando Almacén o el Supervisor de almacén aceptan una solicitud) y
+P8d (si lo disponible del área que nadie ha tomado también impide pedir).
+**Nada se programa hasta que el fundador indique empezar;** el orden de pasos es el de la sección 12 de la propuesta, con
 WMS-59 primero.
 
 ### WMS-60 · API y webhooks
