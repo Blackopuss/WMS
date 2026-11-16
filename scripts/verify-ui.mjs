@@ -303,8 +303,10 @@ try {
     );
     await page.screenshot({ path: `${OUT}/equipo-${viewport.name}.png` });
     check(
-      (await roleBoxes.count()) === 4 && smallRoles === 0 && teamOverflow <= 0,
-      `${viewport.name}: the invite dialog offers the four roles with large targets and explains a missing role`,
+      // Production and quality roles join the four when their module is
+      // active (WMS-59), so the count is a floor.
+      (await roleBoxes.count()) >= 4 && smallRoles === 0 && teamOverflow <= 0,
+      `${viewport.name}: the invite dialog offers the roles with large targets and explains a missing role`,
     );
 
     // Optional round trip that leaves a cancelled invitation behind:
@@ -373,11 +375,14 @@ try {
     );
     await page.screenshot({ path: `${OUT}/plan-${viewport.name}.png` });
     check(
-      (await page.getByRole("progressbar").count()) === 2 &&
+      // Products, users and files (WMS-67).
+      (await page.getByRole("progressbar").count()) === 3 &&
         (await page
           .getByRole("progressbar", { name: "Productos activos" })
           .getAttribute("aria-valuemax")) === "1000" &&
-        (await page.getByText("Próximamente", { exact: true }).count()) === 2 &&
+        // Production and quality can be hired now (WMS-27, WMS-30A): no
+        // module is «Próximamente» any more.
+        (await page.getByRole("heading", { name: "Módulos" }).count()) > 0 &&
         planOverflow <= 0,
       `${viewport.name}: «Mi plan» shows product and user quotas, modules and no overflow`,
     );
@@ -576,7 +581,12 @@ try {
         .first()
         .waitFor();
     }
-    const rows = a.locator("section ul > li");
+    // Only the rows of «Sesiones activas» (the page has other lists).
+    const rows = a
+      .locator("div.rounded-xl", {
+        has: a.getByRole("heading", { name: "Sesiones activas" }),
+      })
+      .locator("ul > li");
     await a.reload({ waitUntil: "networkidle" });
     check(
       (await rows.count()) === 1,
@@ -947,7 +957,8 @@ try {
       .first()
       .evaluate((el) => getComputedStyle(el).boxShadow);
     check(
-      ring !== "none" && !/rgba\(0, 0, 0, 0\.05\)/.test(ring),
+      // ring-input of the light theme (#808ea3), at least 3:1 on white.
+      ring.includes("rgb(128, 142, 163)"),
       "WMS-78A: the theme switch has a visible ring",
     );
     await page.context().close();
