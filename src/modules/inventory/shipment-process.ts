@@ -28,6 +28,7 @@ export const SHIPMENT_PROCESS: ProcessDocument = {
       key: SHIPMENT_DISPATCHED_OPERATION,
       label: "Salida confirmada",
       milestone: "DRAFT",
+      leadsTo: "SHIPPED",
     },
   ],
   readPermission: "inventory.shipment.read",

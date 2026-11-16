@@ -386,6 +386,13 @@ export async function lockRows(
   tx: object,
   model: keyof typeof LOCKABLE,
   ids: readonly string[],
+  /**
+   * `share`: `FOR SHARE`, for who only needs the rows not to change while
+   * it decides (WMS-74B: starting a process while a version is published).
+   * Never take it and then write the same rows (two holders would wait for
+   * each other).
+   */
+  options: { mode?: "update" | "share" } = {},
 ): Promise<string[]> {
   const scope = (tx as Record<symbol, unknown>)[TRANSACTION] as
     { client: RawTransaction; organizationId: string } | undefined;
@@ -402,7 +409,7 @@ export async function lockRows(
   if (unique.length === 0) return [];
   // The table comes from the fixed list above; every value is a parameter.
   const rows = await scope.client.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM \`${table}\` WHERE organizationId = ? AND id IN (${unique.map(() => "?").join(", ")}) ORDER BY id FOR UPDATE`,
+    `SELECT id FROM \`${table}\` WHERE organizationId = ? AND id IN (${unique.map(() => "?").join(", ")}) ORDER BY id FOR ${options.mode === "share" ? "SHARE" : "UPDATE"}`,
     scope.organizationId,
     ...unique,
   );

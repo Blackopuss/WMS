@@ -28,6 +28,7 @@ export {
   ProcessStagesPending,
   assertStagesDone,
   completeOperationStage,
+  doneStagesAt,
   operationWaits,
   reachMilestone,
   setProcessPlace,

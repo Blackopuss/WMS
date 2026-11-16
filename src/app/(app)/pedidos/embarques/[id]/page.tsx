@@ -105,8 +105,10 @@ export default async function EmbarquePage({
   const canEdit = active && draft && access.allows("inventory.shipment.create");
   const canDispatch =
     active && draft && access.allows("inventory.shipment.dispatch");
+  // WMS-74B: after a stage of «Por confirmar» was done, the orders stay.
+  const canChangeOrders = canEdit && !shipment.ordersFixed;
   const [ready, process] = await Promise.all([
-    canEdit ? listReadyOrders(actor) : null,
+    canChangeOrders ? listReadyOrders(actor) : null,
     getProcessView(actor, processDocuments, {
       documentKey: SHIPMENT_PROCESS.key,
       documentId: shipment.id,
@@ -216,7 +218,7 @@ export default async function EmbarquePage({
                         .join(" · ")}
                     </p>
                   </div>
-                  {canEdit && (
+                  {canChangeOrders && (
                     <RemoveOrder
                       shipmentId={shipment.id}
                       orderId={order.id}
@@ -307,7 +309,13 @@ export default async function EmbarquePage({
         </section>
       )}
 
-      {canEdit && ready && ready.items.length > 0 && (
+      {canEdit && shipment.ordersFixed && (
+        <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+          {shipment.ordersFixed}
+        </p>
+      )}
+
+      {canChangeOrders && ready && ready.items.length > 0 && (
         <section
           aria-labelledby="agregar"
           className="max-w-3xl space-y-3 rounded-xl border bg-card p-4 sm:px-5"

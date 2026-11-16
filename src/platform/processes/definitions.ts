@@ -19,8 +19,16 @@ export type ProcessMilestone = {
 export type ProcessOperation = {
   key: string;
   label: string;
-  /** The milestone it happens in. */
+  /** The milestone it happens in (where it is asked, before it is written). */
   milestone: string;
+  /**
+   * The milestone the operation takes the document to, or null when it
+   * does not change its fixed state (WMS-74B review). Required, so a
+   * module says it: an operation that changes the state must be declared
+   * in the milestone before the change, or `assertStagesDone` would wait
+   * for ever («Esperando que el documento llegue a …»).
+   */
+  leadsTo: string | null;
 };
 
 export type ProcessDocument = {
@@ -88,6 +96,24 @@ export function assertValidProcessDocuments(
       operations.add(operation.key);
       if (!milestones.has(operation.milestone)) {
         throw new Error(`Operation ${operation.key} has no milestone`);
+      }
+      const at = milestoneIndex(document, operation.milestone);
+      if (document.milestones[at]!.closes) {
+        throw new Error(`Operation ${operation.key} is in a closing milestone`);
+      }
+      if (operation.leadsTo !== null) {
+        if (typeof operation.leadsTo !== "string") {
+          throw new Error(`Operation ${operation.key} needs its leadsTo`);
+        }
+        const to = milestoneIndex(document, operation.leadsTo);
+        if (to < 0) {
+          throw new Error(`Operation ${operation.key} leads nowhere`);
+        }
+        if (to <= at) {
+          throw new Error(
+            `Operation ${operation.key} must be declared before ${operation.leadsTo}`,
+          );
+        }
       }
     }
   }

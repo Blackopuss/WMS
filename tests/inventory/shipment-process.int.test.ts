@@ -5,6 +5,7 @@ import {
   SHIPMENT_DISPATCHED_OPERATION,
   SHIPMENT_PROCESS,
   acceptTask,
+  addShipmentOrders,
   cancelShipment,
   confirmPick,
   createOutboundOrder,
@@ -15,7 +16,9 @@ import {
   reconcileStock,
   registerEntry,
   releaseOutboundOrder,
+  removeShipmentOrder,
   setOutboundLine,
+  updateShipment,
   type InventoryActor,
 } from "@/modules/inventory";
 import { moduleRegistry, processDocuments } from "@/modules/registry";
@@ -29,17 +32,20 @@ import {
   switchFacility,
 } from "@/platform/locations";
 import {
+  backStage,
   completeStage,
   getProcessSettings,
   getProcessView,
   listProcessWork,
   publishProcess,
   saveProcessDraft,
+  skipStage,
+  startProcess,
   takeStage,
   type DraftInput,
 } from "@/platform/processes";
 import { createOrganization } from "@/platform/tenancy";
-import { db } from "@/server";
+import { LOCKING_TRANSACTION, db, forOrganization, lockRows } from "@/server";
 
 // WMS-74B (ADR 0071): the shipment is the first real document with a
 // process of the company. Its stages before the exit are waited for by
@@ -765,5 +771,152 @@ describe("who reaches a shipment's process", () => {
     expect(await stateOf(progress.id, "Carga")).toMatchObject({
       status: "READY",
     });
+  });
+});
+
+describe("review of WMS-74B", () => {
+  it("once a stage before the exit is done, the orders stay as they were", async () => {
+    const { owner } = await company();
+    await publish(owner, {
+      stages: [
+        {
+          name: "Carga",
+          kind: "MANUAL",
+          milestone: "DRAFT",
+          roles: ["operator"],
+        },
+        {
+          name: "Revisión",
+          kind: "MANUAL",
+          milestone: "DRAFT",
+          roles: ["supervisor"],
+          allowBack: true,
+        },
+        {
+          name: "Salida",
+          kind: "OPERATION",
+          operationKey: SHIPMENT_DISPATCHED_OPERATION,
+        },
+      ],
+    });
+    const operator = await member(owner.organizationId, ["operator"]);
+    const supervisor = await member(owner.organizationId, ["supervisor"]);
+    const first = await readyOrder(owner);
+    const second = await readyOrder(owner);
+    const third = await readyOrder(owner);
+    const shipmentId = await ship(owner, [first.orderId, third.orderId]);
+    // Nothing done yet: the orders may change.
+    expect(
+      await removeShipmentOrder(owner, shipmentId, third.orderId),
+    ).toMatchObject({ ok: true });
+    const progress = (await progressOf(owner.organizationId, shipmentId))!;
+    const carga = await stateOf(progress.id, "Carga");
+    expect(
+      await completeStage(operator, processDocuments, { stateId: carga.id }),
+    ).toMatchObject({ ok: true });
+
+    const added = await addShipmentOrders(owner, shipmentId, [second.orderId]);
+    expect(added).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect(!added.ok && added.formError).toContain("Ya se hizo «Carga»");
+    expect(
+      await removeShipmentOrder(owner, shipmentId, first.orderId),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect((await getShipment(owner, shipmentId))?.ordersFixed).toContain(
+      "«Carga»",
+    );
+    // The transport data still change.
+    expect(
+      await updateShipment(owner, shipmentId, { carrier: "Fletes Norte" }),
+    ).toMatchObject({ ok: true });
+
+    // «Regresar» from the next stage opens them again.
+    const revision = await stateOf(progress.id, "Revisión");
+    expect(
+      await backStage(supervisor, processDocuments, {
+        stateId: revision.id,
+        reason: "Se agrega un pedido",
+      }),
+    ).toMatchObject({ ok: true });
+    expect((await getShipment(owner, shipmentId))?.ordersFixed).toBeNull();
+    expect(
+      await addShipmentOrders(owner, shipmentId, [second.orderId]),
+    ).toMatchObject({ ok: true });
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("a stage skipped or of another milestone does not fix the orders", async () => {
+    const { owner } = await company();
+    await publish(owner, {
+      stages: [
+        {
+          name: "Carga",
+          kind: "MANUAL",
+          milestone: "DRAFT",
+          roles: ["operator"],
+          allowSkip: true,
+        },
+      ],
+    });
+    const operator = await member(owner.organizationId, ["operator"]);
+    const first = await readyOrder(owner);
+    const second = await readyOrder(owner);
+    const shipmentId = await ship(owner, [first.orderId]);
+    const progress = (await progressOf(owner.organizationId, shipmentId))!;
+    const carga = await stateOf(progress.id, "Carga");
+    expect(
+      await skipStage(operator, processDocuments, {
+        stateId: carga.id,
+        reason: "Sin carga hoy",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await addShipmentOrders(owner, shipmentId, [second.orderId]),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("a process waits while its version is being published, never takes a retired one", async () => {
+    const { owner, facilityId } = await company();
+    await publish(owner);
+    const definition = await db.processDefinition.findFirstOrThrow({
+      where: {
+        organizationId: owner.organizationId,
+        documentKey: SHIPMENT_PROCESS.key,
+      },
+      select: { id: true },
+    });
+    // Publishing locks the definition for update: a start waits for it.
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let holding = false;
+    const holder = forOrganization(owner.organizationId).$transaction(
+      async (tx) => {
+        await lockRows(tx, "processDefinition", [definition.id]);
+        holding = true;
+        await gate;
+      },
+      { ...LOCKING_TRANSACTION, timeout: 20_000 },
+    );
+    while (!holding) await new Promise((resolve) => setTimeout(resolve, 20));
+    let finished = false;
+    const started = forOrganization(owner.organizationId)
+      .$transaction(
+        (tx) =>
+          startProcess(tx, SHIPMENT_PROCESS, owner, {
+            documentId: newId(),
+            facilityId,
+            label: "EM-PRUEBA",
+            milestone: "DRAFT",
+          }),
+        { ...LOCKING_TRANSACTION, timeout: 20_000 },
+      )
+      .then((result) => {
+        finished = true;
+        return result;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(finished).toBe(false);
+    release();
+    await holder;
+    expect(await started).toMatchObject({ started: true });
   });
 });

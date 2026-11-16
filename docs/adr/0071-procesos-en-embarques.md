@@ -101,6 +101,17 @@ en `processDocuments` (`src/modules/registry/processes.ts`):
   bitácora. Las acciones de las personas sobre una etapa bloquean solo el
   progreso, así que no hay ciclo. Cancelar: embarque → progreso. Armar:
   pedidos → (embarque nuevo) → progreso nuevo.
+- **Los pedidos quedan fijos después de una etapa hecha** (revisión
+  independiente): mientras el embarque esté en «Por confirmar» y alguna
+  etapa manual de ese hito esté **hecha** (no saltada), agregar o quitar
+  pedidos se rechaza con un mensaje que la nombra, y la ficha no lo ofrece:
+  la evidencia de la carga corresponde a lo que sale. Se abre otra vez
+  regresando el proceso a esa etapa (solo existe desde una etapa manual
+  posterior que permita regresar) o cancelando el embarque y armándolo de
+  nuevo. Los datos del transporte se siguen cambiando. Lo lee
+  `doneStagesAt` bajo el candado del progreso, después de los del embarque
+  y los pedidos. El fundador puede preferir permitirlo como antes o que
+  las etapas se reabran solas al cambiar los pedidos.
 - **No cambia cómo sale la mercancía**: ni el movimiento, ni las reservas,
   ni los bultos, ni las series, ni `ship:<id>`, ni `repeated`. Una salida
   repetida responde antes de tocar el proceso.
@@ -137,6 +148,18 @@ en `processDocuments` (`src/modules/registry/processes.ts`):
 
 ## Cambios al motor (mínimos)
 
+- `ProcessOperation.leadsTo` obligatorio (hito al que lleva, o `null`),
+  validado al arrancar: después de `milestone`, y `milestone` nunca un hito
+  `closes`. El embarque declara `{ milestone: "DRAFT", leadsTo: "SHIPPED" }`.
+- `startProcess` lee la versión vigente con un candado compartido de la
+  definición (`lockRows(..., { mode: "share" })`, opción nueva de
+  `@/server`): publicar en el mismo momento ya no hace fallar el disparador
+  «only a published version starts».
+- `doneStagesAt(client, doc, documentId, { lock })`: etapas manuales del
+  hito actual ya hechas.
+- Si `completeOperationStage` lanza `ProcessStagesPending` en la salida, el
+  embarque responde `not_allowed` con su mensaje (todo se revierte).
+
 - `operationWaits(client, doc, documentId, operationKey)` en `engine.ts`:
   lo mismo que `assertStagesDone` sin bloquear, para que una pantalla diga
   por qué no ofrece la operación.
@@ -144,8 +167,8 @@ en `processDocuments` (`src/modules/registry/processes.ts`):
   (pura): la condición de «Tareas» e Inicio de arriba, usada por el layout,
   `/tareas` e Inicio.
 - La acción de etapas (`/procesos/actions.ts`) refresca también la
-  dirección del documento cuando la pantalla la manda (`documentHref`,
-  solo una ruta propia, `isInternalHref`).
+  pantalla del documento: el motor la devuelve en su resultado
+  (`documentHref`), nunca la manda el formulario.
 
 ## Pruebas
 
@@ -159,9 +182,12 @@ que despacha termina con `reconcileStock` vacío.
 
 ## Pendientes
 
+- No hay forma de forzar una salida que espera una etapa: la hace el
+  titular (puede hacer cualquier etapa) o se cancela y se arma otra vez.
+
 - Que la salida espere siempre a las etapas de «Por confirmar», aunque la
   empresa no ponga «Salida confirmada» (decisión del fundador).
-- Montacarguista y Comprador en etapas (decisión del fundador).
+- Montacarguista y Comprador en etapas de embarque (decisión del fundador).
 - «Seguimiento» con filtro por etapa («Embarques en ruta»), tiempos por
   etapa (WMS-33), avisar a quien recibe, eventos de webhook por etapa.
 - Procesos en pedidos de salida, traslados y órdenes de compra.

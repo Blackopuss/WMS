@@ -84,8 +84,18 @@ const DOC: ProcessDocument = {
     { key: "CANCELLED", label: "Cancelado", closes: true },
   ],
   operations: [
-    { key: "test.verified", label: "Se verificó", milestone: "CHECK" },
-    { key: "test.stored", label: "Se guardó", milestone: "CHECK" },
+    {
+      key: "test.verified",
+      label: "Se verificó",
+      milestone: "CHECK",
+      leadsTo: null,
+    },
+    {
+      key: "test.stored",
+      label: "Se guardó",
+      milestone: "CHECK",
+      leadsTo: null,
+    },
   ],
   readPermission: "inventory.stock.read",
   href: (id) => `/inventario?documento=${id}`,

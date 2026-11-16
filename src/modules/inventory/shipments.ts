@@ -8,8 +8,10 @@ import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { activeFacilityOf, isFacilityInScope } from "@/platform/locations";
 import {
+  ProcessStagesPending,
   assertStagesDone,
   completeOperationStage,
+  doneStagesAt,
   operationWaits,
   reachMilestone,
   startProcess,
@@ -139,6 +141,11 @@ async function inShipment(
       );
     } catch (error) {
       if (error instanceof Rejected) return error.result;
+      // WMS-74B: a stage of the process was missing after all (the exit
+      // asks first, so it should not happen): everything rolled back.
+      if (error instanceof ProcessStagesPending) {
+        return { ok: false, reason: "not_allowed", formError: error.message };
+      }
       if (
         (error instanceof ShipmentChanged ||
           (isClash(error, "number") && !isClash(error, "openOrderId"))) &&
@@ -252,6 +259,27 @@ function draftOnly(status: ShipmentStatus): void {
   if (status !== "DRAFT") {
     stop("not_allowed", shipmentTransitionProblem(status, "SHIPPED")!);
   }
+}
+
+/**
+ * WMS-74B (review): once a stage of «Por confirmar» was done (the loading,
+ * with its photo), the orders of the shipment stay as they were: what
+ * leaves is what was checked. «Regresar» that stage (if it allows it) or
+ * cancelling the shipment opens them again. Under the lock of the process,
+ * after the shipment's (and the orders') locks.
+ */
+async function ordersFixed(tx: Tx, shipmentId: string): Promise<void> {
+  const done = await doneStagesAt(tx, SHIPMENT_PROCESS, shipmentId, {
+    lock: true,
+  });
+  if (done.length > 0) stop("not_allowed", ordersFixedMessage(done));
+}
+
+function ordersFixedMessage(done: readonly string[]): string {
+  const names = done.map((name) => `«${name}»`).join(", ");
+  // «Regresar» only exists from a later manual stage that allows it, so
+  // the way out that always exists is said too.
+  return `${done.length === 1 ? "Ya se hizo" : "Ya se hicieron"} ${names}: para cambiar los pedidos de este embarque, regresa el proceso a esa etapa (si lo permite) o cancela el embarque y ármalo otra vez.`;
 }
 
 /**
@@ -463,6 +491,7 @@ export async function addShipmentOrders(
       shipment.facilityId,
       actor.userId,
     );
+    await ordersFixed(tx, shipment.id);
     await tx.shipmentOrder.createMany({
       data: orders.map((order) => ({
         id: newId(),
@@ -498,6 +527,7 @@ export async function removeShipmentOrder(
   return inShipment(actor.organizationId, async (tx) => {
     const shipment = await lockShipment(tx, shipmentId, actor.userId);
     draftOnly(shipment.status);
+    await ordersFixed(tx, shipment.id);
     const row = await tx.shipmentOrder.findFirst({
       where: {
         shipmentId: shipment.id,
@@ -1587,6 +1617,11 @@ export type ShipmentView = {
    * nothing waits. The exit decides again under its locks.
    */
   dispatchWaits: string | null;
+  /**
+   * WMS-74B: why its orders cannot change now — a stage of «Por confirmar»
+   * already done; null when they can.
+   */
+  ordersFixed: string | null;
 };
 
 /**
@@ -1797,6 +1832,12 @@ export async function getShipment(
             SHIPMENT_PROCESS,
             row.id,
             SHIPMENT_DISPATCHED_OPERATION,
+          )
+        : null,
+    ordersFixed:
+      row.status === "DRAFT"
+        ? await doneStagesAt(client, SHIPMENT_PROCESS, row.id).then((done) =>
+            done.length > 0 ? ordersFixedMessage(done) : null,
           )
         : null,
   };

@@ -130,11 +130,10 @@ export async function stageAction(
   }
   revalidatePath(`/procesos/${progressId}`);
   revalidatePath("/tareas");
-  // WMS-74B: the panel also lives in the screen of its document (only a
-  // path of this application; it only refreshes, it decides nothing).
-  const documentHref = text(formData, "documentHref", 200);
-  if (documentHref && isInternalHref(documentHref)) {
-    revalidatePath(documentHref.split("?")[0]!);
+  // WMS-74B: the panel also lives in the screen of its document; the
+  // engine says which (never the form).
+  if (result.documentHref && isInternalHref(result.documentHref)) {
+    revalidatePath(result.documentHref.split("?")[0]!);
   }
   return { ok: true, message: result.message, answers };
 }
