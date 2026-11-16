@@ -44,7 +44,11 @@ import {
   countRequestsToAttend,
   listPurchaseOrders,
 } from "@/modules/purchasing";
-import { approvalTypes, moduleRegistry } from "@/modules/registry";
+import {
+  approvalTypes,
+  moduleRegistry,
+  processDocuments,
+} from "@/modules/registry";
 import { countPendingApprovals } from "@/platform/approvals";
 import {
   getModuleAccess,
@@ -53,6 +57,7 @@ import {
   renewalText,
   usageLevel,
 } from "@/platform/billing";
+import { countProcessWork } from "@/platform/processes";
 
 import { DaySummaryBlock } from "./day-summary";
 import { FirstStepsGuide } from "./first-steps-guide";
@@ -102,6 +107,9 @@ export default async function InicioPage() {
   const showSummary = inventory && access.can("inventory.summary.read");
   const summary = showSummary ? await getDaySummary(actor) : null;
 
+  // WMS-74: stages of processes count with the tasks (the same rule as
+  // Tareas; without documents with processes nothing is queried).
+  const stages = await countProcessWork(actor, processDocuments);
   const [low, movements, plan, firstSteps, tasks, incoming] = await Promise.all(
     [
       showLow ? listLowStock(actor) : null,
@@ -198,18 +206,18 @@ export default async function InicioPage() {
           },
         ]
       : []),
-    ...(tasks && executes
+    ...((tasks && executes) || stages.mine + stages.available > 0
       ? [
           {
             href: "/tareas?vista=mine",
             label: "Mis tareas",
-            count: tasks.mine,
+            count: (tasks && executes ? tasks.mine : 0) + stages.mine,
             icon: ClipboardList,
           },
           {
             href: "/tareas?vista=available",
             label: "Tareas disponibles",
-            count: tasks.available,
+            count: (tasks && executes ? tasks.available : 0) + stages.available,
             icon: ClipboardList,
           },
         ]

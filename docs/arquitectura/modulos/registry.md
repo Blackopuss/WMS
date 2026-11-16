@@ -15,7 +15,8 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | `open-work.ts` | `moduleOpenWork` | `provisionCompany` al quitar un módulo |
 | `approvals.ts` | `approvalTypes` (tipos de aprobación de cada módulo con su efecto, validados al cargar; WMS-56) | Aprobaciones, Inicio, Configuración › Reglas de aprobación |
 | `notifications.ts` | `notificationTypes` (tipos de aviso de la plataforma y de cada módulo, validados al cargar; WMS-39) | Configuración › Avisos que recibo |
-| `evidence.ts` | `evidenceOwners` (quién alcanza el registro de una foto de evidencia; hoy `incident: reachesIncident`; WMS-37) | `/api/archivos` (abrir una foto) |
+| `evidence.ts` | `evidenceOwners` (quién alcanza el registro de una foto de evidencia; hoy `incident: reachesIncident` y `process_step: processStepReach(processDocuments)`; WMS-37, WMS-74) | `/api/archivos` (abrir una foto) |
+| `processes.ts` | `processDocuments` (documentos de cada módulo que pueden seguir un proceso, validados al cargar; hoy vacío hasta WMS-28/29; WMS-74) | Configuración › Procesos, `/procesos/[id]`, `/tareas` |
 | `webhooks.ts` | `webhookEventTypes` (eventos que cada módulo manda por webhook, validados al cargar; WMS-60) | Configuración › API y webhooks, servicios de destinos |
 
 `jobs.ts` y `rounds.ts` no salen por `index.ts`: los importa directamente

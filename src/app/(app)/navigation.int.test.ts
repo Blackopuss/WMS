@@ -121,8 +121,23 @@ describe("menu by role", () => {
 
   it("Encargado de producción and Inspector de calidad see the stock and incidents", () => {
     for (const role of ["production_supervisor", "quality_inspector"]) {
+      // Without documents with processes the layout hides what working
+      // stages would show (WMS-74).
+      const withoutStages = visibleNavItems(
+        (permission) =>
+          permission !== "platform.process.work" &&
+          can(member(role), permission as Permission),
+      ).map((item) => item.label);
+      expect(withoutStages, role).toEqual([
+        "Inicio",
+        "Inventario",
+        "Incidencias",
+        "Configuración",
+      ]);
+      // With them, Tareas carries their stages (WMS-74, 6.4).
       expect(menuOf(member(role)), role).toEqual([
         "Inicio",
+        "Tareas",
         "Inventario",
         "Incidencias",
         "Configuración",
@@ -189,9 +204,17 @@ describe("screens check on the server", () => {
         path.join(root, item.href.slice(1), "page.tsx"),
         "utf8",
       );
-      expect(source, item.href).toContain(
-        `if (!access.can("${item.permission}"))`,
-      );
+      if (item.orPermission) {
+        // WMS-74: a section shown by either permission asks for both.
+        expect(source, item.href).toContain(`access.can("${item.permission}")`);
+        expect(source, item.href).toContain(
+          `access.can("${item.orPermission}")`,
+        );
+      } else {
+        expect(source, item.href).toContain(
+          `if (!access.can("${item.permission}"))`,
+        );
+      }
       expect(source, item.href).toContain("<NoAccessState");
       // …and for the module the company must have (MOD-05).
       expect(source, item.href).toContain(

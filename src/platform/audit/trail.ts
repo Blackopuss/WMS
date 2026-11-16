@@ -135,6 +135,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "inventory.count_program_changed": "Cambió un programa de conteo cíclico",
   "approval.rule_changed": "Cambió una regla de aprobación",
   "approval.requested": "Pidió una autorización",
+  "process.draft_saved": "Guardó el borrador de un proceso",
+  "process.published": "Publicó una versión de un proceso",
   "approval.approved": "Autorizó una solicitud",
   "approval.rejected": "Rechazó una solicitud",
   "approval.cancelled": "Retiró una solicitud de autorización",

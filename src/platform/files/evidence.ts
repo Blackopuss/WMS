@@ -16,11 +16,13 @@ import {
   signedFileLink,
 } from "./files";
 import {
+  EVIDENCE_OWNER_KINDS,
   EVIDENCE_PURPOSES,
   isPurpose,
   ownerWhere,
   purposeOf,
   type EvidenceOwner,
+  type EvidenceOwnerKind,
   type EvidenceOwners,
   type FileActor,
   type FilePurpose,
@@ -182,6 +184,79 @@ export async function evidencePhotoLinks(
     noteId: row.incidentNoteId,
     createdAt: row.createdAt,
   }));
+}
+
+/**
+ * Which of these records of one kind the person reaches, asked of their
+ * owner all at once (the engine of processes reads the steps of one
+ * process in one query). Only what it returns gets links.
+ */
+export type ReachesMany = (
+  actor: FileActor,
+  ownerIds: readonly string[],
+) => Promise<ReadonlySet<string>>;
+
+/**
+ * The photos of several records of one kind, in one query, each with its
+ * link for this person (WMS-74). The owner of the records says which ones
+ * the person reaches (`reaches`); only those get links, and without the
+ * function nothing does (fails closed, like `EvidenceOwners`). Still asks
+ * the permission to read each purpose.
+ */
+export async function evidencePhotoLinksOf(
+  actor: FileActor,
+  kind: EvidenceOwnerKind,
+  ownerIds: readonly string[],
+  reaches: ReachesMany | undefined,
+  options: { now?: Date } = {},
+): Promise<Map<string, EvidencePhotoLink[]>> {
+  const result = new Map<string, EvidencePhotoLink[]>();
+  const asked = [...new Set(ownerIds.map((id) => String(id).slice(0, 36)))];
+  if (asked.length === 0 || !reaches) return result;
+  const reached = await reaches(actor, asked);
+  const ids = asked.filter((id) => reached.has(id));
+  if (ids.length === 0) return result;
+  const column = EVIDENCE_OWNER_KINDS[kind];
+  const rows = await forOrganization(
+    actor.organizationId,
+  ).evidencePhoto.findMany({
+    where: { [column]: { in: ids }, file: { deletedAt: null } },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+    take: 1000,
+    select: {
+      fileId: true,
+      purpose: true,
+      incidentId: true,
+      processStepId: true,
+      incidentNoteId: true,
+      createdAt: true,
+      file: { select: { width: true, height: true } },
+    },
+  });
+  for (const purpose of new Set(rows.map((row) => row.purpose))) {
+    if (!isPurpose(purpose)) return result;
+    await assertModulePermission(
+      actor.organizationId,
+      actor.userId,
+      purposeOf(purpose).read,
+    );
+  }
+  const now = options.now ?? new Date();
+  for (const row of rows) {
+    const owner = row[column];
+    if (!owner) continue;
+    const list = result.get(owner) ?? [];
+    list.push({
+      fileId: row.fileId,
+      url: signedFileLink(actor, row.fileId, now).url,
+      width: row.file.width,
+      height: row.file.height,
+      noteId: row.incidentNoteId,
+      createdAt: row.createdAt,
+    });
+    result.set(owner, list);
+  }
+  return result;
 }
 
 /** How many photos to look at per round and company. */

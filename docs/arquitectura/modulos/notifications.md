@@ -87,6 +87,13 @@ y `daily_digest` (resumen diario por persona y día; lo escribe Inventario).
 ## Tipos declarados
 
 - Plataforma (aprobaciones): `approvals.pending`, `approvals.decided`.
+- Plataforma (procesos, WMS-74): `processes.ready` (relevo a la siguiente
+  área) y `processes.assigned`.
+
+Desde WMS-74, `memberReaches` compara `to.roles` con los roles **vigentes**
+(`activeRoles`: un rol ligado a un módulo cuenta solo con su módulo activo),
+y `ownerByRole: false` hace que el titular pase el filtro de roles solo con
+uno de ellos (la misma condición vuelve a leerse al enviar el correo).
 - [inventory](inventory.md#avisos): `inventory.task_assigned`,
   `inventory.task_blocked`, `inventory.customer_return`,
   `inventory.transfer_incoming`, `inventory.transfer_differences`,

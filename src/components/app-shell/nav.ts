@@ -23,6 +23,8 @@ export type NavItem = {
    * the catalog in platform/authorization; null = every member.
    */
   permission: string | null;
+  /** Another permission that also shows it (WMS-74: who works stages). */
+  orPermission?: string;
   /**
    * Shown in the mobile bottom bar: the first 4 the person may see, in
    * this order; the rest go to «Más».
@@ -50,6 +52,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: ClipboardList,
     module: "inventory",
     permission: "inventory.task.read",
+    // WMS-74: the stages of processes live in Tareas too (only when some
+    // module declares documents: the layout asks it).
+    orPermission: "platform.process.work",
     mobile: true,
   },
   {
@@ -142,6 +147,9 @@ export function visibleNavItems(
   can: (permission: string) => boolean,
 ): NavItem[] {
   return NAV_ITEMS.filter(
-    (item) => item.permission === null || can(item.permission),
+    (item) =>
+      item.permission === null ||
+      can(item.permission) ||
+      (item.orPermission !== undefined && can(item.orPermission)),
   );
 }

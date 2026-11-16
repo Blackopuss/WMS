@@ -8,6 +8,10 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-74** Motor de procesos de la empresa: etapas y subetapas encima de
+  los estados fijos de un documento, con candado entre etapas, relevo entre
+  áreas y rastro con fotos; ningún módulo declara documentos todavía.
+  ADR 0069.
 - **WMS-67** Almacenamiento externo de archivos compatible con S3, pensado
   para Cloudflare R2: cliente propio, cupo por empresa, copiador para migrar,
   respaldar y restaurar, y prueba de salud. ADR 0070.

@@ -67,6 +67,8 @@ export const PERMISSIONS = [
   "platform.ownership.transfer",
   "platform.audit.read",
   "platform.api.manage",
+  "platform.process.work",
+  "platform.process.assign",
   "platform.module.read",
   "platform.capacity.read",
   "platform.plan.read",
@@ -214,6 +216,8 @@ export const OWNER_PERMISSIONS: readonly Permission[] = [
   "platform.ownership.transfer",
   "platform.audit.read",
   "platform.api.manage",
+  "platform.process.work",
+  "platform.process.assign",
   "platform.module.read",
   "platform.capacity.read",
   "platform.plan.read",
@@ -358,6 +362,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "platform.terminal.manage",
     "platform.audit.read",
     "platform.api.manage",
+    "platform.process.work",
+    "platform.process.assign",
     "platform.module.read",
     "platform.capacity.read",
     "platform.plan.read",
@@ -479,6 +485,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   warehouse: [
     "platform.organization.read",
+    "platform.process.work",
+    "platform.process.assign",
     "platform.module.read",
     "platform.capacity.read",
     "inventory.product.read",
@@ -634,6 +642,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   supervisor: [
     "platform.organization.read",
+    "platform.process.work",
+    "platform.process.assign",
     "platform.team.read",
     "platform.module.read",
     "platform.capacity.read",
@@ -716,6 +726,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   operator: [
     "platform.organization.read",
+    "platform.process.work",
     "platform.module.read",
     "inventory.product.read",
     "inventory.unit.read",
@@ -819,6 +830,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   // give nothing. None of them reads costs.
   production_operator: [
     "platform.organization.read",
+    "platform.process.work",
     "platform.module.read",
     "inventory.product.read",
     "inventory.unit.read",
@@ -838,6 +850,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   production_supervisor: [
     "platform.organization.read",
+    "platform.process.work",
+    "platform.process.assign",
     "platform.module.read",
     "inventory.product.read",
     "inventory.unit.read",
@@ -865,6 +879,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   ],
   quality_inspector: [
     "platform.organization.read",
+    "platform.process.work",
     "platform.module.read",
     "inventory.product.read",
     "inventory.unit.read",

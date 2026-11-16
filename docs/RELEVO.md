@@ -25,8 +25,8 @@ id de sesión para que reporten ahí**):
 | --- | --- | --- | --- |
 | WMS-27 recetas (ADR 0066) | — | `wms-27-recetas` | **Cerrado y unido el 2026-11-16.** |
 | WMS-30A planes de inspección (ADR 0067) | — | `wms-30a-planes-inspeccion` | **Cerrado y unido el 2026-11-16.** |
-| WMS-30-0 recibir en inspección, desechar, retención (ADR 0068) | `session_01QMjUPXSxZtmZAnShDUjdgp` | `wms-30-0-inspeccion-al-recibir` | Implementando. **Corazón:** revisor independiente con ejecución de pruebas y `stock:reconcile`. Partió de `7c265a9`: tendrá que traer `pruebas`. |
-| WMS-74 motor de procesos (ADR 0069) | `session_01QMjUPWrrjBJrhqeh1iMJQh` | `wms-74-motor-procesos` | Implementando (se prueba con un documento de prueba; ningún módulo declara documentos todavía). |
+| WMS-30-0 recibir en inspección, desechar, retención (ADR 0068) | `session_01QMjUPXSxZtmZAnShDUjdgp` | `wms-30-0-inspeccion-al-recibir` | Reporte entregado (commit `a67eb5e`, migración `20261117040000`). **Corazón:** en revisión independiente con ejecución de pruebas y reconciliación; al unirse se abre WMS-75. |
+| WMS-74 motor de procesos (ADR 0069) | — | `wms-74-motor-procesos` | **Cerrado y unido el 2026-11-16.** |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
 
 El siguiente ADR libre es el 0071. Las ramas ya unidas (`wms-59-…`,

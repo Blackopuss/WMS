@@ -54,7 +54,9 @@ Cada propósito de `FILE_PURPOSES` dice qué permiso escribe y cuál lee:
 `import_source` (`inventory.import.create` / `.read`), `outbound_source`
 (`inventory.outbound.create` / `.read`), `export` (`inventory.export.create`)
 e `incident_photo` (`inventory.incident.create` / `.read`; 5 MB; 5 fotos a la
-vez y 30 por incidencia).
+vez y 30 por incidencia) y `process_step_photo` (WMS-74:
+`platform.process.work` / `platform.organization.read`, porque quién la ve
+lo decide `processStepReach` del motor de procesos; 5 fotos por paso).
 Un módulo que suba o genere archivos agrega aquí su propósito con sus
 permisos.
 
@@ -62,7 +64,8 @@ permisos.
 
 `stored_file` (con `width` y `height` de una imagen), `evidence_photo`
 (vínculo inmutable de una foto con su registro: una columna por clase de
-registro, hoy `incidentId` e `incidentNoteId`) y `storage_cleanup` (llaves
+registro, hoy `incidentId` e `incidentNoteId`, y `processStepId` de un paso
+de un proceso, WMS-74) y `storage_cleanup` (llaves
 cuyos bytes pueden haber quedado sin archivo vivo, WMS-67). El cupo de
 almacenamiento es el contador `file_storage_kib` de `quota_usage` (KiB por
 archivo, hacia arriba), limitado por el derecho `file_storage_gb` del plan
@@ -95,6 +98,14 @@ Pasos del ADR 0063 («Cómo agrega su propósito un paso futuro»): columna en
 `EVIDENCE_OWNER_KINDS`, propósito en `FILE_PURPOSES` con `evidence`, función
 del dueño en `src/modules/registry/evidence.ts`, `attachEvidencePhotos` en
 la transacción del registro y `PhotoCapture`/`PhotoGallery` en la pantalla.
+
+
+Para las fotos de **varios registros de una vez** (el historial de un
+proceso, WMS-74) está `evidencePhotoLinksOf(actor, clase, ids, reaches)`:
+una sola consulta, pero solo firma enlaces de los registros que la función
+`reaches` del dueño (`ReachesMany`, por lote) confirma que la persona
+alcanza; sin esa función no devuelve nada. Se usa solo desde el servicio
+dueño de esos registros, nunca para fotos de registros de otro dueño.
 
 ## ADR
 

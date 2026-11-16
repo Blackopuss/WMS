@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-128 tablas en 31 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+135 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -15,6 +15,7 @@
 | Plataforma › Aceptación de documentos | 1 | [legal](modulos/legal.md) |
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
+| Plataforma › Procesos | 7 | [processes](modulos/processes.md) |
 | Plataforma › Avisos | 4 | [notifications](modulos/notifications.md) |
 | Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
@@ -752,6 +753,187 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `ApprovalStatus`: `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXPIRED`.
 
+## Plataforma › Procesos
+
+Procesos de cada empresa por tipo de documento: versiones (borrador, publicada, retirada) con sus etapas, subetapas y áreas; el proceso de cada documento ligado a su versión, el estado de cada etapa con quién la tiene y el rastro inmutable de cada paso. Los documentos los declara cada módulo.
+
+Documento: [modulos/processes.md](modulos/processes.md).
+
+### ProcessDefinition · `process_definition`
+
+The process of one kind of document in a company («production.batch»).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `documentKey` | `String · VarChar(80)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `documentKey`).
+
+### ProcessVersion · `process_version`
+
+A version of a process. Published, it never changes (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `definitionId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `status` | `ProcessVersionStatus` | `DRAFT` |  |
+| `draftKey` | `String? · Char(36)` |  | The definition while DRAFT (one draft per definition), else null. |
+| `currentKey` | `String? · Char(36)` |  | The definition while PUBLISHED (one in force), else null. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+| `publishedByUserId` | `String? · Char(36)` |  |  |
+| `publishedAt` | `DateTime? · DateTime(3)` |  |  |
+| `retiredAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `definitionId`, `number`); (`organizationId`, `draftKey`); (`organizationId`, `currentKey`).
+- Relaciones: `definition` → `ProcessDefinition` por (`organizationId`, `definitionId`) (al borrar: Restrict).
+
+### ProcessStage · `process_stage`
+
+A stage or a sub-stage (`parentStageId`) of a version.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `parentStageId` | `String? · Char(36)` |  |  |
+| `position` | `Int` |  |  |
+| `name` | `String · VarChar(60)` |  |  |
+| `kind` | `ProcessStageKind` |  |  |
+| `operationKey` | `String? · VarChar(80)` |  | The operation of the module that completes it (OPERATION only). |
+| `milestoneKey` | `String · VarChar(40)` |  | The fixed state of the document it belongs to. |
+| `childOrder` | `ProcessChildOrder` | `IN_ORDER` | How its sub-stages are done (only with sub-stages). |
+| `noteEvidence` | `ProcessEvidence` | `NONE` |  |
+| `photoEvidence` | `ProcessEvidence` | `NONE` |  |
+| `quantityEvidence` | `ProcessEvidence` | `NONE` |  |
+| `allowSkip` | `Boolean` | `false` |  |
+| `allowBack` | `Boolean` | `false` |  |
+| `zoneOnly` | `Boolean` | `false` | The area works only inside the zone of the document. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `versionId`, `position`).
+- Relaciones: `version` → `ProcessVersion` por (`organizationId`, `versionId`) (al borrar: Restrict); `parent` → `ProcessStage` por (`organizationId`, `parentStageId`) (al borrar: Restrict).
+
+### ProcessStageRole · `process_stage_role`
+
+A role of the area of a stage.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `stageId` | `String · Char(36)` |  |  |
+| `role` | `String · VarChar(40)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `stageId`, `role`).
+- Relaciones: `stage` → `ProcessStage` por (`organizationId`, `stageId`) (al borrar: Restrict).
+
+### ProcessProgress · `process_progress`
+
+The process of one document, fixed to its version (P11).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `documentKey` | `String · VarChar(80)` |  |  |
+| `documentId` | `String · Char(36)` |  |  |
+| `versionId` | `String · Char(36)` |  |  |
+| `facilityId` | `String · Char(36)` |  | Where the document is (scope and zone of its area, WMS-20). |
+| `locationId` | `String? · Char(36)` |  |  |
+| `milestoneKey` | `String · VarChar(40)` |  | The fixed state the document is in. |
+| `label` | `String · VarChar(80)` |  | What people read: «LP-0001». |
+| `status` | `ProcessProgressStatus` | `ACTIVE` |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+| `finishedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `documentKey`, `documentId`).
+- Índices: (`organizationId`, `status`, `facilityId`).
+- Relaciones: `version` → `ProcessVersion` por (`organizationId`, `versionId`) (al borrar: Restrict); `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `facilityId`, `locationId`) (al borrar: Restrict).
+
+### ProcessStageState · `process_stage_state`
+
+Where one stage of work of a document is, and who has it.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `progressId` | `String · Char(36)` |  |  |
+| `stageId` | `String · Char(36)` |  |  |
+| `kind` | `ProcessStageKind` |  | Copied from the stage, to list pending work without a join. |
+| `status` | `ProcessStageStateStatus` | `WAITING` |  |
+| `takenByUserId` | `String? · Char(36)` |  |  |
+| `takenAt` | `DateTime? · DateTime(3)` |  |  |
+| `assignedByUserId` | `String? · Char(36)` |  |  |
+| `readyAt` | `DateTime? · DateTime(3)` |  |  |
+| `doneAt` | `DateTime? · DateTime(3)` |  |  |
+| `doneByUserId` | `String? · Char(36)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `progressId`, `stageId`).
+- Índices: (`organizationId`, `status`, `kind`, `takenByUserId`, `readyAt`, `id`).
+- Relaciones: `progress` → `ProcessProgress` por (`organizationId`, `progressId`) (al borrar: Restrict); `stage` → `ProcessStage` por (`organizationId`, `stageId`) (al borrar: Restrict).
+
+### ProcessStep · `process_step`
+
+The trail of a process: never changes, never goes away (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `progressId` | `String · Char(36)` |  |  |
+| `stageId` | `String · Char(36)` |  |  |
+| `action` | `ProcessStepAction` |  |  |
+| `actorUserId` | `String? · Char(36)` |  | Null when the system did it. |
+| `assigneeUserId` | `String? · Char(36)` |  | Who received it (ASSIGNED). |
+| `previousUserId` | `String? · Char(36)` |  | Who had it before (ASSIGNED, RELEASED), if somebody did. |
+| `note` | `String? · VarChar(500)` |  |  |
+| `quantity` | `Decimal? · Decimal(18, 3)` |  |  |
+| `device` | `String? · VarChar(120)` |  | «Chrome en Android» (describeUserAgent, never the raw text). |
+| `idempotencyKey` | `String? · VarChar(64)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `idempotencyKey`).
+- Índices: (`organizationId`, `progressId`, `createdAt`, `id`).
+- Relaciones: `progress` → `ProcessProgress` por (`organizationId`, `progressId`) (al borrar: Restrict); `stage` → `ProcessStage` por (`organizationId`, `stageId`) (al borrar: Restrict).
+
+#### Enumeraciones de Plataforma › Procesos
+
+- `ProcessVersionStatus`: `DRAFT`, `PUBLISHED`, `RETIRED`.
+- `ProcessStageKind`: `MANUAL`, `OPERATION`.
+- `ProcessChildOrder`: `IN_ORDER`, `ANY`.
+- `ProcessEvidence`: `NONE`, `OPTIONAL`, `REQUIRED`.
+- `ProcessProgressStatus`: `ACTIVE`, `DONE`, `CLOSED`.
+- `ProcessStageStateStatus`: `WAITING`, `READY`, `DONE`, `SKIPPED`.
+- `ProcessStepAction`: `COMPLETED`, `OPERATION`, `SKIPPED`, `BACK`, `TAKEN`, `RELEASED`, `ASSIGNED`.
+
 ## Plataforma › Avisos
 
 Avisos dentro de la app para una persona (texto y destino fijos al crearse; solo cambia «leído»), los tipos que cada persona apagó o pidió por correo, los avisos que salen por correo y el resumen diario por correo de cada persona; los tipos los declara cada módulo.
@@ -1159,13 +1341,14 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `purpose` | `String · VarChar(40)` |  | The purpose of its file (FILE_PURPOSES); a trigger checks they match. |
 | `incidentId` | `String? · Char(36)` |  |  |
 | `incidentNoteId` | `String? · Char(36)` |  | The follow-up note it came with, if any (of the same incident). |
+| `processStepId` | `String? · Char(36)` |  | A step of a process (WMS-74, ADR 0069). |
 | `position` | `Int` |  | Order inside its owner (0, 1, 2…). |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
-- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`).
-- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`).
+- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict).
 
 ### StorageCleanup · `storage_cleanup`
 

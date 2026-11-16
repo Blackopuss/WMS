@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   ListChecks,
   ListPlus,
+  ListTree,
   MapPin,
   MonitorSmartphone,
   ShieldCheck,
@@ -25,6 +26,8 @@ import { formatDateTime } from "@/lib";
 import { getMfaStatus, listActiveSessions } from "@/platform/auth";
 import { getSupportAccess } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
+import { processDocuments } from "@/modules/registry";
+import { hasProcessDocuments } from "@/platform/processes";
 import { getMyPinStatus } from "@/platform/terminals";
 
 import { grantSupportAccessAction, revokeSupportAccessAction } from "./actions";
@@ -51,7 +54,7 @@ export default async function ConfiguracionPage() {
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
-  const [sessions, mfa, support, pin] = await Promise.all([
+  const [sessions, mfa, support, pin, processes] = await Promise.all([
     terminal ? [] : listActiveSessions(user.id, sessionId),
     terminal ? null : getMfaStatus(user.id),
     canGrantSupport ? getSupportAccess(access.organization.id) : null,
@@ -61,6 +64,10 @@ export default async function ConfiguracionPage() {
           organizationId: access.organization.id,
           userId: user.id,
         }),
+    // WMS-74: only when an active module declares documents with processes.
+    access.can("platform.organization.update")
+      ? hasProcessDocuments(access.organization.id, processDocuments)
+      : false,
   ]);
 
   return (
@@ -109,6 +116,14 @@ export default async function ConfiguracionPage() {
               icon={ListPlus}
               title="Campos personalizados"
               description="Datos propios de tus productos, ubicaciones y proveedores."
+            />
+          )}
+          {processes && (
+            <SettingsLink
+              href="/configuracion/procesos"
+              icon={ListTree}
+              title="Procesos"
+              description="Etapas que sigue cada documento y qué área hace cada una."
             />
           )}
           {showDefects && (
@@ -308,6 +323,7 @@ function SettingsLink({
     | "/configuracion/almacenes"
     | "/configuracion/operacion"
     | "/configuracion/campos"
+    | "/configuracion/procesos"
     | "/configuracion/defectos"
     | "/configuracion/equipos-del-almacen"
     | "/configuracion/equipo"

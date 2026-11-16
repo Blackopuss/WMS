@@ -206,6 +206,9 @@ export const TERMINAL_PLATFORM_KEEP: readonly Permission[] = [
   "platform.organization.read",
   "platform.module.read",
   "platform.capacity.read",
+  // WMS-74 (ADR 0069): the stages of a process are floor work; assigning
+  // them and configuring processes are not.
+  "platform.process.work",
 ];
 
 /**
@@ -253,6 +256,19 @@ export function keptAtTerminal(permission: Permission): boolean {
 /** Known roles of the subject, without repeats, in catalog order. */
 export function knownRoles(roles: readonly string[]): Role[] {
   return [...new Set(roles.filter(isRole))].sort();
+}
+
+/**
+ * Known roles that count for the subject now (WMS-59): a role tied to a
+ * module counts only with that module active. Who filters people by role
+ * (an approval rule, the area of a process stage, WMS-74) uses these, so
+ * a tied role without its module never qualifies by its name alone.
+ */
+export function activeRoles(subject: Subject): Role[] {
+  return knownRoles(subject.roles).filter((role) => {
+    const needs = ROLE_MODULE[role];
+    return needs === undefined || subject.modules?.get(needs) === "active";
+  });
 }
 
 /** Every permission of the subject: roles combine by union (USR-06). */
