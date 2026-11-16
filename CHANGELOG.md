@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-77** Sitio público: Producción y Calidad con su precio, módulos
+  nuevos, términos versión 2026-11-16 y revisión de accesibilidad y
+  rendimiento con Playwright, axe y Lighthouse.
 - **WMS-76** Orden de candados: `lockRows` siempre por la llave primaria, una
   sola puerta para bloquear almacenes y reintento por clave del motor de
   procesos ligado a su proceso. Quita los interbloqueos de reubicar, del primer

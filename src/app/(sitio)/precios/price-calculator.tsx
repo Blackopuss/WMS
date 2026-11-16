@@ -14,15 +14,54 @@ export type PriceTier = {
   users: number;
   inventory: number;
   purchasing: number;
+  production: number;
+  quality: number;
 };
 
-const ADD_ONS = [
+type AddOnId = "purchasing" | "production" | "quality";
+
+const ADD_ONS: {
+  id: AddOnId;
+  name: string;
+  summary: string;
+  requires?: AddOnId;
+}[] = [
   {
     id: "purchasing",
     name: "Compras",
     summary: "Proveedores, órdenes y recepciones",
   },
-] as const;
+  {
+    id: "production",
+    name: "Producción",
+    summary: "Recetas y órdenes de producción",
+  },
+  {
+    id: "quality",
+    name: "Calidad",
+    summary: "Planes de inspección y defectos. Requiere Producción",
+    requires: "production",
+  },
+];
+
+/**
+ * Checking a module also checks what it requires; unchecking one also
+ * unchecks what depends on it (Calidad needs Producción).
+ */
+function toggle(
+  now: Record<AddOnId, boolean>,
+  id: AddOnId,
+  checked: boolean,
+): Record<AddOnId, boolean> {
+  const next = { ...now, [id]: checked };
+  for (const addOn of ADD_ONS) {
+    if (checked && addOn.id === id && addOn.requires) {
+      next[addOn.requires] = true;
+    }
+    if (!checked && addOn.requires === id) next[addOn.id] = false;
+  }
+  return next;
+}
 
 /**
  * Pick how many products you manage and which modules you want; the
@@ -31,8 +70,10 @@ const ADD_ONS = [
  */
 export function PriceCalculator({ tiers }: { tiers: PriceTier[] }) {
   const [index, setIndex] = useState(1);
-  const [chosen, setChosen] = useState<Record<string, boolean>>({
+  const [chosen, setChosen] = useState<Record<AddOnId, boolean>>({
     purchasing: true,
+    production: false,
+    quality: false,
   });
   const total = useRef<HTMLSpanElement>(null);
   const shown = useRef({ value: 0 });
@@ -106,7 +147,7 @@ export function PriceCalculator({ tiers }: { tiers: PriceTier[] }) {
               <p className="font-medium">Inventario</p>
               <p className="text-sm text-muted-foreground">Incluido siempre</p>
             </div>
-            <span className="text-sm font-medium tabular-nums">
+            <span className="shrink-0 text-sm font-medium whitespace-nowrap tabular-nums">
               {formatMoney(tier.inventory)}
             </span>
           </div>
@@ -118,10 +159,10 @@ export function PriceCalculator({ tiers }: { tiers: PriceTier[] }) {
               <span className="flex items-center gap-3">
                 <input
                   type="checkbox"
-                  checked={chosen[module.id] ?? false}
+                  checked={chosen[module.id]}
                   onChange={(event) => {
                     const checked = event.target.checked;
-                    setChosen((now) => ({ ...now, [module.id]: checked }));
+                    setChosen((now) => toggle(now, module.id, checked));
                   }}
                   className="size-5 accent-[var(--primary)]"
                 />
@@ -132,7 +173,7 @@ export function PriceCalculator({ tiers }: { tiers: PriceTier[] }) {
                   </span>
                 </span>
               </span>
-              <span className="text-sm font-medium tabular-nums">
+              <span className="shrink-0 text-sm font-medium whitespace-nowrap tabular-nums">
                 + {formatMoney(tier[module.id])}
               </span>
             </label>

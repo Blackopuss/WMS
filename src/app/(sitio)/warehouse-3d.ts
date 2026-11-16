@@ -82,6 +82,9 @@ export function mountWarehouse(
       antialias: true,
       alpha: true,
       powerPreference: "low-power",
+      // Software rendering would keep the main thread busy: the 2D
+      // illustration stays instead (HeroScene).
+      failIfMajorPerformanceCaveat: true,
     });
   } catch {
     throw new Error("WebGL is not available");

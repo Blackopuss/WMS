@@ -117,6 +117,13 @@ const SCREENS = [
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
 const PUBLIC = [
+  // WMS-77: the public site.
+  "/",
+  "/funciones",
+  "/precios",
+  "/nosotros",
+  "/privacidad",
+  "/terminos",
   "/ingresar",
   // WMS-38: «¿Quién eres?» (on a browser that is not a terminal it says so).
   "/terminal",

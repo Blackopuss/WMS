@@ -9,7 +9,7 @@ import { CtaBand, Eyebrow, PageHero, Section } from "../sections";
 export const metadata: Metadata = {
   title: "Nosotros",
   description:
-    "Hacemos software de inventario para negocios mexicanos que mueven mercancía: simple, en español y con tus datos bajo tu control.",
+    "Hacemos software de almacén para empresas que mueven mercancía, de cualquier giro: simple, en español y con tus datos bajo tu control.",
 };
 
 const PRINCIPLES = [
@@ -51,8 +51,8 @@ export default function AboutPage() {
           <div className="space-y-5 text-lg text-muted-foreground" data-reveal>
             <Eyebrow>Nuestra historia</Eyebrow>
             <p className="text-foreground">
-              Las pymes mexicanas compran por caja, venden por pieza, guardan en
-              tres bodegas y llevan todo en una hoja de cálculo que alguien
+              Muchas empresas reciben por tarima, surten por pieza, guardan en
+              varios almacenes y llevan todo en una hoja de cálculo que alguien
               olvidó actualizar.
             </p>
             <p>
@@ -61,16 +61,17 @@ export default function AboutPage() {
               pedido llega en partes.
             </p>
             <p>
-              WMS nace de ese hueco: un inventario que hace bien lo esencial, al
-              que se le agregan módulos (Compras hoy; tareas de almacén,
-              producción y calidad después) solo cuando tu negocio los necesita.
+              WMS nace de ese hueco: un sistema de almacén que hace bien lo
+              esencial, al que se le agregan Compras, Producción y Calidad solo
+              cuando tu empresa los necesita, y que se configura a tu forma de
+              trabajar en lugar de obligarte a cambiarla.
             </p>
           </div>
           <div data-reveal="stagger" className="grid grid-cols-2 gap-4">
             {[
               { value: "1", label: "solo sistema para todo tu almacén" },
-              { value: "2", label: "módulos disponibles hoy" },
-              { value: "4", label: "roles para repartir el trabajo" },
+              { value: "4", label: "módulos disponibles hoy" },
+              { value: "11", label: "roles para repartir el trabajo" },
               { value: "100%", label: "en español" },
             ].map((item) => (
               <div

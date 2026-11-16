@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 
 import { cn } from "cn";
 
-import { ThemeToggle } from "@/components";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,

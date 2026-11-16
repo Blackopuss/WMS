@@ -48,7 +48,7 @@ export function PageHero({
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_1px_1px,var(--scene-rack)_1px,transparent_0)] [mask-image:radial-gradient(ellipse_at_top,black,transparent_75%)] [background-size:24px_24px] opacity-[0.08]"
       />
-      <div className="relative mx-auto max-w-3xl px-4 py-16 text-center motion-safe:animate-in motion-safe:duration-700 motion-safe:fade-in motion-safe:slide-in-from-bottom-3 sm:px-6 sm:py-20">
+      <div className="relative mx-auto max-w-3xl px-4 py-16 text-center motion-safe:animate-in motion-safe:duration-700 motion-safe:slide-in-from-bottom-3 sm:px-6 sm:py-20">
         <Eyebrow>{eyebrow}</Eyebrow>
         <h1 className="mt-4 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
           {title}

@@ -40,7 +40,7 @@ export function LegalDocument({
               <li key={section.id}>
                 <a
                   href={`#${section.id}`}
-                  className="-ml-px flex min-h-9 items-center border-l-2 border-transparent pl-3 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                  className="-ml-px flex min-h-11 items-center border-l-2 border-transparent pl-3 text-muted-foreground transition-colors hover:border-primary hover:text-foreground lg:min-h-9"
                 >
                   {index + 1}. {section.title}
                 </a>

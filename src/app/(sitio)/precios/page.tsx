@@ -10,8 +10,11 @@ import { PriceCalculator } from "./price-calculator";
 export const metadata: Metadata = {
   title: "Precios",
   description:
-    "Precio mensual según cuántos productos manejas. Inventario incluido; Compras opcional. Sin permanencia.",
+    "Precio mensual según cuántos productos manejas. Inventario incluido; Compras, Producción y Calidad opcionales. Sin permanencia.",
 };
+
+/** Producción and Calidad cost the same in every tier. */
+const FLAT = TIER_PRICES[0]!;
 
 const TIERS = PROPOSED_TIERS.map((tier, index) => ({
   ...tier,
@@ -30,9 +33,14 @@ const FAQ = [
       "Puedes seguir trabajando con lo que ya tienes; para dar de alta más productos cambias al siguiente nivel o archivas lo que ya no vendes.",
   },
   {
-    question: "¿Puedo quitar Compras después?",
+    question: "¿Puedo contratar Calidad sin Producción?",
     answer:
-      "Sí. Nada se borra: tus órdenes, recepciones y devoluciones quedan para consultar y exportar, y si lo vuelves a activar sigues donde te quedaste.",
+      "No. Calidad revisa lo que produces, así que se contrata junto con Producción. Producción sí se puede contratar sola.",
+  },
+  {
+    question: "¿Puedo quitar un módulo después?",
+    answer:
+      "Sí. Nada se borra: tus órdenes, recepciones, recetas y lo demás quedan para consultar y exportar, y si lo vuelves a activar sigues donde te quedaste.",
   },
   {
     question: "¿Puedo cambiar de plan a medio mes?",
@@ -53,8 +61,8 @@ export default function PricingPage() {
   return (
     <>
       <PageHero eyebrow="Precios" title="Pagas según el tamaño de tu catálogo">
-        Inventario siempre incluido. Agrega Compras cuando lo necesites. Sin
-        permanencia y con tus datos siempre exportables.
+        Inventario siempre incluido. Agrega Compras, Producción y Calidad cuando
+        los necesites. Sin permanencia y con tus datos siempre exportables.
       </PageHero>
 
       <Section className="pt-12 sm:pt-16">
@@ -73,9 +81,17 @@ export default function PricingPage() {
         <h2 className="text-3xl font-semibold tracking-tight" data-reveal>
           Todos los niveles
         </h2>
+        <p className="mt-3 text-muted-foreground" data-reveal>
+          Inventario y Compras cambian según tus productos activos; Producción y
+          Calidad cuestan lo mismo en cualquier nivel.
+        </p>
         <div
-          className="mt-8 overflow-x-auto rounded-2xl border bg-card"
+          className="mt-8 overflow-x-auto rounded-2xl border bg-card outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           data-reveal
+          role="region"
+          aria-label="Precio mensual por nivel"
+          // Scrolls sideways on a phone: keyboard users can reach it too.
+          tabIndex={0}
         >
           <table className="w-full min-w-[640px] text-left text-sm">
             <caption className="sr-only">
@@ -96,7 +112,7 @@ export default function PricingPage() {
                   + Compras
                 </th>
                 <th scope="col" className="px-5 py-3 text-right font-medium">
-                  Todo
+                  Inventario y Compras
                 </th>
               </tr>
             </thead>
@@ -124,6 +140,18 @@ export default function PricingPage() {
             </tbody>
           </table>
         </div>
+        <ul data-reveal="stagger" className="mt-6 grid gap-4 md:grid-cols-2">
+          <FlatPrice
+            name="Producción"
+            amount={FLAT.production}
+            text="Recetas con versiones y órdenes de producción que apartan sus materiales. Se suma a cualquier nivel."
+          />
+          <FlatPrice
+            name="Calidad"
+            amount={FLAT.quality}
+            text="Planes de inspección por producto y catálogo de defectos. Se contrata junto con Producción."
+          />
+        </ul>
       </Section>
 
       <Section>
@@ -155,5 +183,30 @@ export default function PricingPage() {
 
       <CtaBand />
     </>
+  );
+}
+
+function FlatPrice({
+  name,
+  amount,
+  text,
+}: {
+  name: string;
+  amount: number;
+  text: string;
+}) {
+  return (
+    <li className="flex flex-col gap-2 rounded-2xl border bg-card p-6 shadow-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h3 className="text-lg font-semibold">{name}</h3>
+        <p className="font-semibold tabular-nums">
+          + {formatMoney(amount)}{" "}
+          <span className="text-sm font-normal text-muted-foreground">
+            al mes
+          </span>
+        </p>
+      </div>
+      <p className="text-sm text-muted-foreground">{text}</p>
+    </li>
   );
 }

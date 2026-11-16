@@ -12,8 +12,8 @@ export function SiteFooter() {
         <div className="space-y-3">
           <Brand />
           <p className="max-w-xs text-sm text-muted-foreground">
-            Inventario y compras para negocios que mueven mercancía. Hecho en
-            México, en español.
+            Almacén, compras y producción para empresas que mueven mercancía.
+            Hecho en México, en español.
           </p>
           <a
             href={`mailto:${SITE.contactEmail}`}
