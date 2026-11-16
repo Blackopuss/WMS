@@ -387,13 +387,17 @@ export const AREAS = [
     title: "Producción",
     doc: "production",
     summary:
-      "Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones.",
+      "Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones. Órdenes de producción con los materiales y lo que sale copiados de la receta, y sus personas asignadas.",
     models: [
       "Recipe",
       "RecipeVersion",
       "RecipeInput",
       "RecipeOutput",
       "RecipeLock",
+      "ProductionOrder",
+      "ProductionOrderLine",
+      "ProductionOrderOutput",
+      "ProductionOrderAssignee",
     ],
   },
 ];

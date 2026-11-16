@@ -258,9 +258,18 @@ export {
   WAREHOUSE_TASK_STATUS_LABELS,
   WAREHOUSE_TASK_TRANSITIONS,
   canTaskTransition,
+  formatIssueOrderNumber,
   formatTaskNumber,
   taskTransitionProblem,
 } from "./task-states";
+// WMS-28 (ADR 0073): «Surtir a producción»; Producción sets its materials
+// aside and creates the tasks when it releases an order.
+export { setAsideForProduction } from "./issue";
+export { nextTaskNumber, pickSources, type PickSource } from "./picking";
+export {
+  OUTBOUND_LINE_SOURCE,
+  PRODUCTION_ORDER_LINE_SOURCE,
+} from "./reservation-sources";
 export type { WarehouseTaskStatus } from "./task-states";
 export {
   AVAILABLE_ANY_LOT,

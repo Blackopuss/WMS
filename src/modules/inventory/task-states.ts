@@ -100,3 +100,13 @@ export function taskTransitionProblem(
 export function formatTaskNumber(number: number): string {
   return `T-${String(number).padStart(4, "0")}`;
 }
+
+/**
+ * «OP-0001»: the number of the production order an ISSUE task serves
+ * (WMS-28, ADR 0073). Inventario does not import Producción; the same
+ * format is `formatProductionNumber` of Producción, and a test compares
+ * them.
+ */
+export function formatIssueOrderNumber(number: number): string {
+  return `OP-${String(number).padStart(4, "0")}`;
+}

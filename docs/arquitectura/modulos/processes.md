@@ -9,7 +9,9 @@ mismo documento (P10, P10b) y relevo automático entre áreas. Avanzar una etapa
 **nunca mueve existencias ni cambia el estado fijo del documento**. La
 plataforma recibe los documentos como lista (`processDocuments` de
 `src/modules/registry/processes.ts`; hoy el embarque de Inventario,
-WMS-74B, ADR 0071) y no conoce a los módulos.
+WMS-74B, ADR 0071, y la orden de producción, WMS-28, ADR 0073, con la
+operación «Orden liberada» en su hito «Borrador») y no conoce a los
+módulos.
 
 ## Servicios públicos (`index.ts`)
 
@@ -124,5 +126,5 @@ en etapas manuales), cada una con su disparador.
 
 ## ADR
 
-0069 (motor de procesos), 0071 (procesos en embarques), 0057 (avisos), 0062 (roles ligados a módulos),
+0069 (motor de procesos), 0071 (procesos en embarques), 0073 (órdenes de producción), 0057 (avisos), 0062 (roles ligados a módulos),
 0063 (fotos de evidencia).

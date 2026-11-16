@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   ClipboardList,
   ClipboardCheck,
+  Factory,
   House,
   MessageSquareWarning,
   PackageCheck,
@@ -17,7 +18,7 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   /** Module that must be contracted to show the item (MOD-05); null = always. */
-  module: "inventory" | "purchasing" | null;
+  module: "inventory" | "purchasing" | "production" | null;
   /**
    * Permission needed to see the item and open its screen (USR-09), from
    * the catalog in platform/authorization; null = every member.
@@ -74,6 +75,16 @@ export const NAV_ITEMS: readonly NavItem[] = [
     icon: PackageCheck,
     module: "inventory",
     permission: "inventory.outbound.read",
+    mobile: false,
+  },
+  {
+    // WMS-28 (ADR 0073): the Encargado creates and releases orders every
+    // day; the Operario and the warehouse read theirs.
+    href: "/produccion",
+    label: "Producción",
+    icon: Factory,
+    module: "production",
+    permission: "production.order.read",
     mobile: false,
   },
   {

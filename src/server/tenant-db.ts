@@ -110,6 +110,10 @@ export const TENANT_MODELS = [
   "RecipeVersion",
   "RecipeInput",
   "RecipeOutput",
+  "ProductionOrder",
+  "ProductionOrderLine",
+  "ProductionOrderOutput",
+  "ProductionOrderAssignee",
   "RecipeLock",
   "Notification",
   "NotificationPreference",
@@ -372,6 +376,7 @@ const LOCKABLE = {
   processProgress: "process_progress",
   recipe: "recipe",
   recipeLock: "recipe_lock",
+  productionOrder: "production_order",
 } as const;
 
 /**

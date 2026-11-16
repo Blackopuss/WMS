@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-137 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+141 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -37,7 +37,7 @@
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
 | Calidad | 6 | [quality](modulos/quality.md) |
-| Producción | 5 | [production](modulos/production.md) |
+| Producción | 9 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -1524,7 +1524,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Plataforma › Almacenes y ubicaciones
 
-- `LocationType`: `STORAGE`, `PICKING`, `RECEIVING`, `STAGING`, `QUARANTINE`, `DOCK`, `REPAIR`.
+- `LocationType`: `STORAGE`, `PICKING`, `RECEIVING`, `STAGING`, `QUARANTINE`, `DOCK`, `REPAIR`, `PRODUCTION`.
 
 ## Plataforma › Catálogo de productos
 
@@ -2095,6 +2095,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `status` | `WarehouseTaskStatus` | `PENDING` |  |
 | `priority` | `WarehouseTaskPriority` | `NORMAL` |  |
 | `outboundLineId` | `String? · Char(36)` |  | PICK only: the line of the outbound order it picks. |
+| `productionOrderLineId` | `String? · Char(36)` |  | ISSUE only (WMS-28, ADR 0073): the material line of the production order it takes to the area; never changes. |
 | `pickedQuantity` | `Decimal? · Decimal(12, 3)` |  | PICK only: what the person confirmed they took (≤ quantity), and why it was less. |
 | `shortReason` | `String? · VarChar(300)` |  |  |
 | `productId` | `String? · Char(36)` |  | What it moves: a product (with its quantity and unit), or a whole container (WMS-53, ADR 0043; then no product, quantity, lot nor order). Exactly one of the two (CHECK); neither ever changes. |
@@ -2124,8 +2125,8 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `movementId`).
-- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `placedLocationId`); (`organizationId`, `crossDockMovementId`); (`organizationId`, `equipmentId`, `status`); (`organizationId`, `equipmentTypeId`).
-- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `crossDockMovement` → `StockMovement` por (`organizationId`, `crossDockMovementId`) (al borrar: Restrict); `equipmentType` → `EquipmentType` por (`organizationId`, `equipmentTypeId`) (al borrar: Restrict); `equipment` → `Equipment` por (`organizationId`, `equipmentId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `containerId`); (`organizationId`, `status`, `number`); (`organizationId`, `assignedToUserId`, `status`); (`organizationId`, `productId`); (`organizationId`, `outboundLineId`); (`organizationId`, `productionOrderLineId`); (`organizationId`, `placedLocationId`); (`organizationId`, `crossDockMovementId`); (`organizationId`, `equipmentId`, `status`); (`organizationId`, `equipmentTypeId`).
+- Relaciones: `outboundLine` → `OutboundOrderLine` por (`organizationId`, `outboundLineId`) (al borrar: Restrict); `productionOrderLine` → `ProductionOrderLine` por (`organizationId`, `productionOrderLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `container` → `Container` por (`organizationId`, `containerId`) (al borrar: Restrict); `fromLocation` → `Location` por (`organizationId`, `fromLocationId`) (al borrar: Restrict); `toLocation` → `Location` por (`organizationId`, `toLocationId`) (al borrar: Restrict); `placedLocation` → `Location` por (`organizationId`, `placedLocationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `crossDockMovement` → `StockMovement` por (`organizationId`, `crossDockMovementId`) (al borrar: Restrict); `equipmentType` → `EquipmentType` por (`organizationId`, `equipmentTypeId`) (al borrar: Restrict); `equipment` → `Equipment` por (`organizationId`, `equipmentId`) (al borrar: Restrict).
 
 ### WarehouseTaskSerial · `warehouse_task_serial`
 
@@ -2370,7 +2371,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `WarehouseTaskStatus`: `PENDING`, `ASSIGNED`, `ACCEPTED`, `PICKED_UP`, `DELIVERED`, `BLOCKED`, `CANCELLED`.
 - `WarehouseTaskPriority`: `NORMAL`, `URGENT`.
-- `WarehouseTaskKind`: `TRANSFER`, `PICK`, `PUTAWAY`, `REPLENISH`.
+- `WarehouseTaskKind`: `TRANSFER`, `PICK`, `PUTAWAY`, `REPLENISH`, `ISSUE`.
 - `StockReservationState`: `ACTIVE`, `CLOSED`.
 - `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKING`, `PACKED`, `SHIPPED`, `CANCELLED`.
 - `PickWaveStatus`: `OPEN`, `DONE`, `CANCELLED`.
@@ -3391,7 +3392,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Producción
 
-Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones.
+Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones. Órdenes de producción con los materiales y lo que sale copiados de la receta, y sus personas asignadas.
 
 Documento: [modulos/production.md](modulos/production.md).
 
@@ -3406,12 +3407,13 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `id` | `String · Char(36)` |  | llave primaria |
 | `organizationId` | `String · Char(36)` |  |  |
 | `productId` | `String · Char(36)` |  |  |
+| `areaLocationId` | `String? · Char(36)` |  | WMS-28 (ADR 0073): the production area its orders propose (a location of use «Producción»); optional, changes with `setRecipeArea`. |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `productId`).
-- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+- Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict).
 
 ### RecipeVersion · `recipe_version`
 
@@ -3509,6 +3511,109 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - Únicas: (`organizationId`, `id`).
 
+### ProductionOrder · `production_order`
+
+A production order (WMS-28, ADR 0073), `OP-0001`: a product with its recipe in force, a quantity and a production area of a warehouse. It copies the version of the recipe (materials and what comes out, scaled) and, released, sets its materials aside (`production_order_line`). What it makes, its warehouse, author and number never change; the rest only in draft (triggers). Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `areaLocationId` | `String · Char(36)` |  | Where it is made: a location of use «Producción» of `facilityId`. |
+| `productId` | `String · Char(36)` |  |  |
+| `recipeVersionId` | `String · Char(36)` |  | The version of the recipe it copied. |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | How much of the product, in `unitCode` (its unit when created). |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `dueOn` | `DateTime? · Date` |  | Day it is committed for (calendar day of the company). |
+| `priority` | `WarehouseTaskPriority` | `NORMAL` |  |
+| `note` | `String? · VarChar(500)` |  |  |
+| `status` | `ProductionOrderStatus` | `DRAFT` |  |
+| `createdByUserId` | `String · Char(36)` |  | Who created it (or, with WMS-28B, who approved the request). |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `releasedAt` | `DateTime? · DateTime(3)` |  |  |
+| `releasedByUserId` | `String? · Char(36)` |  |  |
+| `startedAt` | `DateTime? · DateTime(3)` |  | First report (WMS-29). |
+| `closedAt` | `DateTime? · DateTime(3)` |  | Close (WMS-31), with its reason when something was missing. |
+| `closedByUserId` | `String? · Char(36)` |  |  |
+| `closeReason` | `String? · VarChar(300)` |  |  |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelledByUserId` | `String? · Char(36)` |  |  |
+| `cancelReason` | `String? · VarChar(300)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `status`, `number`); (`organizationId`, `productId`); (`organizationId`, `areaLocationId`); (`organizationId`, `recipeVersionId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `recipeVersion` → `RecipeVersion` por (`organizationId`, `recipeVersionId`) (al borrar: Restrict).
+
+### ProductionOrderLine · `production_order_line`
+
+A material of a production order (WMS-28): the recipe line scaled to the order and rounded up to the material's step, in its unit. Released, it is what the order sets aside (reservations with source `production_order_line`). Only while the order is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | For the order, in `unitCode`. |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `recipeQuantity` | `Decimal · Decimal(12, 3)` |  | What the recipe says for its base, and the expected scrap (informative). |
+| `scrapPercent` | `Decimal? · Decimal(5, 2)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `orderId`, `lineNumber`); (`organizationId`, `orderId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### ProductionOrderOutput · `production_order_output`
+
+What a production order is expected to make (WMS-28): the recipe's outputs scaled and rounded down to each product's step, with its share of the cost (percent). Only while the order is a draft (triggers).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `costShare` | `Decimal · Decimal(5, 2)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `orderId`, `lineNumber`); (`organizationId`, `orderId`, `productId`).
+- Índices: (`organizationId`, `productId`).
+- Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### ProductionOrderAssignee · `production_order_assignee`
+
+A person assigned to a production order (WMS-28): who will make it. They change until the order is closed or cancelled (trigger).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `userId` | `String · Char(36)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `orderId`, `userId`).
+- Índices: (`organizationId`, `userId`).
+- Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict).
+
 #### Enumeraciones de Producción
 
 - `RecipeVersionStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.
+- `ProductionOrderStatus`: `DRAFT`, `RELEASED`, `IN_PROGRESS`, `CLOSED`, `CANCELLED`.

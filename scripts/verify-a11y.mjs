@@ -61,6 +61,9 @@ const SCREENS = [
   "/pedidos",
   "/pedidos/nuevo",
   "/pedidos/importar",
+  // WMS-28: production orders and starting one.
+  "/produccion",
+  "/produccion/nueva",
   // WMS-16: shipments and putting one together.
   "/pedidos/embarques",
   "/pedidos/embarques/nuevo",

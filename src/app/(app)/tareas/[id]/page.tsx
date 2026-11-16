@@ -167,7 +167,9 @@ export default async function TareaPage({
       ? "Acomodar"
       : task.kind === "REPLENISH"
         ? "Reponer"
-        : "Entregar",
+        : task.kind === "ISSUE"
+          ? "Dejar en el área"
+          : "Entregar",
   ];
 
   return (
@@ -247,6 +249,24 @@ export default async function TareaPage({
         aria-label="Qué se mueve"
         className="max-w-xl space-y-4 rounded-xl border bg-card p-4 sm:p-5"
       >
+        {task.productionOrder && (
+          <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
+            Orden de producción{" "}
+            {access.can("production.order.read") &&
+            access.hasModule("production") ? (
+              <Link
+                href={`/produccion/${task.productionOrder.id}`}
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                {task.productionOrder.numberText}
+              </Link>
+            ) : (
+              <span className="font-medium">
+                {task.productionOrder.numberText}
+              </span>
+            )}
+          </p>
+        )}
         {task.order && (
           <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
             Pedido{" "}
@@ -267,7 +287,9 @@ export default async function TareaPage({
                 ? "Acomodar"
                 : task.kind === "REPLENISH"
                   ? "Reponer"
-                  : "Mover"}
+                  : task.kind === "ISSUE"
+                    ? "Surtir a producción"
+                    : "Mover"}
           </p>
           {task.container ? (
             <>

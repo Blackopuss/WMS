@@ -53,6 +53,8 @@ describe("menu by role", () => {
       "Inicio",
       "Tareas",
       "Pedidos",
+      // WMS-28: it reads the production orders it prepares materials for.
+      "Producción",
       "Inventario",
       "Movimientos",
       "Conteos",
@@ -107,12 +109,13 @@ describe("menu by role", () => {
     expect(ROLES.length).toBe(11);
   });
 
-  // WMS-59: production and quality have no section yet (each step adds its
-  // own); their roles see what they read of Inventario, with their module.
-  it("Operario de producción sees its tasks, the stock and incidents", () => {
+  // WMS-59: their roles see what they read of Inventario, with their
+  // module; WMS-28 adds «Producción» (the orders).
+  it("Operario de producción sees its tasks, the orders, the stock and incidents", () => {
     expect(menuOf(member("production_operator"))).toEqual([
       "Inicio",
       "Tareas",
+      "Producción",
       "Inventario",
       "Incidencias",
       "Configuración",
@@ -130,6 +133,7 @@ describe("menu by role", () => {
       ).map((item) => item.label);
       expect(withoutStages, role).toEqual([
         "Inicio",
+        "Producción",
         "Inventario",
         "Incidencias",
         "Configuración",
@@ -138,6 +142,7 @@ describe("menu by role", () => {
       expect(menuOf(member(role)), role).toEqual([
         "Inicio",
         "Tareas",
+        "Producción",
         "Inventario",
         "Incidencias",
         "Configuración",

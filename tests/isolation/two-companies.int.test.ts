@@ -1261,6 +1261,99 @@ beforeAll(async () => {
     await db.recipeLock.create({
       data: { id: organizationId, organizationId },
     });
+    // A production order with a material, what comes out, a person and a
+    // «Surtir a producción» task to its area (WMS-28).
+    const areaId = newId();
+    await db.location.create({
+      data: {
+        id: areaId,
+        organizationId,
+        facilityId: location.facilityId,
+        name: "Línea de producción",
+        type: "PRODUCTION",
+        levelId: (
+          await db.locationLevel.findFirstOrThrow({
+            where: {
+              organizationId,
+              facilityId: location.facilityId,
+              depth: 1,
+            },
+          })
+        ).id,
+      },
+    });
+    const productionOrderId = newId();
+    await db.productionOrder.create({
+      data: {
+        id: productionOrderId,
+        organizationId,
+        number: 1,
+        facilityId: location.facilityId,
+        areaLocationId: areaId,
+        productId,
+        recipeVersionId,
+        quantity: "1",
+        unitCode: "piece",
+        createdByUserId: author,
+      },
+    });
+    const productionLineId = newId();
+    await db.productionOrderLine.create({
+      data: {
+        id: productionLineId,
+        organizationId,
+        orderId: productionOrderId,
+        lineNumber: 1,
+        productId: serialProductId,
+        quantity: "2",
+        unitCode: "piece",
+        recipeQuantity: "2",
+      },
+    });
+    await db.productionOrderOutput.create({
+      data: {
+        id: newId(),
+        organizationId,
+        orderId: productionOrderId,
+        lineNumber: 1,
+        productId,
+        quantity: "1",
+        unitCode: "piece",
+        costShare: "100",
+      },
+    });
+    await db.productionOrderAssignee.create({
+      data: {
+        id: newId(),
+        organizationId,
+        orderId: productionOrderId,
+        userId: author,
+        createdByUserId: author,
+      },
+    });
+    await db.productionOrder.update({
+      where: { id: productionOrderId },
+      data: {
+        status: "RELEASED",
+        releasedAt: new Date(),
+        releasedByUserId: author,
+      },
+    });
+    await db.warehouseTask.create({
+      data: {
+        id: newId(),
+        organizationId,
+        number: 900,
+        kind: "ISSUE",
+        productionOrderLineId: productionLineId,
+        productId: serialProductId,
+        fromLocationId: location.id,
+        toLocationId: areaId,
+        quantity: "2",
+        unitCode: "piece",
+        createdByUserId: author,
+      },
+    });
     // A notice, a preference, and an incident with its note (WMS-39).
     const who = organizationId === orgA ? ids.ana : ids.beto;
     await db.notification.create({
