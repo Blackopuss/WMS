@@ -132,7 +132,7 @@ export default async function EtiquetasUbicacionesPage({
               en{" "}
               <Link
                 href="/ubicaciones"
-                className="font-medium text-primary underline underline-offset-4"
+                className="rounded-sm py-1 font-medium text-primary underline underline-offset-4"
               >
                 Ubicaciones
               </Link>

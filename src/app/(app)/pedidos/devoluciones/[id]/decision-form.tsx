@@ -133,7 +133,9 @@ export function DecisionForm({
                 name="toLocationId"
                 defaultValue={values.toLocationId}
               >
-                <option value="">Se queda en {placeName}</option>
+                <option key="" value="">
+                  Se queda en {placeName}
+                </option>
                 {places.map((place) => (
                   <option key={place.id} value={place.id}>
                     {place.path}

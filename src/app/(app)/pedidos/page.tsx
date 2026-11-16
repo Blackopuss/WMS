@@ -287,7 +287,7 @@ export default async function PedidosPage({
                   </span>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </Link>
               </li>

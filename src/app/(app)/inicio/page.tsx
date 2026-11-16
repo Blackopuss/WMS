@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PageContainer, PageHeader, ReadOnlyNotice } from "@/components";
+import { PendingNotices } from "@/components/pending-notices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
@@ -421,46 +422,32 @@ export default async function InicioPage() {
         </Link>
       )}
 
-      {inspecting > 0 && (
-        <Link
-          href="/inventario/por-inspeccionar"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {inspecting === 1
-              ? "1 renglón por inspeccionar."
-              : `${inspecting.toLocaleString("es-MX")} renglones por inspeccionar.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
-      {unplaced > 0 && (
-        <Link
-          href="/inventario/sin-acomodar"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {unplaced === 1
-              ? "1 producto sin acomodar."
-              : `${unplaced.toLocaleString("es-MX")} productos sin acomodar.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
-
-      {expiring > 0 && (
-        <Link
-          href="/inventario/por-caducar"
-          className="flex min-h-11 items-center gap-2 rounded-xl border bg-card p-4 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <span className="flex-1">
-            {expiring === 1
-              ? "1 lote por caducar."
-              : `${expiring.toLocaleString("es-MX")} lotes por caducar.`}
-          </span>
-          <span className="font-medium text-primary">Ver cuáles</span>
-        </Link>
-      )}
+      <PendingNotices
+        label="Pendientes del almacén"
+        notices={[
+          inspecting > 0 && {
+            href: "/inventario/por-inspeccionar",
+            text:
+              inspecting === 1
+                ? "1 renglón por inspeccionar."
+                : `${inspecting.toLocaleString("es-MX")} renglones por inspeccionar.`,
+          },
+          unplaced > 0 && {
+            href: "/inventario/sin-acomodar",
+            text:
+              unplaced === 1
+                ? "1 producto sin acomodar."
+                : `${unplaced.toLocaleString("es-MX")} productos sin acomodar.`,
+          },
+          expiring > 0 && {
+            href: "/inventario/por-caducar",
+            text:
+              expiring === 1
+                ? "1 lote por caducar."
+                : `${expiring.toLocaleString("es-MX")} lotes por caducar.`,
+          },
+        ]}
+      />
 
       {nothing && (
         <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground sm:p-5">
@@ -539,6 +526,8 @@ export default async function InicioPage() {
                 Existencias bajas
                 {low.total > 0 && (
                   <Badge variant="warning">
+                    {/* Read as «Existencias bajas: 2», not «bajas2». */}
+                    <span className="sr-only">: </span>
                     {low.total.toLocaleString("es-MX")}
                   </Badge>
                 )}

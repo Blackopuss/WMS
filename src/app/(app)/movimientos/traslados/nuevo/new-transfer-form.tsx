@@ -2,9 +2,10 @@
 
 import { CircleAlert, Loader2 } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 
 import { FormField } from "@/components";
+import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -52,9 +53,16 @@ export function NewTransferForm({
     },
     { values: {}, answers: 0 } as TransferFormState,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const { answers, values } = state;
   return (
-    <form action={formAction} noValidate className="max-w-xl space-y-4">
+    <form
+      ref={formRef}
+      action={formAction}
+      noValidate
+      className="max-w-xl space-y-4"
+    >
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
       {state.error && (
         <p

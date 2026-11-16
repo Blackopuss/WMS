@@ -9,6 +9,7 @@ import {
   PageContainer,
   PageHeader,
 } from "@/components";
+import { Button } from "@/components/ui/button";
 import { listEquipmentTypes } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 import { getActiveFacility } from "@/platform/locations";
@@ -21,7 +22,6 @@ const BASE = "/configuracion/equipos-del-almacen";
 
 const backClass =
   "inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
-const linkClass = "font-medium text-primary underline-offset-4 hover:underline";
 
 /** «Registrar equipo» (WMS-42): in the warehouse the person works in. */
 export default async function RegistrarEquipoPage() {
@@ -70,9 +70,9 @@ export default async function RegistrarEquipoPage() {
           title="Primero define sus tipos"
           description="Un tipo es el nombre que tu empresa le da a cada clase de equipo."
           action={
-            <Link href={`${BASE}/tipos`} className={linkClass}>
-              Tipos de equipo
-            </Link>
+            <Button asChild variant="outline">
+              <Link href={`${BASE}/tipos`}>Tipos de equipo</Link>
+            </Button>
           }
         />
       ) : (

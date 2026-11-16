@@ -164,7 +164,7 @@ export default async function SinAcomodarPage({
                     </p>
                   )}
                 </div>
-                <div className="text-right text-sm">
+                <div className="ml-auto text-right text-sm">
                   <p className="font-medium tabular-nums">
                     {item.quantityLabel}
                   </p>
@@ -179,7 +179,7 @@ export default async function SinAcomodarPage({
                 </div>
                 <ChevronRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
+                  className="ml-auto size-4 shrink-0 text-muted-foreground"
                 />
               </li>
             ))}
