@@ -27,9 +27,10 @@ id de sesión para que reporten ahí**):
 | WMS-30A planes de inspección (ADR 0067) | — | `wms-30a-planes-inspeccion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-30-0 recibir en inspección, desechar, retención (ADR 0068) | `session_01QMjUPXSxZtmZAnShDUjdgp` | `wms-30-0-inspeccion-al-recibir` | Reporte entregado (commit `a67eb5e`, migración `20261117040000`). **Corazón:** en revisión independiente con ejecución de pruebas y reconciliación; al unirse se abre WMS-75. |
 | WMS-74 motor de procesos (ADR 0069) | — | `wms-74-motor-procesos` | **Cerrado y unido el 2026-11-16.** |
+| WMS-74B procesos en embarques (ADR 0071) | `session_01QMjUPTYTbzrzdAJpXP8Hug` | `wms-74b-procesos-embarques` | Abierto el 2026-11-16 al unirse WMS-74 (no es corazón, pero toca la confirmación de salida: lleva revisor independiente). Migraciones desde `20261117050000`. |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
 
-El siguiente ADR libre es el 0071. Las ramas ya unidas (`wms-59-…`,
+El siguiente ADR libre es el 0072. Las ramas ya unidas (`wms-59-…`,
 `wms-42-equipos`, `wms-68-…`, `wms-37-…`) siguen en GitHub.
 
 **Qué se abre después, por dependencias (sección 12 de la propuesta):** WMS-75
