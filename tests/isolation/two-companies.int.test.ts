@@ -1282,11 +1282,36 @@ beforeAll(async () => {
         ).id,
       },
     });
+    // A production request from the floor, accepted (WMS-28B): the order
+    // below was born from it.
+    const productionRequestId = newId();
+    await db.productionRequest.create({
+      data: {
+        id: productionRequestId,
+        organizationId,
+        number: 1,
+        facilityId: location.facilityId,
+        areaLocationId: areaId,
+        productId,
+        quantity: "1",
+        unitCode: "piece",
+        requestedByUserId: author,
+      },
+    });
+    await db.productionRequest.update({
+      where: { id: productionRequestId },
+      data: {
+        status: "ACCEPTED",
+        decidedAt: new Date(),
+        decidedByUserId: author,
+      },
+    });
     const productionOrderId = newId();
     await db.productionOrder.create({
       data: {
         id: productionOrderId,
         organizationId,
+        requestId: productionRequestId,
         number: 1,
         facilityId: location.facilityId,
         areaLocationId: areaId,

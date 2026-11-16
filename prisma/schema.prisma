@@ -253,6 +253,7 @@ model Organization {
   recipeInputs                 RecipeInput[]
   recipeOutputs                RecipeOutput[]
   productionOrders             ProductionOrder[]
+  productionRequests           ProductionRequest[]
   productionOrderLines         ProductionOrderLine[]
   productionOrderOutputs       ProductionOrderOutput[]
   productionOrderAssignees     ProductionOrderAssignee[]
@@ -268,51 +269,52 @@ model Organization {
 /// own locations, its General and its staging location. Never deleted:
 /// archived when empty.
 model Facility {
-  id               String             @id @db.Char(36)
-  organizationId   String             @db.Char(36)
-  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name             String             @db.VarChar(120)
+  id                 String              @id @db.Char(36)
+  organizationId     String              @db.Char(36)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name               String              @db.VarChar(120)
   /// Short code people use and scan («CDMX-1»); unique in the company.
-  code             String             @db.VarChar(20)
-  address          String?            @db.VarChar(300)
+  code               String              @db.VarChar(20)
+  address            String?             @db.VarChar(300)
   /// True for the main warehouse, NULL for the others (one per company).
-  isDefault        Boolean?
-  archivedAt       DateTime?          @db.DateTime(3)
-  createdAt        DateTime           @default(now()) @db.DateTime(3)
-  updatedAt        DateTime           @updatedAt @db.DateTime(3)
-  locations        Location[]
-  levels           LocationLevel[]
-  activeFor        Membership[]
-  outboundOrders   OutboundOrder[]
-  memberScopes     MembershipScope[]
+  isDefault          Boolean?
+  archivedAt         DateTime?           @db.DateTime(3)
+  createdAt          DateTime            @default(now()) @db.DateTime(3)
+  updatedAt          DateTime            @updatedAt @db.DateTime(3)
+  locations          Location[]
+  levels             LocationLevel[]
+  activeFor          Membership[]
+  outboundOrders     OutboundOrder[]
+  memberScopes       MembershipScope[]
   /// Its shipments (WMS-16).
-  shipments        Shipment[]
+  shipments          Shipment[]
   /// What customers returned to it (WMS-17).
-  customerReturns  CustomerReturn[]
+  customerReturns    CustomerReturn[]
   /// Transfers that leave from it and that come to it (WMS-19).
-  transfersOut     FacilityTransfer[] @relation("TransferFrom")
-  transfersIn      FacilityTransfer[] @relation("TransferTo")
+  transfersOut       FacilityTransfer[]  @relation("TransferFrom")
+  transfersIn        FacilityTransfer[]  @relation("TransferTo")
   /// Its cycle count programs (WMS-55).
-  countPrograms    CountProgram[]
+  countPrograms      CountProgram[]
   /// Approval requests about something of this warehouse (WMS-56).
-  approvalRequests ApprovalRequest[]
+  approvalRequests   ApprovalRequest[]
   /// Incidents reported in it (WMS-39).
-  incidents        Incident[]
+  incidents          Incident[]
   /// Processes of documents of this warehouse (WMS-74).
-  processProgress  ProcessProgress[]
+  processProgress    ProcessProgress[]
   /// Its equipment (WMS-42).
-  equipment        Equipment[]
+  equipment          Equipment[]
   /// WMS-28 (ADR 0073): production orders of this warehouse.
-  productionOrders ProductionOrder[]
+  productionOrders   ProductionOrder[]
+  productionRequests ProductionRequest[]
   /// Shared terminals of its floor (WMS-38).
-  sharedTerminals  SharedTerminal[]
+  sharedTerminals    SharedTerminal[]
   /// Its picking waves (WMS-25).
-  pickWaves        PickWave[]
+  pickWaves          PickWave[]
   /// Purchase requests and orders of this warehouse (WMS-57).
-  purchaseRequests PurchaseRequest[]
-  purchaseOrders   PurchaseOrder[]
+  purchaseRequests   PurchaseRequest[]
+  purchaseOrders     PurchaseOrder[]
   /// API keys that work in this warehouse (WMS-60).
-  apiKeys          ApiKey[]
+  apiKeys            ApiKey[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -421,6 +423,7 @@ model Location {
   /// WMS-28 (ADR 0073): production orders made in this area, and recipes
   /// that propose it.
   productionOrders    ProductionOrder[]         @relation("ProductionArea")
+  productionRequests  ProductionRequest[]       @relation("ProductionRequestArea")
   recipeAreas         Recipe[]                  @relation("RecipeArea")
   /// True for General, NULL for other locations (never false; SQL CHECK).
   /// MySQL allows multiple NULLs in the unique key, but only one true.
@@ -1184,6 +1187,7 @@ model Product {
   recipeOutputs          RecipeOutput[]
   /// WMS-28 (ADR 0073): orders that make it, and order lines that use it.
   productionOrders       ProductionOrder[]
+  productionRequests     ProductionRequest[]
   productionOrderLines   ProductionOrderLine[]
   productionOrderOutputs ProductionOrderOutput[]
 
@@ -5022,6 +5026,10 @@ model ProductionOrder {
   cancelledAt       DateTime?                 @db.DateTime(3)
   cancelledByUserId String?                   @db.Char(36)
   cancelReason      String?                   @db.VarChar(300)
+  /// WMS-28B (ADR 0075): the request it was born from (accepted); never
+  /// changes. Who approved it is who decided the request.
+  requestId         String?                   @db.Char(36)
+  request           ProductionRequest?        @relation(fields: [organizationId, requestId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   updatedAt         DateTime                  @updatedAt @db.DateTime(3)
   lines             ProductionOrderLine[]
   outputs           ProductionOrderOutput[]
@@ -5029,12 +5037,63 @@ model ProductionOrder {
 
   @@unique([organizationId, id])
   @@unique([organizationId, number])
+  @@unique([organizationId, requestId])
   @@index([organizationId, facilityId, status, number])
   @@index([organizationId, status, number])
   @@index([organizationId, productId])
   @@index([organizationId, areaLocationId])
   @@index([organizationId, recipeVersionId])
   @@map("production_order")
+}
+
+enum ProductionRequestStatus {
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+/// A production request (WMS-28B, ADR 0075), `SP-0001`: someone with
+/// nothing to their name asks to produce a product of their area that is
+/// close to its minimum. It sets nothing aside. Submitted → accepted (an
+/// order is born from it), rejected (with a reason) or cancelled by who
+/// asked (PRODUCTION_REQUEST_TRANSITIONS and trigger). Never deleted; what
+/// was asked never changes.
+model ProductionRequest {
+  id                String                  @id @db.Char(36)
+  organizationId    String                  @db.Char(36)
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  number            Int
+  facilityId        String                  @db.Char(36)
+  facility          Facility                @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The production area: a location of use «Producción» of `facilityId`.
+  areaLocationId    String                  @db.Char(36)
+  area              Location                @relation("ProductionRequestArea", fields: [organizationId, areaLocationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  productId         String                  @db.Char(36)
+  product           Product                 @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// What was asked, in `unitCode` (the unit of the product then).
+  quantity          Decimal                 @db.Decimal(12, 3)
+  unitCode          String                  @db.VarChar(12)
+  note              String?                 @db.VarChar(300)
+  status            ProductionRequestStatus @default(SUBMITTED)
+  requestedByUserId String                  @db.Char(36)
+  createdAt         DateTime                @default(now()) @db.DateTime(3)
+  decidedAt         DateTime?               @db.DateTime(3)
+  decidedByUserId   String?                 @db.Char(36)
+  rejectReason      String?                 @db.VarChar(300)
+  cancelledAt       DateTime?               @db.DateTime(3)
+  cancelledByUserId String?                 @db.Char(36)
+  updatedAt         DateTime                @updatedAt @db.DateTime(3)
+  orders            ProductionOrder[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, number])
+  @@index([organizationId, facilityId, status, number])
+  @@index([organizationId, status, number])
+  @@index([organizationId, productId, status])
+  @@index([organizationId, requestedByUserId, status])
+  @@index([organizationId, areaLocationId])
+  @@map("production_request")
 }
 
 /// A material of a production order (WMS-28): the recipe line scaled to the

@@ -207,6 +207,27 @@ describe("shared terminal (WMS-38)", () => {
     expect(can(titular, "production.recipe.read")).toBe(true);
   });
 
+  it("asks for production and decides requests from the floor (WMS-28B)", () => {
+    const operario: Subject = {
+      ...member("production_operator"),
+      terminal: true,
+    };
+    expect(can(operario, "production.request.create")).toBe(true);
+    expect(can(operario, "production.request.read")).toBe(true);
+    expect(can(operario, "production.request.decide")).toBe(false);
+    const encargado: Subject = {
+      ...member("production_supervisor"),
+      terminal: true,
+    };
+    expect(can(encargado, "production.request.decide")).toBe(true);
+    const almacen: Subject = { ...member("warehouse"), terminal: true };
+    expect(can(almacen, "production.request.decide")).toBe(true);
+    // Deciding a request never gives permissions over orders (ADR 0075).
+    expect(can(member("warehouse"), "production.order.create")).toBe(false);
+    expect(can(member("warehouse"), "production.order.release")).toBe(false);
+    expect(can(member("supervisor"), "production.order.cancel")).toBe(false);
+  });
+
   it("reads inspection plans and defects and never changes them (WMS-30A)", () => {
     const admin = member("administrator");
     const atTerminal: Subject = { ...admin, terminal: true };

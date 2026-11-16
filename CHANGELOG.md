@@ -8,6 +8,8 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-28B** Solicitudes de producción desde el piso, decisión dentro del
+  alcance y orden que nace liberada a nombre de quien aceptó. ADR 0075.
 - **WMS-77** Sitio público: Producción y Calidad con su precio, módulos
   nuevos, términos versión 2026-11-16 y revisión de accesibilidad y
   rendimiento con Playwright, axe y Lighthouse.

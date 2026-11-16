@@ -30,7 +30,7 @@ id de sesión para que reporten ahí**):
 | WMS-75 estado «En restauración» (ADR 0072) | — | `wms-75-en-restauracion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-28 órdenes de producción (ADR 0073) | — | `wms-28-ordenes-produccion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-76 orden de candados (ADR 0074) | — | `wms-76-candados-varios-ids` | **Cerrado y unido el 2026-11-16.** |
-| WMS-28B solicitudes de producción (ADR 0075) | `session_01QMjUPV2Rdkrbb81NuhoPw8` | `wms-28b-solicitudes-produccion` | Abierto el 2026-11-16 al unirse WMS-28 (no es corazón; toca permisos: lleva revisor). Migraciones desde `20261117090000`. |
+| WMS-28B solicitudes de producción (ADR 0075) | — | `wms-28b-solicitudes-produccion` | **Cerrado y unido el 2026-11-16.** |
 | WMS-77 sitio público, precios y calificación | — | `wms-77-sitio-publico` | **Cerrado y unido el 2026-11-16.** |
 | WMS-78A revisión visual: acceso, Configuración, `AppShell`, avisos, aprobaciones, consola interna | `session_01QMjUPX1twkxfXtZd3AwZm1` | `wms-78a-revision-acceso-configuracion` | Abierto el 2026-11-16. Solo interfaz. Dueño de `app-shell` y del criterio de `verify-a11y`. Reporte en `docs/ux/REVISION_VISUAL_ACCESO_CONFIGURACION.md`. |
 | WMS-78B revisión visual: Inicio, Tareas, Recepción, Pedidos, Inventario, Movimientos, Conteos, Incidencias | `session_01QMjUPUo5iKedZc8eJaZ5uA` | `wms-78b-revision-operacion` | Abierto el 2026-11-16. Solo interfaz. Reporte en `docs/ux/REVISION_VISUAL_OPERACION.md`. |

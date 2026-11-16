@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-141 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+142 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -37,7 +37,7 @@
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 10 | [purchasing](modulos/purchasing.md) |
 | Calidad | 6 | [quality](modulos/quality.md) |
-| Producción | 9 | [production](modulos/production.md) |
+| Producción | 10 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -3392,7 +3392,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Producción
 
-Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones. Órdenes de producción con los materiales y lo que sale copiados de la receta, y sus personas asignadas.
+Recetas de los productos: una por producto, con versiones (para cuánto, materiales y lo que sale) y el candado que ordena sus activaciones. Órdenes de producción con los materiales y lo que sale copiados de la receta, y sus personas asignadas. Solicitudes de producción desde el piso, de las que puede nacer una orden.
 
 Documento: [modulos/production.md](modulos/production.md).
 
@@ -3543,11 +3543,12 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
 | `cancelledByUserId` | `String? · Char(36)` |  |  |
 | `cancelReason` | `String? · VarChar(300)` |  |  |
+| `requestId` | `String? · Char(36)` |  | WMS-28B (ADR 0075): the request it was born from (accepted); never changes. Who approved it is who decided the request. |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
-- Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `requestId`).
 - Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `status`, `number`); (`organizationId`, `productId`); (`organizationId`, `areaLocationId`); (`organizationId`, `recipeVersionId`).
-- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `recipeVersion` → `RecipeVersion` por (`organizationId`, `recipeVersionId`) (al borrar: Restrict).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `recipeVersion` → `RecipeVersion` por (`organizationId`, `recipeVersionId`) (al borrar: Restrict); `request` → `ProductionRequest` por (`organizationId`, `requestId`) (al borrar: Restrict).
 
 ### ProductionOrderLine · `production_order_line`
 
@@ -3613,7 +3614,39 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `userId`).
 - Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict).
 
+### ProductionRequest · `production_request`
+
+A production request (WMS-28B, ADR 0075), `SP-0001`: someone with nothing to their name asks to produce a product of their area that is close to its minimum. It sets nothing aside. Submitted → accepted (an order is born from it), rejected (with a reason) or cancelled by who asked (PRODUCTION_REQUEST_TRANSITIONS and trigger). Never deleted; what was asked never changes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `areaLocationId` | `String · Char(36)` |  | The production area: a location of use «Producción» of `facilityId`. |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | What was asked, in `unitCode` (the unit of the product then). |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `note` | `String? · VarChar(300)` |  |  |
+| `status` | `ProductionRequestStatus` | `SUBMITTED` |  |
+| `requestedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `decidedAt` | `DateTime? · DateTime(3)` |  |  |
+| `decidedByUserId` | `String? · Char(36)` |  |  |
+| `rejectReason` | `String? · VarChar(300)` |  |  |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelledByUserId` | `String? · Char(36)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `status`, `number`); (`organizationId`, `productId`, `status`); (`organizationId`, `requestedByUserId`, `status`); (`organizationId`, `areaLocationId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
 #### Enumeraciones de Producción
 
 - `RecipeVersionStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.
 - `ProductionOrderStatus`: `DRAFT`, `RELEASED`, `IN_PROGRESS`, `CLOSED`, `CANCELLED`.
+- `ProductionRequestStatus`: `SUBMITTED`, `ACCEPTED`, `REJECTED`, `CANCELLED`.

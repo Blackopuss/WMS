@@ -15,11 +15,15 @@ import { Button } from "@/components/ui/button";
 import {
   PRODUCTION_ORDER_STATUSES,
   PRODUCTION_ORDER_STATUS_LABELS,
+  countProductionRequestsToDecide,
   listProductionOrders,
 } from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
 
 export const metadata: Metadata = { title: "Producción" };
+
+const linkClass =
+  "inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50";
 
 const chip =
   "inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -60,6 +64,11 @@ export default async function ProduccionPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
+  // WMS-28B: requests from the floor; who decides sees how many wait.
+  const toDecide =
+    moduleState === "active" && access.allows("production.request.decide")
+      ? await countProductionRequestsToDecide(actor)
+      : 0;
   const list = await listProductionOrders(actor, {
     status: typeof estado === "string" ? estado : undefined,
     mine: mias === "1",
@@ -102,6 +111,15 @@ export default async function ProduccionPage({
     <PageContainer>
       {moduleState === "read_only" && <ReadOnlyNotice module="Producción" />}
       <PageHeader title="Producción" actions={newButton} />
+      {access.can("production.request.read") && (
+        <div className="-mt-2 flex flex-wrap gap-x-6">
+          <Link href="/produccion/solicitudes" className={linkClass}>
+            {toDecide > 0
+              ? `Solicitudes por atender (${toDecide})`
+              : "Solicitudes de producción"}
+          </Link>
+        </div>
+      )}
       <nav aria-label="Estado de las órdenes" className="flex flex-wrap gap-2">
         {filters.map((filter) => (
           <Link

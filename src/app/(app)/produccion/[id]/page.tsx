@@ -196,6 +196,23 @@ export default async function OrdenProduccionPage({
         {order.note && (
           <p className="[overflow-wrap:anywhere]">Indicaciones: {order.note}</p>
         )}
+        {order.request && (
+          <p>
+            Nació de la solicitud{" "}
+            {access.can("production.request.read") ? (
+              <Link
+                href={`/produccion/solicitudes/${idPath(order.request.id)}`}
+                className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {order.request.numberText}
+              </Link>
+            ) : (
+              order.request.numberText
+            )}{" "}
+            de {order.request.requestedBy}; la aprobó {order.request.approvedBy}
+            .
+          </p>
+        )}
         <p className="text-muted-foreground">
           La creó {order.createdBy} el{" "}
           {formatDateTime(order.createdAt, timeZone)}

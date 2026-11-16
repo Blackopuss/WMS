@@ -114,13 +114,19 @@ import {
   takeWaveTasks,
 } from "@/modules/inventory";
 import {
+  acceptProductionRequest,
   activateRecipeVersion,
   createProductionOrder,
   createRecipe,
   getProductionOrder,
+  getProductionRequest,
   listProductionOrders,
+  listProductionRequests,
+  rejectProductionRequest,
   releaseProductionOrder,
+  setRecipeArea,
   setRecipeInput,
+  submitProductionRequest,
 } from "@/modules/production";
 import {
   addOrderLine,
@@ -2044,6 +2050,67 @@ describe("PC-12: production orders (WMS-28)", () => {
       reason: "not_found",
     });
     expect(await getProductionOrder(free, made.orderId)).not.toBeNull();
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: production requests (WMS-28B)", () => {
+  it("a request of an area of A does not exist from B", async () => {
+    const area = await createLocation(owner, {
+      level: 1,
+      name: "Línea SP",
+      type: "PRODUCTION",
+    });
+    if (!area.ok) throw new Error(JSON.stringify(area));
+    const kit = await createProduct(owner, { sku: "ALC-SP", name: "Kit SP" });
+    if (!kit.ok) throw new Error(JSON.stringify(kit));
+    const recipe = await createRecipe(owner, kit.productId, {
+      baseQuantity: "1",
+    });
+    if (!recipe.ok) throw new Error(JSON.stringify(recipe));
+    await setRecipeInput(owner, recipe.versionId, {
+      productId,
+      quantity: "1",
+    });
+    expect(await activateRecipeVersion(owner, recipe.versionId)).toMatchObject({
+      ok: true,
+    });
+    expect(
+      await setRecipeArea(owner, kit.productId, area.locationId),
+    ).toMatchObject({ ok: true });
+    expect(
+      await setMinimum(owner, { productId: kit.productId, quantity: "5" }),
+    ).toMatchObject({ ok: true });
+    const asked = await submitProductionRequest(owner, {
+      productId: kit.productId,
+      quantity: "5",
+    });
+    if (!asked.ok) throw new Error(JSON.stringify(asked));
+    expect(await getProductionRequest(limited, asked.requestId)).toBeNull();
+    expect((await listProductionRequests(limited)).items).toEqual([]);
+    expect(
+      await acceptProductionRequest(limited, asked.requestId),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    // Not even a wrong quantity says it exists.
+    expect(
+      await acceptProductionRequest(limited, asked.requestId, {
+        quantity: "abc",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await rejectProductionRequest(limited, asked.requestId, "No hace falta"),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    // From B it is never asked (its area is in A; here B also has tasks
+    // to its name from the tests above).
+    expect(
+      await submitProductionRequest(limited, {
+        productId: kit.productId,
+        quantity: "5",
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      (await getProductionRequest(free, asked.requestId))?.decision,
+    ).not.toBeNull();
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

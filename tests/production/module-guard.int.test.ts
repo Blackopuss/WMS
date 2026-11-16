@@ -91,6 +91,13 @@ const NOT_SERVICES = new Set([
   "fitsLine",
   "scaleInput",
   "scaleOutput",
+  // WMS-28B: pure rules of requests.
+  "canProductionRequestTransition",
+  "formatProductionRequestNumber",
+  "isProductionRequestStatus",
+  "productionRequestProblem",
+  "isNearMinimum",
+  "reachableQuantity",
 ]);
 
 const services = Object.entries(production).filter(
@@ -128,6 +135,15 @@ describe("Producción without the module (MOD-05)", () => {
         "setProductionOrderAssignees",
         "setRecipeArea",
         "updateProductionOrder",
+        // WMS-28B (ADR 0075).
+        "acceptProductionRequest",
+        "cancelProductionRequest",
+        "countProductionRequestsToDecide",
+        "getProductionRequest",
+        "listProductionRequests",
+        "listRequestableProducts",
+        "rejectProductionRequest",
+        "submitProductionRequest",
       ].sort(),
     );
   });

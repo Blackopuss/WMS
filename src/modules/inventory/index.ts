@@ -99,6 +99,7 @@ export {
   countLowStock,
   getMinimum,
   listLowStock,
+  productsNearMinimum,
   setMinimum,
   type LowStockItem,
   type LowStockPage,

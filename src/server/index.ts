@@ -6,6 +6,7 @@ export {
   TenantScopeError,
   forOrganization,
   lockRows,
+  shareOrganization,
 } from "./tenant-db";
 export type { TenantDb } from "./tenant-db";
 export type TransactionClient =

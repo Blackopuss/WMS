@@ -25,6 +25,7 @@ import {
   wavesEnabled,
   type TaskListView,
 } from "@/modules/inventory";
+import { listRequestableProducts } from "@/modules/production";
 import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import {
@@ -108,27 +109,36 @@ export default async function TareasPage({
     page: 1,
     pageCount: 1,
   };
-  const [list, counts, waves, processWork, processCounts] = await Promise.all([
-    readsTasks
-      ? listTasks(actor, {
-          view,
-          day: typeof dia === "string" ? dia : undefined,
-          page:
-            typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
-              ? Number(pagina)
-              : undefined,
-        })
-      : { items: [], total: 0, page: 1, pageCount: 1, day: null },
-    readsTasks ? countMyTasks(actor) : { mine: 0, available: 0, blocked: 0 },
-    // WMS-25: open waves with work here, when the company picks in waves.
-    readsTasks
-      ? wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : []))
-      : [],
-    view === "mine" || view === "available"
-      ? listProcessWork(actor, processDocuments, { view })
-      : noWork,
-    countProcessWork(actor, processDocuments),
-  ]);
+  // WMS-28B: «Queda poco» for who may ask for production and has nothing
+  // to their name (names only, never stock).
+  const asksProduction =
+    view === "mine" &&
+    access.moduleState("production") === "active" &&
+    access.allows("production.request.create");
+  const [list, counts, waves, processWork, processCounts, lowStock] =
+    await Promise.all([
+      readsTasks
+        ? listTasks(actor, {
+            view,
+            day: typeof dia === "string" ? dia : undefined,
+            page:
+              typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
+                ? Number(pagina)
+                : undefined,
+          })
+        : { items: [], total: 0, page: 1, pageCount: 1, day: null },
+      readsTasks ? countMyTasks(actor) : { mine: 0, available: 0, blocked: 0 },
+      // WMS-25: open waves with work here, when the company picks in waves.
+      readsTasks
+        ? wavesEnabled(actor).then((on) => (on ? listOpenWaves(actor) : []))
+        : [],
+      view === "mine" || view === "available"
+        ? listProcessWork(actor, processDocuments, { view })
+        : noWork,
+      countProcessWork(actor, processDocuments),
+      asksProduction ? listRequestableProducts(actor) : null,
+    ]);
+  const toAsk = lowStock?.ok ? lowStock.items : [];
   const tabs: { id: TaskListView; label: string; count?: number }[] = [
     ...(ownTabs
       ? [
@@ -248,6 +258,46 @@ export default async function TareasPage({
             Ver todas las terminadas
           </Link>
         </p>
+      )}
+
+      {toAsk.length > 0 && (
+        <section
+          aria-labelledby="queda-poco"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2 id="queda-poco" className="border-b p-4 font-medium sm:px-5">
+            Queda poco
+          </h2>
+          <ul className="divide-y">
+            {toAsk.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={`/produccion/solicitudes/nueva?producto=${encodeURIComponent(item.id)}`}
+                  className="flex min-h-16 items-center gap-3 p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span className="block font-medium [overflow-wrap:anywhere]">
+                      {item.name}
+                    </span>
+                    <span className="block text-sm text-primary">
+                      Pedir producción
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {lowStock?.ok && lowStock.more && (
+            <p className="border-t p-4 text-sm text-muted-foreground sm:px-5">
+              Se muestran los primeros {toAsk.length}; hay más productos por
+              acabarse.
+            </p>
+          )}
+        </section>
       )}
 
       {processWork.total > 0 && (

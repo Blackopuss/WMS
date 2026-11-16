@@ -162,6 +162,33 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); receta y área se buscan solo en esa empresa y en el alcance de la persona",
     coveredBy: "tests/production/orders.int.test.ts",
   },
+  // WMS-28B (ADR 0075): production requests.
+  askProductionAction: {
+    input:
+      "id del producto (fijado por la página), cantidad, id del área (solo si hay que elegirla) y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); quien pide sale de la sesión; las tres condiciones, el producto y el área se vuelven a comprobar en esa empresa y en su alcance, bajo el candado de su membresía",
+    coveredBy: "tests/production/requests.int.test.ts",
+  },
+  acceptProductionRequestAction: {
+    input:
+      "id de la solicitud, cantidad, día, id de la persona asignada y cómo nace la orden (liberada, con lo que hay o en borrador)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud existe solo si su área está en el alcance; la orden nace a nombre de quien decide y aparta solo de su alcance",
+    coveredBy: "tests/production/requests.int.test.ts",
+  },
+  rejectProductionRequestAction: {
+    input: "id de la solicitud y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la solicitud existe solo si su área está en el alcance",
+    coveredBy: "tests/production/requests.int.test.ts",
+  },
+  cancelProductionRequestAction: {
+    input: "id de la solicitud",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); solo quien la pidió (de la sesión) la cancela",
+    coveredBy: "tests/production/requests.int.test.ts",
+  },
   releaseOutboundAction: {
     input: "id del pedido y si se libera con lo que hay",
     identity:
