@@ -3,12 +3,16 @@ import "server-only";
 import { isInternalHref, newId } from "@/lib";
 import {
   buildScope,
+  companyModules,
+  hasTiedRole,
   inScope,
   knownRoles,
   permissionsOf,
+  type CompanyModuleState,
   type Permission,
   type Place,
 } from "@/platform/authorization";
+import { readModuleStates, type ModuleReader } from "@/platform/entitlements";
 import { enqueueJobs } from "@/platform/jobs";
 import { placeOfLocation } from "@/platform/locations";
 import { parseSettingValue } from "@/platform/settings";
@@ -132,8 +136,9 @@ export async function notify(
     take: MEMBERS_READ,
     select: MEMBER_SELECT,
   });
+  const modules = await modulesFor(tx, organizationId, members);
   const candidates = members
-    .filter((member) => memberReaches(member, to, place))
+    .filter((member) => memberReaches(member, to, place, modules))
     .map((member) => member.userId);
   if (candidates.length === 0) return { sent: 0 };
 
@@ -199,14 +204,34 @@ type MemberRow = {
 };
 
 /**
+ * The company's modules, read with the caller's client (WMS-59, ADR 0062),
+ * only when one of the members has a role tied to a module: the rest do
+ * not depend on them, so no query is added for them.
+ */
+export async function modulesFor(
+  client: ModuleReader,
+  organizationId: string,
+  members: readonly Pick<MemberRow, "roles">[],
+): Promise<ReadonlyMap<string, CompanyModuleState> | undefined> {
+  const tied = members.some((member) =>
+    hasTiedRole(member.roles.map((each) => each.role)),
+  );
+  if (!tied) return undefined;
+  return companyModules(await readModuleStates(client, organizationId));
+}
+
+/**
  * Whether a member may receive a notice with these requirements (roles,
  * permissions and place). The same rule decides when the notice is
- * created and again when its mail is sent (ADR 0060).
+ * created and again when its mail is sent (ADR 0060). A role tied to a
+ * module counts only with `modules` (`modulesFor`); without them it gives
+ * nothing (WMS-59).
  */
 export function memberReaches(
   member: MemberRow,
   to: Pick<NotifyRecipients, "permissions" | "match" | "roles">,
   place: Place | null,
+  modules?: ReadonlyMap<string, CompanyModuleState>,
 ): boolean {
   const isOwner = member.organization.ownerUserId === member.userId;
   const roles = member.roles.map((each) => each.role);
@@ -214,6 +239,7 @@ export function memberReaches(
     isOwner,
     roles,
     scope: isOwner ? null : buildScope(member.scopes),
+    ...(modules ? { modules } : {}),
   };
   if (
     to.roles &&

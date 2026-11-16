@@ -20,7 +20,18 @@ const menuOf = (subject: Subject) =>
     (item) => item.label,
   );
 
-const member = (...roles: string[]): Subject => ({ isOwner: false, roles });
+// Every module contracted (WMS-59): roles tied to a module need it.
+const EVERY_MODULE = new Map([
+  ["inventory", "active"],
+  ["purchasing", "active"],
+  ["production", "active"],
+  ["quality", "active"],
+] as const);
+const member = (...roles: string[]): Subject => ({
+  isOwner: false,
+  roles,
+  modules: EVERY_MODULE,
+});
 
 describe("menu by role", () => {
   it("every item names a permission of the catalog", () => {
@@ -93,7 +104,59 @@ describe("menu by role", () => {
     expect(menuOf(member("warehouse", "buyer"))).toEqual(
       NAV_ITEMS.map((item) => item.label),
     );
-    expect(ROLES.length).toBe(8);
+    expect(ROLES.length).toBe(11);
+  });
+
+  // WMS-59: production and quality have no section yet (each step adds its
+  // own); their roles see what they read of Inventario, with their module.
+  it("Operario de producción sees its tasks, the stock and incidents", () => {
+    expect(menuOf(member("production_operator"))).toEqual([
+      "Inicio",
+      "Tareas",
+      "Inventario",
+      "Incidencias",
+      "Configuración",
+    ]);
+  });
+
+  it("Encargado de producción and Inspector de calidad see the stock and incidents", () => {
+    for (const role of ["production_supervisor", "quality_inspector"]) {
+      expect(menuOf(member(role)), role).toEqual([
+        "Inicio",
+        "Inventario",
+        "Incidencias",
+        "Configuración",
+      ]);
+    }
+  });
+
+  // What Almacén and Supervisor de almacén gain with Producción has no
+  // section yet: catalog.test.ts fixes it (P7c, P7d).
+  it("without their module the new roles see only Inicio and Configuración", () => {
+    const onlyInventory = new Map([["inventory", "active"]] as const);
+    for (const role of [
+      "production_operator",
+      "production_supervisor",
+      "quality_inspector",
+    ]) {
+      expect(menuOf({ isOwner: false, roles: [role] }), role).toEqual([
+        "Inicio",
+        "Configuración",
+      ]);
+      expect(
+        menuOf({ isOwner: false, roles: [role], modules: onlyInventory }),
+        role,
+      ).toEqual(["Inicio", "Configuración"]);
+    }
+    // Calidad without Producción does not happen (dependsOn), and even
+    // then the production roles stay asleep.
+    expect(
+      menuOf({
+        isOwner: false,
+        roles: ["production_operator"],
+        modules: new Map([["quality", "active"]] as const),
+      }),
+    ).toEqual(["Inicio", "Configuración"]);
   });
 });
 

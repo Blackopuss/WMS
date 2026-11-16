@@ -85,13 +85,26 @@ export const terminalCookieOptions = {
  * signs in with a PIN (also checked with `isMfaRequired`).
  */
 export const PIN_ROLE_SETS = {
-  floor: ["operator", "forklift"],
-  floor_supervision: ["operator", "forklift", "supervisor", "warehouse"],
+  // WMS-59 (ADR 0062 §7): production operators and quality inspectors are
+  // floor people; the production supervisor goes with supervision.
+  floor: ["operator", "forklift", "production_operator", "quality_inspector"],
+  floor_supervision: [
+    "operator",
+    "forklift",
+    "production_operator",
+    "quality_inspector",
+    "supervisor",
+    "warehouse",
+    "production_supervisor",
+  ],
   without_mfa: [
     "operator",
     "forklift",
+    "production_operator",
+    "quality_inspector",
     "supervisor",
     "warehouse",
+    "production_supervisor",
     "buyer",
     "viewer",
     "manager",

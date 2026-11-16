@@ -124,6 +124,7 @@ describe("isAllowed", () => {
     expect(await loadSubject(esperanza, userId)).toEqual({
       isOwner: false,
       roles: [],
+      modules: expect.any(Map),
     });
     expect(await isAllowed(esperanza, userId, "inventory.product.read")).toBe(
       false,

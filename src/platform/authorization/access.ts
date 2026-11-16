@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { ForbiddenError } from "@/lib";
 import { terminalUserOfRequest } from "@/platform/auth";
+import { getEntitlements } from "@/platform/entitlements";
 import {
   requireOrganizationContext,
   supportWindowFor,
@@ -15,6 +16,7 @@ import type { Permission, Role } from "./catalog";
 import {
   buildScope,
   can,
+  companyModules,
   type SubjectLimit,
   isOwnerOnly,
   knownRoles,
@@ -94,12 +96,21 @@ async function loadMemberSubject(
   // A PIN session of a shared terminal (WMS-38): the person of this request
   // is cut down by the policy, in every check of the request.
   const terminal = (await terminalUserOfRequest()) === userId;
+  // WMS-59 (ADR 0062): a role tied to a module gives nothing without it.
+  // Also read for everyone else: the team rules ask it of whoever assigns.
+  const modules = await modulesOf(organizationId);
   return {
     isOwner,
     roles: membership.roles.map((r) => r.role),
+    modules,
     ...(scope ? { scope } : {}),
     ...(terminal ? { terminal } : {}),
   };
+}
+
+/** The company's modules and their state, as the policy reads them (WMS-59). */
+export async function modulesOf(organizationId: string) {
+  return companyModules(await getEntitlements(organizationId));
 }
 
 /** Decision for one person, company and permission. */

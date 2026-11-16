@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/platform/audit";
 import { terminalUserOfRequest } from "@/platform/auth";
 import {
   buildScope,
+  companyModules,
   knownRoles,
   loadScope,
   loadSubject,
@@ -180,10 +181,15 @@ export async function findApprovalByKey(
 // ---------------------------------------------------------------------------
 // Who may decide
 
-/** The person as the database says now, read with the given client. */
+/**
+ * The person as the database says now, read with the given client, with
+ * the company's modules read before the transaction (WMS-59: a role tied
+ * to a module counts only with them, as in `loadSubject`).
+ */
 async function subjectIn(
   client: Pick<Client, "membership">,
   userId: string,
+  entitlements: Entitlements,
 ): Promise<(Subject & { name: string | null }) | null> {
   const membership = await client.membership.findFirst({
     where: { userId, status: "ACTIVE" },
@@ -204,6 +210,7 @@ async function subjectIn(
     roles: membership.roles.map((each) => each.role),
     ...(scope ? { scope } : {}),
     ...(terminal ? { terminal } : {}),
+    modules: companyModules(entitlements),
     name: membership.user.name,
   };
 }
@@ -402,7 +409,7 @@ export async function decideApproval(
             })
           : null;
         if (!request) return refuse("not_found", NOT_FOUND);
-        const subject = await subjectIn(tx, userId);
+        const subject = await subjectIn(tx, userId, entitlements);
         const mine = request.requestedByUserId === userId;
         if (!subject || !(await requestInScope(tx, userId, request))) {
           return refuse("not_found", NOT_FOUND);
