@@ -139,7 +139,7 @@ export function RecipeLineForm({
     <form
       action={formAction}
       noValidate
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end"
+      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-start"
     >
       {!line && (
         <FormField
@@ -236,7 +236,11 @@ export function RecipeLineForm({
           )}
         </FormField>
       )}
-      <Button type="submit" className="min-h-11" disabled={pending}>
+      <Button
+        type="submit"
+        className="min-h-11 sm:self-end lg:mt-5.5 lg:self-start"
+        disabled={pending}
+      >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         {line ? "Guardar" : "Agregar"}
       </Button>

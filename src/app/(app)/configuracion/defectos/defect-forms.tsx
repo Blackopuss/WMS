@@ -35,6 +35,7 @@ export function DefectForm({
   severity = "MAJOR",
   submit,
   pendingText,
+  primary = false,
 }: {
   id: string;
   action: FormAction;
@@ -43,6 +44,8 @@ export function DefectForm({
   severity?: string;
   submit: string;
   pendingText: string;
+  /** The form that adds: its button is the main action of the screen. */
+  primary?: boolean;
 }) {
   const [state, formAction, pending] = useDefectAction(action);
   const sent = state.ok ? undefined : state.values;
@@ -93,7 +96,11 @@ export function DefectForm({
             </NativeSelect>
           )}
         </FormField>
-        <Button type="submit" variant="outline" disabled={pending}>
+        <Button
+          type="submit"
+          variant={primary ? "default" : "outline"}
+          disabled={pending}
+        >
           {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
           {pending ? pendingText : submit}
         </Button>

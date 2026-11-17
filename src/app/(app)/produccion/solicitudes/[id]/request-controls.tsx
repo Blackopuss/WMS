@@ -197,10 +197,7 @@ export function RejectRequest({ requestId }: { requestId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          className="min-h-11 text-muted-foreground hover:text-destructive"
-        >
+        <Button variant="outline" className="min-h-11">
           Rechazar
         </Button>
       </DialogTrigger>
@@ -269,8 +266,8 @@ export function CancelRequest({ requestId }: { requestId: string }) {
     <div className="space-y-2">
       <Button
         type="button"
-        variant="ghost"
-        className="min-h-11 text-muted-foreground hover:text-destructive"
+        variant="outline"
+        className="min-h-11"
         disabled={pending}
         onClick={() => run(() => cancelProductionRequestAction(requestId))}
       >

@@ -1,4 +1,4 @@
-import { ChevronLeft, Inbox } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -9,6 +9,7 @@ import {
   PageContainer,
   PageHeader,
 } from "@/components";
+import { Button } from "@/components/ui/button";
 import { listRequestableProducts } from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
 import { getUnit } from "@/platform/catalog";
@@ -73,11 +74,55 @@ export default async function PedirProduccionPage({
           title="Ahora no puedes pedir producción"
           description={list.message}
         />
+      ) : !productId && list.items.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title="Nada por pedir"
+          description="Cuando un producto de tu área esté por acabarse, aparecerá aquí."
+        />
+      ) : !productId ? (
+        <section
+          aria-labelledby="queda-poco"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2 id="queda-poco" className="border-b p-4 font-medium sm:px-5">
+            Queda poco
+          </h2>
+          <ul className="divide-y">
+            {list.items.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={`/produccion/solicitudes/nueva?producto=${encodeURIComponent(item.id)}`}
+                  className="flex min-h-16 items-center gap-3 p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+                    {item.name}
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {list.more && (
+            <p className="border-t p-4 text-sm text-muted-foreground sm:px-5">
+              Se muestran los primeros {list.items.length}; hay más productos
+              por acabarse.
+            </p>
+          )}
+        </section>
       ) : !chosen ? (
         <EmptyState
           icon={Inbox}
           title="Ese producto no se puede pedir"
-          description="Solo se piden productos de tu área que están por acabarse. Elige uno en «Mis tareas»."
+          description="Solo se piden productos de tu área que están por acabarse."
+          action={
+            <Button asChild variant="outline">
+              <Link href="/produccion/solicitudes/nueva">Pedir producción</Link>
+            </Button>
+          }
         />
       ) : (
         <section className="max-w-xl space-y-4">

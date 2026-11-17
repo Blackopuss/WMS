@@ -180,7 +180,7 @@ export default async function OrdenProduccionPage({
           {access.can("inventory.product.read") ? (
             <Link
               href={`/inventario/${idPath(order.productId)}`}
-              className="text-primary underline-offset-4 hover:underline"
+              className="inline-flex min-h-11 items-center rounded text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
             >
               {order.quantityText} · {order.productName}
             </Link>

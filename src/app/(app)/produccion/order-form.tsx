@@ -106,8 +106,12 @@ export function ProductionOrderForm({
             defaultValue={state.values.priority}
             key={key("priority")}
           >
-            <option value="NORMAL">Normal</option>
-            <option value="URGENT">Urgente</option>
+            <option key="NORMAL" value="NORMAL">
+              Normal
+            </option>
+            <option key="URGENT" value="URGENT">
+              Urgente
+            </option>
           </NativeSelect>
         )}
       </FormField>

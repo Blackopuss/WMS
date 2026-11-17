@@ -691,20 +691,28 @@ export default async function ProductoPage({
       {inspection && (
         <section
           aria-labelledby="inspeccion-producto"
-          className="space-y-1 rounded-xl border bg-card p-4 sm:p-5"
+          className="rounded-xl border bg-card"
         >
-          <h2 id="inspeccion-producto" className="font-medium">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 border-b px-4 py-2 sm:px-5">
+            <h2 id="inspeccion-producto" className="font-medium">
+              Inspección
+              {inspection.active && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · v{inspection.active.number}
+                </span>
+              )}
+            </h2>
             <Link
               href={`/inventario/${product.id}/inspeccion`}
-              className="inline-flex min-h-11 items-center gap-1 rounded text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              Inspección
-              <ChevronRight aria-hidden="true" className="size-4" />
+              Plan de inspección
             </Link>
-          </h2>
-          <p className="text-sm text-muted-foreground">
+          </div>
+          <p className="p-4 text-sm text-muted-foreground sm:px-5">
             {inspection.active
-              ? `Versión ${inspection.active.number} · ${inspection.active.samplingText} · ${inspection.active.points.length} ${inspection.active.points.length === 1 ? "punto" : "puntos"} · ${inspection.active.originsText}`
+              ? `${inspection.active.samplingText} · ${inspection.active.points.length} ${inspection.active.points.length === 1 ? "punto" : "puntos"} · ${inspection.active.originsText}`
               : `Sin plan de inspección: la calidad se revisa como dice el ajuste de la empresa (${inspection.defaultSamplingText.toLowerCase()}).`}
           </p>
         </section>
