@@ -8,6 +8,8 @@ cerrar cada paso.
 
 ## 2026-11-17
 
+- **WMS-78C** Revisión visual de Compras, Producción y Calidad (axe en cero)
+  y Lighthouse de la app; la demo trae Producción y Calidad con ejemplos.
 - **WMS-80** Next.js 16.4.6: sin vulnerabilidades en dependencias de
   producción y sin el aviso que detenía la compilación. ADR 0001.
 - **WMS-81** Sin módulo CRM anunciado; aviso de privacidad y términos al día

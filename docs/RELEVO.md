@@ -38,7 +38,7 @@ id de sesión para que reporten ahí**):
 | WMS-80 actualizar Next.js a la última versión | — | `wms-80-actualizar-next` | **Cerrado y unido el 2026-11-17** (16.4.6). En un contenedor ya levantado, `npm install` después de traer `pruebas`. |
 | WMS-81 sin CRM, privacidad y términos, textos genéricos | — | `wms-81-textos-legales-sin-crm` | **Cerrado y unido el 2026-11-17.** |
 | WMS-82 almacén archivado (ADR 0077) | `session_01QMjUPWgyA4HNuhsDWSwYgy` | `wms-82-almacen-archivado` | Abierto el 2026-11-16. **Corazón:** revisor independiente con `Promise.all`. Después van, uno tras otro y sin abrir todavía, WMS-83 (desechar con autorización) y WMS-84 (rechazo de recepción). |
-| WMS-78C revisión visual: Compras, Producción, Calidad (receta e inspección de la ficha) | `session_01QMjUPWijaRUV35CFS1FLPD` | `wms-78c-revision-compras-produccion` | Abierto el 2026-11-16 al unirse WMS-28B. Solo interfaz. Reporte en `docs/ux/REVISION_VISUAL_COMPRAS_PRODUCCION.md`. Se le pidió correr Lighthouse también sobre una muestra de 78A (ese chat no pudo descargarlo). |
+| WMS-78C revisión visual: Compras, Producción, Calidad (receta e inspección de la ficha) | — | `wms-78c-revision-compras-produccion` | **Cerrado y unido el 2026-11-17.** Reporte en `docs/ux/REVISION_VISUAL_COMPRAS_PRODUCCION.md` (incluye Lighthouse de la app). |
 | WMS-74B procesos en embarques (ADR 0071) | — | `wms-74b-procesos-embarques` | **Cerrado y unido el 2026-11-16.** |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
 

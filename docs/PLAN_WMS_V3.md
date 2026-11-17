@@ -621,7 +621,7 @@ sin escribir aquí su flujo (regla 15).
 
 ### WMS-27..31 · Producción y calidad
 
-**WMS-28B hecho (2026-11-16, ADR 0075):** solicitudes de producción desde el piso, decisión dentro del alcance y orden que nace liberada. Pendiente: rastreo de órdenes de producción (con WMS-29), revisión en navegador (WMS-78C).
+**WMS-28B hecho (2026-11-16, ADR 0075):** solicitudes de producción desde el piso, decisión dentro del alcance y orden que nace liberada. Pendiente: rastreo de órdenes de producción (con WMS-29), (la revisión en navegador se hizo con WMS-78C).
 
 **Alto del fundador (2026-11-16, tarde):** se terminan WMS-76 y WMS-28B y no se abre WMS-29, WMS-30B, WMS-31 ni WMS-29B hasta que lo indique. Sigue la revisión visual (WMS-77: sitio público con módulos y precios nuevos; WMS-78A, B y C: pantallas de la app). Decidido y sin implementar: Montacarguista y Comprador hacen etapas de procesos.
 
@@ -646,7 +646,7 @@ sin escribir aquí su flujo (regla 15).
 
 **WMS-37B hecho (2026-11-16, ADR 0076):** foto de evidencia al entregar una tarea, atada a su tarea, con ajuste por empresa. Pendiente: foto al reportar un problema de la tarea; la foto de quien reporta lo producido (WMS-29) y la de Calidad (WMS-30B) reutilizan el mecanismo `boundToOwner`.
 
-**WMS-78A y WMS-78B hechos (2026-11-16):** revisión visual de la app (144 pantallas, axe en cero). Pendiente: Lighthouse de la app (con WMS-78C), el conteo de «Embarques» que no cuadra con «Armar embarque», la barra inferior con tres secciones, y lo listado en `docs/ux/REVISION_VISUAL_*.md`.
+**WMS-78A y WMS-78B hechos (2026-11-16):** revisión visual de la app (144 pantallas, axe en cero). **WMS-78C hecho (2026-11-17):** Compras, Producción y Calidad (47 rutas, 19 diálogos y formularios, axe en cero) y Lighthouse de la app: escritorio 100 en accesibilidad y buenas prácticas y 99 a 100 en rendimiento; teléfono 100 en accesibilidad y buenas prácticas y 84 a 97 en rendimiento. Pendiente, paso propio sin abrir: rendimiento en teléfono (partir los componentes cliente del layout, cargar `motion` y `sonner` solo donde se usan); revisar en navegador «Mi plan» sin CRM y `/acepta-terminos`. Pendiente de 78A y 78B: el conteo de «Embarques» que no cuadra con «Armar embarque», la barra inferior con tres secciones, y lo listado en `docs/ux/REVISION_VISUAL_*.md`.
 
 ### WMS-79 · Pedido del cliente ligado a producción y embarque (anotado el 2026-11-16, sin abrir)
 
