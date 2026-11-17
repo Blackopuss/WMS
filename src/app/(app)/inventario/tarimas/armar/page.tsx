@@ -79,7 +79,10 @@ export default async function ArmarTarimaPage({
         {moduleState === "none" ? (
           <NoModuleState module="Inventario" />
         ) : (
-          <ReadOnlyNotice module="Inventario" />
+          <>
+            <PageHeader title="Armar tarima" />
+            <ReadOnlyNotice module="Inventario" />
+          </>
         )}
       </PageContainer>
     );
@@ -225,7 +228,7 @@ export default async function ArmarTarimaPage({
                     </span>
                     <ChevronRight
                       aria-hidden="true"
-                      className="size-4 shrink-0 text-muted-foreground"
+                      className="ml-auto size-4 shrink-0 text-muted-foreground"
                     />
                   </Link>
                 </li>

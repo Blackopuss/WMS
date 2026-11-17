@@ -83,7 +83,10 @@ export default async function NuevaDevolucionPage({
         {moduleState === "none" ? (
           <NoModuleState module="Inventario" />
         ) : (
-          <ReadOnlyNotice module="Inventario" />
+          <>
+            <PageHeader title="Registrar devolución" />
+            <ReadOnlyNotice module="Inventario" />
+          </>
         )}
       </PageContainer>
     );
@@ -249,7 +252,7 @@ export default async function NuevaDevolucionPage({
                   </span>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </Link>
               </li>
@@ -321,7 +324,7 @@ export default async function NuevaDevolucionPage({
                   </span>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </Link>
               </li>

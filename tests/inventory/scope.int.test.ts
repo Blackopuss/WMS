@@ -112,6 +112,8 @@ import {
   getWave,
   listOpenWaves,
   takeWaveTasks,
+  reachesTask,
+  uploadTaskPhoto,
 } from "@/modules/inventory";
 import {
   acceptProductionRequest,
@@ -139,6 +141,7 @@ import {
 } from "@/modules/purchasing";
 import {
   approvalTypes,
+  evidenceOwners,
   moduleRegistry,
   operationSettings,
 } from "@/modules/registry";
@@ -153,7 +156,7 @@ import { setMemberScope, type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { archiveProduct, createProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
-import { readSpreadsheet } from "@/platform/files";
+import { createFileLink, readSpreadsheet } from "@/platform/files";
 import {
   createFacility,
   createLocation,
@@ -166,6 +169,8 @@ import {
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
+
+import { TEST_JPEG } from "../setup/images";
 
 // WMS-20, critical test PC-12: someone limited to warehouse B neither sees
 // nor moves anything of warehouse A, whatever id of A reaches a service.
@@ -2112,5 +2117,50 @@ describe("PC-12: production requests (WMS-28B)", () => {
       (await getProductionRequest(free, asked.requestId))?.decision,
     ).not.toBeNull();
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: photos of a task (WMS-37B)", () => {
+  it("the photo of a task of A does not exist from B, nor is one taken there", async () => {
+    const spot = await shelf("Estante A9");
+    const task = await createTask(owner, {
+      productId,
+      fromLocationId: shelfA,
+      toLocationId: spot,
+      quantity: "1",
+    });
+    if (!task.ok) throw new Error(JSON.stringify(task));
+    expect(await acceptTask(owner, task.taskId)).toMatchObject({ ok: true });
+    expect(await pickUpTask(owner, task.taskId)).toMatchObject({ ok: true });
+    const upload = (actor: InventoryActor) =>
+      uploadTaskPhoto(actor, task.taskId, {
+        name: "foto.jpg",
+        bytes: TEST_JPEG,
+      });
+    const uploaded = await upload(owner);
+    if (!uploaded.ok) throw new Error(uploaded.error);
+    // Even a task of A given to them before the limit: no photo from B.
+    await db.warehouseTask.update({
+      where: { id: task.taskId },
+      data: { assignedToUserId: limited.userId },
+    });
+    expect(await upload(limited)).toMatchObject({ ok: false });
+    await db.warehouseTask.update({
+      where: { id: task.taskId },
+      data: { assignedToUserId: owner.userId },
+    });
+    expect(
+      await deliverTask(owner, task.taskId, { photoIds: [uploaded.fileId] }),
+    ).toMatchObject({ ok: true });
+    expect(await reachesTask(free, task.taskId)).toBe(true);
+    expect(await reachesTask(limited, task.taskId)).toBe(false);
+    expect(
+      await createFileLink(free, uploaded.fileId, { owners: evidenceOwners }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await createFileLink(limited, uploaded.fileId, {
+        owners: evidenceOwners,
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
   });
 });

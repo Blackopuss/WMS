@@ -6,8 +6,7 @@ const count = (value: number) => value.toLocaleString("es-MX");
 const plural = (value: number, one: string, many: string) =>
   `${count(value)} ${value === 1 ? one : many}`;
 
-const tileClass =
-  "flex min-h-24 flex-col justify-between gap-2 rounded-xl border bg-card p-4";
+const tileClass = "flex min-h-24 flex-col gap-2 rounded-xl border bg-card p-4";
 
 /**
  * «Hoy» (WMS-73): what the warehouse has done so far today and who did

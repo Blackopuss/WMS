@@ -639,7 +639,7 @@ export default async function RevisionPage({
                   Corrige lo marcado y{" "}
                   <Link
                     href="/inventario/importar"
-                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    className="inline-block rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     sube el archivo de nuevo
                   </Link>

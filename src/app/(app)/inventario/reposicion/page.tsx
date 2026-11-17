@@ -181,7 +181,7 @@ export default async function ReposicionPage({
                 <Badge variant={BADGE[rule.state]}>{rule.stateLabel}</Badge>
                 <ChevronRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
+                  className="ml-auto size-4 shrink-0 text-muted-foreground"
                 />
               </li>
             ))}

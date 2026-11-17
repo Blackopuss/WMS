@@ -2,9 +2,16 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import {
+  useRef,
+  useState,
+  useTransition,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { toast } from "sonner";
 
+import { PhotoCapture, type CapturedPhoto } from "@/components";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +33,10 @@ import {
   blockTaskAction,
   changeTaskEquipmentAction,
   cancelTaskAction,
+  deliverTaskAction,
+  discardTaskPhotoAction,
   releaseTaskAction,
+  uploadTaskPhotoAction,
   taskStepAction,
   type TaskStepState,
 } from "../actions";
@@ -54,8 +64,9 @@ function useTaskAction() {
 
 /**
  * The next step of the person who has the task, as one big button: take
- * it, confirm the pick up, confirm the delivery (WMS-07). Repeating a step
- * is harmless: the service answers that it was already done.
+ * it or confirm the pick up (WMS-07); the delivery is `DeliverStep`.
+ * Repeating a step is harmless: the service answers that it was already
+ * done.
  */
 export function TaskStep({
   taskId,
@@ -63,7 +74,7 @@ export function TaskStep({
   label,
 }: {
   taskId: string;
-  step: "accept" | "pickUp" | "deliver";
+  step: "accept" | "pickUp";
   label: string;
 }) {
   const { pending, error, run } = useTaskAction();
@@ -277,15 +288,19 @@ export function AssignTask({
           </p>
         )}
       </div>
-      <Button
-        type="submit"
-        variant="outline"
-        className="min-h-11"
-        disabled={pending || chosen === (assignedToUserId ?? "")}
-      >
-        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-        Guardar
-      </Button>
+      {/* Shown once something changed: a disabled «Guardar» said nothing
+          about why (WMS-78B, KISS). */}
+      {(pending || chosen !== (assignedToUserId ?? "")) && (
+        <Button
+          type="submit"
+          variant="outline"
+          className="min-h-11"
+          disabled={pending}
+        >
+          {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+          Guardar
+        </Button>
+      )}
     </form>
   );
 }
@@ -387,5 +402,129 @@ export function EquipmentStep({
         {pending ? "Guardando…" : label}
       </Button>
     </form>
+  );
+}
+
+/** What the photo field says, by what the company asks (WMS-37B). */
+export function taskPhotoLabel(mode: "optional" | "required") {
+  return mode === "required"
+    ? "Foto de dónde lo dejaste"
+    : "Foto de dónde lo dejaste (opcional)";
+}
+
+/**
+ * The photo of where the load was left (WMS-37B, ADR 0076): taken right
+ * before the last tap, uploaded at once and linked by the delivery. Kept
+ * by the parent, so a refused delivery keeps what was taken.
+ */
+export function TaskPhotoField({
+  taskId,
+  mode,
+  max,
+  photos,
+  onPhotosChange,
+  error,
+}: {
+  taskId: string;
+  mode: "optional" | "required";
+  max: number;
+  photos: CapturedPhoto[];
+  onPhotosChange: Dispatch<SetStateAction<CapturedPhoto[]>>;
+  error?: string;
+}) {
+  return (
+    <PhotoCapture
+      id="task-photos"
+      label={taskPhotoLabel(mode)}
+      hint="Queda como prueba de dónde quedó la mercancía."
+      error={error}
+      photos={photos}
+      onPhotosChange={onPhotosChange}
+      upload={uploadTaskPhotoAction.bind(null, taskId)}
+      discard={discardTaskPhotoAction}
+      max={max}
+    />
+  );
+}
+
+/**
+ * The last step: left where it was going, with the photo of where it was
+ * left when the company asks for it — the same big button, no extra
+ * screen (WMS-37B). A refusal about the photos is said next to the photo
+ * field, which takes the focus.
+ */
+export function DeliverStep({
+  taskId,
+  label,
+  photoMode,
+  maxPhotos,
+}: {
+  taskId: string;
+  label: string;
+  photoMode: "off" | "optional" | "required";
+  maxPhotos: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [problem, setProblem] = useState<{
+    error: string;
+    photos: boolean;
+  } | null>(null);
+  const field = useRef<HTMLDivElement>(null);
+  const refuse = (error: string, aboutPhotos: boolean) => {
+    setProblem({ error, photos: aboutPhotos });
+    if (aboutPhotos) field.current?.focus();
+  };
+  const deliver = () => {
+    if (photoMode === "required" && photos.length === 0) {
+      refuse("Toma una foto de dónde la dejaste.", true);
+      return;
+    }
+    setProblem(null);
+    startTransition(async () => {
+      const result = await deliverTaskAction(
+        taskId,
+        photos.map((photo) => photo.fileId),
+      );
+      if (result.ok) {
+        toast.success(result.summary);
+        router.refresh();
+      } else {
+        refuse(result.error, result.field === "photos");
+      }
+    });
+  };
+  const photoError = problem?.photos ? problem.error : undefined;
+  return (
+    <div className="space-y-3">
+      {photoMode !== "off" && (
+        <div ref={field} tabIndex={-1} className="rounded-lg outline-none">
+          <TaskPhotoField
+            taskId={taskId}
+            mode={photoMode}
+            max={maxPhotos}
+            photos={photos}
+            onPhotosChange={setPhotos}
+            error={photoError}
+          />
+        </div>
+      )}
+      <Button
+        type="button"
+        size="lg"
+        className="min-h-14 w-full text-base sm:w-auto sm:min-w-72"
+        disabled={pending}
+        onClick={deliver}
+      >
+        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+        {pending ? "Guardando…" : label}
+      </Button>
+      {problem && (
+        <p role="alert" className="text-sm text-destructive">
+          {problem.photos ? "Revisa la foto antes de entregar." : problem.error}
+        </p>
+      )}
+    </div>
   );
 }

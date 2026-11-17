@@ -97,7 +97,7 @@ export function SignInForm({
         <p className="-mt-2 text-right text-sm">
           <Link
             href="/recuperar-contrasena"
-            className="inline-flex min-h-11 items-center rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-0"
+            className="inline-flex min-h-11 items-center rounded py-1 font-medium text-primary underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-0"
           >
             ¿Olvidaste tu contraseña?
           </Link>
@@ -112,7 +112,7 @@ export function SignInForm({
         ¿No tienes cuenta?{" "}
         <Link
           href="/registro"
-          className="rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="rounded py-1 font-medium text-primary underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           Crea una
         </Link>

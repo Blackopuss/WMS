@@ -2,9 +2,10 @@
 
 import { CircleAlert, Loader2, TriangleAlert } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 
 import { FormField, SerialsField } from "@/components";
+import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -97,11 +98,18 @@ export function ReturnForm({
       answers: 0,
     },
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const { answers, values } = state;
   const single = rows.length === 1 && rows[0]!.key === "single";
 
   return (
-    <form action={formAction} noValidate className="max-w-2xl space-y-6">
+    <form
+      ref={formRef}
+      action={formAction}
+      noValidate
+      className="max-w-2xl space-y-6"
+    >
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
       {state.error && (
         <p
