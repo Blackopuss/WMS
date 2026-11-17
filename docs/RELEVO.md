@@ -1,11 +1,83 @@
 # Relevo entre sesiones
 
-Actualizado: 2026-11-16 (relevo de quien coordina, 08:35 UTC). Para quien abre un chat nuevo sobre este repositorio:
+Actualizado: 2026-11-17 (cierre de la sesión de coordinación, 03:32 UTC). Para quien abre un chat nuevo sobre este repositorio:
 dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando. El
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
 
-## Relevo de quien coordina (2026-11-16, 08:35 UTC)
+## Relevo de quien coordina (2026-11-17, 03:32 UTC)
+
+El chat que coordinaba (`session_01QMjUPVEbPAkRHP3gBSqvpY`) pasó con mucho de
+400,000 tokens y el fundador pidió cerrar todo para empezar una sesión nueva
+(«cuando terminen los chats ya no abras más pasos, para que todo quede subido
+y poder iniciar una nueva sesión»). Esto es lo que necesita quien lo releve.
+
+**No hay ningún chat abierto ni nada a medias.** Todo lo que estaba en curso
+quedó unido: `pruebas` y `main` apuntan al mismo commit. Lo primero al abrir:
+levantar el entorno (sección de abajo; `npm install` trae Next 16.4.6) y
+comprobar que la última corrida de CI de `pruebas` quedó en verde.
+
+**Cerrado y unido en esta tanda (2026-11-16 y 17):** WMS-59, WMS-37, WMS-42,
+WMS-68, WMS-27, WMS-30A, WMS-67, WMS-74, WMS-30-0, WMS-74B, WMS-75, WMS-28,
+WMS-76, WMS-28B, WMS-37B, WMS-77 (sitio público), WMS-78A/B/C (revisión
+visual de toda la app, con Lighthouse), WMS-80 (Next.js 16.4.6), WMS-81 (sin
+CRM, textos legales) y WMS-82 (almacén archivado). El detalle de cada uno está
+en su párrafo de `AGENTS.md` y en `CHANGELOG.md`.
+
+**No abrir ningún paso sin que el fundador lo diga.** Lo que quedó anotado en
+el plan, sin abrir, en el orden en que iría:
+
+1. **WMS-83** · Desechar pide autorización, con el porqué (ADR 0078). Corazón:
+   revisor independiente antes de unir.
+2. **WMS-84** · Rechazo de recepción con su nota (ADR 0079). Después de WMS-83.
+3. **Producción** (el alto se levanta cuando él lo diga): WMS-29 (reporte de
+   lo producido, con su foto) → WMS-31 (cierre de la orden) → WMS-30B
+   (inspección de Calidad, que confirma la cantidad) → WMS-79 (pedido del
+   cliente ligado a producción y embarque). Uno tras otro: todos tocan
+   existencias. WMS-29B (reproceso) sigue en alto.
+4. **WMS-85** · Reactivar un almacén (lo propuso WMS-82; sin decisión del
+   fundador).
+5. **Rendimiento en teléfono de la app** (Lighthouse 84 a 97; lo pone el
+   JavaScript compartido del layout): paso propio, solo interfaz.
+6. Pendientes chicos de cada paso: en su párrafo de `AGENTS.md` y en
+   «Pendientes que dejaron los pasos cerrados» del plan.
+
+**Esperan al fundador:** qué esquema de precios usar (la comparación contra
+el mercado y sus tres opciones están en `MEMORY.md`); nombre comercial (hoy
+«WMS»); servidor y dominio (sin comprar); razón social (será la de la
+empresa); la revisión de un abogado del aviso de privacidad y los términos
+(la lista para el abogado está en el párrafo de WMS-81 de `AGENTS.md`); y las
+decisiones que cada ADR marca como «el fundador puede cambiar» (0073, 0075,
+0076). Ya decidido y que no se vuelve a preguntar: sin facturación fiscal
+dentro del WMS, Ventas no regresa en esta versión, sin CRM, la foto al
+entregar una tarea queda opcional por omisión.
+
+**Cosas prácticas que costaron tiempo en esta sesión:**
+
+- Docker se cae cuando el chat espera mucho: `rm -f /var/run/docker.pid
+  /var/run/docker.sock`, levantar `dockerd` otra vez y `docker start
+  wms-mysql`. Comprobar MySQL antes y durante cada `npm run check`.
+- El límite de uso de 5 horas detiene a los subagentes y a las sesiones hijas
+  (quedan «failed» o inactivas con su trabajo guardado): al restablecerse hay
+  que mandarle a cada uno un mensaje para que continúe.
+- Un revisor independiente es un subagente (`Agent`, modelo Opus, en segundo
+  plano) sobre un worktree `/home/user/wt/<paso>` con su base
+  `wms_test_rev<letra>`; se le da el código y qué atacar, no la conclusión, y
+  termina con «unir» o «no unir». Las vueltas siguientes van al mismo agente.
+- Una prueba que arma fechas relativas a hoy las calcula en el calendario de
+  la empresa, no en UTC (falló entre las 00:00 y las 06:00 UTC).
+- Un disparador de la base que lee otra tabla toma un candado: solo se
+  permite si el servicio ya lo tomó antes, en el orden global (WMS-82).
+- Las sesiones hijas ya terminadas se pueden archivar; sus ramas siguen en
+  GitHub (desde la nube no se pueden borrar).
+
+El siguiente ADR libre es el 0080 (0078 y 0079 quedan apartados para WMS-83 y
+WMS-84).
+
+## Relevo anterior de quien coordina (2026-11-16): historial
+
+Todo lo de esta sección ya está cerrado; se conserva como historial de la
+tanda y de las decisiones del fundador de esos días.
 
 El chat que coordinaba (`session_01QMjUPVEbPAkRHP3gBSqvpY`) pasó de 400,000
 tokens. Esto es lo que necesita quien lo releve; lo demás del documento sigue
@@ -37,7 +109,7 @@ id de sesión para que reporten ahí**):
 | WMS-37B foto de evidencia al terminar una tarea (ADR 0076) | — | `wms-37b-foto-tareas` | **Cerrado y unido el 2026-11-16.** |
 | WMS-80 actualizar Next.js a la última versión | — | `wms-80-actualizar-next` | **Cerrado y unido el 2026-11-17** (16.4.6). En un contenedor ya levantado, `npm install` después de traer `pruebas`. |
 | WMS-81 sin CRM, privacidad y términos, textos genéricos | — | `wms-81-textos-legales-sin-crm` | **Cerrado y unido el 2026-11-17.** |
-| WMS-82 almacén archivado (ADR 0077) | `session_01QMjUPWgyA4HNuhsDWSwYgy` | `wms-82-almacen-archivado` | Abierto el 2026-11-16. **Corazón:** revisor independiente con `Promise.all`. Después van, uno tras otro y sin abrir todavía, WMS-83 (desechar con autorización) y WMS-84 (rechazo de recepción). |
+| WMS-82 almacén archivado (ADR 0077) | — | `wms-82-almacen-archivado` | **Cerrado y unido el 2026-11-17.** Dejó propuesto, sin abrir, «Reactivar un almacén» (WMS-85). |
 | WMS-78C revisión visual: Compras, Producción, Calidad (receta e inspección de la ficha) | — | `wms-78c-revision-compras-produccion` | **Cerrado y unido el 2026-11-17.** Reporte en `docs/ux/REVISION_VISUAL_COMPRAS_PRODUCCION.md` (incluye Lighthouse de la app). |
 | WMS-74B procesos en embarques (ADR 0071) | — | `wms-74b-procesos-embarques` | **Cerrado y unido el 2026-11-16.** |
 | WMS-67 almacenamiento externo, Cloudflare R2 (ADR 0070) | — | `wms-67-almacenamiento-externo` | **Cerrado y unido el 2026-11-16.** Toca `deploy/`: comprobar el workflow «Despliegue de prueba». |
@@ -48,13 +120,13 @@ id de sesión para que reporten ahí**):
 
 **Decisiones del fundador (2026-11-16, noche, segunda tanda):** (1) **Tareas del Montacarguista: se quedan en tres toques** (aceptar, recoger, entregar), sin ningún cambio automático por tiempo: «que no tenga mucha fricción con la interfaz, lo que queremos es eficiencia». (2) **Foto de evidencia al terminar una tarea: sí, implementarla** («una prueba de que realmente lo puso donde el sistema le dijo, por si hay una auditoría, saber qué persona subió la foto»): abierto **WMS-37B** (ADR 0076, rama `wms-37b-foto-tareas`), con un ajuste por empresa (`off`, `optional` por omisión, `required`). **Lo mismo vale para las demás áreas:** quien reporta lo producido sube su foto (requisito de WMS-29) y Calidad confirma la cantidad (requisito de WMS-30B). (3) **Ligar pedido del cliente → producción → embarque: sí, anotado como WMS-79**, después de WMS-29 y WMS-31, para que no choque con nada: al liberar un pedido, lo que falta de un producto con receta genera su solicitud de producción ligada a la línea; lo producido se aparta para ese pedido y sigue a surtido y embarque. Cada empresa decide si lo usa (ajuste, apagado por omisión). (4) **Orden cancelada a la mitad:** el fundador confirma que está bien como está planeado (producción reporta, WMS-29; la orden se cierra con lo hecho, WMS-31). **El alto a WMS-29, WMS-30B, WMS-31 y WMS-29B sigue vigente hasta que lo levante;** se le dijo que sin WMS-29 y WMS-31 el módulo Producción no produce nada en el sistema.
 
-**Decisiones del fundador (2026-11-16, noche, tercera tanda):** (1) **El alto a producción sí se levantará:** WMS-29 (reporte), WMS-31 (cierre), WMS-30B (inspección de Calidad) y después WMS-79 quedan anotados para implementarse **en otra sesión, cuando el fundador lo diga**; no abrirlos antes. (2) **La foto al entregar una tarea se queda opcional por omisión.** (3) **Rechazo de recepción: sí, paso propio (WMS-84):** al rechazar un lote al recibir «que se escriba una nota de por qué se regresa, para que quede la evidencia»; distinguible del rechazo de calidad. (4) **De qué entrega vino cada pieza: se deja así** (quien lo necesite usa lote o serie); deja de ser pregunta abierta. (5) **Embarques:** la salida espera a las etapas previas **solo si la empresa lo configura** (como hoy). Y para WMS-79: si hay material en inventario se embarca directo; si no lo hay y el pedido necesita producirse, la orden queda **ligada al embarque para que no pueda irse sin lo que pidió el cliente**. (6) **Desechar mercancía pide autorización, con el porqué** (WMS-83: tipo de aprobación propio en el motor de aprobaciones; el motivo ya es obligatorio). (7) **Actualizar Next.js a la última versión** (WMS-80, abierto). (8) **De acuerdo:** quien solo aprueba una solicitud de producción no acepta por más de lo pedido. (9) **Almacén archivado: corregirlo** (WMS-82, abierto; ADR 0077). (10) **Quitar «CRM · Próximamente»:** «no es necesario agregar CRM» (WMS-81, abierto). (11) **Ajustar términos y privacidad** con lo que ya existe (PIN, fotos, R2, accesos; WMS-81); sigue haciendo falta la revisión de un abogado. **Además:** servidor y dominio aún no se compran; el nombre comercial sigue sin decidir («no sé qué nombre usar»); la razón social será la de la empresa; **la facturación fiscal no se requiere dentro del WMS** (WMS-61 sale del plan); **Ventas no regresa en esta versión** («no es punto de venta ni ERP»; WMS-63 se cierra sin hacer); precios reales: pidió compararlos con el mercado (vio de 200 a 300 dólares por usuario y de 1,000 a 1,500 por almacén), comparación encargada ese día. **Orden de lo que toca existencias (uno tras otro):** WMS-82, después WMS-83, después WMS-84; WMS-83 y WMS-84 quedan sin abrir para la siguiente sesión de coordinación.
+**Decisiones del fundador (2026-11-16, noche, tercera tanda):** (1) **El alto a producción sí se levantará:** WMS-29 (reporte), WMS-31 (cierre), WMS-30B (inspección de Calidad) y después WMS-79 quedan anotados para implementarse **en otra sesión, cuando el fundador lo diga**; no abrirlos antes. (2) **La foto al entregar una tarea se queda opcional por omisión.** (3) **Rechazo de recepción: sí, paso propio (WMS-84):** al rechazar un lote al recibir «que se escriba una nota de por qué se regresa, para que quede la evidencia»; distinguible del rechazo de calidad. (4) **De qué entrega vino cada pieza: se deja así** (quien lo necesite usa lote o serie); deja de ser pregunta abierta. (5) **Embarques:** la salida espera a las etapas previas **solo si la empresa lo configura** (como hoy). Y para WMS-79: si hay material en inventario se embarca directo; si no lo hay y el pedido necesita producirse, la orden queda **ligada al embarque para que no pueda irse sin lo que pidió el cliente**. (6) **Desechar mercancía pide autorización, con el porqué** (WMS-83: tipo de aprobación propio en el motor de aprobaciones; el motivo ya es obligatorio). (7) **Actualizar Next.js a la última versión** (WMS-80, abierto). (8) **De acuerdo:** quien solo aprueba una solicitud de producción no acepta por más de lo pedido. (9) **Almacén archivado: corregirlo** (WMS-82, ADR 0077; **cerrado y unido el 2026-11-17**). (10) **Quitar «CRM · Próximamente»:** «no es necesario agregar CRM» (WMS-81, abierto). (11) **Ajustar términos y privacidad** con lo que ya existe (PIN, fotos, R2, accesos; WMS-81); sigue haciendo falta la revisión de un abogado. **Además:** servidor y dominio aún no se compran; el nombre comercial sigue sin decidir («no sé qué nombre usar»); la razón social será la de la empresa; **la facturación fiscal no se requiere dentro del WMS** (WMS-61 sale del plan); **Ventas no regresa en esta versión** («no es punto de venta ni ERP»; WMS-63 se cierra sin hacer); precios reales: pidió compararlos con el mercado (vio de 200 a 300 dólares por usuario y de 1,000 a 1,500 por almacén), comparación encargada ese día. **Orden de lo que toca existencias (uno tras otro):** WMS-82, después WMS-83, después WMS-84; WMS-83 y WMS-84 quedan sin abrir para la siguiente sesión de coordinación.
 
 **Indicación del fundador (2026-11-16, al cierre):** «cuando terminen los chats ya no abras más pasos, para que todo quede subido y poder iniciar una nueva sesión». Se cierran solo los que ya estaban abiertos (WMS-78C, WMS-80, WMS-81, WMS-82); **no se abre ninguno más**: WMS-83, WMS-84, producción (WMS-29, WMS-31, WMS-30B) y WMS-79 quedan anotados en el plan para la sesión nueva de coordinación, cuando el fundador lo diga.
 
 **WMS-76, abierto al unirse WMS-28 y antes de WMS-29 (hallazgo del revisor de WMS-28 sobre código ya unido):** `registerTransfer` (`src/modules/inventory/movements.ts`) bloquea sus dos ubicaciones en una sola llamada de `lockRows` y se interbloquea (5 de 6 rondas) con una salida, la liberación de un pedido o un cambio de estado sobre el mismo estante; es la causa que explicó WMS-75 (`lockRows` con varios ids recorre el índice único antes que la llave primaria). Hay que revisar toda llamada de `lockRows` con varios ids de `location` y de las demás tablas que los movimientos bloquean de una en una, corregirlo en un solo lugar si se puede (por ejemplo dentro de `lockRows`), con pruebas `Promise.all` y revisor independiente. Es paso «corazón». **El mismo paso (WMS-76) recoge otros dos hallazgos del revisor de WMS-28, también sobre código ya unido:** `switchFacility` se interbloquea con `createFacility`/`archiveFacility` (`src/platform/locations/facilities.ts`, 4 de 20 rondas), y la prueba «the same confirmation on two processes at once (B2)» de `tests/platform/processes.int.test.ts` falló una vez de cinco con dos `ok` en lugar de uno (carrera del motor de procesos con la misma clave de confirmación en dos documentos: se investiga, no se repite la prueba). **Y un cuarto, de la tercera vuelta:** `ensureStagingLocation` (`src/platform/locations/staging.ts`) y `ensureTransitLocation` bloquean el almacén en exclusivo por llave primaria después de los productos, mientras `createFacility`/`archiveFacility` y `changeTree` bloquean todos los almacenes por el índice único: el primer pedido de salida de un almacén se interbloquea con frecuencia con esas operaciones (59 interbloqueos en 20 rondas de la mezcla del revisor), sin producción de por medio.
 
-El siguiente ADR libre es el 0078 (0077 es de WMS-82; 0078 y 0079 quedan apartados para WMS-83 y WMS-84). Las ramas ya unidas (`wms-59-…`,
+Las ramas ya unidas (`wms-59-…`,
 `wms-42-equipos`, `wms-68-…`, `wms-37-…`) siguen en GitHub.
 
 **Qué se abre después, por dependencias (sección 12 de la propuesta):** WMS-75
@@ -168,14 +240,14 @@ con IP del titular y de los administradores (hoy sí, como las sesiones).
 
 ## Qué sigue cuando el fundador lo indique
 
-- Producción y calidad: el orden de pasos está en la propuesta (WMS-59 roles,
-  WMS-37 fotos, base de inspección, recetas, motor de procesos WMS-74, órdenes,
-  solicitudes, reporte, inspección, cierre). El flujo ya está decidido (sexta
-  versión). **El fundador indicó empezar el 2026-11-16**, un paso a la vez;
-  el primer paso es WMS-59 (roles), con su ADR antes del código.
-- WMS-61/62 y WMS-63 esperan decisión del fundador.
-- Transversales: WMS-37 (fotos; pasa a ser requisito de producción), WMS-67,
-  WMS-42, WMS-68, WMS-47. Después, Fases 4 y 5.
+La lista vigente, en orden, está arriba en «Relevo de quien coordina
+(2026-11-17)»: WMS-83, WMS-84, producción (WMS-29 → WMS-31 → WMS-30B →
+WMS-79), WMS-85 y el rendimiento en teléfono. Además:
+
+- WMS-61 (facturación fiscal) salió del plan y WMS-63 (Ventas) se cerró sin
+  hacer, por decisión del fundador (2026-11-16). WMS-62 (integraciones) espera
+  su decisión.
+- Transversales que faltan: WMS-47. Después, Fases 4 y 5.
 - Pendientes chicos de pasos cerrados (surtir directo de una tarima, conteo por
   serie, impresión directa de etiquetas, despacho parcial, trasladar una tarima
   entre almacenes…): lista completa en el plan. Los que tocan el corazón de las
@@ -316,11 +388,12 @@ Quien coordina no implementa: reparte, revisa e integra.
 
 > Trabaja en la rama `pruebas` de `Blackopuss/WMS`. Lee `docs/RELEVO.md`
 > (empieza por «Relevo de quien coordina»), `AGENTS.md` y
-> `docs/PLAN_WMS_V3.md` antes de nada. Relevas al chat que coordinaba
-> producción y calidad: tú coordinas, repartes, revisas e integras; no
-> implementas. Levanta el entorno, comprueba CI del último commit de
-> `pruebas`, manda tu id de sesión a los cinco chats en curso para que te
-> reporten a ti, y sigue con ellos como dice el relevo: revisor independiente
-> antes de unir, `check` y `build` en local, `main` igual que `pruebas` al
-> cerrar cada paso, y abrir el siguiente paso cuando sus dependencias estén
-> unidas, avisándome. Sin emojis.
+> `docs/PLAN_WMS_V3.md` antes de nada. Relevas al chat que coordinaba: tú
+> coordinas, repartes, revisas e integras; no implementas y escribes poco en
+> este chat. No hay chats abiertos. Levanta el entorno y comprueba CI del
+> último commit de `pruebas`. Después abre [el paso que yo te diga: WMS-83,
+> WMS-84, producción (WMS-29 primero)…] con la forma de trabajo del relevo:
+> un chat nuevo de Opus en esfuerzo medio por paso, en su rama, con su ADR
+> antes de programar; revisor independiente antes de unir lo que toque
+> existencias, permisos o seguridad; `check` y `build` en local; `main` igual
+> que `pruebas` al cerrar cada paso. Sin emojis.

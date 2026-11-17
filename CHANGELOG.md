@@ -8,6 +8,9 @@ cerrar cada paso.
 
 ## 2026-11-17
 
+- **WMS-82** Un almacén archivado no recibe existencias ni documentos:
+  archivar revisa lo que sigue abierto y cada operación comprueba su almacén
+  bajo candado. ADR 0077.
 - **WMS-78C** Revisión visual de Compras, Producción y Calidad (axe en cero)
   y Lighthouse de la app; la demo trae Producción y Calidad con ejemplos.
 - **WMS-80** Next.js 16.4.6: sin vulnerabilidades en dependencias de
