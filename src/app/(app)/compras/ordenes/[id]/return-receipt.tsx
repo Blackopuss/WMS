@@ -2,10 +2,11 @@
 
 import { CircleAlert, Loader2, Undo2 } from "lucide-react";
 import { unstable_rethrow } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { FormField, SerialsField } from "@/components";
+import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -118,6 +119,8 @@ export function ReturnReceipt({
       answers: 0,
     },
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const { answers } = state;
 
   return (
@@ -129,7 +132,7 @@ export function ReturnReceipt({
         </Button>
       </DialogTrigger>
       <DialogContent>
-        <form action={formAction} className="contents">
+        <form ref={formRef} action={formAction} className="contents">
           <DialogHeader>
             <DialogTitle>Devolver al proveedor</DialogTitle>
             <DialogDescription>
