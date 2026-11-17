@@ -329,7 +329,7 @@ export type DecideResult =
   | {
       ok: true;
       status: "APPROVED" | "REJECTED";
-      /** «Autorizada: Ajuste de Tornillo en A-01…». */
+      /** «Autorizada: Ajuste de Guante en A-01…». */
       summary: string;
       repeated?: true;
     }

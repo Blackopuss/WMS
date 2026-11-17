@@ -121,9 +121,16 @@ const noticesOf = (actor: InventoryActor, typeKey: string) =>
     orderBy: { id: "asc" },
   });
 
-/** «2026-11-20»: `days` from today (UTC is fine: the company is in UTC). */
+/**
+ * «2026-11-20»: `days` from today in the calendar of the company. Its time
+ * zone is the default one, not UTC: between midnight in UTC and midnight
+ * there the two days differ, and «yesterday» in UTC is still today for it.
+ */
 const dayFromToday = (days: number) => {
-  const date = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+  }).format(new Date());
+  const date = new Date(`${today}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 };

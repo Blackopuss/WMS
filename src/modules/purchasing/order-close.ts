@@ -43,7 +43,7 @@ export type CloseOrderResult =
   | {
       ok: true;
       status: "CLOSED";
-      /** «Faltaron 40 piezas de Tornillo y 2 cajas de Clavo». */
+      /** «Faltaron 40 piezas de Guante y 2 cajas de Cinta». */
       shortageText: string;
       /** It was already closed (a double click, a retry): nothing changed. */
       repeated?: true;
@@ -72,7 +72,7 @@ const refuse = (reason: Failure["reason"], message: string): never => {
   });
 };
 
-/** «40 piezas de Tornillo, 2 cajas de Clavo y 1 rollo de Cable». */
+/** «40 piezas de Guante, 2 cajas de Cinta y 1 rollo de Cuerda». */
 function listText(parts: string[]): string {
   return parts.length <= 1
     ? (parts[0] ?? "")

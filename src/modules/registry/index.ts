@@ -6,8 +6,6 @@ import { purchasingModule } from "@/modules/purchasing";
 import { qualityModule } from "@/modules/quality";
 import { createModuleRegistry } from "@/platform/billing";
 
-import { crmModule } from "./announced";
-
 export { approvalTypes } from "./approvals";
 export { customFieldReservedLabels } from "./custom-fields";
 export { evidenceOwners } from "./evidence";
@@ -19,8 +17,7 @@ export { webhookEventTypes } from "./webhooks";
 
 /**
  * Installed modules. Inventario, Compras, Producción and Calidad (WMS-30A)
- * can be contracted; CRM is announced but not available, so nothing can
- * activate it yet.
+ * can be contracted.
  * A module added here with an unknown or circular dependency stops the
  * application from starting.
  */
@@ -29,8 +26,6 @@ export const moduleRegistry = createModuleRegistry([
   purchasingModule,
   productionModule,
   qualityModule,
-  crmModule,
 ]);
 
-export type ModuleId =
-  "inventory" | "purchasing" | "production" | "quality" | "crm";
+export type ModuleId = "inventory" | "purchasing" | "production" | "quality";

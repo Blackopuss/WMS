@@ -61,7 +61,7 @@ const GOAL_MS = 500;
 const PASSWORD = `carga-${newId()}`;
 const stamp = Date.now();
 
-const WORDS = ["Tornillo", "Clavo", "Pija", "Taquete", "Cable", "Brocha"];
+const WORDS = ["Guante", "Cuerda", "Etiqueta", "Caja", "Cinta", "Arena"];
 const SIZES_TEXT = ["1/4", "3/8", "1/2", "2 in", "10 mm", "#8"];
 const nameOf = (n: number) =>
   `${WORDS[n % WORDS.length]} ${SIZES_TEXT[n % SIZES_TEXT.length]} modelo ${n}`;
