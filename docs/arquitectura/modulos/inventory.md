@@ -381,9 +381,10 @@ rechaza con la revisión de siempre («… está archivada»), después de bloqu
 la ubicación. La entrada manual y el saldo inicial resuelven y bloquean
 «General» antes de leerla (`generalLocationIdOf`). Pedidos de salida (pantalla,
 API e importación), embarques, programas de conteo, incidencias y equipos
-toman su almacén compartido con `holdOpenFacility` antes de nacer; la ola y
-los documentos que nacen bloqueando una ubicación del almacén no lo
-necesitan.
+toman su almacén compartido con `holdOpenFacility` antes de nacer, y la
+devolución de cliente lo toma después de sus productos y antes de su
+ubicación; la ola (nace de pedidos abiertos) y lo que nace bloqueando una
+ubicación del almacén (tareas, conteos, contenedores) no lo necesitan.
 
 ## ADR
 

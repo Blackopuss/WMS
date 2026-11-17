@@ -8,7 +8,9 @@ import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
 import {
   activeFacilityOf,
+  ARCHIVED_FACILITY_MESSAGE,
   assertLocationsInScope,
+  holdOpenFacility,
   isFacilityInScope,
   isLimited,
   locationPath,
@@ -738,6 +740,11 @@ export async function receiveCustomerReturn(
     try {
       return await client.$transaction(async (tx) => {
         await lockRows(tx, "product", productIds.filter(Boolean));
+        // WMS-82 (ADR 0077): its warehouse, shared, after the products and
+        // before the location (ADR 0074 order).
+        if (!(await holdOpenFacility(tx, facility.id))) {
+          return stop("not_allowed", ARCHIVED_FACILITY_MESSAGE);
+        }
         const [locationId] = await lockRows(tx, "location", [data.locationId]);
         if (data.orderId) await lockRows(tx, "outboundOrder", [data.orderId]);
         // WMS-20: nothing is received into a place outside the scope.

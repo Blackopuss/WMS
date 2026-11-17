@@ -17,7 +17,11 @@ import {
 } from "@/server";
 
 import { createDefaultLevels } from "./bootstrap";
-import { lockAllFacilities, retryingFacilitySet } from "./facility-lock";
+import {
+  FacilitySetChanged,
+  lockAllFacilities,
+  retryingFacilitySet,
+} from "./facility-lock";
 import type { LocationActor } from "./locations";
 import { FACILITY_OUT_OF_SCOPE_MESSAGE, facilityInScope } from "./scope";
 
@@ -258,6 +262,7 @@ async function inFacilities(
     );
   } catch (error) {
     if (error instanceof Rejected) return error.result;
+    if (error instanceof FacilitySetChanged) return FACILITY_SET_CHANGED;
     if ((error as { code?: string }).code === "P2002") {
       return {
         ok: false,
@@ -268,6 +273,14 @@ async function inFacilities(
     throw error;
   }
 }
+
+/** Three turns in a row found a new warehouse while locking them all. */
+const FACILITY_SET_CHANGED: FacilityResult = {
+  ok: false,
+  reason: "busy",
+  formError:
+    "Los almacenes de tu empresa cambiaron mientras guardabas. Intenta de nuevo.",
+};
 
 const LIMITED_MESSAGE =
   "Tu acceso está limitado a ciertos almacenes: no puedes crear uno nuevo.";
@@ -510,7 +523,14 @@ async function refuseWhatStaysOpen(tx: Tx, facilityId: string) {
       "Este almacén tiene equipos registrados: dalos de baja primero en Configuración › Equipos del almacén.",
     ],
     [
-      () => tx.apiKey.count({ where: { facilityId, revokedAt: null } }),
+      () =>
+        tx.apiKey.count({
+          where: {
+            facilityId,
+            revokedAt: null,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+        }),
       "Este almacén tiene llaves de la API activas: revócalas primero en Configuración › API y webhooks.",
     ],
   ];

@@ -1079,6 +1079,11 @@ export async function convertPurchaseRequest(
     take: PURCHASE_REQUEST_MAX_LINES,
     select: { productId: true },
   });
+  // The warehouse of a request never changes: read before the locks.
+  const home = await client.purchaseRequest.findFirst({
+    where: { id },
+    select: { facilityId: true },
+  });
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
@@ -1088,6 +1093,18 @@ export async function convertPurchaseRequest(
           "product",
           known.map((line) => line.productId),
         );
+        // WMS-82 (ADR 0077): its warehouse, shared, after the products and
+        // before the request. Archiving counts the orders before the
+        // requests, so without this lock a conversion that commits between
+        // the two counts would leave an open order in an archived warehouse.
+        if (home && !(await holdOpenFacility(tx, home.facilityId))) {
+          throw new Rejected({
+            ok: false,
+            reason: "not_allowed",
+            fieldErrors: {},
+            formError: ARCHIVED_FACILITY_MESSAGE,
+          });
+        }
         const request = await lockRequest(tx, userId, id);
         const numberText = formatRequestNumber(request.number);
         if (request.status === "CONVERTED") {

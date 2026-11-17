@@ -40,7 +40,11 @@ import {
   type CapacityLimits,
 } from "./limits";
 import { getActiveFacility } from "./facilities";
-import { lockAllFacilities, retryingFacilitySet } from "./facility-lock";
+import {
+  FacilitySetChanged,
+  lockAllFacilities,
+  retryingFacilitySet,
+} from "./facility-lock";
 import {
   assertFacilityInScope,
   assertLocationsInScope,
@@ -212,6 +216,16 @@ async function changeTree(
     return { ok: true, locationId };
   } catch (error) {
     if (error instanceof Rejected) return error.result;
+    // WMS-82: three turns in a row found a new warehouse while locking.
+    if (error instanceof FacilitySetChanged) {
+      return {
+        ok: false,
+        reason: "not_allowed",
+        fieldErrors: {},
+        formError:
+          "Los almacenes de tu empresa cambiaron mientras guardabas. Intenta de nuevo.",
+      };
+    }
     throw error;
   }
 }

@@ -49,8 +49,9 @@ producción, autorizaciones pendientes, incidencias, terminales, equipos o
 llaves de la API abiertos, y archiva el almacén junto con todas sus
 ubicaciones (incluidas «General» y la de tránsito), bajo sus candados y sin
 esperarlos (WMS-82, ADR 0077): un almacén archivado no recibe existencias ni
-documentos, y la base lo repite (`stock_balance_archived_location_*`,
-`location_archived_facility_*`, `<tabla>_archived_facility`). Una ubicación
+documentos, y la base lo repite para existencias y ubicaciones
+(`stock_balance_archived_location_*`, `location_archived_facility_*`); los
+documentos los sostienen sus servicios con `holdOpenFacility`. Una ubicación
 de un almacén archivado no se reactiva.
 
 ## Permisos

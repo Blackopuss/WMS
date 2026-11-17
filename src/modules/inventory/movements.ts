@@ -98,6 +98,10 @@ import {
  * balance each one reads is the one the previous left.
  */
 
+/** «General» was archived with its warehouse while the entry waited. */
+const GENERAL_ARCHIVED_MESSAGE =
+  "Tu almacén se archivó mientras registrabas. Vuelve a intentarlo: quedará en el almacén en el que trabajas ahora.";
+
 /**
  * «General» of the person's active warehouse, to lock it before reading it
  * (WMS-82, ADR 0077: it is archived with its warehouse).
@@ -647,7 +651,9 @@ async function post(
         return reject(
           "not_allowed",
           "locationId",
-          `«${location.name}» está archivada. Elige otra ubicación.`,
+          data.locationId
+            ? `«${location.name}» está archivada. Elige otra ubicación.`
+            : GENERAL_ARCHIVED_MESSAGE,
         );
       }
       // WMS-54 (ADR 0052): the outbound orders that may wait for what comes
@@ -2283,7 +2289,9 @@ async function adjustIn(
     return reject(
       "not_allowed",
       "locationId",
-      `«${location.name}» está archivada. Elige otra ubicación.`,
+      data.locationId
+        ? `«${location.name}» está archivada. Elige otra ubicación.`
+        : GENERAL_ARCHIVED_MESSAGE,
     );
   }
 

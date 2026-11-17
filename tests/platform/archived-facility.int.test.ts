@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  createEquipment,
+  createOutboundDraft,
   createOutboundOrder,
   createTask,
   dismissIncident,
@@ -10,7 +12,9 @@ import {
   registerEntry,
   registerInitialBalance,
   registerTransfer,
+  receiveCustomerReturn,
   reportIncident,
+  saveEquipmentType,
   type InventoryActor,
 } from "@/modules/inventory";
 import {
@@ -20,10 +24,13 @@ import {
   setRecipeInput,
 } from "@/modules/production";
 import {
+  convertPurchaseRequest,
   createPurchaseOrder,
   createPurchaseRequest,
+  submitPurchaseRequest,
 } from "@/modules/purchasing";
 import { moduleRegistry } from "@/modules/registry";
+import { createApiKey } from "@/platform/api";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
@@ -185,6 +192,9 @@ async function leftovers(organizationId: string, facilityId: string) {
     production,
     tasks,
     active,
+    returns,
+    equipment,
+    keys,
   ] = await Promise.all([
     db.stockBalance.count({
       where: { organizationId, quantity: { gt: 0 }, location: inside },
@@ -209,6 +219,13 @@ async function leftovers(organizationId: string, facilityId: string) {
     db.location.count({
       where: { organizationId, facilityId, archivedAt: null },
     }),
+    db.customerReturn.count({ where: { organizationId, facilityId } }),
+    db.equipment.count({
+      where: { organizationId, facilityId, retiredAt: null },
+    }),
+    db.apiKey.count({
+      where: { organizationId, facilityId, revokedAt: null },
+    }),
   ]);
   return {
     stock,
@@ -219,6 +236,9 @@ async function leftovers(organizationId: string, facilityId: string) {
     production,
     tasks,
     active,
+    returns,
+    equipment,
+    keys,
   };
 }
 
@@ -231,6 +251,9 @@ const NOTHING = {
   production: 0,
   tasks: 0,
   active: 0,
+  returns: 0,
+  equipment: 0,
+  keys: 0,
 };
 
 async function isArchived(facilityId: string) {
@@ -320,19 +343,8 @@ describe("an archived warehouse (WMS-82)", () => {
       ok: false,
     });
 
-    // The base refuses a direct write too.
-    await expect(
-      db.outboundOrder.create({
-        data: {
-          id: newId(),
-          organizationId: actor.organizationId,
-          facilityId,
-          number: 9_000 + counter,
-          recipient: "Directo",
-          createdByUserId: actor.userId,
-        },
-      }),
-    ).rejects.toThrow(/archived facility/);
+    // The base refuses a direct write of stock too (documents are kept
+    // out by their services: ADR 0077).
     await expect(
       db.stockBalance.create({
         data: {
@@ -503,11 +515,83 @@ describe("an archived warehouse (WMS-82)", () => {
     const supplier = await createSupplier(owner, { name: "Proveedor" });
     if (!supplier.ok) throw new Error(JSON.stringify(supplier));
 
-    type Kind = "outbound" | "request" | "purchase" | "incident" | "production";
+    const equipmentType = await saveEquipmentType(owner, {
+      name: "Montacargas",
+    });
+    if (!equipmentType.ok) throw new Error(JSON.stringify(equipmentType));
+    const materialSku = (
+      await db.product.findUniqueOrThrow({ where: { id: material } })
+    ).sku;
+
+    type Kind =
+      | "outbound"
+      | "request"
+      | "purchase"
+      | "incident"
+      | "production"
+      | "apiDraft"
+      | "convert"
+      | "customerReturn"
+      | "equipment"
+      | "apiKey";
+    /** Done before the race, in the warehouse (with nothing open yet). */
+    const prepare: Partial<
+      Record<Kind, (facilityId: string) => Promise<string>>
+    > = {
+      // A request sent with the rule off is «por atender»: it already
+      // stops archiving, and converting it turns it into an open order.
+      convert: async () => {
+        const asked = await createPurchaseRequest(owner, {
+          productId: material,
+          capture: "base",
+          quantity: "3",
+        });
+        if (!asked.ok) throw new Error(JSON.stringify(asked));
+        const sent = await submitPurchaseRequest(owner, asked.requestId);
+        if (!sent.ok) throw new Error(JSON.stringify(sent));
+        return asked.requestId;
+      },
+    };
     const create: Record<
       Kind,
-      (facilityId: string, areaId: string) => Promise<unknown>
+      (facilityId: string, areaId: string, prepared: string) => Promise<unknown>
     > = {
+      apiDraft: () =>
+        createOutboundDraft(owner, {
+          recipient: "Sucursal",
+          priority: "NORMAL",
+          lines: [{ product: materialSku, quantity: "1" }],
+          apiRequestKey: newId().replace(/-/g, "").padEnd(64, "0"),
+        }),
+      convert: async (_facilityId, _areaId, requestId) => {
+        const line = await db.purchaseRequestLine.findFirstOrThrow({
+          where: { requestId },
+          select: { id: true },
+        });
+        return convertPurchaseRequest(owner, requestId, {
+          suppliers: { [line.id]: supplier.supplierId },
+        });
+      },
+      customerReturn: (_facilityId, shelfId) =>
+        receiveCustomerReturn(owner, {
+          returnedBy: "Cliente",
+          reason: "No era lo que pidió",
+          locationId: shelfId,
+          idempotencyKey: newId(),
+          lines: [{ productId: material, quantity: "1" }],
+        }),
+      equipment: () =>
+        createEquipment(owner, {
+          code: `EQ-${++counter}`,
+          name: "Montacargas",
+          typeId: equipmentType.typeId,
+        }),
+      apiKey: (facilityId) =>
+        createApiKey(owner, {
+          name: `Llave ${++counter}`,
+          capabilities: ["stock.read"],
+          facilityId,
+        }),
       outbound: () =>
         createOutboundOrder(owner, {
           recipient: "Sucursal",
@@ -546,9 +630,10 @@ describe("an archived warehouse (WMS-82)", () => {
           owner,
           kind === "production" ? "PRODUCTION" : undefined,
         );
+        const prepared = (await prepare[kind]?.(facilityId)) ?? "";
         const settled = await together([
           () => archiveFacility(owner, facilityId),
-          () => create[kind](facilityId, shelfId),
+          () => create[kind](facilityId, shelfId, prepared),
         ]);
         errors.push(...rawErrors(settled).map((error) => `${kind}: ${error}`));
         const archived = await isArchived(facilityId);
@@ -569,6 +654,6 @@ describe("an archived warehouse (WMS-82)", () => {
       }
     }
     expect(errors).toEqual([]);
-    expect(Object.keys(tally)).toHaveLength(5);
-  }, 600_000);
+    expect(Object.keys(tally)).toHaveLength(10);
+  }, 900_000);
 });

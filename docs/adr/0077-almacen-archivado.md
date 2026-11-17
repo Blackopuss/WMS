@@ -1,6 +1,6 @@
 # ADR 0077 — Un almacén archivado no recibe existencias ni documentos
 
-Fecha: 2026-11-16 · Estado: aceptada · Paso: WMS-82 (corazón) · Corrige:
+Fecha: 2026-11-16 (revisión: 2026-11-17) · Estado: aceptada · Paso: WMS-82 (corazón) · Corrige:
 ADR 0035 (varios almacenes), ADR 0074 (pendientes) · Origen: hallazgos del
 revisor independiente de WMS-76 sobre código ya unido
 
@@ -58,33 +58,59 @@ por esta razón.
 
 La entrada manual y el saldo de un producto en «General» no bloqueaban
 «General» (nunca se archivaba): ahora la resuelven primero y la bloquean como
-cualquier otra ubicación.
+cualquier otra ubicación. Si «General» se archivó con su almacén mientras la
+entrada esperaba, responden «Tu almacén se archivó mientras registrabas.
+Vuelve a intentarlo: quedará en el almacén en el que trabajas ahora.».
+Consecuencia: dos entradas de productos distintos a «General» del mismo
+almacén ya no corren en paralelo, igual que dos entradas al mismo estante
+(medido con `Promise.all`: 20 entradas a la vez de productos distintos
+tardan unos 555 ms hacia «General» contra unos 229 ms hacia 20 estantes
+distintos).
 
-**Última defensa en la base** (migración `20261117110000`):
+**Un disparador que lee otra tabla es un candado.** Un `SELECT` dentro de un
+disparador toma un candado compartido sobre las filas que lee, también en
+READ COMMITTED (lo midió el revisor en `performance_schema.data_lock_waits`).
+Por eso **solo se permite un disparador que lee otra tabla si todo servicio
+que escribe esa fila ya tomó ese mismo candado antes, en el orden global**
+(ADR 0074); si no, es un candado escondido fuera de orden.
 
-- `stock_balance_archived_location` (antes de insertar o de subir la cantidad
-  de un saldo): lee la ubicación **con candado compartido por su llave
-  primaria** y rechaza si está archivada. Para quien ya bloqueó la ubicación
-  (todos los servicios) no espera nada; para un camino que se olvidó de
-  bloquearla, la pone en fila con archivar. Una salida (bajar la cantidad) no
-  se revisa.
+La migración `20261117110000` agregó disparadores en los documentos y en
+tareas, conteos y contenedores que leían el almacén o la ubicación. Esos
+cerraban círculos con la operación diaria, y la migración `20261117120000`
+los quita. Lo que encontró el revisor (20 de 20 o 30 de 30 rondas con 1213,
+y 0 sin el disparador):
+
+- `warehouse_task_archived_location`: entregar un acomodo hacia el estante E
+  (bloquea [E, M]) contra una entrada de otro producto al muelle M, que al
+  insertar su tarea de acomodo hacia E pedía E compartido después de M; y
+  entregar un surtido de cross-docking del muelle a «Preparación» contra una
+  entrada al mismo muelle que reparte a otro pedido.
+- `customer_return_archived_facility`: el primer surtido de un almacén
+  (producto → almacén en exclusivo por «Preparación» → tarea que pedía el
+  estante) contra una devolución de cliente sin pedido en ese estante
+  (producto → estante → `customer_return`, que pedía el almacén).
+
+Se quedan, porque el servicio ya tiene el candado que leen:
+
+- `stock_balance_archived_location_insert|update` (antes de insertar o de
+  subir la cantidad de un saldo): lee la ubicación con candado compartido
+  por su llave primaria y rechaza una archivada. Todo servicio que mete
+  existencias bloquea antes esa ubicación en exclusivo (INV-16; lo mismo
+  hacía ya `stock_balance_transit_rule`). Bajar un saldo no se revisa.
 - `location_archived_facility_insert|update`: una ubicación de un almacén
-  archivado nace y queda archivada (lectura simple del almacén), y «General»
-  y la ubicación de tránsito solo se archivan con su almacén. Esa regla vivía
-  en los CHECK `location_general_check` y `location_transit` («nunca
-  archivada»), que no pueden mirar el almacén: la migración los vuelve a
-  crear sin la condición de `archivedAt` (los relaja; ninguna fila que antes
-  pasaba deja de pasar). Por eso `archiveFacility` marca primero el almacén y
-  después sus ubicaciones.
-- Al insertar un documento con `facilityId` (pedido, embarque, devolución de
-  cliente, traslado —origen y destino—, orden y solicitud de compra, programa
-  de conteo, ola, incidencia, equipo, terminal, llave de la API, orden y
-  solicitud de producción): `<tabla>_archived_facility` rechaza un almacén
-  archivado (lectura simple: la carrera la cierran los servicios, punto 2). Al
-  insertar una tarea, un conteo o un contenedor: rechaza una ubicación
-  archivada.
+  archivado nace y queda archivada, y «General» y la de tránsito solo se
+  archivan con su almacén. Leen el almacén; toda escritura de `location`
+  (`changeTree`, `inFacilities`, `ensureStagingLocation`,
+  `ensureTransitLocation`, el alta de la empresa) ocurre con su almacén ya
+  bloqueado en exclusivo. La regla de «General» y tránsito vivía en los CHECK
+  `location_general_check` y `location_transit` («nunca archivada»), que no
+  pueden mirar el almacén: la migración los vuelve a crear sin la condición
+  de `archivedAt` (los relaja; ninguna fila que antes pasaba deja de pasar).
+  Por eso `archiveFacility` marca primero el almacén y después sus
+  ubicaciones.
 
 Estos disparadores no dan el mensaje para la persona: lo dan los servicios.
+Los documentos no tienen disparador: los sostienen los servicios del punto 2.
 
 ### 2. Un documento toma su almacén compartido antes de nacer
 
@@ -105,16 +131,18 @@ ese almacén**:
 | Programa de conteo | `createCountProgram` | Primero, antes de su ubicación raíz |
 | Incidencia | `reportIncident` | Después de la búsqueda por clave, antes de escribir |
 | Equipo | `createEquipment` | Después de revisar el alcance, antes del tipo |
-| Llave de la API | `createApiKey` | Después del candado de la empresa (lectura con candado por llave primaria en la transacción de `db`) |
+| Llave de la API | `createApiKey` | **Antes** del candado de la empresa (lectura con candado por llave primaria en la transacción de `db`): archivar tiene los almacenes y después escribe filas que apuntan a la empresa (su línea de bitácora); tomar la empresa primero cerraba un círculo (lo encontró la carrera de esta prueba, 1213) |
+| Devolución de cliente | `receiveCustomerReturn` | Después de los productos y antes de su ubicación (revisión, A1) |
+| Orden de compra desde una solicitud | `convertPurchaseRequest` | Después de los productos y antes de la solicitud: `archiveFacility` cuenta las órdenes antes que las solicitudes, y una conversión confirmada entre las dos cuentas dejaba una orden abierta en un almacén archivado |
 | Orden de producción | `shareFacility` (crear, guardar borrador, cambiar personas, aceptar una solicitud) | Primero, como ya lo hacía; ahora además rechaza un almacén archivado |
 | Solicitud de producción | `submitProductionRequest` | Después de la empresa compartida y **antes** de la membresía: `archiveFacility` toma el almacén en exclusivo y después las membresías que trabajan ahí, así que tomar la membresía antes que el almacén cerraría un círculo |
 
-No lo necesitan, porque nacen de algo que ya impide archivar y que se lee
-sin candado de forma segura (está abierto antes y después): la **ola**
-(agrupa pedidos abiertos del almacén) y el **borrador de orden de compra que
-nace de una solicitud** (`insertDraftOrder`: la solicitud está «por atender»
-hasta que esa misma transacción la convierte). Los disparadores de la base
-los cubren si alguien los escribe directo.
+No lo necesitan, porque nacen de algo que ya impide archivar y que **sigue
+abierto antes y después** de crearlos (así no importa en qué orden cuente
+`archiveFacility`): la **ola** (agrupa pedidos abiertos del almacén, que
+siguen abiertos). Una conversión no cumple eso (la solicitud se cierra en la
+misma transacción que abre la orden), por eso `convertPurchaseRequest` sí
+toma el almacén.
 
 Archivar toma todos los almacenes en exclusivo (`lockAllFacilities`), así que
 espera a quien tiene el suyo compartido y, al seguir, ve el documento abierto
@@ -123,11 +151,26 @@ y se rechaza; quien llega después ve el almacén archivado y se rechaza.
 Ya ponían en fila a su almacén, sin cambio: el traslado entre almacenes (toma
 sus dos almacenes en exclusivo y lee `archivedAt`), la terminal compartida
 (toma el suyo en exclusivo) y los tipos de equipo. Los documentos que nacen
-bloqueando una ubicación del almacén (devolución de cliente, tarea, conteo,
-contenedor, regla de reposición, programa de conteo de una zona) quedan
-cubiertos por el punto 1: su ubicación queda archivada con el almacén. Las
-solicitudes de autorización y el progreso de un proceso nacen dentro de la
-operación de su documento.
+bloqueando una ubicación del almacén quedan cubiertos por el punto 1 (archivar
+toma esa ubicación sin esperar y la deja archivada):
+
+- **Tareas:** toda tarea nace bloqueando su origen o de un documento abierto
+  que ya impide archivar. `createTask` bloquea origen y destino; el acomodo y
+  el surtido de cross-docking nacen dentro de la entrada o la recepción, que
+  bloquearon el lugar de paso de origen; la reposición bloquea origen y
+  destino; el surtido nace de un pedido liberado y «Surtir a producción» de
+  una orden liberada, los dos abiertos. Y una tarea abierta (desde o hacia el
+  almacén) impide archivar.
+- **Conteos:** el manual bloquea su ubicación y la revisa; la ronda de
+  conteos bloquea las ubicaciones elegidas y vuelve a revisar que no estén
+  archivadas.
+- **Contenedores:** armar bloquea la ubicación; un bulto de empaque nace de
+  un pedido abierto.
+- **Reglas de reposición y programas de conteo de una zona:** bloquean su
+  ubicación.
+
+Las solicitudes de autorización y el progreso de un proceso nacen dentro de
+la operación de su documento.
 
 **Orden:** productos → almacén (compartido) → ubicaciones → documento, el de
 ADR 0074. Nadie que tome el almacén compartido toma después «Preparación» en
@@ -149,7 +192,8 @@ enviada, parcial), solicitudes de compra abiertas (borrador, enviada, por
 atender), conteos abiertos, apartados vigentes en sus ubicaciones,
 incidencias abiertas o en atención, olas abiertas, órdenes de producción
 abiertas, solicitudes de producción por atender, solicitudes de autorización
-pendientes, equipos sin dar de baja y llaves de la API activas. Cada uno con
+pendientes, equipos sin dar de baja y llaves de la API vigentes (sin revocar
+y sin vencer: una vencida no se puede revocar desde la pantalla). Cada uno con
 su mensaje; el primero que aplica responde.
 
 Los programas de conteo no lo impiden: la ronda ya no genera conteos en un
@@ -172,10 +216,26 @@ activas de los almacenes ya archivados (con la fecha de archivo del almacén),
 para que la regla «almacén archivado ⇒ ubicaciones archivadas» valga también
 para ellos. Sus existencias siguen contando en los totales de la empresa y
 `reconcileStock`/`reconcileValue` no cambian (comparan saldos contra
-movimientos, no miran si la ubicación está archivada). De ahí solo se puede
-sacar (una salida baja el saldo y no se revisa); meter, nada. Reactivar un
-almacén archivado no existe; si el fundador lo pide, será un paso propio que
-reactive también sus ubicaciones.
+movimientos, no miran si la ubicación está archivada).
+
+**Esas existencias quedan atrapadas** (lo señaló el revisor): la base dejaría
+bajar el saldo, pero los servicios rechazan toda ubicación archivada
+(`registerExit` y `registerAdjustment` responden ««Z» está archivada»;
+`registerTransfer` «es de otro almacén»). Antes tampoco se veían ni se
+ofrecían en ninguna pantalla; solo se podían sacar armando a mano el id de la
+ubicación. No hay una forma limpia dentro de este paso: dejar activas solo
+las ubicaciones con saldo rompería la regla que sostiene todo lo demás (un
+almacén archivado con ubicaciones activas vuelve a recibir existencias), y una
+excepción en las salidas para ubicaciones archivadas abriría un camino que el
+resto de la regla cierra. **Hoy no hay servidor ni datos reales** (el WMS no
+se ha desplegado), así que esto solo puede pasar en bases de desarrollo.
+**Propuesta:** un paso propio «Reactivar un almacén» (servicio que, con todos
+los almacenes bloqueados, quita el archivo del almacén y de sus ubicaciones
+—«General» y tránsito incluidas—, con bitácora); con él, lo heredado se
+saca o se traslada como en cualquier almacén y después se vuelve a archivar.
+Reactivar un almacén por SQL a mano dejaría «General» y sus ubicaciones
+archivadas (no hay servicio que las reactive y `restoreLocation` rechaza una
+ubicación de un almacén archivado, pero no reactiva «General»).
 
 ## Costo
 
@@ -189,7 +249,9 @@ reactive también sus ubicaciones.
   documentos del mismo almacén no se esperan entre sí; solo esperan a quien
   cambia almacenes o el árbol de ubicaciones (raro y breve).
 - Archivar: bloquea todas las ubicaciones del almacén (una consulta) y cuenta
-  quince cosas. Es una operación de administración.
+  dieciocho cosas. Es una operación de administración.
+- Entradas a «General»: ahora se ponen en fila entre sí dentro de un almacén
+  (ver punto 1).
 
 ## Consecuencias
 
@@ -198,13 +260,19 @@ reactive también sus ubicaciones.
   agregar.
 - Un servicio nuevo que crea un documento con `facilityId` sin bloquear antes
   una ubicación de ese almacén llama `holdOpenFacility` (después de sus
-  productos, antes de cualquier ubicación), agrega su tabla al disparador
-  `<tabla>_archived_facility` (migración nueva) y a la cuenta de
-  `archiveFacility`, y su caso a `tests/platform/archived-facility.int.test.ts`.
+  productos, antes de cualquier ubicación y antes de un candado de empresa),
+  agrega su cuenta a `refuseWhatStaysOpen` y su carrera a
+  `tests/platform/archived-facility.int.test.ts`.
+- Un disparador nuevo que lea otra tabla es un candado: solo si todo servicio
+  que escribe esa fila ya tomó ese candado antes, en el orden global.
 - Nadie toma una ubicación con `NOWAIT` fuera de `archiveFacility`.
 
 ## Pendiente
 
+- Reactivar un almacén (paso propio, punto 5): es la salida para lo heredado.
 - Mostrar en Configuración › Almacenes un almacén archivado con existencias
   heredadas (hoy solo se ve en la base y en los totales).
-- Reactivar un almacén (no existe).
+- Sin carrera en las pruebas: terminal compartida (toma su almacén en
+  exclusivo, como antes), importación de pedidos, autorizaciones, entrega de
+  reposición, «Surtir a producción» y `submitProductionRequest` contra
+  archivar.

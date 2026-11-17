@@ -49,7 +49,7 @@ Una sola puerta, en `src/platform/locations/facility-lock.ts`:
 | Crear «Preparación» (`ensureStagingLocation`, al liberar el primer pedido o la primera ola) | Exclusivo, uno | Después de los productos, antes de cualquier ubicación |
 | Crear un traslado entre almacenes (y su «En tránsito», `ensureTransitLocation`, que vuelve a tomar el destino que ya tiene) | Exclusivo, los dos | Primero; no bloquea productos |
 | Crear, guardar o cambiar personas de una orden de producción | Compartido, uno | Primero |
-| Crear un documento con `facilityId` sin bloquear antes una ubicación de ese almacén (`holdOpenFacility`, WMS-82: pedido, embarque, orden y solicitud de compra, programa de conteo, incidencia, equipo, llave de la API, solicitud de producción) | Compartido, uno, y lee `archivedAt` con la misma consulta | Después de los productos (si los hay), antes de cualquier ubicación; la solicitud de producción, entre la empresa y la membresía |
+| Crear un documento con `facilityId` sin bloquear antes una ubicación de ese almacén (`holdOpenFacility`, WMS-82: pedido, embarque, orden y solicitud de compra, conversión de una solicitud, programa de conteo, incidencia, equipo, llave de la API, devolución de cliente, solicitud de producción) | Compartido, uno, y lee `archivedAt` con la misma consulta | Después de los productos (si los hay), antes de cualquier ubicación y antes de un candado de empresa; la solicitud de producción, entre la empresa compartida y la membresía |
 | Toda fila con `facilityId` | Compartido en `(organizationId, id)` por su llave foránea | Nunca espera a los anteriores |
 
 Una operación que bloquea productos nunca toma el almacén antes que ellos.
@@ -70,9 +70,20 @@ lo que evita el círculo con una operación que bloquea dos ubicaciones en
 llamadas separadas (una entrada y, al final, el estante de su tarea de
 acomodo). Nadie más usa `nowait`.
 
-En la base, `stock_balance_archived_location_*` rechaza subir un saldo en una
-ubicación archivada y lee la ubicación con candado compartido por su llave
-primaria (para quien ya la tiene bloqueada no espera nada).
+## Un disparador que lee otra tabla es un candado
+
+Un `SELECT` dentro de un disparador toma un candado compartido sobre las
+filas que lee, también en READ COMMITTED. Un disparador nuevo que lea otra
+tabla solo se permite si **todo servicio que escribe esa fila ya tomó ese
+mismo candado antes, en el orden global**; si no, es un candado escondido
+fuera de orden (WMS-82: los disparadores de documentos y de tareas que leían
+el almacén o la ubicación interbloqueaban la entrega de un acomodo con una
+entrada al mismo muelle, y el primer surtido de un almacén con una devolución
+de cliente; se quitaron). Quedan `stock_balance_archived_location_*` (lee la
+ubicación, que todo servicio que mete existencias ya bloqueó) y
+`location_archived_facility_*` (lee el almacén, que toda escritura de
+`location` ya bloqueó). Los que ya existían antes (por ejemplo
+`stock_balance_transit_rule`, que lee la ubicación) cumplen la misma regla.
 
 `lockAllFacilities` lanza `FacilitySetChanged` si en la segunda vuelta
 aparece un almacén con id menor que uno ya tomado (otra instancia con el

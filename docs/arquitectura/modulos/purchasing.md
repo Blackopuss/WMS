@@ -152,9 +152,9 @@ bajas» y la ficha del producto), `/compras/solicitudes/[id]` (y `/producto`) y
 
 **Almacén archivado (WMS-82, ADR 0077).** `createPurchaseOrder` y
 `createPurchaseRequest` toman el almacén de la orden o la solicitud compartido
-(`holdOpenFacility`) dentro de su transacción y rechazan uno archivado; el
-borrador que nace de convertir una solicitud no lo necesita (la solicitud
-abierta ya impide archivar). Archivar un almacén se rechaza con órdenes
+(`holdOpenFacility`) dentro de su transacción y rechazan uno archivado;
+`convertPurchaseRequest` lo toma después de los productos y antes de la
+solicitud (la solicitud se cierra en la misma transacción que abre la orden). Archivar un almacén se rechaza con órdenes
 (borrador, enviada, parcial) o solicitudes (borrador, enviada, por atender)
 de ese almacén.
 
