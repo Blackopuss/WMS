@@ -8,6 +8,7 @@ import {
   assertModulePermission,
   createModuleRegistry,
   deactivateModule,
+  defineModule,
   type ModuleContract,
 } from "@/platform/billing";
 import {
@@ -19,6 +20,23 @@ import { db } from "@/server";
 
 // MOD-06: modules are turned on and off respecting their dependencies.
 // Inventario cannot be removed while Compras is active.
+
+// A module announced but not sold: nothing can activate it. Today no real
+// module is in that state, so the rule is proved with a made-up one.
+const withAnnounced = createModuleRegistry([
+  ...moduleRegistry.all,
+  defineModule({
+    id: "announced",
+    name: "Anunciado",
+    version: "0.1.0",
+    availability: "unavailable",
+    required: false,
+    dependsOn: [],
+    uses: [],
+    permissions: [],
+    limits: [],
+  }),
+]);
 
 const stamp = Date.now();
 let counter = 0;
@@ -84,17 +102,14 @@ describe("activateModule", () => {
     expect(await activeModules(org)).toEqual([]);
   });
 
-  it.each(["crm"])(
-    "refuses %s: announced but not available",
-    async (moduleId) => {
-      const { org } = await newCompany();
-      await activateModule(moduleRegistry, change(org, "inventory"));
-      expect(
-        await activateModule(moduleRegistry, change(org, moduleId)),
-      ).toMatchObject({ ok: false, reason: "unavailable" });
-      expect(await activeModules(org)).toEqual(["inventory"]);
-    },
-  );
+  it("refuses a module that is announced but not available", async () => {
+    const { org } = await newCompany();
+    await activateModule(moduleRegistry, change(org, "inventory"));
+    expect(
+      await activateModule(withAnnounced, change(org, "announced")),
+    ).toMatchObject({ ok: false, reason: "unavailable" });
+    expect(await activeModules(org)).toEqual(["inventory"]);
+  });
 
   it("refuses unknown modules and unknown companies", async () => {
     const { org } = await newCompany();

@@ -40,7 +40,7 @@ export type SetMinimumResult =
       ok: true;
       /** Null when the minimum was removed. */
       minimum: string | null;
-      /** «Mínimo de Tornillo: 20 piezas.» */
+      /** «Mínimo de Guante: 20 piezas.» */
       summary: string;
     }
   | { ok: false; reason: "invalid" | "not_found"; error: string };

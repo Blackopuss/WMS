@@ -31,24 +31,24 @@ import {
 // Fictitious sample data; never real inventory.
 const products = [
   {
-    sku: "TOR-001",
-    name: "Tornillo hexagonal 1/4 × 1 in",
+    sku: "ART-001",
+    name: "Guante de nitrilo talla M",
     qty: "200",
     unit: "pza",
     location: "A-01, B-03",
     state: "ok",
   },
   {
-    sku: "CAB-001",
-    name: "Cable THW calibre 12",
+    sku: "ART-002",
+    name: "Cuerda de polipropileno 8 mm",
     qty: "197.25",
     unit: "m",
     location: "C-02",
     state: "low",
   },
   {
-    sku: "CLA-001",
-    name: "Clavo estándar 2 in",
+    sku: "ART-003",
+    name: "Arena para derrames",
     qty: "0",
     unit: "kg",
     location: "General",
@@ -107,7 +107,7 @@ export function Showcase() {
                 <DialogHeader>
                   <DialogTitle>Agregar entrada</DialogTitle>
                   <DialogDescription>
-                    Tornillo hexagonal 1/4 × 1 in · Caja = 100 piezas
+                    Guante de nitrilo talla M · Caja = 100 piezas
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-2">

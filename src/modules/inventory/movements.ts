@@ -233,7 +233,7 @@ export type MovementResult =
   | {
       ok: true;
       movementId: string;
-      /** «Entraron 25 piezas de Tornillo a General. Ahora hay 325 piezas ahí.» */
+      /** «Entraron 25 piezas de Guante a General. Ahora hay 325 piezas ahí.» */
       summary: string;
       /**
        * The confirmation had already been registered (a retry): nothing

@@ -12,7 +12,7 @@ import { unpackAction, type UnpackState } from "../actions";
 
 type ItemOption = {
   id: string;
-  /** «Tornillo · Lote L-01 · 20 piezas». */
+  /** «Guante · Lote L-01 · 20 piezas». */
   label: string;
   /** «piezas». */
   unitLabel: string;

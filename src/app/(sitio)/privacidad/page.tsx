@@ -54,13 +54,28 @@ export default function PrivacyPage() {
                 (guardada solo como huella cifrada, nunca en texto).
               </li>
               <li>
-                <strong>Seguridad:</strong> dirección IP, navegador, fecha de
-                inicio de sesión, intentos fallidos y la configuración de tu
-                verificación en dos pasos.
+                <strong>Seguridad y accesos:</strong> dirección IP, tipo de
+                dispositivo y navegador, fecha de cada inicio de sesión,
+                intentos fallidos, bloqueos y la configuración de tu
+                verificación en dos pasos. No determinamos tu país a partir de
+                la IP.
+              </li>
+              <li>
+                <strong>PIN de terminal compartida:</strong> si tu empresa usa
+                terminales compartidas en el almacén, tu PIN se guarda solo como
+                una huella derivada, nunca en claro, y se borra si te
+                desactivan. También se registran las terminales (nombre y
+                almacén) y los intentos de entrar con PIN.
+              </li>
+              <li>
+                <strong>Fotos de evidencia:</strong> las que tu equipo sube al
+                reportar incidencias, al completar etapas de un proceso o al
+                entregar una tarea, con el nombre de quien las subió y la fecha.
               </li>
               <li>
                 <strong>Empresa:</strong> nombre del negocio y las personas que
-                invitas a tu equipo, con su rol.
+                invitas a tu equipo, con su rol, y las sesiones abiertas de cada
+                persona.
               </li>
               <li>
                 <strong>Contratación:</strong> plan, módulos, meses pagados y la
@@ -82,7 +97,46 @@ export default function PrivacyPage() {
               {SITE.name} actúa como encargado: solo los tratamos para prestarte
               el servicio, incluidos los correos que nos pides enviarles
               (órdenes de compra a tus proveedores), y no los usamos para otros
-              fines.
+              fines. Si tu empresa activa la API o los webhooks, la información
+              que configure se envía al destino que tu empresa indique; desde
+              ahí, su tratamiento es responsabilidad de tu empresa y de quien
+              administre ese destino.
+            </p>
+          ),
+        },
+        {
+          id: "fotos",
+          title: "Fotos de evidencia",
+          body: (
+            <ul>
+              <li>
+                Solo las ven las personas de tu empresa que pueden ver el
+                registro al que pertenecen (por ejemplo, la incidencia o la
+                tarea), dentro de los almacenes y zonas que tengan asignados.
+              </li>
+              <li>
+                Al subirlas se les quitan los metadatos que traen (ubicación GPS
+                incluida), así que lo guardado no revela dónde se tomó la foto.
+              </li>
+              <li>
+                Una foto que se sube y nunca se liga a un registro se borra
+                automáticamente a las 24 horas.
+              </li>
+            </ul>
+          ),
+        },
+        {
+          id: "accesos",
+          title: "Historial de accesos y sesiones",
+          body: (
+            <p>
+              Guardamos un historial de accesos a tu cuenta (dispositivo y
+              navegador, intentos fallidos, bloqueos y cierres de sesión) para
+              que tú lo revises y para avisarte por correo si alguien entra
+              desde un dispositivo nuevo o falla muchas veces. El titular, la
+              administración y la gerencia de tu empresa pueden ver las sesiones
+              y el historial de acceso de su equipo en esa empresa, y cerrar
+              sesiones.
             </p>
           ),
         },
@@ -113,9 +167,11 @@ export default function PrivacyPage() {
                 </li>
                 <li>
                   Enviarte correos del servicio: confirmación, recuperación de
-                  contraseña, invitaciones y avisos de cambios importantes.
+                  contraseña, invitaciones y avisos de cambios importantes. Los
+                  avisos de operación por correo y el resumen diario son
+                  opcionales y cada persona los activa por su cuenta.
                 </li>
-                <li>Cobrar, facturar y darte soporte.</li>
+                <li>Registrar tu pago, facturar y darte soporte.</li>
                 <li>Cumplir obligaciones legales.</li>
               </ul>
               <p>
@@ -154,8 +210,15 @@ export default function PrivacyPage() {
                 esos fines, y con autoridades cuando la ley lo exija:
               </p>
               <ul>
-                <li>Hospedaje: Amazon Web Services.</li>
-                <li>Envío de correo: Google (Gmail).</li>
+                <li>
+                  Hospedaje de la aplicación y la base de datos: el proveedor de
+                  servidores que contratemos.
+                </li>
+                <li>
+                  Almacenamiento de archivos (fotos y archivos importados): un
+                  proveedor externo compatible con S3, Cloudflare R2.
+                </li>
+                <li>Envío de correo: el servidor de correo del servicio.</li>
               </ul>
               <p>
                 Algunos de estos proveedores guardan información fuera de
@@ -196,7 +259,15 @@ export default function PrivacyPage() {
               </li>
               <li>Separación estricta entre empresas y permisos por rol.</li>
               <li>Bitácora de cambios sensibles que no se puede alterar.</li>
-              <li>Respaldos cifrados y revisiones de seguridad periódicas.</li>
+              <li>
+                Respaldos cifrados y revisiones de seguridad periódicas. Los
+                archivos se sirven siempre a través del sistema, con permiso de
+                quien los pide.
+              </li>
+              <li>
+                Los PIN de terminal compartida se guardan derivados y solo
+                funcionan en una terminal registrada.
+              </li>
             </ul>
           ),
         },

@@ -512,8 +512,8 @@ describe("validateImport", () => {
     if (!result.ok) return;
     expect(result.preview[0]).toEqual({
       row: 2,
-      sku: "TOR-001",
-      name: "Tornillo hexagonal 1/4 × 1",
+      sku: "ART-001",
+      name: "Guante de nitrilo talla M",
       unit: "pieza",
       presentation: "Caja de 100 piezas",
       stock: "3 cajas × 100 = 300 piezas en General",
