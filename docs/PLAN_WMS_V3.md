@@ -635,7 +635,7 @@ sin escribir aquí su flujo (regla 15).
 
 ### Pasos decididos el 2026-11-16 (noche)
 
-- **WMS-80 · Actualizar Next.js a la última versión estable** (abierto). Quita la vulnerabilidad moderada de next 16.3.0–16.4.4 y el aviso que detiene `next build` una de cada dos veces. Actualiza el ADR 0001.
+- **WMS-80 · Actualizar Next.js a la última versión estable** (**hecho el 2026-11-17**, 16.4.6). Quita la vulnerabilidad moderada de next 16.3.0–16.4.4 y el aviso que detiene `next build` una de cada dos veces. Actualiza el ADR 0001.
 - **WMS-81 · Sin CRM, privacidad y términos al día, textos genéricos** (**hecho el 2026-11-17**; versiones legales 2026-11-17). Pendiente: revisión de un abogado, política de retención de `security_event`, revisar «Mi plan» y `/acepta-terminos` en navegador.
 - **WMS-82 · Un almacén archivado no recibe existencias ni documentos** (abierto, corazón, ADR 0077).
 - **WMS-83 · Desechar pide autorización** (sin abrir; corazón, después de WMS-82; ADR 0078). Tipo de aprobación `inventory.disposal` en el motor (regla por empresa apagada por omisión, como las demás), con el motivo en el resumen; al autorizar se vuelve a validar que lo que se desecha siga ahí; cubre también el rodeo «disponible → dañado → desechar» que hoy evita la autorización de ajustes. **Listo cuando:** con la regla encendida, `disposeStock` responde `pending_approval` sin escribir; autorizar escribe el `DISPOSAL` a nombre de quien pidió; una solicitud vieja vence si las existencias cambiaron; reconciliación vacía.
