@@ -69,6 +69,18 @@ alineación, textos).
 | `/configuracion/defectos` | Cada defecto era un formulario abierto (dos campos, dos botones por fila); «Agregar» con estilo secundario | Fila con nombre y gravedad; el cambio va plegado en «Cambiar o archivar»; «Agregar» es la acción principal; foco al error |
 | Operación › Producción y Calidad | axe 0 | axe 0 |
 
+### Pedido después de WMS-81: «Mi plan» y `/acepta-terminos`
+
+Revisadas en la app compilada, en claro y oscuro, a 1280 y 390 px.
+
+| Pantalla | Antes | Después |
+| --- | --- | --- |
+| `/configuracion/plan` | Ya sin «CRM · Próximamente» ni ningún módulo anunciado; axe 0, sin desbordamiento, un `h1`. Cada módulo activo repetía «Activo.» bajo su nombre junto a la etiqueta «Activo» | La nota se omite cuando solo repite la etiqueta (queda «Base de tu empresa.» en Inventario y la fecha cuando el módulo vence) |
+| `/acepta-terminos` (cuenta con versión 2026-11-16) | Aparece al entrar; axe 0; la cortina del almacén se abre y deja ver el formulario. Enviar sin marcar la casilla mostraba el error pero el foco quedaba en el cuerpo de la página | El foco va a la casilla, que queda ligada a su error. Al marcarla y aceptar entra a `/inicio` |
+
+La cifra «Usuarios 11 de 5» de las capturas es de los datos de esta revisión
+(las personas se crearon directo en la base, sin cupo), no de la pantalla.
+
 ### Lighthouse (app compilada)
 
 Escritorio, 23 pantallas (18 del área y 5 de WMS-78A): **Accesibilidad 100 y
@@ -108,6 +120,9 @@ tabla de abajo.
 
 - `src/components/ui/native-select.tsx`: **el mismo cambio de WMS-78A**
   (traído tal cual de su rama, ya unido en `pruebas`), sin nada propio.
+- `src/app/(auth)/acepta-terminos/accept-legal-form.tsx` (foco al error) y
+  `src/app/(app)/configuracion/plan/page.tsx` (sin la nota repetida), de WMS-78A,
+  revisadas a pedido de quien coordina tras WMS-81.
 - Ninguno más: `globals.css`, `states.tsx`, `motion.tsx`, `app-shell` y el
   layout quedaron igual. Se reutilizó `focus-first-error.ts` de WMS-78B.
 - Fuera de `src/app`: `src/modules/quality/plans.ts` (solo cómo se une el
