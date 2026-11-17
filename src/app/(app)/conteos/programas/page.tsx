@@ -100,7 +100,7 @@ export default async function ProgramasPage() {
                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <Link
                         href={`/conteos/programas/${program.id}`}
-                        className="font-medium [overflow-wrap:anywhere] outline-none after:absolute after:inset-0 focus-visible:after:ring-3 focus-visible:after:ring-ring/50 focus-visible:after:ring-inset"
+                        className="rounded font-medium [overflow-wrap:anywhere] underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                       >
                         {program.name}
                       </Link>
@@ -123,7 +123,7 @@ export default async function ProgramasPage() {
                   </span>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </div>
               </li>

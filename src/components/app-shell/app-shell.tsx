@@ -107,7 +107,10 @@ export function AppShell({
           {switcher}
           <BellButton bell={bell} />
         </div>
-        <nav aria-label="Principal" className="flex-1 px-3 pb-4">
+        <nav
+          aria-label="Principal"
+          className="min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+        >
           <ul className="space-y-1">
             {items.map((item) => (
               <li key={item.href}>
@@ -128,7 +131,7 @@ export function AppShell({
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md md:hidden print:hidden">
           <Warehouse aria-hidden="true" className="size-5 text-primary" />
           <span className="min-w-0 truncate font-semibold">
-            {current?.label ?? "WMS"}
+            {current?.label ?? titleOf(pathname)}
           </span>
           <BellButton bell={bell} compact className="ml-auto" />
           <ThemeToggle />
@@ -170,6 +173,20 @@ export function AppShell({
       </nav>
     </div>
   );
+}
+
+/** Header title on the phone for screens outside the menu. */
+const OTHER_TITLES: [string, string][] = [
+  ["/avisos", "Avisos"],
+  ["/aprobaciones", "Aprobaciones"],
+  ["/procesos", "Procesos"],
+];
+
+function titleOf(pathname: string): string {
+  const found = OTHER_TITLES.find(
+    ([href]) => pathname === href || pathname.startsWith(`${href}/`),
+  );
+  return found?.[1] ?? "WMS";
 }
 
 function Brand() {
@@ -296,25 +313,27 @@ function UserBlock({
 }) {
   const initial = user.name.trim().charAt(0).toUpperCase() || "?";
   return (
-    <div className="flex items-center gap-3 rounded-lg px-1 py-1">
-      <span
-        aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-foreground"
-      >
-        {initial}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{user.name}</p>
-        <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+    <div className="space-y-1">
+      <div className="flex items-center gap-3 rounded-lg px-1 py-1">
+        <span
+          aria-hidden="true"
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-foreground"
+        >
+          {initial}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{user.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+        </div>
       </div>
       <form action={signOutAction}>
+        {/* Visible text, not an icon alone (KISS rules of the screen). */}
         <button
           type="submit"
-          aria-label="Cerrar sesión"
-          title="Cerrar sesión"
-          className="grid size-11 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:size-10"
+          className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 md:h-10"
         >
           <LogOut aria-hidden="true" className="size-4.5" />
+          Cerrar sesión
         </button>
       </form>
     </div>

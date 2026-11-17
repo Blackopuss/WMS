@@ -1,9 +1,10 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 
 import { FormField } from "@/components";
+import { useFocusFirstError } from "@/components/focus-first-error";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,11 +46,18 @@ export function RuleForm({
       answers: 0,
     } satisfies RuleFormState,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const errors = state.fieldErrors ?? {};
   const key = (name: string) => `${name}-${state.answers}`;
   const unit = unitLabel ? ` (${unitLabel})` : "";
   return (
-    <form action={formAction} noValidate className="max-w-xl space-y-4">
+    <form
+      ref={formRef}
+      action={formAction}
+      noValidate
+      className="max-w-xl space-y-4"
+    >
       {state.error && (
         <p role="alert" className="text-sm text-destructive">
           {state.error}

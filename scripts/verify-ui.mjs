@@ -267,7 +267,7 @@ try {
     // Team screen (USR-08): reached from Configuración; the demo account is
     // the titular, so it sees itself protected and may invite any role.
     await page.goto(`${BASE}/configuracion`, { waitUntil: "networkidle" });
-    await page.getByRole("link", { name: /Equipo/ }).click();
+    await page.getByRole("link", { name: /^Equipo Personas/ }).click();
     await page.waitForURL("**/configuracion/equipo");
     await page.getByRole("heading", { name: "Equipo", level: 1 }).waitFor();
     const people = page.getByRole("region", { name: "Personas" });
@@ -303,8 +303,10 @@ try {
     );
     await page.screenshot({ path: `${OUT}/equipo-${viewport.name}.png` });
     check(
-      (await roleBoxes.count()) === 4 && smallRoles === 0 && teamOverflow <= 0,
-      `${viewport.name}: the invite dialog offers the four roles with large targets and explains a missing role`,
+      // Production and quality roles join the four when their module is
+      // active (WMS-59), so the count is a floor.
+      (await roleBoxes.count()) >= 4 && smallRoles === 0 && teamOverflow <= 0,
+      `${viewport.name}: the invite dialog offers the roles with large targets and explains a missing role`,
     );
 
     // Optional round trip that leaves a cancelled invitation behind:
@@ -373,11 +375,14 @@ try {
     );
     await page.screenshot({ path: `${OUT}/plan-${viewport.name}.png` });
     check(
-      (await page.getByRole("progressbar").count()) === 2 &&
+      // Products, users and files (WMS-67).
+      (await page.getByRole("progressbar").count()) === 3 &&
         (await page
           .getByRole("progressbar", { name: "Productos activos" })
           .getAttribute("aria-valuemax")) === "1000" &&
-        (await page.getByText("Próximamente", { exact: true }).count()) === 2 &&
+        // Production and quality can be hired now (WMS-27, WMS-30A): no
+        // module is «Próximamente» any more.
+        (await page.getByRole("heading", { name: "Módulos" }).count()) > 0 &&
         planOverflow <= 0,
       `${viewport.name}: «Mi plan» shows product and user quotas, modules and no overflow`,
     );
@@ -576,7 +581,12 @@ try {
         .first()
         .waitFor();
     }
-    const rows = a.locator("section ul > li");
+    // Only the rows of «Sesiones activas» (the page has other lists).
+    const rows = a
+      .locator("div.rounded-xl", {
+        has: a.getByRole("heading", { name: "Sesiones activas" }),
+      })
+      .locator("ul > li");
     await a.reload({ waitUntil: "networkidle" });
     check(
       (await rows.count()) === 1,
@@ -908,6 +918,155 @@ try {
       (await page.getAttribute("#password", "type")) === "text",
       `${viewport.name}: password visibility toggle works`,
     );
+    await page.close();
+  }
+
+  // WMS-78A: access and Configuración. Read-only: nothing is saved.
+  {
+    // Links inside a sentence are underlined (in dark mode the primary
+    // color is white, so color alone does not tell them apart).
+    const page = await newPage(browser, {
+      viewport: { width: 375, height: 812 },
+    });
+    await page.goto(`${BASE}/registro`, { waitUntil: "networkidle" });
+    const underlined = await page.$$eval(
+      "form a[href='/terminos'], form a[href='/privacidad'], main a[href='/ingresar']",
+      (links) =>
+        links.length > 0 &&
+        links.every((a) =>
+          getComputedStyle(a).textDecorationLine.includes("underline"),
+        ),
+    );
+    check(underlined, "WMS-78A: links in a sentence are underlined");
+    await page.context().close();
+  }
+  {
+    const page = await signedInPage(browser, { width: 1280, height: 800 });
+    // Signing out is a button with its words, not an icon alone.
+    const signOut = page
+      .locator("aside")
+      .getByRole("button", { name: "Cerrar sesión" });
+    check(
+      (await signOut.isVisible()) &&
+        ((await signOut.textContent()) ?? "").includes("Cerrar sesión"),
+      "WMS-78A: desktop sidebar says «Cerrar sesión» in words",
+    );
+    // The theme switch keeps a 3:1 ring around its track in both themes.
+    const ring = await page
+      .locator("aside [role=switch] > span")
+      .first()
+      .evaluate((el) => getComputedStyle(el).boxShadow);
+    check(
+      // ring-input of the light theme (#808ea3), at least 3:1 on white.
+      ring.includes("rgb(128, 142, 163)"),
+      "WMS-78A: the theme switch has a visible ring",
+    );
+    await page.context().close();
+  }
+  {
+    const page = await signedInPage(browser, { width: 375, height: 812 });
+    // Screens outside the menu name themselves in the phone header.
+    await page.goto(`${BASE}/avisos`, { waitUntil: "networkidle" });
+    check(
+      ((await page.locator("header span.truncate").textContent()) ?? "") ===
+        "Avisos",
+      "WMS-78A: phone header says «Avisos» on /avisos",
+    );
+    // A select with a width limit keeps its arrow next to it.
+    await page.goto(`${BASE}/configuracion/operacion`, {
+      waitUntil: "networkidle",
+    });
+    const staging = page.locator("#staging");
+    if ((await staging.count()) > 0) {
+      const gap = await staging.evaluate((select) => {
+        const arrow = select.parentElement?.querySelector("svg");
+        if (!arrow) return 999;
+        return (
+          select.getBoundingClientRect().right -
+          arrow.getBoundingClientRect().right
+        );
+      });
+      check(
+        gap >= 0 && gap < 24,
+        "WMS-78A: a narrow select keeps its arrow inside",
+      );
+    }
+    await page.context().close();
+  }
+
+  // WMS-78B (operación de almacén): visual review of the warehouse screens.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      {
+        isMobile: true,
+        hasTouch: true,
+      },
+    );
+    for (const path of [
+      "/inicio",
+      "/tareas",
+      "/pedidos",
+      "/inventario",
+      "/movimientos",
+      "/conteos",
+      "/incidencias",
+    ]) {
+      await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `320px: ${path} fits and has one heading`,
+      );
+    }
+    // What waits in the warehouse: one card with full-width rows ≥ 44 px.
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const pending = page.getByRole("list", {
+      name: "Pendientes del inventario",
+    });
+    if (await pending.count()) {
+      const heights = await pending
+        .locator("a")
+        .evaluateAll((links) =>
+          links.map((a) => a.getBoundingClientRect().height),
+        );
+      check(
+        heights.every((height) => height >= 44),
+        "320px: pending notices of Inventario are rows ≥ 44px",
+      );
+    }
+    // The scan box keeps the focus and is never disabled (INV-29).
+    await page.goto(`${BASE}/movimientos/salida-rapida`, {
+      waitUntil: "networkidle",
+    });
+    await page.fill("#buscar-producto", "NO-EXISTE-78B");
+    await page.press("#buscar-producto", "Enter");
+    await page.waitForTimeout(1500);
+    check(
+      await page.evaluate(() => {
+        const box = document.querySelector("#buscar-producto");
+        return document.activeElement === box && !box.disabled;
+      }),
+      "320px: the scan box of «Registrar salida» keeps the focus",
+    );
+    // Dark mode: the class is on <html> before paint and the page is dark.
+    await page.evaluate(() => localStorage.setItem("almacen-tema", "dark"));
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const dark = await page.evaluate(() => {
+      const [r, g, b] = getComputedStyle(document.body)
+        .backgroundColor.match(/[\d.]+/g)
+        .map(Number);
+      return {
+        on: document.documentElement.classList.contains("dark"),
+        light: (r + g + b) / 3,
+      };
+    });
+    check(dark.on && dark.light < 60, "dark mode: Inventario is dark");
+    await page.evaluate(() => localStorage.setItem("almacen-tema", "light"));
     await page.close();
   }
 } finally {

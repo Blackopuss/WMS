@@ -1757,6 +1757,10 @@ model StoredFile {
   /// Pixels of an image (WMS-37), read from its header; null otherwise.
   width           Int?
   height          Int?
+  /// WMS-37B (ADR 0076): the record a photo of evidence was taken for
+  /// (its owner kind is the one of its purpose). When set, the photo is
+  /// linked only to that record; never changes.
+  pendingOwnerId  String?          @db.Char(36)
   productImports  ProductImport[]
   exitImports     ExitImport[]
   outboundImports OutboundImport[]
@@ -2582,6 +2586,8 @@ model WarehouseTask {
   /// Units by serial the person took (WMS-21B): scanned when picking or
   /// picking up, moved by the delivery.
   serials               WarehouseTaskSerial[]
+  /// WMS-37B (ADR 0076): photos of where it was left, linked on delivery.
+  photos                EvidencePhoto[]
   incidents             Incident[]
   containerEvents       ContainerEvent[]
 
@@ -4092,31 +4098,35 @@ model IncidentNote {
 /// CHECK). Never changes nor is deleted, and its file can no longer be
 /// removed (triggers).
 model EvidencePhoto {
-  id              String        @id @db.Char(36)
-  organizationId  String        @db.Char(36)
-  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  fileId          String        @db.Char(36)
-  file            StoredFile    @relation(fields: [organizationId, fileId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  id              String         @id @db.Char(36)
+  organizationId  String         @db.Char(36)
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  fileId          String         @db.Char(36)
+  file            StoredFile     @relation(fields: [organizationId, fileId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The purpose of its file (FILE_PURPOSES); a trigger checks they match.
-  purpose         String        @db.VarChar(40)
-  incidentId      String?       @db.Char(36)
-  incident        Incident?     @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  purpose         String         @db.VarChar(40)
+  incidentId      String?        @db.Char(36)
+  incident        Incident?      @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// The follow-up note it came with, if any (of the same incident).
-  incidentNoteId  String?       @db.Char(36)
-  incidentNote    IncidentNote? @relation(fields: [organizationId, incidentNoteId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  incidentNoteId  String?        @db.Char(36)
+  incidentNote    IncidentNote?  @relation(fields: [organizationId, incidentNoteId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// A step of a process (WMS-74, ADR 0069).
-  processStepId   String?       @db.Char(36)
-  processStep     ProcessStep?  @relation(fields: [organizationId, processStepId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  processStepId   String?        @db.Char(36)
+  processStep     ProcessStep?   @relation(fields: [organizationId, processStepId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// A warehouse task, photographed where it was left (WMS-37B, ADR 0076).
+  warehouseTaskId String?        @db.Char(36)
+  warehouseTask   WarehouseTask? @relation(fields: [organizationId, warehouseTaskId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   /// Order inside its owner (0, 1, 2…).
   position        Int
-  createdByUserId String        @db.Char(36)
-  createdAt       DateTime      @default(now()) @db.DateTime(3)
+  createdByUserId String         @db.Char(36)
+  createdAt       DateTime       @default(now()) @db.DateTime(3)
 
   @@unique([organizationId, id])
   @@unique([organizationId, fileId])
   @@index([organizationId, incidentId, position])
   @@index([organizationId, incidentNoteId])
   @@index([organizationId, processStepId, position])
+  @@index([organizationId, warehouseTaskId, position])
   @@map("evidence_photo")
 }
 

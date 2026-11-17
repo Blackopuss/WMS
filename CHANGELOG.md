@@ -8,6 +8,11 @@ cerrar cada paso.
 
 ## 2026-11-16
 
+- **WMS-78A / WMS-78B** Revisión visual de la app con Playwright y axe:
+  acceso, Configuración, menú y la operación de almacén, en claro y oscuro,
+  escritorio y teléfono.
+- **WMS-37B** Foto de evidencia al entregar una tarea del almacén, atada a
+  su tarea, con ajuste por empresa (apagada, opcional u obligatoria). ADR 0076.
 - **WMS-28B** Solicitudes de producción desde el piso, decisión dentro del
   alcance y orden que nace liberada a nombre de quien aceptó. ADR 0075.
 - **WMS-77** Sitio público: Producción y Calidad con su precio, módulos

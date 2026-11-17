@@ -69,6 +69,7 @@ export default async function NuevaOlaPage({
     return (
       <PageContainer>
         {back}
+        <PageHeader title="Nueva ola" />
         <EmptyState
           icon={Layers}
           title="El surtido por olas está apagado"

@@ -26,6 +26,7 @@ export type Extension = SheetExtension | ImageExtension;
 export const EVIDENCE_OWNER_KINDS = {
   incident: "incidentId",
   process_step: "processStepId",
+  warehouse_task: "warehouseTaskId",
 } as const;
 
 export type EvidenceOwnerKind = keyof typeof EVIDENCE_OWNER_KINDS;
@@ -62,6 +63,14 @@ type Purpose = {
     perRecord: number;
     /** Photos a record can hold in all. */
     perOwner: number;
+    /**
+     * WMS-37B (ADR 0076): the record already exists when the photo is
+     * taken, so the photo is uploaded for it (`stored_file.pendingOwnerId`)
+     * and is linked only to it. Without this (incidents, steps of a
+     * process: their record is born with the photos), a photo is linked to
+     * whatever record of its kind the same person saves.
+     */
+    boundToOwner?: boolean;
   };
 };
 
@@ -115,6 +124,24 @@ export const FILE_PURPOSES = {
     extensions: PHOTO_EXTENSIONS,
     evidence: { owner: "process_step", perRecord: 5, perOwner: 5 },
   },
+  /**
+   * WMS-37B (ADR 0076): photos of where a warehouse task was left, taken
+   * by who delivers it and linked with the delivery (a task is delivered
+   * once, so the photos of the record are the photos of the task). Who
+   * sees the task sees them.
+   */
+  task_photo: {
+    write: "inventory.task.execute",
+    read: "inventory.task.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: {
+      owner: "warehouse_task",
+      perRecord: 3,
+      perOwner: 3,
+      boundToOwner: true,
+    },
+  },
 } as const satisfies Record<string, Purpose>;
 
 export type FilePurpose = keyof typeof FILE_PURPOSES;
@@ -137,6 +164,8 @@ export function ownerWhere(owner: EvidenceOwner) {
       return { incidentId: String(owner.id).slice(0, 36) };
     case "process_step":
       return { processStepId: String(owner.id).slice(0, 36) };
+    case "warehouse_task":
+      return { warehouseTaskId: String(owner.id).slice(0, 36) };
   }
 }
 
@@ -144,10 +173,14 @@ export function ownerWhere(owner: EvidenceOwner) {
 export function ownerOfLink(link: {
   incidentId: string | null;
   processStepId?: string | null;
+  warehouseTaskId?: string | null;
 }): EvidenceOwner | null {
   if (link.incidentId) return { kind: "incident", id: link.incidentId };
   if (link.processStepId) {
     return { kind: "process_step", id: link.processStepId };
+  }
+  if (link.warehouseTaskId) {
+    return { kind: "warehouse_task", id: link.warehouseTaskId };
   }
   return null;
 }

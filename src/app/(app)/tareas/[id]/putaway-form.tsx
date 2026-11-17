@@ -2,15 +2,16 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField, type CapturedPhoto } from "@/components";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { putawayAction, type PutawayState } from "../actions";
+import { TaskPhotoField } from "./task-controls";
 
 /**
  * Put-away (WMS-52), at the place: scan the label where the goods were
@@ -21,11 +22,18 @@ import { putawayAction, type PutawayState } from "../actions";
 export function PutawayForm({
   taskId,
   hint,
+  photoMode,
+  maxPhotos,
 }: {
   taskId: string;
   /** «Escanea la etiqueta de Zona A › Estante 3 o escribe A-03.» */
   hint: string;
+  /** WMS-37B: whether the company asks for a photo of where it was left. */
+  photoMode: "off" | "optional" | "required";
+  maxPhotos: number;
 }) {
+  // Outside the form, so a refused answer (which rebuilds it) keeps them.
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const router = useRouter();
   const [state, formAction, pending] = useActionState(
     putawayAction.bind(null, taskId),
@@ -80,6 +88,16 @@ export function PutawayForm({
           </div>
         )}
       </FormField>
+      {photoMode !== "off" && (
+        <TaskPhotoField
+          taskId={taskId}
+          mode={photoMode}
+          max={maxPhotos}
+          photos={photos}
+          onPhotosChange={setPhotos}
+          error={state.fieldErrors?.photos}
+        />
+      )}
       {state.capacityWarning ? (
         <div
           role="alert"
