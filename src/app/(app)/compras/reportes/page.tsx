@@ -202,7 +202,7 @@ async function PendingView({
                 {canOpenOrders ? (
                   <Link
                     href={`/compras/ordenes/${row.orderId}`}
-                    className={`${textLink} after:absolute after:inset-0`}
+                    className={`${textLink} inline-block after:absolute after:inset-0`}
                   >
                     {row.numberText}
                   </Link>

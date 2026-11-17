@@ -140,6 +140,9 @@ const demo = await db.organization.findFirstOrThrow({
 for (const grant of [
   { kind: "MODULE" as const, key: "inventory", value: null },
   { kind: "MODULE" as const, key: "purchasing", value: null },
+  // Producción and Calidad (WMS-78C), so their screens are reachable too.
+  { kind: "MODULE" as const, key: "production", value: null },
+  { kind: "MODULE" as const, key: "quality", value: null },
   { kind: "LIMIT" as const, key: "active_products", value: 1000 },
   { kind: "LIMIT" as const, key: "users", value: 5 },
   // Several warehouses (WMS-18), so the switcher can be tried locally.

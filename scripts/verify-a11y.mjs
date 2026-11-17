@@ -132,6 +132,14 @@ const SCREENS = [
   "/movimientos/reubicar",
   "/movimientos/ajuste",
   "/movimientos/saldo-inicial",
+  // WMS-78C (Compras, Producción y Calidad): screens of the area not listed above.
+  "/compras?estado=borrador",
+  "/compras/sugerencias",
+  "/compras/reportes",
+  "/compras/reportes?vista=proveedores",
+  "/produccion?estado=all",
+  "/produccion/solicitudes",
+  "/produccion/solicitudes/nueva",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
@@ -166,6 +174,9 @@ const FORMS = [
   { path: "/incidencias/nueva", submit: "Reportar" },
   { path: "/conteos/programas/nuevo", submit: "Crear programa" },
   { path: "/inventario/reposicion/nueva", submit: "Guardar regla" },
+  // WMS-78C (Compras, Producción y Calidad): forms of the area.
+  { path: "/compras/ordenes/nueva", submit: "Empezar orden" },
+  { path: "/configuracion/defectos", submit: "Agregar" },
 ];
 
 let failures = 0;
@@ -401,6 +412,21 @@ try {
       ["/conteos/programas", /^\/conteos\/programas\/[0-9a-f-]{36}$/],
       ["/inventario/tarimas", /^\/inventario\/tarimas\/[0-9a-f-]{36}$/],
       ["/inventario/reposicion", /^\/inventario\/reposicion\/[0-9a-f-]{36}$/],
+      // WMS-78C (Compras, Producción y Calidad): details of the area.
+      ["/compras/proveedores", /^\/compras\/proveedores\/[0-9a-f-]{36}$/],
+      ["/compras/solicitudes", /^\/compras\/solicitudes\/[0-9a-f-]{36}$/],
+      ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/],
+      [
+        "/produccion/solicitudes?estado=all",
+        /^\/produccion\/solicitudes\/[0-9a-f-]{36}$/,
+      ],
+      ["/inventario?q=KIT-001", /^\/inventario\/[0-9a-f-]{36}$/, "/receta"],
+      [
+        "/inventario?q=KIT-001",
+        /^\/inventario\/[0-9a-f-]{36}$/,
+        "/receta/versiones",
+      ],
+      ["/inventario?q=KIT-001", /^\/inventario\/[0-9a-f-]{36}$/, "/inspeccion"],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

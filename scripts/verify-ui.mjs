@@ -1069,6 +1069,77 @@ try {
     await page.evaluate(() => localStorage.setItem("almacen-tema", "light"));
     await page.close();
   }
+
+  // WMS-78C (Compras, Producción y Calidad). Read-only: nothing is saved.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    for (const path of [
+      "/compras",
+      "/compras/proveedores",
+      "/compras/solicitudes",
+      "/compras/sugerencias",
+      "/compras/reportes",
+      "/produccion",
+      "/produccion/solicitudes",
+      "/produccion/solicitudes/nueva",
+      "/configuracion/defectos",
+    ]) {
+      await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `WMS-78C 320px: ${path} fits and has one heading`,
+      );
+    }
+    // «Pedir producción» without a product lists what may be asked (or
+    // says there is nothing), never «Ese producto no se puede pedir».
+    await page.goto(`${BASE}/produccion/solicitudes/nueva`, {
+      waitUntil: "networkidle",
+    });
+    check(
+      !((await page.locator("main").textContent()) ?? "").includes(
+        "Ese producto no se puede pedir",
+      ),
+      "WMS-78C: «Pedir producción» without a product does not refuse it",
+    );
+    // Pending purchases: the whole row opens its order.
+    await page.goto(`${BASE}/compras/reportes`, { waitUntil: "networkidle" });
+    const rows = page.locator("section[aria-labelledby=pendientes] li");
+    if (await rows.count()) {
+      const height = await rows
+        .first()
+        .locator("a")
+        .evaluate((a) => {
+          const after = getComputedStyle(a, "::after");
+          return after.position === "absolute"
+            ? a.closest("li").getBoundingClientRect().height
+            : a.getBoundingClientRect().height;
+        });
+      check(height >= 44, "WMS-78C: a pending purchase row opens its order");
+    }
+    // Defects: each row says name and severity; changing it is folded.
+    await page.goto(`${BASE}/configuracion/defectos`, {
+      waitUntil: "networkidle",
+    });
+    const fold = page.locator("main details summary", {
+      hasText: "Cambiar o archivar",
+    });
+    if (await fold.count()) {
+      const box = await fold.first().boundingBox();
+      check(
+        (box?.height ?? 0) >= 44,
+        "WMS-78C: «Cambiar o archivar» of a defect is a 44px target",
+      );
+    }
+    await page.close();
+  }
 } finally {
   await browser.close();
 }
