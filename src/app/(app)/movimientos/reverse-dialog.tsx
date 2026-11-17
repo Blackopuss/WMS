@@ -31,7 +31,7 @@ export function ReverseMovement({
 }: {
   movementId: string;
   idempotencyKey: string;
-  /** «Entrada de 120 piezas de Tornillo», read in the dialog. */
+  /** «Entrada de 120 piezas de Guante», read in the dialog. */
   description: string;
 }) {
   const [open, setOpen] = useState(false);

@@ -76,7 +76,6 @@ describe("getPlanOverview", () => {
       ["purchasing", "available"],
       ["production", "available"],
       ["quality", "available"],
-      ["crm", "unavailable"],
     ]);
   });
 
@@ -106,7 +105,7 @@ describe("getPlanOverview", () => {
     });
   });
 
-  it("shows active modules, what could be added and what is announced", async () => {
+  it("shows active modules, and what could be added", async () => {
     const { org } = await newCompany();
     await provision(org, { modules: ["inventory"] });
     const plan = await getPlanOverview(moduleRegistry, org);
@@ -116,7 +115,6 @@ describe("getPlanOverview", () => {
         { name: "Compras", state: "available" },
         { name: "Producción", state: "available" },
         { name: "Calidad", state: "available" },
-        { name: "CRM", state: "unavailable" },
       ],
     );
     expect(plan.modules[0]).toMatchObject({ required: true, validUntil: null });

@@ -416,7 +416,7 @@ export type SupplierDetail = {
   phone: string | null;
   address: string | null;
   notes: string | null;
-  /** It is also a customer (Ventas, CRM). */
+  /** It is also a customer (customer). */
   isCustomer: boolean;
   archived: boolean;
   createdAt: Date;
