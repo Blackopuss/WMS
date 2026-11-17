@@ -106,6 +106,7 @@ export default async function DefectosPage({
             severities={SEVERITIES}
             submit="Agregar"
             pendingText="Agregando…"
+            primary
           />
         </section>
       )}
@@ -121,29 +122,42 @@ export default async function DefectosPage({
         ) : (
           <ul className="divide-y">
             {inUse.map((defect) => (
-              <li key={defect.id} className="space-y-3 p-4 sm:px-5">
+              <li key={defect.id} className="space-y-1 p-4 sm:px-5">
                 {writable ? (
                   <>
-                    <DefectForm
-                      id={defect.id}
-                      action={updateDefectAction.bind(null, defect.id)}
-                      severities={SEVERITIES}
-                      name={defect.name}
-                      severity={defect.severity}
-                      submit="Guardar"
-                      pendingText="Guardando…"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <DefectButton
-                        action={setDefectArchivedAction.bind(
-                          null,
-                          defect.id,
-                          true,
-                        )}
-                      >
-                        Archivar
-                      </DefectButton>
-                    </div>
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium [overflow-wrap:anywhere]">
+                        {defect.name}
+                      </span>
+                      <Badge variant="outline">{defect.severityLabel}</Badge>
+                    </p>
+                    <details>
+                      <summary className="inline-flex min-h-11 cursor-pointer items-center rounded-lg text-sm font-medium text-primary outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+                        Cambiar o archivar
+                      </summary>
+                      <div className="mt-2 space-y-3">
+                        <DefectForm
+                          id={defect.id}
+                          action={updateDefectAction.bind(null, defect.id)}
+                          severities={SEVERITIES}
+                          name={defect.name}
+                          severity={defect.severity}
+                          submit="Guardar"
+                          pendingText="Guardando…"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <DefectButton
+                            action={setDefectArchivedAction.bind(
+                              null,
+                              defect.id,
+                              true,
+                            )}
+                          >
+                            Archivar
+                          </DefectButton>
+                        </div>
+                      </div>
+                    </details>
                   </>
                 ) : (
                   <p className="flex flex-wrap items-center gap-2">

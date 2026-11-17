@@ -2,7 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useFocusFirstError } from "@/components/focus-first-error";
 
 import {
   acceptProductionRequestAction,
@@ -78,10 +79,20 @@ export function AcceptRequest({
   const { pending, answer, run } = useStep();
   const failed = answer && !answer.ok ? answer : null;
   const short = failed?.shortages;
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, answer);
+  // The error of a field is said next to it and linked to it.
+  const invalid = (field: string) =>
+    failed?.field === field ? { "aria-invalid": true } : {};
+  const describedBy = (field: string, help?: string) =>
+    [failed?.field === field ? "accept-error" : null, help ?? null]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const accept = (mode: "release" | "take" | "draft") =>
     run(() => acceptProductionRequestAction(requestId, { ...values, mode }));
   return (
     <form
+      ref={formRef}
       noValidate
       className="max-w-xl space-y-4"
       onSubmit={(event) => {
@@ -93,7 +104,11 @@ export function AcceptRequest({
         <Label htmlFor="accept-quantity">Cuánto ({unitName})</Label>
         <Input
           id="accept-quantity"
-          aria-describedby={capText ? "accept-quantity-help" : undefined}
+          {...invalid("quantity")}
+          aria-describedby={describedBy(
+            "quantity",
+            capText ? "accept-quantity-help" : undefined,
+          )}
           inputMode="decimal"
           autoComplete="off"
           maxLength={20}
@@ -116,6 +131,8 @@ export function AcceptRequest({
         <Input
           id="accept-due"
           type="date"
+          {...invalid("dueOn")}
+          aria-describedby={describedBy("dueOn")}
           value={values.dueOn}
           onChange={(event) =>
             setValues((now) => ({ ...now, dueOn: event.target.value }))
@@ -126,6 +143,8 @@ export function AcceptRequest({
         <Label htmlFor="accept-person">Quién la hace</Label>
         <NativeSelect
           id="accept-person"
+          {...invalid("assigneeIds")}
+          aria-describedby={describedBy("assigneeIds")}
           value={values.assigneeId}
           onChange={(event) =>
             setValues((now) => ({ ...now, assigneeId: event.target.value }))
@@ -141,7 +160,9 @@ export function AcceptRequest({
       </div>
       {failed && (
         <div role="alert" className="space-y-2 text-sm">
-          <p className="text-destructive">{failed.error}</p>
+          <p id="accept-error" className="text-destructive">
+            {failed.error}
+          </p>
           {short && short.length > 0 && (
             <ul className="list-disc space-y-1 pl-5">
               {short.map((line) => (
@@ -197,10 +218,7 @@ export function RejectRequest({ requestId }: { requestId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          className="min-h-11 text-muted-foreground hover:text-destructive"
-        >
+        <Button variant="outline" className="min-h-11">
           Rechazar
         </Button>
       </DialogTrigger>
@@ -269,8 +287,8 @@ export function CancelRequest({ requestId }: { requestId: string }) {
     <div className="space-y-2">
       <Button
         type="button"
-        variant="ghost"
-        className="min-h-11 text-muted-foreground hover:text-destructive"
+        variant="outline"
+        className="min-h-11"
         disabled={pending}
         onClick={() => run(() => cancelProductionRequestAction(requestId))}
       >

@@ -370,7 +370,14 @@ function viewOf(
     rule,
     samplingText: samplingText(row.sampling, rule, unit),
     origins,
-    originsText: origins.map((origin) => ORIGIN_LABELS[origin]).join(", "),
+    // «Lo producido, lo recibido»: only the first one starts with a capital.
+    originsText: origins
+      .map((origin, index) =>
+        index === 0
+          ? ORIGIN_LABELS[origin]
+          : ORIGIN_LABELS[origin].toLowerCase(),
+      )
+      .join(", "),
     points: row.points.map((each) => {
       const point = pointOf(each);
       return {

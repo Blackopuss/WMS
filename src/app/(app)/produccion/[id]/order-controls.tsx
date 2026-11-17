@@ -107,10 +107,7 @@ export function CancelOrder({ orderId }: { orderId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          className="min-h-11 text-muted-foreground hover:text-destructive"
-        >
+        <Button variant="outline" className="min-h-11">
           Cancelar orden
         </Button>
       </DialogTrigger>
@@ -190,7 +187,7 @@ export function OrderPeople({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" className="min-h-11">
+        <Button variant="outline" className="min-h-11">
           Cambiar personas
         </Button>
       </DialogTrigger>

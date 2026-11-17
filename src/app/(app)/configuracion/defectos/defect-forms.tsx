@@ -1,13 +1,14 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { toast } from "sonner";
 
 import { FormField } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useFocusFirstError } from "@/components/focus-first-error";
 
 import type { DefectFormState } from "./actions";
 
@@ -35,6 +36,7 @@ export function DefectForm({
   severity = "MAJOR",
   submit,
   pendingText,
+  primary = false,
 }: {
   id: string;
   action: FormAction;
@@ -43,14 +45,18 @@ export function DefectForm({
   severity?: string;
   submit: string;
   pendingText: string;
+  /** The form that adds: its button is the main action of the screen. */
+  primary?: boolean;
 }) {
   const [state, formAction, pending] = useDefectAction(action);
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const sent = state.ok ? undefined : state.values;
   // After adding, the form is empty again; after a change, it shows it.
   const shownName = sent?.name ?? (state.ok && !name ? "" : name);
   const remount = String(state.answers);
   return (
-    <form action={formAction} noValidate className="space-y-3">
+    <form ref={formRef} action={formAction} noValidate className="space-y-3">
       {state.error && !state.field && (
         <p role="alert" className="text-sm text-destructive">
           {state.error}
@@ -93,7 +99,11 @@ export function DefectForm({
             </NativeSelect>
           )}
         </FormField>
-        <Button type="submit" variant="outline" disabled={pending}>
+        <Button
+          type="submit"
+          variant={primary ? "default" : "outline"}
+          disabled={pending}
+        >
           {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
           {pending ? pendingText : submit}
         </Button>

@@ -8,7 +8,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { FormField, SerialsField } from "@/components";
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useFocusFirstError } from "@/components/focus-first-error";
 
 import {
   checkReceiptAction,
@@ -158,6 +159,8 @@ export function ReceiveOrder({
       answers: 0,
     },
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const { answers } = state;
   // WMS-21: a product by lot may arrive in several lots — one more part
   // per lot, each with its quantity, lot and expiry (`<id>~1`, `<id>~2`…).
@@ -173,7 +176,7 @@ export function ReceiveOrder({
         </Button>
       </DialogTrigger>
       <DialogContent>
-        <form action={formAction} className="contents">
+        <form ref={formRef} action={formAction} className="contents">
           <DialogHeader>
             <DialogTitle>Recibir la orden {numberText}</DialogTitle>
             <DialogDescription>

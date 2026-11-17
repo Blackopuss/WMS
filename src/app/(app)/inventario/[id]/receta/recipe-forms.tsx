@@ -2,13 +2,14 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { FormField } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useFocusFirstError } from "@/components/focus-first-error";
 
 import {
   activateRecipeAction,
@@ -48,8 +49,10 @@ export function RecipeBaseForm({
       : createRecipeAction.bind(null, productId),
     { values: { baseQuantity }, answers: 0 } satisfies RecipeBaseState,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   return (
-    <form action={formAction} noValidate className="space-y-2">
+    <form ref={formRef} action={formAction} noValidate className="space-y-2">
       <FormField
         id={versionId ? "baseQuantity" : "newBaseQuantity"}
         label={`Para cuánto (${unit})`}
@@ -131,15 +134,18 @@ export function RecipeLineForm({
       answers: 0,
     } satisfies RecipeLineState,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const errors = state.fieldErrors ?? {};
   const key = (name: string) => `${name}-${state.answers}`;
   // Ids stay unique when several forms are on the page.
   const id = (name: string) => `${kind}-${line?.productId ?? "nuevo"}-${name}`;
   return (
     <form
+      ref={formRef}
       action={formAction}
       noValidate
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end"
+      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-start"
     >
       {!line && (
         <FormField
@@ -236,7 +242,11 @@ export function RecipeLineForm({
           )}
         </FormField>
       )}
-      <Button type="submit" className="min-h-11" disabled={pending}>
+      <Button
+        type="submit"
+        className="min-h-11 sm:self-end lg:mt-5.5 lg:self-start"
+        disabled={pending}
+      >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         {line ? "Guardar" : "Agregar"}
       </Button>

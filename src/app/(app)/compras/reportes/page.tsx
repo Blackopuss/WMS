@@ -188,7 +188,7 @@ async function PendingView({
         {report.rows.map((row, index) => (
           <li
             key={`${row.orderId}-${index}`}
-            className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 p-4 sm:px-5"
+            className={`relative flex flex-wrap items-start justify-between gap-x-4 gap-y-1 p-4 sm:px-5${canOpenOrders ? "hover:bg-muted/50" : ""}`}
           >
             <div className="min-w-0 space-y-1">
               <p className="font-medium [overflow-wrap:anywhere]">
@@ -202,7 +202,7 @@ async function PendingView({
                 {canOpenOrders ? (
                   <Link
                     href={`/compras/ordenes/${row.orderId}`}
-                    className={textLink}
+                    className={`${textLink} inline-block after:absolute after:inset-0`}
                   >
                     {row.numberText}
                   </Link>

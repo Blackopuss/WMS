@@ -92,6 +92,8 @@ export type RequestStepState =
   | {
       ok: false;
       error: string;
+      /** The field the error belongs to, so the screen can point at it. */
+      field?: string;
       shortages?: ProductionShortage[];
       mayTakeWhatThereIs?: boolean;
     };
@@ -114,6 +116,9 @@ async function step(
           result.formError ??
           Object.values(result.fieldErrors ?? {})[0] ??
           "No se pudo cambiar la solicitud.",
+        ...(!result.formError && result.fieldErrors
+          ? { field: Object.keys(result.fieldErrors)[0] }
+          : {}),
         shortages: result.shortages,
         mayTakeWhatThereIs: result.mayTakeWhatThereIs,
       };

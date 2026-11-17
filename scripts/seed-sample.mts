@@ -35,6 +35,8 @@ const { createLocation } = await import("@/platform/locations");
 const { createSupplier } = await import("@/platform/contacts");
 const inventory = await import("@/modules/inventory");
 const purchasing = await import("@/modules/purchasing");
+const production = await import("@/modules/production");
+const quality = await import("@/modules/quality");
 
 const email = process.env.DEMO_EMAIL;
 const password = process.env.DEMO_PASSWORD;
@@ -338,6 +340,103 @@ await must(
   "conteo",
   inventory.openCount(actor, { locationId: locations["A1-2"]! }),
 );
+
+// A picking place (WMS-78C), so «Nueva regla de reposición» has where to
+// replenish; and Producción and Calidad: an area, a kit with its recipe, a
+// released order, an inspection plan and a defect.
+await must(
+  "ubicación de surtido",
+  createLocation(actor, {
+    level: 3,
+    name: "Estante 2",
+    parentId: locations["A2"],
+    code: "A-02-02",
+    type: "PICKING",
+  }),
+);
+{
+  const area = await must(
+    "área de producción",
+    createLocation(actor, {
+      level: 1,
+      name: "Línea de ensamble",
+      code: "PROD-01",
+      type: "PRODUCTION",
+    }),
+  );
+  const areaId = (area as unknown as { locationId: string }).locationId;
+  const kit = await must(
+    "producto KIT-001",
+    createProduct(actor, {
+      sku: "KIT-001",
+      name: "Kit de envío mediano",
+      category: "Empaque",
+      unit: "piece",
+    }),
+  );
+  await must(
+    "mínimo KIT-001",
+    inventory.setMinimum(actor, { productId: kit.productId, quantity: "20" }),
+  );
+  const recipe = await must(
+    "receta",
+    production.createRecipe(actor, kit.productId, { baseQuantity: "1" }),
+  );
+  for (const [sku, quantity] of [
+    ["CAJ-002", "1"],
+    ["CIN-001", "2"],
+    ["ETI-001", "1"],
+  ] as const) {
+    await must(
+      `material ${sku}`,
+      production.setRecipeInput(actor, recipe.versionId, {
+        productId: products[sku]!,
+        quantity,
+      }),
+    );
+  }
+  await must(
+    "activar receta",
+    production.activateRecipeVersion(actor, recipe.versionId),
+  );
+  await must(
+    "área de la receta",
+    production.setRecipeArea(actor, kit.productId, areaId),
+  );
+  const order = await must(
+    "orden de producción",
+    production.createProductionOrder(actor, {
+      productId: kit.productId,
+      quantity: "10",
+      areaLocationId: areaId,
+    }),
+  );
+  await must(
+    "liberar orden",
+    production.releaseProductionOrder(
+      actor,
+      (order as unknown as { orderId: string }).orderId,
+    ),
+  );
+  const plan = await must(
+    "plan de inspección",
+    quality.startPlanDraft(actor, kit.productId),
+  );
+  const planVersion = (plan as unknown as { versionId: string }).versionId;
+  await must(
+    "punto del plan",
+    quality.addPlanPoint(actor, planVersion, {
+      label: "Caja sin golpes",
+      kind: "CHECK",
+      required: true,
+    }),
+  );
+  await must("publicar plan", quality.publishPlanDraft(actor, planVersion));
+  await must(
+    "defecto",
+    quality.createDefect(actor, { name: "Caja aplastada", severity: "MAJOR" }),
+  );
+}
 
 console.log(
   `Datos de ejemplo listos en «${organization.name}». Personas sin dos pasos (misma contraseña demo): ${people.map((p) => `${p.local}@${domain}`).join(", ")}.`,

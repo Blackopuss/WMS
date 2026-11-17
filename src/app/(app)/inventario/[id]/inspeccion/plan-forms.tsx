@@ -1,13 +1,14 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { FormField } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useFocusFirstError } from "@/components/focus-first-error";
 
 import type { PlanFormState } from "./actions";
 
@@ -97,6 +98,8 @@ export function DraftForm({
   unit: string;
 }) {
   const [state, formAction, pending] = usePlanAction(action);
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const sent = state.ok ? undefined : state.values;
   const initial = {
     ...draft,
@@ -115,7 +118,7 @@ export function DraftForm({
   const errorOf = (...fields: string[]) =>
     state.field && fields.includes(state.field) ? state.error : undefined;
   return (
-    <form action={formAction} noValidate className="space-y-4">
+    <form ref={formRef} action={formAction} noValidate className="space-y-4">
       <Problem state={state} id="draft-error" />
       <FormField
         id="draft-sampling"
@@ -277,13 +280,15 @@ export function AddPointForm({
   kinds: { value: string; label: string }[];
 }) {
   const [state, formAction, pending] = usePlanAction(action);
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const sent = state.ok ? undefined : state.values;
   const [kind, setKind] = useState(sent?.kind || "CHECK");
   const remount = String(state.answers);
   const errorOf = (field: string) =>
     state.field === field ? state.error : undefined;
   return (
-    <form action={formAction} noValidate className="space-y-4">
+    <form ref={formRef} action={formAction} noValidate className="space-y-4">
       <Problem state={state} id="point-error" />
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField

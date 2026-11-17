@@ -139,7 +139,7 @@ export default async function SolicitudProduccionPage({
             {access.can("production.order.read") ? (
               <Link
                 href={`/produccion/${idPath(request.order.id)}`}
-                className={linkClass}
+                className={`${linkClass} inline-flex min-h-11 items-center sm:min-h-0`}
               >
                 {request.order.numberText}
               </Link>
@@ -158,7 +158,7 @@ export default async function SolicitudProduccionPage({
             aria-labelledby="existencias"
             className="max-w-3xl space-y-3 rounded-xl border bg-card p-4 text-sm sm:px-5"
           >
-            <h2 id="existencias" className="font-medium">
+            <h2 id="existencias" className="text-base font-medium">
               Existencias de {request.productName}
             </h2>
             {decision.limited && (
@@ -281,7 +281,7 @@ export default async function SolicitudProduccionPage({
               aria-labelledby="decidir"
               className="max-w-3xl space-y-4 rounded-xl border bg-card p-4 sm:px-5"
             >
-              <h2 id="decidir" className="font-medium">
+              <h2 id="decidir" className="text-base font-medium">
                 Decidir
               </h2>
               <p className="text-sm text-muted-foreground">
