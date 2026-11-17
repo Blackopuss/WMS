@@ -358,7 +358,7 @@ function ofProduct(task: LockedTask): ProductTask {
   return task as ProductTask;
 }
 
-/** «12 cajas de Tornillo» or «Tarima C-0001»: what a task moves. */
+/** «12 cajas de Guante» or «Tarima C-0001»: what a task moves. */
 const whatOf = (task: {
   quantity: { toString(): string } | null;
   unitCode: string | null;

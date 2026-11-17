@@ -236,7 +236,7 @@ describe("import template", () => {
     expect(sheet).toContain(">metro<");
     expect(sheet).toContain(">kilogramo<");
     expect(sheet).toContain(">250.5<");
-    expect(sheet).toContain(">Martillo de uña 16 oz<");
+    expect(sheet).toContain(">Cinta métrica 5 m<");
 
     const instructions = cells(parts["xl/worksheets/sheet2.xml"]!);
     const text = instructions.flat();
@@ -257,7 +257,7 @@ describe("import template", () => {
     });
     const lines = template.bytes.toString("utf8").split("\r\n");
     expect(lines[0]).toBe(`﻿${headers.join(",")}`);
-    expect(lines[1]).toContain("TOR-001");
+    expect(lines[1]).toContain("ART-001");
     expect(lines[1]).toContain("pieza,Caja,100,3,Caja");
     expect(lines.filter((line) => line !== "")).toHaveLength(5);
   });

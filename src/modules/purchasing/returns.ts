@@ -133,7 +133,7 @@ export type ReturnResult =
   | {
       ok: true;
       returnId: string;
-      /** «Devolviste 1 caja de Clavo (100 piezas) de OC-0007.». */
+      /** «Devolviste 1 caja de Cinta (100 piezas) de OC-0007.». */
       summary: string;
       /** It had already been registered (a retry): nothing was written now. */
       repeated?: true;
@@ -177,7 +177,7 @@ const refuseLines = (lineErrors: Record<string, string>): never => {
   });
 };
 
-/** «1 caja de Clavo rechazado»: the state it left from (WMS-30-0). */
+/** «1 caja de Cinta rechazado»: the state it left from (WMS-30-0). */
 const STATE_WORD: Record<ReturnableStatus, string> = {
   AVAILABLE: "",
   INSPECTION: "en inspección",

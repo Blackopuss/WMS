@@ -552,7 +552,7 @@ async function reachableEdges(
   return edges;
 }
 
-/** «Tornillo se hace con Crate, que se hace con Tornillo». */
+/** «Guante se hace con Caja, que se hace con Guante». */
 async function cycleMessage(
   client: Pick<TenantDb, "product">,
   chain: string[],

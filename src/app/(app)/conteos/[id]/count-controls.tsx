@@ -34,7 +34,7 @@ export function RemoveCapture({
 }: {
   countId: string;
   captureId: string;
-  /** «2 cajas × 100 = 200 piezas de Tornillo», for screen readers. */
+  /** «2 cajas × 100 = 200 piezas de Guante», for screen readers. */
   description: string;
 }) {
   const [pending, startTransition] = useTransition();

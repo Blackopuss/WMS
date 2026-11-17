@@ -1864,7 +1864,7 @@ export type ContainerEventView = {
     | "SEALED"
     | "REOPENED"
     | "SHIPPED";
-  /** «Se armó en Estante 1», «Se puso 20 piezas de Tornillo (lote L-01)». */
+  /** «Se armó en Estante 1», «Se puso 20 piezas de Guante (lote L-01)». */
   text: string;
   movementId: string | null;
   taskId: string | null;
