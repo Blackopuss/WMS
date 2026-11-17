@@ -1,9 +1,10 @@
 "use client";
 
 import { CalendarClock, Loader2 } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 
 import { FormField } from "@/components";
+import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -33,6 +34,8 @@ export function ProgramForm({
     values: initial,
     answers: 0,
   } satisfies ProgramFormState);
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
   const [basis, setBasis] = useState(state.values.basis || "EVEN");
   const error = (field: ProgramFormState["field"]) =>
     state.field === field ? state.error : undefined;
@@ -40,7 +43,12 @@ export function ProgramForm({
   const abc = basis === "ABC";
 
   return (
-    <form action={formAction} noValidate className="max-w-xl space-y-5">
+    <form
+      ref={formRef}
+      action={formAction}
+      noValidate
+      className="max-w-xl space-y-5"
+    >
       {programId && <input type="hidden" name="programId" value={programId} />}
       {state.error && !state.field && (
         <p role="alert" className="text-sm text-destructive">

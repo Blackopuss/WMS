@@ -56,7 +56,9 @@ Cada propósito de `FILE_PURPOSES` dice qué permiso escribe y cuál lee:
 e `incident_photo` (`inventory.incident.create` / `.read`; 5 MB; 5 fotos a la
 vez y 30 por incidencia) y `process_step_photo` (WMS-74:
 `platform.process.work` / `platform.organization.read`, porque quién la ve
-lo decide `processStepReach` del motor de procesos; 5 fotos por paso).
+lo decide `processStepReach` del motor de procesos; 5 fotos por paso) y
+`task_photo` (WMS-37B: `inventory.task.execute` / `inventory.task.read`; 3
+fotos por tarea, ligadas al entregarla).
 Un módulo que suba o genere archivos agrega aquí su propósito con sus
 permisos.
 
@@ -65,7 +67,7 @@ permisos.
 `stored_file` (con `width` y `height` de una imagen), `evidence_photo`
 (vínculo inmutable de una foto con su registro: una columna por clase de
 registro, hoy `incidentId` e `incidentNoteId`, y `processStepId` de un paso
-de un proceso, WMS-74) y `storage_cleanup` (llaves
+de un proceso, WMS-74, y `warehouseTaskId` de una tarea entregada, WMS-37B) y `storage_cleanup` (llaves
 cuyos bytes pueden haber quedado sin archivo vivo, WMS-67). El cupo de
 almacenamiento es el contador `file_storage_kib` de `quota_usage` (KiB por
 archivo, hacia arriba), limitado por el derecho `file_storage_gb` del plan

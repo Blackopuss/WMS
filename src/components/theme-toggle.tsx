@@ -44,10 +44,10 @@ export function ThemeToggle({
       <span
         aria-hidden="true"
         className={cn(
-          "relative flex h-8 w-14 shrink-0 items-center overflow-hidden rounded-full p-1 shadow-inner ring-1 ring-black/5 transition-colors duration-300",
-          dark
-            ? "bg-gradient-to-br from-zinc-950 via-zinc-800 to-zinc-700 ring-white/10"
-            : "bg-gradient-to-br from-sky-300 via-sky-200 to-amber-100",
+          // Tokens only: the track's ring and the icon keep 3:1 (WCAG 1.4.11)
+          // in both themes; the old sky and zinc gradients did not.
+          "relative flex h-8 w-14 shrink-0 items-center overflow-hidden rounded-full p-1 shadow-inner ring-1 ring-input transition-colors duration-300",
+          dark ? "bg-secondary" : "bg-accent",
         )}
       >
         <AnimatePresence>
@@ -55,7 +55,7 @@ export function ThemeToggle({
             STARS.map((star, i) => (
               <motion.span
                 key={i}
-                className="absolute rounded-full bg-white"
+                className="absolute rounded-full bg-muted-foreground"
                 style={{
                   top: star.top,
                   left: star.left,
@@ -75,7 +75,7 @@ export function ThemeToggle({
         <motion.span
           className={cn(
             "relative z-10 grid size-6 place-items-center rounded-full shadow-md",
-            dark ? "bg-zinc-200 text-zinc-900" : "bg-white text-amber-500",
+            dark ? "bg-foreground text-background" : "bg-card text-warning",
           )}
           initial={false}
           animate={{ x: dark ? 24 : 0 }}

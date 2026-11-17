@@ -206,7 +206,7 @@ export default async function PedidoPage({
           Se surte en la{" "}
           <Link
             href={`/tareas/olas/${wave.id}`}
-            className="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="rounded font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             ola {wave.numberText}
           </Link>
@@ -271,7 +271,7 @@ export default async function PedidoPage({
                     {line.sku}
                   </span>
                 </span>
-                <span className="flex items-center gap-3 text-right tabular-nums">
+                <span className="ml-auto flex items-center gap-3 text-right tabular-nums">
                   <span>
                     <span className="block font-medium">
                       {line.quantityText}

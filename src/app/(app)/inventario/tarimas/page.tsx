@@ -101,14 +101,14 @@ export default async function TarimasPage({
         actions={
           canMove && !closed && visible ? (
             <>
-              <Button asChild variant="outline" size="lg">
-                <Link href="/inventario/tarimas/mover">Mover una tarima</Link>
-              </Button>
               {enabled && (
-                <Button asChild size="lg">
+                <Button asChild>
                   <Link href="/inventario/tarimas/armar">Armar tarima</Link>
                 </Button>
               )}
+              <Button asChild variant="outline">
+                <Link href="/inventario/tarimas/mover">Mover una tarima</Link>
+              </Button>
             </>
           ) : undefined
         }
@@ -194,7 +194,7 @@ export default async function TarimasPage({
                     {item.locationPath}
                   </p>
                 </div>
-                <div className="text-right text-sm">
+                <div className="ml-auto text-right text-sm">
                   <p className="font-medium">
                     {item.open ? (
                       item.contentText
@@ -213,7 +213,7 @@ export default async function TarimasPage({
                 </div>
                 <ChevronRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
+                  className="ml-auto size-4 shrink-0 text-muted-foreground"
                 />
               </li>
             ))}

@@ -126,6 +126,8 @@ export function ReportForm({
                 name="kind"
                 value={kind.value}
                 defaultChecked={state.values.kind === kind.value}
+                aria-invalid={errors.kind ? true : undefined}
+                aria-describedby={errors.kind ? "kind-error" : undefined}
                 className="size-4 accent-primary"
               />
               <span>{kind.label}</span>

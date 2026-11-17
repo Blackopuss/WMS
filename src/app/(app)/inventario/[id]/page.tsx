@@ -416,7 +416,7 @@ export default async function ProductoPage({
                         </>
                       )}
                     </span>
-                    <span className="text-right tabular-nums">
+                    <span className="ml-auto text-right tabular-nums">
                       <span className="font-medium">{location.label}</span>
                       {location.unavailable.map((part) => (
                         <span
@@ -486,7 +486,7 @@ export default async function ProductoPage({
                         : "Sin caducidad"}
                     </p>
                   </div>
-                  <p className="text-right tabular-nums">
+                  <p className="ml-auto text-right tabular-nums">
                     {lot.expired && lot.total !== "0" && (
                       <>
                         <Badge variant="destructive">Caducado</Badge>{" "}
@@ -496,7 +496,7 @@ export default async function ProductoPage({
                   </p>
                   <ChevronRight
                     aria-hidden="true"
-                    className="size-4 shrink-0 text-muted-foreground"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
                   />
                 </li>
               ))}
