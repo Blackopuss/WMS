@@ -4,10 +4,12 @@ import { newId } from "@/lib";
 import {
   acceptTask,
   changeStockStatus,
+  confirmPick,
   createOutboundOrder,
   createTask,
   deliverTask,
   pickUpTask,
+  receiveCustomerReturn,
   reconcileStock,
   registerEntry,
   registerExit,
@@ -17,7 +19,8 @@ import {
   setOutboundLine,
   type InventoryActor,
 } from "@/modules/inventory";
-import { moduleRegistry } from "@/modules/registry";
+import { moduleRegistry, operationSettings } from "@/modules/registry";
+import { setMemberScope } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import {
@@ -27,6 +30,7 @@ import {
   editLocation,
   switchFacility,
 } from "@/platform/locations";
+import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -129,6 +133,30 @@ async function draftOrder(
   });
   if (!line.ok) throw new Error(JSON.stringify(line));
   return made.orderId;
+}
+
+async function setTo(actor: InventoryActor, key: string, value: string) {
+  const set = await updateOperationSetting(
+    actor,
+    operationSettings,
+    key,
+    value,
+  );
+  if (!set.ok) throw new Error(set.error);
+}
+
+/** An order released with whatever there is (cross-docking waits for it). */
+async function waiting(
+  actor: InventoryActor,
+  productId: string,
+  quantity: string,
+) {
+  const order = await draftOrder(actor, productId, quantity);
+  const released = await releaseOutboundOrder(actor, order, {
+    takeWhatThereIs: true,
+  });
+  if (!released.ok) throw new Error(JSON.stringify(released));
+  return order;
 }
 
 /** Runs everything at once; returns the raw errors (deadlocks among them). */
@@ -359,6 +387,242 @@ describe("locks in one order (WMS-76)", () => {
               code: `N${counter}`,
             }),
           () => switchFacility(owner, spare.facilityId),
+        ])),
+      );
+    }
+    expect(errors).toEqual([]);
+  }, 180_000);
+  it("archiving a warehouse never deadlocks with an entry that then locks the shelf of its putaway task (WMS-82)", async () => {
+    // The entry locks «General» of the warehouse and, at the end, the shelf
+    // its putaway task recommends: two locations one after the other.
+    // Archiving takes every location of the warehouse without waiting, so
+    // it answers «try again» instead of closing a circle.
+    const owner = await company();
+    const set = await updateOperationSetting(
+      owner,
+      operationSettings,
+      "inventory.putaway.mode",
+      "tasks",
+    );
+    if (!set.ok) throw new Error(set.error);
+    const item = await product(owner);
+    const errors: string[] = [];
+    for (let round = 0; round < 20; round++) {
+      const made = await createFacility(owner, {
+        name: `Por archivar ${++counter}`,
+        code: `P${counter}`,
+      });
+      if (!made.ok) throw new Error("facility setup failed");
+      const moved = await switchFacility(owner, made.facilityId);
+      if (!moved.ok) throw new Error("switch failed");
+      for (let n = 0; n < 3; n++) await shelf(owner);
+      errors.push(
+        ...(await together([
+          () =>
+            registerEntry(owner, {
+              productId: item,
+              quantity: "4",
+              acceptRepeat: true,
+              acceptCapacity: true,
+            }),
+          () => archiveFacility(owner, made.facilityId),
+        ])),
+      );
+      const archived = await db.facility.findUniqueOrThrow({
+        where: { id: made.facilityId },
+        select: { archivedAt: true },
+      });
+      const stocked = await db.stockBalance.count({
+        where: {
+          organizationId: owner.organizationId,
+          quantity: { gt: 0 },
+          location: { facilityId: made.facilityId },
+        },
+      });
+      expect(archived.archivedAt !== null && stocked > 0).toBe(false);
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 180_000);
+  it("delivering a put-away to a shelf never deadlocks with an entry to the same dock (WMS-82 review, C1)", async () => {
+    // Shelf E created before dock M (E < M). The put-away M→E locks
+    // [E, M]; an entry of another product to M locks M and creates its
+    // put-away towards E. No hidden lock on E may come after M.
+    const owner = await company();
+    await setTo(owner, "inventory.putaway.mode", "tasks");
+    const shelfCode = `E${++counter}`;
+    const shelfE = await createLocation(owner, {
+      level: 3,
+      name: `Estante E ${counter}`,
+      code: shelfCode,
+    });
+    const dock = await createLocation(owner, {
+      level: 1,
+      name: `Muelle ${++counter}`,
+      type: "RECEIVING",
+    });
+    if (!shelfE.ok || !dock.ok) throw new Error("location setup failed");
+    const errors: string[] = [];
+    for (let round = 0; round < 20; round++) {
+      const first = await product(owner);
+      const second = await product(owner);
+      await enter(owner, first, dock.locationId, "3");
+      const task = await db.warehouseTask.findFirstOrThrow({
+        where: {
+          organizationId: owner.organizationId,
+          productId: first,
+          kind: "PUTAWAY",
+        },
+        select: { id: true },
+      });
+      expect(await acceptTask(owner, task.id)).toMatchObject({ ok: true });
+      expect(await pickUpTask(owner, task.id)).toMatchObject({ ok: true });
+      errors.push(
+        ...(await together([
+          () =>
+            deliverTask(owner, task.id, {
+              locationCode: shelfCode,
+              acceptCapacity: true,
+            }),
+          () => enter(owner, second, dock.locationId, "2"),
+        ])),
+      );
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 180_000);
+
+  it("delivering a cross-dock pick never deadlocks with an entry to the same dock that serves another order (WMS-82 review, C1)", async () => {
+    const owner = await company();
+    await setTo(owner, "inventory.putaway.mode", "tasks");
+    await setTo(owner, "inventory.crossdock.mode", "on");
+    await shelf(owner);
+    // «Preparación» first (the first release creates it), the dock after.
+    const warmUp = await product(owner);
+    await waiting(owner, warmUp, "1");
+    const dock = await createLocation(owner, {
+      level: 1,
+      name: `Muelle ${++counter}`,
+      type: "RECEIVING",
+    });
+    if (!dock.ok) throw new Error("location setup failed");
+    const dockName = (
+      await db.location.findUniqueOrThrow({ where: { id: dock.locationId } })
+    ).name;
+    const errors: string[] = [];
+    for (let round = 0; round < 20; round++) {
+      const first = await product(owner);
+      const second = await product(owner);
+      await waiting(owner, first, "2");
+      await waiting(owner, second, "2");
+      await enter(owner, first, dock.locationId, "2");
+      const task = await db.warehouseTask.findFirstOrThrow({
+        where: {
+          organizationId: owner.organizationId,
+          productId: first,
+          kind: "PICK",
+        },
+        select: { id: true },
+      });
+      const sku = (await db.product.findUniqueOrThrow({ where: { id: first } }))
+        .sku;
+      expect(await acceptTask(owner, task.id)).toMatchObject({ ok: true });
+      expect(
+        await confirmPick(owner, task.id, {
+          productCode: sku,
+          locationCode: dockName,
+          quantity: "2",
+        }),
+      ).toMatchObject({ ok: true });
+      errors.push(
+        ...(await together([
+          () => deliverTask(owner, task.id),
+          () => enter(owner, second, dock.locationId, "2"),
+        ])),
+      );
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("the first release of a new warehouse never deadlocks with a customer return on the same shelf (WMS-82 review, A1)", async () => {
+    const owner = await company();
+    const errors: string[] = [];
+    for (let round = 0; round < 20; round++) {
+      const made = await createFacility(owner, {
+        name: `Nuevo surtido ${++counter}`,
+        code: `R${counter}`,
+      });
+      if (!made.ok) throw new Error("facility setup failed");
+      const moved = await switchFacility(owner, made.facilityId);
+      if (!moved.ok) throw new Error("switch failed");
+      const place = await shelf(owner);
+      const ordered = await product(owner);
+      const returned = await product(owner);
+      await enter(owner, ordered, place, "5");
+      const order = await draftOrder(owner, ordered, "2");
+      errors.push(
+        ...(await together([
+          () => releaseOutboundOrder(owner, order),
+          () =>
+            receiveCustomerReturn(owner, {
+              returnedBy: "Cliente",
+              reason: "No era lo que pidió",
+              locationId: place,
+              idempotencyKey: newId(),
+              lines: [{ productId: returned, quantity: "1" }],
+            }),
+        ])),
+      );
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+  it("archiving a warehouse never deadlocks with a team change of someone who works there (WMS-82)", async () => {
+    // Archiving updates the memberships that work in the warehouse and
+    // writes its audit line (which points to the company); a team change
+    // locks the company and then the membership.
+    const owner = await company();
+    const memberId = await newUser();
+    const membership = await db.membership.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        userId: memberId,
+        status: "ACTIVE",
+      },
+    });
+    await db.membershipRole.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        membershipId: membership.id,
+        role: "operator",
+      },
+    });
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, isDefault: true },
+      select: { id: true },
+    });
+    const errors: string[] = [];
+    for (let round = 0; round < 20; round++) {
+      const made = await createFacility(owner, {
+        name: `Con gente ${++counter}`,
+        code: `G${counter}`,
+      });
+      if (!made.ok) throw new Error("facility setup failed");
+      await db.membership.update({
+        where: { id: membership.id },
+        data: { activeFacilityId: made.facilityId },
+      });
+      errors.push(
+        ...(await together([
+          () => archiveFacility(owner, made.facilityId),
+          () =>
+            setMemberScope(owner.organizationId, owner.userId, {
+              userId: memberId,
+              facilities: round % 2 === 0 ? [{ facilityId: main.id }] : [],
+            }),
         ])),
       );
     }

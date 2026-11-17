@@ -9,7 +9,9 @@ import {
   LOCATION_PARENTS,
   activeFacilityOf,
   assertLocationsInScope,
+  ARCHIVED_FACILITY_MESSAGE,
   assertWholeFacilityInScope,
+  holdOpenFacility,
   isLimited,
   locationPath,
   locationScopeWhere,
@@ -284,6 +286,10 @@ export async function createCountProgram(
   try {
     return await forOrganization(organizationId).$transaction(async (tx) => {
       const facility = await activeFacilityOf(tx, userId);
+      // WMS-82 (ADR 0077): its warehouse, shared, before its root location.
+      if (!(await holdOpenFacility(tx, facility.id))) {
+        reject("not_allowed", ARCHIVED_FACILITY_MESSAGE);
+      }
       const rootLocationId = await checkRoot(
         tx,
         userId,

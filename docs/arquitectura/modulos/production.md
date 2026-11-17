@@ -157,6 +157,12 @@ omisión, `issue`) y `production.release.short` (`ask` por omisión,
 `production.request_created`, `production.request_accepted`,
 `production.request_rejected`, `production.request_cancelled`.
 
+**Almacén archivado (WMS-82, ADR 0077).** `shareFacility` (crear, guardar,
+cambiar personas, aceptar una solicitud) rechaza un almacén archivado con la
+misma lectura con candado. `submitProductionRequest` toma el almacén
+compartido entre la empresa y la membresía. Archivar un almacén se rechaza
+con órdenes abiertas o solicitudes por atender de ese almacén.
+
 ## ADR
 
 0062 (roles y permisos de producción y calidad), 0066 (recetas), 0073

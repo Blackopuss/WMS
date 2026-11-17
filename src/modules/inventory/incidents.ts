@@ -14,9 +14,11 @@ import {
   type StoreFileResult,
 } from "@/platform/files";
 import {
+  ARCHIVED_FACILITY_MESSAGE,
   LOCATION_PARENTS,
   activeFacilityOf,
   assertLocationsInScope,
+  holdOpenFacility,
   isFacilityInScope,
   isLimited,
   locationPath,
@@ -331,6 +333,11 @@ export async function reportIncident(
             repeated: true as const,
             summary: `Ya habías reportado ${formatIncidentNumber(known.number)}.`,
           };
+        }
+        // WMS-82 (ADR 0077): its warehouse, shared, before it is written;
+        // archiving takes it in exclusive and sees this incident.
+        if (!(await holdOpenFacility(tx, facility.id))) {
+          return stop("not_allowed", ARCHIVED_FACILITY_MESSAGE);
         }
         if (locationId) await assertLocationsInScope(tx, userId, [locationId]);
         const photoIds = input.photoIds ?? [];

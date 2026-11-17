@@ -14,7 +14,9 @@ import {
   type Capture,
 } from "@/platform/catalog";
 import {
+  ARCHIVED_FACILITY_MESSAGE,
   activeFacilityOf,
+  holdOpenFacility,
   isFacilityInScope,
   type LocationScopeReader,
 } from "@/platform/locations";
@@ -201,6 +203,13 @@ async function listedOrdersWhere(
  * The warehouse a new order is for: the one chosen, when the person may
  * work there, else their active one.
  */
+/** The warehouse of a new order was archived meanwhile (WMS-82). */
+class FacilityArchived extends Error {
+  constructor() {
+    super("the warehouse of the order was archived");
+  }
+}
+
 async function facilityForNewOrder(
   client: Pick<Tx, "facility" | "membership" | "location">,
   userId: string,
@@ -271,6 +280,11 @@ export async function createPurchaseOrder(
     const number = (last?.number ?? 0) + 1;
     try {
       await client.$transaction(async (tx) => {
+        // WMS-82 (ADR 0077): its warehouse, shared, before it is written;
+        // archiving takes it in exclusive and sees this order.
+        if (!(await holdOpenFacility(tx, facility.facilityId))) {
+          throw new FacilityArchived();
+        }
         await tx.purchaseOrder.create({
           data: {
             id: orderId,
@@ -296,6 +310,9 @@ export async function createPurchaseOrder(
       });
       return { ok: true, orderId, number };
     } catch (error) {
+      if (error instanceof FacilityArchived) {
+        return refuse("invalid", "facilityId", ARCHIVED_FACILITY_MESSAGE);
+      }
       if ((error as { code?: string }).code !== "P2002") throw error;
     }
   }

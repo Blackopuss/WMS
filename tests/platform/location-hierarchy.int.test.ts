@@ -852,7 +852,9 @@ describe("the database keeps the hierarchy even when the application is bypassed
           ),
           change,
         ).rejects.toThrow(
-          /location_default_check|location_general_check|location_tree/,
+          // WMS-82: archiving General outside its facility is refused by
+          // a trigger now (the CHECK cannot see the facility).
+          /location_default_check|location_general_check|location_tree|archived only with their facility/,
         );
       }
       await expect(insert("Otra General", "GENERAL", null)).rejects.toThrow(

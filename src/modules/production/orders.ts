@@ -17,8 +17,10 @@ import { isAllowed } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
 import {
+  ARCHIVED_FACILITY_MESSAGE,
   LOCATION_PARENTS,
   activeFacilityOf,
+  holdOpenFacility,
   isLimited,
   locationPath,
   locationScopeWhere,
@@ -249,10 +251,16 @@ async function facilityOfOrder(
   return row?.facilityId ?? null;
 }
 
-export const shareFacility = (tx: Tx, facilityId: string | null) =>
-  facilityId
-    ? lockRows(tx, "facility", [facilityId], { mode: "share" })
-    : Promise.resolve([]);
+/**
+ * The warehouse of the order, shared, first (ADR 0073/0074); an archived
+ * one stops everything (WMS-82, ADR 0077).
+ */
+export const shareFacility = async (tx: Tx, facilityId: string | null) => {
+  if (!facilityId) return;
+  if (!(await holdOpenFacility(tx, facilityId))) {
+    stop("not_allowed", ARCHIVED_FACILITY_MESSAGE);
+  }
+};
 
 // ── Header ───────────────────────────────────────────────────────────────
 

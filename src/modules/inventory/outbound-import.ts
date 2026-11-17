@@ -13,7 +13,11 @@ import {
   storeFile,
   type Cell,
 } from "@/platform/files";
-import { activeFacilityOf } from "@/platform/locations";
+import {
+  ARCHIVED_FACILITY_MESSAGE,
+  activeFacilityOf,
+  holdOpenFacility,
+} from "@/platform/locations";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { formatExitDay, parseExitDay } from "./exit-import";
@@ -1046,6 +1050,15 @@ export async function confirmOutboundImport(
             ok: false,
             reason: "not_ready",
             error: NOT_READY,
+          });
+        }
+        // WMS-82 (ADR 0077): the warehouse of the orders, shared; archiving
+        // it takes it in exclusive and sees these orders.
+        if (!(await holdOpenFacility(tx, facility.id))) {
+          throw new Rejected({
+            ok: false,
+            reason: "not_ready",
+            error: ARCHIVED_FACILITY_MESSAGE,
           });
         }
         // Imported meanwhile by another file, or archived since the

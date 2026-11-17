@@ -217,6 +217,16 @@ export async function createApiKey(
       // The cap is counted under the lock of the company, like the
       // changes of the team: two keys created at once never pass it.
       const full = await db.$transaction(async (tx) => {
+        // WMS-82 (ADR 0077): its warehouse, shared, by its primary key,
+        // BEFORE the company: archiving holds every warehouse and then
+        // writes rows that point to the company (its audit line), so taking
+        // the company first closed a circle. The archived mark is read by
+        // the locking statement itself.
+        const [home] = await tx.$queryRaw<{ archivedAt: Date | null }[]>`
+          SELECT archivedAt FROM facility FORCE INDEX (PRIMARY)
+          WHERE id = ${facility.id} AND organizationId = ${organizationId}
+          FOR SHARE`;
+        if (!home || home.archivedAt) return "archived" as const;
         await lockOrganization(tx, organizationId);
         // Expired keys do not count: the screen cannot revoke them.
         const active = await tx.apiKey.count({
@@ -258,6 +268,13 @@ export async function createApiKey(
         });
         return false;
       });
+      if (full === "archived") {
+        return {
+          ok: false,
+          reason: "invalid",
+          fieldErrors: { facilityId: "Elige un almacén en el que trabajes." },
+        };
+      }
       if (full) {
         return {
           ok: false,

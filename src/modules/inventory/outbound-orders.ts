@@ -7,7 +7,9 @@ import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
 import {
+  ARCHIVED_FACILITY_MESSAGE,
   activeFacilityOf,
+  holdOpenFacility,
   ensureStagingLocation,
   isFacilityInScope,
 } from "@/platform/locations";
@@ -258,6 +260,15 @@ export async function createOutboundOrder(
   for (let attempt = 0; ; attempt++) {
     try {
       return await forOrganization(organizationId).$transaction(async (tx) => {
+        // WMS-82 (ADR 0077): its warehouse, shared, before anything else;
+        // archiving takes it in exclusive and sees this order.
+        if (!(await holdOpenFacility(tx, facility.id))) {
+          return {
+            ok: false as const,
+            reason: "not_allowed" as const,
+            formError: ARCHIVED_FACILITY_MESSAGE,
+          };
+        }
         const last = await tx.outboundOrder.findFirst({
           orderBy: { number: "desc" },
           select: { number: true },
@@ -1452,6 +1463,14 @@ export async function createOutboundDraft(
           "product",
           ids.filter((id): id is string => id !== null),
         );
+        // WMS-82 (ADR 0077): its warehouse, shared, after the products.
+        if (!(await holdOpenFacility(tx, facility.id))) {
+          return {
+            ok: false as const,
+            reason: "invalid" as const,
+            formError: ARCHIVED_FACILITY_MESSAGE,
+          };
+        }
         const products = await tx.product.findMany({
           where: { id: { in: ids.filter((id): id is string => id !== null) } },
           select: {

@@ -375,6 +375,17 @@ Rondas (`scheduledRounds` de `src/modules/registry/rounds.ts`, cada hora):
 | `inventory.equipment_maintenance` | `runEquipmentMaintenanceRound` (`equipment.ts`) | Avisa del mantenimiento por vencer o vencido de cada equipo no dado de baja; repetirla no duplica (llave por equipo, día y fase) |
 | `inventory.daily_digest` | `runDailyDigestRound` (`daily-digest.ts`) | A partir de la hora de la empresa, aparta el resumen de hoy de quien lo pidió y encola su envío; repetirla o correrla dos veces a la vez no duplica (llave única persona + día). Borra los resúmenes terminados de más de 90 días. |
 
+**Almacén archivado (WMS-82, ADR 0077).** Un almacén archivado tiene todas
+sus ubicaciones archivadas, así que toda operación que mete existencias lo
+rechaza con la revisión de siempre («… está archivada»), después de bloquear
+la ubicación. La entrada manual y el saldo inicial resuelven y bloquean
+«General» antes de leerla (`generalLocationIdOf`). Pedidos de salida (pantalla,
+API e importación), embarques, programas de conteo, incidencias y equipos
+toman su almacén compartido con `holdOpenFacility` antes de nacer, y la
+devolución de cliente lo toma después de sus productos y antes de su
+ubicación; la ola (nace de pedidos abiertos) y lo que nace bloqueando una
+ubicación del almacén (tareas, conteos, contenedores) no lo necesitan.
+
 ## ADR
 
 0012 (movimientos y saldos), 0013 (cola), 0014 (archivos), 0015 (importación de
