@@ -6,6 +6,12 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-17
+
+- **WMS-81** Sin módulo CRM anunciado; aviso de privacidad y términos al día
+  (versión 2026-11-17); ejemplos genéricos en la plantilla de importación.
+- Prueba de equipos: «hoy» en el calendario de la empresa, no en UTC.
+
 ## 2026-11-16
 
 - **WMS-78A / WMS-78B** Revisión visual de la app con Playwright y axe:
