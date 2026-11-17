@@ -1,9 +1,10 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 
 import { LegalConsent } from "@/components";
+import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 
 import { signOutAction } from "../../(app)/actions";
@@ -21,6 +22,8 @@ export function AcceptLegalForm({
     AcceptLegalState,
     FormData
   >(acceptLegalAction, {});
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(formRef, state);
 
   return (
     <>
@@ -49,7 +52,12 @@ export function AcceptLegalForm({
           </li>
         ))}
       </ul>
-      <form action={formAction} noValidate className="mt-6 space-y-5">
+      <form
+        ref={formRef}
+        action={formAction}
+        noValidate
+        className="mt-6 space-y-5"
+      >
         <LegalConsent error={state.error} />
         <Button type="submit" size="lg" className="w-full" disabled={pending}>
           {pending && <Loader2 aria-hidden="true" className="animate-spin" />}

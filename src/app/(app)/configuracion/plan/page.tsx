@@ -106,7 +106,8 @@ function moduleNote(module: PlanModule): string {
   if (module.validUntil) {
     return `Activo hasta el ${formatDate(module.validUntil)}.`;
   }
-  return module.required ? "Base de tu empresa." : "Activo.";
+  // An active module says nothing more: its badge already says «Activo».
+  return module.required ? "Base de tu empresa." : "";
 }
 
 /** «Mi plan» (MOD-10): quotas, modules and validity of the company. */
@@ -292,9 +293,11 @@ export default async function PlanPage() {
             >
               <div className="min-w-0">
                 <p className="font-medium">{module.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {moduleNote(module)}
-                </p>
+                {moduleNote(module) && (
+                  <p className="text-sm text-muted-foreground">
+                    {moduleNote(module)}
+                  </p>
+                )}
               </div>
               {module.state === "active" ? (
                 <Badge variant="success">Activo</Badge>
