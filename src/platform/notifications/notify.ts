@@ -67,6 +67,16 @@ export type NotifyRecipients = {
   facilityId?: string | null;
   /** …or this location (and so its warehouse). */
   locationId?: string | null;
+  /**
+   * Every one of these locations (WMS-88, ADR 0084): a task exists for
+   * who reaches its origin and its destination.
+   */
+  locationIds?: readonly (string | null | undefined)[];
+  /**
+   * Only who sees the whole company: the titular or someone without a
+   * limit of warehouses or zones (WMS-88, ADR 0084).
+   */
+  wholeCompany?: boolean;
 };
 
 export type NotifyInput = {
@@ -118,13 +128,8 @@ export async function notify(
     : null;
   if (wanted && wanted.length === 0) return { sent: 0 };
 
-  let place: Place | null = null;
-  if (to.locationId) {
-    place = await placeOfLocation(tx, to.locationId);
-    if (!place) return { sent: 0 };
-  } else if (to.facilityId) {
-    place = { facilityId: to.facilityId };
-  }
+  const place = await placesOf(tx, to);
+  if (!place) return { sent: 0 };
 
   // The company is also named in each filter (the scoped client adds the
   // same): a platform fact written with the plain client of its own
@@ -234,8 +239,11 @@ export async function modulesFor(
  */
 export function memberReaches(
   member: MemberRow,
-  to: Pick<NotifyRecipients, "permissions" | "match" | "roles" | "ownerByRole">,
-  place: Place | null,
+  to: Pick<
+    NotifyRecipients,
+    "permissions" | "match" | "roles" | "ownerByRole" | "wholeCompany"
+  >,
+  place: Place | readonly Place[] | null,
   modules?: ReadonlyMap<string, CompanyModuleState>,
 ): boolean {
   const isOwner = member.organization.ownerUserId === member.userId;
@@ -263,7 +271,37 @@ export function memberReaches(
         : to.permissions.every((permission) => granted.has(permission));
     if (!holds) return false;
   }
-  return !place || inScope(subject, place);
+  if (to.wholeCompany && subject.scope) return false;
+  const places = place === null ? [] : Array.isArray(place) ? place : [place];
+  return (places as readonly Place[]).every((each) => inScope(subject, each));
+}
+
+/**
+ * Where a notice requires the person to reach (WMS-88): its location, its
+ * locations (all of them) or its warehouse. An empty list = anywhere;
+ * null = a location named no longer exists (nobody is notified).
+ */
+export async function placesOf(
+  client: Parameters<typeof placeOfLocation>[0],
+  to: Pick<NotifyRecipients, "facilityId" | "locationId" | "locationIds">,
+): Promise<Place[] | null> {
+  const ids = [
+    ...new Set(
+      [to.locationId, ...(to.locationIds ?? [])].filter(
+        (id): id is string => typeof id === "string" && id !== "",
+      ),
+    ),
+  ];
+  const places: Place[] = [];
+  for (const id of ids) {
+    const place = await placeOfLocation(client, id);
+    if (!place) return null;
+    places.push(place);
+  }
+  if (places.length === 0 && to.facilityId) {
+    places.push({ facilityId: to.facilityId });
+  }
+  return places;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +323,8 @@ export type NoticeRequirement = Pick<
   | "ownerByRole"
   | "facilityId"
   | "locationId"
->;
+  | "wholeCompany"
+> & { locationIds?: string[] };
 
 /** When the next mail to a person may leave, from its last one. */
 export function nextMailAt(now: Date, lastSentAt: Date | null): Date {
@@ -345,6 +384,14 @@ async function queueNoticeEmails(
     ...(to.ownerByRole === false ? { ownerByRole: false } : {}),
     ...(to.facilityId ? { facilityId: to.facilityId } : {}),
     ...(to.locationId ? { locationId: to.locationId } : {}),
+    ...(to.locationIds && to.locationIds.some(Boolean)
+      ? {
+          locationIds: to.locationIds.filter(
+            (id): id is string => typeof id === "string" && id !== "",
+          ),
+        }
+      : {}),
+    ...(to.wholeCompany ? { wholeCompany: true } : {}),
   };
   const now = new Date();
   const text = noticeText(input.text);
