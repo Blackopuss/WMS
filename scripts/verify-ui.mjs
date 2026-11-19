@@ -1194,10 +1194,15 @@ try {
           `WMS-88 ${width}px (${each.name}): no horizontal overflow`,
         );
         await button.click();
+        // Not Next's route announcer (also role=alert): the card's answer.
         const answer = page.locator(
           each.works ? "[role=status]" : "[role=alert]",
+          {
+            hasText: each.works
+              ? "Ya no recibirás avisos por correo"
+              : "no es válido o ya venció",
+          },
         );
-        await answer.first().waitFor({ timeout: 10_000 });
         const focused = await answer
           .first()
           .evaluate((node) => document.activeElement === node);
@@ -1210,8 +1215,7 @@ try {
           `WMS-88 ${width}px (${each.name}): the answer is said and focused`,
         );
         // It never says the person, the address or the company.
-        const body =
-          (await page.locator("main, body").first().textContent()) ?? "";
+        const body = await page.locator("body").innerText();
         check(
           !body.includes("@") && !body.includes("Empresa Demo"),
           `WMS-88 ${width}px (${each.name}): says nothing of the person or company`,
