@@ -17,3 +17,10 @@ export const COUNT_APPROVAL = {
   label: "Aplicar conteos con diferencias grandes",
   decidePermissions: ["inventory.count.apply", "inventory.adjustment.create"],
 } as const;
+
+export const DISPOSAL_APPROVAL = {
+  key: "inventory.disposal",
+  label: "Desechar mercancía",
+  // Authorizing a write-off takes being able to write off (WMS-83).
+  decidePermissions: ["inventory.disposal.create"],
+} as const;

@@ -260,6 +260,17 @@ const supplier = await must(
     phone: "55 5555 0101",
   }),
 );
+// A second supplier: with a single one «Nueva orden» chooses it for the person
+// and has nothing to refuse when sent empty (verify:a11y checks that).
+await must(
+  "segundo proveedor",
+  createSupplier(actor, {
+    name: "Etiquetas del Norte",
+    contactPerson: "Mario Ibarra",
+    email: "pedidos@etiquetasdelnorte.example",
+    phone: "55 5555 0102",
+  }),
+);
 const order = await must(
   "orden de compra",
   purchasing.createPurchaseOrder(actor, { supplierId: supplier.supplierId }),
@@ -435,6 +446,72 @@ await must(
   await must(
     "defecto",
     quality.createDefect(actor, { name: "Caja aplastada", severity: "MAJOR" }),
+  );
+}
+
+// WMS-87: stock that waits for a decision («Por inspeccionar» and «En
+// restauración») and a process with a stage on production orders, so those
+// screens and `/procesos/[id]` can be reviewed with data.
+{
+  const at = {
+    productId: products["GUA-001"]!,
+    locationId: locations["B1-1"]!,
+  };
+  for (const [to, reason] of [
+    ["INSPECTION", "Revisar el lote al recibirlo"],
+    ["REPAIR", "Coser costuras sueltas"],
+  ] as const) {
+    await must(
+      `existencias ${to}`,
+      inventory.changeStockStatus(actor, {
+        ...at,
+        from: "AVAILABLE",
+        to,
+        quantity: "3",
+        reason,
+        idempotencyKey: newId(),
+      }),
+    );
+  }
+  const processes = await import("@/platform/processes");
+  const documents = (await import("@/modules/registry")).processDocuments;
+  await must(
+    "proceso de órdenes de producción",
+    processes.saveProcessDraft(
+      actor,
+      documents,
+      "production.order",
+      {
+        stages: [
+          {
+            name: "Revisar los materiales",
+            kind: "MANUAL",
+            milestone: "DRAFT",
+            roles: ["production_supervisor"],
+            children: [
+              { name: "Contar las cajas" },
+              { name: "Revisar la cinta" },
+            ],
+          },
+        ],
+      },
+      { publish: true },
+    ),
+  );
+  const area = await db.location.findFirstOrThrow({
+    where: { organizationId, type: "PRODUCTION" },
+  });
+  const kit = await db.product.findFirstOrThrow({
+    where: { organizationId, sku: "KIT-001" },
+  });
+  // A new order starts its process (the first one was made before it).
+  await must(
+    "orden con proceso",
+    production.createProductionOrder(actor, {
+      productId: kit.id,
+      quantity: "5",
+      areaLocationId: area.id,
+    }),
   );
 }
 

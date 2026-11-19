@@ -620,7 +620,14 @@ async function openTasksOf(tx: Tx | Client, equipmentId: string) {
     },
     orderBy: { number: "asc" },
     take: 50,
-    select: { id: true, number: true, assignedToUserId: true, status: true },
+    select: {
+      id: true,
+      number: true,
+      assignedToUserId: true,
+      status: true,
+      fromLocationId: true,
+      toLocationId: true,
+    },
   });
 }
 
@@ -828,7 +835,10 @@ async function tellHolders(
   what: "out" | "retired",
 ) {
   const tasks = await openTasksOf(tx, equipment.id);
-  const byPerson = new Map<string, { id: string; number: number }>();
+  const byPerson = new Map<
+    string,
+    { id: string; number: number; fromLocationId: string; toLocationId: string }
+  >();
   for (const task of tasks) {
     if (task.assignedToUserId && !byPerson.has(task.assignedToUserId)) {
       byPerson.set(task.assignedToUserId, task);
@@ -838,7 +848,12 @@ async function tellHolders(
     await notify(tx, EQUIPMENT_OUT_OF_SERVICE_NOTICE, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
-      to: { userIds: [personId] },
+      // WMS-88: the same rule that lets them see the task.
+      to: {
+        userIds: [personId],
+        permissions: ["inventory.task.read"],
+        locationIds: [task.fromLocationId, task.toLocationId],
+      },
       text: `${text} Lo usas en ${formatTaskNumber(task.number)}: si no has recogido la carga, cambia de equipo.`,
       href: `/tareas/${task.id}`,
       key: `equipment:${equipment.id}:${what}:${newId()}`,

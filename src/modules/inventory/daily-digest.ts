@@ -1,7 +1,7 @@
 import "server-only";
 
 import { DEFAULT_TIME_ZONE, formatDate, log, newId } from "@/lib";
-import { isAllowed } from "@/platform/authorization";
+import { isAllowed, seesWholeCompany } from "@/platform/authorization";
 import {
   InvalidEmailError,
   dailyDigestEmail,
@@ -12,6 +12,7 @@ import { enqueueJob, type JobHandlers } from "@/platform/jobs";
 import { isFacilityInScope } from "@/platform/locations";
 import {
   appLink,
+  createUnsubscribeLink,
   emailSubscribers,
   isEmailChannelOn,
   memberAddress,
@@ -25,7 +26,7 @@ import { listExpiringLots } from "./lots";
 import { listLowStock } from "./minimums";
 import type { InventoryActor } from "./movements";
 import { DAILY_DIGEST_NOTICE } from "./notices";
-import { DIGEST_HOUR } from "./settings";
+import { DIGEST_DAYS, DIGEST_HOUR } from "./settings";
 
 /**
  * The daily summary by mail (WMS-39B, ADR 0060). A round of the worker
@@ -84,13 +85,44 @@ async function timeZoneOf(client: Client): Promise<string> {
 
 const dayDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
 
+/**
+ * Whether the summary goes out on a day of the company's calendar
+ * («AAAA-MM-DD»), by the setting `inventory.digest.days`. Pure.
+ */
+export function digestGoesOn(days: string, day: string): boolean {
+  const weekday = new Date(`${day}T12:00:00.000Z`).getUTCDay(); // 0 = Sunday
+  if (days === "weekdays") return weekday >= 1 && weekday <= 5;
+  if (days === "monday_saturday") return weekday !== 0;
+  return true;
+}
+
 const isDuplicate = (error: unknown) =>
   (error as { code?: string } | null)?.code === "P2002";
+
+/**
+ * Removes the company's summaries that ended more than DIGEST_KEEP_DAYS
+ * ago. It runs in the cleanup round of notices, for every company
+ * (WMS-88, ADR 0084: also without Inventario in force).
+ */
+export async function purgeEndedDigests(
+  organizationId: string,
+  now: Date = new Date(),
+): Promise<{ removed: number }> {
+  const result = await forOrganization(organizationId).dailyDigest.deleteMany({
+    where: {
+      status: { not: "QUEUED" },
+      createdAt: {
+        lt: new Date(now.getTime() - DIGEST_KEEP_DAYS * 86_400_000),
+      },
+    },
+  });
+  return { removed: result.count };
+}
 
 export type DigestRoundResult = {
   queued: number;
   day?: string;
-  reason?: "channel_off" | "too_early";
+  reason?: "channel_off" | "too_early" | "day_off";
 };
 
 /**
@@ -104,15 +136,6 @@ export async function runDailyDigestRound(
   now: Date = new Date(),
 ): Promise<DigestRoundResult> {
   const client = forOrganization(organizationId);
-  // Ended summaries older than the limit go away first.
-  await client.dailyDigest.deleteMany({
-    where: {
-      status: { not: "QUEUED" },
-      createdAt: {
-        lt: new Date(now.getTime() - DIGEST_KEEP_DAYS * 86_400_000),
-      },
-    },
-  });
   if (!(await isEmailChannelOn(client))) {
     return { queued: 0, reason: "channel_off" };
   }
@@ -125,6 +148,11 @@ export async function runDailyDigestRound(
   }
   const window = await dayWindow(client, now);
   if (!window) return { queued: 0 };
+  // WMS-88: only on the days the company chose (its calendar).
+  const days = await readSetting(client, DIGEST_DAYS);
+  if (!digestGoesOn(days, window.day)) {
+    return { queued: 0, day: window.day, reason: "day_off" };
+  }
   const day = dayDate(window.day);
   const people = await emailSubscribers(
     client,
@@ -220,22 +248,54 @@ export async function digestSections(
   }
 
   if (await isAllowed(organizationId, userId, "inventory.minimum.read")) {
-    const low = await listLowStock(actor);
-    // Minimums are of the whole company: nothing for who is limited.
-    if (!low.limited && low.total > 0) {
-      const shown = low.items.slice(0, DIGEST_LINES);
-      sections.push({
-        title: `Existencias bajas (${low.total})`,
-        lines: shown.map(
-          (item) =>
-            `${item.name} (${item.sku}): hay ${item.stockLabel}, mínimo ${item.minimumLabel}`,
-        ),
-        more: low.total - shown.length,
-        url: appLink("/inventario/bajas"),
-      });
-    }
+    const low = await lowStockSection(actor);
+    if (low) sections.push(low);
   }
   return sections;
+}
+
+/**
+ * WMS-88 (ADR 0084): «Existencias bajas» is a figure of the whole company,
+ * the same for everybody who may read it, without costs. The jobs of one
+ * round reuse it for LOW_STOCK_REUSE_MS instead of reading it once per
+ * person; each person is still checked (the permission, by the caller, and
+ * that they see the whole company) before the copy is used.
+ */
+const LOW_STOCK_REUSE_MS = 10 * 60_000;
+const lowStockCopies = new Map<
+  string,
+  { at: number; section: DigestSection | null }
+>();
+
+async function lowStockSection(
+  actor: InventoryActor,
+): Promise<DigestSection | null> {
+  const client = forOrganization(actor.organizationId);
+  // Minimums are of the whole company: nothing for who is limited.
+  if (!(await seesWholeCompany(client, actor.userId))) return null;
+  const now = Date.now();
+  const copy = lowStockCopies.get(actor.organizationId);
+  if (copy && now - copy.at < LOW_STOCK_REUSE_MS) return copy.section;
+  const low = await listLowStock(actor);
+  if (low.limited) return null;
+  const shown = low.items.slice(0, DIGEST_LINES);
+  const section =
+    low.total > 0
+      ? {
+          title: `Existencias bajas (${low.total})`,
+          lines: shown.map(
+            (item) =>
+              `${item.name} (${item.sku}): hay ${item.stockLabel}, mínimo ${item.minimumLabel}`,
+          ),
+          more: low.total - shown.length,
+          url: appLink("/inventario/bajas"),
+        }
+      : null;
+  for (const [key, each] of lowStockCopies) {
+    if (now - each.at >= LOW_STOCK_REUSE_MS) lowStockCopies.delete(key);
+  }
+  lowStockCopies.set(actor.organizationId, { at: now, section });
+  return section;
 }
 
 export type DigestOutcome =
@@ -301,6 +361,11 @@ export async function sendDailyDigest(
   });
   if (sections.length === 0) return end("EMPTY", "No había nada que decir.");
 
+  // WMS-88: its own link to stop every notice by mail without signing in.
+  const unsubscribe = await createUnsubscribeLink(
+    organizationId,
+    digest.userId,
+  );
   try {
     await sendEmail(
       dailyDigestEmail({
@@ -309,6 +374,7 @@ export async function sendDailyDigest(
         dayLabel: formatDate(new Date(`${day}T12:00:00.000Z`), "UTC"),
         sections,
         settingsUrl: appLink("/configuracion/avisos"),
+        unsubscribe,
       }),
     );
   } catch (error) {

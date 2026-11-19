@@ -53,6 +53,30 @@ export async function allOrganizations(): Promise<string[]> {
 }
 
 /**
+ * Work of the platform that belongs to no company (WMS-88, ADR 0084: the
+ * retention of the per-person access history). The worker runs these in
+ * the same hourly turn as the company rounds.
+ */
+export type AccountRound = {
+  name: string;
+  run(): Promise<unknown>;
+};
+
+/** Runs every account round once; one that fails does not stop the rest. */
+export async function runAccountRounds(
+  rounds: readonly AccountRound[],
+  onError: (round: string, error: unknown) => void,
+): Promise<void> {
+  for (const round of rounds) {
+    try {
+      await round.run();
+    } catch (error) {
+      onError(round.name, error);
+    }
+  }
+}
+
+/**
  * Runs every round once for each company. One company that fails does not
  * stop the others; `onError` hears about it.
  */

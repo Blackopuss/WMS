@@ -6,6 +6,44 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-19
+
+- **WMS-66** Búsqueda global: una pantalla `/buscar` («Buscar» junto a
+  «Avisos», en escritorio y teléfono) que encuentra productos, ubicaciones,
+  lotes, series, tarimas y documentos por número (pedidos, embarques,
+  devoluciones, traslados, tareas, incidencias, órdenes y solicitudes de
+  compra, órdenes y solicitudes de producción) y proveedores, cada tipo solo
+  si la persona puede abrir su pantalla y cada resultado solo si esa pantalla
+  lo mostraría; una lectura exacta con un solo resultado lo abre. Motor en
+  `src/platform/search`, fuentes en cada módulo; índice nuevo
+  `lot(organizationId, code)`. Sin tablas ni permisos nuevos. ADR 0081.
+- **WMS-88** Pendientes de avisos por correo y del historial de accesos: los
+  avisos dirigidos a personas revalidan permiso y lugar al crearse y al
+  mandar el correo; el correo de alerta de accesos tiene estado real y se
+  reintenta; retención de `security_event` a 365 días; limpieza de avisos
+  para toda empresa; resumen diario con menos consultas y días elegibles;
+  correo en HTML con enlace de baja sin entrar a la app; alertas de accesos
+  en la campana (ADR 0084).
+- **WMS-43** Asistente de configuración inicial: la guía de primer uso crece
+  a «Configura tu empresa» (almacén, ubicaciones, equipo, ajustes de
+  operación, productos, existencias y primer movimiento), derivada de lo que
+  existe, en Inicio y en Configuración › Configuración inicial
+  (`/configuracion/inicial`). Sin tablas ni permisos nuevos. ADR 0083.
+- **WMS-87** Pendientes chicos de interfaz: «Embarques» ya no cuenta como
+  listo para salir un pedido que está en un embarque abierto; filtro por
+  estado de las existencias en Inventario; lint limpio en el reporte de
+  incidencias; `global-error` con Inter; el 404 de `/interno` ya no revela
+  nada; selects que no se cortan en teléfono; más pantallas en `verify-a11y`
+  y `verify-ui`; ejemplos nuevos en `db:seed:ejemplo`. Sin ADR.
+- **WMS-83** Desechar pide autorización, con el porqué: con la regla
+  `inventory.disposal` encendida, desechar espera a que alguien lo autorice y
+  al autorizar se vuelve a validar todo; cierra el rodeo «disponible → dañado
+  → desechar». Sin tablas ni permisos nuevos. ADR 0078.
+- **WMS-46** Manuales en `docs/manuales/`: índice, guía común (entrar, dos
+  pasos, PIN en terminal, menú, avisos, escaneo, instalar la app), un manual
+  por rol e instalación, actualización, y respaldo y restauración. Solo
+  documentos, sin ADR.
+
 ## 2026-11-17
 
 - **WMS-82** Un almacén archivado no recibe existencias ni documentos:

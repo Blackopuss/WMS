@@ -34,6 +34,9 @@ import {
   containersVisible,
   countAwaitingInspection,
   countInRepair,
+  STOCK_STATUS_FILTER_OPTIONS,
+  chosenStockStatus,
+  productsInStatusWhere,
   countUnplacedStock,
   formatStock,
   getInventoryValue,
@@ -87,6 +90,7 @@ export default async function InventarioPage({
     q,
     categoria,
     marca,
+    existencias,
   } = params;
   const showArchived = archivados === "1";
   const created = typeof creado === "string" ? creado.slice(0, 64) : "";
@@ -130,6 +134,10 @@ export default async function InventarioPage({
       value: chosen(params[`c_${filter.key}`], filter.options),
     }));
   const customApplied = customFilters.filter((filter) => filter.value);
+  // WMS-87: by the state of the stock, only for who reads stock; a value
+  // that is not a state is ignored (INV-12).
+  const canFilterStock = !showArchived && access.can("inventory.stock.read");
+  const stockStatus = canFilterStock ? chosenStockStatus(existencias) : null;
   const filterValue = (value: string) =>
     value === "" ? undefined : value === NONE ? null : value;
   const list = await listProducts(actor, {
@@ -142,9 +150,12 @@ export default async function InventarioPage({
       key: filter.key,
       value: filter.value,
     })),
+    also: stockStatus
+      ? await productsInStatusWhere(actor, stockStatus)
+      : undefined,
   });
   const narrowed = Boolean(
-    list.search || category || brand || customApplied.length,
+    list.search || category || brand || customApplied.length || stockStatus,
   );
   const categoryName =
     category === NONE
@@ -223,6 +234,7 @@ export default async function InventarioPage({
     for (const filter of customApplied) {
       params.set(`c_${filter.key}`, filter.value);
     }
+    if (stockStatus) params.set("existencias", stockStatus);
     if (page > 1) params.set("pagina", String(page));
     const query = params.toString();
     return query ? `/inventario?${query}` : "/inventario";
@@ -519,13 +531,29 @@ export default async function InventarioPage({
               )}
             </div>
           )}
-          {customFilters.length > 0 && (
-            // WMS-58: rarely used, folded unless one is applied.
-            <details className="w-full" open={customApplied.length > 0}>
+          {(canFilterStock || customFilters.length > 0) && (
+            // WMS-58 / WMS-87: rarely used, folded unless one is applied.
+            <details
+              className="w-full"
+              open={customApplied.length > 0 || Boolean(stockStatus)}
+            >
               <summary className="-m-1 inline-flex min-h-11 cursor-pointer items-center rounded-md p-1 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                 Más filtros
               </summary>
               <div className="mt-2 flex flex-wrap gap-2">
+                {canFilterStock && (
+                  <FilterSelect
+                    id="existencias"
+                    name="existencias"
+                    label="Filtrar por estado de las existencias"
+                    value={stockStatus ?? ""}
+                    allLabel="Estado de las existencias"
+                    options={STOCK_STATUS_FILTER_OPTIONS.map((option) => ({
+                      id: option.id,
+                      name: option.name,
+                    }))}
+                  />
+                )}
                 {customFilters.map((filter) => (
                   <FilterSelect
                     key={filter.key}
@@ -568,6 +596,18 @@ export default async function InventarioPage({
               · Marca: <span className="font-medium">{brandName}</span>
             </>
           )}
+          {stockStatus && (
+            <>
+              {" "}
+              · Existencias:{" "}
+              <span className="font-medium">
+                {STOCK_STATUS_FILTER_OPTIONS.find(
+                  (option) => option.id === stockStatus,
+                )?.name.toLowerCase()}
+              </span>{" "}
+              en este almacén
+            </>
+          )}
           {customApplied.map((filter) => (
             <span key={filter.key}>
               {" "}
@@ -585,7 +625,7 @@ export default async function InventarioPage({
             href={showArchived ? "/inventario?archivados=1" : "/inventario"}
             className="inline-flex min-h-11 items-center rounded-lg font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            {category || brand || customApplied.length
+            {category || brand || customApplied.length || stockStatus
               ? "Quitar filtros"
               : "Quitar búsqueda"}
           </Link>
@@ -612,7 +652,7 @@ export default async function InventarioPage({
             icon={Search}
             title="No encontramos productos"
             description={
-              category || brand || customApplied.length
+              category || brand || customApplied.length || stockStatus
                 ? "Ningún producto coincide con esos filtros. Quita alguno o busca con menos palabras."
                 : showArchived
                   ? "Ningún producto archivado coincide. Revisa cómo está escrito o busca con menos palabras."

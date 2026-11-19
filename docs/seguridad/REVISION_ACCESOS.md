@@ -42,23 +42,45 @@ implementó el paso; la leerá un revisor independiente antes de unir.
 | Borrar huellas | `security_event` sigue siendo solo-agregar por disparadores; la migración solo agrega columnas | Disparadores de PLT-14 |
 | Ver la seguridad de la cuenta desde una terminal compartida | `listMyAccessHistory` llama `assertNotTerminalSession`; la pantalla lo dice | Revisión de código |
 
+## WMS-88 (2026-11-19, ADR 0084)
+
+| Amenaza | Control | Prueba |
+| --- | --- | --- |
+| El historial dice «se envió» de un correo que no salió | El correo de cada alerta es un renglón de `access_alert_email` (estado `QUEUED`, `SENT` o `FAILED`) que se escribe en la misma transacción que la alerta; el historial lee ese estado | «a mail that fails is tried again and the history tells the truth», «gives up after its tries, says so…» |
+| Dos procesos mandan el mismo correo de alerta | Cada intento reclama el renglón con una actualización condicionada que anota `claimToken`; solo quien lo tiene lo cierra; un reclamo de más de 5 minutos se da por muerto | «tries at once send it only once» |
+| Los reintentos pasan el tope diario | El turno del día se toma una sola vez, al crear la alerta; reintentar no toma turnos; un fallo no libera el suyo | «…takes no more slots» |
+| El reintento revela si la cuenta existe | Nada cambia antes de responder; el primer intento corre después de responder y los demás en el worker | Pruebas de WMS-68 sin cambios |
+| El correo sale a un buzón que dejó de estar confirmado | Al mandar se lee la cuenta otra vez; sin correo confirmado, `FAILED` | «an address no longer confirmed…» |
+| La dirección queda en un registro | El renglón no guarda la dirección; el log del fallo lleva solo el id del renglón y el intento (el error del servidor de correo puede traer la dirección) | Revisión de código |
+| Borrar huellas con la retención | El disparador `security_event_no_delete` solo deja borrar eventos de acceso (y filas internas del día) con más de 365 días según el reloj de la base; nunca `access.device_known` ni los eventos que no son accesos; las actualizaciones siguen prohibidas. La app pide un día de margen | «removes only access events older than the limit; the database refuses the rest» |
+| Que un dispositivo conocido vuelva a alertar o se aprenda en silencio por la purga | `access.device_known` nunca se purga | La misma prueba |
+| Un intento muere con el correo tomado y queda esperando para siempre | Al agotar los intentos, la ronda lo cierra `FAILED` aunque no haya resultado; nunca se vuelve a tomar | «a try that died after the last attempt…» |
+| El historial pierde el estado del correo antes que la alerta | Los renglones de correo duran lo mismo que su alerta (366 días); sin renglón, la fila dice «Se programó» | «an alert whose mail row is gone…» |
+| Inundar la campana | Tope de 5 alertas por persona y día con turnos atómicos | «the bell gets at most its daily cap…» |
+| La alerta en la campana revela algo de otra empresa | El texto es fijo por clase de alerta, de la cuenta de la persona, sin IP; un aviso por empresa donde es miembro activo; nunca por correo como aviso (`app_only`), también en el servidor | «reaches each company of the person once, and never as a second mail» |
+| La campana avisa del PIN de quien no tiene PIN | Igual que el correo: no se escribe | «not for the PIN of someone who has none» |
+
+Riesgo aceptado: quien acaba de entrar puede ser el intruso y marcar como
+leído el aviso de la campana; el correo al buzón confirmado sigue siendo el
+canal que importa.
+
 ## Riesgos que quedan
 
-- **Sin purga** de `security_event`: contra una cuenta que existe, alguien
-  sin la contraseña puede escribir como máximo unos 480 `sign_in.failed` y
-  96 `sign_in.locked` al día. Queda pendiente decidir cuánto se guarda.
+- **Retención:** 365 días para eventos de acceso (decisión conservadora de
+  WMS-88 que el fundador puede cambiar con una migración). Los eventos que
+  no son accesos y los dispositivos conocidos no se purgan. El aviso de
+  privacidad todavía no dice plazos de conservación (revisión legal).
 
 - «Dispositivo» es tipo, navegador y sistema: otra computadora con el mismo
   navegador y sistema no se detecta como nueva. Una cookie de dispositivo lo
   afinaría a costa de un identificador persistente (ADR 0064 §4).
 - Quien trabaja en varias empresas: su administrador no ve sus entradas con
   contraseña (no se sabe para qué empresa fueron).
-- El correo de alerta se manda una vez, después de responder, sin cola ni
-  reintento: si el servidor de correo falla en ese momento, la alerta queda
-  en el historial pero el correo no llega (se registra el error), y el
-  dispositivo nuevo ya quedó aprendido. Riesgo aceptado: el dispositivo se
-  aprende cuando la alerta toma su turno y programa el correo; un fallo
-  posterior del servidor de correo no se puede provocar desde fuera.
+- El dispositivo nuevo se aprende cuando su alerta programa el correo; desde
+  WMS-88 el correo se reintenta cinco veces en unas horas, y si nunca sale
+  el historial dice «No se pudo enviar el correo de alerta». Si el proceso
+  muere entre mandar y cerrar, el correo puede salir dos veces (se prefiere
+  a uno que se cree enviado).
 - Los correos propios de Better Auth (confirmación, recuperación) le llegan
   a `after()` como una promesa ya empezada; así los entrega Better Auth.
 - Sin país por IP (decisión del fundador); entrará solo desde una cabecera

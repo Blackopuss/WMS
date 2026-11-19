@@ -211,6 +211,7 @@ model Organization {
   notifications                Notification[]
   notificationPreferences      NotificationPreference[]
   notificationEmails           NotificationEmail[]
+  noticeUnsubscribes           NoticeUnsubscribe[]
   dailyDigests                 DailyDigest[]
   incidents                    Incident[]
   /// API keys and webhook destinations (WMS-60).
@@ -712,7 +713,60 @@ model SecurityEvent {
 
   @@unique([userId, dedupeKey])
   @@index([userId, createdAt])
+  /// The retention round reads by age (WMS-88, ADR 0084).
+  @@index([createdAt])
   @@map("security_event")
+}
+
+/// The mail of an access alert (WMS-88, ADR 0084): per person, like
+/// `security_event` (not a company table). Never the address: it is read
+/// from the account when sending. Ended rows go after 90 days.
+model AccessAlertEmail {
+  id              String                 @id @db.Char(36)
+  userId          String                 @db.Char(36)
+  /// The alert row it mails (no foreign key: the history is append-only).
+  securityEventId String                 @unique @db.Char(36)
+  kind            String                 @db.VarChar(40)
+  deviceKey       String?                @db.VarChar(80)
+  ipAddress       String?                @db.VarChar(64)
+  occurredAt      DateTime               @db.DateTime(3)
+  status          AccessAlertEmailStatus @default(QUEUED)
+  attempts        Int                    @default(0)
+  nextAttemptAt   DateTime               @db.DateTime(3)
+  /// The attempt that holds it; closing needs the same token.
+  claimToken      String?                @db.Char(36)
+  claimedAt       DateTime?              @db.DateTime(3)
+  sentAt          DateTime?              @db.DateTime(3)
+  reason          String?                @db.VarChar(300)
+  createdAt       DateTime               @default(now()) @db.DateTime(3)
+
+  @@index([status, nextAttemptAt])
+  @@index([status, createdAt])
+  @@map("access_alert_email")
+}
+
+enum AccessAlertEmailStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// A link to stop notices by mail without signing in (WMS-88, ADR 0084).
+/// Only the sha256 of its secret is kept; it gives no session.
+model NoticeUnsubscribe {
+  id             String       @id @db.Char(36)
+  organizationId String       @db.Char(36)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String       @db.Char(36)
+  tokenHash      String       @db.Char(64)
+  expiresAt      DateTime     @db.DateTime(3)
+  usedAt         DateTime?    @db.DateTime(3)
+  createdAt      DateTime     @default(now()) @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, tokenHash])
+  @@index([organizationId, expiresAt])
+  @@map("notice_unsubscribe")
 }
 
 /// One person accepted one version of a legal document (PIL-09): terms of
@@ -1072,7 +1126,7 @@ model SupportAccess {
 
 // ── Product catalog (INV-01) ─────────────────────────────────────────────
 // The catalog belongs to the shared core (platform/catalog): Inventario,
-// Compras and later Ventas use the same products. Text columns use the
+// Compras, Producción and Calidad use the same products. Text columns use the
 // database's case- and accent-insensitive collation, so "tor-001" and
 // "TOR-001" are the same SKU.
 
@@ -2021,8 +2075,8 @@ model ExitImportRow {
 }
 
 /// A person or business the company deals with (CMP-01): a supplier it
-/// buys from, a customer it sells to, or both. Contacts belong to the
-/// core, not to a module: Compras, Ventas and CRM share the same row
+/// buys from, a customer it ships to, or both. Contacts belong to the
+/// core, not to a module: every module that needs them shares the same row
 /// instead of each keeping its own copy of the same business. What a
 /// contact is for a module is a facet (`isSupplier`, `isCustomer`), and a
 /// contact always has at least one.
@@ -2688,6 +2742,8 @@ model Lot {
   @@unique([organizationId, productId, code])
   /// The list of lots about to expire reads by date.
   @@index([organizationId, expiresOn])
+  /// WMS-66: a lot by its code in any product (global search and trace).
+  @@index([organizationId, code])
   @@map("lot")
 }
 

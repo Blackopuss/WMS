@@ -20,7 +20,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PageContainer, PageHeader, ReadOnlyNotice } from "@/components";
+import { PageContainer, PageHeader, ReadOnlyNotice } from "@/components/states";
 import { PendingNotices } from "@/components/pending-notices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,9 +38,14 @@ import {
   countAwaitingInspection,
   countUnplacedStock,
   getDaySummary,
+  doneSteps,
   getFirstSteps,
+  isSetupStepKey,
+  offeredSteps,
   listLowStock,
   listRecentMovements,
+  planSetupSteps,
+  setupAbilities,
 } from "@/modules/inventory";
 import {
   countRequestsToAttend,
@@ -61,8 +66,8 @@ import {
 } from "@/platform/billing";
 import { countProcessWork, worksProcessStages } from "@/platform/processes";
 
+import { SetupGuide } from "../configuracion/inicial/setup-guide";
 import { DaySummaryBlock } from "./day-summary";
-import { FirstStepsGuide } from "./first-steps-guide";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -79,12 +84,16 @@ const SHOWN = 5;
  * block appears only for who may see its section; all of it is read from
  * the same services as those sections.
  */
-export default async function InicioPage() {
+export default async function InicioPage({
+  searchParams,
+}: PageProps<"/inicio">) {
   const access = await getModuleAccess();
   const actor = {
     organizationId: access.organization.id,
     userId: access.user.id,
   };
+  const { guia: guiaParam } = await searchParams;
+  const guia = Array.isArray(guiaParam) ? guiaParam[0] : guiaParam;
   const moduleState = access.moduleState("inventory");
   const inventory = moduleState !== "none";
   const showLow =
@@ -93,7 +102,7 @@ export default async function InicioPage() {
     access.can("inventory.stock.read");
   const showMovements = inventory && access.can("inventory.movement.read");
   const showPlan = access.can("platform.plan.read");
-  // The guide of first use (IMP-12) is for a company that can still be
+  // The setup guide (IMP-12, WMS-43) is for a company that can still be
   // set up: with the plan in read-only nothing of it could be done.
   const showGuide =
     moduleState === "active" && access.can("inventory.product.read");
@@ -123,7 +132,13 @@ export default async function InicioPage() {
       showLow ? listLowStock(actor) : null,
       showMovements ? listRecentMovements(actor, { limit: SHOWN }) : null,
       showPlan ? getPlanOverview(moduleRegistry, actor.organizationId) : null,
-      showGuide ? getFirstSteps(actor) : null,
+      showGuide
+        ? getFirstSteps(actor, {
+            seesTeam: access.can("platform.team.read"),
+            changesSettings: access.can("platform.organization.update"),
+            whileSettingUp: true,
+          })
+        : null,
       showTasks ? countMyTasks(actor) : null,
       showIncoming ? listPurchaseOrders(actor, { toReceive: true }) : null,
     ],
@@ -343,6 +358,28 @@ export default async function InicioPage() {
       : []),
   ];
 
+  // WMS-43: what is next of the setup; «Saltar» only moves `?guia=`.
+  // Once something moved after the starting stock the guide leaves Inicio
+  // (the rest of the setup is not even read then, `whileSettingUp`).
+  const setup =
+    firstSteps && !firstSteps.hasMovement
+      ? (() => {
+          const can = setupAbilities((permission) => access.allows(permission));
+          const steps = planSetupSteps(
+            doneSteps(firstSteps),
+            offeredSteps(can),
+          );
+          const open =
+            isSetupStepKey(guia) &&
+            steps.steps.some(
+              (step) => step.key === guia && step.status !== "done",
+            )
+              ? guia
+              : steps.current;
+          return { can, plan: steps, open };
+        })()
+      : null;
+
   const canEnter = access.allows("inventory.entry.create");
   const canExit = access.allows("inventory.exit.create");
   // With an empty catalog there is nothing to move yet: the guide below
@@ -456,17 +493,14 @@ export default async function InicioPage() {
         </p>
       )}
 
-      {firstSteps && !firstSteps.complete && (
-        <FirstStepsGuide
-          steps={firstSteps}
-          can={{
-            importProducts: access.allows("inventory.import.create"),
-            createProduct: access.allows("inventory.product.create"),
-            createLocation: access.allows("inventory.location.create"),
-            openingBalance: access.allows("inventory.opening.create"),
-            entry: canEnter,
-            exit: canExit,
-          }}
+      {setup && setup.plan.current !== null && (
+        <SetupGuide
+          plan={setup.plan}
+          open={setup.open}
+          can={setup.can}
+          hasProducts={firstSteps?.hasProducts ?? false}
+          view="home"
+          hrefFor={(key) => `/inicio?guia=${key}#configura`}
         />
       )}
 

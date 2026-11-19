@@ -315,6 +315,10 @@ function screens(company: Company): Record<string, () => string> {
     // WMS-32: warehouse indicators, 30 and 90 days.
     Indicadores: () => "/inventario/indicadores",
     "Indicadores, 90 días": () => "/inventario/indicadores?periodo=90",
+    // WMS-66: the global search, by words and by a document number.
+    "Búsqueda global": () =>
+      `/buscar?q=${encodeURIComponent(`${pick(WORDS)} ${pick(SIZES_TEXT)}`)}`,
+    "Búsqueda global, número": () => "/buscar?q=PS-0001",
     ...(company.lotIds.length > 0
       ? { "Ficha del lote": () => `/inventario/lotes/${pick(company.lotIds)}` }
       : {}),

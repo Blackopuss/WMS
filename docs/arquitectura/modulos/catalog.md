@@ -12,7 +12,7 @@ módulo trabaja con productos; el cupo `active_products` lo comparten todos.
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Productos | `products.ts` | `createProduct` (consume cupo), `updateProduct`, `archiveProduct` (sus mensajes de rechazo solo nombran y cuentan órdenes y existencias del alcance de la persona, WMS-57B), `reactivateProduct`, `getProduct`, `listProducts`, filtros y grupos, `normalizeSearch`; etiquetas de control por lote. Crear y editar reciben `customFields` (WMS-58) y los validan y guardan con [custom-fields](custom-fields.md) en su transacción (`customErrors`); `listProducts` filtra por campo (`custom`) |
+| Productos | `products.ts` | `createProduct` (consume cupo), `updateProduct`, `archiveProduct` (sus mensajes de rechazo solo nombran y cuentan órdenes y existencias del alcance de la persona, WMS-57B), `reactivateProduct`, `getProduct`, `listProducts`, filtros y grupos, `normalizeSearch`; etiquetas de control por lote. Crear y editar reciben `customFields` (WMS-58) y los validan y guardan con [custom-fields](custom-fields.md) en su transacción (`customErrors`); `listProducts` filtra por campo (`custom`) y acepta una condición más ya armada por quien llama (`also`, WMS-87: el filtro por estado de las existencias, que construye Inventario) |
 | Unidades | `units.ts` | `UNITS`, `convertUnits`, `formatQuantity`, dimensiones |
 | Cantidades | `quantity.ts`, `measures.ts` | `parseQuantity` (regla del producto; nunca `Number()`), `parseMeasure`, peso y volumen por unidad |
 | Presentaciones | `presentations.ts` | `createPresentation`, `changePresentationFactor` (versión nueva), `listPresentations`, `listPresentationVersions` |

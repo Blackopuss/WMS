@@ -731,7 +731,8 @@ export function webhookDeliveryHandler(
         await notify(tx, WEBHOOK_PAUSED_NOTICE, {
           organizationId,
           actorUserId: null,
-          to: { userIds: managers, permissions: [MANAGE] },
+          // WMS-88: checked again when the mail leaves.
+          to: { userIds: managers, permissions: [MANAGE], wholeCompany: true },
           // Never the address of the destination: the notice may also leave
           // by email (WMS-39B). Its name is what the company called it.
           text: `${name} se pausó después de ${failures} entregas fallidas seguidas. Revísalo en API y webhooks.`,

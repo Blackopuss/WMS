@@ -693,7 +693,12 @@ export async function createTask(
           await notify(tx, TASK_ASSIGNED_NOTICE, {
             organizationId,
             actorUserId: userId,
-            to: { userIds: [data.assignToUserId] },
+            // WMS-88: the same rule that lets them see the task.
+            to: {
+              userIds: [data.assignToUserId],
+              permissions: ["inventory.task.read"],
+              locationIds: [from.id, to.id],
+            },
             text: `${await memberName(tx, userId)} te asignó la tarea ${formatTaskNumber(number)}: ${product.name} de ${from.name} a ${to.name}.`,
             href: `/tareas/${id}`,
             key: `task:${id}:assigned:${data.assignToUserId}`,
@@ -2442,7 +2447,14 @@ export async function assignTasks(
       await notify(tx, TASK_ASSIGNED_NOTICE, {
         organizationId,
         actorUserId: userId,
-        to: { userIds: [target] },
+        to: {
+          userIds: [target],
+          permissions: ["inventory.task.read"],
+          locationIds: tasks.flatMap((task) => [
+            task.fromLocationId,
+            task.toLocationId,
+          ]),
+        },
         text:
           tasks.length === 1
             ? `${await memberName(tx, userId)} te asignó la tarea ${formatTaskNumber(first.number)}.`
@@ -2524,7 +2536,11 @@ export async function assignTask(
       await notify(tx, TASK_ASSIGNED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
-        to: { userIds: [target] },
+        to: {
+          userIds: [target],
+          permissions: ["inventory.task.read"],
+          locationIds: [task.fromLocationId, task.toLocationId],
+        },
         text: `${await memberName(tx, actor.userId)} te asignó la tarea ${formatTaskNumber(task.number)}.`,
         href: `/tareas/${task.id}`,
         key: `task:${task.id}:assigned:${target}`,

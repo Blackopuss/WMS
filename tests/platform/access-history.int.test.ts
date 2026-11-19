@@ -4,15 +4,26 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ForbiddenError, newId } from "@/lib";
 import { recordSecurityEvent } from "@/platform/audit";
+import { notificationTypes } from "@/modules/registry";
+import { setNotificationPreference } from "@/platform/notifications";
 import {
+  ACCESS_ALERT_NOTICE,
   ACCESS_ALERTS_PER_DAY,
+  ACCESS_ALERT_MAIL_ATTEMPTS,
+  ACCESS_ALERT_MAIL_KEEP_DAYS,
+  ACCESS_BELL_ALERTS_PER_DAY,
   ACCESS_HISTORY_PAGE_SIZE,
+  SECURITY_EVENT_KEEP_DAYS,
   alertFailedAttempts,
   alertPinLocked,
   auth,
   confirmTotpEnrollment,
+  deliverAccessAlertEmail,
   listMyAccessHistory,
+  purgeExpiredSecurityEvents,
+  retryAccessAlertEmails,
   signIn,
+  writeBellAlert,
   startTotpEnrollment,
   verifySignInCode,
 } from "@/platform/auth";
@@ -382,7 +393,7 @@ describe("failed tries", () => {
       await settle();
       const alerts = await events(hana.id, "access.alert_new_device");
       const mailed = alerts.filter(
-        (a) => (a.metadata as { mail?: string }).mail === "sent",
+        (a) => (a.metadata as { mail?: string }).mail === "queued",
       );
       expect(alerts).toHaveLength(devices.length);
       expect(mailed).toHaveLength(ACCESS_ALERTS_PER_DAY);
@@ -571,7 +582,7 @@ describe("second step", () => {
         await events(hugo.id, "access.alert_password_new_device"),
       ).toHaveLength(1);
       const [codeAlert] = await events(hugo.id, "access.alert_code_locked");
-      expect(codeAlert?.metadata).toEqual({ mail: "sent" });
+      expect(codeAlert?.metadata).toEqual({ mail: "queued" });
       expect(alertMails(hugo.email).map((m) => m.subject)).toContain(
         "Alguien tiene tu contraseña de WMS",
       );
@@ -722,4 +733,363 @@ describe("who sees the history", () => {
     expect(last.rows).toHaveLength(3);
     expect(last.rows[0]?.tone).toBe("warning");
   });
+});
+
+// WMS-88 (ADR 0084): the history says what really happened to the mail of
+// an alert; a failure is tried again, without a second mail or a slot.
+describe("the mail of an alert (WMS-88)", () => {
+  const mailOf = async (userId: string) =>
+    db.accessAlertEmail.findFirstOrThrow({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+  const slots = (userId: string) =>
+    db.securityEvent.count({ where: { userId, action: "access.mail_slot" } });
+  const minutes = (n: number) => new Date(Date.now() + n * 60_000);
+
+  it(
+    "a mail that fails is tried again and the history tells the truth",
+    async () => {
+      const iris = await newAccount("iris");
+      const good = iris.email;
+      const bad = `iris.${counter}.${stamp}@correo.invalid`;
+      await db.user.update({ where: { id: iris.id }, data: { email: bad } });
+      await alertFailedAttempts(iris.id, from(UA.laptop));
+      const [alert] = await events(iris.id, "access.alert_failed_attempts");
+      expect(alert?.metadata).toEqual({ mail: "queued" });
+      expect((await listMyAccessHistory(iris.id)).rows[0]?.mailText).toBe(
+        "El correo de alerta está programado.",
+      );
+      await settle();
+      expect(await mailOf(iris.id)).toMatchObject({
+        status: "QUEUED",
+        attempts: 1,
+        securityEventId: alert?.id,
+      });
+      expect((await listMyAccessHistory(iris.id)).rows[0]?.mailText).toBe(
+        "El correo de alerta no ha salido; se volverá a intentar.",
+      );
+      // Not before its turn.
+      expect(await deliverAccessAlertEmail((await mailOf(iris.id)).id)).toBe(
+        "not_taken",
+      );
+      await db.user.update({ where: { id: iris.id }, data: { email: good } });
+      await retryAccessAlertEmails(minutes(2));
+      expect(await mailOf(iris.id)).toMatchObject({ status: "SENT" });
+      expect(alertMails(good)).toHaveLength(1);
+      expect((await listMyAccessHistory(iris.id)).rows[0]?.mailText).toBe(
+        "Se envió el correo de alerta.",
+      );
+      // The retry took no slot of the day.
+      expect(await slots(iris.id)).toBe(1);
+      // Run again: nothing more leaves.
+      await retryAccessAlertEmails(minutes(120));
+      expect(alertMails(good)).toHaveLength(1);
+    },
+    SLOW,
+  );
+
+  it(
+    "tries at once send it only once",
+    async () => {
+      const jose = await newAccount("jose");
+      await alertFailedAttempts(jose.id, from(UA.laptop));
+      afterQueue.length = 0; // the test tries by itself
+      const { id } = await mailOf(jose.id);
+      const outcomes = await Promise.all(
+        Array.from({ length: 4 }, () => deliverAccessAlertEmail(id)),
+      );
+      expect(outcomes.filter((each) => each === "sent")).toHaveLength(1);
+      expect(alertMails(jose.email)).toHaveLength(1);
+      const rounds = await Promise.all([
+        retryAccessAlertEmails(minutes(10)),
+        retryAccessAlertEmails(minutes(10)),
+      ]);
+      expect(rounds.reduce((sum, each) => sum + each.sent, 0)).toBe(0);
+      expect(alertMails(jose.email)).toHaveLength(1);
+    },
+    SLOW,
+  );
+
+  it(
+    "gives up after its tries, says so, and takes no more slots",
+    async () => {
+      const kai = await newAccount("kai");
+      await db.user.update({
+        where: { id: kai.id },
+        data: { email: `kai.${counter}.${stamp}@correo.invalid` },
+      });
+      await alertFailedAttempts(kai.id, from(UA.laptop));
+      await settle();
+      for (let i = 0; i < ACCESS_ALERT_MAIL_ATTEMPTS; i += 1) {
+        await retryAccessAlertEmails(minutes(200 * (i + 1)));
+      }
+      expect(await mailOf(kai.id)).toMatchObject({
+        status: "FAILED",
+        attempts: ACCESS_ALERT_MAIL_ATTEMPTS,
+      });
+      expect((await listMyAccessHistory(kai.id)).rows[0]?.mailText).toBe(
+        "No se pudo enviar el correo de alerta.",
+      );
+      expect(await slots(kai.id)).toBe(1);
+    },
+    SLOW,
+  );
+
+  it(
+    "an address no longer confirmed when it is its turn: it does not leave",
+    async () => {
+      const lu = await newAccount("lu");
+      await alertFailedAttempts(lu.id, from(UA.laptop));
+      afterQueue.length = 0;
+      await db.user.update({
+        where: { id: lu.id },
+        data: { emailVerified: false },
+      });
+      expect(await deliverAccessAlertEmail((await mailOf(lu.id)).id)).toBe(
+        "failed",
+      );
+      expect(alertMails(lu.email)).toHaveLength(0);
+    },
+    SLOW,
+  );
+});
+
+describe("retention of the access history (WMS-88)", () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+  const write = (userId: string, action: string, days: number) =>
+    db.securityEvent.create({
+      data: {
+        id: newId(),
+        userId,
+        action,
+        createdAt: daysAgo(days),
+        ...(action === "access.device_known"
+          ? { dedupeKey: `device:old-${newId()}` }
+          : {}),
+      },
+    });
+
+  it(
+    "removes only access events older than the limit; the database refuses the rest",
+    async () => {
+      const mia = await newPerson("mia");
+      const old = SECURITY_EVENT_KEEP_DAYS + 30;
+      const oldFail = await write(mia, "sign_in.failed", old);
+      const oldAlert = await write(mia, "access.alert_new_device", old);
+      const oldDevice = await write(mia, "access.device_known", old);
+      const oldMfa = await write(mia, "mfa.enabled", old);
+      const recent = await write(mia, "sign_in.failed", 10);
+      await purgeExpiredSecurityEvents();
+      const left = new Set((await events(mia)).map((each) => each.id));
+      expect(left.has(oldFail.id)).toBe(false);
+      expect(left.has(oldAlert.id)).toBe(false);
+      expect(left.has(oldDevice.id)).toBe(true);
+      expect(left.has(oldMfa.id)).toBe(true);
+      expect(left.has(recent.id)).toBe(true);
+      // Not even the app can delete what the policy keeps.
+      for (const id of [recent.id, oldDevice.id, oldMfa.id]) {
+        await expect(
+          db.securityEvent.deleteMany({ where: { id } }),
+        ).rejects.toThrow();
+      }
+      await expect(
+        db.securityEvent.updateMany({
+          where: { id: recent.id },
+          data: { action: "sign_in.succeeded" },
+        }),
+      ).rejects.toThrow();
+      // Repeating removes nothing more.
+      await purgeExpiredSecurityEvents();
+      expect((await events(mia)).length).toBe(left.size);
+    },
+    SLOW,
+  );
+
+  it(
+    "removes alert mails that ended long ago, never one that waits",
+    async () => {
+      const noe = await newPerson("noe");
+      const make = (status: "SENT" | "QUEUED", days: number) =>
+        db.accessAlertEmail.create({
+          data: {
+            id: newId(),
+            userId: noe,
+            securityEventId: newId(),
+            kind: "failed_attempts",
+            occurredAt: daysAgo(days),
+            nextAttemptAt: daysAgo(days),
+            status,
+            createdAt: daysAgo(days),
+          },
+        });
+      const ended = await make("SENT", ACCESS_ALERT_MAIL_KEEP_DAYS + 5);
+      const waiting = await make("QUEUED", ACCESS_ALERT_MAIL_KEEP_DAYS + 5);
+      const fresh = await make("SENT", 5);
+      await purgeExpiredSecurityEvents();
+      const left = (
+        await db.accessAlertEmail.findMany({ where: { userId: noe } })
+      ).map((row) => row.id);
+      expect(left).not.toContain(ended.id);
+      expect(left).toEqual(expect.arrayContaining([waiting.id, fresh.id]));
+      await db.accessAlertEmail.deleteMany({ where: { userId: noe } });
+    },
+    SLOW,
+  );
+});
+
+// WMS-88 (ADR 0084): an access alert is also a notice of the bell, in each
+// company of the person, never by mail as a notice.
+describe("access alerts in the bell (WMS-88)", () => {
+  const bell = (userId: string) =>
+    db.notification.findMany({
+      where: { recipientUserId: userId, typeKey: ACCESS_ALERT_NOTICE.key },
+    });
+
+  it(
+    "reaches each company of the person once, and never as a second mail",
+    async () => {
+      const olga = await newAccount("olga");
+      const one = await newCompany(`Bell uno ${stamp}`);
+      const two = await newCompany(`Bell dos ${stamp}`);
+      await join(one.org, olga.id, ["supervisor"]);
+      await join(two.org, olga.id, ["operator"]);
+      // Even asking for it by mail is refused.
+      expect(
+        await setNotificationPreference(
+          { organizationId: one.org, userId: olga.id },
+          notificationTypes,
+          ACCESS_ALERT_NOTICE.key,
+          true,
+          "email",
+        ),
+      ).toEqual({ ok: false, reason: "not_allowed" });
+      await signIn({ email: olga.email, password }, from(UA.laptop));
+      await signIn({ email: olga.email, password }, from(UA.phone));
+      await signIn({ email: olga.email, password }, from(UA.phone));
+      await settle();
+      const notices = await bell(olga.id);
+      expect(notices.map((each) => each.organizationId).sort()).toEqual(
+        [one.org, two.org].sort(),
+      );
+      expect(notices[0]?.text).toContain("Chrome en Android");
+      expect(notices[0]?.text).not.toMatch(/203\.0\.113/);
+      expect(notices[0]?.href).toBe("/configuracion/accesos");
+      expect(
+        await db.notificationEmail.count({
+          where: { recipientUserId: olga.id },
+        }),
+      ).toBe(0);
+    },
+    SLOW,
+  );
+
+  it(
+    "not for the PIN of someone who has none",
+    async () => {
+      const pepe = await newPerson("pepe");
+      const place = await newCompany(`Bell PIN ${stamp}`);
+      await join(place.org, pepe, ["operator"]);
+      await alertPinLocked(pepe, false);
+      await settle();
+      expect(await bell(pepe)).toHaveLength(0);
+      await alertPinLocked(pepe, true);
+      await settle();
+      // The day's alert was already decided: nothing more today.
+      expect(await bell(pepe)).toHaveLength(0);
+    },
+    SLOW,
+  );
+});
+
+// Review of WMS-88: the history always says something true, a try that
+// died is closed, and the bell has a daily cap too.
+describe("review of WMS-88", () => {
+  it(
+    "an alert whose mail row is gone still says it was scheduled",
+    async () => {
+      const rosa = await newAccount("rosa");
+      await alertFailedAttempts(rosa.id, from(UA.laptop));
+      afterQueue.length = 0;
+      await db.accessAlertEmail.deleteMany({ where: { userId: rosa.id } });
+      expect((await listMyAccessHistory(rosa.id)).rows[0]?.mailText).toBe(
+        "Se programó el correo de alerta.",
+      );
+    },
+    SLOW,
+  );
+
+  it(
+    "a try that died after the last attempt ends as failed and is never taken again",
+    async () => {
+      const saul = await newPerson("saul");
+      const id = newId();
+      const old = new Date(Date.now() - 3_600_000);
+      await db.accessAlertEmail.create({
+        data: {
+          id,
+          userId: saul,
+          securityEventId: newId(),
+          kind: "failed_attempts",
+          occurredAt: old,
+          nextAttemptAt: old,
+          attempts: ACCESS_ALERT_MAIL_ATTEMPTS,
+          claimToken: newId(),
+          claimedAt: old,
+        },
+      });
+      expect(await deliverAccessAlertEmail(id)).toBe("not_taken");
+      await retryAccessAlertEmails();
+      expect(
+        await db.accessAlertEmail.findUniqueOrThrow({ where: { id } }),
+      ).toMatchObject({ status: "FAILED", claimToken: null });
+      await db.accessAlertEmail.deleteMany({ where: { userId: saul } });
+    },
+    SLOW,
+  );
+
+  it(
+    "the bell gets at most its daily cap of access alerts",
+    async () => {
+      const tere = await newPerson("tere");
+      const place = await newCompany(`Bell tope ${stamp}`);
+      await join(place.org, tere, ["operator"]);
+      await Promise.all(
+        Array.from({ length: ACCESS_BELL_ALERTS_PER_DAY + 3 }, (_, i) =>
+          writeBellAlert(tere, "new_device", null, `prueba:${i}`),
+        ),
+      );
+      expect(
+        await db.notification.count({
+          where: { recipientUserId: tere, typeKey: ACCESS_ALERT_NOTICE.key },
+        }),
+      ).toBe(ACCESS_BELL_ALERTS_PER_DAY);
+    },
+    SLOW,
+  );
+
+  it(
+    "takes no slot of the bell when no notice will be written",
+    async () => {
+      const uriel = await newPerson("uriel");
+      const place = await newCompany(`Bell apagada ${stamp}`);
+      await join(place.org, uriel, ["operator"]);
+      await setNotificationPreference(
+        { organizationId: place.org, userId: uriel },
+        notificationTypes,
+        ACCESS_ALERT_NOTICE.key,
+        false,
+      );
+      const loner = await newPerson("sin empresa");
+      for (const who of [uriel, loner]) {
+        await writeBellAlert(who, "failed_attempts", null, `x:${newId()}`);
+        expect(
+          await db.securityEvent.count({
+            where: { userId: who, dedupeKey: { startsWith: "bell_slot:" } },
+          }),
+        ).toBe(0);
+      }
+    },
+    SLOW,
+  );
 });
