@@ -33,6 +33,9 @@ import {
   DIGEST_DAYS,
   DIGEST_HOUR,
   KPI_IDLE_DAYS,
+  SLOTTING_CONSOLIDATE,
+  SLOTTING_FAST_CLASSES,
+  SLOTTING_LIMIT,
   type InventoryActor,
 } from "@/modules/inventory";
 import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
@@ -263,6 +266,10 @@ describe("operation settings", () => {
       { key: DIGEST_DAYS.key, value: "all", defaultValue: "all" },
       // WMS-32: 90 days without movement for the indicators.
       { key: KPI_IDLE_DAYS.key, value: "90", defaultValue: "90" },
+      // WMS-65: relocation suggestions.
+      { key: SLOTTING_FAST_CLASSES.key, value: "a", defaultValue: "a" },
+      { key: SLOTTING_CONSOLIDATE.key, value: "on", defaultValue: "on" },
+      { key: SLOTTING_LIMIT.key, value: "20", defaultValue: "20" },
       // WMS-42: equipment (shown on its own screen).
       {
         key: "inventory.equipment.maintenance_notice",
@@ -308,6 +315,9 @@ describe("operation settings", () => {
       { key: DIGEST_HOUR.key, value: "7" },
       { key: DIGEST_DAYS.key, value: "all" },
       { key: KPI_IDLE_DAYS.key, value: "90" },
+      { key: SLOTTING_FAST_CLASSES.key, value: "a" },
+      { key: SLOTTING_CONSOLIDATE.key, value: "on" },
+      { key: SLOTTING_LIMIT.key, value: "20" },
       { key: "inventory.equipment.maintenance_notice", value: "7" },
       { key: "inventory.equipment.on_broken_report", value: "stop" },
       { key: "platform.notices.email", value: "on" },

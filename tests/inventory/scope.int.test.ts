@@ -65,6 +65,7 @@ import {
   getProductStock,
   getStockByLocation,
   getWarehouseIndicators,
+  listSlottingSuggestions,
   getStockTotals,
   getTask,
   listCounts,
@@ -1055,6 +1056,14 @@ describe("limited to a zone of a warehouse", () => {
       facilityId: facilityA,
     });
     expect(asked.facility.id).toBe(facilityB);
+  });
+
+  it("relocation suggestions name only places of the zone (WMS-65)", async () => {
+    const seen = await listSlottingSuggestions(zoned);
+    for (const each of seen.suggestions) {
+      expect([zoneId, inZone]).toContain(each.fromLocationId);
+      expect([zoneId, inZone]).toContain(each.toLocationId);
+    }
   });
 
   it("moves only inside the zone", async () => {

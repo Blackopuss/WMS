@@ -57,6 +57,7 @@ const SCREENS = [
   "/conteos/exactitud",
   // WMS-32: warehouse indicators.
   "/inventario/indicadores",
+  "/inventario/reubicaciones",
   "/tareas",
   "/tareas/nueva",
   "/recepcion",

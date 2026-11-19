@@ -13,6 +13,7 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 - **Recepción:** abre una orden por recibir y toca **Recibir mercancía** (pasos en el manual del [Comprador](rol-comprador.md), sección «Recibir lo que llega»).
 - **Compras:** puedes ver proveedores y órdenes; no las creas. **Solicitudes de compra** sí puedes crearlas (**Solicitar compra**).
 - **Conteos › Exactitud** y **Programas de conteo**.
+- **Inventario › Sugerencias de reubicación** (pantalla «Sugerencias de reubicación»): lo que conviene mover en tu almacén y en tus zonas, con una línea de por qué: **Acercar a surtido** (lo que sale seguido y no tiene lugar de surtido), **Sacar de surtido** (lo que no se ha movido y ocupa un lugar de surtido) y **Juntar** (el mismo producto y lote repartido en varias ubicaciones de almacenaje). **Crear tarea** hace una tarea de traslado normal con lo que el sistema decide en ese momento; **Ver la tarea** la abre. Lo que ya tiene una tarea en camino no se vuelve a sugerir. Qué se sugiere se ajusta en Configuración › Operación, en «Sugerencias de reubicación».
 - **Inventario › Indicadores** (pantalla «Indicadores»; también el enlace **Indicadores** junto a **Lo que se hizo hoy** en Inicio): de un periodo (**7 días**, **30 días**, **90 días**, **Este mes**, **Mes anterior**, o fechas en **Más filtros**), pedidos completos y a tiempo, tiempo de surtido, **De recibir a acomodar**, exactitud, **Productos de mayor movimiento** con su rotación y días de inventario, **Sin movimiento**, **Rendimiento por persona** y **Rendimiento por zona**. Toca un producto o una persona para ver solo lo suyo (**Quitar** lo deshace). Con varios almacenes, eliges cuál en **Más filtros**. Desde una terminal con PIN no ves **Rendimiento por persona**. No ves importes (eso es de quien ve costos).
 - **Configuración › Equipo** (ver las personas y sus roles, no cambiarlos).
 
@@ -32,4 +33,4 @@ Crear órdenes de compra ni ver costos (Comprador); cambiar la configuración o 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-19 (indicadores: WMS-32)
+Vigente al 2026-11-19 (indicadores: WMS-32; sugerencias de reubicación: WMS-65)

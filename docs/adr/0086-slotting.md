@@ -94,7 +94,9 @@ almacenaje); siempre se trabaja con existencias **disponibles** (`AVAILABLE`).
   sin tarea abierta hacia ella, que admita **todo** (la idea es vaciar el
   lugar de surtido; mover la mitad no sirve). Orden: el mismo del acomodo
   (`rankPutawayPlaces` con `inventory.putaway.preference`: junto a lo mismo,
-  o lo más vacío), hasta 10 probadas.
+  o lo más vacío; el desempate es el código, o el nombre si no tiene, en
+  orden natural, no la ruta completa, para no hacer una consulta por nivel),
+  hasta 10 probadas.
 - **Cantidad:** todo lo disponible de ese lote en el origen.
 
 ### 3. Juntar lo repartido (`consolidate`)
@@ -120,8 +122,8 @@ almacenaje); siempre se trabaja con existencias **disponibles** (`AVAILABLE`).
   vuelve a sugerir**.
 - **Series:** entran como cualquier producto (la tarea pide escanear las
   series al recoger, como todo traslado).
-- **Orden y tope:** primero «acercar» (clase A antes que B, después más
-  salidas), luego «sacar de surtido», luego «juntar»; hasta
+- **Orden y tope:** primero «acercar» (clase A antes que B, después por
+  nombre), luego «sacar de surtido», luego «juntar»; hasta
   `inventory.slotting.limit` (10, 20 por omisión o 50).
 - **Lectura acotada:** cada tipo lee como mucho 2,000 saldos candidatos
   (`SLOTTING_SCAN_MAX`); si hubo más, la respuesta trae `truncated` y la
