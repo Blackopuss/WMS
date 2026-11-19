@@ -177,7 +177,8 @@ async function seed(size: number): Promise<Company> {
     data: { id: membershipId, organizationId, userId },
   });
   await db.membershipRole.createMany({
-    data: (["warehouse"] as const).map((role) => ({
+    // WMS-32: with Supervisión too, so the indicators are measured.
+    data: (["warehouse", "supervisor"] as const).map((role) => ({
       id: newId(),
       organizationId,
       membershipId,

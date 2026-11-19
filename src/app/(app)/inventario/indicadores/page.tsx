@@ -1,5 +1,6 @@
 import { ChevronLeft, CircleAlert, X } from "lucide-react";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Form from "next/form";
 import Link from "next/link";
 
@@ -14,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -367,7 +367,7 @@ export default async function IndicadoresPage({
             No hubo salidas en este periodo.
           </p>
         ) : (
-          <Table>
+          <ScrollTable label="Productos de mayor movimiento">
             <TableHeader>
               <TableRow>
                 <TableHead>Producto</TableHead>
@@ -387,7 +387,7 @@ export default async function IndicadoresPage({
                   <TableCell className="min-w-48">
                     <Link
                       href={href({ producto: row.productId })}
-                      className={textLink}
+                      className={`inline-flex min-h-11 items-center ${textLink}`}
                     >
                       {row.name}
                     </Link>
@@ -425,7 +425,7 @@ export default async function IndicadoresPage({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
         )}
       </section>
 
@@ -442,7 +442,7 @@ export default async function IndicadoresPage({
           del periodo elegido).
         </p>
         {kpi.idle.rows.length > 0 && (
-          <Table>
+          <ScrollTable label="Productos sin movimiento">
             <TableHeader>
               <TableRow>
                 <TableHead>Producto</TableHead>
@@ -457,7 +457,7 @@ export default async function IndicadoresPage({
                   <TableCell className="min-w-48">
                     <Link
                       href={`/inventario/${row.productId}`}
-                      className={textLink}
+                      className={`inline-flex min-h-11 items-center ${textLink}`}
                     >
                       {row.name}
                     </Link>
@@ -481,7 +481,7 @@ export default async function IndicadoresPage({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
         )}
       </section>
 
@@ -495,7 +495,7 @@ export default async function IndicadoresPage({
               Nadie entregó tareas ni registró movimientos en este periodo.
             </p>
           ) : (
-            <Table>
+            <ScrollTable label="Rendimiento por persona">
               <TableHeader>
                 <TableRow>
                   <TableHead>Persona</TableHead>
@@ -513,7 +513,7 @@ export default async function IndicadoresPage({
                     <TableCell className="min-w-40">
                       <Link
                         href={href({ persona: row.userId })}
-                        className={textLink}
+                        className={`inline-flex min-h-11 items-center ${textLink}`}
                       >
                         {row.name ?? "Ya no está en el equipo"}
                       </Link>
@@ -543,7 +543,7 @@ export default async function IndicadoresPage({
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ScrollTable>
           )}
           <p className="text-sm text-muted-foreground">
             Tiempo por tarea: la mitad tardó menos, de aceptarla a entregarla.
@@ -560,7 +560,7 @@ export default async function IndicadoresPage({
             Sin tareas ni movimientos en este periodo.
           </p>
         ) : (
-          <Table>
+          <ScrollTable label="Rendimiento por zona">
             <TableHeader>
               <TableRow>
                 <TableHead>Zona</TableHead>
@@ -587,7 +587,7 @@ export default async function IndicadoresPage({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ScrollTable>
         )}
       </section>
     </PageContainer>
@@ -656,6 +656,29 @@ function Time({
           : `La mitad tardó menos · 9 de cada 10, menos de ${durationText(times.p90Ms)} · ${count(times.count)} ${unit}`}
       </p>
       <p className="text-sm text-muted-foreground">{help}</p>
+    </div>
+  );
+}
+
+/**
+ * A table that may be wider than a phone: its box scrolls on its own and
+ * takes the keyboard focus, so it can be scrolled without a mouse.
+ */
+function ScrollTable({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+      className="w-full overflow-x-auto rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      <table className="w-full caption-bottom text-sm">{children}</table>
     </div>
   );
 }
