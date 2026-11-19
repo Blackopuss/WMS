@@ -1,7 +1,7 @@
 import "server-only";
 
 import { DEFAULT_TIME_ZONE, formatDate, log, newId } from "@/lib";
-import { isAllowed } from "@/platform/authorization";
+import { isAllowed, seesWholeCompany } from "@/platform/authorization";
 import {
   InvalidEmailError,
   dailyDigestEmail,
@@ -231,22 +231,54 @@ export async function digestSections(
   }
 
   if (await isAllowed(organizationId, userId, "inventory.minimum.read")) {
-    const low = await listLowStock(actor);
-    // Minimums are of the whole company: nothing for who is limited.
-    if (!low.limited && low.total > 0) {
-      const shown = low.items.slice(0, DIGEST_LINES);
-      sections.push({
-        title: `Existencias bajas (${low.total})`,
-        lines: shown.map(
-          (item) =>
-            `${item.name} (${item.sku}): hay ${item.stockLabel}, mínimo ${item.minimumLabel}`,
-        ),
-        more: low.total - shown.length,
-        url: appLink("/inventario/bajas"),
-      });
-    }
+    const low = await lowStockSection(actor);
+    if (low) sections.push(low);
   }
   return sections;
+}
+
+/**
+ * WMS-88 (ADR 0084): «Existencias bajas» is a figure of the whole company,
+ * the same for everybody who may read it, without costs. The jobs of one
+ * round reuse it for LOW_STOCK_REUSE_MS instead of reading it once per
+ * person; each person is still checked (the permission, by the caller, and
+ * that they see the whole company) before the copy is used.
+ */
+const LOW_STOCK_REUSE_MS = 10 * 60_000;
+const lowStockCopies = new Map<
+  string,
+  { at: number; section: DigestSection | null }
+>();
+
+async function lowStockSection(
+  actor: InventoryActor,
+): Promise<DigestSection | null> {
+  const client = forOrganization(actor.organizationId);
+  // Minimums are of the whole company: nothing for who is limited.
+  if (!(await seesWholeCompany(client, actor.userId))) return null;
+  const now = Date.now();
+  const copy = lowStockCopies.get(actor.organizationId);
+  if (copy && now - copy.at < LOW_STOCK_REUSE_MS) return copy.section;
+  const low = await listLowStock(actor);
+  if (low.limited) return null;
+  const shown = low.items.slice(0, DIGEST_LINES);
+  const section =
+    low.total > 0
+      ? {
+          title: `Existencias bajas (${low.total})`,
+          lines: shown.map(
+            (item) =>
+              `${item.name} (${item.sku}): hay ${item.stockLabel}, mínimo ${item.minimumLabel}`,
+          ),
+          more: low.total - shown.length,
+          url: appLink("/inventario/bajas"),
+        }
+      : null;
+  for (const [key, each] of lowStockCopies) {
+    if (now - each.at >= LOW_STOCK_REUSE_MS) lowStockCopies.delete(key);
+  }
+  lowStockCopies.set(actor.organizationId, { at: now, section });
+  return section;
 }
 
 export type DigestOutcome =
