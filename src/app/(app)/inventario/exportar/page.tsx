@@ -21,6 +21,8 @@ const DESCRIPTIONS: Record<ExportKind, string> = {
   catalogo: "Todos tus productos, también los archivados.",
   existencias: "Cuánto hay de cada producto en cada ubicación.",
   movimientos: "Entradas, salidas y ajustes, con fecha y quién.",
+  indicadores:
+    "Los indicadores de los últimos 30 días del almacén en que trabajas. Para otro periodo, descárgalos desde Indicadores.",
 };
 
 /**

@@ -182,7 +182,7 @@ Consultar equivalencias (INV-09) no concede permiso para confirmar el movimiento
 | `inventory.import.read` | Consultar archivo, errores, progreso, resultado parcial y fecha de actualización de una importación autorizada; IMP-02/05/08/10. | Sí | Sí | Sí | No | No | Sí | No | No | Sí | No | No | No |
 | `inventory.import.confirm` | Confirmar importación y reservas; exige además cada permiso de la operación importada; IMP-07/08/09/10. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
 | `inventory.import.cancel` | Cancelar trabajo y liberar solo reservas no consumidas, sin revertir lo ya aplicado; IMP-08B. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
-| `inventory.export.create` | Generar/descargar exportación segura de catálogo, existencias e historial legibles por el actor; IMP-11, sección 4; pregunta 5. | Sí | Sí | Sí | Sí | Sí | Sí | No | No | Sí | No | No | No |
+| `inventory.export.create` | Generar/descargar exportación segura de catálogo, existencias e historial legibles por el actor; IMP-11, sección 4; pregunta 5. Los indicadores de almacén (WMS-34, ADR 0085) piden además `inventory.kpi.read`. | Sí | Sí | Sí | Sí | Sí | Sí | No | No | Sí | No | No | No |
 
 Importar no permite eludir controles manuales: productos nuevos requieren `inventory.product.create`; actualizaciones, `inventory.product.update`; reactivaciones, `inventory.product.reactivate`; presentaciones nuevas o modificadas, su permiso correspondiente; saldos iniciales, `inventory.opening.create`; salidas diarias, `inventory.exit.create`. Validar todo antes de confirmar y otra vez al ejecutar lo pertinente. Archivo, ejecución, lectura y cancelación de un job permanecen dentro de la empresa y de las operaciones autorizadas al actor.
 

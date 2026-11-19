@@ -90,7 +90,7 @@ export default async function TareasPage({
   const supervises = readsTasks && access.can("inventory.task.create");
   const executes = readsTasks && access.can("inventory.task.execute");
   const ownTabs = executes || worksStages;
-  const { vista, pagina, dia } = await searchParams;
+  const { vista, pagina, dia, persona } = await searchParams;
   const asked = typeof vista === "string" ? vista : "";
   // Who does not execute tasks starts with every open one.
   const view: TaskListView =
@@ -121,12 +121,20 @@ export default async function TareasPage({
         ? listTasks(actor, {
             view,
             day: typeof dia === "string" ? dia : undefined,
+            person: typeof persona === "string" ? persona : undefined,
             page:
               typeof pagina === "string" && /^\d{1,6}$/.test(pagina)
                 ? Number(pagina)
                 : undefined,
           })
-        : { items: [], total: 0, page: 1, pageCount: 1, day: null },
+        : {
+            items: [],
+            total: 0,
+            page: 1,
+            pageCount: 1,
+            day: null,
+            person: null,
+          },
       readsTasks ? countMyTasks(actor) : { mine: 0, available: 0, blocked: 0 },
       // WMS-25: open waves with work here, when the company picks in waves.
       readsTasks
@@ -162,9 +170,15 @@ export default async function TareasPage({
       : []),
   ];
   // The day only travels between the pages of the same narrowed list.
-  const href = (target: TaskListView, page = 1, day: string | null = null) => {
+  const href = (
+    target: TaskListView,
+    page = 1,
+    day: string | null = null,
+    person: string | null = null,
+  ) => {
     const params = new URLSearchParams({ vista: target });
     if (day) params.set("dia", day);
+    if (person) params.set("persona", person);
     if (page > 1) params.set("pagina", String(page));
     return `/tareas?${params.toString()}`;
   };
@@ -259,6 +273,18 @@ export default async function TareasPage({
             className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             Ver todas las terminadas
+          </Link>
+        </p>
+      )}
+
+      {list.person && (
+        <p className="text-sm text-muted-foreground">
+          Sin terminar de {list.person.name}.{" "}
+          <Link
+            href={href("open")}
+            className="inline-flex min-h-11 items-center rounded font-medium underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Ver todas las abiertas
           </Link>
         </p>
       )}
@@ -446,7 +472,15 @@ export default async function TareasPage({
             >
               {list.page > 1 ? (
                 <Button asChild variant="outline">
-                  <Link href={href(view, list.page - 1, list.day)} rel="prev">
+                  <Link
+                    href={href(
+                      view,
+                      list.page - 1,
+                      list.day,
+                      list.person?.userId,
+                    )}
+                    rel="prev"
+                  >
                     <ChevronLeft aria-hidden="true" data-icon="inline-start" />
                     Anterior
                   </Link>
@@ -459,7 +493,15 @@ export default async function TareasPage({
               </p>
               {list.page < list.pageCount ? (
                 <Button asChild variant="outline">
-                  <Link href={href(view, list.page + 1, list.day)} rel="next">
+                  <Link
+                    href={href(
+                      view,
+                      list.page + 1,
+                      list.day,
+                      list.person?.userId,
+                    )}
+                    rel="next"
+                  >
                     Siguiente
                     <ChevronRight aria-hidden="true" data-icon="inline-end" />
                   </Link>

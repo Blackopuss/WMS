@@ -25,11 +25,15 @@ import { formatDate } from "@/lib";
 import {
   KPI_MAX_DAYS,
   durationText,
+  getIndicatorsByFacility,
   getWarehouseIndicators,
+  headlineTruncated,
   type KpiPreset,
   type KpiTimes,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
+
+import { ByFacilityTable, ComparisonTable, dayText } from "./dashboard";
 
 export const metadata: Metadata = { title: "Indicadores" };
 
@@ -45,14 +49,6 @@ const chip =
   "inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 const textLink =
   "rounded underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50";
-
-/** «9 nov» for a day written as year-month-day. */
-const dayText = (day: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString("es-MX", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
 
 const count = (n: number) => n.toLocaleString("es-MX");
 const percent = (share: string | null) => (share === null ? "—" : `${share} %`);
@@ -102,18 +98,141 @@ export default async function IndicadoresPage({
     almacen: text(params.almacen),
     producto: text(params.producto),
     persona: text(params.persona),
+    vista: text(params.vista),
   };
-  const kpi = await getWarehouseIndicators(
-    { organizationId: access.organization.id, userId: access.user.id },
-    {
+  const actor = {
+    organizationId: access.organization.id,
+    userId: access.user.id,
+  };
+  // WMS-34: downloads only for who may export (not at a PIN terminal).
+  const exports = access.can("inventory.export.create");
+  const downloads = (query: Record<string, string | undefined>) => {
+    if (!exports) return null;
+    const of = (format: string) => {
+      const search = new URLSearchParams({ formato: format });
+      for (const [key, value] of Object.entries(query)) {
+        if (value) search.set(key, value);
+      }
+      return `/api/exportaciones/indicadores?${search.toString()}`;
+    };
+    return (
+      <p className="flex flex-wrap gap-x-6 border-t pt-4 text-sm">
+        <a
+          href={of("xlsx")}
+          download
+          className={`inline-flex min-h-11 items-center ${textLink}`}
+        >
+          Descargar en Excel
+        </a>
+        <a
+          href={of("csv")}
+          download
+          className={`inline-flex min-h-11 items-center ${textLink}`}
+        >
+          Descargar en CSV
+        </a>
+      </p>
+    );
+  };
+
+  // WMS-34: the warehouses side by side, for who reaches more than one.
+  if (asked.vista === "almacenes") {
+    const byFacility = await getIndicatorsByFacility(actor, {
       preset: asked.periodo,
       from: asked.desde,
       to: asked.hasta,
-      facilityId: asked.almacen,
-      productId: asked.producto,
-      personId: asked.persona,
-    },
-  );
+    });
+    if (byFacility.rows.length > 1) {
+      const period = byFacility.period;
+      const keptPeriod = {
+        periodo: period.preset ?? undefined,
+        desde: period.preset ? undefined : period.from,
+        hasta: period.preset ? undefined : period.to,
+      };
+      const viewHref = (change: Record<string, string | undefined>) => {
+        const query = new URLSearchParams();
+        for (const [key, value] of Object.entries({
+          ...keptPeriod,
+          ...change,
+        })) {
+          if (value) query.set(key, value);
+        }
+        const written = query.toString();
+        return written
+          ? `/inventario/indicadores?${written}`
+          : "/inventario/indicadores";
+      };
+      return (
+        <PageContainer>
+          {back}
+          {moduleState === "read_only" && (
+            <ReadOnlyNotice module="Inventario" />
+          )}
+          <PageHeader title="Indicadores" />
+          <p className="-mt-2 text-sm text-muted-foreground">
+            Por almacén · del {dayText(period.from)} al {dayText(period.to)}
+          </p>
+          <nav
+            aria-label="Vista"
+            className="-mt-2 flex flex-wrap gap-x-6 text-sm"
+          >
+            <Link
+              href={viewHref({})}
+              className={`inline-flex min-h-11 items-center ${textLink}`}
+            >
+              Ver un almacén
+            </Link>
+          </nav>
+          <nav aria-label="Periodo" className="flex flex-wrap gap-2">
+            {PRESETS.map((preset) => {
+              const current = period.preset === preset.value;
+              return (
+                <Link
+                  key={preset.value}
+                  href={viewHref({
+                    vista: "almacenes",
+                    periodo: preset.value,
+                    desde: undefined,
+                    hasta: undefined,
+                  })}
+                  aria-current={current ? "page" : undefined}
+                  className={`${chip} ${current ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:bg-muted"}`}
+                >
+                  {preset.label}
+                </Link>
+              );
+            })}
+          </nav>
+          {period.clipped && (
+            <p role="status" className="text-sm text-muted-foreground">
+              El periodo puede tener hasta {KPI_MAX_DAYS} días: se muestran los
+              últimos {KPI_MAX_DAYS}.
+            </p>
+          )}
+          {byFacility.rows.some(headlineTruncated) && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Hubo más registros de los que caben en este reporte: algunas
+              cifras están incompletas. Elige un periodo más corto.
+            </p>
+          )}
+          <ByFacilityTable
+            data={byFacility}
+            hrefOf={(facilityId) => viewHref({ almacen: facilityId })}
+          />
+          {downloads({ ...keptPeriod, vista: "almacenes" })}
+        </PageContainer>
+      );
+    }
+  }
+
+  const kpi = await getWarehouseIndicators(actor, {
+    preset: asked.periodo,
+    from: asked.desde,
+    to: asked.hasta,
+    facilityId: asked.almacen,
+    productId: asked.producto,
+    personId: asked.persona,
+  });
   const timeZone = access.organization.timeZone;
   // Only what the service accepted goes on to the next links.
   const kept = {
@@ -146,7 +265,9 @@ export default async function IndicadoresPage({
     kpi.tasksTruncated ||
     kpi.accuracy?.truncated ||
     kpi.exits.valueTruncated ||
-    kpi.idle.truncated
+    kpi.idle.truncated ||
+    kpi.receiving.truncated ||
+    (kpi.previous && headlineTruncated(kpi.previous))
   ) {
     notices.push(
       "Hubo más registros de los que caben en este reporte: algunas cifras están incompletas. Elige un periodo más corto.",
@@ -164,6 +285,24 @@ export default async function IndicadoresPage({
         {kpi.facility.name} · del {dayText(kpi.period.from)} al{" "}
         {dayText(kpi.period.to)}
       </p>
+      {kpi.facilities.length > 1 && (
+        <nav
+          aria-label="Vista"
+          className="-mt-2 flex flex-wrap gap-x-6 text-sm"
+        >
+          <Link
+            href={`/inventario/indicadores?${new URLSearchParams({
+              vista: "almacenes",
+              ...(kept.periodo ? { periodo: kept.periodo } : {}),
+              ...(kept.desde ? { desde: kept.desde } : {}),
+              ...(kept.hasta ? { hasta: kept.hasta } : {}),
+            }).toString()}`}
+            className={`inline-flex min-h-11 items-center ${textLink}`}
+          >
+            Comparar almacenes
+          </Link>
+        </nav>
+      )}
 
       <nav aria-label="Periodo" className="flex flex-wrap gap-2">
         {PRESETS.map((preset) => {
@@ -291,6 +430,14 @@ export default async function IndicadoresPage({
           {notice}
         </p>
       ))}
+
+      {kpi.previous && (
+        <ComparisonTable
+          current={kpi}
+          previous={kpi.previous}
+          previousPeriod={kpi.previous.period}
+        />
+      )}
 
       <section aria-labelledby="kpi-pedidos" className="space-y-3">
         <h2 id="kpi-pedidos" className="text-lg font-semibold">
@@ -591,6 +738,7 @@ export default async function IndicadoresPage({
           </ScrollTable>
         )}
       </section>
+      {downloads(kept)}
     </PageContainer>
   );
 }

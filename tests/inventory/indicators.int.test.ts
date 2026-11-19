@@ -52,7 +52,11 @@ const DAY = 86_400_000;
  * of WMS-32 (58 before): permission, scope and company are read once
  * each; three warehouses cost the same as one.
  */
-const KPI_QUERY_BUDGET = 50;
+// WMS-34 (ADR 0085): the screen also reads the headline figures of the
+// period before; without them, the reads of WMS-32 plus two (tasks
+// delivered and the put-away times, now read by the shared headline).
+const KPI_QUERY_BUDGET = 66;
+const KPI_QUERY_BUDGET_ALONE = 52;
 const stamp = Date.now();
 let counter = 0;
 let staff = "";
@@ -976,6 +980,9 @@ describe("getWarehouseIndicators", () => {
       queries.reset();
       await getWarehouseIndicators(owner, { preset: "30" });
       expect(queries.count()).toBe(plain);
+      queries.reset();
+      await getWarehouseIndicators(owner, { preset: "30", compare: false });
+      expect(queries.count()).toBeLessThanOrEqual(KPI_QUERY_BUDGET_ALONE);
     } finally {
       queries.restore();
     }

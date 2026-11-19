@@ -219,17 +219,28 @@ elegir por empresa qué bloques ve cada rol, o una tolerancia en «a tiempo»
 
 ## Costo
 
-- Inicio: una consulta más (`groupBy`) y otra para los nombres, solo para
-  quien ve «Lo que se hizo hoy».
-- Indicadores (vista normal): las 50 sentencias de WMS-32 más los
-  titulares del periodo anterior (unas 11). Se fija con la prueba que
-  cuenta las sentencias del propio adaptador.
-- Por almacén: los titulares de cada almacén alcanzado (unas 11 por
-  almacén, en paralelo), sin productos, sin movimiento, personas ni zonas;
-  tope de 10 almacenes. No se carga si no se pide.
+Medido contando solo las sentencias del adaptador de cada prueba (nunca el
+contador global del servidor):
+
+- Inicio: «Trabajo abierto por persona» cuesta 16 sentencias (permiso,
+  almacén activo y alcance —las mismas lecturas que la lista de Tareas—, un
+  `groupBy` y los nombres), solo para quien ve «Lo que se hizo hoy»
+  (`dashboards.int.test.ts` fija el tope).
+- Indicadores (vista normal): 66 sentencias, contra 50 de WMS-32: los
+  titulares del periodo anterior son unas 14 y la vista misma suma dos
+  (tareas entregadas y los tiempos de acomodo, que ahora lee la función de
+  titulares en vez de sacarlos de las filas de tareas). Sin comparación
+  (`compare: false`, lo usa el archivo de la vista por almacén y las
+  pruebas) son 52. `indicators.int.test.ts` fija los dos.
+- Por almacén: 6 sentencias para empezar y unas 18 por almacén, en
+  paralelo; con tres almacenes, 60 (tope en la prueba: 64). Tope de 10
+  almacenes. Solo se carga si se pide.
 - Exportación: lo mismo que su pantalla.
-- Meta de `npm run load:test`: p95 < 500 ms; se vuelve a medir y se anota
-  en el cierre.
+- Un cambio de comportamiento menor: «De recibir a acomodar» dice que está
+  incompleto cuando las tareas de acomodo leídas pasan del tope, no cuando
+  lo pasan todas las tareas del periodo (es más exacto).
+- `npm run load:test`: la pantalla «Indicadores por almacén» entra a
+  `screens()`; la medición queda en el reporte de cierre.
 
 ## Lo que no entra
 

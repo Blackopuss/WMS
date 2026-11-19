@@ -2944,6 +2944,8 @@ const summaryOf = (
 
 export type TaskPage = {
   view: TaskListView;
+  /** The person the open list is narrowed to (WMS-34), if any. */
+  person: { userId: string; name: string } | null;
   items: TaskSummary[];
   total: number;
   page: number;
@@ -2970,7 +2972,13 @@ export const deliveredOnWhere = (window: DayWindow, from: object) => ({
  */
 export async function listTasks(
   actor: InventoryActor,
-  options: { view?: unknown; page?: number; day?: unknown } = {},
+  options: {
+    view?: unknown;
+    page?: number;
+    day?: unknown;
+    /** Open view only: the tasks a person has (WMS-34, ADR 0085). */
+    person?: unknown;
+  } = {},
 ): Promise<TaskPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -3014,10 +3022,21 @@ export async function listTasks(
     view === "closed" && typeof options.day === "string"
       ? await dayWindow(client, options.day)
       : null;
+  // A person asked for in the open view counts only if they are in the
+  // team; anything else is ignored (WMS-34).
+  const askedPerson =
+    view === "open" && typeof options.person === "string" && options.person
+      ? await client.membership.findFirst({
+          where: { userId: options.person.slice(0, 36) },
+          select: { userId: true, user: { select: { name: true } } },
+        })
+      : null;
   const where = {
     ...(window
       ? deliveredOnWhere(window, { facilityId: facility.id })
-      : { ...byView, fromLocation: { facilityId: facility.id } }),
+      : askedPerson
+        ? assignedOpenWhere(facility.id, askedPerson.userId)
+        : { ...byView, fromLocation: { facilityId: facility.id } }),
     ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
   };
   const total = await client.warehouseTask.count({ where });
@@ -3057,6 +3076,95 @@ export async function listTasks(
     page,
     pageCount,
     day: window?.day ?? null,
+    person: askedPerson
+      ? { userId: askedPerson.userId, name: askedPerson.user.name }
+      : null,
+  };
+}
+
+/** Tasks someone has and has not finished: assigned and still open. */
+export const ASSIGNED_OPEN_STATUSES: readonly WarehouseTaskStatus[] = [
+  "ASSIGNED",
+  "ACCEPTED",
+  "PICKED_UP",
+  "BLOCKED",
+];
+
+/**
+ * The open work of the people of a warehouse (WMS-34, ADR 0085): tasks
+ * leaving from it with a person and not finished. The same condition for
+ * the count of the dashboard and for the list it opens.
+ */
+export function assignedOpenWhere(facilityId: string, personId?: string) {
+  return {
+    status: { in: [...ASSIGNED_OPEN_STATUSES] },
+    fromLocation: { facilityId },
+    assignedToUserId: personId ?? { not: null },
+  };
+}
+
+/** People shown at most in the open work of the dashboard. */
+export const OPEN_WORK_PEOPLE_MAX = 50;
+
+export type OpenWorkRow = {
+  userId: string;
+  /** Null when the person is no longer in the team. */
+  name: string | null;
+  open: number;
+  blocked: number;
+};
+
+/**
+ * Open work per person in the active warehouse, inside the scope of who
+ * asks (WMS-34, ADR 0085). The most loaded first.
+ */
+export async function listOpenWorkByPerson(
+  actor: InventoryActor,
+): Promise<{ rows: OpenWorkRow[]; truncated: boolean }> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.task.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  const [facility, scope] = await Promise.all([
+    activeFacilityOf(client, actor.userId),
+    taskScope(client, actor.userId),
+  ]);
+  const groups = await client.warehouseTask.groupBy({
+    by: ["assignedToUserId", "status"],
+    where: {
+      ...assignedOpenWhere(facility.id),
+      ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
+    },
+    orderBy: [{ assignedToUserId: "asc" }, { status: "asc" }],
+    _count: { _all: true },
+  });
+  const byPerson = new Map<string, OpenWorkRow>();
+  for (const group of groups) {
+    if (!group.assignedToUserId) continue;
+    const row = byPerson.get(group.assignedToUserId) ?? {
+      userId: group.assignedToUserId,
+      name: null,
+      open: 0,
+      blocked: 0,
+    };
+    row.open += group._count._all;
+    if (group.status === "BLOCKED") row.blocked += group._count._all;
+    byPerson.set(group.assignedToUserId, row);
+  }
+  const names = await namesOf(actor.organizationId, [...byPerson.keys()]);
+  const rows = [...byPerson.values()]
+    .map((row) => ({ ...row, name: names.get(row.userId) ?? null }))
+    .sort(
+      (a, b) =>
+        b.open - a.open ||
+        (a.name ?? "").localeCompare(b.name ?? "", "es") ||
+        a.userId.localeCompare(b.userId),
+    );
+  return {
+    rows: rows.slice(0, OPEN_WORK_PEOPLE_MAX),
+    truncated: rows.length > OPEN_WORK_PEOPLE_MAX,
   };
 }
 

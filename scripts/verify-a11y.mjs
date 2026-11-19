@@ -57,6 +57,10 @@ const SCREENS = [
   "/conteos/exactitud",
   // WMS-32: warehouse indicators.
   "/inventario/indicadores",
+  // WMS-34: dashboards (comparison by warehouse; with one warehouse it
+  // falls back to the indicators of the active one).
+  "/inventario/indicadores?vista=almacenes",
+  "/tareas?vista=open&persona=nadie",
   "/tareas",
   "/tareas/nueva",
   "/recepcion",
