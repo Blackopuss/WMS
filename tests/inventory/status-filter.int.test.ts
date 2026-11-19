@@ -3,17 +3,25 @@ import { afterAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib";
 import {
   STOCK_STATUS_FILTER_OPTIONS,
+  addFacilityTransferLine,
+  createFacilityTransfer,
+  sendFacilityTransfer,
   changeStockStatus,
   chosenStockStatus,
   productsInStatusWhere,
   registerEntry,
   type InventoryActor,
+  type StockStatus,
 } from "@/modules/inventory";
 import { moduleRegistry } from "@/modules/registry";
 import { setMemberScope } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct, listProducts } from "@/platform/catalog";
-import { createLocation } from "@/platform/locations";
+import {
+  createFacility,
+  createLocation,
+  switchFacility,
+} from "@/platform/locations";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
@@ -53,6 +61,7 @@ async function setup() {
     {
       productLimit: 20,
       users: 10,
+      facilities: 3,
       modules: ["inventory"],
       validUntil: null,
       reason: "Prueba del filtro por estado",
@@ -180,5 +189,81 @@ describe("filter of the list by the state of the stock (WMS-87)", () => {
     if (!scoped.ok) throw new Error(JSON.stringify(scoped));
     const zoned = { organizationId: owner.organizationId, userId: zonedUser };
     expect(await skus(zoned, "DAMAGED")).toEqual(["FE-1"]);
+  }, 60_000);
+  it("what is on its way counts in the warehouse it goes to, and each person sees their own active warehouse", async () => {
+    const owner: InventoryActor = await setup();
+    const made = await createProduct(owner, { sku: "TR-1", name: "Prod TR-1" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    const zone = await createLocation(owner, { level: 1, name: "Zona A" });
+    if (!zone.ok) throw new Error("zone");
+    const entered = await registerEntry(owner, {
+      productId: made.productId,
+      locationId: zone.locationId,
+      quantity: "5",
+      unitCost: "10",
+      acceptRepeat: true,
+      acceptCapacity: true,
+    });
+    if (!entered.ok) throw new Error(JSON.stringify(entered));
+    const facility = await createFacility(owner, {
+      name: "Bodega B",
+      code: "B",
+    });
+    if (!facility.ok) throw new Error(JSON.stringify(facility));
+    const transfer = await createFacilityTransfer(owner, {
+      toFacilityId: facility.facilityId,
+      idempotencyKey: newId(),
+    });
+    if (!transfer.ok) throw new Error(JSON.stringify(transfer));
+    const line = await addFacilityTransferLine(owner, {
+      transferId: transfer.transferId,
+      productId: made.productId,
+      source: zone.locationId,
+      quantity: "2",
+    });
+    if (!line.ok) throw new Error(JSON.stringify(line));
+    const sent = await sendFacilityTransfer(owner, {
+      transferId: transfer.transferId,
+      idempotencyKey: newId(),
+    });
+    if (!sent.ok) throw new Error(JSON.stringify(sent));
+
+    const skus = async (actor: InventoryActor, status: StockStatus) =>
+      (
+        await listProducts(actor, {
+          also: await productsInStatusWhere(actor, status),
+        })
+      ).items.map((item) => item.sku);
+    // The owner works in A: the goods in transit are in B's transit place.
+    expect(await skus(owner, "IN_TRANSIT")).toEqual([]);
+    expect(await skus(owner, "AVAILABLE")).toEqual(["TR-1"]);
+
+    // Someone else works in B and sees them; the owner still does not.
+    const otherUser = await newUser();
+    const membership = await db.membership.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        userId: otherUser,
+      },
+    });
+    await db.membershipRole.create({
+      data: {
+        id: newId(),
+        organizationId: owner.organizationId,
+        membershipId: membership.id,
+        role: "administrator",
+      },
+    });
+    const other = { organizationId: owner.organizationId, userId: otherUser };
+    const switched = await switchFacility(other, facility.facilityId);
+    if (!switched.ok) throw new Error(JSON.stringify(switched));
+    expect(await skus(other, "IN_TRANSIT")).toEqual(["TR-1"]);
+    expect(await skus(other, "AVAILABLE")).toEqual([]);
+    expect(await skus(owner, "IN_TRANSIT")).toEqual([]);
+    // When the owner changes warehouse, the same list follows.
+    await switchFacility(owner, facility.facilityId);
+    expect(await skus(owner, "IN_TRANSIT")).toEqual(["TR-1"]);
+    expect(await skus(owner, "AVAILABLE")).toEqual([]);
   }, 60_000);
 });
