@@ -48,6 +48,9 @@ Cada cambio queda en la bitácora.
 ### Datos del catálogo
 En **Inventario**: **Agregar producto**, **Importar Excel**, **Descargar en Excel**, **Cambiar estado**, **Desechar** (solo lo dañado o rechazado, con motivo; no se reversa), tarimas, etiquetas, reposición. En **Movimientos**: **Corregir existencias**, **Saldo inicial** y **Reversar** (siempre con motivo).
 
+## Indicadores del almacén
+**Inventario › Indicadores** (pantalla «Indicadores»; también el enlace **Indicadores** junto a **Lo que se hizo hoy** en Inicio): de un periodo (**7 días**, **30 días**, **90 días**, **Este mes**, **Mes anterior**, o fechas en **Más filtros**), pedidos completos y a tiempo, tiempo de surtido, **De recibir a acomodar**, exactitud, **Productos de mayor movimiento** con su rotación y días de inventario, **Sin movimiento**, **Rendimiento por persona** y **Rendimiento por zona**. Toca un producto o una persona para ver solo lo suyo (**Quitar** lo deshace). Con varios almacenes, eliges cuál en **Más filtros**. Desde una terminal con PIN no ves **Rendimiento por persona**. Con costos ves además el valor de lo que salió y de lo que no se mueve.
+
 ## Lo que no puedes hacer
 - Contratar módulos, cambiar de plan, cancelar, cambiar el método de pago, dar acceso a soporte: es del [titular](rol-titular.md). Transferir la titularidad todavía no está disponible en la app; se pide por el correo de contacto de **Mi plan**.
 - Entrar con PIN.
@@ -56,4 +59,4 @@ En **Inventario**: **Agregar producto**, **Importar Excel**, **Descargar en Exce
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Para el sistema mismo (servidor, respaldos), ver los manuales de [instalación](instalacion.md), [actualización](actualizacion.md) y [respaldo y restauración](respaldo-y-restauracion.md).
 
-Vigente al 2026-11-19 (configuración inicial: WMS-43)
+Vigente al 2026-11-19 (configuración inicial: WMS-43; indicadores: WMS-32)

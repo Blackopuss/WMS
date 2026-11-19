@@ -177,7 +177,8 @@ async function seed(size: number): Promise<Company> {
     data: { id: membershipId, organizationId, userId },
   });
   await db.membershipRole.createMany({
-    data: (["warehouse"] as const).map((role) => ({
+    // WMS-32: with Supervisión too, so the indicators are measured.
+    data: (["warehouse", "supervisor"] as const).map((role) => ({
       id: newId(),
       organizationId,
       membershipId,
@@ -311,6 +312,9 @@ function screens(company: Company): Record<string, () => string> {
     // WMS-39: the list of notices and the incidents of the warehouse.
     Avisos: () => "/avisos",
     Incidencias: () => "/incidencias",
+    // WMS-32: warehouse indicators, 30 and 90 days.
+    Indicadores: () => "/inventario/indicadores",
+    "Indicadores, 90 días": () => "/inventario/indicadores?periodo=90",
     // WMS-66: the global search, by words and by a document number.
     "Búsqueda global": () =>
       `/buscar?q=${encodeURIComponent(`${pick(WORDS)} ${pick(SIZES_TEXT)}`)}`,

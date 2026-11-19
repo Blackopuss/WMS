@@ -64,6 +64,7 @@ import {
   startPacking,
   getProductStock,
   getStockByLocation,
+  getWarehouseIndicators,
   getStockTotals,
   getTask,
   listCounts,
@@ -1040,6 +1041,20 @@ describe("limited to a zone of a warehouse", () => {
       inZone,
     ]);
     expect((await getProductStock(zoned, productId))?.total).toBe("4");
+  });
+
+  it("the warehouse indicators name only the zone and its warehouse (WMS-32)", async () => {
+    const seen = await getWarehouseIndicators(zoned, { preset: "7" });
+    expect(seen.facility.id).toBe(facilityB);
+    expect(seen.facilities.map((each) => each.id)).toEqual([facilityB]);
+    expect(seen.zones.length).toBeGreaterThan(0);
+    for (const zone of seen.zones) expect(zone.zoneId).toBe(zoneId);
+    // A warehouse outside the scope is ignored, not shown.
+    const asked = await getWarehouseIndicators(zoned, {
+      preset: "7",
+      facilityId: facilityA,
+    });
+    expect(asked.facility.id).toBe(facilityB);
   });
 
   it("moves only inside the zone", async () => {

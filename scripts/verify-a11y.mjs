@@ -55,6 +55,8 @@ const SCREENS = [
   "/conteos/programas",
   "/conteos/programas/nuevo",
   "/conteos/exactitud",
+  // WMS-32: warehouse indicators.
+  "/inventario/indicadores",
   "/tareas",
   "/tareas/nueva",
   "/recepcion",

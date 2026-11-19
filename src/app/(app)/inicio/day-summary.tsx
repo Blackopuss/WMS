@@ -19,7 +19,13 @@ export function DaySummaryBlock({
   links,
 }: {
   summary: DaySummary;
-  links: { movements: boolean; tasks: boolean; orders: boolean };
+  links: {
+    movements: boolean;
+    tasks: boolean;
+    orders: boolean;
+    /** WMS-32: the warehouse indicators, for who may see them. */
+    indicators?: boolean;
+  };
 }) {
   const movementsOf = (type: string) =>
     links.movements
@@ -71,9 +77,19 @@ export function DaySummaryBlock({
 
   return (
     <section aria-labelledby="inicio-resumen" className="space-y-3">
-      <h2 id="inicio-resumen" className="font-medium">
-        Lo que se hizo hoy
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-x-4">
+        <h2 id="inicio-resumen" className="font-medium">
+          Lo que se hizo hoy
+        </h2>
+        {links.indicators && (
+          <Link
+            href="/inventario/indicadores"
+            className="inline-flex min-h-11 items-center rounded-lg text-sm font-medium underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Indicadores
+          </Link>
+        )}
+      </div>
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map(({ label, value, detail, href }) => {
           const body = (

@@ -785,6 +785,28 @@ export const EQUIPMENT_SETTINGS: readonly SettingDefinition[] = [
   EQUIPMENT_ON_BROKEN_REPORT,
 ];
 
+/**
+ * How many days without any movement make a product with stock «sin
+ * movimiento» in the warehouse indicators (WMS-32, ADR 0082).
+ */
+export const KPI_IDLE_DAYS = {
+  key: "inventory.kpi.idle_days",
+  module: "inventory",
+  area: "Indicadores",
+  label: "Producto sin movimiento después de",
+  options: [
+    { value: "30", label: "30 días", help: "Para productos de salida diaria." },
+    { value: "60", label: "60 días", help: "Dos meses sin moverse." },
+    { value: "90", label: "90 días", help: "Un trimestre sin moverse." },
+    {
+      value: "180",
+      label: "180 días",
+      help: "Para productos de temporada o de ciclos largos.",
+    },
+  ],
+  defaultValue: "90",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -812,6 +834,7 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_MODE,
   DIGEST_HOUR,
   DIGEST_DAYS,
+  KPI_IDLE_DAYS,
   ...EQUIPMENT_SETTINGS,
 ];
 

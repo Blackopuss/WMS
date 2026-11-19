@@ -542,6 +542,7 @@ export default async function InicioPage({
             movements: showMovements,
             tasks: showTasks,
             orders: access.can("inventory.outbound.read"),
+            indicators: access.can("inventory.kpi.read"),
           }}
         />
       )}
