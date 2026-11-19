@@ -22,7 +22,9 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | WMS-43 Asistente de configuración inicial | `session_01QMjUPWjqnyim6TcuhoF9Am` | `wms-43-asistente-inicial` | Opus, medio | 0083 (`20261119130000`) | abierto |
 | WMS-88 Pendientes de avisos por correo (ADR 0060) y del historial de accesos (ADR 0064) (seguridad; revisor) | `session_01QMjUPY8CFA5E9GkWMRc1Tj` | `wms-88-avisos-accesos-pendientes` | Opus, medio | 0084 (`20261119140000`) | abierto |
 | WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | abierto |
-| WMS-46 Manuales por rol, instalación, actualización y respaldo (`docs/manuales/`) | `session_01QMjUPWnxq17jsxbEu38ox6` | `wms-46-manuales` | Sonnet, medio | sin ADR | abierto |
+| WMS-46 Manuales por rol, instalación, actualización y respaldo (`docs/manuales/`) | `session_01QMjUPWnxq17jsxbEu38ox6` | `wms-46-manuales` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
+
+Huecos de la app que salieron de la revisión de los manuales (no son de los manuales): transferir la titularidad no tiene pantalla ni Server Action (`ownership.ts` existe, ninguna ruta lo usa; pendiente sin número), y el Inspector de calidad no tiene enlace a «Por inspeccionar» (requisito de WMS-30B).
 
 WMS-86, WMS-87 y WMS-88 son números nuevos. El siguiente ADR libre es el 0085 (el 0079 sigue apartado para WMS-84).
 

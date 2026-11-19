@@ -68,7 +68,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 
 **Qué sigue cuando el fundador lo indique, en el orden de la tabla de fases:** producción y calidad (el flujo ya está decidido; el orden de pasos es el de la sección 12 de la propuesta, con WMS-59 primero, y cada paso escribe su ADR antes de programar), WMS-61 y WMS-62 (con decisión del fundador), WMS-63 (Ventas, espera decisión); transversales WMS-37 (requisito de producción), WMS-67, ~~WMS-42~~, WMS-68, WMS-47; después las Fases 4 y 5. Ya están hechos WMS-60, WMS-38 y WMS-40.
 
-**Tanda abierta (2026-11-19):** el fundador pidió abrir todos los chats posibles a la vez con los pasos pendientes que no se pisan, y que el relevo de un chat que implementa sea a los 500,000 tokens. Abiertos: WMS-83 (ADR 0078), WMS-86 (rendimiento en teléfono, 0080), WMS-66 (búsqueda global, 0081), WMS-32 (indicadores de almacén, 0082), WMS-43 (asistente inicial, 0083), WMS-88 (pendientes de avisos por correo y accesos, 0084), WMS-87 (pendientes chicos de interfaz) y WMS-46 (manuales). Sin abrir: WMS-84 (después de WMS-83), producción WMS-29 → WMS-31 → WMS-30B → WMS-79 (uno tras otro, después de WMS-84), WMS-85, WMS-33, WMS-34, WMS-65, WMS-64, WMS-44, WMS-45 y los que esperan al fundador (WMS-62, 69, 47, 48, 70). Detalle en «Relevo de quien coordina (2026-11-19)» de `docs/RELEVO.md`.
+**Tanda abierta (2026-11-19):** el fundador pidió abrir todos los chats posibles a la vez con los pasos pendientes que no se pisan, y que el relevo de un chat que implementa sea a los 500,000 tokens. Abiertos: WMS-83 (ADR 0078), WMS-86 (rendimiento en teléfono, 0080), WMS-66 (búsqueda global, 0081), WMS-32 (indicadores de almacén, 0082), WMS-43 (asistente inicial, 0083), WMS-88 (pendientes de avisos por correo y accesos, 0084), WMS-87 (pendientes chicos de interfaz) y WMS-46 (manuales; **quedó cerrado y unido el 2026-11-19**). Sin abrir: WMS-84 (después de WMS-83), producción WMS-29 → WMS-31 → WMS-30B → WMS-79 (uno tras otro, después de WMS-84), WMS-85, WMS-33, WMS-34, WMS-65, WMS-64, WMS-44, WMS-45 y los que esperan al fundador (WMS-62, 69, 47, 48, 70). Detalle en «Relevo de quien coordina (2026-11-19)» de `docs/RELEVO.md`.
 
 **Decisiones del fundador (2026-11-13):**
 
@@ -141,6 +141,8 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
   (`docs/seguridad/AUDITORIA_5.md`).
 - Una invitación pendiente conserva el alcance con que se emitió; reenviarla no lo
   revalida (`docs/seguridad/AUDITORIA_5.md`).
+- Una pantalla para transferir la titularidad: el servicio existe (`ownership.ts`, USR-03B) pero ninguna ruta de `src/app` lo usa (salió de la revisión de los manuales, WMS-46).
+- Enlace a «Por inspeccionar» para el Inspector de calidad: el aviso de Inicio e Inventario solo sale con `inventory.status.change|release` (requisito de WMS-30B).
 
 ## Resumen por fase
 
@@ -151,7 +153,7 @@ Lo que un ADR posterior o el `CHANGELOG.md` dio por cerrado no aparece aquí.
 | 3. Gestión empresarial | ~~WMS-56~~, ~~WMS-57~~, ~~WMS-58~~, ~~WMS-41~~, ~~WMS-59~~, WMS-27..31 (hechos: 27, 28, 28B, 30A, 30-0, 74, 74B, 75, 76; faltan 29, 31, 30B, 79 y 29B), ~~WMS-60~~, ~~WMS-61~~ (fuera del plan), WMS-62, ~~WMS-63~~ (cerrado sin hacer), WMS-83, WMS-84, WMS-85 | Aprobaciones, compras, campos personalizados, producción, calidad, roles, API y webhooks, facturación, Ventas (pendiente) |
 | 4. Inteligencia operativa | WMS-32, WMS-33, WMS-34, WMS-64, WMS-65, WMS-66 | Indicadores, tableros, automatizaciones, slotting, búsqueda global |
 | Transversal (piso, seguridad, infraestructura) | ~~WMS-35~~, ~~WMS-37~~, ~~WMS-38~~, ~~WMS-39~~, ~~WMS-40~~, ~~WMS-67~~, ~~WMS-42~~, ~~WMS-68~~, ~~WMS-82~~, WMS-47, WMS-86, WMS-87, WMS-88 | PWA, fotos, PIN, incidencias, sesiones e historial de accesos, equipos, almacenamiento externo, ambientes |
-| 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, WMS-46, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
+| 5. Escalabilidad comercial | WMS-69, WMS-43, WMS-44, WMS-45, ~~WMS-46~~, WMS-70, WMS-48 | Licencias y usuarios adicionales, configuración inicial, demo, plantillas por giro, manuales, portal y monitoreo de clientes, lo comercial |
 
 Los pasos transversales se intercalan cuando su dependencia está lista (por
 ejemplo WMS-36, cámara, junto con la Fase 2; WMS-40, sesiones, cuando haga
@@ -785,7 +787,7 @@ WMS-36, y solo para lo que la especificación 4.5 permite.
 | WMS-43 | Asistente de configuración inicial: almacenes, ubicaciones, equipo, parámetros, importación de productos y existencias | Desarrollo |
 | WMS-44 | Empresa de demostración con datos ficticios por giro | Desarrollo |
 | WMS-45 | Plantillas por giro (almacén general, comercial, manufactura, 3PL) que activan módulos, parámetros y campos personalizados | Desarrollo |
-| WMS-46 | Manuales: por rol, de instalación, de actualización y de respaldo y restauración | Desarrollo |
+| WMS-46 | Manuales: por rol, de instalación, de actualización y de respaldo y restauración | Desarrollo. **Hecho (2026-11-19).** Pendiente: pasada de actualización al cerrar la tanda del 2026-11-19 |
 | WMS-70 | Portal de administración de clientes: estado de cada empresa, uso, versión, salud; actualizaciones automáticas en todos los clientes (**PC-10**) | Desarrollo |
 | WMS-48 | Lo comercial: nombre, precios, contrato, SLA, retención, términos y privacidad revisados | Fundador |
 
