@@ -39,7 +39,7 @@ En **Producción › Solicitudes de producción** (**Solicitudes por atender (N)
 3. **Rechazar:** escribe el motivo; quien pidió lo recibe en un aviso.
 
 ### Procesos
-Si la empresa publicó un proceso para la orden de producción, **Tareas › Etapas de procesos** muestra las que te tocan, y puedes asignarlas a otra persona.
+Si la empresa publicó un proceso para la orden de producción, **Tareas** muestra con la insignia **Etapa** las que te tocan, y puedes asignarlas a otra persona.
 
 ## Lo que no puedes hacer (y a quién pedirlo)
 Corregir existencias (Almacén o Supervisor), administrar equipos o ver costos, ni cambiar la configuración (Administrador).

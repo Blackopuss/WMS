@@ -20,7 +20,7 @@ En **Inicio › Para hoy** ve **Mis tareas**, **Tareas disponibles**, **Pedidos 
 4. **Acomodar:** el sistema recomienda un lugar (**Se recomendó <ruta>**). Escanea su etiqueta y toca **Ya lo acomodé**; si lo dejaste en otro lugar, escanea ese y usa **Lo dejé en otro lugar**.
 5. **Entregar:** **Ya lo dejé en <ruta>**. Si la empresa pide foto, toma una de dónde lo dejaste antes de entregar (hasta 3). Hasta entregar no se mueve nada en el inventario.
 6. Si no puedes hacerla: **Reportar un problema**, escribe **Qué pasó**. La tarea se detiene y tu supervisor la revisa. Una carga que ya recogiste no se cancela: se entrega o se reporta.
-7. Si hay una **ola**, en **Tareas** abre **Olas de surtido abiertas** y sigue el recorrido por pasillo («Toma 30 piezas…»).
+7. Si hay una **ola**, en **Tareas** abre **Olas abiertas** y sigue el recorrido por pasillo («Toma 30 piezas…»).
 
 ### 3. Recibir mercancía
 **Recepción:** abre la orden por recibir y toca **Recibir mercancía**. Pasos y avisos, en el manual del [Comprador](rol-comprador.md) (sección «Recibir lo que llega»). Si la empresa usa tareas de acomodo, al terminar aparece **Ver las tareas**.
@@ -35,7 +35,7 @@ Si el sistema avisa que ya registraste algo igual, o que algo no cabe, léelo an
 **Conteos:** abre el conteo de hoy, escanea o busca cada producto, escribe cuántos hay y **Guardar captura**. Contar **no** cambia las existencias: quien aplica el conteo lo decide.
 
 ### 6. Empacar y despachar
-- **Pedidos › <pedido> › Seguir empacando** (si tu empresa empaca): escanea lo que tienes enfrente; cada escaneo entra en la caja abierta. **Cerrar bulto**, y **Terminar empaque** cuando todo está empacado. Si falta algo: **Marcar faltante** con motivo.
+- **Pedidos › <pedido> › Seguir empacando** (si tu empresa empaca): escanea lo que tienes enfrente; cada escaneo entra en la caja abierta. **Cerrar bulto**, y **Terminar empaque** cuando todo está empacado. Si falta algo: **Falta** con motivo.
 - **Pedidos › Embarques › Armar embarque** con los pedidos listos, datos del transporte y **Confirmar salida**. Puedes **Descargar PDF** de la hoja de embarque.
 - **Registrar devolución** de lo que regresa un cliente: entra en inspección hasta que alguien lo revise.
 - **Traslados entre almacenes** que llegan: **Recibir en <almacén>** (lo que llegó bien y lo dañado).

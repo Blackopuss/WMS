@@ -21,7 +21,7 @@ Inicio, Tareas (para las etapas de proceso), Producción (solo lectura), Inventa
 ## Tus tareas del día
 
 ### Consultar el plan de un producto
-**Inventario › <producto>:** en el bloque **Inspección** ves **Plan de inspección · v<N>**, o **Sin plan de inspección** (entonces la calidad se revisa como dice el ajuste de la empresa: completa o por muestra). Toca **Plan de inspección** para ver:
+**Inventario › <producto>:** en el bloque **Inspección** está el enlace **Plan de inspección** con su versión, o **Sin plan de inspección** (entonces la calidad se revisa como dice el ajuste de la empresa: completa o por muestra). Toca **Plan de inspección** para ver:
 - **Revisión de calidad:** **Completa**, o **Por muestra** (cuántas se revisan, o un porcentaje con mínimo y tope).
 - A qué aplica: producido, recibido o devuelto.
 - Los **puntos**: qué se revisa y qué se anota (sí o no, número con mínimo y máximo, opción de lista, texto), si es **Obligatorio** u **Opcional** y si **Pide foto**.
@@ -32,10 +32,10 @@ No puedes crear ni cambiar planes: lo hace Administración o el titular.
 **Configuración › Defectos:** el catálogo con su gravedad (**Menor**, **Mayor** o **Crítica**, solo informativa). Hoy ninguna pantalla los usa para rechazar algo.
 
 ### Lo que llegó «En inspección»
-Cuando un producto está marcado como **Inspeccionar al recibir**, lo sano de una recepción entra **En inspección** y no está disponible. Se ve en **Inventario › Por inspeccionar**. **Decidir** (liberar, mandar a dañado, a rechazado o a restauración) se hace con **Cambiar estado**, y requiere permisos que el rol Inspector no tiene hoy: pídeselo al [Supervisor de almacén](rol-supervisor-almacen.md) o a [Almacén](rol-almacen.md).
+Cuando un producto está marcado como **Inspeccionar al recibir**, lo sano de una recepción entra **En inspección** y no está disponible. La lista **Por inspeccionar** la ven quienes pueden decidir, no tu rol. **Decidir** (liberar, mandar a dañado, a rechazado o a restauración) se hace con **Cambiar estado**, y requiere permisos que el rol Inspector no tiene hoy: pídeselo al [Supervisor de almacén](rol-supervisor-almacen.md) o a [Almacén](rol-almacen.md).
 
 ### Etapas de proceso
-Si tu empresa publicó etapas con tu área, **Tareas › Etapas de procesos** te las muestra: toma la etapa, sube la nota o foto que pida y termínala.
+Si tu empresa publicó etapas con tu área, aparecen en **Tareas** con la insignia **Etapa**: toma la etapa, sube la nota o foto que pida y termínala.
 
 ## Lo que no puedes hacer (y a quién pedirlo)
 Producir, crear órdenes, corregir existencias, cambiar planes o ver costos: [Encargado de producción](rol-encargado-produccion.md), [Almacén](rol-almacen.md) o [Administrador](rol-administrador.md).

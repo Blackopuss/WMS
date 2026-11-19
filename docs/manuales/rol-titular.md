@@ -9,9 +9,9 @@ Con correo y contraseña, y **verificación en dos pasos obligatoria** (el siste
 Todo lo que tengan contratado tu plan y tus módulos: Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventario, Movimientos, Conteos, Incidencias, Compras y Configuración.
 
 ## Lo que solo hace el titular
-- **Ver y entender tu plan:** **Configuración › Mi plan** muestra la vigencia, los cupos (productos, usuarios, archivos, almacenes) y los módulos. No hay botón de contratar ni cobro en línea: para contratar o renovar, escribe al correo de contacto que aparece ahí; el personal de la plataforma lo activa cuando se confirma el pago.
+- **Ver y entender tu plan:** **Configuración › Mi plan** muestra la vigencia, los cupos (**Productos activos**, **Usuarios** y **Archivos**) y los módulos. No hay botón de contratar ni cobro en línea: para contratar o renovar, escribe al correo de contacto que aparece ahí; el personal de la plataforma lo activa cuando se confirma el pago.
 - **Permitir que soporte vea tu empresa:** en **Configuración › Soporte** toca **Permitir acceso** (24 horas, solo lectura, queda en la bitácora) y **Quitar acceso** cuando termines.
-- **Contratar, cancelar y transferir la titularidad:** se piden al contratar o por contacto; la transferencia a otra persona la inicia solo el titular y exige que la acepte quien la recibe.
+- **Contratar, cancelar y transferir la titularidad:** hoy no hay pantalla en la app para hacerlo (todavía no disponible en la app); se pide por el correo de contacto de **Mi plan**.
 - Al activarse un aviso de renovación (los últimos 15 días del plan), te aparece en Inicio y en **Mi plan**. Si el plan vence, todo queda en **solo lectura** hasta renovar.
 
 ## Primeros pasos con una empresa nueva

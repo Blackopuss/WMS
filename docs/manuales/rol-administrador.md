@@ -47,7 +47,7 @@ Cada cambio queda en la bitácora.
 En **Inventario**: **Agregar producto**, **Importar Excel**, **Descargar en Excel**, **Cambiar estado**, **Desechar** (solo lo dañado o rechazado, con motivo; no se reversa), tarimas, etiquetas, reposición. En **Movimientos**: **Corregir existencias**, **Saldo inicial** y **Reversar** (siempre con motivo).
 
 ## Lo que no puedes hacer
-- Contratar módulos, cambiar de plan, cancelar, cambiar el método de pago, transferir la titularidad o dar acceso a soporte: es del [titular](rol-titular.md).
+- Contratar módulos, cambiar de plan, cancelar, cambiar el método de pago, dar acceso a soporte: es del [titular](rol-titular.md). Transferir la titularidad todavía no está disponible en la app; se pide por el correo de contacto de **Mi plan**.
 - Entrar con PIN.
 - Cambiar al titular o tus propios roles.
 

@@ -3,7 +3,7 @@
 El rol Almacén administra el catálogo, las ubicaciones, los movimientos y los conteos de Inventario, y arma pedidos y embarques. No opera Compras (no recibe órdenes de compra ni ve proveedores). Antes lee [lo común](comun.md). El [Supervisor de almacén](rol-supervisor-almacen.md) hace lo mismo y además recibe mercancía de órdenes de compra y ve el equipo.
 
 ## Cómo entras
-Correo y contraseña (dos pasos opcionales). Con PIN solo si la empresa eligió «Todos los que no usan verificación en dos pasos».
+Correo y contraseña (dos pasos opcionales). Con PIN si la empresa eligió «Piso y supervisión» o «Todos los que no usan verificación en dos pasos».
 
 ## Lo que ves en el menú
 Inicio, Tareas, Pedidos, Producción (si está contratada, solo lectura de órdenes y recetas), Inventario, Movimientos, Conteos, Incidencias y Configuración. (No hay Recepción ni Compras.)
@@ -23,7 +23,7 @@ Inicio, Tareas, Pedidos, Producción (si está contratada, solo lectura de órde
 - Traslados entre almacenes: **Nuevo traslado** y **Enviar**; recibir y resolver también.
 
 ### Conteos
-**Iniciar un conteo** por ubicación, capturar con **Guardar captura** y **Aplicar conteo** cuando termines (con motivo si hay diferencias). También **Programas de conteo** y **Exactitud**.
+**Iniciar un conteo** por ubicación, capturar con **Guardar captura** y **Aplicar conteo** cuando termines (con motivo si hay diferencias). También **Programas de conteo**.
 
 ### Pedidos de salida
 **Nuevo pedido**, agregar líneas, **Liberar al almacén** (aparta lo que hay y crea tareas de surtido), o **Importar pedidos** desde Excel. Después: empaque (**Seguir empacando**), **Armar embarque** y **Confirmar salida**, y **Registrar devolución** de lo que regresa un cliente.

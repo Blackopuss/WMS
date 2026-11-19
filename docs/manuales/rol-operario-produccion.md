@@ -31,7 +31,7 @@ Si lo que produces está por acabarse, en **Tareas** aparece el bloque **Queda p
 Condiciones: **no debes tener nada a tu nombre** (órdenes liberadas asignadas, etapas de proceso tomadas o tareas sin terminar), el producto debe tener receta vigente y estar cerca de su mínimo. No ves cifras de existencias. No puedes tener dos solicitudes por atender del mismo producto. Si no cumples, la pantalla dice **Ahora no puedes pedir producción**. Puedes **Cancelar solicitud** si todavía está por atender.
 
 ### Etapas de un proceso
-Si tu empresa publicó etapas para la orden de producción, en **Tareas › Etapas de procesos** ves las que te tocan por tu área.
+Si tu empresa publicó etapas para la orden de producción, en **Tareas** ves con la insignia **Etapa** las que te tocan por tu área.
 
 ## Lo que no puedes hacer (y a quién pedirlo)
 Crear o cambiar recetas y órdenes, decidir solicitudes, corregir existencias o ver costos: [Encargado de producción](rol-encargado-produccion.md) o [Administrador](rol-administrador.md).

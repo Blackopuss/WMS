@@ -12,7 +12,7 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 - **Inicio:** **Lo que se hizo hoy** y **Quién hizo qué hoy**; el mosaico **Tareas con problema** y **Incidencias abiertas**.
 - **Recepción:** abre una orden por recibir y toca **Recibir mercancía** (pasos en el manual del [Comprador](rol-comprador.md), sección «Recibir lo que llega»).
 - **Compras:** puedes ver proveedores y órdenes; no las creas. **Solicitudes de compra** sí puedes crearlas (**Solicitar compra**).
-- **Conteos › Exactitud de inventario** y **Programas de conteo**.
+- **Conteos › Exactitud** y **Programas de conteo**.
 - **Configuración › Equipo** (ver las personas y sus roles, no cambiarlos).
 
 ## Tus tareas del día
