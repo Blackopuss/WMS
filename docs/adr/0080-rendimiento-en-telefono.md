@@ -39,31 +39,43 @@ Los números de antes y después quedan en `docs/ux/RENDIMIENTO_TELEFONO.md`.
 
 ## Decisión
 
+0. **Se importa cada componente por su archivo y desaparece el índice
+   `src/components/index.ts`.** La medición mostró la causa principal: un
+   componente de servidor que importaba cualquier cosa del índice (el layout
+   raíz con `Providers`, el `not-found` raíz con `PageContainer`, cada
+   pantalla con `PageHeader`) metía en esa página **todos** los componentes de
+   cliente que el índice exportaba: `AppShell`, la cámara, la captura de
+   fotos, `motion`, Sonner. Como el layout raíz y el `not-found` raíz lo
+   importaban, eso llegaba a todas las páginas, también al sitio público. Se
+   cambiaron los 213 archivos que lo usaban (un import por archivo, cambio
+   mecánico) y se borró el índice, así que un `import … from "@/components"`
+   ya no compila. Las reglas de capas no cambian: la app y los módulos ya
+   podían importar cualquier archivo de `src/components`.
 1. **El layout raíz deja de montar proveedores de cliente.** `Providers`
-   desaparece del layout raíz; cada grupo monta lo que usa:
-   - App con sesión (`(app)`), cuentas (`(auth)`), terminal, consola interna y
-     `/sistema-visual`: el `Toaster` de Sonner y `PwaSetup` (registro del
-     service worker), en un componente `AppProviders` que se monta en su
-     layout.
-   - Sitio público (`(sitio)`): solo `PwaSetup` (la app instalable debe
-     poder registrarse desde la portada); ni `motion` ni Sonner.
-   El `THEME_SCRIPT` sigue en el layout raíz, antes de pintar, con su nonce.
-2. **`motion` solo donde hay animación de verdad.** La barra lateral (indicador
-   de la sección activa) y el interruptor de tema pasan a transiciones de CSS
-   (`transition-*` con `motion-reduce:transition-none`), con el mismo aspecto
-   final. `MotionConfig reducedMotion="user"` ya no es global: lo pone cada
-   componente que sigue usando `motion` (`FadeIn`, `WarehouseCard`,
-   `WarehouseScene`) para seguir respetando «reducir movimiento». Así `motion`
-   se descarga solo en las pantallas de cuentas y en `/sistema-visual`.
-3. **Sonner se queda donde hay avisos.** Toda pantalla que llama `toast`
-   está bajo un layout que monta el `Toaster`; el sitio no lo descarga.
-4. **Lo que se usa poco se carga al usarse.** La hoja de avisos de la campana,
-   el menú «Más» y los selectores de empresa y almacén se cargan con
-   `import()` (`next/dynamic`) la primera vez que se abren o en reposo; el
-   botón y la cuenta de avisos se pintan desde el principio, sin consultas
-   nuevas.
-5. **Barra inferior:** la lista usa tantas columnas como botones (de dos a
-   cinco), así tres secciones y «Más» se reparten a lo ancho.
+   desaparece; el layout raíz solo monta `THEME_SCRIPT` (antes de pintar, con
+   su nonce) y `PwaSetup` (registro del service worker, ahora en su propio
+   archivo `pwa-setup.tsx`, aparte de los paneles de la PWA). Los avisos de
+   Sonner (`Toasts`, `src/components/providers.tsx`) los montan los layouts de
+   la app, de las cuentas y `/sistema-visual`, y el `Toaster` se descarga
+   después de que la página queda lista (`next/dynamic` sin SSR): un aviso
+   siempre sigue a algo que la persona hizo.
+2. **`motion` solo donde hay animación de verdad.** La barra lateral
+   (indicador de la sección activa), el interruptor de tema, la tarjeta de las
+   pantallas de cuenta (techo y persiana) y la entrada del texto de las
+   cuentas pasan a CSS (`motion-reduce` y la regla global de «reducir
+   movimiento» siguen valiendo). `MotionConfig reducedMotion="user"` ya no es
+   global: lo lleva cada componente que sigue usando `motion` (`FadeIn`,
+   `WarehouseScene`, la lista de sesiones activas). La ilustración animada de
+   las cuentas se descarga solo en pantallas anchas (`AccountScene`): en el
+   teléfono está oculta. El sitio dibuja la ilustración quieta con
+   `WarehouseSceneStill` (`warehouse-scene-art.tsx`, sin `motion`).
+3. **Lo que se usa poco se carga al usarse.** La hoja de avisos de la campana,
+   el menú «Más» y el diálogo para cambiar de empresa o almacén se descargan la
+   primera vez que se abren; el botón, la cuenta de avisos y su región
+   anunciada se pintan desde el principio, sin consultas nuevas. Como ya no
+   hay disparador de Radix, cada uno devuelve el foco a su botón al cerrarse.
+4. **Barra inferior:** la lista reparte el ancho entre los botones que haya
+   (`flex-1`), así tres secciones y «Más» ocupan toda la barra.
 
 ## Qué no cambia
 
@@ -76,9 +88,12 @@ agregan dependencias.
 
 ## Consecuencias
 
+- Un componente se importa por su archivo (`@/components/states`,
+  `@/components/form-field`…); no hay índice. Volver a crear uno reintroduce
+  el problema.
 - Una pantalla nueva que use `toast` debe estar bajo un layout que monte
-  `AppProviders` (todas las de la app, cuentas, terminal e interno ya lo
-  están); en el sitio público no hay avisos con Sonner.
+  `Toasts` (todas las de la app, cuentas y `/sistema-visual` ya lo están); en
+  el sitio público, la consola interna y la terminal no hay avisos con Sonner.
 - Un componente nuevo con `motion` envuelve su animación en `MotionConfig
   reducedMotion="user"` (o usa `FadeIn`, que ya lo hace) y no se pone en el
   `AppShell` ni en el sitio.
