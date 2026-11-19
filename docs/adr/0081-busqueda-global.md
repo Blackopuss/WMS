@@ -107,11 +107,11 @@ documentos es de toda la empresa dentro del alcance**, como la ficha.
 
 | Tipo | Qué se busca | Permiso (el de su pantalla) | Almacén | Tope | Abre |
 | --- | --- | --- | --- | ---: | --- |
-| Productos | Cada palabra en nombre, clave o código de barras; exacta = clave o código de barras | `inventory.product.read` | Toda la empresa (el catálogo), solo activos, con `listProducts` | 8 | `/inventario/[id]` |
-| Ubicaciones | Código exacto, o cada palabra en nombre, código o ruta | `inventory.location.read` | **Almacén activo** y alcance, con `listLocations` (la pantalla de ubicaciones es del almacén activo) | 5 | `/ubicaciones#ubicacion-<id>` |
+| Productos | Cada palabra en nombre, clave o código de barras; exacta = clave o código de barras | `inventory.product.read` | Toda la empresa (el catálogo), solo activos: las condiciones de `listProducts` en una consulta propia | 8 | `/inventario/[id]` |
+| Ubicaciones | Código exacto, o cada palabra en nombre o código (no en la ruta) | `inventory.location.read` | **Almacén activo**, sin archivadas ni tránsito, y alcance: las condiciones de `listLocations` filtradas en la base (la pantalla de ubicaciones es del almacén activo) | 5 | `/ubicaciones#ubicacion-<id>` |
 | Lotes | Código exacto (`normalizeLotCode`), cualquier producto | `inventory.stock.read` | Lote con algún movimiento en el alcance (regla del rastreo) | 5 | `/inventario/lotes/[id]` |
 | Series | Serie exacta (`normalizeSerial`), cualquier producto | `inventory.movement.read` | Unidad con algún movimiento en el alcance (`traceSerial`) | 5 | `/inventario/rastrear?serie=…` |
-| Tarimas y cajas | Código exacto | `inventory.stock.read` | `getContainer` (alcance) | 1 | `/inventario/tarimas/[id]` |
+| Tarimas y cajas | Código exacto | `inventory.stock.read` | La condición de `getContainer`: su ubicación en el alcance | 1 | `/inventario/tarimas/[id]` |
 | Pedidos | `PS-n` | `inventory.outbound.read` | `getOutboundOrder` | 1 | `/pedidos/[id]` |
 | Embarques | `EM-n` | `inventory.shipment.read` | `getShipment` | 1 | `/pedidos/embarques/[id]` |
 | Devoluciones | `DV-n` | `inventory.customer_return.read` | `getCustomerReturn` | 1 | `/pedidos/devoluciones/[id]` |
@@ -120,7 +120,7 @@ documentos es de toda la empresa dentro del alcance**, como la ficha.
 | Incidencias | `INC-n` | `inventory.incident.read` | `getIncident` | 1 | `/incidencias/[id]` |
 | Órdenes de compra | `OC-n` | `purchasing.order.read` | `getPurchaseOrder` (`orderInScope`; sin almacén = toda la empresa) | 1 | `/compras/ordenes/[id]` |
 | Solicitudes de compra | `SC-n` | `purchasing.request.read` | `getPurchaseRequest` (un borrador solo para quien lo escribe) | 1 | `/compras/solicitudes/[id]` |
-| Proveedores | Cada palabra en nombre o RFC | `purchasing.supplier.read` | Toda la empresa, sin archivados, con `listSuppliers` | 5 | `/compras/proveedores/[id]` |
+| Proveedores | Cada palabra en nombre o RFC | `purchasing.supplier.read` | Toda la empresa, sin archivados: las condiciones de `listSuppliers` en una consulta propia | 5 | `/compras/proveedores/[id]` |
 | Órdenes de producción | `OP-n` | `production.order.read` | `getProductionOrder` (alcance del área) | 1 | `/produccion/[id]` |
 | Solicitudes de producción | `SP-n` | `production.request.read` | `getProductionRequest` | 1 | `/produccion/solicitudes/[id]` |
 
@@ -141,28 +141,53 @@ documentos es de toda la empresa dentro del alcance**, como la ficha.
 
 ### Rendimiento
 
+Las fuentes de texto corren en **cada** búsqueda; las de número, solo cuando el
+texto es un número de su tipo. Por eso (revisión independiente, 2026-11-19):
+
+- **Una sola revisión de permisos por búsqueda.** El motor carga el sujeto y
+  los derechos una vez. Las fuentes de texto (productos, ubicaciones, lotes,
+  series, tarimas, proveedores) no llaman a los servicios de lista, que
+  volverían a comprobar el permiso cada uno (unas cuatro consultas por
+  servicio): leen con **una consulta propia acotada** que repite las
+  condiciones de su lista (ver la tabla). Es la excepción a «leer con el
+  servicio de la pantalla», limitada a esas seis fuentes; una condición nueva
+  en esas listas se repite aquí.
+- **El alcance se lee una vez por búsqueda** (`reachOf`, memorizado sobre el
+  objeto de la consulta, que es el mismo para todas las fuentes de una
+  búsqueda) y lo comparten ubicaciones, lotes, series y tarimas.
+- **Ubicaciones en la base**, no en memoria: antes se leía el árbol del almacén
+  (hasta 1,000 filas, `MAX_LOCATIONS`) y una ubicación de un almacén más grande
+  podía quedar fuera sin aviso. Ahora se filtra por nombre o código en la base
+  con tope. El título es el nombre y la línea dice su código y dónde está (un
+  nivel arriba): la ruta completa costaría una consulta por nivel.
 - Documentos: una lectura por índice único `(organizationId, number)` y, si
-  existe, el servicio de la ficha (una sola fila).
-- Productos y proveedores: las consultas de su lista, sobre sus índices
-  (`(organizationId, status, name, sku, barcode)` y `(organizationId,
-  isSupplier, name, rfc, id)`), con `take` del tope.
-- Series: índice `(organizationId, serial)`. Tarimas: único
-  `(organizationId, code)`.
-- Lotes: no había índice por código sin producto; se agrega
-  `lot(organizationId, code)` (migración `20261119110000`), que también usa el
-  rastreo.
-- Ubicaciones: el árbol del almacén activo que ya carga la pantalla de
-  ubicaciones (tope 1,000), filtrado en memoria.
-- Las fuentes corren en paralelo. La pantalla se agrega a `screens()` de la
-  prueba de carga; meta p95 < 500 ms.
+  existe, el servicio de la ficha (que sí vuelve a revisar permiso y alcance).
+- Índices: productos `(organizationId, status, name, sku, barcode)`;
+  proveedores `(organizationId, isSupplier, name, rfc, id)`; series
+  `(organizationId, serial)`; tarimas único `(organizationId, code)`; lotes,
+  nuevo `lot(organizationId, code)` (migración `20261119110000`, que también
+  usa el rastreo); ubicaciones, las del almacén `(organizationId, facilityId,
+  …)`: `contains` recorre las ubicaciones de un almacén, que son pocas
+  comparadas con productos o movimientos.
+- **Costo medido** (`SHOW GLOBAL STATUS 'Questions'`, una persona sin límite):
+  63 a 64 consultas por búsqueda antes de la revisión, 23 a 24 después, sea
+  cual sea el texto («caja», seis palabras, una clave exacta; «PS-0001» suma
+  el servicio de la ficha si existe). `global-search.int.test.ts` fija un
+  máximo de 26.
+- Las fuentes corren en paralelo. La pantalla está en `screens()` de la prueba
+  de carga; meta p95 < 500 ms.
 
 ### Interfaz (KISS)
 
-- Un campo con etiqueta «Buscar» visible, botón «Buscar» con texto y el botón
+- Un campo con etiqueta visible «Qué buscas», botón «Buscar» con texto y el botón
   de cámara donde el navegador lo permite. El campo recibe el foco al abrir la
   pantalla y conserva lo buscado.
-- Grupos con encabezado y número de resultados; filas completas como enlace
-  (`after:absolute after:inset-0`); nada de botones de solo ícono.
+- Un renglón dice cuántos resultados hubo en total; cada grupo lleva su
+  encabezado. Cada fila es un enlace de bloque completo (toda la fila es el
+  objetivo); nada de botones de solo ícono.
+- «Ver todos» lleva a la lista con lo buscado; si el texto codificado no cabe
+  en una dirección (acentos y otras letras crecen al codificarse), lleva las
+  primeras palabras que caben.
 - Sin descripción que repita el título. Ayuda de una línea bajo el campo.
 - Se agrega a `verify-a11y` y `verify-ui`.
 
@@ -171,10 +196,17 @@ documentos es de toda la empresa dentro del alcance**, como la ficha.
 - Una pantalla de detalle nueva que valga la pena buscar declara su fuente en su
   módulo, con el permiso de su pantalla, y agrega su caso a
   `tests/platform/global-search.int.test.ts`.
-- Una fuente que lea con un servicio distinto al de su pantalla tiene que
-  justificarlo aquí (hoy: lotes y ubicaciones, por las razones de la tabla).
+- Una fuente que lea con algo distinto al servicio de su pantalla tiene que
+  justificarlo aquí (hoy: las seis fuentes de texto, por costo; ver
+  «Rendimiento»).
 - La búsqueda revela que existe un documento con ese número solo a quien lo
   podría abrir; a los demás les responde igual que si no existiera.
+- **Riesgo aceptado: tiempo de respuesta.** Un número que no existe cuesta una
+  consulta; uno que existe fuera del alcance cuesta esa más el servicio de la
+  ficha. Midiendo tiempos, una persona limitada podría saber que existe un
+  documento con ese número en otro almacén de **su** empresa (nunca de otra
+  empresa, y los números son consecutivos, así que ya se deduce). El rastreo
+  ya tenía lo mismo. Igualarlo costaría correr el servicio en cada búsqueda.
 
 ## Decisiones que el fundador puede cambiar
 
@@ -183,7 +215,8 @@ documentos es de toda la empresa dentro del alcance**, como la ficha.
 - Los documentos se buscan solo por número; buscar por destinatario, referencia
   del cliente o transportista quedó fuera (exige índices nuevos en tablas que
   crecen).
-- Las ubicaciones se buscan solo en el almacén activo (como su pantalla).
+- Las ubicaciones se buscan solo en el almacén activo (como su pantalla) y por
+  su nombre o código, no por la ruta.
 - Topes: 8 productos, 5 ubicaciones, lotes, series y proveedores, 1 por número.
 
 ## Pendiente

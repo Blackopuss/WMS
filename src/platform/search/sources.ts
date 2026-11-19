@@ -43,9 +43,9 @@ export type SearchSource = {
   label: string;
   /**
    * The read permission of the screen the results open. The motor asks
-   * it (role and contracted module) before running the source; the
-   * source still reads with the services of that screen, so scope and
-   * company are those of the screen.
+   * it (role and contracted module) once, before running the source; the
+   * source reads with the conditions of that screen (company, warehouse,
+   * scope), with its getter for a document or one bounded query for text.
    */
   permission: Permission;
   /** What is searched in this kind, for the help of the screen. */

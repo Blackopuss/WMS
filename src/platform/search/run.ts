@@ -40,6 +40,23 @@ export type SearchResult = {
   open: string | null;
 };
 
+/**
+ * The list that shows all of them, for a text that fits in an address:
+ * a long text (accents and other letters grow when encoded) keeps its
+ * first words; null when not even one fits.
+ */
+function fittingMoreHref(
+  build: (query: SearchQuery) => string,
+  query: SearchQuery,
+): string | null {
+  for (let count = query.words.length; count > 0; count--) {
+    const words = query.words.slice(0, count);
+    const href = build({ text: words.join(" "), words });
+    if (isInternalHref(href)) return href;
+  }
+  return null;
+}
+
 /** The text as the sources receive it. */
 export function searchQueryOf(value: unknown): SearchQuery {
   const text = normalizeSearch(value);
@@ -97,14 +114,14 @@ export async function runGlobalSearch(
     if (hits.length === 0) return;
     const moreHref =
       hits.length > source.limit && source.moreHref
-        ? source.moreHref(query)
+        ? fittingMoreHref(source.moreHref, query)
         : null;
     groups.push({
       kind: source.kind,
       label: source.label,
       hits: hits.slice(0, source.limit),
       more: hits.length > source.limit,
-      moreHref: isInternalHref(moreHref) ? moreHref : null,
+      moreHref,
     });
   });
   const all = groups.flatMap((group) => group.hits);

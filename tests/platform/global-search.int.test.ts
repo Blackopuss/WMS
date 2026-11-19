@@ -1,4 +1,6 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { randomBytes } from "node:crypto";
+
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { newId } from "@/lib";
 import {
@@ -8,19 +10,26 @@ import {
   registerEntry,
   type InventoryActor,
 } from "@/modules/inventory";
-import { createPurchaseOrder } from "@/modules/purchasing";
+import {
+  createPurchaseOrder,
+  createPurchaseRequest,
+} from "@/modules/purchasing";
 import { moduleRegistry, searchSources } from "@/modules/registry";
 import {
   ROLES,
   ROLE_MODULE,
   ROLE_PERMISSIONS,
+  enterSupport,
+  grantSupportAccess,
   setMemberScope,
   type Role,
 } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
+import { invalidateEntitlements } from "@/platform/entitlements";
 import {
+  archiveLocation,
   createFacility,
   createLocation,
   getActiveFacility,
@@ -34,9 +43,22 @@ import {
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
+import { migratorConnection } from "../setup/test-db";
+
 // WMS-66 (ADR 0081): one box over every kind of record, each searched only
 // if the person may open its screen and each result only if that screen
 // would show it.
+
+/** Who the request comes from at a shared terminal (WMS-38), if anybody. */
+let terminalUser: string | null = null;
+vi.mock("@/platform/auth", async (original) => ({
+  ...(await original<typeof import("@/platform/auth")>()),
+  terminalUserOfRequest: async () => terminalUser,
+}));
+
+afterEach(() => {
+  terminalUser = null;
+});
 
 const stamp = Date.now();
 let counter = 0;
@@ -152,6 +174,23 @@ describe("global search", () => {
     const empty = await search(owner, "   ");
     expect(empty.groups).toEqual([]);
     expect(empty.searchable.map((each) => each.label)).toContain("Productos");
+  });
+
+  it("keeps «Ver todos» for a long text with accents", async () => {
+    const owner = await company();
+    const first = "ñ".repeat(30);
+    const second = "á".repeat(30);
+    for (let i = 1; i <= 9; i++) {
+      await product(owner, `LG-${i}-${stamp}`, `Producto ${first} ${second}`);
+    }
+    const result = await search(owner, `producto ${first} ${second}`);
+    const group = result.groups.find((g) => g.kind === "inventory.product")!;
+    expect(group.more).toBe(true);
+    // Encoded, the three words pass the length of an address: the list
+    // opens with the first two.
+    expect(group.moreHref).toBe(
+      `/inventario?q=producto%20${encodeURIComponent(first)}`,
+    );
   });
 
   it("takes %, _ and \\ as text, not as wildcards", async () => {
@@ -359,11 +398,7 @@ describe("global search", () => {
     expect((await search(floor, "T-0001")).groups).toEqual([]);
     expect((await search(floor, "PS-0001")).groups).toEqual([]);
     const places = await search(floor, "zona");
-    // The path counts: what is inside zone A too, nothing of zone B.
-    expect(idsOf(places, "inventory.location")).toEqual([
-      zoneA.locationId,
-      placeA.locationId,
-    ]);
+    expect(idsOf(places, "inventory.location")).toEqual([zoneA.locationId]);
     expect(idsOf(await search(floor, "pasillo"), "inventory.location")).toEqual(
       [placeA.locationId],
     );
@@ -381,6 +416,145 @@ describe("global search", () => {
     ).toEqual([far.orderId]);
     expect((await search(other, "T-0001")).groups).toEqual([]);
     expect((await search(other, `LB-${stamp}`)).groups).toEqual([]);
+  });
+
+  it("hides archived locations and someone else's draft request", async () => {
+    const owner = await company();
+    const kept = await createLocation(owner, {
+      level: 1,
+      name: "Muelle norte",
+    });
+    const gone = await createLocation(owner, {
+      level: 1,
+      name: "Muelle viejo",
+    });
+    if (!kept.ok || !gone.ok) throw new Error("locations");
+    expect(await archiveLocation(owner, gone.locationId)).toMatchObject({
+      ok: true,
+    });
+    expect(idsOf(await search(owner, "muelle"), "inventory.location")).toEqual([
+      kept.locationId,
+    ]);
+
+    const productId = await product(owner, `SC-${stamp}`, "Grapas");
+    const author = await member(owner.organizationId, "warehouse");
+    const draft = await createPurchaseRequest(author, {
+      productId,
+      capture: "base",
+      quantity: "3",
+    });
+    if (!draft.ok) throw new Error(JSON.stringify(draft));
+    // A draft is private to who writes it, also for the titular.
+    expect(
+      idsOf(await search(author, "SC-0001"), "purchasing.request"),
+    ).toEqual([draft.requestId]);
+    expect((await search(owner, "SC-0001")).groups).toEqual([]);
+  });
+
+  it("keeps searching with the plan ended (reads stay)", async () => {
+    const owner = await company();
+    const productId = await product(owner, `VEN-${stamp}`, "Martillo vencido");
+    await db.entitlement.updateMany({
+      where: { organizationId: owner.organizationId },
+      data: {
+        validFrom: new Date(Date.now() - 2 * 86_400_000),
+        validUntil: new Date(Date.now() - 86_400_000),
+      },
+    });
+    invalidateEntitlements(owner.organizationId);
+    try {
+      const result = await search(owner, "martillo vencido");
+      expect(idsOf(result, "inventory.product")).toEqual([productId]);
+      expect(result.searchable.map((each) => each.label)).toContain(
+        "Órdenes de compra",
+      );
+    } finally {
+      invalidateEntitlements(owner.organizationId);
+    }
+  });
+
+  it("lets platform support read what it may, only while the window is open", async () => {
+    const owner = await company();
+    const productId = await product(owner, `SOP-${stamp}`, "Llave soporte");
+    const session = await db.session.create({
+      data: {
+        id: newId(),
+        userId: staff,
+        token: randomBytes(24).toString("hex"),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    });
+    const helper = { organizationId: owner.organizationId, userId: staff };
+    // Closed: support is nobody in the company.
+    const closed = await search(helper, "llave soporte");
+    expect(closed.groups).toEqual([]);
+    expect(closed.searchable).toEqual([]);
+    await grantSupportAccess(owner);
+    expect(
+      await enterSupport(staff, session.id, owner.organizationId),
+    ).toMatchObject({ ok: true });
+    expect(
+      idsOf(await search(helper, "llave soporte"), "inventory.product"),
+    ).toEqual([productId]);
+  });
+
+  it("works the same in a PIN session at a shared terminal", async () => {
+    const owner = await company();
+    const productId = await product(owner, `PIN-${stamp}`, "Cinta terminal");
+    const operator = await member(owner.organizationId, "operator");
+    const desk = await search(operator, "cinta terminal");
+    terminalUser = operator.userId;
+    const terminal = await search(operator, "cinta terminal");
+    expect(idsOf(terminal, "inventory.product")).toEqual([productId]);
+    expect(terminal.searchable).toEqual(desk.searchable);
+  });
+
+  it("gives a production role its own kinds with Producción active", async () => {
+    const owner = await company(["inventory", "purchasing", "production"]);
+    const worker = await member(owner.organizationId, "production_operator");
+    const labels = (await search(worker, "")).searchable.map(
+      (each) => each.label,
+    );
+    const expected = searchSources
+      .filter((source) =>
+        (ROLE_PERMISSIONS.production_operator as readonly string[]).includes(
+          source.permission,
+        ),
+      )
+      .map((source) => source.label);
+    expect(labels).toEqual(expected);
+    expect(labels).toContain("Órdenes de producción");
+  });
+
+  it("costs a bounded number of queries, whatever is typed", async () => {
+    const owner = await company();
+    await product(owner, `QRY-${stamp}`, "Consulta medida");
+    const connection = await migratorConnection();
+    const questions = async () => {
+      const rows = (await connection.query(
+        "SHOW GLOBAL STATUS LIKE 'Questions'",
+      )) as { Value: string }[];
+      return Number(rows[0]!.Value);
+    };
+    try {
+      for (const text of [
+        "consulta",
+        "uno dos tres cuatro cinco seis",
+        `QRY-${stamp}`,
+      ]) {
+        // The least of three runs: the counter is of the whole server.
+        let least = Infinity;
+        for (let round = 0; round < 3; round++) {
+          const before = await questions();
+          await search(owner, text);
+          least = Math.min(least, (await questions()) - before - 1);
+        }
+        // 63 before WMS-66 was reviewed; 23 measured after.
+        expect(least, text).toBeLessThanOrEqual(26);
+      }
+    } finally {
+      await connection.end();
+    }
   });
 
   it("refuses a source that would need a writing permission", () => {

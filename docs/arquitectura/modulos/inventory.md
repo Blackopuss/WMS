@@ -187,7 +187,7 @@ código»):
 | Inicio y resúmenes | `first-steps.ts`, `day-summary.ts`, `unplaced.ts` | `getFirstSteps`, `getDaySummary`, `listUnplacedStock` (dice qué fila ya tiene tarea de acomodo), `countUnplacedStock` |
 | Reconciliación | `reconciliation.ts` | `reconcileStock`, `reconcileValue`, `reconcileCompany` |
 | Ajustes y trabajos | `settings.ts`, `import-apply.ts`, `exit-import-apply.ts` | `INVENTORY_SETTINGS` y cada ajuste; `inventoryJobHandlers`, `exitImportJobHandlers` |
-| Búsqueda global | `search.ts` | `INVENTORY_SEARCH_SOURCES` (WMS-66, ADR 0081): productos (`listProducts`), ubicaciones del almacén activo (`listLocations`), lotes y series exactos (`findLotsByCode`/`findSerialsBySerial` de `traceability.ts`, compartidos con el rastreo), tarimas (`findContainerByCode` + `getContainer`) y por número pedidos, embarques, devoluciones, traslados, tareas e incidencias (confirmados con el getter de su ficha) |
+| Búsqueda global | `search.ts` | `INVENTORY_SEARCH_SOURCES` (WMS-66, ADR 0081): productos, ubicaciones del almacén activo y tarimas con una consulta propia que repite las condiciones de su lista (una revisión de permisos por búsqueda, alcance leído una vez con `reachOf`), lotes y series exactos (`findLotsByCode`/`findSerialsBySerial` de `traceability.ts`, compartidos con el rastreo) y por número pedidos, embarques, devoluciones, traslados, tareas e incidencias (confirmados con el getter de su ficha) |
 
 Internos que no se exportan pero deciden reglas: `picking.ts` (`pickSources`:
 de dónde y de qué lote se surte, con el orden de `stock-sources.ts`), `lot-resolve.ts`, `serials.ts` (qué

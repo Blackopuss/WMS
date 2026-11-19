@@ -1,6 +1,5 @@
 import "server-only";
 
-import { listSuppliers } from "@/platform/contacts";
 import {
   searchByNumber,
   searchIdPath,
@@ -78,16 +77,29 @@ const SUPPLIERS: SearchSource = {
   moreHref: (query) =>
     `/compras/proveedores?q=${encodeURIComponent(query.text)}`,
   async search(actor, query, take) {
-    const page = await listSuppliers(actor, {
-      search: query.text,
-      pageSize: take,
+    // The conditions of the supplier list: suppliers not archived, every
+    // word in the name or the RFC, on its index (company, supplier, name,
+    // RFC). One query: the motor already checked the permission.
+    const rfc = query.text.toUpperCase();
+    const rows = await client(actor).contact.findMany({
+      where: {
+        isSupplier: true,
+        archivedAt: null,
+        AND: query.words.map((word) => {
+          const contains = word.replace(/[\\%_]/g, "\\$&");
+          return { OR: [{ name: { contains } }, { rfc: { contains } }] };
+        }),
+      },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      take,
+      select: { id: true, name: true, rfc: true },
     });
-    return page.items.map((supplier) => ({
+    return rows.map((supplier) => ({
       id: supplier.id,
       title: supplier.name,
       detail: supplier.rfc,
       href: `/compras/proveedores/${searchIdPath(supplier.id)}`,
-      exact: supplier.rfc !== null && supplier.rfc === query.text.toUpperCase(),
+      exact: supplier.rfc !== null && supplier.rfc === rfc,
     }));
   },
 };

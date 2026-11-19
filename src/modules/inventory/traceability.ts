@@ -10,6 +10,7 @@ import {
   locationPath,
   locationScopeWhere,
   locationsOutOfScope,
+  type LocationScopeWhere,
 } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
@@ -157,11 +158,13 @@ export async function findLotsByCode(
   actor: InventoryActor,
   text: string,
   take: number,
+  /** The zones of the person, when the caller already read them. */
+  known?: LocationScopeWhere,
 ): Promise<FoundLot[]> {
   const lotCode = normalizeLotCode(text);
   if (!lotCode.ok) return [];
   const client = forOrganization(actor.organizationId);
-  const scoped = await locationScopeWhere(client, actor.userId);
+  const scoped = known ?? (await locationScopeWhere(client, actor.userId));
   const lots = await client.lot.findMany({
     where: {
       code: lotCode.code,
@@ -193,11 +196,13 @@ export async function findSerialsBySerial(
   actor: InventoryActor,
   text: string,
   take: number,
+  /** The zones of the person, when the caller already read them. */
+  known?: LocationScopeWhere,
 ): Promise<FoundSerial[]> {
   const serial = normalizeSerial(text);
   if (!serial.ok) return [];
   const client = forOrganization(actor.organizationId);
-  const scoped = await locationScopeWhere(client, actor.userId);
+  const scoped = known ?? (await locationScopeWhere(client, actor.userId));
   const units = await client.serialUnit.findMany({
     where: {
       serial: serial.serial,

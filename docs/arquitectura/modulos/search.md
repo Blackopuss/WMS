@@ -17,10 +17,14 @@ declara las suyas y `src/modules/registry/search.ts` las junta en
 
 ## Reglas
 
-- Una fuente lee con el servicio de la pantalla que abre (lista o ficha), así
-  que empresa, almacén y alcance son los de esa pantalla. Un documento por
-  número se confirma con el getter de su ficha: si responde `null`, no se
-  lista ni se cuenta.
+- Un documento por número se confirma con el getter de su ficha: si responde
+  `null`, no se lista ni se cuenta.
+- Las fuentes de texto corren en cada búsqueda y leen con una consulta propia
+  que repite las condiciones de su lista (empresa, almacén, alcance,
+  archivados), sin volver a revisar permisos: ya lo hizo el motor una vez. Una
+  condición nueva en esas listas se repite en su fuente.
+- `fittingMoreHref`: «Ver todos» con las primeras palabras que caben en una
+  dirección.
 - Nunca costos: título y una línea.
 - Sin tablas propias, sin escrituras, sin ruta en la API.
 
