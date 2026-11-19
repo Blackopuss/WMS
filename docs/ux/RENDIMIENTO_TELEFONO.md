@@ -84,9 +84,23 @@ Accesibilidad y Buenas prácticas 100.
   pantalla descarga 283 KB: además del marco, sus paneles (dos pasos, sesiones
   activas con `motion`, instalar la app, Radix `Dialog`). Es una pantalla de
   uso ocasional; partir sus paneles sería un paso aparte.
-- `/` (93): el contenido llega en el primer envío; pesa anime.js, el menú del
-  sitio (Radix) y el hero. La ilustración quieta del hero ya se dibuja en el
-  servidor (no viaja como JavaScript).
+- `/` (93; 93, 93 y 94 en la última medición, 218 KB): el contenido llega en el
+  primer envío; pesan anime.js, el menú del sitio (Radix) y el hero, con un
+  bloqueo de 110 ms. Dibujar la ilustración quieta del hero en el servidor (ya
+  no viaja como JavaScript) solo quitó 2 KB y no movió la nota.
+
+## Verificadores
+
+- `npm run verify:pwa` (app compilada, `wms_test`): 62 comprobaciones, todo bien.
+- `npm run verify:ui` (`npm run dev`): 118 comprobaciones, todo bien. La que
+  revisa la empresa en «Más» ahora espera a que la hoja aparezca (se descarga
+  al abrirla; empieza a bajar en cuanto el dedo o el puntero toca el botón).
+- `npm run verify:a11y` (app compilada): 834 comprobaciones bien y 2 fallas,
+  las dos en `/compras/ordenes/nueva` («enviar vacío lleva el foco al
+  error»). No vienen de este paso: con un solo proveedor la pantalla ya lo trae
+  elegido (código de antes, sin cambios), así que enviar sin escribir nada crea
+  la orden. Pasa con los datos de ejemplo de hoy, que tienen un solo
+  proveedor. Esas corridas dejaron órdenes en borrador en `wms_dev`.
 
 ## Qué quedó
 
@@ -95,3 +109,5 @@ Accesibilidad y Buenas prácticas 100.
   de precargarse (más lento al tocar una sección en red lenta).
 - Partir los paneles de `/configuracion` si se vuelve de uso diario.
 - Medir con un teléfono real; Lighthouse simula red y procesador.
+- La comprobación de `/compras/ordenes/nueva` de `verify:a11y` depende de que
+  haya más de un proveedor; corregirla (o la prueba) es aparte.

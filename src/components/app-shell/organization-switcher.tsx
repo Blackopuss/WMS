@@ -6,8 +6,9 @@ import { useRef, useState } from "react";
 
 // The dialog is downloaded the first time someone opens it (ADR 0080): the
 // frame is on every screen and most people never switch.
+const loadSwitchDialog = () => import("./switch-dialog");
 const SwitchDialog = dynamic(
-  () => import("./switch-dialog").then((module) => module.SwitchDialog),
+  () => loadSwitchDialog().then((module) => module.SwitchDialog),
   { ssr: false },
 );
 
@@ -71,6 +72,9 @@ export function OrganizationSwitcher({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
+        // Starts the download as the finger or the pointer reaches it.
+        onPointerEnter={() => void loadSwitchDialog()}
+        onFocus={() => void loadSwitchDialog()}
         onClick={() => {
           setLoaded(true);
           setOpen(true);

@@ -141,9 +141,12 @@ export function BellButton({
   bell,
   className,
   compact = false,
+  preload,
 }: {
   bell: Bell;
   className?: string;
+  /** Starts downloading the list as the finger or the pointer reaches it. */
+  preload?: () => void;
   /** The mobile header: less padding, same name. */
   compact?: boolean;
 }) {
@@ -158,6 +161,8 @@ export function BellButton({
           ? "Avisos, ninguno sin leer"
           : `Avisos, ${count === 1 ? "1 sin leer" : `${countText(count)} sin leer`}`
       }
+      onPointerEnter={preload}
+      onFocus={preload}
       onClick={(event) => bell.show(event.currentTarget)}
       className={cn(
         "relative inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",

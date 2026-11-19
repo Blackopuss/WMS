@@ -707,6 +707,11 @@ try {
     // Active company (PLT-11): shown in «Más» on mobile.
     await page.getByRole("button", { name: "Más" }).click();
     const sheet = page.getByRole("dialog", { name: "Más opciones" });
+    // The sheet is downloaded the first time it opens (ADR 0080).
+    await sheet
+      .getByText("Empresa Demo")
+      .waitFor({ timeout: 10000 })
+      .catch(() => {});
     check(
       await sheet.getByText("Empresa Demo").isVisible(),
       "company: the active company is shown in the menu",

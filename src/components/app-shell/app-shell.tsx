@@ -22,13 +22,15 @@ import {
 
 // Downloaded the first time they open (ADR 0080): the frame is on every
 // screen, the sheets are not needed to paint it.
+const loadNotificationSheet = () => import("./notification-sheet");
+const loadMoreSheet = () => import("./more-sheet");
 const NotificationSheet = dynamic(
-  () =>
-    import("./notification-sheet").then((module) => module.NotificationSheet),
+  () => loadNotificationSheet().then((module) => module.NotificationSheet),
   { ssr: false },
 );
+const preloadBell = () => void loadNotificationSheet();
 const MoreSheet = dynamic(
-  () => import("./more-sheet").then((module) => module.MoreSheet),
+  () => loadMoreSheet().then((module) => module.MoreSheet),
   { ssr: false },
 );
 
@@ -111,7 +113,7 @@ export function AppShell({
         <Brand />
         <div className="-mt-2 px-3 pb-2">
           {switcher}
-          <BellButton bell={bell} />
+          <BellButton bell={bell} preload={preloadBell} />
         </div>
         <nav
           aria-label="Principal"
@@ -139,7 +141,12 @@ export function AppShell({
           <span className="min-w-0 truncate font-semibold">
             {current?.label ?? titleOf(pathname)}
           </span>
-          <BellButton bell={bell} compact className="ml-auto" />
+          <BellButton
+            bell={bell}
+            preload={preloadBell}
+            compact
+            className="ml-auto"
+          />
           <ThemeToggle />
         </header>
         <OfflineNotice />
@@ -278,6 +285,9 @@ function MoreMenu({
         aria-expanded={open}
         className={bottomItemClass}
         data-active={active}
+        // Starts the download as the finger or the pointer reaches it.
+        onPointerEnter={() => void loadMoreSheet()}
+        onFocus={() => void loadMoreSheet()}
         onClick={() => {
           setLoaded(true);
           setOpen(true);
