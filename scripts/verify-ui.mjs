@@ -1070,6 +1070,43 @@ try {
     await page.close();
   }
 
+  // WMS-66: the global search. Read-only: nothing is saved.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/inicio`, { waitUntil: "networkidle" });
+    const entry = page.getByRole("link", { name: "Buscar" }).first();
+    const box = await entry.boundingBox();
+    check(
+      box !== null && box.height >= 44,
+      "WMS-66: «Buscar» is in the phone header, with its word, 44px",
+    );
+    await page.goto(`${BASE}/buscar?q=a`, { waitUntil: "networkidle" });
+    const state = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      h1: document.querySelectorAll("h1").length,
+      focused: document.activeElement?.id,
+    }));
+    check(
+      state.overflow <= 0 && state.h1 === 1,
+      "WMS-66 320px: /buscar fits and has one heading",
+    );
+    check(state.focused === "q", "WMS-66: the search box takes the focus");
+    await page.goto(`${BASE}/buscar?q=sin-resultado-wms66`, {
+      waitUntil: "networkidle",
+    });
+    check(
+      ((await page.locator("main").textContent()) ?? "").includes(
+        "Sin resultados",
+      ),
+      "WMS-66: a search with nothing says so",
+    );
+    await page.close();
+  }
+
   // WMS-78C (Compras, Producción y Calidad). Read-only: nothing is saved.
   {
     const page = await signedInPage(

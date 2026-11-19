@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
+import { runGlobalSearch } from "@/platform/search";
 import {
   createEquipment,
   getEquipment,
@@ -144,6 +145,7 @@ import {
   evidenceOwners,
   moduleRegistry,
   operationSettings,
+  searchSources,
 } from "@/modules/registry";
 import {
   countPendingApprovals,
@@ -378,6 +380,15 @@ describe("PC-12: limited to warehouse B", () => {
       listLocations(limited, { facilityId: facilityA }),
     ).rejects.toMatchObject({ code: "facility_out_of_scope" });
     expect((await getDefaultLocation(limited))?.id).toBe(generalB);
+  });
+
+  it("finds nothing of A in the global search (WMS-66)", async () => {
+    const shelves = await runGlobalSearch(limited, "estante", searchSources);
+    const places = shelves.groups.find(
+      (group) => group.kind === "inventory.location",
+    );
+    expect(places?.hits.map((hit) => hit.id)).toEqual([shelfB]);
+    expect(JSON.stringify(shelves)).not.toContain("Estante A1");
   });
 
   it("sees only the stock, the movements and the exports of B", async () => {

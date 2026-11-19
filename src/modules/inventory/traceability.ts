@@ -145,6 +145,81 @@ function numberOf(prefix: "PS" | "OC" | "EM", text: string): number | null {
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
+type FoundLot = Extract<TraceMatch, { kind: "lot" }>;
+type FoundSerial = Extract<TraceMatch, { kind: "serial" }>;
+
+/**
+ * Lots whose code is exactly the text (any product), with some movement in
+ * the person's scope (WMS-20). Shared by the trace and the global search
+ * (WMS-66); the caller checks the permission.
+ */
+export async function findLotsByCode(
+  actor: InventoryActor,
+  text: string,
+  take: number,
+): Promise<FoundLot[]> {
+  const lotCode = normalizeLotCode(text);
+  if (!lotCode.ok) return [];
+  const client = forOrganization(actor.organizationId);
+  const scoped = await locationScopeWhere(client, actor.userId);
+  const lots = await client.lot.findMany({
+    where: {
+      code: lotCode.code,
+      ...(isLimited(scoped) ? { lines: { some: { location: scoped } } } : {}),
+    },
+    orderBy: { id: "asc" },
+    take,
+    select: {
+      id: true,
+      code: true,
+      product: { select: { name: true, sku: true } },
+    },
+  });
+  return lots.map((lot) => ({
+    kind: "lot" as const,
+    id: lot.id,
+    code: lot.code,
+    productName: lot.product.name,
+    sku: lot.product.sku,
+  }));
+}
+
+/**
+ * Units whose serial is exactly the text (any product), with some
+ * movement in the person's scope. Shared by the trace and the global
+ * search; the caller checks the permission.
+ */
+export async function findSerialsBySerial(
+  actor: InventoryActor,
+  text: string,
+  take: number,
+): Promise<FoundSerial[]> {
+  const serial = normalizeSerial(text);
+  if (!serial.ok) return [];
+  const client = forOrganization(actor.organizationId);
+  const scoped = await locationScopeWhere(client, actor.userId);
+  const units = await client.serialUnit.findMany({
+    where: {
+      serial: serial.serial,
+      ...(isLimited(scoped) ? { moves: { some: { location: scoped } } } : {}),
+    },
+    orderBy: { id: "asc" },
+    take,
+    select: {
+      id: true,
+      serial: true,
+      product: { select: { name: true, sku: true } },
+    },
+  });
+  return units.map((unit) => ({
+    kind: "serial" as const,
+    id: unit.id,
+    serial: unit.serial,
+    productName: unit.product.name,
+    sku: unit.product.sku,
+  }));
+}
+
 /**
  * What a search names: lots and units by serial with exactly that code
  * (any product), an outbound order or a purchase order by its number.
@@ -167,56 +242,8 @@ export async function findTraceMatches(
   const limited = isLimited(scoped);
   const matches: TraceMatch[] = [];
 
-  const lotCode = normalizeLotCode(text);
-  if (lotCode.ok) {
-    const lots = await client.lot.findMany({
-      where: {
-        code: lotCode.code,
-        ...(limited ? { lines: { some: { location: scoped } } } : {}),
-      },
-      orderBy: { id: "asc" },
-      take: MATCHES_SHOWN,
-      select: {
-        id: true,
-        code: true,
-        product: { select: { name: true, sku: true } },
-      },
-    });
-    matches.push(
-      ...lots.map((lot) => ({
-        kind: "lot" as const,
-        id: lot.id,
-        code: lot.code,
-        productName: lot.product.name,
-        sku: lot.product.sku,
-      })),
-    );
-  }
-  const serial = normalizeSerial(text);
-  if (serial.ok) {
-    const units = await client.serialUnit.findMany({
-      where: {
-        serial: serial.serial,
-        ...(limited ? { moves: { some: { location: scoped } } } : {}),
-      },
-      orderBy: { id: "asc" },
-      take: MATCHES_SHOWN,
-      select: {
-        id: true,
-        serial: true,
-        product: { select: { name: true, sku: true } },
-      },
-    });
-    matches.push(
-      ...units.map((unit) => ({
-        kind: "serial" as const,
-        id: unit.id,
-        serial: unit.serial,
-        productName: unit.product.name,
-        sku: unit.product.sku,
-      })),
-    );
-  }
+  matches.push(...(await findLotsByCode(actor, text, MATCHES_SHOWN)));
+  matches.push(...(await findSerialsBySerial(actor, text, MATCHES_SHOWN)));
   const orderNumber = numberOf("PS", text);
   if (orderNumber && (await mayRead(actor, "inventory.outbound.read"))) {
     const order = await client.outboundOrder.findFirst({

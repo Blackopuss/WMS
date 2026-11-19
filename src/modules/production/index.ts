@@ -138,3 +138,6 @@ export {
   type RequestableProduct,
   type RequestableProducts,
 } from "./requests";
+
+// WMS-66: what Producción offers to the global search (ADR 0081).
+export { PRODUCTION_SEARCH_SOURCES } from "./search";

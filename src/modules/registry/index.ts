@@ -13,6 +13,7 @@ export { moduleOpenWork } from "./open-work";
 export { notificationTypes } from "./notifications";
 export { operationSettings } from "./settings";
 export { processDocuments } from "./processes";
+export { searchSources } from "./search";
 export { webhookEventTypes } from "./webhooks";
 
 /**

@@ -140,6 +140,10 @@ const SCREENS = [
   "/produccion?estado=all",
   "/produccion/solicitudes",
   "/produccion/solicitudes/nueva",
+  // WMS-66: the global search, empty, with results and with none.
+  "/buscar",
+  "/buscar?q=a",
+  "/buscar?q=sin-resultado-wms66",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
