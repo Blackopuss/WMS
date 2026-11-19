@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { WarehouseCard } from "@/components";
+import { WarehouseCard } from "@/components/warehouse-card";
 
 import { UnsubscribeForm } from "./unsubscribe-form";
 

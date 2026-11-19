@@ -1126,7 +1126,7 @@ model SupportAccess {
 
 // ── Product catalog (INV-01) ─────────────────────────────────────────────
 // The catalog belongs to the shared core (platform/catalog): Inventario,
-// Compras and later Ventas use the same products. Text columns use the
+// Compras, Producción and Calidad use the same products. Text columns use the
 // database's case- and accent-insensitive collation, so "tor-001" and
 // "TOR-001" are the same SKU.
 
@@ -2075,8 +2075,8 @@ model ExitImportRow {
 }
 
 /// A person or business the company deals with (CMP-01): a supplier it
-/// buys from, a customer it sells to, or both. Contacts belong to the
-/// core, not to a module: Compras, Ventas and CRM share the same row
+/// buys from, a customer it ships to, or both. Contacts belong to the
+/// core, not to a module: every module that needs them shares the same row
 /// instead of each keeping its own copy of the same business. What a
 /// contact is for a module is a facet (`isSupplier`, `isCustomer`), and a
 /// contact always has at least one.

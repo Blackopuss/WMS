@@ -5,8 +5,10 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components";
 import { requirePlatformStaff } from "@/platform/billing";
 
+// No title here: a 404 for someone who is not staff would carry it and tell
+// them the console exists (WMS-87). Each page sets its own <title> inside its
+// body, which only renders for staff.
 export const metadata: Metadata = {
-  title: { default: "Consola interna", template: "%s · Consola interna" },
   robots: { index: false },
 };
 

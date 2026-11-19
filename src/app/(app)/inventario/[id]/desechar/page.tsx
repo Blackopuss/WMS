@@ -14,6 +14,7 @@ import { newId } from "@/lib";
 import {
   DISPOSABLE_STATUSES,
   STOCK_STATUS_LABELS,
+  disposalNeedsApproval,
   getProductStock,
 } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
@@ -73,9 +74,10 @@ export default async function DesecharPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const [product, stock] = await Promise.all([
+  const [product, stock, needsApproval] = await Promise.all([
     getProduct(actor, id),
     getProductStock(actor, id),
+    disposalNeedsApproval(actor),
   ]);
   if (!product || product.status !== "ACTIVE" || !stock) {
     return (
@@ -130,6 +132,7 @@ export default async function DesecharPage({
           unitLabel={getUnit(product.unitCode).plural}
           sources={sources}
           bySerial={product.tracking === "SERIAL"}
+          needsApproval={needsApproval}
         />
       )}
     </PageContainer>

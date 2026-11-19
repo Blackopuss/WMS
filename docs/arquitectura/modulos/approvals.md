@@ -45,8 +45,9 @@ permiso.
 ## Tipos declarados
 
 De [inventory](inventory.md#aprobaciones): `inventory.adjustment` (corregir
-existencias sobre el umbral) e `inventory.count_apply` (aplicar un conteo con
-diferencias grandes).
+existencias sobre el umbral), `inventory.count_apply` (aplicar un conteo con
+diferencias grandes) e `inventory.disposal` (desechar lo dañado o rechazado,
+siempre que la regla esté encendida; WMS-83, ADR 0078).
 
 ## Avisos
 
