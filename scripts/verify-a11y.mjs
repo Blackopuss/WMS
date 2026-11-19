@@ -80,6 +80,9 @@ const SCREENS = [
   "/inventario/reposicion",
   "/inventario/reposicion/nueva",
   "/configuracion/operacion",
+  // WMS-43: the setup guide, whole and with its settings open.
+  "/configuracion/inicial",
+  "/configuracion/inicial?paso=operacion",
   // WMS-58: custom fields of products, locations and suppliers.
   "/configuracion/campos",
   "/configuracion/almacenes",

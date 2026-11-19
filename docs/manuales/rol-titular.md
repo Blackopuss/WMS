@@ -15,11 +15,16 @@ Todo lo que tengan contratado tu plan y tus módulos: Inicio, Tareas, Recepción
 - Al activarse un aviso de renovación (los últimos 15 días del plan), te aparece en Inicio y en **Mi plan**. Si el plan vence, todo queda en **solo lectura** hasta renovar.
 
 ## Primeros pasos con una empresa nueva
-1. **Configuración › Almacenes:** crea tus almacenes (nombre y código corto).
-2. **Ubicaciones:** crea zonas, pasillos y estantes.
-3. **Equipo › Invitar persona:** invita a tu gente con su rol.
-4. **Inventario:** **Agregar producto** o **Importar Excel**, y luego **Capturar existencias** (saldo inicial).
-5. **Configuración › Operación:** ajusta cómo trabaja tu almacén (surtido, acomodo, empaque, etc.; detalle en el manual del [Administrador](rol-administrador.md)).
+Mientras tu empresa no registre su primer movimiento, **Inicio** muestra **Configura tu empresa** con el paso que sigue. La lista completa está en **Configuración › Configuración inicial**, en este orden:
+1. **Revisa tu almacén:** nombre y código del almacén principal; agrega otros almacenes o sucursales (**Revisar almacenes**).
+2. **Crea tus ubicaciones:** zonas, pasillos y estantes (**Crear ubicaciones**, **Cambiar niveles**).
+3. **Invita a tu equipo:** cada persona con su rol (**Invitar personas**).
+4. **Elige cómo trabaja tu almacén:** cinco ajustes del recorrido diario (surtido por pedido u olas, de dónde se surte primero, acomodo, tarimas y empaque) con su opción usual marcada; **Ver todos los ajustes** abre **Configuración › Operación**.
+5. **Trae tus productos:** **Subir Excel** o **Agregar uno a mano**.
+6. **Di cuánto tienes:** **Capturar existencias** (o el mismo Excel con existencias).
+7. **Registra tu primer movimiento:** **Registrar entrada** o **Registrar salida**.
+
+Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para empezar a trabajar con la ubicación «General». El avance se calcula con lo que ya existe: un paso que no hiciste y que quedó antes de uno hecho aparece como **(saltado)** y lo puedes hacer después desde la misma pantalla.
 
 ## Lo que no puedes hacer (y a quién pedirlo)
 - Cambiar precios o activar módulos tú mismo: lo hace el personal de la plataforma.
@@ -28,4 +33,4 @@ Todo lo que tengan contratado tu plan y tus módulos: Inicio, Tareas, Recepción
 ## Si tienes un problema
 **Reportar un problema** (ver [común](comun.md), sección 8). Para ayuda del sistema, da acceso a soporte como se describe arriba.
 
-Vigente al 2026-11-19
+Vigente al 2026-11-19 (configuración inicial: WMS-43)

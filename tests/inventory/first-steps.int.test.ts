@@ -44,7 +44,7 @@ async function newUser() {
 async function company(): Promise<InventoryActor> {
   const owner = await newUser();
   const created = await createOrganization(owner, {
-    name: `Ferretería ${counter}`,
+    name: `Empresa ${counter}`,
     timeZone: "",
   });
   if (!created.ok) throw new Error("company setup failed");
@@ -69,6 +69,11 @@ async function company(): Promise<InventoryActor> {
 }
 
 const NOTHING = {
+  facilityReady: false,
+  hasOwnLocations: false,
+  // Not asked for: the team and the settings are not read (WMS-43).
+  hasTeam: null,
+  settingsChosen: null,
   hasProducts: false,
   hasStock: false,
   hasMovement: false,
@@ -98,6 +103,7 @@ describe("getFirstSteps", () => {
       quantity: "50",
     });
     expect(await getFirstSteps(actor)).toEqual({
+      ...NOTHING,
       hasProducts: true,
       hasStock: true,
       hasMovement: false,
@@ -106,6 +112,7 @@ describe("getFirstSteps", () => {
 
     await registerEntry(actor, { productId: product.productId, quantity: "5" });
     expect(await getFirstSteps(actor)).toEqual({
+      ...NOTHING,
       hasProducts: true,
       hasStock: true,
       hasMovement: true,
@@ -150,6 +157,7 @@ describe("getFirstSteps", () => {
 
     // Two steps at once; the first movement is still to come.
     expect(await getFirstSteps(actor)).toEqual({
+      ...NOTHING,
       hasProducts: true,
       hasStock: true,
       hasMovement: false,

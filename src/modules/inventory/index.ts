@@ -225,7 +225,29 @@ export {
   type ExportKind,
   type ExportResult,
 } from "./exports";
-export { getFirstSteps, type FirstSteps } from "./first-steps";
+export {
+  getFirstSteps,
+  type FirstSteps,
+  type FirstStepsOptions,
+} from "./first-steps";
+export {
+  SETUP_STEP_KEYS,
+  doneSteps,
+  isSetupStepKey,
+  offeredSteps,
+  planSetupSteps,
+  setupAbilities,
+  stepAfter,
+  stepBefore,
+  waitsForCatalog,
+} from "./setup-rules";
+export type {
+  PlannedStep,
+  SetupAbilities,
+  SetupPlan,
+  SetupStepKey,
+  SetupStepStatus,
+} from "./setup-rules";
 export { getDaySummary, type DayCount, type DaySummary } from "./day-summary";
 export {
   TASK_PAGE_SIZE,
@@ -550,6 +572,7 @@ export {
   PICK_EXPIRED,
   ENTRY_REPEAT_WINDOW,
   INVENTORY_SETTINGS,
+  SETUP_SETTINGS,
   PICKING_STRATEGY,
   PUTAWAY_MODE,
   REPAIR_RELEASE,

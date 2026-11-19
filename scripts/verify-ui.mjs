@@ -1196,6 +1196,53 @@ try {
     }
     await page.close();
   }
+
+  // WMS-43: setup guide. Read-only: it only opens steps and links.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/configuracion/inicial?paso=operacion`, {
+      waitUntil: "networkidle",
+    });
+    const state = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      h1: document.querySelectorAll("h1").length,
+      open: document.querySelectorAll("li[aria-current=step]").length,
+    }));
+    check(
+      state.overflow <= 0 && state.h1 === 1 && state.open === 1,
+      "WMS-43 320px: Configuración inicial fits and opens one step",
+    );
+    // Every link and button of the guide is a 44px target with words.
+    const targets = await page
+      .locator("#configura a, #configura button")
+      .evaluateAll((items) =>
+        items.map((item) => ({
+          height: item.getBoundingClientRect().height,
+          text: (item.textContent ?? "").trim(),
+        })),
+      );
+    check(
+      targets.length > 0 &&
+        targets.every((target) => target.height >= 44 && target.text !== ""),
+      "WMS-43: the guide has only 44px targets with words",
+    );
+    // An unknown step in the address opens the next one, not an error.
+    await page.goto(`${BASE}/configuracion/inicial?paso=nada`, {
+      waitUntil: "networkidle",
+    });
+    check(
+      (await page.locator("h1").textContent())?.includes(
+        "Configuración inicial",
+      ) ?? false,
+      "WMS-43: an unknown step is ignored",
+    );
+    await page.close();
+  }
+
   // WMS-87 (pendientes de interfaz). Read-only: nothing is saved.
   {
     const page = await signedInPage(

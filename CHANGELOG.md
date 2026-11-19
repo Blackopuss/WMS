@@ -8,6 +8,11 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-43** Asistente de configuración inicial: la guía de primer uso crece
+  a «Configura tu empresa» (almacén, ubicaciones, equipo, ajustes de
+  operación, productos, existencias y primer movimiento), derivada de lo que
+  existe, en Inicio y en Configuración › Configuración inicial
+  (`/configuracion/inicial`). Sin tablas ni permisos nuevos. ADR 0083.
 - **WMS-87** Pendientes chicos de interfaz: «Embarques» ya no cuenta como
   listo para salir un pedido que está en un embarque abierto; filtro por
   estado de las existencias en Inventario; lint limpio en el reporte de

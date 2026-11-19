@@ -10,6 +10,10 @@ type LocationTransaction = Pick<
   "$queryRaw" | "facility" | "location" | "locationLevel"
 >;
 
+/** Name and code the main warehouse is born with (WMS-18; WMS-43 reads them). */
+export const MAIN_FACILITY_NAME = "Principal";
+export const MAIN_FACILITY_CODE = "PRINCIPAL";
+
 /**
  * The levels a new warehouse starts with (WMS-22A); the company changes
  * them in Ubicaciones. Call it in the transaction that creates the
@@ -71,8 +75,8 @@ export async function ensureDefaultLocation(
       data: {
         id: newId(),
         organizationId,
-        name: "Principal",
-        code: "PRINCIPAL",
+        name: MAIN_FACILITY_NAME,
+        code: MAIN_FACILITY_CODE,
         isDefault: true,
       },
     });

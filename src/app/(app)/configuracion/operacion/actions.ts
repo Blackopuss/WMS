@@ -42,6 +42,8 @@ export async function updateSettingAction(
     revalidatePath("/configuracion/terminales");
     // WMS-42: and those of equipment on theirs.
     revalidatePath("/configuracion/equipos-del-almacen");
+    // WMS-43: and the first ones, in the setup guide.
+    revalidatePath("/configuracion/inicial");
     return { ok: true, message: result.summary, answers };
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {
