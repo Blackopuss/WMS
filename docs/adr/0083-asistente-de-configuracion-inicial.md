@@ -128,12 +128,18 @@ desaparece: queda enlazada en Configuración («Configuración inicial»).
   de `access.can`, que ya aplica el recorte de una sesión de PIN): el
   servicio no vuelve a leer permisos y, sin esos datos, no lee equipo ni
   ajustes (`null`). En una terminal con PIN nada de eso se ofrece ni se lee.
+  El servicio confía en quien lo llama para esos dos datos: hoy solo lo
+  llaman Server Components con `access.can`; **quien lo exponga en una
+  Server Action o en la API debe revisar esos permisos en el servidor**.
 - **Costo en Inicio:** Inicio pide `whileSettingUp`: si ya hay un movimiento
   que no es saldo inicial, todo lo anterior está listo o saltado y la guía no
   se pinta, así que solo se leen las tres preguntas de siempre (7 consultas,
   igual que antes de WMS-43). Con la empresa todavía configurándose son 15.
+  Inicio deja de pintar la guía en cuanto hay ese movimiento, sin depender
+  de qué pasos tenga cada rol.
   La primera versión de este paso hacía 26 en cada carga; la prueba
-  «costs few queries» fija los topes.
+  «costs few queries» fija los topes contando solo las sentencias que manda
+  su propio proceso (no el estado global del servidor).
 - Con el catálogo vacío, «Cuánto tienes» y «Tu primer movimiento» no ofrecen
   acciones (llevarían a una búsqueda vacía, como los botones que Inicio ya
   esconde): dicen que primero hacen falta productos y, a quien no puede

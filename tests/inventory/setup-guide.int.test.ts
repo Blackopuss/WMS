@@ -1,3 +1,4 @@
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
@@ -37,7 +38,31 @@ import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
 import { grantSeats } from "../setup/plan";
-import { migratorConnection } from "../setup/test-db";
+
+/**
+ * Counts the SQL statements this process sends: the database client
+ * connects lazily, so wrapping the adapter before the first query sees
+ * every statement (also inside transactions, which share the base class).
+ */
+const statements = { count: 0, counting: false, wrapped: false };
+const connect = PrismaMariaDb.prototype.connect;
+PrismaMariaDb.prototype.connect = async function (
+  this: InstanceType<typeof PrismaMariaDb>,
+) {
+  const adapter = await connect.call(this);
+  const base = Object.getPrototypeOf(Object.getPrototypeOf(adapter)) as {
+    performIO: (query: unknown) => Promise<unknown>;
+  };
+  if (!statements.wrapped) {
+    const performIO = base.performIO;
+    base.performIO = function (this: unknown, query: unknown) {
+      if (statements.counting) statements.count++;
+      return performIO.call(this, query);
+    };
+    statements.wrapped = true;
+  }
+  return adapter;
+};
 
 // WMS-43 (ADR 0083): the setup guide reads where a company is from what
 // exists — warehouse, locations, team, settings, products, stock — within
@@ -300,6 +325,11 @@ describe("setup guide: who sees what (WMS-43)", () => {
       if (offered.includes("ubicaciones")) {
         expect(can(subject, "inventory.location.create")).toBe(true);
       }
+      // Inicio hides the guide once something moved; today every role with
+      // warehouse or location steps also has the movement step.
+      if (offered.includes("almacen") || offered.includes("ubicaciones")) {
+        expect(offered, role).toContain("movimiento");
+      }
     }
   });
 
@@ -517,33 +547,30 @@ describe("setup guide: the rest (WMS-43, review)", () => {
 
   it("costs few queries: as before WMS-43 once the company operates", async () => {
     const owner = await company();
-    const connection = await migratorConnection();
-    const selects = async () => {
-      const rows = (await connection.query(
-        "SHOW GLOBAL STATUS LIKE 'Com_select'",
-      )) as { Value: string }[];
-      return Number(rows[0]!.Value);
-    };
     const inicio = { ...FULL, whileSettingUp: true };
     const cost = async () => {
       await getFirstSteps(owner, inicio); // caches warm
-      const before = await selects();
-      await getFirstSteps(owner, inicio);
-      return (await selects()) - before;
+      statements.counting = true;
+      statements.count = 0;
+      try {
+        await getFirstSteps(owner, inicio);
+      } finally {
+        statements.counting = false;
+      }
+      return statements.count;
     };
-    try {
-      // Measured on 2026-11-19: 7 before WMS-43; 26 in its first version;
-      // 15 for a new company and 7 for one that operates after the review.
-      expect(await cost()).toBeLessThanOrEqual(15);
-      const product = await createProduct(owner, { sku: "P-1", name: "Pieza" });
-      if (!product.ok) throw new Error("product setup failed");
-      await registerEntry(owner, {
-        productId: product.productId,
-        quantity: "1",
-      });
-      expect(await cost()).toBeLessThanOrEqual(7);
-    } finally {
-      await connection.end();
-    }
+    // Measured on 2026-11-19: 7 before WMS-43; 26 in its first version;
+    // 15 for a new company and 7 for one that operates after the review.
+    // Only the SQL this test process sends counts (other load on the same
+    // server does not change it).
+    expect(await cost()).toBeLessThanOrEqual(15);
+    const product = await createProduct(owner, { sku: "P-1", name: "Pieza" });
+    if (!product.ok) throw new Error("product setup failed");
+    await registerEntry(owner, {
+      productId: product.productId,
+      quantity: "1",
+    });
+    expect(await cost()).toBeLessThanOrEqual(7);
+    expect(statements.wrapped).toBe(true);
   });
 });

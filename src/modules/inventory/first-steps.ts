@@ -54,6 +54,11 @@ export type FirstSteps = {
  * What the caller already knows from the session (the screen has the
  * person's access): no permission is read twice. Without it, nothing of
  * the team or the settings is read.
+ *
+ * This service trusts its caller for `seesTeam` and `changesSettings`:
+ * today only Server Components pass them from `access.can`. Whoever
+ * exposes it through a Server Action or the API checks those permissions
+ * on the server first (ADR 0083).
  */
 export type FirstStepsOptions = {
   /** The person may see the team (`platform.team.read`). */

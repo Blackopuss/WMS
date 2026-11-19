@@ -359,20 +359,26 @@ export default async function InicioPage({
   ];
 
   // WMS-43: what is next of the setup; «Saltar» only moves `?guia=`.
-  const setup = firstSteps
-    ? (() => {
-        const can = setupAbilities((permission) => access.allows(permission));
-        const steps = planSetupSteps(doneSteps(firstSteps), offeredSteps(can));
-        const open =
-          isSetupStepKey(guia) &&
-          steps.steps.some(
-            (step) => step.key === guia && step.status !== "done",
-          )
-            ? guia
-            : steps.current;
-        return { can, plan: steps, open };
-      })()
-    : null;
+  // Once something moved after the starting stock the guide leaves Inicio
+  // (the rest of the setup is not even read then, `whileSettingUp`).
+  const setup =
+    firstSteps && !firstSteps.hasMovement
+      ? (() => {
+          const can = setupAbilities((permission) => access.allows(permission));
+          const steps = planSetupSteps(
+            doneSteps(firstSteps),
+            offeredSteps(can),
+          );
+          const open =
+            isSetupStepKey(guia) &&
+            steps.steps.some(
+              (step) => step.key === guia && step.status !== "done",
+            )
+              ? guia
+              : steps.current;
+          return { can, plan: steps, open };
+        })()
+      : null;
 
   const canEnter = access.allows("inventory.entry.create");
   const canExit = access.allows("inventory.exit.create");

@@ -56,6 +56,7 @@ export default async function ConfiguracionPage() {
   // WMS-43: the setup guide, whole; reachable always, not only while new,
   // but only for who has some step of it to do.
   const showSetup =
+    access.moduleState("inventory") === "active" &&
     access.can("inventory.product.read") &&
     offeredSteps(setupAbilities((permission) => access.allows(permission)))
       .size > 0;
