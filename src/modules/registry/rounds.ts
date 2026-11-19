@@ -17,6 +17,7 @@ import {
 } from "@/platform/api";
 import { processStorageCleanup, purgeOrphanPhotos } from "@/platform/files";
 import {
+  purgeExpiredUnsubscribeLinks,
   purgeFinishedNoticeEmails,
   purgeReadNotifications,
 } from "@/platform/notifications";
@@ -49,6 +50,7 @@ export const scheduledRounds: readonly ScheduledRound[] = [
       notices: await purgeReadNotifications(organizationId),
       mails: await purgeFinishedNoticeEmails(organizationId),
       digests: await purgeEndedDigests(organizationId),
+      unsubscribeLinks: await purgeExpiredUnsubscribeLinks(organizationId),
     }),
   },
   // WMS-37 (ADR 0063): photos taken and never linked to a record, a day

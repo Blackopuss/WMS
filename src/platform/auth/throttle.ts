@@ -46,6 +46,12 @@ export const RULES = {
   },
   // Invitation links opened or answered from one IP (USR-05).
   inviteTokenIp: { max: 30, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  // A link to stop notices by mail (WMS-88): 256 bits, but still counted.
+  noticeUnsubscribeIp: {
+    max: 30,
+    windowSeconds: 15 * 60,
+    blockSeconds: 15 * 60,
+  },
   // Calls of the API with a key that does not work, per IP (WMS-60).
   apiKeyIp: { max: 30, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   // Passwords typed at the counter to allow a discount (VEN-14), per
@@ -126,6 +132,10 @@ export const throttleKeys = {
   apiKeyIp: (ip: string): ThrottleKey => ({
     key: `api:key:ip:${ip}`,
     rule: RULES.apiKeyIp,
+  }),
+  noticeUnsubscribeIp: (ip: string): ThrottleKey => ({
+    key: `notice:unsubscribe:ip:${ip}`,
+    rule: RULES.noticeUnsubscribeIp,
   }),
   inviteTokenIp: (ip: string): ThrottleKey => ({
     key: `invite:token:ip:${ip}`,

@@ -567,6 +567,7 @@ export {
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
   ADJUSTMENT_APPROVAL_THRESHOLD,
+  DIGEST_DAYS,
   DIGEST_HOUR,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
@@ -771,6 +772,7 @@ export {
   DIGEST_LINES,
   dailyDigestJobHandlers,
   digestSections,
+  digestGoesOn,
   purgeEndedDigests,
   runDailyDigestRound,
   sendDailyDigest,

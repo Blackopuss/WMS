@@ -22,6 +22,7 @@ import {
 } from "./notify";
 import { READ_NOTICE_DAYS } from "./notifications";
 import { NOTICE_EMAIL_CHANNEL } from "./settings";
+import { createUnsubscribeLink } from "./unsubscribe";
 
 /**
  * Notices by mail (WMS-39B, ADR 0060). `notify` writes a row per person
@@ -365,6 +366,8 @@ export async function sendNoticeEmails(
     }
   }
 
+  // WMS-88: its own link to stop every notice by mail without signing in.
+  const unsubscribe = await createUnsubscribeLink(organizationId, userId);
   try {
     await sendEmail(
       noticeEmail({
@@ -377,6 +380,7 @@ export async function sendNoticeEmails(
         more: Math.max(0, keep.length - NOTICE_EMAIL_LINES),
         allUrl: appLink("/avisos"),
         settingsUrl: appLink("/configuracion/avisos"),
+        unsubscribe,
       }),
     );
   } catch (error) {

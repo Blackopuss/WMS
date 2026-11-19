@@ -58,3 +58,10 @@ export type {
   OpenNotificationResult,
   SetPreferenceResult,
 } from "./notifications";
+export {
+  UNSUBSCRIBE_LINK_DAYS,
+  createUnsubscribeLink,
+  purgeExpiredUnsubscribeLinks,
+  unsubscribeFromNoticeEmails,
+} from "./unsubscribe";
+export type { UnsubscribeLink, UnsubscribeResult } from "./unsubscribe";

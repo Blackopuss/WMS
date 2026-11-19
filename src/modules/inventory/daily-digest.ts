@@ -12,6 +12,7 @@ import { enqueueJob, type JobHandlers } from "@/platform/jobs";
 import { isFacilityInScope } from "@/platform/locations";
 import {
   appLink,
+  createUnsubscribeLink,
   emailSubscribers,
   isEmailChannelOn,
   memberAddress,
@@ -25,7 +26,7 @@ import { listExpiringLots } from "./lots";
 import { listLowStock } from "./minimums";
 import type { InventoryActor } from "./movements";
 import { DAILY_DIGEST_NOTICE } from "./notices";
-import { DIGEST_HOUR } from "./settings";
+import { DIGEST_DAYS, DIGEST_HOUR } from "./settings";
 
 /**
  * The daily summary by mail (WMS-39B, ADR 0060). A round of the worker
@@ -84,6 +85,17 @@ async function timeZoneOf(client: Client): Promise<string> {
 
 const dayDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
 
+/**
+ * Whether the summary goes out on a day of the company's calendar
+ * («AAAA-MM-DD»), by the setting `inventory.digest.days`. Pure.
+ */
+export function digestGoesOn(days: string, day: string): boolean {
+  const weekday = new Date(`${day}T12:00:00.000Z`).getUTCDay(); // 0 = Sunday
+  if (days === "weekdays") return weekday >= 1 && weekday <= 5;
+  if (days === "monday_saturday") return weekday !== 0;
+  return true;
+}
+
 const isDuplicate = (error: unknown) =>
   (error as { code?: string } | null)?.code === "P2002";
 
@@ -110,7 +122,7 @@ export async function purgeEndedDigests(
 export type DigestRoundResult = {
   queued: number;
   day?: string;
-  reason?: "channel_off" | "too_early";
+  reason?: "channel_off" | "too_early" | "day_off";
 };
 
 /**
@@ -136,6 +148,11 @@ export async function runDailyDigestRound(
   }
   const window = await dayWindow(client, now);
   if (!window) return { queued: 0 };
+  // WMS-88: only on the days the company chose (its calendar).
+  const days = await readSetting(client, DIGEST_DAYS);
+  if (!digestGoesOn(days, window.day)) {
+    return { queued: 0, day: window.day, reason: "day_off" };
+  }
   const day = dayDate(window.day);
   const people = await emailSubscribers(
     client,
@@ -344,6 +361,11 @@ export async function sendDailyDigest(
   });
   if (sections.length === 0) return end("EMPTY", "No había nada que decir.");
 
+  // WMS-88: its own link to stop every notice by mail without signing in.
+  const unsubscribe = await createUnsubscribeLink(
+    organizationId,
+    digest.userId,
+  );
   try {
     await sendEmail(
       dailyDigestEmail({
@@ -352,6 +374,7 @@ export async function sendDailyDigest(
         dayLabel: formatDate(new Date(`${day}T12:00:00.000Z`), "UTC"),
         sections,
         settingsUrl: appLink("/configuracion/avisos"),
+        unsubscribe,
       }),
     );
   } catch (error) {
