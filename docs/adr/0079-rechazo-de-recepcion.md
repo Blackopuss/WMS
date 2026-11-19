@@ -158,8 +158,7 @@ en `REJECTED` con su retención (B), sin quitar A como valor por omisión.
 ## Foto opcional
 
 - Propósito `receipt_rejection_photo` (escribe `purchasing.receipt.create`,
-  lee `purchasing.receipt.read`; hasta 5 por recepción y 10 sin ligar por
-  persona). Dueño: la recepción (`evidence_photo.purchaseReceiptId`, nueva
+  lee `purchasing.receipt.read`; hasta 5 por recepción). Dueño: la recepción (`evidence_photo.purchaseReceiptId`, nueva
   columna, con su extensión del `CHECK` de un solo dueño). **No** es
   `boundToOwner`: la recepción nace junto con las fotos, como una
   incidencia.

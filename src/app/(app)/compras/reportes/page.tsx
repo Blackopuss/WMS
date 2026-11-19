@@ -221,6 +221,11 @@ async function PendingView({
                   ? `llegaron ${row.receivedText} de ${row.orderedText}`
                   : `pediste ${row.orderedText}`}
               </p>
+              {row.rejectedText && (
+                <p className="text-muted-foreground">
+                  Rechazado al recibir: {row.rejectedText}
+                </p>
+              )}
               {row.pendingAmountText && (
                 <p className="text-muted-foreground">{row.pendingAmountText}</p>
               )}
@@ -340,6 +345,10 @@ async function SupplierView({
                       : `${row.products} productos`}
                     {row.returns > 0 &&
                       ` · ${row.returns === 1 ? "1 devolución" : `${row.returns} devoluciones`}`}
+                    {row.qualityReturns > 0 &&
+                      ` (${row.qualityReturns} por calidad)`}
+                    {row.receiptRejections > 0 &&
+                      ` · ${row.receiptRejections === 1 ? "1 rechazo al recibir" : `${row.receiptRejections} rechazos al recibir`}`}
                   </p>
                 </div>
                 {row.netAmountText && (

@@ -27,10 +27,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useFocusFirstError } from "@/components/focus-first-error";
+import { PhotoCapture, type CapturedPhoto } from "@/components/photo-capture";
 
 import {
   checkReceiptAction,
+  discardRejectionPhotoAction,
   receivePurchaseOrderAction,
+  uploadRejectionPhotoAction,
   type ReceiveFormState,
 } from "../actions";
 
@@ -71,6 +74,8 @@ export function ReceiveOrder({
   locations,
   defaultLocationId,
   containerKinds = null,
+  rejectionPhoto = "optional",
+  maxPhotos = 5,
 }: {
   orderId: string;
   numberText: string;
@@ -84,8 +89,13 @@ export function ReceiveOrder({
    * suggested kinds. Null = it does not, and nothing is shown.
    */
   containerKinds?: readonly string[] | null;
+  /** WMS-84: whether the company takes photos of what is rejected. */
+  rejectionPhoto?: "off" | "optional" | "required";
+  maxPhotos?: number;
 }) {
   const [open, setOpen] = useState(false);
+  // WMS-84: photos of what is rejected, kept until the receipt goes through.
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const router = useRouter();
   const [state, formAction, busy] = useActionState(
     async (prev: ReceiveFormState, formData: FormData) => {
@@ -138,6 +148,7 @@ export function ReceiveOrder({
             : undefined,
         );
         setOpen(false);
+        setPhotos([]);
       }
       return { ...next, answers: prev.answers + 1 };
     },
@@ -180,7 +191,8 @@ export function ReceiveOrder({
           <DialogHeader>
             <DialogTitle>Recibir la orden {numberText}</DialogTitle>
             <DialogDescription>
-              Ya viene lo que falta. Si algo no llegó, déjalo en 0.
+              Ya viene lo que falta. Si algo no llegó, déjalo en 0. Lo que no
+              cuadra con la orden se rechaza en su producto.
             </DialogDescription>
           </DialogHeader>
           <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
@@ -327,6 +339,21 @@ export function ReceiveOrder({
                     }
                     error={error}
                   />
+                  <RejectFields
+                    line={line}
+                    fieldId={fieldId}
+                    answers={answers}
+                    values={state.values}
+                    wrong={
+                      wrong === "rejected" ||
+                      wrong === "rejectedReason" ||
+                      wrong === "rejectedLotCode" ||
+                      wrong === "rejectedSerials"
+                        ? wrong
+                        : undefined
+                    }
+                    error={error}
+                  />
                   {line.byLot &&
                     Array.from({ length: partsOf(line.id) - 1 }, (_, i) => {
                       const key = `${line.id}~${i + 1}`;
@@ -433,6 +460,24 @@ export function ReceiveOrder({
                 className="mt-0.5 size-4 shrink-0 text-destructive"
               />
               <p>{state.formError}</p>
+            </div>
+          )}
+          {rejectionPhoto !== "off" && (
+            <div id={`receive-photos-${orderId}-group`}>
+              <PhotoCapture
+                id={`receive-photos-${orderId}`}
+                label={
+                  rejectionPhoto === "required"
+                    ? "Fotos de lo rechazado (si rechazas algo)"
+                    : "Fotos de lo rechazado (opcional)"
+                }
+                error={state.fieldErrors.photos}
+                photos={photos}
+                onPhotosChange={setPhotos}
+                upload={uploadRejectionPhotoAction}
+                discard={discardRejectionPhotoAction}
+                max={maxPhotos}
+              />
             </div>
           )}
           {containerKinds && (
@@ -648,6 +693,128 @@ function DamagedFields({
             label="Series de las dañadas"
             error={wrong === "damagedSerials" ? error : undefined}
             defaultValue={values.damagedSerials[fieldKey] ?? ""}
+            rows={2}
+          />
+        )}
+      </div>
+    </details>
+  );
+}
+
+const AREA_CLASS =
+  "w-full rounded-lg border border-input bg-transparent px-3 py-2 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive md:text-sm";
+
+/**
+ * WMS-84 (ADR 0079): «¿Rechazas algo?», folded: what is rejected at the
+ * door because it does not match the order. It does not enter the stock
+ * and stays pending; the reason is required, as evidence.
+ */
+function RejectFields({
+  line,
+  fieldId,
+  answers,
+  values,
+  wrong,
+  error,
+}: {
+  line: PendingReceiptLine;
+  fieldId: string;
+  answers: number;
+  values: ReceiveFormState["values"];
+  wrong:
+    | "rejected"
+    | "rejectedReason"
+    | "rejectedLotCode"
+    | "rejectedSerials"
+    | undefined;
+  error: string | undefined;
+}) {
+  const key = line.id;
+  const typed =
+    (values.rejected?.[key] ?? "").trim() !== "" ||
+    (values.rejectedReasons?.[key] ?? "").trim() !== "";
+  const describedBy = (field: typeof wrong) =>
+    wrong === field && error ? `${fieldId}-error` : undefined;
+  return (
+    <details
+      key={`${key}-rejected-${answers}`}
+      open={typed || wrong !== undefined}
+      className="sm:col-span-2"
+    >
+      <summary className="flex min-h-11 cursor-pointer items-center text-sm text-muted-foreground">
+        ¿Rechazas algo?
+      </summary>
+      <div className="grid gap-2 pt-1">
+        <p className="text-sm text-muted-foreground">
+          No entra al inventario y sigue pendiente en la orden.
+        </p>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={`${fieldId}-rejected`}
+            className="shrink-0 text-sm text-muted-foreground"
+          >
+            Rechazado
+          </label>
+          <Input
+            id={`${fieldId}-rejected`}
+            name={`rej:${key}`}
+            inputMode="decimal"
+            autoComplete="off"
+            defaultValue={values.rejected?.[key] ?? ""}
+            aria-invalid={wrong === "rejected" ? true : undefined}
+            aria-describedby={describedBy("rejected")}
+            className="max-w-32 tabular-nums"
+          />
+          <span className="shrink-0 text-sm text-muted-foreground">
+            {line.unitText}
+          </span>
+        </div>
+        <div>
+          <label
+            htmlFor={`${fieldId}-rejected-reason`}
+            className="mb-1 block text-sm text-muted-foreground"
+          >
+            Por qué se regresa
+          </label>
+          <textarea
+            id={`${fieldId}-rejected-reason`}
+            name={`rjr:${key}`}
+            rows={2}
+            maxLength={500}
+            defaultValue={values.rejectedReasons?.[key] ?? ""}
+            aria-invalid={wrong === "rejectedReason" ? true : undefined}
+            aria-describedby={describedBy("rejectedReason")}
+            className={AREA_CLASS}
+          />
+        </div>
+        {line.byLot && (
+          <div>
+            <label
+              htmlFor={`${fieldId}-rejected-lot`}
+              className="mb-1 block text-sm text-muted-foreground"
+            >
+              Lote que traía (opcional)
+            </label>
+            <Input
+              id={`${fieldId}-rejected-lot`}
+              name={`rjl:${key}`}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={64}
+              defaultValue={values.rejectedLots?.[key] ?? ""}
+              aria-invalid={wrong === "rejectedLotCode" ? true : undefined}
+              aria-describedby={describedBy("rejectedLotCode")}
+            />
+          </div>
+        )}
+        {line.bySerial && (
+          <SerialsField
+            id={`${fieldId}-rejected-serials`}
+            name={`rjs:${key}`}
+            label="Series que traía (opcional)"
+            error={wrong === "rejectedSerials" ? error : undefined}
+            defaultValue={values.rejectedSerials?.[key] ?? ""}
             rows={2}
           />
         )}

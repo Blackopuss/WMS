@@ -396,6 +396,19 @@ beforeAll(async () => {
         unitCode: "piece",
       },
     });
+    // WMS-84: what was rejected at the door with that receipt.
+    await db.purchaseReceiptRejection.create({
+      data: {
+        id: newId(),
+        organizationId,
+        receiptId,
+        lineNumber: 1,
+        orderLineId,
+        productId,
+        quantity: "1",
+        reason: "No es el producto pedido",
+      },
+    });
     // A return of that receipt (CMP-12): its movement, the return and its line.
     const returnMovementId = newId();
     await db.stockMovement.create({

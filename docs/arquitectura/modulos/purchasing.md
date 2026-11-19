@@ -37,6 +37,21 @@ Reglas que no se rompen:
   mismo costo, no va en la tarima ni lleva tarea de acomodo. La devolución
   sale del estado de su línea de recepción; `sameReceipt` compara también lo
   dañado.
+- Rechazo de recepción (WMS-84, ADR 0079): `receivePurchaseOrder` acepta
+  `rejections` (línea de la orden, cantidad en sus términos, motivo
+  obligatorio de 3 a 500 caracteres, y como evidencia escrita el lote y las
+  series que traía) y `photoIds`. Lo rechazado **no entra al inventario**:
+  sin movimiento, saldo, valor, último costo, lote ni serie; se guarda en
+  `purchase_receipt_rejection` (inmutable). No cuenta como recibido: sigue
+  pendiente y el proveedor puede reponerlo contra la misma línea; lo
+  recibido más lo rechazado de una recepción no pasa de lo pendiente. Una
+  recepción que solo rechaza no tiene movimiento (`movementId` vacío) y no
+  cambia el estado de la orden. `sameReceipt` y `sameRejections` comparan
+  lo recibido y lo rechazado (no la nota). Fotos por recepción
+  (`receipt_rejection_photo`, dueño `evidence_photo.purchaseReceiptId`,
+  `reachesPurchaseReceipt`), según el ajuste
+  `purchasing.receipt.rejection_photo`. Se distingue del rechazo de
+  calidad, que sí entró y sale con una devolución desde «Rechazado».
 - Cross-docking (WMS-54, ADR 0052): con `inventory.crossdock.mode = on`,
   `postReceiptEntry` bloquea los pedidos de salida que esperan lo que llega
   (después de la orden de compra: productos → ubicaciones → orden de compra
@@ -76,12 +91,12 @@ Reglas que no se rompen:
 | Cierre | `order-close.ts` | `closePurchaseOrder`: cierra una orden `PARTIAL` con faltante |
 | PDF | `order-pdf.ts` | `buildOrderPdf` |
 | Envío por correo | `order-delivery.ts` | `requestOrderDelivery` (encola), `getOrderDeliveries`; manejador `purchasingJobHandlers` |
-| Recepciones | `receipts.ts` | `receivePurchaseOrder` (parcial, destino por línea, lote por línea, series por línea para un producto por serie, todo en una tarima con `container`, WMS-53; lo dañado por línea y lo que fue directo a pedidos, WMS-54; lo sano de un producto que se inspecciona al recibir entra en inspección, WMS-30-0), `getOrderReceipts` (cada línea de recepción dice su estado: dañada o en inspección, y de qué estados puede devolverse, `returnStates`), `findReceiptConfirmation` |
+| Recepciones | `receipts.ts` | `receivePurchaseOrder` (lo rechazado en la puerta, `rejections`, WMS-84; parcial, destino por línea, lote por línea, series por línea para un producto por serie, todo en una tarima con `container`, WMS-53; lo dañado por línea y lo que fue directo a pedidos, WMS-54; lo sano de un producto que se inspecciona al recibir entra en inspección, WMS-30-0), `getOrderReceipts` (cada línea de recepción dice su estado: dañada o en inspección, y de qué estados puede devolverse, `returnStates`), `findReceiptConfirmation`; `rejectedByLine`, `uploadRejectionPhoto`, `discardRejectionPhoto`, `rejectionPhotoMode`, `reachesPurchaseReceipt` (WMS-84) |
 | Devoluciones | `returns.ts` | `returnToSupplier` (un producto por serie devuelve unidades que llegaron con esa línea de recepción; lo dañado sale de «Dañado», WMS-54; cada renglón puede decir de qué estado sale, `status`, según solo cómo llegó su línea de recepción, `returnStatesFor` de `return-states.ts`: dañada solo de dañado; en inspección de inspección, disponible, rechazado o dañado; disponible de disponible, rechazado o dañado; las existencias del mismo producto, lote, ubicación y estado son intercambiables entre recepciones, WMS-30-0, ADR 0068), `findReturnConfirmation` |
 | Sugerencias | `suggestions.ts` | `getPurchaseSuggestions`, `generateSuggestedOrders` (borradores por proveedor, con `insertDraftOrder`) |
 | Solicitudes | `requests.ts`, `request-states.ts`, `approvals.ts` | `createPurchaseRequest`, `updatePurchaseRequest`, `addRequestLine`, `updateRequestLine`, `removeRequestLine`, `submitPurchaseRequest` (`pending_approval` con la regla encendida), `cancelPurchaseRequest`, `rejectPurchaseRequest`, `convertPurchaseRequest`, `listPurchaseRequests` (`attend`, `mine`, `all`), `getPurchaseRequest`, `countRequestsToAttend`; tipo de aprobación `PURCHASING_APPROVAL_TYPES` |
 | Comparar proveedores | `supplier-comparison.ts` | `compareSuppliers`: último costo por unidad del producto, días de entrega y cumplimiento (y dañado) de las últimas 10 órdenes de cada proveedor, con tope de 500 órdenes (`truncated`) y el sugerido |
-| Reportes | `reports.ts` | `getPendingReport`, `getPurchasesBySupplier`, `buildPurchaseReport` (archivo) |
+| Reportes | `reports.ts` | `getPendingReport` (con «Rechazado al recibir» por línea, WMS-84), `getPurchasesBySupplier` (con «Devoluciones por calidad», las que salieron de «Rechazado», y «Rechazos al recibir», WMS-84), `buildPurchaseReport` (archivo) |
 | Al quitar el módulo | `deactivation.ts` | `purchasingOpenWork`: lo que quedaría a medias, para la consola |
 
 Proveedores (`createSupplier`, `listSuppliers`…) viven en
@@ -101,6 +116,7 @@ comprar; atender y convertir exige `purchasing.order.create`).
 
 `product_supplier`, `purchase_order`, `purchase_order_line`,
 `purchase_order_delivery`, `purchase_receipt`, `purchase_receipt_line`,
+`purchase_receipt_rejection` (WMS-84),
 `purchase_return`, `purchase_return_line`, `purchase_request`,
 `purchase_request_line`. Usa `contact` (núcleo) y escribe en
 las de Inventario solo por `postReceiptEntry`/`postReturnExit`.
@@ -109,6 +125,7 @@ las de Inventario solo por `postReceiptEntry`/`postReturnExit`.
 
 | Clave | Opciones | Qué decide |
 | --- | --- | --- |
+| `purchasing.receipt.rejection_photo` | `off`, `optional` (omisión), `required` | Fotos de lo rechazado al recibir (WMS-84) |
 | `purchasing.compare.min_fulfillment` | `any`, `80`, `90` (omisión), `95` | Proveedor sugerido al comparar: el de menor costo por unidad entre los que entregaron al menos ese porcentaje (o no tienen historial) |
 
 ## Tipos de aprobación
@@ -133,7 +150,10 @@ proveedores:
 lo emite `receivePurchaseOrder` en su transacción, con lo que entró por
 línea (producto, ubicación, lote, cantidad base, dañado) y cómo quedó la
 orden; nunca costos (WMS-60, ADR 0058). `ReceiptSummary` agrega producto,
-cantidad base, unidad y lote de cada línea para la API.
+cantidad base, unidad y lote de cada línea para la API. Desde WMS-84 solo
+se emite si entró algo, y `purchasing.receipt.rejected` lleva lo rechazado
+en la puerta (producto, cantidad en los términos de la línea, motivo, lote
+y series que traía); la API de recepciones agrega `rejections`.
 
 ## Trabajos en segundo plano
 

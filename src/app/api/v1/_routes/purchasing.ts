@@ -141,7 +141,7 @@ const receipts: ApiRoute = {
   tag: "Compras",
   summary: "Recepciones de una orden de compra",
   description:
-    "Cada recepción con lo que entró, en la unidad del producto, a qué ubicación y si llegó dañado. De la más reciente a la más antigua.",
+    "Cada recepción con lo que entró, en la unidad del producto, a qué ubicación y si llegó dañado, y lo que se rechazó al recibir (`rejections`: no entró al inventario y sigue pendiente en la orden; la cantidad va en los términos de la línea de la orden). De la más reciente a la más antigua.",
   params: z.object({ id: idParam }),
   response: z.object({
     receipts: z.array(
@@ -161,6 +161,21 @@ const receipts: ApiRoute = {
             damaged: z.boolean(),
             /** WMS-30-0: it entered in inspection (ADR 0068). */
             inspection: z.boolean(),
+          }),
+        ),
+        /** WMS-84 (ADR 0079): rejected at the door; it never entered. */
+        rejections: z.array(
+          z.object({
+            id: z.string(),
+            orderLineId: z.string(),
+            productId: z.string(),
+            sku: z.string(),
+            quantity: decimalText,
+            presentationId: z.string().nullable(),
+            unitCode: z.string(),
+            reason: z.string(),
+            lotCode: z.string().nullable(),
+            serials: z.array(z.string()),
           }),
         ),
       }),
@@ -187,6 +202,18 @@ const receipts: ApiRoute = {
             lotCode: line.lotCode,
             damaged: line.damaged,
             inspection: line.inspection,
+          })),
+          rejections: receipt.rejections.map((row) => ({
+            id: row.id,
+            orderLineId: row.orderLineId,
+            productId: row.productId,
+            sku: row.sku,
+            quantity: row.quantity,
+            presentationId: row.presentationId,
+            unitCode: row.unitCode,
+            reason: row.reason,
+            lotCode: row.lotCode,
+            serials: row.serials,
           })),
         })),
       },

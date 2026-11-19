@@ -182,8 +182,8 @@ describe("receivePurchaseOrder", () => {
       include: { lines: { orderBy: { lineNumber: "asc" } }, movement: true },
     });
     expect(receipt.reference).toBe("Remisión 4411");
-    expect(receipt.movement.type).toBe("RECEIPT");
-    expect(receipt.movement.reference).toMatch(/^OC-\d{4} · Remisión 4411$/);
+    expect(receipt.movement?.type).toBe("RECEIPT");
+    expect(receipt.movement?.reference).toMatch(/^OC-\d{4} · Remisión 4411$/);
     expect(
       receipt.lines.map((line) => [
         line.capturedQuantity.toString(),
@@ -460,7 +460,7 @@ describe("a receipt is corrected from Compras, not from Inventario (NEG-22)", ()
     });
     expect(
       await reverseMovement(actor, {
-        movementId: receipt.movementId,
+        movementId: receipt.movementId!,
         reason: "Me equivoqué",
         idempotencyKey: key(),
       }),

@@ -730,6 +730,16 @@ describe("PC-12: limited to warehouse B", () => {
         idempotencyKey: key(),
       }),
     ).toMatchObject({ ok: false, reason: "not_found" });
+    // WMS-84: nor can it reject anything of it at the door.
+    expect(
+      await receivePurchaseOrder(limited, ofA.orderId, {
+        idempotencyKey: key(),
+        lines: [],
+        rejections: [
+          { orderLineId: newId(), quantity: "1", reason: "No cuadra" },
+        ],
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
     // …but one of the whole company (written before orders had a
     // warehouse) does: it is received and returned within the scope.
     const last = await db.purchaseOrder.findFirstOrThrow({

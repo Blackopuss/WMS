@@ -11,7 +11,7 @@ import { forOrganization } from "@/server";
 import { PURCHASE_ORDER_STATUS_LABELS } from "./order-states";
 import { formatOrderNumber, visibleOrdersWhere } from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
-import { inTermsOf, receivedByLine } from "./receipts";
+import { inTermsOf, receivedByLine, rejectedByLine } from "./receipts";
 
 /**
  * Reports of Compras (CMP-15): what is still to be received, and what was
@@ -83,6 +83,11 @@ export type PendingRow = {
   /** «3 cajas», «25 piezas». */
   orderedText: string;
   receivedText: string | null;
+  /**
+   * WMS-84 (ADR 0079): rejected at the door (never entered; still pending).
+   * Not the quality rejection, which entered and went back as a return.
+   */
+  rejectedText: string | null;
   pendingText: string;
   /** Plain numbers for files: "2". */
   pendingQuantity: string;
@@ -151,6 +156,10 @@ export async function getPendingReport(
     client,
     kept.map((line) => line.id),
   );
+  const rejected = await rejectedByLine(
+    client,
+    kept.map((line) => line.id),
+  );
   let total = dec(0);
   const rows: PendingRow[] = [];
   for (const line of kept) {
@@ -173,6 +182,9 @@ export async function getPendingReport(
       orderedText: inTermsOf(ordered, line.presentation, line.unitCode),
       receivedText: got.greaterThan(0)
         ? inTermsOf(got, line.presentation, line.unitCode)
+        : null,
+      rejectedText: rejected.has(line.id)
+        ? inTermsOf(rejected.get(line.id)!, line.presentation, line.unitCode)
         : null,
       pendingText: inTermsOf(left, line.presentation, line.unitCode),
       pendingQuantity: left.toFixed(),
@@ -215,6 +227,16 @@ export type SupplierRow = {
   products: number;
   /** Returns in the period. */
   returns: number;
+  /**
+   * WMS-84: of those returns, the ones that left from «Rechazado»: the
+   * quality rejection (it entered, was analyzed and did not pass).
+   */
+  qualityReturns: number;
+  /**
+   * WMS-84 (ADR 0079): products rejected at the door in the period (rows of
+   * rejection); they never entered and are not returns.
+   */
+  receiptRejections: number;
   /** Absent without costs. */
   receivedAmountText?: string;
   returnedAmountText?: string;
@@ -279,7 +301,8 @@ export async function getPurchasesBySupplier(
   // WMS-57: only the orders that exist for the person.
   const visible = await visibleOrdersWhere(client, actor.userId);
   const receiptRows = await client.purchaseReceipt.findMany({
-    where: { createdAt: when, order: visible },
+    // WMS-84: a receipt that only rejected brought nothing in.
+    where: { createdAt: when, order: visible, movementId: { not: null } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: REPORT_MAX_ROWS + 1,
     select: {
@@ -308,6 +331,16 @@ export async function getPurchasesBySupplier(
           },
         },
       },
+      // WMS-84: the quality rejection leaves from «Rechazado».
+      movement: {
+        select: {
+          lines: {
+            where: { status: "REJECTED" },
+            take: 1,
+            select: { id: true },
+          },
+        },
+      },
       lines: {
         select: {
           capturedQuantity: true,
@@ -319,8 +352,26 @@ export async function getPurchasesBySupplier(
     },
   });
 
+  // WMS-84 (ADR 0079): what was rejected at the door in the period.
+  const rejectionRows = await client.purchaseReceiptRejection.findMany({
+    where: { createdAt: when, receipt: { order: visible } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: REPORT_MAX_ROWS + 1,
+    select: {
+      receipt: {
+        select: {
+          order: {
+            select: { contactId: true, contact: { select: { name: true } } },
+          },
+        },
+      },
+    },
+  });
+
   const truncated =
-    receiptRows.length > REPORT_MAX_ROWS || returnRows.length > REPORT_MAX_ROWS;
+    receiptRows.length > REPORT_MAX_ROWS ||
+    returnRows.length > REPORT_MAX_ROWS ||
+    rejectionRows.length > REPORT_MAX_ROWS;
   const receipts = receiptRows.slice(0, REPORT_MAX_ROWS);
   const returns = returnRows.slice(0, REPORT_MAX_ROWS);
 
@@ -330,6 +381,8 @@ export async function getPurchasesBySupplier(
     orders: Set<string>;
     products: Set<string>;
     returns: number;
+    qualityReturns: number;
+    receiptRejections: number;
     received: Decimal;
     returned: Decimal;
     withoutCost: number;
@@ -344,6 +397,8 @@ export async function getPurchasesBySupplier(
       orders: new Set(),
       products: new Set(),
       returns: 0,
+      qualityReturns: 0,
+      receiptRejections: 0,
       received: dec(0),
       returned: dec(0),
       withoutCost: 0,
@@ -372,6 +427,7 @@ export async function getPurchasesBySupplier(
     const order = back.receipt.order;
     const acc = accOf(order.contactId, order.contact.name);
     acc.returns += 1;
+    if (back.movement.lines.length > 0) acc.qualityReturns += 1;
     for (const line of back.lines) {
       const cost = (line as { receiptLine?: CostOf }).receiptLine?.unitCost;
       if (cost) {
@@ -380,6 +436,11 @@ export async function getPurchasesBySupplier(
         );
       }
     }
+  }
+
+  for (const row of rejectionRows.slice(0, REPORT_MAX_ROWS)) {
+    const order = row.receipt.order;
+    accOf(order.contactId, order.contact.name).receiptRejections += 1;
   }
 
   let total = dec(0);
@@ -392,6 +453,8 @@ export async function getPurchasesBySupplier(
         orders: acc.orders.size,
         products: acc.products.size,
         returns: acc.returns,
+        qualityReturns: acc.qualityReturns,
+        receiptRejections: acc.receiptRejections,
       };
       if (!costsVisible) return row;
       const net = acc.received.minus(acc.returned);
@@ -468,6 +531,7 @@ export async function buildPurchaseReport(
         "Producto",
         "Pedido",
         "Recibido",
+        "Rechazado al recibir",
         "Pendiente",
         "En",
         ...(report.costsVisible ? ["Importe pendiente"] : []),
@@ -481,6 +545,7 @@ export async function buildPurchaseReport(
         row.productName,
         row.orderedText,
         row.receivedText ?? "",
+        row.rejectedText ?? "",
         row.pendingQuantity,
         row.unitText,
         ...(report.costsVisible ? [row.pendingAmount ?? ""] : []),
@@ -500,6 +565,8 @@ export async function buildPurchaseReport(
         "Órdenes",
         "Productos",
         "Devoluciones",
+        "Devoluciones por calidad",
+        "Rechazos al recibir",
         ...(report.costsVisible
           ? ["Recibido", "Devuelto", "Neto", "Líneas sin costo"]
           : []),
@@ -510,6 +577,8 @@ export async function buildPurchaseReport(
         String(row.orders),
         String(row.products),
         String(row.returns),
+        String(row.qualityReturns),
+        String(row.receiptRejections),
         ...(report.costsVisible
           ? [
               row.receivedAmount ?? "",

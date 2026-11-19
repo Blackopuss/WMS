@@ -41,6 +41,39 @@ export const COMPARE_MIN_FULFILLMENT = {
   defaultValue: "90",
 } as const satisfies SettingDefinition;
 
+/**
+ * Photos of what is rejected at the door when receiving (WMS-84, ADR
+ * 0079). Optional by default; a company that keeps the photo as evidence
+ * before the supplier makes it required.
+ */
+export const RECEIPT_REJECTION_PHOTO = {
+  key: "purchasing.receipt.rejection_photo",
+  module: "purchasing",
+  area: "Recepción",
+  label: "Foto de lo rechazado al recibir",
+  options: [
+    {
+      value: "off",
+      label: "Sin foto",
+      help: "Lo rechazado se registra solo con su nota.",
+    },
+    {
+      value: "optional",
+      label: "Opcional",
+      help: "Quien recibe puede tomar fotos de lo que rechaza.",
+    },
+    {
+      value: "required",
+      label: "Obligatoria",
+      help: "Nada se rechaza al recibir sin al menos una foto.",
+    },
+  ],
+  defaultValue: "optional",
+} as const satisfies SettingDefinition;
+
+export type RejectionPhotoMode = "off" | "optional" | "required";
+
 export const PURCHASING_SETTINGS: readonly SettingDefinition[] = [
   COMPARE_MIN_FULFILLMENT,
+  RECEIPT_REJECTION_PHOTO,
 ];
