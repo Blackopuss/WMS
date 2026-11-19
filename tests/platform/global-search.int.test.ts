@@ -43,11 +43,15 @@ import {
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
-import { migratorConnection } from "../setup/test-db";
-
 // WMS-66 (ADR 0081): one box over every kind of record, each searched only
 // if the person may open its screen and each result only if that screen
 // would show it.
+
+// The cost test counts the queries of this process (Prisma events); they
+// must be asked for before the database client is created.
+vi.hoisted(() => {
+  process.env.WMS_QUERY_EVENTS = "1";
+});
 
 /** Who the request comes from at a shared terminal (WMS-38), if anybody. */
 let terminalUser: string | null = null;
@@ -529,31 +533,36 @@ describe("global search", () => {
   it("costs a bounded number of queries, whatever is typed", async () => {
     const owner = await company();
     await product(owner, `QRY-${stamp}`, "Consulta medida");
-    const connection = await migratorConnection();
-    const questions = async () => {
-      const rows = (await connection.query(
-        "SHOW GLOBAL STATUS LIKE 'Questions'",
-      )) as { Value: string }[];
-      return Number(rows[0]!.Value);
-    };
-    try {
-      for (const text of [
-        "consulta",
-        "uno dos tres cuatro cinco seis",
-        `QRY-${stamp}`,
-      ]) {
-        // The least of three runs: the counter is of the whole server.
-        let least = Infinity;
-        for (let round = 0; round < 3; round++) {
-          const before = await questions();
-          await search(owner, text);
-          least = Math.min(least, (await questions()) - before - 1);
-        }
-        // 63 before WMS-66 was reviewed; 23 measured after.
-        expect(least, text).toBeLessThanOrEqual(26);
-      }
-    } finally {
-      await connection.end();
+    // Only the queries of this process (Prisma events), never the counter
+    // of the whole server, which other runs on the same MySQL move.
+    let counting = false;
+    let count = 0;
+    (db as unknown as { $on(event: "query", listener: () => void): void }).$on(
+      "query",
+      () => {
+        if (counting) count++;
+      },
+    );
+    const measured: Record<string, number> = {};
+    for (const text of [
+      "consulta",
+      "uno dos tres cuatro cinco seis",
+      `QRY-${stamp}`,
+      "PS-0001",
+    ]) {
+      await search(owner, text); // warm: the entitlements are cached
+      count = 0;
+      counting = true;
+      await search(owner, text);
+      counting = false;
+      measured[text] = count;
+    }
+    // 63 before the review of WMS-66 (every list service checked its
+    // permission again and the whole tree of locations was read); 23 to 24
+    // after (a number adds the getter of its page).
+    for (const [text, queries] of Object.entries(measured)) {
+      expect(queries, text).toBeGreaterThan(0);
+      expect(queries, text).toBeLessThanOrEqual(25);
     }
   });
 

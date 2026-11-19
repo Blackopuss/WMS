@@ -169,11 +169,14 @@ texto es un número de su tipo. Por eso (revisión independiente, 2026-11-19):
   usa el rastreo); ubicaciones, las del almacén `(organizationId, facilityId,
   …)`: `contains` recorre las ubicaciones de un almacén, que son pocas
   comparadas con productos o movimientos.
-- **Costo medido** (`SHOW GLOBAL STATUS 'Questions'`, una persona sin límite):
-  63 a 64 consultas por búsqueda antes de la revisión, 23 a 24 después, sea
-  cual sea el texto («caja», seis palabras, una clave exacta; «PS-0001» suma
-  el servicio de la ficha si existe). `global-search.int.test.ts` fija un
-  máximo de 26.
+- **Costo medido** (una persona sin límite): 63 a 64 consultas por búsqueda
+  antes de la revisión (medido con `SHOW GLOBAL STATUS 'Questions'`), 23 a 24
+  después, sea cual sea el texto («consulta», seis palabras, una clave exacta;
+  «PS-0001» suma el servicio de la ficha si existe). `global-search.int.test.ts`
+  cuenta solo las consultas de su propio proceso (evento `query` de Prisma,
+  encendido con `WMS_QUERY_EVENTS=1` antes de crear el cliente y nunca en
+  producción; el contador del servidor lo mueven otras corridas) y fija un
+  máximo de 25.
 - Las fuentes corren en paralelo. La pantalla está en `screens()` de la prueba
   de carga; meta p95 < 500 ms.
 
