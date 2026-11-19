@@ -9,6 +9,7 @@ import {
   buildShipmentPdf,
   cancelShipment,
   confirmPick,
+  countOrdersToArm,
   countOrdersToShip,
   createOutboundOrder,
   createShipment,
@@ -659,6 +660,10 @@ describe("one open shipment per order", () => {
     expect([x, y].filter((r) => r.ok)).toHaveLength(1);
     const second = (x.ok ? x : y) as { shipmentId: string };
     expect((await listReadyOrders(owner)).total).toBe(0);
+    // WMS-87: the number of «Embarques» agrees with that list; Inicio still
+    // counts what has not left.
+    expect(await countOrdersToArm(owner)).toBe(0);
+    expect(await countOrdersToShip(owner)).toBe(2);
     expect(
       await removeShipmentOrder(owner, second.shipmentId, two),
     ).toMatchObject({ ok: true });
@@ -684,6 +689,7 @@ describe("one open shipment per order", () => {
       reason: "not_allowed",
     });
     expect((await listReadyOrders(owner)).total).toBe(2);
+    expect(await countOrdersToArm(owner)).toBe(2);
     await ship(owner, [one, two]);
     expect(await getShipment(owner, first)).toMatchObject({
       status: "CANCELLED",

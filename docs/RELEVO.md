@@ -22,7 +22,7 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | WMS-32 Indicadores de almacén (permisos, alcance y costos; revisor) | `session_01QMjUPWFSksAhndeQ1UGQxR` | `wms-32-indicadores-almacen` | Opus, medio | 0082 (`20261119120000`) | abierto |
 | WMS-43 Asistente de configuración inicial | `session_01QMjUPWjqnyim6TcuhoF9Am` | `wms-43-asistente-inicial` | Opus, medio | 0083 (`20261119130000`) | abierto |
 | WMS-88 Pendientes de avisos por correo (ADR 0060) y del historial de accesos (ADR 0064) (seguridad; revisor) | `session_01QMjUPY8CFA5E9GkWMRc1Tj` | `wms-88-avisos-accesos-pendientes` | Opus, medio | 0084 (`20261119140000`) | abierto |
-| WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | abierto |
+| WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
 | WMS-46 Manuales por rol, instalación, actualización y respaldo (`docs/manuales/`) | `session_01QMjUPWnxq17jsxbEu38ox6` | `wms-46-manuales` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
 
 Huecos de la app que salieron de la revisión de los manuales (no son de los manuales): transferir la titularidad no tiene pantalla ni Server Action (`ownership.ts` existe, ninguna ruta lo usa; pendiente sin número), y el Inspector de calidad no tiene enlace a «Por inspeccionar» (requisito de WMS-30B).
@@ -255,7 +255,8 @@ con IP del titular y de los administradores (hoy sí, como las sesiones).
   pasos en verde y otra tardó 17 minutos y medio. Si una corrida aparece
   «cancelled» con sus pasos en verde, es eso (se repite con
   `rerun_workflow_run`); conviene subir `timeout-minutes` a 30 en
-  `.github/workflows/ci.yml` en el siguiente paso que toque código.
+  `.github/workflows/ci.yml` en el siguiente paso que toque código. Las dos cosas sueltas de arriba (`/ubicaciones/etiquetas` y el aviso de
+  `key` de `/inventario/nuevo`) ya no se reproducen (WMS-87).
 
 ## Qué leer, en orden
 

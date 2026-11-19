@@ -17,6 +17,7 @@ export {
 } from "./products";
 export type {
   CatalogActor,
+  ProductWhere,
   CreateProductResult,
   ProductCard,
   ProductField,

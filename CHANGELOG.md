@@ -8,6 +8,12 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-87** Pendientes chicos de interfaz: «Embarques» ya no cuenta como
+  listo para salir un pedido que está en un embarque abierto; filtro por
+  estado de las existencias en Inventario; lint limpio en el reporte de
+  incidencias; `global-error` con Inter; el 404 de `/interno` ya no revela
+  nada; selects que no se cortan en teléfono; más pantallas en `verify-a11y`
+  y `verify-ui`; ejemplos nuevos en `db:seed:ejemplo`. Sin ADR.
 - **WMS-83** Desechar pide autorización, con el porqué: con la regla
   `inventory.disposal` encendida, desechar espera a que alguien lo autorice y
   al autorizar se vuelve a validar todo; cierra el rodeo «disponible → dañado
