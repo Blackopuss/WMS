@@ -92,7 +92,7 @@ export async function unsubscribeFromNoticeEmails(
     };
   }
   try {
-    return await useLink(token, keys);
+    return await applyLink(token, keys);
   } catch (error) {
     // A failure of the database is not a guess: the attempt goes back
     // (review of WMS-88).
@@ -101,7 +101,7 @@ export async function unsubscribeFromNoticeEmails(
   }
 }
 
-async function useLink(
+async function applyLink(
   token: string,
   keys: Parameters<typeof refundAttempt>[0],
 ): Promise<UnsubscribeResult> {
