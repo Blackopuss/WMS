@@ -1,17 +1,24 @@
 "use client";
 
 import { Ellipsis, LogOut, Warehouse } from "lucide-react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { OfflineNotice } from "../pwa";
 import { ThemeToggle } from "../theme-toggle";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "../ui/sheet";
 import { NAV_ITEMS, isActive, type NavItem } from "./nav";
 import {
   BellButton,
-  NotificationStatus,
+  NotificationSheet,
   useNotificationBell,
   type NotificationBellProps,
 } from "./notification-bell";
@@ -19,20 +26,6 @@ import {
   OrganizationSwitcher,
   type ShellOrganization,
 } from "./organization-switcher";
-
-// Downloaded the first time they open (ADR 0080): the frame is on every
-// screen, the sheets are not needed to paint it.
-const loadNotificationSheet = () => import("./notification-sheet");
-const loadMoreSheet = () => import("./more-sheet");
-const NotificationSheet = dynamic(
-  () => loadNotificationSheet().then((module) => module.NotificationSheet),
-  { ssr: false },
-);
-const preloadBell = () => void loadNotificationSheet();
-const MoreSheet = dynamic(
-  () => loadMoreSheet().then((module) => module.MoreSheet),
-  { ssr: false },
-);
 
 export type ShellUser = { name: string; email: string };
 export type { BellNotice, NotificationBellProps } from "./notification-bell";
@@ -91,8 +84,6 @@ export function AppShell({
     </>
   );
   const bell = useNotificationBell(notifications);
-  const [bellLoaded, setBellLoaded] = useState(false);
-  if (bell.open && !bellLoaded) setBellLoaded(true);
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href));
   // The bottom bar holds 4 sections; the rest go to «Más».
@@ -113,7 +104,7 @@ export function AppShell({
         <Brand />
         <div className="-mt-2 px-3 pb-2">
           {switcher}
-          <BellButton bell={bell} preload={preloadBell} />
+          <BellButton bell={bell} />
         </div>
         <nav
           aria-label="Principal"
@@ -141,12 +132,7 @@ export function AppShell({
           <span className="min-w-0 truncate font-semibold">
             {current?.label ?? titleOf(pathname)}
           </span>
-          <BellButton
-            bell={bell}
-            preload={preloadBell}
-            compact
-            className="ml-auto"
-          />
+          <BellButton bell={bell} compact className="ml-auto" />
           <ThemeToggle />
         </header>
         <OfflineNotice />
@@ -160,10 +146,7 @@ export function AppShell({
         </main>
       </div>
 
-      <NotificationStatus count={bell.count} />
-      {bellLoaded && (
-        <NotificationSheet bell={bell} openAction={notifications.openAction} />
-      )}
+      <NotificationSheet bell={bell} openAction={notifications.openAction} />
 
       <nav
         aria-label="Principal"
@@ -254,10 +237,6 @@ function BottomLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-/**
- * «Más» in the bottom bar: the button is always there; the sheet with the
- * other sections is downloaded the first time it opens (ADR 0080).
- */
 function MoreMenu({
   switcher,
   user,
@@ -274,44 +253,49 @@ function MoreMenu({
   pathname: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className={bottomItemClass}
-        data-active={active}
-        // Starts the download as the finger or the pointer reaches it.
-        onPointerEnter={() => void loadMoreSheet()}
-        onFocus={() => void loadMoreSheet()}
-        onClick={() => {
-          setLoaded(true);
-          setOpen(true);
-        }}
-      >
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger className={bottomItemClass} data-active={active}>
         <Ellipsis aria-hidden="true" className="size-5" />
         Más
-      </button>
-      {loaded && (
-        <MoreSheet
-          open={open}
-          onOpenChange={setOpen}
-          triggerRef={triggerRef}
-          items={items}
-          pathname={pathname}
-          footer={
-            <>
-              {switcher}
-              <UserBlock user={user} signOutAction={signOutAction} />
-            </>
-          }
-        />
-      )}
-    </>
+      </SheetTrigger>
+      <SheetContent
+        side="bottom"
+        className="rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      >
+        <SheetHeader>
+          <SheetTitle>Más opciones</SheetTitle>
+          <SheetDescription className="sr-only">
+            Otras secciones de la aplicación
+          </SheetDescription>
+        </SheetHeader>
+        <nav aria-label="Más opciones" className="px-4">
+          <ul className="space-y-1">
+            {items.map((item) => {
+              const Icon = item.icon;
+              const current = isActive(pathname, item);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={() => setOpen(false)}
+                    aria-current={current ? "page" : undefined}
+                    className="flex h-12 items-center gap-3 rounded-lg px-3 font-medium transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground"
+                  >
+                    <Icon aria-hidden="true" className="size-5" />
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+        <div className="mx-4 space-y-1 border-t pt-3">
+          {switcher}
+          <UserBlock user={user} signOutAction={signOutAction} />
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

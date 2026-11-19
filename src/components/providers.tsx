@@ -1,13 +1,6 @@
 "use client";
 
-import dynamic from "next/dynamic";
-
-// Loaded after the page is interactive: a notice only follows something the
-// person did, and screens without notices do not wait for it (ADR 0080).
-const Toaster = dynamic(
-  () => import("./ui/sonner").then((module) => module.Toaster),
-  { ssr: false },
-);
+import { Toaster } from "./ui/sonner";
 
 /**
  * Sonner's notices («Guardado», errors) for the screens that use `toast`:

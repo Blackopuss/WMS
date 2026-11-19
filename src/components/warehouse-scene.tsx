@@ -106,19 +106,56 @@ function FloatingCard({
 export function WarehouseScene({
   className,
   still = false,
+  settled = false,
 }: {
   className?: string;
   still?: boolean;
+  /**
+   * Takes over a still scene already on screen (`AccountScene`): the boxes
+   * and cards are already there, only the forklift and the cards' float
+   * move.
+   */
+  settled?: boolean;
 }) {
   if (still) return <WarehouseSceneStill className={className} />;
   return (
     <MotionProvider>
       <SceneArt
         className={className}
-        Crate={Crate}
+        Crate={settled ? SettledCrate : Crate}
         Forklift={Forklift}
-        Card={FloatingCard}
+        Card={settled ? SettledCard : FloatingCard}
       />
     </MotionProvider>
+  );
+}
+
+function SettledCrate({ box }: { box: Box; index: number }) {
+  return (
+    <g>
+      <CrateShape box={box} />
+    </g>
+  );
+}
+
+function SettledCard({
+  className,
+  delay,
+  children,
+}: {
+  className: string;
+  delay: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <motion.div
+      animate={{ y: [0, -6, 0] }}
+      transition={{
+        y: { delay, duration: 4.5, repeat: Infinity, ease: "easeInOut" },
+      }}
+      className={cn(FLOATING_CARD_CLASS, className)}
+    >
+      {children}
+    </motion.div>
   );
 }

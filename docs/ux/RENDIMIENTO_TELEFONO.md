@@ -75,9 +75,30 @@ la primera carga en KB comprimidos; Accesibilidad / Buenas prácticas después.
 Escritorio: 99 a 100 antes y después en las 16 páginas (LCP 0.5 a 0.9 s),
 Accesibilidad y Buenas prácticas 100.
 
+### Después de la revisión independiente
+
+El revisor pidió que nada de lo que el marco necesita para moverse y salir se
+descargue a pedido (una falla de red tumbaba la app; ADR 0080, decisión 3).
+La hoja «Más», el diálogo de cambiar empresa o almacén, la hoja de avisos y el
+`Toaster` volvieron al paquete principal: 13 KB comprimidos más en las
+pantallas con sesión (Radix `Dialog` y Sonner) y en teléfono:
+
+| Pantalla | Antes de WMS-86 | Primera entrega | Final |
+| --- | --- | --- | --- |
+| `/inicio` | 88 | 90 | **88** (LCP 3.8 s, 212 KB) |
+| `/tareas` | 95 | 97 | **96** (LCP 2.7 s) |
+| `/inventario` | 87 | 90 | **89** (LCP 3.7 s, 220 KB) |
+| `/pedidos` | 94 | 96 | **95** (LCP 2.9 s) |
+| `/compras` | 95 | 96 | **95** (LCP 2.9 s) |
+| `/produccion` | 95 | 97 | **96** (LCP 2.7 s) |
+| `/ingresar` | 94 | 97 | **96** (LCP 2.7 s, 191 KB) |
+
+El sitio público no cambió con esto (no lleva el marco de la app). Las demás
+pantallas con sesión de la tabla de arriba pierden lo mismo, uno o dos puntos.
+
 ## Lo que no llegó a 95 y por qué
 
-- `/inicio` (90) e `/inventario` (90): ver «Qué se encontró», punto 3. Su
+- `/inicio` (88) e `/inventario` (89): ver «Qué se encontró», punto 3. Su
   contenido espera las consultas (unos 300 ms más que el marco) y las
   precargas de enlaces que Next lanza en ese tiempo entran en el LCP simulado.
 - `/configuracion` (93): el contenido sí llega en el primer envío, pero la
@@ -92,9 +113,9 @@ Accesibilidad y Buenas prácticas 100.
 ## Verificadores
 
 - `npm run verify:pwa` (app compilada, `wms_test`): 62 comprobaciones, todo bien.
-- `npm run verify:ui` (`npm run dev`): 118 comprobaciones, todo bien. La que
-  revisa la empresa en «Más» ahora espera a que la hoja aparezca (se descarga
-  al abrirla; empieza a bajar en cuanto el dedo o el puntero toca el botón).
+- `npm run verify:ui` (`npm run dev`): todo bien, con dos comprobaciones
+  nuevas: con la pantalla cargada se bloquean sus archivos de JavaScript y
+  «Más» abre y se puede cerrar sesión.
 - `npm run verify:a11y` (app compilada): 834 comprobaciones bien y 2 fallas,
   las dos en `/compras/ordenes/nueva` («enviar vacío lleva el foco al
   error»). No vienen de este paso: con un solo proveedor la pantalla ya lo trae

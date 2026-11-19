@@ -1,34 +1,45 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 
-// The animated illustration (with motion) is downloaded only where it shows:
-// the account screens draw it on wide screens and hide it on the phone
-// (ADR 0080).
-const WarehouseScene = dynamic(
-  () => import("./warehouse-scene").then((module) => module.WarehouseScene),
-  { ssr: false },
-);
+type Scene = ComponentType<{ className?: string; settled?: boolean }>;
 
 const WIDE = "(min-width: 64rem)";
 
-function subscribe(listener: () => void) {
-  const query = window.matchMedia(WIDE);
-  query.addEventListener("change", listener);
-  return () => query.removeEventListener("change", listener);
-}
+/**
+ * The illustration of the account screens (ADR 0080). The server draws it
+ * still (`children`), so it shows without JavaScript and keeps its place;
+ * on wide screens, where it is visible, the animated one (with motion)
+ * takes over once downloaded. If the download fails, the still one stays:
+ * it is decoration and never takes the screen down.
+ */
+export function AccountScene({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [Animated, setAnimated] = useState<Scene | null>(null);
 
-/** The scene of the account screens; its box keeps the space meanwhile. */
-export function AccountScene({ className }: { className?: string }) {
-  const wide = useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(WIDE).matches,
-    () => false,
-  );
+  useEffect(() => {
+    if (!window.matchMedia(WIDE).matches) return;
+    let alive = true;
+    import("./warehouse-scene")
+      .then((module) => {
+        if (alive) setAnimated(() => module.WarehouseScene);
+      })
+      .catch(() => {
+        // Without the animated scene the still one stays.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <div aria-hidden="true" className={className}>
-      {wide && <WarehouseScene className="h-full w-full" />}
+      {Animated ? <Animated className="h-full w-full" settled /> : children}
     </div>
   );
 }

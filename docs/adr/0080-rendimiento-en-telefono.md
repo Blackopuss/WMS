@@ -56,24 +56,33 @@ Los números de antes y después quedan en `docs/ux/RENDIMIENTO_TELEFONO.md`.
    su nonce) y `PwaSetup` (registro del service worker, ahora en su propio
    archivo `pwa-setup.tsx`, aparte de los paneles de la PWA). Los avisos de
    Sonner (`Toasts`, `src/components/providers.tsx`) los montan los layouts de
-   la app, de las cuentas y `/sistema-visual`, y el `Toaster` se descarga
-   después de que la página queda lista (`next/dynamic` sin SSR): un aviso
-   siempre sigue a algo que la persona hizo.
+   la app, de las cuentas y `/sistema-visual`, fuera del `<main>`.
 2. **`motion` solo donde hay animación de verdad.** La barra lateral
    (indicador de la sección activa), el interruptor de tema, la tarjeta de las
    pantallas de cuenta (techo y persiana) y la entrada del texto de las
    cuentas pasan a CSS (`motion-reduce` y la regla global de «reducir
    movimiento» siguen valiendo). `MotionConfig reducedMotion="user"` ya no es
    global: lo lleva cada componente que sigue usando `motion` (`FadeIn`,
-   `WarehouseScene`, la lista de sesiones activas). La ilustración animada de
-   las cuentas se descarga solo en pantallas anchas (`AccountScene`): en el
-   teléfono está oculta. El sitio dibuja la ilustración quieta con
+   `WarehouseScene`, la lista de sesiones activas). En las cuentas el servidor
+   dibuja la ilustración quieta y, solo en pantallas anchas (donde se ve), la
+   animada la reemplaza al descargarse (`AccountScene`); si la descarga falla,
+   se queda la quieta. El sitio dibuja la ilustración quieta con
    `WarehouseSceneStill` (`warehouse-scene-art.tsx`, sin `motion`).
-3. **Lo que se usa poco se carga al usarse.** La hoja de avisos de la campana,
-   el menú «Más» y el diálogo para cambiar de empresa o almacén se descargan la
-   primera vez que se abren; el botón, la cuenta de avisos y su región
-   anunciada se pintan desde el principio, sin consultas nuevas. Como ya no
-   hay disparador de Radix, cada uno devuelve el foco a su botón al cerrarse.
+3. **Nada del marco se descarga al usarse.** Se probó descargar la hoja de
+   avisos, el menú «Más», el diálogo de cambiar empresa o almacén y el
+   `Toaster` al abrirlos (`next/dynamic`). El revisor encontró que una falla
+   de esa descarga (red intermitente del almacén) subía hasta
+   `global-error.tsx` y tumbaba la app, y que «Más» con «Cerrar sesión» debe
+   abrir sin red una vez cargada la pantalla. Se regresaron al paquete
+   principal: cuesta 13 KB comprimidos (Radix `Dialog` y Sonner) y 1 a 2
+   puntos en teléfono (`/inicio` 90 → 88, `/tareas` 97 → 96, `/inventario`
+   90 → 89, `/pedidos` y `/compras` 96 → 95, `/ingresar` 97 → 96).
+   Precargarlas en reposo no evitaba el costo en `/inicio` (el evento `load`
+   llega antes que su contenido transmitido) y dejaba el camino de falla.
+   `verify-ui` bloquea los archivos de JavaScript con la pantalla cargada y
+   comprueba que «Más» abre y que se puede cerrar sesión. Regla: lo que el
+   marco necesita para moverse y salir no se descarga a pedido; lo que sí se
+   descargue a pedido atrapa su falla y deja la pantalla como estaba.
 4. **Barra inferior:** la lista reparte el ancho entre los botones que haya
    (`flex-1`), así tres secciones y «Más» ocupan toda la barra.
 
@@ -99,3 +108,8 @@ agregan dependencias.
   `AppShell` ni en el sitio.
 - Si un paso necesita volver a meter algo en el JavaScript compartido de la
   app, lo mide primero con Lighthouse en teléfono.
+- **`/inicio` e `/inventario` quedan en 88 a 90 en teléfono, bajo la meta de
+  95.** Lo que falta no es de interfaz: es del servidor (sus consultas hacen
+  que el contenido llegue unos 300 ms después del marco) y de la precarga de
+  enlaces de Next, que en ese tiempo pide 10 rutas que Lighthouse cuenta en el
+  LCP. Queda como pendiente de un paso propio.

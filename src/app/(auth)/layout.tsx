@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AccountScene } from "@/components/account-scene";
 import { Toasts } from "@/components/providers";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { WarehouseSceneStill } from "@/components/warehouse-scene-art";
 
 const BENEFITS = [
   { icon: PackageCheck, text: "Cuánto tienes de cada producto, al momento" },
@@ -41,7 +42,9 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
               ))}
             </ul>
           </div>
-          <AccountScene className="aspect-[48/34] w-full max-w-xl" />
+          <AccountScene className="aspect-[48/34] w-full max-w-xl">
+            <WarehouseSceneStill className="h-full w-full" />
+          </AccountScene>
         </div>
       </aside>
 

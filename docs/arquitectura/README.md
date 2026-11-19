@@ -139,15 +139,16 @@ llega a todas las páginas, también al sitio público: solo monta
 su archivo (`@/components/states`, `@/components/form-field`…): no hay índice
 `@/components`, porque un componente de servidor que lo importaba metía en su
 página todos los componentes de cliente que exportaba. Los avisos de Sonner
-(`Toasts`, `src/components/providers.tsx`, que descarga el `Toaster` después
-de cargar la página) los montan los layouts de la app, de las cuentas y de
-`/sistema-visual`. `motion` no tiene proveedor global: cada componente que lo
+(`Toasts`, `src/components/providers.tsx`) los montan los layouts de la app,
+de las cuentas y de `/sistema-visual`, fuera del `<main>`. `motion` no tiene proveedor global: cada componente que lo
 usa (`FadeIn`, `WarehouseScene`, sesiones activas) lleva su
 `MotionConfig reducedMotion="user"`; la barra lateral, el interruptor de tema y
-la tarjeta de las cuentas animan con CSS, la ilustración animada de las
-cuentas se descarga solo en pantallas anchas (`AccountScene`) y el sitio dibuja
-la quieta con `WarehouseSceneStill`, sin `motion`. La hoja de avisos, el menú
-«Más» y el diálogo de cambiar empresa o almacén se descargan al abrirse.
+la tarjeta de las cuentas animan con CSS; el servidor dibuja la ilustración
+quieta (`WarehouseSceneStill`, sin `motion`) en el sitio y en las cuentas, donde
+`AccountScene` la cambia por la animada solo en pantallas anchas. Nada de lo
+que el marco necesita para moverse y salir («Más», «Cerrar sesión», cambiar de
+empresa o almacén, avisos) se descarga a pedido: una falla de red no lo deja
+sin abrir.
 
 ## Multiempresa
 
