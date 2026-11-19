@@ -71,7 +71,7 @@ export function ReportForm({
     if (state.answers === 0) return;
     const first = FIELDS.find((field) => errors[field]);
     if (first === "kind") {
-      root.current?.querySelector<HTMLElement>('input[name="kind"]')?.focus();
+      root.current?.querySelector<HTMLElement>("#kind-group")?.focus();
     } else if (first === "photos") {
       root.current?.querySelector<HTMLElement>("#photos-group button")?.focus();
     } else if (first) {
@@ -111,7 +111,13 @@ export function ReportForm({
         </p>
       )}
       <fieldset
-        className="space-y-2"
+        className="space-y-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        // The group, not each radio, is what is invalid (aria-invalid is not
+        // supported by the radio role); the focus goes to it after a refusal.
+        role="radiogroup"
+        id="kind-group"
+        tabIndex={-1}
+        aria-invalid={errors.kind ? true : undefined}
         aria-describedby={errors.kind ? "kind-error" : undefined}
       >
         <legend className="mb-2 text-sm font-medium">¿Qué pasó?</legend>
@@ -126,8 +132,6 @@ export function ReportForm({
                 name="kind"
                 value={kind.value}
                 defaultChecked={state.values.kind === kind.value}
-                aria-invalid={errors.kind ? true : undefined}
-                aria-describedby={errors.kind ? "kind-error" : undefined}
                 className="size-4 accent-primary"
               />
               <span>{kind.label}</span>

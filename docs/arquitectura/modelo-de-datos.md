@@ -1659,7 +1659,7 @@ Documento: [modulos/contacts.md](modulos/contacts.md).
 
 ### Contact · `contact`
 
-A person or business the company deals with (CMP-01): a supplier it buys from, a customer it sells to, or both. Contacts belong to the core, not to a module: Compras, Ventas and CRM share the same row instead of each keeping its own copy of the same business. What a contact is for a module is a facet (`isSupplier`, `isCustomer`), and a contact always has at least one.
+A person or business the company deals with (CMP-01): a supplier it buys from, a customer it ships to, or both. Contacts belong to the core, not to a module: every module that needs them shares the same row instead of each keeping its own copy of the same business. What a contact is for a module is a facet (`isSupplier`, `isCustomer`), and a contact always has at least one.
 
 De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
