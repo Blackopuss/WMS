@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { getLot, listMovements, traceLot } from "@/modules/inventory";
+import { traceProduction } from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
 
 import { OriginsAndOrders } from "../../rastrear/origins-and-orders";
@@ -77,6 +78,12 @@ export default async function LotePage({
   const trace = access.can("inventory.movement.read")
     ? await traceLot(actor, lot.id)
     : null;
+  // WMS-29: the reports that made it or used it, for who reads orders.
+  const production =
+    access.moduleState("production") !== "none" &&
+    access.can("production.order.read")
+      ? await traceProduction(actor, { lotId: lot.id })
+      : null;
   const pageHref = (page: number) =>
     page > 1
       ? `/inventario/lotes/${lot.id}?pagina=${page}`
@@ -100,6 +107,52 @@ export default async function LotePage({
       <p className="-mt-2">
         <PrintLabelLink href={`/api/etiquetas/lote?id=${lot.id}`} />
       </p>
+
+      {production &&
+        (production.madeIn.length > 0 || production.usedIn.length > 0) && (
+          <section
+            aria-labelledby="lote-produccion"
+            className="space-y-2 rounded-xl border bg-card p-4 text-sm sm:p-5"
+          >
+            <h2 id="lote-produccion" className="font-medium">
+              Producción
+            </h2>
+            {production.madeIn.length > 0 && (
+              <p>
+                Se produjo en{" "}
+                {production.madeIn.map((entry, index) => (
+                  <span key={entry.reportId}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      href={`/produccion/reportes/${entry.reportId}`}
+                      className="inline-flex min-h-11 items-center rounded font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
+                    >
+                      {entry.label}
+                    </Link>
+                    {entry.reversed ? " (revertido)" : ""}
+                  </span>
+                ))}
+              </p>
+            )}
+            {production.usedIn.length > 0 && (
+              <p>
+                Se usó en{" "}
+                {production.usedIn.map((entry, index) => (
+                  <span key={entry.reportId}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      href={`/produccion/reportes/${entry.reportId}`}
+                      className="inline-flex min-h-11 items-center rounded font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
+                    >
+                      {entry.label}
+                    </Link>
+                    {entry.reversed ? " (revertido)" : ""}
+                  </span>
+                ))}
+              </p>
+            )}
+          </section>
+        )}
 
       <section
         aria-labelledby="lote-existencias"

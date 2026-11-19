@@ -109,6 +109,11 @@ const NOT_SERVICES = new Set([
   "formatReportNumber",
   "lotPeriod",
   "reachesProductionReport",
+  "productionNumberOf",
+  // Trace of production: answers nothing (null) without the permission;
+  // the screens of the trace ask it besides Inventario's.
+  "findProductionOrderByNumber",
+  "traceProduction",
 ]);
 
 const services = Object.entries(production).filter(

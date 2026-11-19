@@ -1,9 +1,23 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { dec, newId } from "@/lib";
-import { approvalTypes } from "@/modules/registry";
+import { changeStockStatus } from "@/modules/inventory";
+import { approvalTypes, processDocuments } from "@/modules/registry";
+import { createFacility, switchFacility, archiveFacility } from "@/platform/locations";
+import {
+  completeStage,
+  publishProcess,
+  saveProcessDraft,
+} from "@/platform/processes";
+import { evidenceOwners } from "@/modules/registry";
+import { createFileLink } from "@/platform/files";
 import { decideApproval, updateApprovalRule } from "@/platform/approvals";
 import {
+  PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_ORDER_PROCESS,
+  PRODUCTION_ORDER_REPORTED_OPERATION,
+  traceProduction,
+  uploadReportPhoto,
   getOrderProgress,
   reportMaterialScrap,
   saveLotNumbering,
@@ -21,6 +35,7 @@ import {
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { db } from "@/server";
 
+import { TEST_JPEG } from "../setup/images";
 import {
   balanced,
   enter,
@@ -604,5 +619,201 @@ describe("scrap of material", () => {
       "97",
     );
     await balanced(owner.organizationId);
+  });
+});
+
+describe("limits of a report", () => {
+  it("is not reversed once what it made moved or changed state", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "5");
+    const done = await report(owner, id, "2");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    // Without Calidad, «Cambiar estado» decides what was made (ADR 0068).
+    expect(
+      await changeStockStatus(owner, {
+        productId: crate,
+        locationId: area,
+        from: "INSPECTION",
+        to: "AVAILABLE",
+        quantity: "1",
+        reason: "Revisado",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await reverseProductionReport(owner, done.reportId, "Ya no"),
+    ).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("ya no se revierte"),
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("with materials brought to the line, takes only what is in the area", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await setting(owner, "production.materials.mode", "issue");
+    const id = await released(owner, crate, area, "2");
+    // The «Surtir a producción» tasks are not delivered: nothing is there.
+    expect(await report(owner, id, "1")).toMatchObject({
+      ok: false,
+      reason: "short",
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("an order whose plan expired is only read", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "2");
+    await db.entitlement.updateMany({
+      where: { organizationId: owner.organizationId },
+      data: {
+        validFrom: new Date(Date.now() - 2 * 86_400_000),
+        validUntil: new Date(Date.now() - 86_400_000),
+      },
+    });
+    invalidateEntitlements(owner.organizationId);
+    await expect(report(owner, id, "1")).rejects.toMatchObject({
+      code: "module_read_only",
+    });
+    expect(await getOrderProgress(owner, id)).not.toBeNull();
+  });
+
+  it("keeps a photo of what was made, seen by who reaches the order", async () => {
+    const { owner, area, crate } = await workshop();
+    const id = await released(owner, crate, area, "2");
+    const photo = await uploadReportPhoto(owner, {
+      name: "foto.jpg",
+      bytes: TEST_JPEG,
+    });
+    if (!photo.ok) throw new Error(photo.error);
+    const done = await report(owner, id, "1", { photoIds: [photo.fileId] });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.photos.length).toBe(1);
+    expect(
+      await createFileLink(owner, photo.fileId, { owners: evidenceOwners }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("traces the lot made and the lot used", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const sheet = await product(owner, "Hoja", { tracking: "LOT" });
+    const part = await product(owner, "Parte", { tracking: "LOT" });
+    await enter(owner, sheet, shelf, "10", { lotCode: "H-01" });
+    await recipe(owner, part, [[sheet, "1"]]);
+    const id = await released(owner, part, area, "2");
+    const done = await report(owner, id, "2");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const view = await getProductionReport(owner, done.reportId);
+    const used = await db.lot.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, code: "H-01" },
+    });
+    expect(
+      (await traceProduction(owner, { lotId: view!.outputs[0]!.lotId! }))
+        ?.madeIn,
+    ).toEqual([expect.objectContaining({ label: "OP-0001 · R-01" })]);
+    expect((await traceProduction(owner, { lotId: used.id }))?.usedIn).toEqual(
+      [expect.objectContaining({ reportId: done.reportId })],
+    );
+  });
+
+  it("the first report waits for the stages the company put before it, and starts the process of its lot", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const saved = await saveProcessDraft(
+      owner,
+      processDocuments,
+      PRODUCTION_ORDER_PROCESS.key,
+      {
+        stages: [
+          {
+            name: "Materiales listos",
+            kind: "MANUAL",
+            milestone: "RELEASED",
+            roles: ["production_supervisor"],
+          },
+          {
+            name: "Reportada",
+            kind: "OPERATION",
+            operationKey: PRODUCTION_ORDER_REPORTED_OPERATION,
+          },
+        ],
+      },
+    );
+    if (!saved.ok) throw new Error(saved.error);
+    expect(
+      await publishProcess(owner, processDocuments, PRODUCTION_ORDER_PROCESS.key),
+    ).toMatchObject({ ok: true });
+    const lotStages = await saveProcessDraft(
+      owner,
+      processDocuments,
+      PRODUCTION_BATCH_PROCESS.key,
+      {
+        stages: [
+          {
+            name: "Lijado",
+            kind: "MANUAL",
+            milestone: "REPORTED",
+            roles: ["production_operator"],
+          },
+        ],
+      },
+    );
+    if (!lotStages.ok) throw new Error(lotStages.error);
+    expect(
+      await publishProcess(owner, processDocuments, PRODUCTION_BATCH_PROCESS.key),
+    ).toMatchObject({ ok: true });
+    const id = await released(owner, crate, area, "2");
+    expect(await report(owner, id, "1")).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("Materiales listos"),
+    });
+    const progress = await db.processProgress.findFirstOrThrow({
+      where: { documentKey: PRODUCTION_ORDER_PROCESS.key, documentId: id },
+    });
+    const ready = await db.processStageState.findFirstOrThrow({
+      where: { progressId: progress.id, stage: { name: "Materiales listos" } },
+    });
+    expect(
+      await completeStage(owner, processDocuments, {
+        stateId: ready.id,
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({ ok: true });
+    const done = await report(owner, id, "1");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    expect(
+      await db.processProgress.count({
+        where: {
+          documentKey: PRODUCTION_BATCH_PROCESS.key,
+          documentId: done.reportId,
+        },
+      }),
+    ).toBe(1);
+    await balanced(owner.organizationId);
+  });
+
+  it("an archived warehouse receives nothing", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "2");
+    // The area archived under the order would be refused by the tree
+    // while the order is open, so archive it straight in the database
+    // (as a warehouse archived with stock that came before WMS-82).
+    await db.location.update({
+      where: { id: area },
+      data: { archivedAt: new Date() },
+    });
+    expect(await report(owner, id, "1")).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("archivada"),
+    });
+    void createFacility;
+    void switchFacility;
+    void archiveFacility;
   });
 });

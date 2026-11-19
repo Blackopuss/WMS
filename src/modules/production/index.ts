@@ -198,3 +198,10 @@ export {
   type LotNumberingResult,
   type LotNumberingView,
 } from "./lot-numbering";
+export {
+  findProductionOrderByNumber,
+  productionNumberOf,
+  traceProduction,
+  type ProductionTrace,
+  type ProductionTraceMatch,
+} from "./traceability";

@@ -32,7 +32,15 @@ import {
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
+import {
+  releaseProductionOrder,
+  reportMaterialScrap,
+  reportProduction,
+  reverseProductionReport,
+} from "@/modules/production";
 import { db } from "@/server";
+
+import * as production from "../setup/production";
 
 // WMS-76 (ADR 0074): operations that lock the same rows in a different way
 // (by the primary key, or through the unique index (organizationId, id))
@@ -628,4 +636,67 @@ describe("locks in one order (WMS-76)", () => {
     }
     expect(errors).toEqual([]);
   }, 180_000);
+
+  it("reporting production never deadlocks with exits, moves, releases, scrap, reversals and changes of the area (WMS-29)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop();
+    await production.setting(owner, "production.report.photo", "optional");
+    const other = await production.product(owner, "Otro");
+    const moved = await production.product(owner, "Movido");
+    await production.enter(owner, other, shelf, "500");
+    await production.enter(owner, moved, shelf, "500");
+    await production.enter(owner, board, shelf, "900");
+    await production.enter(owner, screw, shelf, "900");
+    const errors: string[] = [];
+    let previous: string | null = null;
+    for (let round = 0; round < 6; round++) {
+      const first = await production.order(owner, crate, area, "4");
+      const second = await production.order(owner, crate, area, "2");
+      const released = await releaseProductionOrder(owner, first);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const line = (await production.linesOf(first))[0]!;
+      const toReverse = previous;
+      const results = await Promise.allSettled([
+        reportProduction(owner, first, {
+          good: "2",
+          idempotencyKey: newId(),
+        }),
+        registerExit(owner, {
+          productId: other,
+          locationId: shelf,
+          quantity: "1",
+        }),
+        registerTransfer(owner, {
+          productId: moved,
+          locationId: shelf,
+          toLocationId: area,
+          quantity: "1",
+          acceptCapacity: true,
+        }),
+        editLocation(owner, area, { name: `Línea ${++counter}` }),
+        releaseProductionOrder(owner, second),
+        reportMaterialScrap(owner, first, {
+          orderLineId: line.id,
+          quantity: "1",
+          reason: "Se rompió",
+          idempotencyKey: newId(),
+        }),
+        toReverse
+          ? reverseProductionReport(owner, toReverse, "Prueba de candados")
+          : Promise.resolve(null),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(String((result.reason as Error)?.message ?? result.reason));
+        }
+      }
+      const reported = results[0];
+      previous =
+        reported.status === "fulfilled" && reported.value.ok
+          ? reported.value.reportId
+          : null;
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
 });
