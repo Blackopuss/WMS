@@ -162,6 +162,16 @@ const PUBLIC = [
   "/verifica-tu-correo",
   "/invitacion",
   "/no-existe-esta-pagina",
+  // WMS-88: the page to stop notices by mail, with an invented link and,
+  // when given (scripts/verify-unsubscribe-links.mts), a working and an
+  // expired one. Opening it changes nothing.
+  `/baja-de-avisos?t=00000000-0000-4000-8000-000000000000.${"A".repeat(43)}`,
+  ...[
+    process.env.VERIFY_UNSUBSCRIBE_VALID,
+    process.env.VERIFY_UNSUBSCRIBE_EXPIRED,
+  ]
+    .filter(Boolean)
+    .map((token) => `/baja-de-avisos?t=${encodeURIComponent(token)}`),
 ];
 
 /** Forms sent empty: the focus must land on a described, invalid field. */

@@ -2,7 +2,7 @@
 
 import { CircleAlert, CircleCheck, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -13,10 +13,16 @@ export function UnsubscribeForm({ token }: { token: string }) {
     UnsubscribeFormState,
     FormData
   >(unsubscribeAction, { status: "idle" });
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  // After the answer, the focus goes to what it says.
+  useEffect(() => {
+    if (state.status !== "idle") resultRef.current?.focus();
+  }, [state]);
 
   if (state.status === "done") {
     return (
-      <div role="status">
+      <div role="status" ref={resultRef} tabIndex={-1} className="outline-none">
         <span className="grid size-12 place-items-center rounded-full bg-success/10 text-success">
           <CircleCheck aria-hidden="true" className="size-6" />
         </span>
@@ -48,7 +54,9 @@ export function UnsubscribeForm({ token }: { token: string }) {
       {state.status === "error" ? (
         <div
           role="alert"
-          className="mt-6 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground"
+          ref={resultRef}
+          tabIndex={-1}
+          className="mt-6 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground outline-none"
         >
           <CircleAlert
             aria-hidden="true"
