@@ -363,6 +363,9 @@ describe("without the address of the app (review of WMS-88)", () => {
       },
     });
     expect(message.unsubscribeUrl).toBeUndefined();
+    // Nor a relative link in the text or the HTML.
+    expect(message.text).not.toContain("baja-de-avisos");
+    expect(message.html).not.toContain("baja-de-avisos");
     await sendEmail(message);
     expect(memoryOutboxFor(`sin.base.${stamp}@example.test`)).toHaveLength(1);
   });

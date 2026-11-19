@@ -349,11 +349,16 @@ export function noticeEmail(input: {
  * instead of failing (review of WMS-88).
  */
 function oneClickHeader(url: string | undefined): { unsubscribeUrl?: string } {
-  return url && /^https?:\/\/[^/\s]/.test(url) ? { unsubscribeUrl: url } : {};
+  return isWebAddress(url) ? { unsubscribeUrl: url } : {};
+}
+
+/** A full web address (a relative one means the app has no address). */
+function isWebAddress(url: string | undefined): url is string {
+  return Boolean(url && /^https?:\/\/[^/\s]/.test(url));
 }
 
 function unsubscribeLines(url: string | undefined): string[] {
-  return url
+  return isWebAddress(url)
     ? [`Para dejar de recibir todos los avisos por correo sin entrar: ${url}`]
     : [];
 }
@@ -369,7 +374,7 @@ function footerLines(
       url: settingsUrl,
       linkText: "Avisos que recibo",
     },
-    ...(unsubscribeUrl
+    ...(isWebAddress(unsubscribeUrl)
       ? [
           {
             text: "O deja de recibir todos los avisos por correo sin entrar:",

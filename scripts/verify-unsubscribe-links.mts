@@ -1,13 +1,25 @@
 // Links to stop notices by mail for the demo account (WMS-88), for
 // `verify:ui` and `verify:a11y`: one that works and one already expired.
-// Prints them as environment variables. Only touches the demo account.
+// Prints them as environment variables. Only touches the demo account and
+// never runs in production or against a public address.
 //
-// Usage:  npx tsx scripts/verify-unsubscribe-links.mts
+// The output is a working link of the demo account: write it to a
+// temporary file, load it into the shell that runs the verifiers and
+// remove it right after (never commit it nor leave it in shared logs):
+//   npx tsx scripts/verify-unsubscribe-links.mts > /tmp/links.env
+//   set -a && . /tmp/links.env && set +a && rm /tmp/links.env
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { pathToFileURL } from "node:url";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
+if (
+  process.env.NODE_ENV === "production" ||
+  process.env.BETTER_AUTH_URL?.startsWith("https://")
+) {
+  console.error("Solo para desarrollo local: no corre en producción.");
+  process.exit(1);
+}
 const serverOnly = pathToFileURL("scripts/server-only-stub.mjs").href;
 registerHooks({
   resolve(specifier, context, nextResolve) {

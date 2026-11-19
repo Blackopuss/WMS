@@ -534,14 +534,32 @@ export async function writeBellAlert(
   key: string,
 ): Promise<void> {
   try {
-    if (!(await takeBellSlot(userId))) return;
     const memberships = await db.membership.findMany({
       where: { userId, status: "ACTIVE" },
       orderBy: { createdAt: "asc" },
       take: BELL_COMPANIES_MAX,
       select: { organizationId: true },
     });
-    for (const { organizationId } of memberships) {
+    // Only where the person keeps it on (the default is on).
+    const off = new Set(
+      (
+        await db.notificationPreference.findMany({
+          where: {
+            userId,
+            typeKey: ACCESS_ALERT_NOTICE.key,
+            enabled: false,
+            organizationId: {
+              in: memberships.map((each) => each.organizationId),
+            },
+          },
+          select: { organizationId: true },
+        })
+      ).map((row) => row.organizationId),
+    );
+    const places = memberships.filter((each) => !off.has(each.organizationId));
+    // The slot of the day is taken only when a notice will be written.
+    if (places.length === 0 || !(await takeBellSlot(userId))) return;
+    for (const { organizationId } of places) {
       await forOrganization(organizationId).$transaction((tx) =>
         notify(tx, ACCESS_ALERT_NOTICE, {
           organizationId,

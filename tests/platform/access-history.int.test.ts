@@ -1067,4 +1067,29 @@ describe("review of WMS-88", () => {
     },
     SLOW,
   );
+
+  it(
+    "takes no slot of the bell when no notice will be written",
+    async () => {
+      const uriel = await newPerson("uriel");
+      const place = await newCompany(`Bell apagada ${stamp}`);
+      await join(place.org, uriel, ["operator"]);
+      await setNotificationPreference(
+        { organizationId: place.org, userId: uriel },
+        notificationTypes,
+        ACCESS_ALERT_NOTICE.key,
+        false,
+      );
+      const loner = await newPerson("sin empresa");
+      for (const who of [uriel, loner]) {
+        await writeBellAlert(who, "failed_attempts", null, `x:${newId()}`);
+        expect(
+          await db.securityEvent.count({
+            where: { userId: who, dedupeKey: { startsWith: "bell_slot:" } },
+          }),
+        ).toBe(0);
+      }
+    },
+    SLOW,
+  );
 });
