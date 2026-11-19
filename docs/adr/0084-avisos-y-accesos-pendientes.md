@@ -113,23 +113,26 @@ dicen «Se programó el correo de alerta» (es lo único que se sabe).
   contraseña equivocada sigue entero después de responder. No cambia el
   orden `reserveAttempt` → verificar → `settleFailure`/`refundAttempt` de
   ningún flujo.
+- **Sin la dirección guardada:** el renglón no la lleva y el log de un
+  fallo solo nombra el renglón (el error del servidor de correo puede
+  traerla).
 - **Aprender el dispositivo:** como antes, al programar el correo (riesgo
   aceptado en ADR 0064; con reintentos es menor).
 - Los renglones terminados se borran a los 90 días (ronda de §3).
 
 ## 3. Retención de `security_event`
 
-**Plazo: 365 días** para los eventos de acceso (los que lista el historial
-y las alertas) y las filas internas por día (`access.mail_slot`,
-`access.claim`). **Decisión conservadora que el fundador puede cambiar**
+**Plazo: 365 días** para los eventos de acceso (los que lista el historial,
+incluidos `password.reset` y las alertas) y las filas internas por día
+(`access.mail_slot`, `access.claim`). **Decisión conservadora que el fundador puede cambiar**
 (cambiarla es una migración nueva y la constante del código).
 
 **Qué nunca se borra por antigüedad:** `access.device_known` (si se
 borrara, un dispositivo conocido volvería a alertar o, peor, si se borraran
 todos, el siguiente se aprendería en silencio) y los demás eventos de la
-cuenta que no son accesos (activar o desactivar dos pasos, códigos de
-recuperación, cambio de contraseña): siguen como la bitácora (ADR 0006),
-sin purga.
+cuenta que no son accesos (activar o desactivar dos pasos, generar códigos
+de recuperación, cambiar la contraseña desde la cuenta): siguen como la
+bitácora (ADR 0006), sin purga.
 
 **Cómo se borra sin abrir un hueco.**
 
@@ -177,15 +180,15 @@ la base.
 **Baja sin entrar a la app.**
 
 - Cada correo de avisos y cada resumen lleva un enlace de baja propio:
-  `<app>/avisos/baja?t=<empresa>.<secreto>`. El secreto son 32 bytes al
+  `<app>/baja-de-avisos?t=<empresa>.<secreto>`. El secreto son 32 bytes al
   azar; en la base solo se guarda su `sha256` (`notice_unsubscribe`, de la
   empresa, con persona, vencimiento a 60 días y `usedAt`). El id de empresa
   en el enlace no es secreto: solo dice en qué empresa buscar.
-- La pantalla `/avisos/baja` es pública y **no cambia nada al abrirse**
+- La pantalla `/baja-de-avisos` es pública y **no cambia nada al abrirse**
   (los antivirus de correo abren los enlaces): muestra «¿Dejar de recibir
   avisos por correo?» y un botón. No dice el correo, la persona ni la
   empresa.
-- El botón (Server Action) y `POST /api/avisos/baja` (la baja de un clic
+- El botón (Server Action) y `POST /api/baja-de-avisos` (la baja de un clic
   de RFC 8058, cabeceras `List-Unsubscribe` y `List-Unsubscribe-Post`)
   llaman al mismo servicio `unsubscribeFromNoticeEmails`:
   1. `reserveAttempt` por IP (30 cada 15 minutos) **antes** de verificar;
@@ -198,7 +201,9 @@ la base.
   persona sigue en la empresa y no escribe nada fuera de sus preferencias.
 - Nunca se registra el enlace ni el secreto (logs, bitácora). No pasa por
   `/api/auth/*`, así que no entra a la lista de Better Auth; tiene su
-  propia prueba.
+  propia prueba. Un GET a `/api/baja-de-avisos` solo redirige a la página.
+- Los correos que esperaban de esa persona quedan `SKIPPED`; uno que el
+  worker ya tomó puede salir todavía.
 
 **Correo en HTML.** Los correos de avisos y el resumen salen con texto y
 HTML. El HTML se arma con una plantilla fija (`htmlEmail`) que **escapa todo
