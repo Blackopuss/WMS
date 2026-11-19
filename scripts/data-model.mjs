@@ -362,6 +362,7 @@ export const AREAS = [
       "PurchaseOrderDelivery",
       "PurchaseReceipt",
       "PurchaseReceiptLine",
+      "PurchaseReceiptRejection",
       "PurchaseReturn",
       "PurchaseReturnLine",
       "PurchaseRequest",

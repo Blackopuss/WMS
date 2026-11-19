@@ -16,7 +16,7 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | Paso | Sesión | Rama | Modelo | ADR | Estado |
 | --- | --- | --- | --- | --- | --- |
 | WMS-83 Desechar pide autorización (corazón; revisor independiente) | `session_01QMjUPTxqZT1kLarRWwnutb` | `wms-83-desechar-autorizacion` | Opus, medio | 0078 (migración `20261119100000`) | **Cerrado y unido el 2026-11-19.** |
-| WMS-84 Rechazo de recepción con su motivo (corazón; revisor independiente) | `session_01QMjUPUKG8rVjQPj7vMeEdv` | `wms-84-rechazo-recepcion` | Opus, medio | 0079 (`20261119170000`) | abierto el 2026-11-19, al unirse WMS-83 |
+| WMS-84 Rechazo de recepción con su motivo (corazón; revisor independiente) | `session_01QMjUPUKG8rVjQPj7vMeEdv` | `wms-84-rechazo-recepcion` | Opus, medio | 0079 (`20261119170000`) | **Cerrado y unido el 2026-11-19.** |
 | WMS-86 Rendimiento en teléfono de la app y del sitio (solo interfaz) | `session_01QMjUPVqXqM4RByBNbvToqk` | `wms-86-rendimiento-telefono` | Opus, medio | 0080 | abierto |
 | WMS-66 Búsqueda global (permisos y alcance; revisor) | `session_01QMjUPTXNNfJr8phb53Ukb4` | `wms-66-busqueda-global` | Opus, medio | 0081 (`20261119150000`) | Cerrado y unido el 2026-11-19 |
 | WMS-32 Indicadores de almacén (permisos, alcance y costos; revisor) | `session_01QMjUPWFSksAhndeQ1UGQxR` | `wms-32-indicadores-almacen` | Opus, medio | 0082 (`20261119160000`) | Cerrado y unido el 2026-11-19 |

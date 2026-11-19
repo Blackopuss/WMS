@@ -86,9 +86,13 @@ export {
   type ReturnResult,
 } from "./returns";
 export {
+  discardRejectionPhoto,
   findReceiptConfirmation,
   getOrderReceipts,
+  reachesPurchaseReceipt,
   receivePurchaseOrder,
+  rejectionPhotoMode,
+  uploadRejectionPhoto,
 } from "./receipts";
 export type {
   OrderReceipts,
@@ -98,6 +102,7 @@ export type {
   ReceiveInput,
   ReceiveLineField,
   ReceiveResult,
+  RejectionPhotoResult,
 } from "./receipts";
 export {
   ORDER_DELIVERY_JOB_TYPE,
@@ -164,7 +169,12 @@ export type {
   SupplierOption,
 } from "./supplier-comparison";
 export { PURCHASING_APPROVAL_TYPES } from "./approvals";
-export { COMPARE_MIN_FULFILLMENT, PURCHASING_SETTINGS } from "./settings";
+export {
+  COMPARE_MIN_FULFILLMENT,
+  PURCHASING_SETTINGS,
+  RECEIPT_REJECTION_PHOTO,
+  type RejectionPhotoMode,
+} from "./settings";
 export { PURCHASING_NOTIFICATION_TYPES } from "./notices";
 export { PURCHASING_WEBHOOK_EVENTS } from "./webhooks";
 

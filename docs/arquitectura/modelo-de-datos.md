@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-144 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+145 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -35,7 +35,7 @@
 | Inventario › Incidencias | 2 | [inventory](modulos/inventory.md) |
 | Inventario › Equipos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
-| Compras | 10 | [purchasing](modulos/purchasing.md) |
+| Compras | 11 | [purchasing](modulos/purchasing.md) |
 | Calidad | 6 | [quality](modulos/quality.md) |
 | Producción | 10 | [production](modulos/production.md) |
 
@@ -1393,13 +1393,14 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `incidentNoteId` | `String? · Char(36)` |  | The follow-up note it came with, if any (of the same incident). |
 | `processStepId` | `String? · Char(36)` |  | A step of a process (WMS-74, ADR 0069). |
 | `warehouseTaskId` | `String? · Char(36)` |  | A warehouse task, photographed where it was left (WMS-37B, ADR 0076). |
+| `purchaseReceiptId` | `String? · Char(36)` |  | A receipt, for what was rejected at the door (WMS-84, ADR 0079). |
 | `position` | `Int` |  | Order inside its owner (0, 1, 2…). |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
-- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`).
-- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`); (`organizationId`, `purchaseReceiptId`, `position`).
+- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict); `purchaseReceipt` → `PurchaseReceipt` por (`organizationId`, `purchaseReceiptId`) (al borrar: Restrict).
 
 ### StorageCleanup · `storage_cleanup`
 
@@ -3149,7 +3150,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `id` | `String · Char(36)` |  | llave primaria |
 | `organizationId` | `String · Char(36)` |  |  |
 | `orderId` | `String · Char(36)` |  |  |
-| `movementId` | `String · Char(36)` |  | The entry of stock it made; one movement per receipt. |
+| `movementId` | `String? · Char(36)` |  | The entry of stock it made; one movement per receipt. Empty when everything that arrived was rejected at the door (WMS-84, ADR 0079). |
 | `reference` | `String? · VarChar(120)` |  | Delivery note or invoice of the supplier it came with. |
 | `idempotencyKey` | `String · VarChar(64)` |  | Sent with the confirmation so that repeating it receives once. |
 | `receivedByUserId` | `String · Char(36)` |  |  |
@@ -3189,9 +3190,31 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `orderLineId`); (`organizationId`, `productId`, `createdAt`).
 - Relaciones: `receipt` → `PurchaseReceipt` por (`organizationId`, `receiptId`) (al borrar: Restrict); `orderLine` → `PurchaseOrderLine` por (`organizationId`, `orderLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `presentation` → `ProductPresentation` por (`organizationId`, `productId`, `presentationId`) (al borrar: Restrict); `presentationVersion` → `PresentationVersion` por (`organizationId`, `presentationId`, `presentationVersionId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict).
 
-### PurchaseReturn · `purchase_return`
+### PurchaseReceiptRejection · `purchase_receipt_rejection`
 
-Goods of a receipt sent back to the supplier (CMP-12). Written in the same transaction as its stock movement (`RETURN`, an exit) and the balances. Never changed nor deleted (triggers). What is returned of a receipt line never adds up to more than what it received.
+Goods of a receipt sent back to the supplier (CMP-12). Written in the same transaction as its stock movement (`RETURN`, an exit) and the balances. Never changed nor deleted (triggers). What is returned of a receipt line never adds up to more than what it received. What was rejected at the door when receiving (WMS-84, ADR 0079): it did not match what was ordered, so it never entered the stock. It does not count as received (it stays pending) and is not a return: no movement, value, lot or serial is written. The lot and serials it carried are kept as written evidence. Immutable (triggers); the reason is required.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `receiptId` | `String · Char(36)` |  |  |
+| `lineNumber` | `Int` |  |  |
+| `orderLineId` | `String · Char(36)` |  | The line of the order it rejects (same order and product: trigger). |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | In the terms of the order line (2 boxes). |
+| `reason` | `String · VarChar(500)` |  | Why it goes back: required. |
+| `lotCode` | `String? · VarChar(80)` |  | The lot it carried, normalized; evidence only (no `lot` is created). |
+| `serials` | `String? · Text` |  | The serials it carried, one per line; evidence only. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `receiptId`, `lineNumber`).
+- Índices: (`organizationId`, `orderLineId`); (`organizationId`, `productId`, `createdAt`); (`organizationId`, `createdAt`).
+- Relaciones: `receipt` → `PurchaseReceipt` por (`organizationId`, `receiptId`) (al borrar: Restrict); `orderLine` → `PurchaseOrderLine` por (`organizationId`, `orderLineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
+### PurchaseReturn · `purchase_return`
 
 De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 

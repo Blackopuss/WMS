@@ -16,6 +16,14 @@ import {
   type CrossDockSent,
 } from "@/modules/inventory";
 import { emitWebhookEvent } from "@/platform/api";
+import {
+  attachEvidencePhotos,
+  deleteFile,
+  evidencePhotoLinksOf,
+  storeFile,
+  type EvidencePhotoLink,
+} from "@/platform/files";
+import { readSetting } from "@/platform/settings";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import {
@@ -47,7 +55,8 @@ import {
   transitionProblem,
   type PurchaseOrderStatus,
 } from "./order-states";
-import { RECEIPT_CONFIRMED_EVENT } from "./webhooks";
+import { RECEIPT_CONFIRMED_EVENT, RECEIPT_REJECTED_EVENT } from "./webhooks";
+import { RECEIPT_REJECTION_PHOTO, type RejectionPhotoMode } from "./settings";
 import { returnStatesFor } from "./return-states";
 import { recordLastCost, type PurchasingActor } from "./product-suppliers";
 
@@ -133,6 +142,25 @@ const receiveSchema = z.object({
     .max(PURCHASE_ORDER_MAX_LINES * RECEIPT_LOTS_PER_LINE)
     .optional(),
   /**
+   * WMS-84 (ADR 0079): what is rejected at the door. It never enters the
+   * stock and stays pending; each one says why (required). The lot and
+   * serials it carried are kept as written evidence.
+   */
+  rejections: z
+    .array(
+      z.object({
+        orderLineId: z.string().trim().max(36),
+        quantity: z.string().trim().max(40),
+        reason: z.string().max(2000),
+        lotCode: z.string().trim().max(200).optional(),
+        serials: z.string().max(60_000).optional(),
+      }),
+    )
+    .max(PURCHASE_ORDER_MAX_LINES * RECEIPT_LOTS_PER_LINE)
+    .optional(),
+  /** Photos of what was rejected (uploaded before, not yet linked). */
+  photoIds: z.array(z.string().max(36)).max(10).optional(),
+  /**
    * The person saw that what arrives goes over the capacity of a location
    * and receives it anyway (WMS-22B); only counts where the company warns.
    */
@@ -150,7 +178,7 @@ const receiveSchema = z.object({
 });
 
 export type ReceiveInput = z.input<typeof receiveSchema>;
-export type ReceiveField = "locationId" | "reference";
+export type ReceiveField = "locationId" | "reference" | "photos";
 
 export type ReceiveResult =
   | {
@@ -190,7 +218,16 @@ export type ReceiveResult =
 
 /** The field of a line with the problem (WMS-21, WMS-21B, WMS-54). */
 export type ReceiveLineField =
-  "lotCode" | "lotExpiresOn" | "serials" | "damaged" | "damagedSerials";
+  | "lotCode"
+  | "lotExpiresOn"
+  | "serials"
+  | "damaged"
+  | "damagedSerials"
+  // WMS-84: the fields of what is rejected at the door.
+  | "rejected"
+  | "rejectedReason"
+  | "rejectedLotCode"
+  | "rejectedSerials";
 
 type Failure = Extract<ReceiveResult, { ok: false }>;
 
@@ -250,6 +287,143 @@ export async function receivedByLine(
       dec(row._sum.capturedQuantity?.toString() ?? 0),
     ]),
   );
+}
+
+/**
+ * What was rejected at the door of each line of an order (WMS-84), in the
+ * terms it was ordered in, and in how many receipts. It does not count as
+ * received and has no cap of its own: a line of 10 rejected three times
+ * shows 30 rejected in 3 deliveries and still 10 pending.
+ */
+export async function rejectedByLine(
+  client: Pick<Tx, "purchaseReceiptRejection">,
+  orderLineIds: string[],
+): Promise<Map<string, { quantity: Decimal; receipts: number }>> {
+  if (orderLineIds.length === 0) return new Map();
+  const rows = await client.purchaseReceiptRejection.groupBy({
+    by: ["orderLineId", "receiptId"],
+    where: { orderLineId: { in: orderLineIds } },
+    _sum: { quantity: true },
+  });
+  const result = new Map<string, { quantity: Decimal; receipts: number }>();
+  for (const row of rows) {
+    const now = result.get(row.orderLineId) ?? {
+      quantity: dec(0),
+      receipts: 0,
+    };
+    result.set(row.orderLineId, {
+      quantity: now.quantity.plus(row._sum.quantity?.toString() ?? 0),
+      receipts: now.receipts + 1,
+    });
+  }
+  return result;
+}
+
+/** «3 piezas», or «30 piezas en 3 entregas» (WMS-84). */
+export function rejectedText(
+  rejected: { quantity: Decimal; receipts: number } | undefined,
+  presentation: { name: string } | null,
+  unitCode: string,
+): string | null {
+  if (!rejected) return null;
+  const amount = inTermsOf(rejected.quantity, presentation, unitCode);
+  return rejected.receipts > 1
+    ? `${amount} en ${rejected.receipts} entregas`
+    : amount;
+}
+
+/**
+ * Whether the person reaches a receipt: its order exists for them
+ * (WMS-57 scope). Who decides if its photos exist (`evidenceOwners`, ADR
+ * 0063; WMS-84).
+ */
+export async function reachesPurchaseReceipt(
+  actor: PurchasingActor,
+  receiptId: string,
+): Promise<boolean> {
+  const client = forOrganization(actor.organizationId);
+  const receipt = await client.purchaseReceipt.findFirst({
+    where: { id: String(receiptId ?? "").slice(0, 36) },
+    select: { order: { select: { facilityId: true } } },
+  });
+  return receipt
+    ? orderInScope(client, actor.userId, receipt.order.facilityId)
+    : false;
+}
+
+export type RejectionPhotoResult =
+  { ok: true; fileId: string } | { ok: false; error: string };
+
+/**
+ * Keeps a photo of what is being rejected at the door (WMS-84). Checked by
+ * its content and stored without metadata; unlinked (seen only by who took
+ * it) until the receipt is confirmed, and gone after a day if it never is.
+ */
+export async function uploadRejectionPhoto(
+  actor: PurchasingActor,
+  input: { name: string; bytes: Uint8Array },
+): Promise<RejectionPhotoResult> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "purchasing.receipt.create",
+  );
+  if (
+    (await readSetting(
+      forOrganization(actor.organizationId),
+      RECEIPT_REJECTION_PHOTO,
+    )) === "off"
+  ) {
+    return {
+      ok: false,
+      error: "Tu empresa no usa fotos de lo rechazado al recibir.",
+    };
+  }
+  const stored = await storeFile(actor, {
+    purpose: "receipt_rejection_photo",
+    name: input.name,
+    bytes: input.bytes,
+  });
+  return stored.ok
+    ? { ok: true, fileId: stored.fileId }
+    : { ok: false, error: stored.error };
+}
+
+/** Removes a photo of a rejection the person took and did not save. */
+export async function discardRejectionPhoto(
+  actor: PurchasingActor,
+  fileId: string,
+): Promise<{ ok: boolean }> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "purchasing.receipt.create",
+  );
+  const file = await forOrganization(actor.organizationId).storedFile.findFirst(
+    {
+      where: {
+        id: String(fileId ?? "").slice(0, 36),
+        purpose: "receipt_rejection_photo",
+      },
+      select: { id: true },
+    },
+  );
+  return file ? deleteFile(actor, file.id) : { ok: false };
+}
+
+/** Whether this company takes photos of what is rejected (for the form). */
+export async function rejectionPhotoMode(
+  actor: PurchasingActor,
+): Promise<RejectionPhotoMode> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "purchasing.receipt.read",
+  );
+  return (await readSetting(
+    forOrganization(actor.organizationId),
+    RECEIPT_REJECTION_PHOTO,
+  )) as RejectionPhotoMode;
 }
 
 /**
@@ -361,13 +535,17 @@ async function receiveOnce(
               lot: { select: { code: true } },
             },
           },
+          rejections: {
+            select: { orderLineId: true, quantity: true, lotCode: true },
+          },
         },
       });
       if (replay) {
         if (
           replay.orderId !== order.id ||
           replay.receivedByUserId !== userId ||
-          !sameReceipt(replay.lines, data)
+          !sameReceipt(replay.lines, data) ||
+          !sameRejections(replay.rejections, data)
         ) {
           return refuse("not_allowed", null, KEY_REUSED);
         }
@@ -436,8 +614,16 @@ async function receiveOnce(
           "Ya se recibió todo lo que pide esta orden.",
         );
       }
+      const rejecting = (data.rejections ?? []).length > 0;
+      if (rejecting && !data.lines) {
+        return refuse(
+          "invalid",
+          null,
+          "Di qué llegó de cada producto además de lo que rechazas.",
+        );
+      }
       const pending = data.lines
-        ? chosenLines(current.lines, left, data.lines)
+        ? chosenLines(current.lines, left, data.lines, rejecting)
         : current.lines
             .map((line) => ({
               line,
@@ -450,48 +636,95 @@ async function receiveOnce(
             }))
             .filter((entry) => entry.quantity.greaterThan(0));
 
-      const numberText = formatOrderNumber(current.number);
-      const entry = await postReceiptEntry(
-        tx,
-        { organizationId, userId },
-        {
-          locationId: data.locationId,
-          lines: pending.map(({ line, quantity, locationId, ...lot }) => ({
-            productId: line.productId,
-            locationId,
-            lotCode: lot.lotCode,
-            lotExpiresOn: lot.lotExpiresOn,
-            serials: lot.serials,
-            // WMS-54: the damaged part enters in «Dañado».
-            status: lot.status,
-            capture: (line.presentationId
-              ? {
-                  kind: "presentation",
-                  quantity: quantity.toString(),
-                  presentationId: line.presentationId,
-                }
-              : { kind: "base", quantity: quantity.toString() }) as Capture,
-            // VAL-02: values the inventory whoever receives.
-            unitCost: line.unitCost,
-          })),
-          reference: data.reference
-            ? `${numberText} · ${data.reference}`
-            : numberText,
-          reason:
-            `Recepción de la orden ${numberText} de ${current.contact.name}`.slice(
-              0,
-              500,
-            ),
-          acceptCapacity: data.acceptCapacity === true,
-          container: data.container
-            ? {
-                code: data.container.code ?? null,
-                kind: data.container.kind ?? null,
-              }
-            : null,
-        },
+      // WMS-84 (ADR 0079): what is rejected at the door, checked against
+      // what is pending together with what is received now.
+      const rejections = chosenRejections(
+        current.lines,
+        left,
+        pending,
+        data.rejections ?? [],
       );
-      if (!entry.ok) {
+      if (pending.length === 0 && rejections.length === 0) {
+        return refuse(
+          "invalid",
+          null,
+          "Escribe cuánto llegó o cuánto rechazas de al menos un producto.",
+        );
+      }
+      const photoIds = [...new Set(data.photoIds ?? [])];
+      const photoMode = (await readSetting(
+        tx,
+        RECEIPT_REJECTION_PHOTO,
+      )) as RejectionPhotoMode;
+      if (photoIds.length > 0 && rejections.length === 0) {
+        return refuse(
+          "invalid",
+          "photos",
+          "Las fotos son de lo que se rechaza: quítalas o rechaza algo.",
+        );
+      }
+      if (
+        photoMode === "required" &&
+        rejections.length > 0 &&
+        photoIds.length === 0
+      ) {
+        return refuse(
+          "invalid",
+          "photos",
+          "Toma al menos una foto de lo que rechazas.",
+        );
+      }
+
+      const numberText = formatOrderNumber(current.number);
+      const entry =
+        pending.length === 0
+          ? null
+          : await postReceiptEntry(
+              tx,
+              { organizationId, userId },
+              {
+                locationId: data.locationId,
+                lines: pending.map(
+                  ({ line, quantity, locationId, ...lot }) => ({
+                    productId: line.productId,
+                    locationId,
+                    lotCode: lot.lotCode,
+                    lotExpiresOn: lot.lotExpiresOn,
+                    serials: lot.serials,
+                    // WMS-54: the damaged part enters in «Dañado».
+                    status: lot.status,
+                    capture: (line.presentationId
+                      ? {
+                          kind: "presentation",
+                          quantity: quantity.toString(),
+                          presentationId: line.presentationId,
+                        }
+                      : {
+                          kind: "base",
+                          quantity: quantity.toString(),
+                        }) as Capture,
+                    // VAL-02: values the inventory whoever receives.
+                    unitCost: line.unitCost,
+                  }),
+                ),
+                reference: data.reference
+                  ? `${numberText} · ${data.reference}`
+                  : numberText,
+                reason:
+                  `Recepción de la orden ${numberText} de ${current.contact.name}`.slice(
+                    0,
+                    500,
+                  ),
+                acceptCapacity: data.acceptCapacity === true,
+                container: data.container
+                  ? {
+                      code: data.container.code ?? null,
+                      kind: data.container.kind ?? null,
+                    }
+                  : null,
+              },
+            );
+      if (entry && !entry.ok) {
         // WMS-22B: a warning the person may accept, not a refusal.
         if (entry.overCapacity) {
           throw new Rejected({
@@ -526,7 +759,7 @@ async function receiveOnce(
       }
 
       // WMS-57: what an order of a warehouse brings enters that warehouse.
-      if (order.facilityId) {
+      if (entry && order.facilityId) {
         const outside = await tx.location.count({
           where: {
             id: {
@@ -550,14 +783,16 @@ async function receiveOnce(
           id: receiptId,
           organizationId,
           orderId: current.id,
-          movementId: entry.movementId,
+          // WMS-84: empty when everything was rejected at the door.
+          movementId: entry?.movementId ?? null,
           reference: data.reference,
           idempotencyKey: data.idempotencyKey,
           receivedByUserId: userId,
         },
       });
+      const entryLines = entry?.lines ?? [];
       await tx.purchaseReceiptLine.createMany({
-        data: entry.lines.map((line, index) => ({
+        data: entryLines.map((line, index) => ({
           id: newId(),
           organizationId,
           receiptId,
@@ -579,14 +814,14 @@ async function receiveOnce(
       });
       // CMP-13: the cost of what arrived becomes the last cost of the
       // product at this supplier (no valuation: just the last price).
-      if (recordCosts) {
+      if (recordCosts && entryLines.length > 0) {
         // The damaged part of a line came at the same cost: once per line.
         const seenCost = new Set<string>();
         await recordReceivedCosts(tx, {
           organizationId,
           userId,
           supplierId: current.contactId,
-          lines: entry.lines
+          lines: entryLines
             .map((line, index) => ({
               productId: line.productId,
               presentationId: line.presentationId,
@@ -603,7 +838,36 @@ async function receiveOnce(
         });
       }
 
-      // Received when nothing is left of any line; in part otherwise.
+      // WMS-84 (ADR 0079): what was rejected at the door, as evidence. No
+      // movement, value, lot nor serial: it never entered.
+      if (rejections.length > 0) {
+        await tx.purchaseReceiptRejection.createMany({
+          data: rejections.map((item, index) => ({
+            id: newId(),
+            organizationId,
+            receiptId,
+            lineNumber: index + 1,
+            orderLineId: item.line.id,
+            productId: item.line.productId,
+            quantity: item.quantity.toString(),
+            reason: item.reason,
+            lotCode: item.lotCode,
+            serials: item.serials,
+          })),
+        });
+      }
+      // The photos are the last locks (their files), as in WMS-37B.
+      if (photoIds.length > 0) {
+        const photos = await attachEvidencePhotos(tx, actor, {
+          purpose: "receipt_rejection_photo",
+          owner: { kind: "purchase_receipt", id: receiptId },
+          fileIds: photoIds,
+        });
+        if (!photos.ok) return refuse("invalid", "photos", photos.error);
+      }
+
+      // Received when nothing is left of any line; in part otherwise. What
+      // was rejected stays pending (WMS-84).
       for (const { line, quantity } of pending) {
         left.set(line.id, left.get(line.id)!.minus(quantity));
       }
@@ -611,14 +875,82 @@ async function receiveOnce(
         quantity.greaterThan(0),
       ).length;
       const status: PurchaseOrderStatus =
-        missing === 0 ? "RECEIVED" : "PARTIAL";
-      await advanceOrderOnReceipt(tx, current.id, status);
+        pending.length === 0
+          ? current.status
+          : missing === 0
+            ? "RECEIVED"
+            : "PARTIAL";
+      if (pending.length > 0) {
+        await advanceOrderOnReceipt(
+          tx,
+          current.id,
+          status as "PARTIAL" | "RECEIVED",
+        );
+      }
       // «General», or «General y A-01» when lines went to several places.
-      const places = [...new Set(entry.lines.map((line) => line.locationName))];
+      const places = [...new Set(entryLines.map((line) => line.locationName))];
       const where =
         places.length === 1
           ? places[0]!
           : `${places.slice(0, -1).join(", ")} y ${places.at(-1)}`;
+      if (rejections.length > 0) {
+        await emitWebhookEvent(tx, RECEIPT_REJECTED_EVENT, {
+          organizationId,
+          data: {
+            receiptId,
+            purchaseOrderId: current.id,
+            purchaseOrderNumber: numberText,
+            orderStatus: status,
+            rejections: rejections.map((item) => ({
+              orderLineId: item.line.id,
+              productId: item.line.productId,
+              quantity: item.quantity.toString(),
+              presentationId: item.line.presentationId,
+              unitCode: item.line.unitCode,
+              reason: item.reason,
+              lotCode: item.lotCode,
+              serials: item.serials ? item.serials.split("\n") : [],
+            })),
+          },
+        });
+        await recordAuditEvent(tx, {
+          organizationId,
+          actorUserId: userId,
+          action: "purchase_order.receipt_rejected",
+          target: { type: "purchase_order", id: current.id },
+          metadata: {
+            orden: numberText,
+            proveedor: current.contact.name,
+            rechazado: rejections
+              .map(
+                (item) =>
+                  `${inTermsOf(item.quantity, item.line.presentation, item.line.unitCode)} de ${item.line.product.name}`,
+              )
+              .join(", ")
+              .slice(0, 500),
+            ...(photoIds.length > 0 ? { fotos: photoIds.length } : {}),
+          },
+        });
+      }
+      const rejectedNote =
+        rejections.length === 0
+          ? ""
+          : ` Rechazaste al recibir: ${rejections
+              .map(
+                (item) =>
+                  `${inTermsOf(item.quantity, item.line.presentation, item.line.unitCode)} de ${item.line.product.name}`,
+              )
+              .join(
+                ", ",
+              )}. No entró al inventario y sigue pendiente en la orden.`;
+      if (!entry) {
+        return {
+          ok: true as const,
+          receiptId,
+          status,
+          summary: `No recibiste nada de ${numberText}.${rejectedNote}`,
+        };
+      }
       // WMS-60: who listens by webhook hears of it, inside this transaction.
       await emitWebhookEvent(tx, RECEIPT_CONFIRMED_EVENT, {
         organizationId,
@@ -689,7 +1021,7 @@ async function receiveOnce(
           missing === 0
             ? "La orden quedó recibida."
             : `La orden quedó recibida en parte: ${missing === 1 ? "falta 1 producto" : `faltan ${missing} productos`}.`
-        }${damagedNote}${inspectionNote}${entry.notes.map((note) => ` ${note}`).join("")}`,
+        }${damagedNote}${inspectionNote}${rejectedNote}${entry.notes.map((note) => ` ${note}`).join("")}`,
         ...(entry.crossDock.length > 0 ? { crossDock: entry.crossDock } : {}),
       };
     }, LOCKING_TRANSACTION);
@@ -858,6 +1190,8 @@ function chosenLines(
     damaged?: string;
     damagedSerials?: string;
   }[],
+  /** WMS-84: something is rejected, so receiving nothing is fine. */
+  allowEmpty = false,
 ): ChosenPart[] {
   const byId = new Map(lines.map((line) => [line.id, line]));
   const errors: Record<string, string> = {};
@@ -1032,7 +1366,7 @@ function chosenLines(
   if (Object.keys(errors).length > 0) {
     return refuseLines(errors, undefined, fields);
   }
-  if (chosen.length === 0) {
+  if (chosen.length === 0 && !allowEmpty) {
     return refuse(
       "invalid",
       null,
@@ -1040,6 +1374,269 @@ function chosenLines(
     );
   }
   return chosen;
+}
+
+/** Reason of a rejection: lines allowed, no other control characters. */
+const REASON_TEXT = /^[^\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]*$/;
+
+type ChosenRejection = {
+  line: OrderLineRow;
+  quantity: Decimal;
+  reason: string;
+  lotCode: string | null;
+  /** One per line of text, or null. */
+  serials: string | null;
+};
+
+/**
+ * What the person rejects at the door (WMS-84, ADR 0079), checked: a line
+ * of this order, a valid quantity in its terms, a reason, never more than
+ * what is pending together with what is received now (NEG-24), a lot only
+ * for a product by lot (several lots of a line, never the same twice) and
+ * serials only for a product by serial (as many as pieces, none of them
+ * received now). Nothing here enters the stock.
+ */
+function chosenRejections(
+  lines: OrderLineRow[],
+  left: Map<string, Decimal>,
+  received: ChosenPart[],
+  requested: {
+    orderLineId: string;
+    quantity: string;
+    reason: string;
+    lotCode?: string;
+    serials?: string;
+  }[],
+): ChosenRejection[] {
+  const byId = new Map(lines.map((line) => [line.id, line]));
+  const errors: Record<string, string> = {};
+  const fields: Record<string, ReceiveLineField> = {};
+  const chosen: ChosenRejection[] = [];
+  const taken = new Map<string, Decimal>();
+  const receivedSerials = new Map<string, Set<string>>();
+  for (const part of received) {
+    taken.set(
+      part.line.id,
+      (taken.get(part.line.id) ?? dec(0)).plus(part.quantity),
+    );
+    if (part.serials) {
+      const list = parseSerialList(part.serials);
+      if (list.ok) {
+        const set = receivedSerials.get(part.line.id) ?? new Set<string>();
+        for (const serial of list.serials) set.add(serialFold(serial));
+        receivedSerials.set(part.line.id, set);
+      }
+    }
+  }
+  const seen = new Map<string, number>();
+  const lotsOf = new Map<string, Set<string>>();
+  const fail = (line: OrderLineRow, field: ReceiveLineField, text: string) => {
+    if (errors[line.id]) return;
+    errors[line.id] = text;
+    fields[line.id] = field;
+  };
+  for (const item of requested) {
+    const line = byId.get(item.orderLineId);
+    const times = line ? (seen.get(line.id) ?? 0) : 0;
+    if (
+      !line ||
+      (times > 0 && line.product.tracking !== "LOT") ||
+      times >= RECEIPT_LOTS_PER_LINE
+    ) {
+      return refuse(
+        "invalid",
+        null,
+        "Lo que mandaste no corresponde a esta orden. Recarga la página.",
+      );
+    }
+    seen.set(line.id, times + 1);
+    if (isNothing(item.quantity)) {
+      if (item.reason.trim() || item.lotCode || item.serials?.trim()) {
+        fail(line, "rejected", "Escribe cuánto rechazas.");
+      }
+      continue;
+    }
+    if (errors[line.id]) continue;
+    const rule = line.presentationId
+      ? { unitCode: "piece", quantityStep: "1" }
+      : {
+          unitCode: line.unitCode,
+          quantityStep: line.product.quantityStep.toString(),
+        };
+    const parsed = parseQuantity(rule, item.quantity);
+    if (!parsed.ok) {
+      fail(
+        line,
+        "rejected",
+        line.presentationId && /completas/.test(parsed.error)
+          ? `Escribe ${line.presentation ? pluralizeName(line.presentation.name, dec(2)) : "presentaciones"} completas.`
+          : parsed.error,
+      );
+      continue;
+    }
+    const reason = item.reason.replace(/\r\n?/g, "\n").trim();
+    if (reason.length < 3) {
+      fail(
+        line,
+        "rejectedReason",
+        "Escribe por qué se rechaza: queda como evidencia.",
+      );
+      continue;
+    }
+    if (reason.length > 500 || !REASON_TEXT.test(reason)) {
+      fail(
+        line,
+        "rejectedReason",
+        reason.length > 500
+          ? "El motivo admite hasta 500 caracteres."
+          : "Quita los tabuladores o caracteres especiales del motivo.",
+      );
+      continue;
+    }
+    const pending = left.get(line.id)!;
+    const together = (taken.get(line.id) ?? dec(0)).plus(parsed.quantity);
+    if (together.greaterThan(pending)) {
+      fail(
+        line,
+        "rejected",
+        pending.lessThanOrEqualTo(0)
+          ? "Este producto ya llegó completo."
+          : `Solo faltan ${inTermsOf(pending, line.presentation, line.unitCode)}: lo que recibes y lo que rechazas no pueden pasar de eso. Lo que llegó de más no es de esta orden.`,
+      );
+      continue;
+    }
+    taken.set(line.id, together);
+
+    let lotCode: string | null = null;
+    if (item.lotCode) {
+      if (line.product.tracking !== "LOT") {
+        fail(
+          line,
+          "rejectedLotCode",
+          `${line.product.name} no se controla por lote: no lleva lote.`,
+        );
+        continue;
+      }
+      const code = normalizeLotCode(item.lotCode);
+      if (!code.ok) {
+        fail(line, "rejectedLotCode", code.error);
+        continue;
+      }
+      lotCode = code.code;
+    }
+    if (line.product.tracking === "LOT") {
+      const lots = lotsOf.get(line.id) ?? new Set<string>();
+      const key = lotCode ?? "";
+      if (lots.has(key)) {
+        fail(
+          line,
+          "rejectedLotCode",
+          lotCode
+            ? `El lote ${lotCode} está dos veces en lo rechazado: suma sus cantidades en una sola fila.`
+            : "Escribe el lote de cada fila de lo rechazado.",
+        );
+        continue;
+      }
+      lots.add(key);
+      lotsOf.set(line.id, lots);
+    }
+
+    let serials: string | null = null;
+    if (item.serials?.trim()) {
+      if (line.product.tracking !== "SERIAL") {
+        fail(
+          line,
+          "rejectedSerials",
+          `${line.product.name} no se controla por serie: no lleva series.`,
+        );
+        continue;
+      }
+      const list = parseSerialList(item.serials);
+      if (!list.ok) {
+        fail(line, "rejectedSerials", list.error);
+        continue;
+      }
+      if (
+        !line.presentationId &&
+        !parsed.quantity.equals(list.serials.length)
+      ) {
+        fail(
+          line,
+          "rejectedSerials",
+          `Rechazas ${formatDecimal(parsed.quantity)} y escribiste ${list.serials.length} ${list.serials.length === 1 ? "serie" : "series"}: deben ser las mismas.`,
+        );
+        continue;
+      }
+      const there = receivedSerials.get(line.id);
+      const both = there
+        ? list.serials.find((serial) => there.has(serialFold(serial)))
+        : undefined;
+      if (both) {
+        fail(
+          line,
+          "rejectedSerials",
+          `La serie ${both} está en lo que recibes y en lo que rechazas.`,
+        );
+        continue;
+      }
+      serials = list.serials.join("\n");
+    }
+    chosen.push({ line, quantity: parsed.quantity, reason, lotCode, serials });
+  }
+  if (Object.keys(errors).length > 0) {
+    return refuseLines(
+      errors,
+      Object.keys(errors).length === 1
+        ? "Revisa lo rechazado marcado."
+        : "Revisa lo rechazado en los productos marcados.",
+      fields,
+    );
+  }
+  return chosen;
+}
+
+/**
+ * Whether a repeated confirmation rejects what its key already rejected
+ * (WMS-84): the same lines, quantities and lots. The reason is not
+ * compared (a space more is still the same receipt).
+ */
+function sameRejections(
+  stored: {
+    orderLineId: string;
+    quantity: { toString(): string };
+    lotCode: string | null;
+  }[],
+  data: z.output<typeof receiveSchema>,
+): boolean {
+  const asked: {
+    orderLineId: string;
+    quantity: Decimal;
+    lot: string | null;
+  }[] = [];
+  for (const item of data.rejections ?? []) {
+    if (isNothing(item.quantity)) continue;
+    const quantity = typedNumber(item.quantity);
+    if (!quantity) return false;
+    const code = item.lotCode ? normalizeLotCode(item.lotCode) : null;
+    asked.push({
+      orderLineId: item.orderLineId,
+      quantity,
+      lot: code?.ok ? code.code : null,
+    });
+  }
+  if (asked.length !== stored.length) return false;
+  const left = [...stored];
+  return asked.every((item) => {
+    const index = left.findIndex(
+      (row) =>
+        row.orderLineId === item.orderLineId &&
+        item.quantity.equals(row.quantity.toString()) &&
+        row.lotCode === item.lot,
+    );
+    if (index < 0) return false;
+    left.splice(index, 1);
+    return true;
+  });
 }
 
 /**
@@ -1091,6 +1688,8 @@ export type PendingLine = {
   receivedText: string | null;
   /** Null when it all arrived. */
   pendingText: string | null;
+  /** WMS-84: what was rejected at the door, all receipts; null if nothing. */
+  rejectedText: string | null;
   /** What is pending as a plain number for a form ("2"), or "0". */
   pendingQuantity: string;
   /** «cajas», «piezas»: what the quantity counts. */
@@ -1158,6 +1757,28 @@ export type ReceiptSummary = {
      */
     returnStates: { id: string; label: string }[];
   }[];
+  /**
+   * WMS-84 (ADR 0079): what was rejected at the door with this receipt. It
+   * never entered; it stays pending in the order.
+   */
+  rejections: {
+    id: string;
+    orderLineId: string;
+    productId: string;
+    productName: string;
+    sku: string;
+    /** «2 cajas». */
+    quantityText: string;
+    /** Exact data for the API: in the terms of the order line. */
+    quantity: string;
+    presentationId: string | null;
+    unitCode: string;
+    reason: string;
+    lotCode: string | null;
+    serials: string[];
+  }[];
+  /** Photos of what was rejected (WMS-84). */
+  photos: EvidencePhotoLink[];
   /** Absent for who may not see returns (`purchasing.return.read`). */
   returns?: {
     id: string;
@@ -1371,6 +1992,26 @@ export async function getOrderReceipts(
               returnLines: { select: { capturedQuantity: true } },
             },
           },
+          rejections: {
+            orderBy: { lineNumber: "asc" },
+            select: {
+              id: true,
+              orderLineId: true,
+              productId: true,
+              quantity: true,
+              reason: true,
+              lotCode: true,
+              serials: true,
+              product: { select: { name: true, sku: true } },
+              orderLine: {
+                select: {
+                  presentationId: true,
+                  unitCode: true,
+                  presentation: { select: { name: true } },
+                },
+              },
+            },
+          },
           returns: {
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             take: 50,
@@ -1406,6 +2047,10 @@ export async function getOrderReceipts(
     client,
     order.lines.map((line) => line.id),
   );
+  const rejected = await rejectedByLine(
+    client,
+    order.lines.map((line) => line.id),
+  );
   const lines = order.lines.map((line): PendingLine => {
     const ordered = dec(line.capturedQuantity.toString());
     const got = received.get(line.id) ?? dec(0);
@@ -1437,6 +2082,11 @@ export async function getOrderReceipts(
       pendingText: left.greaterThan(0)
         ? inTermsOf(left, line.presentation, line.unitCode)
         : null,
+      rejectedText: rejectedText(
+        rejected.get(line.id),
+        line.presentation,
+        line.unitCode,
+      ),
       pendingQuantity: left.greaterThan(0) ? left.toFixed() : "0",
       byLot: line.product.tracking === "LOT",
       bySerial: line.product.tracking === "SERIAL",
@@ -1517,8 +2167,41 @@ export async function getOrderReceipts(
       : [];
   };
 
+  // WMS-84: the photos of what was rejected; the order is already in the
+  // person's scope, so its receipts are reached.
+  const ownReceipts = new Set(order.receipts.map((receipt) => receipt.id));
+  const photosOf = await evidencePhotoLinksOf(
+    actor,
+    "purchase_receipt",
+    order.receipts
+      .filter((receipt) => receipt.rejections.length > 0)
+      .map((receipt) => receipt.id),
+    async (_actor, ids) => new Set(ids.filter((id) => ownReceipts.has(id))),
+  );
   const receipts = order.receipts.map((receipt): ReceiptSummary => ({
     id: receipt.id,
+    rejections: receipt.rejections.map((row) => {
+      const quantity = dec(row.quantity.toString());
+      return {
+        id: row.id,
+        orderLineId: row.orderLineId,
+        productId: row.productId,
+        productName: row.product.name,
+        sku: row.product.sku,
+        quantityText: inTermsOf(
+          quantity,
+          row.orderLine.presentation,
+          row.orderLine.unitCode,
+        ),
+        quantity: quantity.toFixed(),
+        presentationId: row.orderLine.presentationId,
+        unitCode: row.orderLine.unitCode,
+        reason: row.reason,
+        lotCode: row.lotCode,
+        serials: row.serials ? row.serials.split("\n") : [],
+      };
+    }),
+    photos: photosOf.get(receipt.id) ?? [],
     createdAt: receipt.createdAt,
     authorName: names.get(receipt.receivedByUserId) ?? null,
     reference: receipt.reference,
@@ -1608,7 +2291,10 @@ export async function getOrderReceipts(
           ...receipt,
           lines: receipt.lines.filter((l) => !outside.has(l.locationId)),
         }))
-        .filter((receipt) => receipt.lines.length > 0)
+        .filter(
+          (receipt) =>
+            receipt.lines.length > 0 || receipt.rejections.length > 0,
+        )
     : receipts;
 
   return {
