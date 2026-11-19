@@ -1070,6 +1070,62 @@ try {
     await page.close();
   }
 
+  // WMS-83 (desechar con autorización): the screen fits on a phone and an
+  // empty form explains its error without writing anything.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const hrefs = await page
+      .locator("a[href^='/inventario/']")
+      .evaluateAll((links) =>
+        links
+          .map((a) => a.getAttribute("href"))
+          .filter((href) => /^\/inventario\/[0-9a-f-]{36}$/.test(href ?? "")),
+      );
+    let form = false;
+    for (const href of hrefs.slice(0, 15)) {
+      await page.goto(`${BASE}${href}/desechar`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+        form: Boolean(document.querySelector("form #quantity")),
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `320px: ${href}/desechar fits and has one heading`,
+      );
+      if (!state.form) continue;
+      form = true;
+      const button = page.getByRole("button", {
+        name: /^(Desechar|Pedir autorización)$/,
+      });
+      check(
+        (await button.count()) === 1,
+        "WMS-83: the send button says what it does",
+      );
+      await button.click();
+      await page.waitForTimeout(1500);
+      check(
+        await page.evaluate(() =>
+          Boolean(
+            document.querySelector("[aria-invalid='true'], [role='alert']"),
+          ),
+        ),
+        "WMS-83: an empty write-off explains its error",
+      );
+      break;
+    }
+    if (!form)
+      console.log(
+        "  (sin existencias dañadas en la demo: no se probó el formulario de Desechar)",
+      );
+    await page.close();
+  }
+
   // WMS-78C (Compras, Producción y Calidad). Read-only: nothing is saved.
   {
     const page = await signedInPage(

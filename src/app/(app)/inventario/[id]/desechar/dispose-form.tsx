@@ -27,12 +27,15 @@ export function DisposeForm({
   unitLabel,
   sources,
   bySerial = false,
+  needsApproval = false,
   idempotencyKey: firstKey,
 }: {
   productId: string;
   unitLabel: string;
   sources: Option[];
   bySerial?: boolean;
+  /** WMS-83: the company asks to authorize every write-off. */
+  needsApproval?: boolean;
   /** Created by the server when the screen is painted (INV-21). */
   idempotencyKey: string;
 }) {
@@ -81,6 +84,12 @@ export function DisposeForm({
   return (
     <form action={formAction} noValidate className="max-w-xl space-y-4">
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+      {needsApproval && (
+        <p className="text-sm text-muted-foreground">
+          Tu empresa pide autorizar cada desecho: no se tira nada hasta que
+          alguien lo autorice.
+        </p>
+      )}
       {state.saved && (
         <p role="status" className="text-sm font-medium text-success">
           {state.saved}
@@ -152,7 +161,11 @@ export function DisposeForm({
         disabled={pending}
       >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
-        {pending ? "Guardando…" : "Desechar"}
+        {pending
+          ? "Guardando…"
+          : needsApproval
+            ? "Pedir autorización"
+            : "Desechar"}
       </Button>
     </form>
   );

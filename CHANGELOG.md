@@ -6,6 +6,17 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-19
+
+- **WMS-83** Desechar pide autorización, con el porqué: con la regla
+  `inventory.disposal` encendida, desechar espera a que alguien lo autorice y
+  al autorizar se vuelve a validar todo; cierra el rodeo «disponible → dañado
+  → desechar». Sin tablas ni permisos nuevos. ADR 0078.
+- **WMS-46** Manuales en `docs/manuales/`: índice, guía común (entrar, dos
+  pasos, PIN en terminal, menú, avisos, escaneo, instalar la app), un manual
+  por rol e instalación, actualización, y respaldo y restauración. Solo
+  documentos, sin ADR.
+
 ## 2026-11-17
 
 - **WMS-82** Un almacén archivado no recibe existencias ni documentos:

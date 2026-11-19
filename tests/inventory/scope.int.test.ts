@@ -1937,6 +1937,68 @@ describe("PC-12: inspection and write-offs (WMS-30-0)", () => {
     ).toBe(1);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
+
+  it("a write-off waiting in A does not exist from B (WMS-83)", async () => {
+    const on = await updateApprovalRule(
+      owner,
+      approvalTypes,
+      "inventory.disposal",
+      { enabled: true, roles: ["administrator"], allowSelfApproval: false },
+    );
+    expect(on).toMatchObject({ ok: true });
+    try {
+      const moved = await changeStockStatus(owner, {
+        productId,
+        locationId: shelfA,
+        from: "AVAILABLE",
+        to: "DAMAGED",
+        quantity: "1",
+        reason: "Revisión de alcance",
+        idempotencyKey: key(),
+      });
+      if (!moved.ok) throw new Error(JSON.stringify(moved));
+      const asked = await disposeStock(owner, {
+        productId,
+        locationId: shelfA,
+        status: "DAMAGED",
+        quantity: "1",
+        reason: "Roto en A",
+        idempotencyKey: key(),
+      });
+      if (asked.ok || asked.reason !== "pending_approval") {
+        throw new Error(JSON.stringify(asked));
+      }
+      expect(
+        await getApprovalRequest(limited, approvalTypes, asked.requestId),
+      ).toBeNull();
+      expect(
+        await decideApproval(limited, approvalTypes, asked.requestId, {
+          decision: "approve",
+        }),
+      ).toMatchObject({ ok: false, reason: "not_found" });
+      expect(
+        await db.stockMovement.count({
+          where: {
+            organizationId: owner.organizationId,
+            type: "DISPOSAL",
+            reason: "Roto en A",
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await decideApproval(free, approvalTypes, asked.requestId, {
+          decision: "approve",
+        }),
+      ).toMatchObject({ ok: true, status: "APPROVED" });
+      expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    } finally {
+      await updateApprovalRule(owner, approvalTypes, "inventory.disposal", {
+        enabled: false,
+        roles: ["administrator"],
+        allowSelfApproval: false,
+      });
+    }
+  });
 });
 
 describe("PC-12: what is in restoration (WMS-75)", () => {
