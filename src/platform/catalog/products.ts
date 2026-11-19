@@ -507,6 +507,12 @@ export async function listProducts(
      * company's is ignored.
      */
     custom?: readonly { key: string; value: string }[];
+    /**
+     * WMS-87: one more condition, built by the caller for what the catalog
+     * does not know (a module's stock). It joins the search and the filters
+     * in the same query, so the page is still cut in the database.
+     */
+    also?: ProductWhere;
   } = {},
 ): Promise<ProductPage> {
   await assertModulePermission(
@@ -548,6 +554,9 @@ export async function listProducts(
           };
         }),
       ...customWhere,
+      // Built by the caller and typed as a product condition above; kept
+      // opaque here so the query's own typing is not widened.
+      ...(options.also ? [options.also as Record<string, never>] : []),
     ],
   };
   const [total, exact] = await Promise.all([
@@ -601,6 +610,13 @@ async function customFilters(
 /** Id of a category or brand as it came from a filter; never longer than an id. */
 const groupId = (value: string | null) =>
   value === null ? null : String(value).slice(0, 36);
+
+/** A condition on products, as the database client takes it. */
+export type ProductWhere = NonNullable<
+  NonNullable<
+    Parameters<ReturnType<typeof forOrganization>["product"]["count"]>[0]
+  >["where"]
+>;
 
 export type ProductFilterOptions = {
   categories: { id: string; name: string }[];

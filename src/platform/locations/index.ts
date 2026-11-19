@@ -1,5 +1,10 @@
 // Physical facilities and locations shared by Inventario and Compras.
-export { createDefaultLevels, ensureDefaultLocation } from "./bootstrap";
+export {
+  MAIN_FACILITY_CODE,
+  MAIN_FACILITY_NAME,
+  createDefaultLevels,
+  ensureDefaultLocation,
+} from "./bootstrap";
 export {
   MAX_LOCATIONS,
   archiveLocation,

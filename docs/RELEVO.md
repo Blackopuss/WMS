@@ -16,20 +16,22 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | Paso | Sesión | Rama | Modelo | ADR | Estado |
 | --- | --- | --- | --- | --- | --- |
 | WMS-83 Desechar pide autorización (corazón; revisor independiente) | `session_01QMjUPTxqZT1kLarRWwnutb` | `wms-83-desechar-autorizacion` | Opus, medio | 0078 (migración `20261119100000`) | **Cerrado y unido el 2026-11-19.** |
-| WMS-84 Rechazo de recepción con su motivo (corazón; revisor independiente) | (se anota al abrirlo) | `wms-84-rechazo-recepcion` | Opus, medio | 0079 (`20261119170000`) | abierto al unirse WMS-83 |
+| WMS-84 Rechazo de recepción con su motivo (corazón; revisor independiente) | `session_01QMjUPUKG8rVjQPj7vMeEdv` | `wms-84-rechazo-recepcion` | Opus, medio | 0079 (`20261119170000`) | abierto el 2026-11-19, al unirse WMS-83 |
 | WMS-86 Rendimiento en teléfono de la app y del sitio (solo interfaz) | `session_01QMjUPVqXqM4RByBNbvToqk` | `wms-86-rendimiento-telefono` | Opus, medio | 0080 | abierto |
 | WMS-66 Búsqueda global (permisos y alcance; revisor) | `session_01QMjUPTXNNfJr8phb53Ukb4` | `wms-66-busqueda-global` | Opus, medio | 0081 (`20261119110000`) | abierto |
 | WMS-32 Indicadores de almacén (permisos, alcance y costos; revisor) | `session_01QMjUPWFSksAhndeQ1UGQxR` | `wms-32-indicadores-almacen` | Opus, medio | 0082 (`20261119120000`) | abierto |
-| WMS-43 Asistente de configuración inicial | `session_01QMjUPWjqnyim6TcuhoF9Am` | `wms-43-asistente-inicial` | Opus, medio | 0083 (`20261119130000`) | abierto |
+| WMS-43 Asistente de configuración inicial | `session_01QMjUPWjqnyim6TcuhoF9Am` | `wms-43-asistente-inicial` | Opus, medio | 0083 (`20261119130000`) | Cerrado y unido el 2026-11-19 |
 | WMS-88 Pendientes de avisos por correo (ADR 0060) y del historial de accesos (ADR 0064) (seguridad; revisor) | `session_01QMjUPY8CFA5E9GkWMRc1Tj` | `wms-88-avisos-accesos-pendientes` | Opus, medio | 0084 (`20261119140000`) | abierto |
-| WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | abierto |
+| WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
 | WMS-46 Manuales por rol, instalación, actualización y respaldo (`docs/manuales/`) | `session_01QMjUPWnxq17jsxbEu38ox6` | `wms-46-manuales` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
 
 Huecos de la app que salieron de la revisión de los manuales (no son de los manuales): transferir la titularidad no tiene pantalla ni Server Action (`ownership.ts` existe, ninguna ruta lo usa; pendiente sin número), y el Inspector de calidad no tiene enlace a «Por inspeccionar» (requisito de WMS-30B).
 
 WMS-86, WMS-87 y WMS-88 son números nuevos. El siguiente ADR libre es el 0085 (el 0079 sigue apartado para WMS-84).
 
-**Sin abrir, con su razón:** WMS-84 (después de WMS-83); producción WMS-29 → WMS-31 → WMS-30B → WMS-79 (después de WMS-84, uno tras otro); WMS-85 (corazón; sin decisión del fundador); WMS-33 (depende de producción); WMS-34 y WMS-65 (dependen de WMS-32); WMS-64 automatizaciones (crea tareas y bloquea: corazón, y falta definir su flujo); WMS-44 y WMS-45 (después de WMS-43); WMS-62, WMS-69, WMS-47, WMS-48 y WMS-70 (esperan al fundador: integraciones, precios, servidor).
+**Estado al 2026-11-19, 16:30 UTC:** WMS-46 y WMS-83 unidos (`be8402f`). El límite de uso de 5 horas detuvo a los chats hacia las 07:10 UTC; se les mandó un mensaje para continuar a las 16:25. Con veredicto «unir» del revisor y menores por cerrar: WMS-87 (trae `pruebas` y es el siguiente en unirse), WMS-66 y WMS-88. Con «no unir» y correcciones pedidas: WMS-43 (la prueba de costo medía `SHOW GLOBAL STATUS`) y WMS-86 (una descarga diferida que falla tumbaba la app). WMS-32 sigue implementando. **WMS-86 borra el índice `src/components/index.ts`** (cada componente se importa por su archivo): se une después de WMS-87 y las demás ramas traen `pruebas` y ajustan sus imports antes de unirse. Los revisores son subagentes locales sobre worktrees `/home/user/wt/wms-<paso>` con bases `wms_test_rev<letra>`; al reiniciarse el contenedor hay que levantar `dockerd` otra vez.
+
+**Sin abrir, con su razón:** producción WMS-29 → WMS-31 → WMS-30B → WMS-79 (después de WMS-84, uno tras otro); WMS-85 (corazón; sin decisión del fundador); WMS-33 (depende de producción); WMS-34 y WMS-65 (dependen de WMS-32); WMS-64 automatizaciones (crea tareas y bloquea: corazón, y falta definir su flujo); WMS-44 y WMS-45 (después de WMS-43); WMS-62, WMS-69, WMS-47, WMS-48 y WMS-70 (esperan al fundador: integraciones, precios, servidor).
 
 **Relevo de los chats que implementan: 500,000 tokens** (fundador, 2026-11-19; reemplaza los 400,000). Al **cerrar cada paso, `main` queda igual que `pruebas`.** Entorno de quien coordina levantado el 2026-11-19; la corrida de CI del commit `6e23dd9` estaba en curso al abrir.
 
@@ -253,7 +255,8 @@ con IP del titular y de los administradores (hoy sí, como las sesiones).
   pasos en verde y otra tardó 17 minutos y medio. Si una corrida aparece
   «cancelled» con sus pasos en verde, es eso (se repite con
   `rerun_workflow_run`); conviene subir `timeout-minutes` a 30 en
-  `.github/workflows/ci.yml` en el siguiente paso que toque código.
+  `.github/workflows/ci.yml` en el siguiente paso que toque código. Las dos cosas sueltas de arriba (`/ubicaciones/etiquetas` y el aviso de
+  `key` de `/inventario/nuevo`) ya no se reproducen (WMS-87).
 
 ## Qué leer, en orden
 

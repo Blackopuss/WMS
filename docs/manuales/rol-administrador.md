@@ -10,6 +10,8 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 
 ## Tus tareas de administración (Configuración)
 
+En una empresa nueva, **Configuración › Configuración inicial** (y **Configura tu empresa** en Inicio, hasta el primer movimiento) te lleva paso a paso por almacén, ubicaciones, equipo, cómo trabaja tu almacén, productos y existencias; cada paso abre la pantalla de siempre y se puede saltar. Detalle en el manual del [titular](rol-titular.md#primeros-pasos-con-una-empresa-nueva).
+
 ### Equipo (`Configuración › Equipo`)
 - **Invitar persona:** correo, roles (casillas) y, si quieres, almacenes o zonas. Le llega un enlace que vence en 7 días. Cuenta como un lugar del plan aunque esté pendiente.
 - **Cambiar roles de <nombre>** (aplica al instante) y **Cambiar almacenes de <nombre>** (limita a una persona a ciertos almacenes o zonas: fuera de eso no ve nada).
@@ -54,4 +56,4 @@ En **Inventario**: **Agregar producto**, **Importar Excel**, **Descargar en Exce
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Para el sistema mismo (servidor, respaldos), ver los manuales de [instalación](instalacion.md), [actualización](actualizacion.md) y [respaldo y restauración](respaldo-y-restauracion.md).
 
-Vigente al 2026-11-19
+Vigente al 2026-11-19 (configuración inicial: WMS-43)

@@ -35,7 +35,7 @@ En una terminal se ve **menos** que en tu cuenta normal: no aparecen costos, exp
 - Solo ves las secciones que tu rol puede usar. El orden del menú es: Inicio, Tareas, Recepción, Pedidos, Producción, Inventario, Movimientos, Conteos, Incidencias, Compras y Configuración.
 - Si una sección dice **no está activo en tu empresa**, el módulo no está contratado; si dice **solo lectura**, el plan venció o el módulo se quitó: puedes consultar y exportar, pero no registrar nada. **Configuración › Mi plan** solo se consulta: para contratar o renovar, el titular escribe al correo de contacto que aparece ahí y el personal de la plataforma lo activa.
 - Si ves **No tienes acceso a esta sección**, tu rol no la incluye: pídesela al titular o a un administrador.
-- **Inicio** (`Hola, <tu nombre>`) muestra solo lo que tu rol puede hacer hoy: los botones **Registrar entrada** y **Registrar salida** (si los tienes), **Reportar un problema**, los pendientes del almacén y el bloque **Para hoy** con mosaicos numerados (por ejemplo **Mis tareas**, **Tareas disponibles**, **Órdenes por recibir**). Cada mosaico abre la lista correspondiente.
+- **Inicio** (`Hola, <tu nombre>`) muestra solo lo que tu rol puede hacer hoy: los botones **Registrar entrada** y **Registrar salida** (si los tienes), **Reportar un problema**, los pendientes del almacén y el bloque **Para hoy** con mosaicos numerados (por ejemplo **Mis tareas**, **Tareas disponibles**, **Órdenes por recibir**). Cada mosaico abre la lista correspondiente. En una empresa que aún no registra su primer movimiento, arriba aparece **Configura tu empresa** con el paso que te toca (solo los pasos que tu rol puede hacer; con el catálogo vacío, los de existencias y movimientos dicen que primero hacen falta productos).
 - Si necesitas algo que no ves, no hay otra puerta: pídelo a quien administra (ver el manual de [Administrador](rol-administrador.md)).
 
 ## 3. Avisos
@@ -85,4 +85,4 @@ Un reporte **no cambia existencias**: avisa a quien supervisa. Si lo que pasa es
 
 Una persona puede tener **varios roles a la vez**: recibe la suma de lo que permite cada uno y ocupa un solo lugar del plan. Un rol de Producción o de Calidad solo se asigna si el módulo está contratado.
 
-Vigente al 2026-11-19
+Vigente al 2026-11-19 (configuración inicial: WMS-43)

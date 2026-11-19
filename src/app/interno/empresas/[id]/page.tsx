@@ -1,5 +1,4 @@
 import { ChevronLeft } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -20,8 +19,6 @@ import {
 } from "./actions";
 import { PaymentForm, ReversePaymentForm } from "./payment-form";
 import { ProvisionForm } from "./provision-form";
-
-export const metadata: Metadata = { title: "Plan de la empresa" };
 
 /** Plan of one company, the form to assign it (MOD-09) and its payments (PIL-11). */
 export default async function EmpresaInternaPage({
@@ -69,6 +66,7 @@ export default async function EmpresaInternaPage({
 
   return (
     <PageContainer>
+      <title>Plan de la empresa · Consola interna</title>
       <Link
         href="/interno"
         className="inline-flex min-h-11 items-center gap-1 rounded-lg text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"

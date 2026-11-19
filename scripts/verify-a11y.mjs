@@ -80,6 +80,9 @@ const SCREENS = [
   "/inventario/reposicion",
   "/inventario/reposicion/nueva",
   "/configuracion/operacion",
+  // WMS-43: the setup guide, whole and with its settings open.
+  "/configuracion/inicial",
+  "/configuracion/inicial?paso=operacion",
   // WMS-58: custom fields of products, locations and suppliers.
   "/configuracion/campos",
   "/configuracion/almacenes",
@@ -140,6 +143,11 @@ const SCREENS = [
   "/produccion?estado=all",
   "/produccion/solicitudes",
   "/produccion/solicitudes/nueva",
+  // WMS-87: the two lists of stock that waits for a decision.
+  "/inventario/por-inspeccionar",
+  "/inventario/en-restauracion",
+  // WMS-87: the list filtered by the state of the stock (folded filter open).
+  "/inventario?existencias=DAMAGED",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
@@ -175,6 +183,8 @@ const FORMS = [
   { path: "/conteos/programas/nuevo", submit: "Crear programa" },
   { path: "/inventario/reposicion/nueva", submit: "Guardar regla" },
   // WMS-78C (Compras, Producción y Calidad): forms of the area.
+  // Needs two suppliers or more: with one, the form chooses it and an empty
+  // send starts an order (the sample data of `db:seed:ejemplo` has two).
   { path: "/compras/ordenes/nueva", submit: "Empezar orden" },
   { path: "/configuracion/defectos", submit: "Agregar" },
 ];
@@ -427,6 +437,10 @@ try {
         "/receta/versiones",
       ],
       ["/inventario?q=KIT-001", /^\/inventario\/[0-9a-f-]{36}$/, "/inspeccion"],
+      // WMS-87: the steps of a process (a stage that waits for someone).
+      ["/tareas", /^\/procesos\/[0-9a-f-]{36}(\?etapa=[0-9a-f-]{36})?$/],
+      // WMS-87: the card of the product, with its recipe and inspection blocks.
+      ["/inventario?q=KIT-001", /^\/inventario\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>
