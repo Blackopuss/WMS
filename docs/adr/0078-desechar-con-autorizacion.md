@@ -151,6 +151,19 @@ alcance de quien pidió (`assertLocationsInScope`); si ya no lo tiene, vence:
 «Quien pidió el desecho ya no trabaja en esa ubicación: que lo pida alguien que
 sí.»
 
+## Amenazas consideradas
+
+| Amenaza | Control |
+| --- | --- |
+| Partir un desecho en varios chicos para no pedir autorización | Sin umbral: todo desecho manual pide autorización con la regla encendida |
+| Pasar lo disponible a dañado y desecharlo sin autorización | El desecho pide autorización; pasar a dañado no saca valor |
+| Autorizar algo que ya cambió (otras piezas, otra serie) | El efecto revalida bajo candados y vence si la casilla tuvo movimientos desde la solicitud |
+| Autorizar desde una terminal compartida o como soporte | El motor no deja decidir con sesión de PIN ni a soporte |
+| Autorizar fuera de la zona, o que alguien sin alcance se lleve el desecho | La solicitud no existe fuera del alcance; el efecto revisa el alcance de quien pidió |
+| Reusar la clave de confirmación para otra cosa | La misma clave con otro contenido, tipo o persona es `KEY_REUSED` |
+| Que quien autoriza vea costos | El resumen solo lleva cantidades, lugar, estado, lote, series y motivo |
+| Dos autorizaciones o dos pedidos a la vez | Candado de la solicitud (motor) y de producto y ubicación con `openKey`; probado con `Promise.all` |
+
 ## Qué no entra
 
 - Fotos en la solicitud (pendiente de WMS-37 para aprobaciones).

@@ -153,7 +153,7 @@ código»):
 | Restauración (WMS-75) | `repair-release.ts`, `inspection.ts` | Estado `REPAIR` («En restauración», no disponible); `repairReleaseProblem` (ajuste `inventory.repair.release`, leído en `writeStatusChange` y en la reversa de un cambio de estado; con `inspection` solo sale a inspección, dañado o rechazado, `REPAIR_EXITS_THROUGH_INSPECTION`), `repairExitsOf` (lo que «Cambiar estado» ofrece desde restauración); `listInRepair`/`countInRepair` (derivadas, mismo núcleo que «Por inspeccionar»). Uso de ubicación `REPAIR` («Restauración»), que como la cuarentena no admite disponible (ADR 0072) |
 | Inspección al recibir (WMS-30-0) | `inspection.ts` | `listAwaitingInspection` y `countAwaitingInspection` (derivadas: saldos en `INSPECTION` del almacén activo y del alcance, con su origen y lo retenido); la regla es `product.inspectOnReceipt` y la aplica `postReceiptEntry` |
 | Retención genérica (WMS-30-0) | `holds.ts` | `holdStock`, `releaseHold`, `releaseHoldsOf` (dentro de la transacción del documento, después de sus candados) y `heldStock` (la única lectura: suma `stock_hold` y lo que retienen las devoluciones de clientes); la usan «Cambiar estado» (`holdSource` en `writeStatusChange`), las reversas, «Desechar» y la devolución al proveedor. Para WMS-30B (ADR 0068) |
-| Desechar (WMS-30-0) | `disposal.ts` | `disposeStock` (de dañado o rechazado, con motivo, clave de confirmación, `repeated`), `findDisposalConfirmation`, `postDisposal` (núcleo dentro de una transacción ajena, para WMS-29 y WMS-30B; `allowedStatuses`, `holdSource`), `DISPOSABLE_STATUSES`. Movimiento `DISPOSAL` al costo promedio; no se reversa |
+| Desechar (WMS-30-0) | `disposal.ts` | `disposeStock` (de dañado o rechazado, con motivo, clave de confirmación, `repeated`; con la regla `inventory.disposal` encendida responde `pending_approval` sin escribir, WMS-83), `disposalNeedsApproval`, `findDisposalConfirmation`, `postDisposal` (núcleo dentro de una transacción ajena, para WMS-29 y WMS-30B; `allowedStatuses`, `holdSource`), `DISPOSABLE_STATUSES`. Movimiento `DISPOSAL` al costo promedio; no se reversa |
 | Reservas | `reservations.ts` | `reserveStock`, `consumeReservation`, `releaseReservations`, `releaseReservationPart`, `freeToTake`, `freeToMoveFrom`, `getReservedTotals`; se llaman dentro de la transacción del documento. `TASK_HOLD` (fuente de lo que aparta una tarea de acomodo o de reposición) y `PRODUCT_HOLDS` (filtro de lo apartado de todo un producto) |
 | Acomodo | `putaway.ts`, `putaway-rules.ts` | `putawayTarget` (la única que decide el lugar recomendado), `createPutawayTasks` (dentro de la transacción de una recepción o entrada), `createContainerPutawayTask` (una tarea por tarima, WMS-53), `createPendingPutawayTasks` («Crear tareas de acomodo», también para tarimas), `isTaskNumberClash`; orden puro `rankPutawayPlaces` |
 | Lotes | `lots.ts`, `lot-rules.ts` | lotes con existencias, ficha, por caducar (`listExpiringLots`, `countExpiringLots`), `changeLotExpiry`; reglas puras del código y la fecha del lote |
@@ -308,6 +308,7 @@ Tipos declarados en `approvals.ts` (`INVENTORY_APPROVAL_TYPES`), registrados en
 | --- | --- | --- | --- |
 | `inventory.adjustment` («Corregir existencias») | `registerAdjustment` con la regla encendida y la diferencia sobre `inventory.adjustment.approval_threshold` | `inventory.adjustment.create` | `applyApprovedAdjustment`: el mismo ajuste, a nombre de quien lo pidió, solo si nada se movió de ese producto en esa ubicación desde que se pidió (si no, vence) |
 | `inventory.count_apply` («Aplicar conteos con diferencias grandes») | `applyCount` con la regla encendida y líneas sobre `inventory.count.review_threshold` (el conteo queda congelado mientras espera) | `inventory.count.apply` e `inventory.adjustment.create` | `applyApprovedCount`: el mismo `applyCount`, a nombre de quien lo pidió, si lo capturado no cambió |
+| `inventory.disposal` («Desechar mercancía», WMS-83, ADR 0078) | `disposeStock` con la regla encendida, siempre (sin umbral: así se cierra el rodeo disponible → dañado → desechar); `postDisposal` no pide | `inventory.disposal.create` | `applyApprovedDisposal`: el mismo desecho, a nombre de quien lo pidió (bitácora con `autorizadoPor`), solo si nada se movió de ese producto, ubicación, estado y lote desde que se pidió y quien pidió sigue activo y en alcance (si no, vence); no retiene mientras espera |
 
 ## Avisos
 
@@ -399,7 +400,8 @@ entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
 (inspección al recibir, desechar y retención genérica), 0071 (procesos en
-embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea).
+embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea), 0078
+(desechar con autorización).
 
 ## Pruebas
 
@@ -413,7 +415,8 @@ vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int
 `customer-returns.int.test.ts`; traslados entre almacenes en
 `facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;
 inspección al recibir, desechar, PC-5 y retención genérica en
-`inspection-on-receipt.int.test.ts` (`reconcileStock` agrega `source:
+`inspection-on-receipt.int.test.ts` y el desecho con autorización en
+`disposal-approval.int.test.ts` (`reconcileStock` agrega `source:
 "holds"`: lo retenido nunca pasa del saldo); el estado «En restauración»
 (PC-5, permisos, ajuste, ubicación, lotes, series, retención) en
 `repair.int.test.ts`. Casos de alcance en
