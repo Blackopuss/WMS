@@ -1,17 +1,23 @@
 import "server-only";
 
-import { dec, isAppError } from "@/lib";
+import { dec } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
+import { can, loadScope, loadSubject } from "@/platform/authorization";
 import {
   activeFacilityOf,
-  isFacilityInScope,
+  facilityInScope,
   isLimited,
   locationScopeWhere,
 } from "@/platform/locations";
 import { readSetting } from "@/platform/settings";
 import { forOrganization } from "@/server";
 
-import { companyTimeZone, dayWindow, type DayWindow } from "./calendar-day";
+import {
+  companyTimeZone,
+  dayOf,
+  windowOf,
+  type DayWindow,
+} from "./calendar-day";
 import { accuracyFigures, type AccuracyFigures } from "./count-accuracy";
 import {
   daysOfInventory,
@@ -19,11 +25,12 @@ import {
   rotationOf,
   shareOf,
   shiftDay,
+  shippedOnTime,
   timeFigures,
   type KpiPeriod,
 } from "./indicator-rules";
 import { formatValue } from "./inventory-value";
-import { formatStock, startOfDay, type InventoryActor } from "./movements";
+import { formatStock, type InventoryActor } from "./movements";
 import { pickedOnWhere } from "./outbound-orders";
 import { KPI_IDLE_DAYS, PUTAWAY_MODE } from "./settings";
 import { shippedOnWhere } from "./shipment-ready";
@@ -46,6 +53,8 @@ export const KPI_TOP_PRODUCTS = 20;
 export const KPI_ORDERS_MAX = 2_000;
 /** Delivered tasks read for times. */
 export const KPI_TASK_ROWS_MAX = 10_000;
+/** Products with stock read to find the idle ones. */
+export const KPI_IDLE_SCAN_MAX = 20_000;
 /** Groups of cost read for the total value that left. */
 export const KPI_COST_GROUPS_MAX = 5_000;
 
@@ -143,27 +152,14 @@ export type WarehouseIndicators = {
     valueTruncated?: boolean;
     top: KpiProductRow[];
   };
-  idle: { days: number; count: number; rows: KpiIdleRow[] };
+  /** `truncated`: more products with stock than were read. */
+  idle: { days: number; count: number; rows: KpiIdleRow[]; truncated: boolean };
   /** Only with `inventory.worker_performance.read`. */
   people?: KpiPersonRow[];
   zones: KpiZoneRow[];
   /** Rows of delivered tasks read for times were capped. */
   tasksTruncated: boolean;
 };
-
-async function may(actor: InventoryActor, permission: string) {
-  try {
-    await assertModulePermission(
-      actor.organizationId,
-      actor.userId,
-      permission as Parameters<typeof assertModulePermission>[2],
-    );
-    return true;
-  } catch (error) {
-    if (isAppError(error) && error.kind === "forbidden") return false;
-    throw error;
-  }
-}
 
 const id36 = (value: unknown) =>
   typeof value === "string" && value ? value.slice(0, 36) : null;
@@ -197,47 +193,52 @@ export async function getWarehouseIndicators(
     "inventory.kpi.read",
   );
   const client = forOrganization(actor.organizationId);
-  const [today, active, scoped, costs, seesPeople, seesAccuracy, timeZone] =
+  // The company's zone is read once; every day below is worked out from it.
+  const [timeZone, active, scope, scoped, subject, allFacilities, idleDays] =
     await Promise.all([
-      dayWindow(client, options.now ?? new Date()),
-      activeFacilityOf(client, actor.userId),
-      locationScopeWhere(client, actor.userId),
-      may(actor, "inventory.cost.read"),
-      may(actor, "inventory.worker_performance.read"),
-      may(actor, "inventory.count_accuracy.read"),
       companyTimeZone(client),
+      activeFacilityOf(client, actor.userId),
+      loadScope(client, actor.userId),
+      locationScopeWhere(client, actor.userId),
+      loadSubject(actor.organizationId, actor.userId),
+      client.facility.findMany({
+        where: { archivedAt: null },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: { id: true, name: true },
+      }),
+      readSetting(client, KPI_IDLE_DAYS),
     ]);
-  if (!today) throw new Error("Unreadable day for the indicators");
+  // The other reads are of the same module as `inventory.kpi.read`, which
+  // just passed with its entitlement: the role decides, read once.
+  const costs = can(subject, "inventory.cost.read");
+  const seesPeople = can(subject, "inventory.worker_performance.read");
+  const seesAccuracy = can(subject, "inventory.count_accuracy.read");
+  const today = dayOf(options.now ?? new Date(), timeZone);
 
   // Warehouses the person reaches; one asked for outside them is ignored.
-  const allFacilities = await client.facility.findMany({
-    where: { archivedAt: null },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-    select: { id: true, name: true },
-  });
-  const reach = await Promise.all(
-    allFacilities.map((f) => isFacilityInScope(client, actor.userId, f.id)),
-  );
-  const facilities = allFacilities.filter((_, index) => reach[index]);
+  const facilities = allFacilities.filter((f) => facilityInScope(scope, f.id));
   const asked = id36(options.facilityId);
   const facility = facilities.find((f) => f.id === asked) ?? {
     id: active.id,
     name: active.name,
   };
 
-  const period = resolvePeriod(today.day, {
+  const period = resolvePeriod(today, {
     preset: options.preset,
     from: options.from,
     to: options.to,
   });
-  const [startDay, endDay, idleDays] = await Promise.all([
-    dayWindow(client, period.from),
-    dayWindow(client, period.next),
-    readSetting(client, KPI_IDLE_DAYS),
-  ]);
-  if (!startDay || !endDay) throw new Error("Unreadable period");
+  const idleDaysCount = Number(idleDays);
+  const startDay = windowOf(period.from, timeZone);
+  const endDay = windowOf(period.next, timeZone);
+  const idleSince = windowOf(shiftDay(today, 1 - idleDaysCount), timeZone);
+  if (!startDay || !endDay || !idleSince) throw new Error("Unreadable period");
   const range = { gte: startDay.range.gte, lt: endDay.range.gte };
   const window: DayWindow = { day: period.from, range };
+  const place = {
+    facilityId: facility.id,
+    ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+  };
 
   const askedProduct = id36(options.productId);
   const product = askedProduct
@@ -247,18 +248,35 @@ export async function getWarehouseIndicators(
       })
     : null;
   const askedPerson = seesPeople ? id36(options.personId) : null;
-  const personMember = askedPerson
+  let personMember = askedPerson
     ? await client.membership.findFirst({
         where: { userId: askedPerson },
         select: { userId: true, user: { select: { name: true } } },
       })
     : null;
+  // Who is limited to zones only names people who did something inside
+  // them in the period (WMS-20: nothing outside the scope is named).
+  if (personMember && isLimited(scoped)) {
+    const [tasks, movements] = await Promise.all([
+      client.warehouseTask.count({
+        where: {
+          status: "DELIVERED",
+          deliveredAt: range,
+          fromLocation: place,
+          assignedToUserId: personMember.userId,
+        },
+      }),
+      client.stockMovement.count({
+        where: {
+          createdAt: range,
+          createdByUserId: personMember.userId,
+          lines: { some: { location: place } },
+        },
+      }),
+    ]);
+    if (tasks + movements === 0) personMember = null;
+  }
   const personId = personMember?.userId ?? null;
-
-  const place = {
-    facilityId: facility.id,
-    ...(isLimited(scoped) ? { AND: [scoped] } : {}),
-  };
   const byProduct = product ? { productId: product.id } : {};
   const exitLine = {
     direction: "OUT" as const,
@@ -277,12 +295,6 @@ export async function getWarehouseIndicators(
     ...byProduct,
     ...(personId ? { assignedToUserId: personId } : {}),
   };
-  const idleDaysCount = Number(idleDays);
-  const idleSince = await dayWindow(
-    client,
-    shiftDay(today.day, 1 - idleDaysCount),
-  );
-  if (!idleSince) throw new Error("Unreadable day for idle products");
   const shippedWhere = shippedOnWhere(facility.id, window);
   const pickedWhere = pickedOnWhere(facility.id, window);
 
@@ -291,7 +303,6 @@ export async function getWarehouseIndicators(
     exitLines,
     costGroups,
     withStock,
-    movedLately,
     accuracy,
     shippedCount,
     shippedOrders,
@@ -325,22 +336,15 @@ export async function getWarehouseIndicators(
           take: KPI_COST_GROUPS_MAX + 1,
         })
       : Promise.resolve(null),
-    // Idle products: with stock in the place minus those that moved there
-    // lately, both grouped in the database (two group-bys cost less than
-    // a count with EXISTS per product, measured with 10,000 products).
+    // Idle products: those with stock in the place (grouped in the
+    // database, capped) minus those of them that moved there lately. Two
+    // group-bys cost less than a count with EXISTS per product (measured
+    // with 10,000 products).
     client.stockBalance.groupBy({
       by: ["productId"],
       where: { quantity: { gt: 0 }, location: place, ...byProduct },
       orderBy: { productId: "asc" },
-    }),
-    client.stockMovementLine.groupBy({
-      by: ["productId"],
-      where: {
-        createdAt: { gte: idleSince.range.gte },
-        location: place,
-        ...byProduct,
-      },
-      orderBy: { productId: "asc" },
+      take: KPI_IDLE_SCAN_MAX + 1,
     }),
     seesAccuracy
       ? accuracyFigures(client, {
@@ -350,6 +354,7 @@ export async function getWarehouseIndicators(
           },
           costs,
           days: [period.from, period.next],
+          range,
         })
       : Promise.resolve(undefined),
     client.outboundOrder.count({ where: shippedWhere }),
@@ -418,7 +423,16 @@ export async function getWarehouseIndicators(
     }),
     client.warehouseTask.groupBy({
       by: ["placedLocationId", "toLocationId"],
-      where: { ...taskWhere, kind: "PUTAWAY" },
+      // Counted where it was placed, and only when that place is in the
+      // scope too (WMS-20).
+      where: {
+        ...taskWhere,
+        kind: "PUTAWAY",
+        OR: [
+          { placedLocation: place },
+          { placedLocationId: null, toLocation: place },
+        ],
+      },
       orderBy: [{ placedLocationId: "asc" }, { toLocationId: "asc" }],
       _count: { _all: true },
     }),
@@ -555,7 +569,7 @@ export async function getWarehouseIndicators(
         info.unitCode,
       ),
       rotation,
-      daysOfInventory: daysOfInventory(rotation, period.days),
+      daysOfInventory: daysOfInventory(period.days, row.quantity, start, end),
     };
     if (costs) {
       result.exitValue = formatValue(
@@ -576,10 +590,24 @@ export async function getWarehouseIndicators(
   });
 
   // Products with stock that did not move in the last days.
+  const idleTruncated = withStock.length > KPI_IDLE_SCAN_MAX;
+  const stockIds = withStock
+    .slice(0, KPI_IDLE_SCAN_MAX)
+    .map((row) => row.productId);
+  const movedLately =
+    stockIds.length === 0
+      ? []
+      : await client.stockMovementLine.groupBy({
+          by: ["productId"],
+          where: {
+            productId: { in: stockIds },
+            createdAt: { gte: idleSince.range.gte },
+            location: place,
+          },
+          orderBy: { productId: "asc" },
+        });
   const moved = new Set(movedLately.map((row) => row.productId));
-  const idleAll = withStock
-    .map((row) => row.productId)
-    .filter((id) => !moved.has(id));
+  const idleAll = stockIds.filter((id) => !moved.has(id));
   const idleProducts =
     idleAll.length === 0
       ? []
@@ -663,11 +691,11 @@ export async function getWarehouseIndicators(
       .map((s) => s.shipment.shippedAt)
       .filter((at): at is Date => at !== null)
       .sort((a, b) => a.getTime() - b.getTime())[0];
-    const dueEnd = startOfDay(
-      shiftDay(order.dueOn.toISOString().slice(0, 10), 1),
+    const isOnTime = shippedOnTime(
+      shippedAt ?? null,
+      order.dueOn.toISOString().slice(0, 10),
       timeZone,
     );
-    const isOnTime = Boolean(shippedAt && dueEnd && shippedAt < dueEnd);
     if (isOnTime) onTime += 1;
     if (isOnTime && isComplete) completeOnTime += 1;
   }
@@ -699,7 +727,22 @@ export async function getWarehouseIndicators(
     ...tasksPlaced.map((g) => g.placedLocationId ?? g.toLocationId),
     ...linesByLocation.map((g) => g.locationId),
   ]);
-  const zoneOf = await zonesOf(client, [...locationIds]);
+  // With zones, a place outside them is never named nor counted (WMS-20):
+  // the destination of a put-away is checked here as well as in its query.
+  const reachable = isLimited(scoped)
+    ? new Set(
+        (
+          await client.location.findMany({
+            where: { id: { in: [...locationIds] }, ...place },
+            select: { id: true },
+          })
+        ).map((row) => row.id),
+      )
+    : locationIds;
+  const zoneOf = await zonesOf(
+    client,
+    [...locationIds].filter((id) => reachable.has(id)),
+  );
   const putawayTimes: number[] = [];
   const timesByPerson = new Map<string, number[]>();
   const timesByZone = new Map<string, number[]>();
@@ -779,7 +822,12 @@ export async function getWarehouseIndicators(
       truncated: tasksTruncated,
     },
     exits: { lines: exitLines, top },
-    idle: { days: idleDaysCount, count: idleAll.length, rows: idleRows },
+    idle: {
+      days: idleDaysCount,
+      count: idleAll.length,
+      rows: idleRows,
+      truncated: idleTruncated,
+    },
     zones: [...zones.values()].sort(
       (a, b) =>
         b.tasks + b.movementLines - (a.tasks + a.movementLines) ||

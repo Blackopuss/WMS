@@ -107,7 +107,9 @@ export function resolvePeriod(
 
 /**
  * Rotation of a product in a period: what left ÷ the average of the stock
- * it started and ended with. Null without average stock. Two decimals.
+ * it started and ended with. Null without average stock. Two decimals, but
+ * a rotation above zero never reads as «0.00»: below 0.01 it keeps two
+ * significant digits («0.0005»).
  */
 export function rotationOf(
   exits: Decimal | string,
@@ -116,16 +118,27 @@ export function rotationOf(
 ): string | null {
   const average = dec(start).plus(end).dividedBy(2);
   if (!average.greaterThan(0)) return null;
-  return dec(exits).dividedBy(average).toFixed(2);
+  const exact = dec(exits).dividedBy(average);
+  if (exact.greaterThan(0) && exact.lessThan("0.01")) {
+    return exact.toSignificantDigits(2).toFixed();
+  }
+  return exact.toFixed(2);
 }
 
-/** Days the stock lasts at that rotation: days ÷ rotation; whole days. */
+/**
+ * Days the stock lasts at the pace of the period: days × average stock ÷
+ * what left, with exact decimals (never from the rounded rotation); whole
+ * days. Null when nothing left or there was no stock.
+ */
 export function daysOfInventory(
-  rotation: string | null,
   days: number,
+  exits: Decimal | string,
+  start: Decimal | string,
+  end: Decimal | string,
 ): string | null {
-  if (rotation === null || !dec(rotation).greaterThan(0)) return null;
-  return dec(days).dividedBy(rotation).toFixed(0);
+  const average = dec(start).plus(end).dividedBy(2);
+  if (!dec(exits).greaterThan(0) || !average.greaterThan(0)) return null;
+  return dec(days).times(average).dividedBy(exits).toFixed(0);
 }
 
 /** The value at a share (0 to 1) of sorted numbers, nearest rank. */
@@ -168,4 +181,32 @@ export function durationText(ms: number | null): string {
   const days = Math.floor(hours / 24);
   const rest = hours % 24;
   return rest === 0 ? `${days} d` : `${days} d ${rest} h`;
+}
+
+/** The day of the company's calendar a moment falls on: «2026-11-12». */
+export function calendarDay(at: Date, timeZone: string): string {
+  const format = (zone: string) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(at);
+  try {
+    return format(timeZone);
+  } catch {
+    return format("UTC");
+  }
+}
+
+/**
+ * An order left on time when the day of the company's calendar its
+ * shipment left on is not after its day of departure (`dueOn`).
+ */
+export function shippedOnTime(
+  shippedAt: Date | null,
+  dueOn: string,
+  timeZone: string,
+): boolean {
+  return shippedAt !== null && calendarDay(shippedAt, timeZone) <= dueOn;
 }

@@ -145,7 +145,8 @@ export default async function IndicadoresPage({
     kpi.picking.truncated ||
     kpi.tasksTruncated ||
     kpi.accuracy?.truncated ||
-    kpi.exits.valueTruncated
+    kpi.exits.valueTruncated ||
+    kpi.idle.truncated
   ) {
     notices.push(
       "Hubo más registros de los que caben en este reporte: algunas cifras están incompletas. Elige un periodo más corto.",

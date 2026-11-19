@@ -20,7 +20,7 @@ export type DayWindow = {
 type Client = Pick<ReturnType<typeof forOrganization>, "membership">;
 
 /** The calendar day of a moment in a time zone: «2026-11-12». */
-function dayOf(at: Date, timeZone: string): string {
+export function dayOf(at: Date, timeZone: string): string {
   const format = (zone: string) =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: zone,
@@ -70,6 +70,15 @@ export async function dayWindow(
   } else {
     day = dayOf(of, timeZone);
   }
+  return windowOf(day, timeZone);
+}
+
+/**
+ * The window of a day already written as year-month-day, in a time zone
+ * already read: for who needs several days without reading the company
+ * again (WMS-32).
+ */
+export function windowOf(day: string, timeZone: string): DayWindow | null {
   const start = startOfDay(day, timeZone);
   const end = startOfDay(nextDay(day), timeZone);
   if (!start || !end) return null;

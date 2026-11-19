@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { ForbiddenError, newId } from "@/lib";
 import {
@@ -10,6 +11,14 @@ import {
   createTask,
   deliverTask,
   dispatchShipment,
+  finishPacking,
+  packScan,
+  reportPackShortage,
+  startPacking,
+  cancelOutboundOrder,
+  cancelTask,
+  PACKING_MODE,
+  PUTAWAY_MODE,
   getWarehouseIndicators,
   pickUpTask,
   registerEntry,
@@ -25,7 +34,11 @@ import {
 } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
-import { createFacility, createLocation } from "@/platform/locations";
+import {
+  createFacility,
+  createLocation,
+  switchFacility,
+} from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
@@ -34,6 +47,12 @@ import { db } from "@/server";
 // worked out by hand; scope, roles, costs and the company's calendar.
 
 const DAY = 86_400_000;
+/**
+ * Statements of one load of the indicators, as measured after the review
+ * of WMS-32 (58 before): permission, scope and company are read once
+ * each; three warehouses cost the same as one.
+ */
+const KPI_QUERY_BUDGET = 50;
 const stamp = Date.now();
 let counter = 0;
 let staff = "";
@@ -99,11 +118,17 @@ async function product(owner: InventoryActor, name: string) {
   return created.productId;
 }
 
-async function place(owner: InventoryActor, name: string, parentId?: string) {
+async function place(
+  owner: InventoryActor,
+  name: string,
+  parentId?: string,
+  extra: { type?: string; code?: string } = {},
+) {
   const result = await createLocation(owner, {
     level: parentId ? 3 : 1,
     name,
     ...(parentId ? { parentId } : {}),
+    ...extra,
   });
   if (!result.ok) throw new Error(JSON.stringify(result));
   return result.locationId;
@@ -192,6 +217,62 @@ const mexicoDay = (at: Date) =>
     month: "2-digit",
     day: "2-digit",
   }).format(at);
+
+/** Picks every pending picking task of the company, as the owner. */
+async function pickPending(owner: InventoryActor) {
+  const picks = await db.warehouseTask.findMany({
+    where: {
+      organizationId: owner.organizationId,
+      kind: "PICK",
+      status: "PENDING",
+    },
+    orderBy: { number: "asc" },
+    include: { product: true, fromLocation: true },
+  });
+  for (const task of picks) {
+    expect(await acceptTask(owner, task.id)).toMatchObject({ ok: true });
+    expect(
+      await confirmPick(owner, task.id, {
+        productCode: task.product!.sku,
+        locationCode: task.fromLocation.name,
+        quantity: task.quantity!.toString(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await deliverTask(owner, task.id)).toMatchObject({ ok: true });
+  }
+}
+
+/**
+ * Counts the statements this test sends to MySQL: every one goes through
+ * the queryable of the driver adapter (its prototype is shared by the
+ * application's client), and integration tests run one file at a time.
+ */
+async function countingQueries() {
+  const adapter = await new PrismaMariaDb({
+    host: process.env.DATABASE_HOST!,
+    port: Number(process.env.DATABASE_PORT ?? 3306),
+    user: process.env.DATABASE_APP_USER!,
+    password: process.env.DATABASE_APP_PASSWORD!,
+    database: process.env.DATABASE_NAME!,
+    connectionLimit: 1,
+    allowPublicKeyRetrieval: true,
+  }).connect();
+  const queryable = Object.getPrototypeOf(Object.getPrototypeOf(adapter));
+  await adapter.dispose();
+  const reads = vi.spyOn(queryable, "queryRaw");
+  const writes = vi.spyOn(queryable, "executeRaw");
+  return {
+    count: () => reads.mock.calls.length + writes.mock.calls.length,
+    reset: () => {
+      reads.mockClear();
+      writes.mockClear();
+    },
+    restore: () => {
+      reads.mockRestore();
+      writes.mockRestore();
+    },
+  };
+}
 
 afterAll(() => db.$disconnect());
 
@@ -419,8 +500,17 @@ describe("getWarehouseIndicators", () => {
       await order(plenty, "5", shift(-1)),
       await order(plenty, "5"),
     ];
+    // A cancelled order never counts.
+    const dropped = await order(plenty, "2", today);
+    expect(
+      await cancelOutboundOrder(owner, dropped, "El cliente ya no lo quiere"),
+    ).toMatchObject({ ok: true });
     const picks = await db.warehouseTask.findMany({
-      where: { organizationId: owner.organizationId, kind: "PICK" },
+      where: {
+        organizationId: owner.organizationId,
+        kind: "PICK",
+        status: "PENDING",
+      },
       orderBy: { number: "asc" },
       include: { product: true, fromLocation: true },
     });
@@ -690,5 +780,204 @@ describe("getWarehouseIndicators", () => {
     expect(
       (await getWarehouseIndicators(owner, { preset: "7", now })).exits.lines,
     ).toBe(0);
+  }, 60_000);
+
+  it("a zone outside the scope is never named nor counted", async () => {
+    const owner = await company();
+    await setting(owner, PUTAWAY_MODE.key, "tasks");
+    const north = await place(owner, "Zona Norte");
+    const dock = await place(owner, "Andén N", north, { type: "RECEIVING" });
+    await place(owner, "Estante N1", north);
+    const secret = await place(owner, "Zona Secreta");
+    await place(owner, "Estante S1", secret, { code: "S-01" });
+    const item = await product(owner, "Tornillo");
+    // The entry to the dock creates its put-away; it ends up in the
+    // other zone.
+    await entry(owner, item, "4", dock);
+    const putaway = await db.warehouseTask.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, kind: "PUTAWAY" },
+    });
+    expect(await acceptTask(owner, putaway.id)).toMatchObject({ ok: true });
+    expect(await pickUpTask(owner, putaway.id)).toMatchObject({ ok: true });
+    expect(
+      await deliverTask(owner, putaway.id, {
+        locationCode: "S-01",
+        acceptCapacity: true,
+      }),
+    ).toMatchObject({ ok: true });
+    // Someone who only works in the secret zone.
+    const hidden = await member(owner.organizationId, "operator", "Oculto");
+    await movementAt(hidden, {
+      type: "ENTRY",
+      at: new Date(),
+      productId: item,
+      locationId: secret,
+      quantity: "1",
+    });
+
+    const facilityId = (
+      await db.location.findUniqueOrThrow({ where: { id: north } })
+    ).facilityId;
+    const viewer = await member(owner.organizationId, "supervisor", "Norte");
+    const scoped = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: viewer.userId,
+      facilities: [{ facilityId, zoneIds: [north] }],
+    });
+    if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+
+    const seen = await getWarehouseIndicators(viewer, { preset: "7" });
+    expect(seen.zones.map((zone) => zone.name)).toEqual(["Zona Norte"]);
+    expect(JSON.stringify(seen)).not.toContain("Secreta");
+    // The north zone: the entry and the put-away leaving the dock; the
+    // put-away is not a task of the zone (it ended elsewhere).
+    expect(seen.zones[0]).toMatchObject({ tasks: 0, movementLines: 2 });
+    // Nobody who only worked outside is named, not even when asked.
+    expect(seen.people?.map((row) => row.name)).not.toContain("Oculto");
+    const asked = await getWarehouseIndicators(viewer, {
+      preset: "7",
+      personId: hidden.userId,
+    });
+    expect(asked.person).toBeNull();
+    // Who sees the whole warehouse sees both zones.
+    const whole = await getWarehouseIndicators(owner, { preset: "7" });
+    expect(whole.zones.map((zone) => zone.name).sort()).toEqual([
+      "Zona Norte",
+      "Zona Secreta",
+    ]);
+    expect(
+      whole.zones.find((zone) => zone.name === "Zona Secreta"),
+    ).toMatchObject({ tasks: 1 });
+    expect(
+      (await getWarehouseIndicators(owner, { personId: hidden.userId })).person,
+    ).toMatchObject({ name: "Oculto" });
+  }, 120_000);
+
+  it("a short packing makes the order incomplete", async () => {
+    const owner = await company();
+    await setting(owner, PACKING_MODE.key, "on");
+    const shelf = await place(owner, "Zona E");
+    const item = await product(owner, "Taza");
+    await entry(owner, item, "20", shelf);
+    const made = await createOutboundOrder(owner, { recipient: "Tienda" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await setOutboundLine(owner, made.orderId, {
+      productId: item,
+      quantity: "5",
+    });
+    expect(await releaseOutboundOrder(owner, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    await pickPending(owner);
+    const sku = (await db.product.findUniqueOrThrow({ where: { id: item } }))
+      .sku;
+    expect(await startPacking(owner, made.orderId)).toMatchObject({ ok: true });
+    expect(
+      await packScan(owner, made.orderId, { code: sku, quantity: "3" }),
+    ).toMatchObject({ ok: true });
+    const line = await db.outboundOrderLine.findFirstOrThrow({
+      where: { orderId: made.orderId },
+    });
+    expect(
+      await reportPackShortage(owner, made.orderId, {
+        lineId: line.id,
+        reason: "Dos tazas rotas",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await finishPacking(owner, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    const shipment = await createShipment(owner, { orderIds: [made.orderId] });
+    if (!shipment.ok) throw new Error(JSON.stringify(shipment));
+    expect(await dispatchShipment(owner, shipment.shipmentId)).toMatchObject({
+      ok: true,
+    });
+    expect((await getWarehouseIndicators(owner)).orders).toMatchObject({
+      shipped: 1,
+      complete: 0,
+      completeShare: "0.0",
+    });
+  }, 120_000);
+
+  it("picking time runs to the last picking task closed, cancelled too", async () => {
+    const owner = await company();
+    const zone = await place(owner, "Zona F");
+    const a = await place(owner, "Estante F1", zone);
+    const b = await place(owner, "Estante F2", zone);
+    const item = await product(owner, "Vaso");
+    await entry(owner, item, "3", a);
+    await entry(owner, item, "3", b);
+    const made = await createOutboundOrder(owner, { recipient: "Tienda" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await setOutboundLine(owner, made.orderId, {
+      productId: item,
+      quantity: "6",
+    });
+    expect(await releaseOutboundOrder(owner, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    const [first, second] = await db.warehouseTask.findMany({
+      where: { organizationId: owner.organizationId, kind: "PICK" },
+      orderBy: { number: "asc" },
+      include: { product: true, fromLocation: true },
+    });
+    expect(await acceptTask(owner, first!.id)).toMatchObject({ ok: true });
+    expect(
+      await confirmPick(owner, first!.id, {
+        productCode: first!.product!.sku,
+        locationCode: first!.fromLocation.name,
+        quantity: first!.quantity!.toString(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await deliverTask(owner, first!.id)).toMatchObject({ ok: true });
+    expect(
+      await cancelTask(owner, second!.id, "Se rompió en el estante"),
+    ).toMatchObject({ ok: true });
+
+    const order = await db.outboundOrder.findUniqueOrThrow({
+      where: { id: made.orderId },
+    });
+    expect(order.status).toBe("PICKED");
+    const cancelled = await db.warehouseTask.findUniqueOrThrow({
+      where: { id: second!.id },
+    });
+    const seen = await getWarehouseIndicators(owner, { preset: "7" });
+    expect(seen.picking).toMatchObject({
+      orders: 1,
+      count: 1,
+      medianMs: cancelled.cancelledAt!.getTime() - order.releasedAt!.getTime(),
+    });
+  }, 120_000);
+
+  it("reads the database a fixed number of times", async () => {
+    const owner = await company(3);
+    const zone = await place(owner, "Zona G");
+    const shelf = await place(owner, "Estante G1", zone);
+    const item = await product(owner, "Plato");
+    await entry(owner, item, "9", shelf);
+    for (const code of ["G2", "G3"]) {
+      const made = await createFacility(owner, {
+        name: `Bodega ${code}`,
+        code,
+      });
+      if (!made.ok) throw new Error(JSON.stringify(made));
+    }
+    await switchFacility(
+      owner,
+      (await db.location.findUniqueOrThrow({ where: { id: shelf } }))
+        .facilityId,
+    );
+    const queries = await countingQueries();
+    try {
+      queries.reset();
+      await getWarehouseIndicators(owner, { preset: "30" });
+      const plain = queries.count();
+      // More warehouses do not add reads: the scope is read once.
+      expect(plain).toBeLessThanOrEqual(KPI_QUERY_BUDGET);
+      queries.reset();
+      await getWarehouseIndicators(owner, { preset: "30" });
+      expect(queries.count()).toBe(plain);
+    } finally {
+      queries.restore();
+    }
   }, 60_000);
 });

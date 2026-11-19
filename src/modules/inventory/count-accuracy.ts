@@ -101,19 +101,25 @@ export async function accuracyFigures(
     /** First day and the day after the last, as year-month-day. */
     days: [string, string];
     programId?: string | null;
+    /** The moments of those days, when the caller already has them. */
+    range?: { gte: Date; lt: Date };
   },
 ): Promise<AccuracyFigures> {
   const { location, costs, programId } = options;
   const [first, next] = options.days;
-  const [start, end] = await Promise.all([
-    dayWindow(client, first),
-    dayWindow(client, next),
-  ]);
-  if (!start || !end) throw new Error("Unreadable period for accuracy");
+  let range = options.range;
+  if (!range) {
+    const [start, end] = await Promise.all([
+      dayWindow(client, first),
+      dayWindow(client, next),
+    ]);
+    if (!start || !end) throw new Error("Unreadable period for accuracy");
+    range = { gte: start.range.gte, lt: end.range.gte };
+  }
   const counts = await client.stockCount.findMany({
     where: {
       status: "APPLIED",
-      closedAt: { gte: start.range.gte, lt: end.range.gte },
+      closedAt: range,
       location,
       ...(programId ? { programId } : {}),
     },

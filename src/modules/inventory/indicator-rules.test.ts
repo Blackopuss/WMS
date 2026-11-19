@@ -6,6 +6,7 @@ import {
   durationText,
   percentile,
   resolvePeriod,
+  shippedOnTime,
   rotationOf,
   shareOf,
   timeFigures,
@@ -75,10 +76,22 @@ describe("rotation", () => {
     expect(rotationOf("40", "120", "100")).toBe("0.36");
     expect(rotationOf("50", "0", "50")).toBe("2.00");
     expect(rotationOf("10", "0", "0")).toBeNull();
-    expect(daysOfInventory("2.00", 30)).toBe("15");
-    expect(daysOfInventory("0.36", 7)).toBe("19");
-    expect(daysOfInventory(null, 7)).toBeNull();
-    expect(daysOfInventory("0.00", 7)).toBeNull();
+    expect(rotationOf("0", "5", "5")).toBe("0.00");
+    // Slow products: above zero never reads as 0.00.
+    expect(rotationOf("1", "2000", "2000")).toBe("0.0005");
+    expect(rotationOf("3", "200", "200")).toBe("0.02");
+  });
+
+  it("days of inventory come from exact decimals, not the rounded rotation", () => {
+    expect(daysOfInventory(30, "60", "0", "60")).toBe("15");
+    expect(daysOfInventory(7, "40", "120", "100")).toBe("19");
+    // Worked out by hand: 30 × 2000 ÷ 1 = 60,000; 30 × 200 ÷ 3 = 2,000;
+    // 30 × 1000 ÷ 7 = 4,285.7.
+    expect(daysOfInventory(30, "1", "2000", "2000")).toBe("60000");
+    expect(daysOfInventory(30, "3", "200", "200")).toBe("2000");
+    expect(daysOfInventory(30, "7", "1000", "1000")).toBe("4286");
+    expect(daysOfInventory(7, "0", "5", "5")).toBeNull();
+    expect(daysOfInventory(7, "3", "0", "0")).toBeNull();
   });
 });
 
@@ -103,5 +116,22 @@ describe("times and shares", () => {
     expect(durationText(80 * 60_000)).toBe("1 h 20 min");
     expect(durationText(2 * 3_600_000)).toBe("2 h");
     expect(durationText(52 * 3_600_000)).toBe("2 d 4 h");
+  });
+});
+
+describe("on time", () => {
+  it("compares days of the company's calendar, not of UTC", () => {
+    // 03:00 UTC of the 13th is the 12th at 21:00 in Mexico City.
+    const night = new Date("2026-11-13T03:00:00Z");
+    expect(shippedOnTime(night, "2026-11-12", "America/Mexico_City")).toBe(
+      true,
+    );
+    expect(shippedOnTime(night, "2026-11-12", "UTC")).toBe(false);
+    expect(shippedOnTime(night, "2026-11-11", "America/Mexico_City")).toBe(
+      false,
+    );
+    expect(shippedOnTime(null, "2026-11-12", "America/Mexico_City")).toBe(
+      false,
+    );
   });
 });

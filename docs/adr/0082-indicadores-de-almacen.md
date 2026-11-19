@@ -132,9 +132,15 @@ Con `?producto=`, solo ese producto (aunque no tenga salidas).
 - Existencia promedio = (inicial + final) ÷ 2. **Es una aproximación** (no se
   guarda el saldo de cada día; integrar el saldo día por día costaría una
   consulta por movimiento): se dice en el ADR y en la ayuda de la columna.
-- **Rotación = salidas del periodo ÷ existencia promedio** («veces»). Sin
-  existencia promedio (cero) la rotación no existe (`null`, «—»).
-- **Días de inventario = días del periodo ÷ rotación** (sin rotación, «—»).
+- **Rotación = salidas del periodo ÷ existencia promedio** («veces»), con dos
+  decimales; una rotación mayor que cero nunca se muestra como «0.00»: debajo
+  de 0.01 conserva dos cifras significativas («0.0005»). Sin existencia
+  promedio (cero) la rotación no existe (`null`, «—»).
+- **Días de inventario = días del periodo × existencia promedio ÷ salidas**,
+  con decimales exactos y redondeado a días enteros solo al final (nunca a
+  partir de la rotación ya redondeada: con los productos lentos daba «—» o
+  cifras falsas; hallazgo de la revisión). Sin salidas o sin existencia,
+  «—».
 - Se calcula solo para los productos que se muestran (los 20 de mayor
   movimiento o el filtrado), no para todo el catálogo.
 - **Fuera:** rotación global en valor (costo de lo vendido ÷ inventario
@@ -177,7 +183,8 @@ ni por persona.
   y al empacar (`outbound_pack_shortage`), porque todo eso termina en salir
   menos.
 - **A tiempo:** el día del calendario de la empresa en que salió el embarque
-  ≤ «día de salida» del pedido (`dueOn`). Un pedido sin día de salida no
+  ≤ «día de salida» del pedido (`dueOn`) (`shippedOnTime`, pura: un despacho a
+  las 03:00 UTC es todavía el día anterior en Ciudad de México). Un pedido sin día de salida no
   cuenta para «a tiempo» ni para «completo y a tiempo» (se dice cuántos hay).
 - **Completo y a tiempo** = las dos cosas; su porcentaje es sobre los pedidos
   con día de salida.
@@ -221,7 +228,11 @@ Solo con `inventory.worker_performance.read`. En el periodo y en el lugar:
 - Nombres solo de miembros de la empresa (como el resumen del día); quien ya
   no está aparece como «Ya no está en el equipo».
 - Con `?persona=`, rendimiento, zonas y tiempo de recepción se limitan a esa
-  persona (tareas que tenía y movimientos que registró).
+  persona (tareas que tenía y movimientos que registró). Quien está limitado
+  a zonas solo puede elegir a alguien con una tarea entregada o un movimiento
+  dentro de su alcance en el periodo; si no, el filtro se ignora y la persona
+  no se nombra (hallazgo de la revisión: antes se nombraba a cualquier
+  miembro).
 
 No se compara a una persona con otra en una «calificación»: son conteos y
 tiempos. *El fundador puede cambiar* si quiere un índice.
@@ -233,7 +244,14 @@ función `zonesOf` que las olas, que pasa a un archivo compartido). Por zona,
 en el periodo: tareas entregadas (zona de su origen, salvo el acomodo, que
 cuenta en la zona donde quedó: `placedLocationId`), mediana de lo que tardó
 cada tarea (de las mismas filas leídas) y líneas de movimiento en ubicaciones
-de la zona (`groupBy` por ubicación en la base, sumado por zona). Lo que está
+de la zona (`groupBy` por ubicación en la base, sumado por zona). **Una zona
+fuera del alcance nunca se nombra ni se cuenta** (WMS-20): las tareas se
+filtran por su origen dentro del lugar y, además, un acomodo solo cuenta si
+el lugar donde quedó también está dentro (en su consulta y otra vez al
+armar las zonas y sus medianas, que solo miran ubicaciones del alcance). Es
+conservador: un acomodo que sale de un lugar de paso fuera del alcance y
+queda dentro de la zona no se cuenta (hallazgo de la revisión: antes se
+nombraba la zona de destino aunque estuviera fuera). Lo que está
 directamente en el almacén sin zona («General», «Preparación», tránsito)
 cuenta como su propia zona con su nombre.
 
@@ -249,7 +267,16 @@ ignora.
 
 - Periodo máximo 92 días; 20 productos por tabla; 2,000 pedidos; 10,000 filas
   de tareas para tiempos; 20,000 filas de conteo (las de WMS-55); 5,000 grupos
-  de costo para el valor total de lo que salió. Todo lo leído va en orden fijo
+  de costo para el valor total de lo que salió; 20,000 productos con
+  existencias revisados para «sin movimiento» (`KPI_IDLE_SCAN_MAX`; con más,
+  `truncated` y aviso).
+- Lecturas por carga: la zona horaria de la empresa, el alcance y el sujeto
+  (permisos) se leen una vez; los días del periodo se calculan sin volver a
+  leer la empresa (`windowOf`) y los almacenes alcanzados se deciden con el
+  alcance ya leído (no una consulta por almacén). Medido: 50 sentencias por
+  carga (58 antes de la revisión), las mismas con uno o con tres almacenes;
+  la prueba «reads the database a fixed number of times» lo fija contando
+  solo las sentencias de la propia prueba. Todo lo leído va en orden fijo
   terminado en `id`, y cada bloque devuelve `truncated` cuando se topó.
 - Todas las consultas van en paralelo después de resolver almacén, alcance y
   periodo.

@@ -885,6 +885,7 @@ export {
 } from "./inspection";
 export {
   KPI_COST_GROUPS_MAX,
+  KPI_IDLE_SCAN_MAX,
   KPI_ORDERS_MAX,
   KPI_TASK_ROWS_MAX,
   KPI_TOP_PRODUCTS,
