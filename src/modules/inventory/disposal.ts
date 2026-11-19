@@ -12,8 +12,10 @@ import {
   type ApprovalTx,
 } from "@/platform/approvals";
 import { recordAuditEvent } from "@/platform/audit";
+import { companyModules, permissionsOf } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
+import { readModuleStates } from "@/platform/entitlements";
 import { assertLocationsInScope } from "@/platform/locations";
 import {
   LOCKING_TRANSACTION,
@@ -543,14 +545,35 @@ const isKeyClash = (error: unknown) =>
     "idempotencyKey",
   );
 
-/** One open request per product, location, state and lot. */
+/**
+ * One open request per product, location, state and lot. The ids go
+ * without their dashes so the key never passes the 120 characters the
+ * engine keeps (at most 2 + 32 + 1 + 32 + 1 + 8 + 1 + 32 = 109).
+ */
 const disposalOpenKey = (line: {
   productId: string;
   locationId: string;
   status: string;
   lotId: string | null;
 }) =>
-  `disp:${line.productId}:${line.locationId}:${line.status}:${line.lotId ?? ""}`;
+  ["d", line.productId, line.locationId, line.status, line.lotId ?? ""]
+    .map((part, index) => (index === 0 ? part : part.replace(/-/g, "")))
+    .join(":");
+
+/** Same quantity written two ways («2» and «2.0»). */
+function sameQuantity(a: string, b: string): boolean {
+  try {
+    return dec(a).equals(dec(b));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The most a request may keep (the engine refuses above 20,000
+ * characters): a very long list of serials is answered as a message.
+ */
+const MAX_DISPOSAL_PAYLOAD = 18_000;
 
 const ANSWERED_TEXT: Record<string, string> = {
   REJECTED: "se rechazó",
@@ -666,7 +689,7 @@ async function disposeIn(
         payload.data.locationId === locationId &&
         payload.data.status === status &&
         payload.data.lotId === data.lotId &&
-        payload.data.quantity === data.quantity &&
+        sameQuantity(payload.data.quantity, data.quantity) &&
         JSON.stringify(payload.data.serials) ===
           JSON.stringify(data.serials ?? null);
       if (!sameAsk) {
@@ -728,7 +751,10 @@ async function disposeIn(
     // (product, location, state, lot) moved since it was asked for.
     const member = await tx.membership.findFirst({
       where: { userId, status: "ACTIVE" },
-      select: { id: true },
+      select: {
+        roles: { select: { role: true } },
+        organization: { select: { ownerUserId: true } },
+      },
     });
     if (!member) {
       return {
@@ -737,6 +763,22 @@ async function disposeIn(
         fieldErrors: {},
         formError:
           "Quien pidió el desecho ya no trabaja en la empresa: que lo pida alguien que sí.",
+      };
+    }
+    // NEG-20: who asked must still be able to write off, with its roles
+    // and modules as they are now, read with this transaction.
+    const subject = {
+      isOwner: member.organization.ownerUserId === userId,
+      roles: member.roles.map((each) => each.role),
+      modules: companyModules(await readModuleStates(tx, actor.organizationId)),
+    };
+    if (!permissionsOf(subject).has("inventory.disposal.create")) {
+      return {
+        ok: false as const,
+        reason: "not_allowed" as const,
+        fieldErrors: {},
+        formError:
+          "Quien pidió el desecho ya no puede desechar mercancía: que lo pida alguien que sí.",
       };
     }
     const movedSince = await tx.stockMovementLine.count({
@@ -777,6 +819,27 @@ async function disposeIn(
     mode.kind === "direct" &&
     (await approvalRequired(tx, DISPOSAL_APPROVAL.key))
   ) {
+    const payload = {
+      v: 1,
+      productId,
+      locationId,
+      status,
+      lotId: data.lotId,
+      quantity: data.quantity,
+      serials: data.serials,
+      reason: data.reason,
+      idempotencyKey: data.idempotencyKey,
+    };
+    if (JSON.stringify(payload).length > MAX_DISPOSAL_PAYLOAD) {
+      return {
+        ok: false as const,
+        reason: "invalid" as const,
+        fieldErrors: {
+          serials:
+            "Son demasiadas series para pedir una sola autorización. Divide el desecho en varias solicitudes.",
+        },
+      };
+    }
     const checked = await checkDisposalLines(tx, actor, {
       lines,
       reason: data.reason,
@@ -806,17 +869,7 @@ async function disposeIn(
       facilityId: await facilityOf(tx, locationId),
       locationId,
       summary,
-      payload: {
-        v: 1,
-        productId,
-        locationId,
-        status,
-        lotId: data.lotId,
-        quantity: data.quantity,
-        serials: data.serials,
-        reason: data.reason,
-        idempotencyKey: data.idempotencyKey,
-      },
+      payload,
     });
     if (!asked.ok) {
       return {

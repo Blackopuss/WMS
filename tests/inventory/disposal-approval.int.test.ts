@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { newId } from "@/lib";
 import {
@@ -27,6 +35,13 @@ import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
 // WMS-83 (ADR 0078): «Desechar mercancía pide autorización, con el porqué».
+
+/** Who the request comes from at a shared terminal (WMS-38), if anybody. */
+let terminalUser: string | null = null;
+vi.mock("@/platform/auth", async (original) => ({
+  ...(await original<typeof import("@/platform/auth")>()),
+  terminalUserOfRequest: async () => terminalUser,
+}));
 
 const stamp = Date.now();
 let counter = 0;
@@ -661,6 +676,129 @@ describe("with the rule on", () => {
     // Exactly one of them took the six damaged pieces.
     expect([decided.ok, changed.ok].filter(Boolean)).toHaveLength(1);
     expect(await item.damaged()).toBe("0");
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("review of WMS-83", () => {
+  beforeAll(() => rule(owner, true));
+
+  it("a list of serials too long for a request is a message, not an error", async () => {
+    const item = await damaged(owner);
+    const serials = Array.from(
+      { length: 500 },
+      (_, index) =>
+        `SERIE-MUY-LARGA-DE-PRUEBA-${stamp}-${String(index).padStart(6, "0")}`,
+    ).join("\n");
+    expect(await ask(clerk, item, { quantity: "500", serials })).toMatchObject({
+      ok: false,
+      reason: "invalid",
+      fieldErrors: { serials: expect.stringContaining("demasiadas series") },
+    });
+  });
+
+  it("expires when who asked can no longer write off (NEG-20)", async () => {
+    const item = await damaged(owner);
+    const changing = await member(owner.organizationId, "warehouse", "Rita");
+    const requestId = await asked(changing, item);
+    await db.membershipRole.updateMany({
+      where: {
+        organizationId: owner.organizationId,
+        membership: { userId: changing.userId },
+      },
+      data: { role: "operator" },
+    });
+    expect(await approve(boss, requestId)).toMatchObject({
+      ok: false,
+      reason: "expired",
+      error: expect.stringContaining("ya no puede desechar"),
+    });
+    expect(await item.damaged()).toBe("6");
+    expect(await disposalsOf(owner.organizationId, item.productId)).toEqual([]);
+  });
+
+  it("the same quantity written another way is a retry", async () => {
+    const item = await damaged(owner);
+    const key = newId();
+    const requestId = await asked(clerk, item, {
+      idempotencyKey: key,
+      quantity: "2",
+    });
+    expect(
+      await ask(clerk, item, { idempotencyKey: key, quantity: "2.0" }),
+    ).toMatchObject({ reason: "pending_approval", requestId, repeated: true });
+  });
+
+  it("the open key of a rejected lot is never cut", async () => {
+    const item = await damaged(owner, "10", "4", {
+      tracking: "LOT",
+      lotCode: `LR-${counter}`,
+    });
+    const lot = await db.lot.findFirst({
+      where: { productId: item.productId },
+      select: { id: true },
+    });
+    await changeStockStatus(owner, {
+      productId: item.productId,
+      locationId: item.locationId,
+      from: "DAMAGED",
+      to: "REJECTED",
+      lotId: lot!.id,
+      quantity: "4",
+      reason: "No cumple",
+      idempotencyKey: newId(),
+    });
+    const requestId = await asked(clerk, item, {
+      lotId: lot!.id,
+      status: "REJECTED",
+    });
+    const row = await db.approvalRequest.findFirst({
+      where: { id: requestId },
+      select: { openKey: true },
+    });
+    expect(row!.openKey!.length).toBeLessThan(120);
+    expect(row!.openKey).toContain(lot!.id.replace(/-/g, ""));
+    expect(row!.openKey).toContain("REJECTED");
+    // The key still holds the slot.
+    expect(
+      await ask(boss, item, { lotId: lot!.id, status: "REJECTED" }),
+    ).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("esperando autorización"),
+    });
+  });
+
+  it("a PIN session does not decide a write-off", async () => {
+    const item = await damaged(owner);
+    const requestId = await asked(clerk, item);
+    terminalUser = boss.userId;
+    try {
+      expect(await approve(boss, requestId)).toMatchObject({ ok: false });
+    } finally {
+      terminalUser = null;
+    }
+    expect(await item.damaged()).toBe("6");
+    expect(await approve(boss, requestId)).toMatchObject({ ok: true });
+  });
+
+  it("authorizing against a direct write-off at once writes one exit", async () => {
+    const item = await damaged(owner, "10", "6");
+    const requestId = await asked(clerk, item, { quantity: "6" });
+    // The rule goes off: the next write-off goes through directly.
+    await rule(owner, false);
+    try {
+      const [decided, direct] = await Promise.all([
+        approve(boss, requestId),
+        ask(owner, item, { quantity: "6" }),
+      ]);
+      expect([decided.ok, direct.ok].filter(Boolean)).toHaveLength(1);
+    } finally {
+      await rule(owner, true);
+    }
+    expect(await item.damaged()).toBe("0");
+    expect(
+      await disposalsOf(owner.organizationId, item.productId),
+    ).toHaveLength(1);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

@@ -65,7 +65,9 @@ Además de cualquier validación del desecho que ya no se cumpla, la solicitud
 vence si **desde que se pidió hubo cualquier movimiento de ese producto en esa
 ubicación, en ese mismo estado y lote** (una línea de movimiento con fecha
 igual o posterior a la solicitud), o si quien pidió ya no tiene membresía
-activa, o ya no alcanza la ubicación. Se mira solo esa «casilla» (producto,
+activa, ya no alcanza la ubicación o **ya no tiene `inventory.disposal.create`**
+(NEG-20: sus roles y módulos se leen con la transacción de la decisión, bajo
+sus candados; revisión de WMS-83). Se mira solo esa «casilla» (producto,
 ubicación, estado, lote) y no todo el producto en la ubicación: lo disponible
 que se surte del mismo estante no cambia lo que hay dañado. Es más estricto que
 comparar cantidades: si entró otra pieza dañada y salió otra, la cantidad cuadra
@@ -84,7 +86,9 @@ autorizarse.
 
 ### Una solicitud por casilla y la clave de confirmación
 
-- `openKey` = `disp:<producto>:<ubicación>:<estado>:<lote o vacío>`. Una
+- `openKey` = `d:<producto>:<ubicación>:<estado>:<lote o vacío>`, con los ids
+  sin guiones para que nunca pase de los 120 caracteres que guarda el motor
+  (como mucho 109). Una
   segunda solicitud sobre la misma casilla mientras la primera espera se
   rechaza: «Ya hay un desecho de … esperando autorización. Espera a que se
   decida o retíralo en Aprobaciones.» Se revisa bajo los candados del producto
@@ -172,6 +176,15 @@ sí.»
 - Retener lo que espera (ver arriba).
 - Que el piso pida desechar: el Almacenista sigue sin `inventory.disposal.create`.
 
+## Pendiente (fuera de este paso)
+
+- El tipo hermano `inventory.adjustment` tiene el mismo defecto latente con
+  listas largas de series (admite hasta 5,000): pasaría del tope del motor y
+  respondería con la página de error en vez de un mensaje.
+- El efecto de `inventory.adjustment` no vuelve a comprobar que quien pidió
+  conserve `inventory.adjustment.create` al autorizar (el desecho sí, desde la
+  revisión de WMS-83).
+
 ## Decisiones que el fundador puede cambiar
 
 1. Sin umbral: toda solicitud espera con la regla encendida.
@@ -189,6 +202,9 @@ misma casilla; autorizar a nombre de quien pidió con `autorizadoPor`; rechazar;
 retirar; vencer por movimiento de la casilla y no por uno de otro estado; lote y
 series (vence si la serie ya no está); alcance (quien autoriza fuera de la zona
 no la ve; quien pidió pierde el alcance y vence); quien pide no se autoriza
-salvo la regla; PIN no decide (cubierto por el motor); dos autorizaciones a la
-vez y autorizar contra un desecho directo con `Promise.all`; el rodeo
+salvo la regla; una sesión de PIN no decide; quien pidió pierde el permiso y
+vence; la cantidad escrita de otra forma es reintento; la llave abierta no se
+corta; una lista de series demasiado larga es un mensaje; dos autorizaciones a
+la vez, pedir y pedir, autorizar contra un cambio de estado y autorizar contra
+un desecho directo con `Promise.all` (una sola salida); el rodeo
 (disponible → dañado → desechar pide autorización); reconciliación vacía.
