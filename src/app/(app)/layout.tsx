@@ -5,7 +5,7 @@ import { visibleNavItems } from "@/components/app-shell/nav";
 import { Toasts } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
-import { processDocuments } from "@/modules/registry";
+import { processDocuments, searchSources } from "@/modules/registry";
 import { isPermission } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getActiveFacility, listFacilities } from "@/platform/locations";
@@ -65,6 +65,16 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       access.allows(permission) &&
       (permission !== "platform.process.work" || processesOn),
   ).map((item) => item.href);
+  // WMS-66: «Buscar» shows when some kind of result is open to the person
+  // (no query: the sources are in code).
+  if (
+    searchSources.some(
+      (source) =>
+        isPermission(source.permission) && access.allows(source.permission),
+    )
+  ) {
+    allowedHrefs.push("/buscar");
+  }
   return (
     <>
       <AppShell

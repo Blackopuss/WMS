@@ -1,7 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
-import type { InventoryActor } from "@/modules/inventory";
+import {
+  reportIncident,
+  startIncident,
+  type InventoryActor,
+} from "@/modules/inventory";
 import {
   moduleRegistry,
   notificationTypes,
@@ -13,7 +17,11 @@ import { provisionCompany } from "@/platform/billing";
 import { memoryOutboxFor } from "@/platform/email";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { runNextJob } from "@/platform/jobs";
-import { createFacility, listFacilities } from "@/platform/locations";
+import {
+  createFacility,
+  createLocation,
+  listFacilities,
+} from "@/platform/locations";
 import {
   NOTICE_EMAIL_GAP_MS,
   NOTICE_EMAIL_GROUP_MS,
@@ -737,5 +745,118 @@ describe("review of WMS-39B", () => {
     expect(await byMail(lu)).toEqual({ ok: false, reason: "email_off" });
     // Turning it off is always allowed.
     expect(await byMail(lu, THING, false)).toEqual({ ok: true });
+  });
+});
+
+// WMS-88 (ADR 0084): a notice to a person carries what lets them see its
+// document, and its mail checks it again.
+describe("notices to people carry their place (WMS-88)", () => {
+  it("several locations: all of them must be reached, then and when sending", async () => {
+    const zoneA = await createLocation(owner, {
+      level: 1,
+      name: `Z88 ${stamp}`,
+    });
+    const zoneB = await createLocation(owner, {
+      level: 1,
+      name: `Z88b ${stamp}`,
+    });
+    if (!zoneA.ok || !zoneB.ok) throw new Error("zones");
+    const ana = await member(owner.organizationId, "supervisor", "Ana 88");
+    await byMail(ana);
+    const both = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: ana.userId,
+      facilities: [
+        {
+          facilityId: facilityA,
+          zoneIds: [zoneA.locationId, zoneB.locationId],
+        },
+      ],
+    });
+    if (!both.ok) throw new Error(JSON.stringify(both));
+    await send(owner, {
+      userIds: [ana.userId],
+      locationIds: [zoneA.locationId, zoneB.locationId],
+    });
+    const row = await latestMailRow(ana);
+    expect(row.requirement).toMatchObject({
+      locationIds: [zoneA.locationId, zoneB.locationId],
+    });
+    const one = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: ana.userId,
+      facilities: [{ facilityId: facilityA, zoneIds: [zoneA.locationId] }],
+    });
+    if (!one.ok) throw new Error(JSON.stringify(one));
+    await deliver(owner, row.id, { now: later() });
+    expect(memoryOutboxFor(ana.email)).toHaveLength(0);
+    expect(await latestMailRow(ana)).toMatchObject({ status: "SKIPPED" });
+    // Reaching only one of them from the start: no notice at all.
+    const before = (await mailsOf(ana)).length;
+    expect(
+      (
+        await send(owner, {
+          userIds: [ana.userId],
+          locationIds: [zoneA.locationId, zoneB.locationId],
+        })
+      ).sent,
+    ).toBe(0);
+    expect(await mailsOf(ana)).toHaveLength(before);
+  });
+
+  it("only who sees the whole company, checked again when sending", async () => {
+    const bea = await member(owner.organizationId, "administrator", "Bea 88");
+    await byMail(bea);
+    await send(owner, { userIds: [bea.userId], wholeCompany: true });
+    const row = await latestMailRow(bea);
+    expect(row.requirement).toMatchObject({ wholeCompany: true });
+    const limited = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: bea.userId,
+      facilities: [{ facilityId: facilityA }],
+    });
+    if (!limited.ok) throw new Error(JSON.stringify(limited));
+    await deliver(owner, row.id, { now: later() });
+    expect(memoryOutboxFor(bea.email)).toHaveLength(0);
+    expect(await latestMailRow(bea)).toMatchObject({ status: "SKIPPED" });
+    expect(
+      (await send(owner, { userIds: [bea.userId], wholeCompany: true })).sent,
+    ).toBe(0);
+  });
+
+  it("a real one: who reported an incident and then left its warehouse gets no mail", async () => {
+    const rita = await member(owner.organizationId, "supervisor", "Rita 88");
+    const types = notificationTypes;
+    expect(
+      await setNotificationPreference(
+        rita,
+        types,
+        "inventory.incident_changed",
+        true,
+        "email",
+      ),
+    ).toEqual({ ok: true });
+    const reported = await reportIncident(rita, {
+      kind: "OTHER",
+      description: "Una puerta no cierra.",
+      idempotencyKey: newId(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    const started = await startIncident(owner, reported.incidentId);
+    expect(started).toMatchObject({ ok: true });
+    const row = await latestMailRow(rita);
+    expect(row.requirement).toMatchObject({
+      permissions: ["inventory.incident.read"],
+      facilityId: facilityA,
+    });
+    const moved = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: rita.userId,
+      facilities: [{ facilityId: facilityB }],
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    await sendNoticeEmails(owner.organizationId, row.id, {
+      types,
+      jobId: newId(),
+      now: later(),
+    });
+    expect(memoryOutboxFor(rita.email)).toHaveLength(0);
+    expect(await latestMailRow(rita)).toMatchObject({ status: "SKIPPED" });
   });
 });

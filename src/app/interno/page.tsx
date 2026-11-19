@@ -1,5 +1,4 @@
 import { Building2, ChevronRight, Search } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 
 import { EmptyState, PageContainer, PageHeader } from "@/components/states";
@@ -15,8 +14,6 @@ import {
 
 import { EnterSupport } from "./enter-support";
 
-export const metadata: Metadata = { title: "Empresas" };
-
 /** Companies to provision (MOD-09). */
 export default async function InternoPage({
   searchParams,
@@ -31,6 +28,7 @@ export default async function InternoPage({
 
   return (
     <PageContainer>
+      <title>Empresas · Consola interna</title>
       <PageHeader
         title="Empresas"
         description="Asigna el plan de cada empresa: cupo de productos, usuarios, módulos y vigencia."

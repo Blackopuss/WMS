@@ -120,6 +120,7 @@ export const TENANT_MODELS = [
   "NotificationPreference",
   "NotificationEmail",
   "DailyDigest",
+  "NoticeUnsubscribe",
   "Incident",
   "IncidentNote",
   "EvidencePhoto",

@@ -693,6 +693,36 @@ export const DIGEST_HOUR = {
 } as const satisfies SettingDefinition;
 
 /**
+ * Days of the week the daily summary goes out (WMS-88, ADR 0084), in the
+ * company's calendar: the working week of the warehouse. On the other days
+ * the round sets nothing aside.
+ */
+export const DIGEST_DAYS = {
+  key: "inventory.digest.days",
+  module: "inventory",
+  area: "Avisos",
+  label: "Días del resumen diario por correo",
+  options: [
+    {
+      value: "all",
+      label: "Todos los días",
+      help: "También en fin de semana.",
+    },
+    {
+      value: "weekdays",
+      label: "De lunes a viernes",
+      help: "Sábado y domingo no sale.",
+    },
+    {
+      value: "monday_saturday",
+      label: "De lunes a sábado",
+      help: "El domingo no sale.",
+    },
+  ],
+  defaultValue: "all",
+} as const satisfies SettingDefinition;
+
+/**
  * How many days before its next maintenance a piece of equipment asks for
  * attention (WMS-42, ADR 0065): the notice to who manages equipment and
  * the count of Inicio. Shown on Configuración › Equipos del almacén.
@@ -781,5 +811,19 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   ADJUSTMENT_APPROVAL_THRESHOLD,
   PICKING_MODE,
   DIGEST_HOUR,
+  DIGEST_DAYS,
   ...EQUIPMENT_SETTINGS,
+];
+
+/**
+ * WMS-43 (ADR 0083): the settings the setup guide asks about before
+ * operating — the ones that change the everyday route of the goods. All
+ * keep their default until someone chooses.
+ */
+export const SETUP_SETTINGS: readonly SettingDefinition[] = [
+  PICKING_MODE,
+  PICKING_STRATEGY,
+  PUTAWAY_MODE,
+  CONTAINERS_MODE,
+  PACKING_MODE,
 ];

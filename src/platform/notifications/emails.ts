@@ -5,11 +5,10 @@ import type { Permission } from "@/platform/authorization";
 import { InvalidEmailError, noticeEmail, sendEmail } from "@/platform/email";
 import { getFreshEntitlements } from "@/platform/entitlements";
 import { enqueueJob, type JobHandlers } from "@/platform/jobs";
-import { placeOfLocation } from "@/platform/locations";
 import { readSetting } from "@/platform/settings";
 import { forOrganization } from "@/server";
 
-import { isEmailOnly, type NotificationType } from "./definitions";
+import { isAppOnly, isEmailOnly, type NotificationType } from "./definitions";
 import {
   MEMBER_SELECT,
   NOTICE_EMAIL_GAP_MS,
@@ -18,10 +17,12 @@ import {
   memberReaches,
   modulesFor,
   nextMailAt,
+  placesOf,
   type NoticeRequirement,
 } from "./notify";
 import { READ_NOTICE_DAYS } from "./notifications";
 import { NOTICE_EMAIL_CHANNEL } from "./settings";
+import { createUnsubscribeLink } from "./unsubscribe";
 
 /**
  * Notices by mail (WMS-39B, ADR 0060). `notify` writes a row per person
@@ -164,6 +165,10 @@ function requirementOf(value: unknown): NoticeRequirement {
     ...(raw.ownerByRole === false ? { ownerByRole: false } : {}),
     facilityId: typeof raw.facilityId === "string" ? raw.facilityId : null,
     locationId: typeof raw.locationId === "string" ? raw.locationId : null,
+    ...(strings(raw.locationIds)
+      ? { locationIds: strings(raw.locationIds) }
+      : {}),
+    ...(raw.wholeCompany === true ? { wholeCompany: true } : {}),
   };
 }
 
@@ -294,7 +299,7 @@ export async function sendNoticeEmails(
   const wanted = new Map<string, boolean>();
   for (const row of rows) {
     const type = byKey.get(row.typeKey);
-    if (!type || isEmailOnly(type)) {
+    if (!type || isEmailOnly(type) || isAppOnly(type)) {
       dropped.push({ id: row.id, reason: "Ese tipo de aviso ya no existe." });
       continue;
     }
@@ -322,15 +327,10 @@ export async function sendNoticeEmails(
       continue;
     }
     const requirement = requirementOf(row.requirement);
-    let place = null;
-    if (requirement.locationId) {
-      place = await placeOfLocation(client, requirement.locationId);
-      if (!place) {
-        dropped.push({ id: row.id, reason: "La ubicación ya no existe." });
-        continue;
-      }
-    } else if (requirement.facilityId) {
-      place = { facilityId: requirement.facilityId };
+    const place = await placesOf(client, requirement);
+    if (!place) {
+      dropped.push({ id: row.id, reason: "La ubicación ya no existe." });
+      continue;
     }
     if (!memberReaches(member, requirement, place, modules)) {
       dropped.push({
@@ -366,6 +366,8 @@ export async function sendNoticeEmails(
     }
   }
 
+  // WMS-88: its own link to stop every notice by mail without signing in.
+  const unsubscribe = await createUnsubscribeLink(organizationId, userId);
   try {
     await sendEmail(
       noticeEmail({
@@ -378,6 +380,7 @@ export async function sendNoticeEmails(
         more: Math.max(0, keep.length - NOTICE_EMAIL_LINES),
         allUrl: appLink("/avisos"),
         settingsUrl: appLink("/configuracion/avisos"),
+        unsubscribe,
       }),
     );
   } catch (error) {

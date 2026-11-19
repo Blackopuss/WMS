@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { isAppError } from "@/lib";
 import {
@@ -31,6 +32,8 @@ const text = (formData: FormData, name: string, max: number) =>
 
 /**
  * Writes off damaged or rejected stock of a product (WMS-30-0, ADR 0068).
+ * With the company's rule on, it asks for an authorization instead and
+ * opens the request (WMS-83, ADR 0078).
  * The product is bound by the page; person and company come from the
  * session, and the service looks for product and location only there.
  */
@@ -68,6 +71,12 @@ export async function disposeAction(
       return { error: error.message, values, answers };
     }
     throw error;
+  }
+  if (!result.ok && result.reason === "pending_approval") {
+    // WMS-83 (ADR 0078): nothing was thrown away; it waits for an
+    // authorization, which shows what was asked and why.
+    revalidatePath("/aprobaciones");
+    redirect(`/aprobaciones/${result.requestId}?pedida=1`);
   }
   if (!result.ok) {
     return {

@@ -1087,6 +1087,99 @@ try {
     await page.close();
   }
 
+  // WMS-66: the global search. Read-only: nothing is saved.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/inicio`, { waitUntil: "networkidle" });
+    const entry = page.getByRole("link", { name: "Buscar" }).first();
+    const box = await entry.boundingBox();
+    check(
+      box !== null && box.height >= 44,
+      "WMS-66: «Buscar» is in the phone header, with its word, 44px",
+    );
+    await page.goto(`${BASE}/buscar?q=a`, { waitUntil: "networkidle" });
+    const state = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      h1: document.querySelectorAll("h1").length,
+      focused: document.activeElement?.id,
+    }));
+    check(
+      state.overflow <= 0 && state.h1 === 1,
+      "WMS-66 320px: /buscar fits and has one heading",
+    );
+    check(state.focused === "q", "WMS-66: the search box takes the focus");
+    await page.goto(`${BASE}/buscar?q=sin-resultado-wms66`, {
+      waitUntil: "networkidle",
+    });
+    check(
+      ((await page.locator("main").textContent()) ?? "").includes(
+        "Sin resultados",
+      ),
+      "WMS-66: a search with nothing says so",
+    );
+    await page.close();
+  }
+
+  // WMS-83 (desechar con autorización): the screen fits on a phone and an
+  // empty form explains its error without writing anything.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const hrefs = await page
+      .locator("a[href^='/inventario/']")
+      .evaluateAll((links) =>
+        links
+          .map((a) => a.getAttribute("href"))
+          .filter((href) => /^\/inventario\/[0-9a-f-]{36}$/.test(href ?? "")),
+      );
+    let form = false;
+    for (const href of hrefs.slice(0, 15)) {
+      await page.goto(`${BASE}${href}/desechar`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+        form: Boolean(document.querySelector("form #quantity")),
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `320px: ${href}/desechar fits and has one heading`,
+      );
+      if (!state.form) continue;
+      form = true;
+      const button = page.getByRole("button", {
+        name: /^(Desechar|Pedir autorización)$/,
+      });
+      check(
+        (await button.count()) === 1,
+        "WMS-83: the send button says what it does",
+      );
+      await button.click();
+      await page.waitForTimeout(1500);
+      check(
+        await page.evaluate(() =>
+          Boolean(
+            document.querySelector("[aria-invalid='true'], [role='alert']"),
+          ),
+        ),
+        "WMS-83: an empty write-off explains its error",
+      );
+      break;
+    }
+    if (!form)
+      console.log(
+        "  (sin existencias dañadas en la demo: no se probó el formulario de Desechar)",
+      );
+    await page.close();
+  }
+
   // WMS-78C (Compras, Producción y Calidad). Read-only: nothing is saved.
   {
     const page = await signedInPage(
@@ -1155,6 +1248,210 @@ try {
         "WMS-78C: «Cambiar o archivar» of a defect is a 44px target",
       );
     }
+    await page.close();
+  }
+
+  // WMS-43: setup guide. Read-only: it only opens steps and links.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/configuracion/inicial?paso=operacion`, {
+      waitUntil: "networkidle",
+    });
+    const state = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      h1: document.querySelectorAll("h1").length,
+      open: document.querySelectorAll("li[aria-current=step]").length,
+    }));
+    check(
+      state.overflow <= 0 && state.h1 === 1 && state.open === 1,
+      "WMS-43 320px: Configuración inicial fits and opens one step",
+    );
+    // Every link and button of the guide is a 44px target with words.
+    const targets = await page
+      .locator("#configura a, #configura button")
+      .evaluateAll((items) =>
+        items.map((item) => ({
+          height: item.getBoundingClientRect().height,
+          text: (item.textContent ?? "").trim(),
+        })),
+      );
+    check(
+      targets.length > 0 &&
+        targets.every((target) => target.height >= 44 && target.text !== ""),
+      "WMS-43: the guide has only 44px targets with words",
+    );
+    // An unknown step in the address opens the next one, not an error.
+    await page.goto(`${BASE}/configuracion/inicial?paso=nada`, {
+      waitUntil: "networkidle",
+    });
+    check(
+      (await page.locator("h1").textContent())?.includes(
+        "Configuración inicial",
+      ) ?? false,
+      "WMS-43: an unknown step is ignored",
+    );
+    await page.close();
+  }
+
+  // WMS-88: the page to stop notices by mail. Opening it changes nothing;
+  // the button answers, and the focus goes to what it says. A link that
+  // works and an expired one come from `npx tsx
+  // scripts/verify-unsubscribe-links.mts` (VERIFY_UNSUBSCRIBE_VALID and
+  // VERIFY_UNSUBSCRIBE_EXPIRED; only the demo account); an invented one
+  // always runs.
+  {
+    const invented = `00000000-0000-4000-8000-000000000000.${"A".repeat(43)}`;
+    const cases = [
+      { name: "invented", token: invented, works: false },
+      ...(process.env.VERIFY_UNSUBSCRIBE_EXPIRED
+        ? [
+            {
+              name: "expired",
+              token: process.env.VERIFY_UNSUBSCRIBE_EXPIRED,
+              works: false,
+            },
+          ]
+        : []),
+      ...(process.env.VERIFY_UNSUBSCRIBE_VALID
+        ? [
+            {
+              name: "valid",
+              token: process.env.VERIFY_UNSUBSCRIBE_VALID,
+              works: true,
+            },
+          ]
+        : []),
+    ];
+    for (const width of [390, 1280]) {
+      for (const each of cases) {
+        const page = await newPage(browser, {
+          viewport: { width, height: 844 },
+        });
+        await page.goto(
+          `${BASE}/baja-de-avisos?t=${encodeURIComponent(each.token)}`,
+          { waitUntil: "networkidle" },
+        );
+        const button = page.getByRole("button", {
+          name: "Dejar de recibir avisos por correo",
+        });
+        const box = await button.boundingBox();
+        check(
+          (box?.height ?? 0) >= 44,
+          `WMS-88 ${width}px (${each.name}): the unsubscribe button is a 44px target`,
+        );
+        check(
+          (await page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          )) <= 0,
+          `WMS-88 ${width}px (${each.name}): no horizontal overflow`,
+        );
+        await button.click();
+        // Not Next's route announcer (also role=alert): the card's answer.
+        const answer = page.locator(
+          each.works ? "[role=status]" : "[role=alert]",
+          {
+            hasText: each.works
+              ? "Ya no recibirás avisos por correo"
+              : "no es válido o ya venció",
+          },
+        );
+        const focused = await answer
+          .first()
+          .evaluate((node) => document.activeElement === node);
+        const text = (await answer.first().textContent()) ?? "";
+        check(
+          focused &&
+            (each.works
+              ? text.includes("Ya no recibirás avisos por correo")
+              : text.includes("no es válido o ya venció")),
+          `WMS-88 ${width}px (${each.name}): the answer is said and focused`,
+        );
+        // It never says the person, the address or the company.
+        const body = await page.locator("body").innerText();
+        check(
+          !body.includes("@") && !body.includes("Empresa Demo"),
+          `WMS-88 ${width}px (${each.name}): says nothing of the person or company`,
+        );
+        await page.screenshot({
+          path: `${OUT}/wms88-baja-${each.name}-${width}.png`,
+        });
+        await page.close();
+      }
+    }
+  }
+
+  // WMS-87 (pendientes de interfaz). Read-only: nothing is saved.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    const fits = async (path, label) => {
+      await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `WMS-87 320px: ${label ?? path} fits and has one heading`,
+      );
+    };
+    for (const path of [
+      "/inventario/por-inspeccionar",
+      "/inventario/en-restauracion",
+      "/pedidos/embarques",
+      "/ubicaciones/etiquetas",
+    ]) {
+      await fits(path);
+    }
+    // The filter by the state of the stock: folded, applied from the list,
+    // kept in the address and in «Quitar filtros»; an unknown value is ignored.
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const fold = page.locator("main details summary", {
+      hasText: "Más filtros",
+    });
+    check(
+      (await fold.count()) === 1,
+      "WMS-87: «Más filtros» holds the stock state",
+    );
+    await fold.first().click();
+    await page.selectOption("#existencias", "REPAIR");
+    await page.waitForURL(/existencias=REPAIR/);
+    check(
+      ((await page.locator("main").textContent()) ?? "").includes(
+        "en restauración en este almacén",
+      ),
+      "WMS-87: the applied stock state is said",
+    );
+    check(
+      await page
+        .locator("main details")
+        .first()
+        .evaluate((d) => d.open),
+      "WMS-87: «Más filtros» stays open while one is applied",
+    );
+    await fits("/inventario?existencias=nada", "an unknown stock state");
+    check(
+      !((await page.locator("main").textContent()) ?? "").includes(
+        "en este almacén",
+      ),
+      "WMS-87: an unknown stock state is ignored",
+    );
+    // A select never cuts the option it shows (the list of movements).
+    await page.goto(`${BASE}/movimientos`, { waitUntil: "networkidle" });
+    const widths = await page.evaluate(() =>
+      [...document.querySelectorAll("select")].map((el) => el.clientWidth),
+    );
+    check(
+      widths.every((width) => width >= 170),
+      "WMS-87: the filters of Movimientos are wide enough on a phone",
+    );
     await page.close();
   }
 } finally {

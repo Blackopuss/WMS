@@ -557,7 +557,14 @@ export function startIncident(
       await notify(tx, INCIDENT_CHANGED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
-        to: { userIds: [incident.reportedByUserId] },
+        // WMS-88: the same rule that lets them see the incident.
+        to: {
+          userIds: [incident.reportedByUserId],
+          permissions: ["inventory.incident.read"],
+          ...(incident.locationId
+            ? { locationId: incident.locationId }
+            : { facilityId: incident.facilityId }),
+        },
         text: `${await memberName(tx, actor.userId)} está atendiendo tu incidencia ${numberText}.`,
         href: `/incidencias/${incident.id}`,
         key: `incident:${incident.id}:attended`,
@@ -628,7 +635,14 @@ function close(
       await notify(tx, INCIDENT_CHANGED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
-        to: { userIds: [incident.reportedByUserId] },
+        // WMS-88: the same rule that lets them see the incident.
+        to: {
+          userIds: [incident.reportedByUserId],
+          permissions: ["inventory.incident.read"],
+          ...(incident.locationId
+            ? { locationId: incident.locationId }
+            : { facilityId: incident.facilityId }),
+        },
         text:
           to === "RESOLVED"
             ? `Se resolvió tu incidencia ${numberText}: ${gist(parsed.data)}`
@@ -723,7 +737,14 @@ export function addIncidentNote(
       await notify(tx, INCIDENT_CHANGED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
-        to: { userIds: [incident.reportedByUserId] },
+        // WMS-88: the same rule that lets them see the incident.
+        to: {
+          userIds: [incident.reportedByUserId],
+          permissions: ["inventory.incident.read"],
+          ...(incident.locationId
+            ? { locationId: incident.locationId }
+            : { facilityId: incident.facilityId }),
+        },
         text: `${await memberName(tx, actor.userId)} agregó una nota a tu incidencia ${numberText}${said}`,
         href: `/incidencias/${incident.id}`,
         key: `incident:${incident.id}:note:${noteId}`,

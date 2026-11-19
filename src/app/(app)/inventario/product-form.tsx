@@ -482,7 +482,7 @@ export function ProductForm({
                   Queda disponible
                 </option>
                 <option key="yes" value="yes">
-                  Queda en inspección hasta revisarlo
+                  Queda en inspección
                 </option>
               </NativeSelect>
             )}

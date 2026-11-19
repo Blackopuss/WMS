@@ -311,6 +311,10 @@ function screens(company: Company): Record<string, () => string> {
     // WMS-39: the list of notices and the incidents of the warehouse.
     Avisos: () => "/avisos",
     Incidencias: () => "/incidencias",
+    // WMS-66: the global search, by words and by a document number.
+    "Búsqueda global": () =>
+      `/buscar?q=${encodeURIComponent(`${pick(WORDS)} ${pick(SIZES_TEXT)}`)}`,
+    "Búsqueda global, número": () => "/buscar?q=PS-0001",
     ...(company.lotIds.length > 0
       ? { "Ficha del lote": () => `/inventario/lotes/${pick(company.lotIds)}` }
       : {}),

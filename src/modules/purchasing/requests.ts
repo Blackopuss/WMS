@@ -614,13 +614,18 @@ async function noticeAnswered(
   tx: NotifyTx,
   organizationId: string,
   actorUserId: string,
-  request: { id: string; requestedByUserId: string },
+  request: { id: string; requestedByUserId: string; facilityId: string },
   text: string,
 ) {
   await notify(tx, REQUEST_ANSWERED_NOTICE, {
     organizationId,
     actorUserId,
-    to: { userIds: [request.requestedByUserId] },
+    // WMS-88: the same rule that lets them see the request.
+    to: {
+      userIds: [request.requestedByUserId],
+      permissions: ["purchasing.request.read"],
+      facilityId: request.facilityId,
+    },
     text,
     href: `/compras/solicitudes/${request.id}`,
     key: `purchase_request:${request.id}:answered`,

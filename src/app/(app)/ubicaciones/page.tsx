@@ -297,7 +297,9 @@ export default async function UbicacionesPage({
               return (
                 <li
                   key={location.id}
-                  className={`flex min-h-16 items-center gap-3 p-4 sm:px-5 ${
+                  // WMS-66: where a search result for this location lands.
+                  id={`ubicacion-${location.id}`}
+                  className={`flex min-h-16 scroll-mt-20 items-center gap-3 p-4 target:bg-muted sm:px-5 ${
                     showArchived ? "" : (INDENT[location.depth] ?? INDENT[7])
                   }`}
                 >

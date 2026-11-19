@@ -430,7 +430,12 @@ export function releaseStage(
       await notify(context.tx, PROCESS_ASSIGNED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
-        to: { userIds: [taken] },
+        // WMS-88: the same rule that lets them read the document.
+        to: {
+          userIds: [taken],
+          permissions: [context.document.readPermission],
+          facilityId: context.places.facility.facilityId,
+        },
         text: `${context.graph.progress.label}: «${context.stage.name}» ya no está a tu nombre.`,
         href: `/procesos/${context.graph.progress.id}`,
         key: `process:${context.state.id}:released:${newId()}`,
@@ -498,7 +503,12 @@ export function assignStage(
       await notify(context.tx, PROCESS_ASSIGNED_NOTICE, {
         organizationId: actor.organizationId,
         actorUserId: actor.userId,
-        to: { userIds: [previous] },
+        // WMS-88: the same rule that lets them read the document.
+        to: {
+          userIds: [previous],
+          permissions: [context.document.readPermission],
+          facilityId: context.places.facility.facilityId,
+        },
         text: `${context.graph.progress.label}: «${context.stage.name}» ahora la tiene ${target!.name}.`,
         href: `/procesos/${context.graph.progress.id}`,
         key: `process:${context.state.id}:reassigned:${newId()}`,
@@ -507,7 +517,12 @@ export function assignStage(
     await notify(context.tx, PROCESS_ASSIGNED_NOTICE, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
-      to: { userIds: [assignee] },
+      // WMS-88: the same rule that lets them read the document.
+      to: {
+        userIds: [assignee],
+        permissions: [context.document.readPermission],
+        facilityId: context.places.facility.facilityId,
+      },
       text: `${context.graph.progress.label}: te asignaron «${context.stage.name}».`,
       href: `/procesos/${context.graph.progress.id}`,
       key: `process:${context.state.id}:assigned:${newId()}`,

@@ -1139,6 +1139,13 @@ const REVIEWED: Record<string, Review> = {
     identity: "ninguna (respuesta neutral)",
     coveredBy: "tests/platform/recovery.int.test.ts",
   },
+  // WMS-88 (ADR 0084): stop notices by mail from the link of a mail.
+  unsubscribeAction: {
+    input: "el enlace del correo (empresa y secreto)",
+    identity:
+      "el enlace: la empresa sale de él y la persona de su fila (solo el hash del secreto); límite de intentos por IP",
+    coveredBy: "tests/platform/notice-unsubscribe.int.test.ts",
+  },
   resetAction: {
     input: "token del correo y contraseña nueva",
     identity: "el token (un solo uso, vence)",

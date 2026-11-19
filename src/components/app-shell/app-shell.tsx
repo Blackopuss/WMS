@@ -22,6 +22,7 @@ import {
   useNotificationBell,
   type NotificationBellProps,
 } from "./notification-bell";
+import { SearchLink } from "./search-link";
 import {
   OrganizationSwitcher,
   type ShellOrganization,
@@ -90,6 +91,9 @@ export function AppShell({
   const primary = items.filter((item) => item.mobile).slice(0, 4);
   const secondary = items.filter((item) => !primary.includes(item));
   const current = NAV_ITEMS.find((item) => isActive(pathname, item));
+  // WMS-66: the layout adds «/buscar» when the person may search something.
+  const canSearch = allowedHrefs.includes("/buscar");
+  const searching = pathname === "/buscar";
 
   return (
     <div className="flex min-h-dvh w-full">
@@ -104,6 +108,7 @@ export function AppShell({
         <Brand />
         <div className="-mt-2 px-3 pb-2">
           {switcher}
+          {canSearch && <SearchLink active={searching} />}
           <BellButton bell={bell} />
         </div>
         <nav
@@ -132,7 +137,14 @@ export function AppShell({
           <span className="min-w-0 truncate font-semibold">
             {current?.label ?? titleOf(pathname)}
           </span>
-          <BellButton bell={bell} compact className="ml-auto" />
+          {canSearch && (
+            <SearchLink active={searching} compact className="ml-auto" />
+          )}
+          <BellButton
+            bell={bell}
+            compact
+            className={canSearch ? undefined : "ml-auto"}
+          />
           <ThemeToggle />
         </header>
         <OfflineNotice />
@@ -179,6 +191,7 @@ export function AppShell({
 /** Header title on the phone for screens outside the menu. */
 const OTHER_TITLES: [string, string][] = [
   ["/avisos", "Avisos"],
+  ["/buscar", "Buscar"],
   ["/aprobaciones", "Aprobaciones"],
   ["/procesos", "Procesos"],
 ];

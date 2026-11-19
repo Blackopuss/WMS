@@ -96,6 +96,7 @@ const tenantData = {
     "src/platform/custom-fields/**/*.{ts,tsx}",
     "src/platform/files/**/*.{ts,tsx}",
     "src/platform/locations/**/*.{ts,tsx}",
+    "src/platform/search/**/*.{ts,tsx}",
   ],
   rules: {
     "no-restricted-imports": [

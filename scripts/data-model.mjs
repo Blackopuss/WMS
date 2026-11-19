@@ -95,7 +95,7 @@ export const AREAS = [
     doc: "audit",
     summary:
       "Registro solo-agregar de cambios sensibles de empresa y de eventos de cuenta.",
-    models: ["AuditEvent", "SecurityEvent"],
+    models: ["AuditEvent", "SecurityEvent", "AccessAlertEmail"],
   },
   {
     id: "legal",
@@ -148,6 +148,7 @@ export const AREAS = [
       "NotificationPreference",
       "NotificationEmail",
       "DailyDigest",
+      "NoticeUnsubscribe",
     ],
   },
   {

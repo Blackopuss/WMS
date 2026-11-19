@@ -16,6 +16,7 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | `notifications.ts` | `notificationTypes` (tipos de aviso de la plataforma y de cada módulo, validados al cargar; WMS-39) | Configuración › Avisos que recibo |
 | `evidence.ts` | `evidenceOwners` (quién alcanza el registro de una foto de evidencia; hoy `incident: reachesIncident` y `process_step: processStepReach(processDocuments)`; WMS-37, WMS-74) | `/api/archivos` (abrir una foto) |
 | `processes.ts` | `processDocuments` (documentos de cada módulo que pueden seguir un proceso, validados al cargar; hoy vacío hasta WMS-28/29; WMS-74) | Configuración › Procesos, `/procesos/[id]`, `/tareas` |
+| `search.ts` | `searchSources` (lo que cada módulo ofrece a la búsqueda global, en el orden de los resultados, validado al cargar; WMS-66) | `/buscar` y el enlace «Buscar» del layout |
 | `webhooks.ts` | `webhookEventTypes` (eventos que cada módulo manda por webhook, validados al cargar; WMS-60) | Configuración › API y webhooks, servicios de destinos |
 
 `jobs.ts` y `rounds.ts` no salen por `index.ts`: los importa directamente

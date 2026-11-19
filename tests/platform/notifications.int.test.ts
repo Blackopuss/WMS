@@ -554,3 +554,39 @@ describe("cleaning up (round)", () => {
     );
   });
 });
+
+// WMS-88 (ADR 0084): the cleanup of notices runs for every company, also
+// one without Inventario in force.
+describe("cleanup for every company (WMS-88)", () => {
+  it("removes old read notices of a company without any plan", async () => {
+    const { scheduledRounds } = await import("@/modules/registry/rounds");
+    const round = scheduledRounds.find(
+      (each) => each.name === "platform.notifications_cleanup",
+    )!;
+    const owner = await newUser("Sin plan");
+    const created = await createOrganization(owner, {
+      name: `Sin plan ${newId()}`,
+      timeZone: "",
+    });
+    if (!created.ok) throw new Error("company setup failed");
+    const organizationId = created.organizationId;
+    expect(round.module).toBeUndefined();
+    expect(await round.organizations!()).toContain(organizationId);
+    const long = new Date(Date.now() - (READ_NOTICE_DAYS + 1) * 86_400_000);
+    await db.notification.create({
+      data: {
+        id: newId(),
+        organizationId,
+        recipientUserId: owner,
+        typeKey: "test.old",
+        text: "Viejo.",
+        href: "/avisos",
+        dedupeKey: `old-${newId()}`,
+        readAt: long,
+      },
+    });
+    expect(await round.run(organizationId)).toMatchObject({
+      notices: { removed: 1 },
+    });
+  });
+});

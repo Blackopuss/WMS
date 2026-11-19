@@ -124,7 +124,7 @@ export default async function AvisosPreferenciasPage() {
                   />
                 ) : (
                   <>
-                    {byMail && preference.enabled ? (
+                    {byMail && preference.enabled && !preference.appOnly ? (
                       <ToggleForm
                         type={preference.key}
                         channel="email"
