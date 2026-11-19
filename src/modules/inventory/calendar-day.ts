@@ -75,3 +75,11 @@ export async function dayWindow(
   if (!start || !end) return null;
   return { day, range: { gte: start, lt: end } };
 }
+
+/** The company's time zone (or the default one), for days of its calendar. */
+export async function companyTimeZone(client: Client): Promise<string> {
+  const membership = await client.membership.findFirst({
+    select: { organization: { select: { timeZone: true } } },
+  });
+  return membership?.organization.timeZone ?? DEFAULT_TIME_ZONE;
+}

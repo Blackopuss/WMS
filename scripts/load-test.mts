@@ -311,6 +311,9 @@ function screens(company: Company): Record<string, () => string> {
     // WMS-39: the list of notices and the incidents of the warehouse.
     Avisos: () => "/avisos",
     Incidencias: () => "/incidencias",
+    // WMS-32: warehouse indicators, 30 and 90 days.
+    Indicadores: () => "/inventario/indicadores",
+    "Indicadores, 90 días": () => "/inventario/indicadores?periodo=90",
     ...(company.lotIds.length > 0
       ? { "Ficha del lote": () => `/inventario/lotes/${pick(company.lotIds)}` }
       : {}),

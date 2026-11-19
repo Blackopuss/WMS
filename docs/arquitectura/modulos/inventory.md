@@ -185,6 +185,7 @@ código»):
 | Importar salidas | `exit-import.ts`, `exit-import-apply.ts` | `startExitImport` → `reviewExitImport` → `confirmExitImport` → `applyExitImport` (worker); `getExitCoverage` |
 | Exportaciones | `exports.ts` | `buildExport` y `EXPORT_KINDS`; el catálogo agrega una columna por campo personalizado en uso (WMS-58) |
 | Inicio y resúmenes | `first-steps.ts`, `day-summary.ts`, `unplaced.ts` | `getFirstSteps`, `getDaySummary`, `listUnplacedStock` (dice qué fila ya tiene tarea de acomodo), `countUnplacedStock` |
+| Indicadores (WMS-32) | `indicators.ts`, `indicator-rules.ts`, `zones.ts` | `getWarehouseIndicators` (periodo del calendario de la empresa, almacén, producto y persona; topes `KPI_TOP_PRODUCTS`, `KPI_ORDERS_MAX`, `KPI_TASK_ROWS_MAX`, `KPI_COST_GROUPS_MAX`, `KPI_MAX_DAYS`); reglas puras `resolvePeriod`, `rotationOf`, `daysOfInventory`, `timeFigures`, `durationText`; `zonesOf` (zona de cada ubicación, compartida con las olas); `accuracyFigures` de `count-accuracy.ts` (exactitud de cualquier periodo, la usan Exactitud e Indicadores) |
 | Reconciliación | `reconciliation.ts` | `reconcileStock`, `reconcileValue`, `reconcileCompany` |
 | Ajustes y trabajos | `settings.ts`, `import-apply.ts`, `exit-import-apply.ts` | `INVENTORY_SETTINGS` y cada ajuste; `inventoryJobHandlers`, `exitImportJobHandlers` |
 
@@ -201,6 +202,10 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Catálogo y consulta: `product.*`, `unit.read`, `presentation.*`,
   `location.*`, `stock.read`, `movement.read`, `minimum.*`, `cost.read`,
   `cost.record`, `dashboard.read`, `summary.read`.
+- Indicadores (WMS-32): `kpi.read` (titular, Administración, Supervisor de
+  almacén y Gerencia) y `worker_performance.read` (los mismos; rendimiento
+  por persona, no se conserva en una sesión de PIN). El valor, solo con
+  `cost.read`; la exactitud, solo con `count_accuracy.read`.
 - Movimientos: `entry.create`, `opening.create`, `exit.create`,
   `transfer.create`, `adjustment.create`, `movement.reverse`.
 - Estados: `status.change`, `status.release`, `damage.report`.
@@ -291,6 +296,7 @@ la transacción que decide:
 | `inventory.picking.mode` | **`orders`** (pedido por pedido), `waves` (por olas; WMS-25) |
 | `inventory.adjustment.approval_threshold` | **`any`**, `10`, `25`, `50` (% de lo que hay en la ubicación que, con la regla de `inventory.adjustment` encendida, hace esperar una corrección; WMS-41) |
 | `inventory.digest.hour` | `6`, **`7`**, `8`, `9`, `12`, `17` (hora del calendario de la empresa a la que sale el resumen diario por correo; WMS-39B) |
+| `inventory.kpi.idle_days` | `30`, `60`, **`90`**, `180` (días sin ningún movimiento para que un producto con existencias cuente como «sin movimiento» en los indicadores; WMS-32) |
 
 | `inventory.equipment.maintenance_notice` | `3`, **`7`**, `15`, `30` (días antes del mantenimiento de un equipo en que pide atención; WMS-42) |
 | `inventory.equipment.on_broken_report` | **`stop`** (queda fuera de servicio), `notify` (solo se avisa) (WMS-42) |
@@ -399,7 +405,8 @@ entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 (cross-docking y daños al recibir), 0053 (ajustes y conteos con autorización),
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
 (inspección al recibir, desechar y retención genérica), 0071 (procesos en
-embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea).
+embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea),
+0082 (indicadores de almacén).
 
 ## Pruebas
 
@@ -408,7 +415,10 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 `lot-rules.test.ts`, `entry-repeat.test.ts`, `putaway-rules.test.ts`,
 `replenishment-rules.test.ts`). Reposición de surtido en
 `replenishment.int.test.ts`.
-Fotos al entregar una tarea en `task-photos.int.test.ts`. Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
+Fotos al entregar una tarea en `task-photos.int.test.ts`. Indicadores de
+almacén (cada indicador contra un escenario calculado a mano, alcance, roles,
+costos y calendario de la empresa) en `indicators.int.test.ts` e
+`indicator-rules.test.ts`. Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; procesos en embarques en `shipment-process.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en
 `facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;

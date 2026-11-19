@@ -87,6 +87,104 @@ export function accuracyPeriods(
   };
 }
 
+/**
+ * Accuracy of the counts applied in some days (WMS-55), in a place: what the
+ * accuracy screen shows per period and the warehouse indicators (WMS-32,
+ * ADR 0082) for theirs. The caller decides permission and place.
+ */
+export async function accuracyFigures(
+  client: ReturnType<typeof forOrganization>,
+  options: {
+    /** Where the counted locations must be (warehouse and scope). */
+    location: object;
+    costs: boolean;
+    /** First day and the day after the last, as year-month-day. */
+    days: [string, string];
+    programId?: string | null;
+  },
+): Promise<AccuracyFigures> {
+  const { location, costs, programId } = options;
+  const [first, next] = options.days;
+  const [start, end] = await Promise.all([
+    dayWindow(client, first),
+    dayWindow(client, next),
+  ]);
+  if (!start || !end) throw new Error("Unreadable period for accuracy");
+  const counts = await client.stockCount.findMany({
+    where: {
+      status: "APPLIED",
+      closedAt: { gte: start.range.gte, lt: end.range.gte },
+      location,
+      ...(programId ? { programId } : {}),
+    },
+    orderBy: { id: "asc" },
+    take: ACCURACY_MAX_ROWS,
+    select: { id: true, appliedMovementId: true },
+  });
+  let rows = 0;
+  let exact = 0;
+  let truncated = counts.length >= ACCURACY_MAX_ROWS;
+  for (let start = 0; start < counts.length && !truncated; start += 500) {
+    const lines = await client.stockCountLine.findMany({
+      where: {
+        countId: {
+          in: counts.slice(start, start + 500).map((count) => count.id),
+        },
+      },
+      orderBy: { id: "asc" },
+      take: ACCURACY_MAX_ROWS - rows + 1,
+      select: {
+        systemQuantity: true,
+        captures: { select: { baseQuantity: true } },
+      },
+    });
+    for (const line of lines) {
+      if (rows >= ACCURACY_MAX_ROWS) {
+        truncated = true;
+        break;
+      }
+      rows += 1;
+      const counted = line.captures.reduce(
+        (sum, capture) => sum.plus(capture.baseQuantity.toString()),
+        dec(0),
+      );
+      if (counted.equals(line.systemQuantity.toString())) exact += 1;
+    }
+  }
+  let differenceValue: Decimal | null = null;
+  if (costs) {
+    differenceValue = dec(0);
+    const movements = counts
+      .map((count) => count.appliedMovementId)
+      .filter((id): id is string => id !== null);
+    for (let start = 0; start < movements.length; start += 500) {
+      const lines = await client.stockMovementLine.findMany({
+        where: { movementId: { in: movements.slice(start, start + 500) } },
+        select: { baseQuantity: true, unitCost: true },
+      });
+      for (const line of lines) {
+        differenceValue = differenceValue.plus(
+          dec(line.baseQuantity.toString()).times(
+            (line.unitCost ?? 0).toString(),
+          ),
+        );
+      }
+    }
+  }
+  const result: AccuracyFigures = {
+    from: first,
+    to: shiftDay(next, -1),
+    counts: counts.length,
+    rows,
+    exact,
+    accuracy:
+      rows === 0 ? null : dec(exact).times(100).dividedBy(rows).toFixed(1),
+    truncated,
+  };
+  if (differenceValue) result.differenceValue = formatValue(differenceValue);
+  return result;
+}
+
 export async function getCountAccuracy(
   actor: InventoryActor,
   options: { period?: unknown; programId?: unknown; now?: Date } = {},
@@ -111,89 +209,12 @@ export async function getCountAccuracy(
   if (!today) throw new Error("Unreadable day for accuracy");
   const days = accuracyPeriods(today.day, period);
 
-  async function figures([first, next]: [string, string]) {
-    const [start, end] = await Promise.all([
-      dayWindow(client, first),
-      dayWindow(client, next),
-    ]);
-    if (!start || !end) throw new Error("Unreadable period for accuracy");
-    const counts = await client.stockCount.findMany({
-      where: {
-        status: "APPLIED",
-        closedAt: { gte: start.range.gte, lt: end.range.gte },
-        location: {
-          facilityId: facility.id,
-          ...(isLimited(scoped) ? scoped : {}),
-        },
-        ...(programId ? { programId } : {}),
-      },
-      orderBy: { id: "asc" },
-      take: ACCURACY_MAX_ROWS,
-      select: { id: true, appliedMovementId: true },
-    });
-    let rows = 0;
-    let exact = 0;
-    let truncated = counts.length >= ACCURACY_MAX_ROWS;
-    for (let start = 0; start < counts.length && !truncated; start += 500) {
-      const lines = await client.stockCountLine.findMany({
-        where: {
-          countId: {
-            in: counts.slice(start, start + 500).map((count) => count.id),
-          },
-        },
-        orderBy: { id: "asc" },
-        take: ACCURACY_MAX_ROWS - rows + 1,
-        select: {
-          systemQuantity: true,
-          captures: { select: { baseQuantity: true } },
-        },
-      });
-      for (const line of lines) {
-        if (rows >= ACCURACY_MAX_ROWS) {
-          truncated = true;
-          break;
-        }
-        rows += 1;
-        const counted = line.captures.reduce(
-          (sum, capture) => sum.plus(capture.baseQuantity.toString()),
-          dec(0),
-        );
-        if (counted.equals(line.systemQuantity.toString())) exact += 1;
-      }
-    }
-    let differenceValue: Decimal | null = null;
-    if (costs) {
-      differenceValue = dec(0);
-      const movements = counts
-        .map((count) => count.appliedMovementId)
-        .filter((id): id is string => id !== null);
-      for (let start = 0; start < movements.length; start += 500) {
-        const lines = await client.stockMovementLine.findMany({
-          where: { movementId: { in: movements.slice(start, start + 500) } },
-          select: { baseQuantity: true, unitCost: true },
-        });
-        for (const line of lines) {
-          differenceValue = differenceValue.plus(
-            dec(line.baseQuantity.toString()).times(
-              (line.unitCost ?? 0).toString(),
-            ),
-          );
-        }
-      }
-    }
-    const result: AccuracyFigures = {
-      from: first,
-      to: shiftDay(next, -1),
-      counts: counts.length,
-      rows,
-      exact,
-      accuracy:
-        rows === 0 ? null : dec(exact).times(100).dividedBy(rows).toFixed(1),
-      truncated,
-    };
-    if (differenceValue) result.differenceValue = formatValue(differenceValue);
-    return result;
-  }
+  const location = {
+    facilityId: facility.id,
+    ...(isLimited(scoped) ? scoped : {}),
+  };
+  const figures = (days: [string, string]) =>
+    accuracyFigures(client, { location, costs, days, programId });
 
   const [current, previous] = await Promise.all([
     figures(days.current),
