@@ -22,7 +22,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { PendingNotices } from "@/components/pending-notices";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,9 @@
 import { MapPin, PackageCheck, ScanBarcode, Warehouse } from "lucide-react";
 import Link from "next/link";
 
-import { FadeIn, ThemeToggle, WarehouseScene } from "@/components";
+import { AccountScene } from "@/components/account-scene";
+import { Toasts } from "@/components/providers";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const BENEFITS = [
   { icon: PackageCheck, text: "Cuánto tienes de cada producto, al momento" },
@@ -23,7 +25,8 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
           <Brand />
         </div>
         <div className="relative z-10 flex flex-1 flex-col justify-center gap-10 px-10 pb-12 xl:px-16">
-          <FadeIn className="max-w-md space-y-4">
+          {/* CSS entry, not motion (ADR 0080). */}
+          <div className="max-w-md animate-in space-y-4 duration-200 ease-out fade-in slide-in-from-bottom-2">
             <h2 className="text-4xl font-semibold tracking-tight text-balance">
               Tu almacén, bajo control.
             </h2>
@@ -37,8 +40,8 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
                 </li>
               ))}
             </ul>
-          </FadeIn>
-          <WarehouseScene className="aspect-[48/34] w-full max-w-xl" />
+          </div>
+          <AccountScene className="aspect-[48/34] w-full max-w-xl" />
         </div>
       </aside>
 
@@ -57,6 +60,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
           <div className="w-full max-w-md pt-4">{children}</div>
         </main>
       </div>
+      <Toasts />
     </div>
   );
 }

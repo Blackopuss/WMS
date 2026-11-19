@@ -2,7 +2,7 @@ import { ChevronLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { NoAccessState, PageContainer, PageHeader } from "@/components";
+import { NoAccessState, PageContainer, PageHeader } from "@/components/states";
 import { listMyAccessHistory } from "@/platform/auth";
 import { getAccess } from "@/platform/authorization";
 

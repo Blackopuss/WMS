@@ -4,7 +4,9 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 
-import { BackupCodesList, FormField, PasswordInput } from "@/components";
+import { BackupCodesList } from "@/components/backup-codes-list";
+import { FormField } from "@/components/form-field";
+import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

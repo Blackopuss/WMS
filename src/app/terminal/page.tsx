@@ -2,7 +2,7 @@ import { Warehouse } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ThemeToggle } from "@/components";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { getTerminalScreen } from "@/platform/terminals";
 

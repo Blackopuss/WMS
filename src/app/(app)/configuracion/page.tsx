@@ -20,7 +20,8 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { InstallAppPanel, PageContainer, PageHeader } from "@/components";
+import { InstallAppPanel } from "@/components/pwa";
+import { PageContainer, PageHeader } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { getMfaStatus, listActiveSessions } from "@/platform/auth";

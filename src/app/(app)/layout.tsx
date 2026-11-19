@@ -1,6 +1,8 @@
 import { LifeBuoy } from "lucide-react";
 
-import { AppShell, visibleNavItems } from "@/components";
+import { AppShell } from "@/components/app-shell/app-shell";
+import { visibleNavItems } from "@/components/app-shell/nav";
+import { Toasts } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { processDocuments } from "@/modules/registry";
@@ -112,6 +114,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         </div>
       )}
       {children}
+      <Toasts />
     </AppShell>
   );
 }

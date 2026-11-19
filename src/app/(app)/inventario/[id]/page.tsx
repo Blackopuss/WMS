@@ -15,14 +15,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CustomFieldFacts } from "@/components/custom-fields";
 import {
-  CustomFieldFacts,
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { dec, formatDateTime, formatDecimal } from "@/lib";

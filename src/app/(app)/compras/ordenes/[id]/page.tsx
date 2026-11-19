@@ -3,14 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PrintLabelLink } from "@/components/label-print-form";
 import {
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-  PrintLabelLink,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime, newId } from "@/lib";

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { PageContainer, PageHeader } from "@/components";
+import { PageContainer, PageHeader } from "@/components/states";
 import { formatDate, formatDecimal, formatStorageSize } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import {

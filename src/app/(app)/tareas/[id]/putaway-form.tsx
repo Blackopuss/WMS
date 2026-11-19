@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField, type CapturedPhoto } from "@/components";
+import { FormField } from "@/components/form-field";
+import { type CapturedPhoto } from "@/components/photo-capture";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

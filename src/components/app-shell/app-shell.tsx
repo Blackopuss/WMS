@@ -1,25 +1,17 @@
 "use client";
 
 import { Ellipsis, LogOut, Warehouse } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { motion, transitions } from "../motion";
 import { OfflineNotice } from "../pwa";
 import { ThemeToggle } from "../theme-toggle";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "../ui/sheet";
 import { NAV_ITEMS, isActive, type NavItem } from "./nav";
 import {
   BellButton,
-  NotificationSheet,
+  NotificationStatus,
   useNotificationBell,
   type NotificationBellProps,
 } from "./notification-bell";
@@ -27,6 +19,18 @@ import {
   OrganizationSwitcher,
   type ShellOrganization,
 } from "./organization-switcher";
+
+// Downloaded the first time they open (ADR 0080): the frame is on every
+// screen, the sheets are not needed to paint it.
+const NotificationSheet = dynamic(
+  () =>
+    import("./notification-sheet").then((module) => module.NotificationSheet),
+  { ssr: false },
+);
+const MoreSheet = dynamic(
+  () => import("./more-sheet").then((module) => module.MoreSheet),
+  { ssr: false },
+);
 
 export type ShellUser = { name: string; email: string };
 export type { BellNotice, NotificationBellProps } from "./notification-bell";
@@ -85,6 +89,8 @@ export function AppShell({
     </>
   );
   const bell = useNotificationBell(notifications);
+  const [bellLoaded, setBellLoaded] = useState(false);
+  if (bell.open && !bellLoaded) setBellLoaded(true);
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href));
   // The bottom bar holds 4 sections; the rest go to «Más».
@@ -147,19 +153,24 @@ export function AppShell({
         </main>
       </div>
 
-      <NotificationSheet bell={bell} openAction={notifications.openAction} />
+      <NotificationStatus count={bell.count} />
+      {bellLoaded && (
+        <NotificationSheet bell={bell} openAction={notifications.openAction} />
+      )}
 
       <nav
         aria-label="Principal"
         className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden print:hidden"
       >
-        <ul className="grid grid-cols-5">
+        {/* As many columns as buttons (ADR 0080): with three sections and
+            «Más» they spread across the bar instead of leaning left. */}
+        <ul className="flex">
           {primary.map((item) => (
-            <li key={item.href}>
+            <li key={item.href} className="min-w-0 flex-1">
               <BottomLink item={item} active={isActive(pathname, item)} />
             </li>
           ))}
-          <li>
+          <li className="min-w-0 flex-1">
             <MoreMenu
               switcher={switcher}
               user={user}
@@ -205,22 +216,16 @@ function Brand() {
 
 function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
   const Icon = item.icon;
+  // The active section is a CSS state (ADR 0080): the sidebar is on every
+  // screen and no longer loads motion for it.
   return (
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      className="relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:text-accent-foreground"
+      className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground motion-reduce:transition-none"
     >
-      {active && (
-        <motion.span
-          layoutId="sidebar-active"
-          transition={transitions.spring}
-          className="absolute inset-0 rounded-lg bg-accent"
-          aria-hidden="true"
-        />
-      )}
-      <Icon aria-hidden="true" className="relative size-4.5" />
-      <span className="relative">{item.label}</span>
+      <Icon aria-hidden="true" className="size-4.5" />
+      <span>{item.label}</span>
     </Link>
   );
 }
@@ -242,6 +247,10 @@ function BottomLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+/**
+ * «Más» in the bottom bar: the button is always there; the sheet with the
+ * other sections is downloaded the first time it opens (ADR 0080).
+ */
 function MoreMenu({
   switcher,
   user,
@@ -258,49 +267,41 @@ function MoreMenu({
   pathname: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger className={bottomItemClass} data-active={active}>
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className={bottomItemClass}
+        data-active={active}
+        onClick={() => {
+          setLoaded(true);
+          setOpen(true);
+        }}
+      >
         <Ellipsis aria-hidden="true" className="size-5" />
         Más
-      </SheetTrigger>
-      <SheetContent
-        side="bottom"
-        className="rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]"
-      >
-        <SheetHeader>
-          <SheetTitle>Más opciones</SheetTitle>
-          <SheetDescription className="sr-only">
-            Otras secciones de la aplicación
-          </SheetDescription>
-        </SheetHeader>
-        <nav aria-label="Más opciones" className="px-4">
-          <ul className="space-y-1">
-            {items.map((item) => {
-              const Icon = item.icon;
-              const current = isActive(pathname, item);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    aria-current={current ? "page" : undefined}
-                    className="flex h-12 items-center gap-3 rounded-lg px-3 font-medium transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground"
-                  >
-                    <Icon aria-hidden="true" className="size-5" />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-        <div className="mx-4 space-y-1 border-t pt-3">
-          {switcher}
-          <UserBlock user={user} signOutAction={signOutAction} />
-        </div>
-      </SheetContent>
-    </Sheet>
+      </button>
+      {loaded && (
+        <MoreSheet
+          open={open}
+          onOpenChange={setOpen}
+          triggerRef={triggerRef}
+          items={items}
+          pathname={pathname}
+          footer={
+            <>
+              {switcher}
+              <UserBlock user={user} signOutAction={signOutAction} />
+            </>
+          }
+        />
+      )}
+    </>
   );
 }
 

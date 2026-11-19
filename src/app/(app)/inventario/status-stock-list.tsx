@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, CircleCheck } from "lucide-react";
 import Link from "next/link";
 
-import { EmptyState } from "@/components";
+import { EmptyState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {

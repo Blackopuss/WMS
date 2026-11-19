@@ -9,7 +9,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { getReplenishmentRule } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";

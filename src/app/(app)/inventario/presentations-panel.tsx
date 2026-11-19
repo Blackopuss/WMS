@@ -3,7 +3,7 @@
 import { Loader2, Plus } from "lucide-react";
 import { useActionState, useEffect, useRef } from "react";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 

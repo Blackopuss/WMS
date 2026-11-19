@@ -3,14 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PhotoGallery } from "@/components/photo-gallery";
 import {
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-  PhotoGallery,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
 import { getIncident } from "@/modules/inventory";

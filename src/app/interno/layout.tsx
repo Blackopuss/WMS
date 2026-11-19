@@ -2,7 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ThemeToggle } from "@/components";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { requirePlatformStaff } from "@/platform/billing";
 
 export const metadata: Metadata = {

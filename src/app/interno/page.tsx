@@ -2,7 +2,7 @@ import { Building2, ChevronRight, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { EmptyState, PageContainer, PageHeader } from "@/components";
+import { EmptyState, PageContainer, PageHeader } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
