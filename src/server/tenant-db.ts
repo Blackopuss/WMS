@@ -115,6 +115,11 @@ export const TENANT_MODELS = [
   "ProductionOrderLine",
   "ProductionOrderOutput",
   "ProductionOrderAssignee",
+  "ProductionReport",
+  "ProductionReportLine",
+  "ProductionScrap",
+  "ProductionLotNumbering",
+  "ProductionLotSequence",
   "ProductionRequest",
   "RecipeLock",
   "Notification",
@@ -380,6 +385,8 @@ export const LOCKABLE = {
   recipe: "recipe",
   recipeLock: "recipe_lock",
   productionOrder: "production_order",
+  productionReport: "production_report",
+  productionLotNumbering: "production_lot_numbering",
 } as const;
 
 /**

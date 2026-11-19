@@ -123,6 +123,14 @@ type DisposalCoreInput = {
   reason: string;
   allowedStatuses?: readonly StockStatus[];
   holdSource?: HoldSource | null;
+  /**
+   * WMS-29 (ADR 0087): the scrap of material of a production order takes
+   * AVAILABLE stock. Only for a caller that already settled reservations
+   * under the product's lock (used up its own, asked the rest free):
+   * this core does not look at reservations. With `allowedStatuses:
+   * ["AVAILABLE"]`.
+   */
+  takesAvailable?: boolean;
 };
 
 type CheckedDisposal = Awaited<ReturnType<typeof checkDisposalLines>> & {
@@ -206,7 +214,10 @@ async function checkDisposalLines(
         field,
         error,
       });
-    if (line.status === "AVAILABLE" || !allowed.includes(line.status)) {
+    if (
+      (line.status === "AVAILABLE" && !input.takesAvailable) ||
+      !allowed.includes(line.status)
+    ) {
       return fail("source")(
         "Solo se desecha lo dañado o rechazado. Lo disponible sale con una salida o un ajuste.",
       );

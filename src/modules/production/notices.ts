@@ -33,8 +33,20 @@ export const ORDER_FROM_REQUEST_NOTICE: NotificationType = {
   visibleWith: ["production.request.decide", "production.order.cancel"],
 };
 
+/** WMS-29 (ADR 0087): «Avisar que falta material» from an order. */
+export const MATERIAL_SHORT_NOTICE: NotificationType = {
+  key: "production.material_short",
+  module: "production",
+  label: "Falta material en una orden de producción",
+  description:
+    "Cuando quien produce en un área que alcanzas avisa que no le alcanza el material de una orden.",
+  defaultEnabled: true,
+  visibleWith: ["production.request.decide", "production.order.release"],
+};
+
 export const PRODUCTION_NOTIFICATION_TYPES: readonly NotificationType[] = [
   REQUEST_TO_DECIDE_NOTICE,
   REQUEST_ANSWERED_NOTICE,
   ORDER_FROM_REQUEST_NOTICE,
+  MATERIAL_SHORT_NOTICE,
 ];

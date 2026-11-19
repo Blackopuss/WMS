@@ -141,3 +141,62 @@ export {
 
 // WMS-66: what Producción offers to the global search (ADR 0081).
 export { PRODUCTION_SEARCH_SOURCES } from "./search";
+// WMS-29 (ADR 0087): production reports, scrap of material, lot numbering.
+export {
+  PRODUCTION_ORDER_REPORTED_OPERATION,
+} from "./order-process";
+export { PRODUCTION_BATCH_PROCESS } from "./report-process";
+export {
+  consumeNow,
+  cumulativeThatFits,
+  goodThatFits,
+  produceNow,
+} from "./report-rules";
+export {
+  LOT_DATE_FORMATS,
+  LOT_DATE_LABELS,
+  LOT_RESETS,
+  LOT_RESET_LABELS,
+  LOT_SCOPE_LABELS,
+  LOT_SEQUENCE_SCOPES,
+  defaultLotCode,
+  formatLotCode,
+  formatReportNumber,
+  lotPeriod,
+  type LotNumberingRule,
+} from "./lot-numbering-rules";
+export {
+  discardReportPhoto,
+  findProductionReportByKey,
+  getOrderProgress,
+  getProductionReport,
+  getReportPreview,
+  reachesProductionReport,
+  reportProduction,
+  reverseProductionReport,
+  uploadReportPhoto,
+  warnMaterialShortage,
+  type OrderProgress,
+  type ProductionReportField,
+  type ProductionReportInput,
+  type ProductionReportResult,
+  type ProductionReportView,
+  type ProductionShortageLine,
+  type ReportPreview,
+} from "./reports";
+export { SCRAP_APPROVAL } from "./approval-keys";
+export { PRODUCTION_APPROVAL_TYPES } from "./approvals";
+export {
+  reportMaterialScrap,
+  scrapNeedsApproval,
+  type ScrapField,
+  type ScrapInput,
+  type ScrapResult,
+} from "./scrap";
+export {
+  getLotNumbering,
+  saveLotNumbering,
+  type LotNumberingInput,
+  type LotNumberingResult,
+  type LotNumberingView,
+} from "./lot-numbering";

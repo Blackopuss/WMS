@@ -946,3 +946,13 @@ export {
 
 // WMS-66: what Inventario offers to the global search (ADR 0081).
 export { INVENTORY_SEARCH_SOURCES } from "./search";
+export {
+  planMaterialTakes,
+  postProduction,
+  reachableMaterial,
+  reverseProduction,
+  type MaterialTake,
+  type ProductionOutputInput,
+} from "./production-entry";
+export { dayWindow } from "./calendar-day";
+export { KEY_REUSED } from "./movements";

@@ -1194,6 +1194,7 @@ export const MOVEMENT_TYPE_LABELS = {
   CUSTOMER_RETURN: "Devolución de cliente",
   FACILITY_TRANSFER: "Traslado entre almacenes",
   DISPOSAL: "Desecho",
+  PRODUCTION: "Producción",
 } as const;
 
 export type MovementType = keyof typeof MOVEMENT_TYPE_LABELS;
@@ -3028,6 +3029,14 @@ export async function reverseMovement(
       // Nor a write-off (WMS-30-0, ADR 0068): what was thrown away is no
       // longer there, and its document (a verification, a scrap report)
       // would still say it left.
+      // Nor a production report (WMS-29, ADR 0087): its report would still
+      // say it was made; it is reversed from the report.
+      if (original.type === "PRODUCTION") {
+        return stop(
+          "not_allowed",
+          "Este movimiento es un reporte de producción: no se reversa desde Inventario. Se revierte desde el reporte, en su orden de producción.",
+        );
+      }
       if (original.type === "DISPOSAL") {
         return stop(
           "not_allowed",

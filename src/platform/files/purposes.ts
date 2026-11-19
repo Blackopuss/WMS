@@ -28,6 +28,7 @@ export const EVIDENCE_OWNER_KINDS = {
   process_step: "processStepId",
   warehouse_task: "warehouseTaskId",
   purchase_receipt: "purchaseReceiptId",
+  production_report: "productionReportId",
 } as const;
 
 export type EvidenceOwnerKind = keyof typeof EVIDENCE_OWNER_KINDS;
@@ -155,6 +156,18 @@ export const FILE_PURPOSES = {
     extensions: PHOTO_EXTENSIONS,
     evidence: { owner: "purchase_receipt", perRecord: 5, perOwner: 10 },
   },
+  /**
+   * WMS-29 (ADR 0087, D5): photos of what was made, taken by who reports
+   * production. Who reads the order sees them (the report decides through
+   * `EvidenceOwners`). The report is born with its photos (not bound).
+   */
+  production_report_photo: {
+    write: "production.report.create",
+    read: "production.order.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: { owner: "production_report", perRecord: 5, perOwner: 5 },
+  },
 } as const satisfies Record<string, Purpose>;
 
 export type FilePurpose = keyof typeof FILE_PURPOSES;
@@ -181,6 +194,8 @@ export function ownerWhere(owner: EvidenceOwner) {
       return { warehouseTaskId: String(owner.id).slice(0, 36) };
     case "purchase_receipt":
       return { purchaseReceiptId: String(owner.id).slice(0, 36) };
+    case "production_report":
+      return { productionReportId: String(owner.id).slice(0, 36) };
   }
 }
 
@@ -190,6 +205,7 @@ export function ownerOfLink(link: {
   processStepId?: string | null;
   warehouseTaskId?: string | null;
   purchaseReceiptId?: string | null;
+  productionReportId?: string | null;
 }): EvidenceOwner | null {
   if (link.incidentId) return { kind: "incident", id: link.incidentId };
   if (link.processStepId) {
@@ -200,6 +216,9 @@ export function ownerOfLink(link: {
   }
   if (link.purchaseReceiptId) {
     return { kind: "purchase_receipt", id: link.purchaseReceiptId };
+  }
+  if (link.productionReportId) {
+    return { kind: "production_report", id: link.productionReportId };
   }
   return null;
 }

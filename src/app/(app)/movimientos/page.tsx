@@ -507,6 +507,7 @@ export default async function MovimientosPage({
                   movement.type !== "CUSTOMER_RETURN" &&
                   movement.type !== "FACILITY_TRANSFER" &&
                   movement.type !== "DISPOSAL" &&
+                  movement.type !== "PRODUCTION" &&
                   !movement.isReturnDecision &&
                   !movement.reversedByMovementId && (
                     <div className="-ml-3 shrink-0 sm:ml-0">
