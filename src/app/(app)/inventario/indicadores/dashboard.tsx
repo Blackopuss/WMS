@@ -55,43 +55,38 @@ export function ComparisonTable({
   previousPeriod: { from: string; to: string };
 }) {
   const figures = headlineFigures(current, previous);
-  const before = `Del ${dayText(previousPeriod.from)} al ${dayText(previousPeriod.to)}`;
   return (
     <section aria-labelledby="kpi-comparado" className="space-y-3">
       <h2 id="kpi-comparado" className="text-lg font-semibold">
         Comparado con el periodo anterior
       </h2>
-      <Scroll label="Comparado con el periodo anterior">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Indicador</TableHead>
-            <TableHead className="text-right">Este periodo</TableHead>
-            <TableHead className="text-right">
-              Periodo anterior
-              <span className="block text-xs font-normal text-muted-foreground">
-                {before}
-              </span>
-            </TableHead>
-            <TableHead className="text-right">Cambio</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {figures.map((figure) => (
-            <TableRow key={figure.key}>
-              <TableCell className="min-w-44">{figure.label}</TableCell>
-              <TableCell className="text-right font-medium tabular-nums">
+      <p className="text-sm text-muted-foreground">
+        Periodo anterior: del {dayText(previousPeriod.from)} al{" "}
+        {dayText(previousPeriod.to)}.
+      </p>
+      <ul className="divide-y rounded-xl border bg-card">
+        {figures.map((figure) => (
+          <li
+            key={figure.key}
+            className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-5"
+          >
+            <span className="min-w-0 [overflow-wrap:anywhere]">
+              {figure.label}
+            </span>
+            <span className="text-right">
+              <span className="block font-semibold tabular-nums">
                 {figure.now}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {figure.before ?? "—"}
-              </TableCell>
-              <TableCell className="min-w-36 text-right text-muted-foreground tabular-nums">
-                {figure.change ?? "—"}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Scroll>
+              </span>
+              <span className="block text-sm text-muted-foreground tabular-nums">
+                Antes: {figure.before ?? "—"}
+                {figure.change && figure.change !== "—"
+                  ? ` · ${figure.change}`
+                  : ""}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
