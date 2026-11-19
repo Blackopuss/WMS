@@ -283,13 +283,6 @@ export async function getWarehouseIndicators(
     shiftDay(today.day, 1 - idleDaysCount),
   );
   if (!idleSince) throw new Error("Unreadable day for idle products");
-  const idleWhere = {
-    ...(product ? { id: product.id } : {}),
-    balances: { some: { quantity: { gt: 0 }, location: place } },
-    movementLines: {
-      none: { createdAt: { gte: idleSince.range.gte }, location: place },
-    },
-  };
   const shippedWhere = shippedOnWhere(facility.id, window);
   const pickedWhere = pickedOnWhere(facility.id, window);
 
@@ -297,8 +290,8 @@ export async function getWarehouseIndicators(
     topGroups,
     exitLines,
     costGroups,
-    idleCount,
-    idleProducts,
+    withStock,
+    movedLately,
     accuracy,
     shippedCount,
     shippedOrders,
@@ -332,12 +325,22 @@ export async function getWarehouseIndicators(
           take: KPI_COST_GROUPS_MAX + 1,
         })
       : Promise.resolve(null),
-    client.product.count({ where: idleWhere }),
-    client.product.findMany({
-      where: idleWhere,
-      orderBy: [{ name: "asc" }, { id: "asc" }],
-      take: KPI_TOP_PRODUCTS,
-      select: { id: true, name: true, sku: true, unitCode: true },
+    // Idle products: with stock in the place minus those that moved there
+    // lately, both grouped in the database (two group-bys cost less than
+    // a count with EXISTS per product, measured with 10,000 products).
+    client.stockBalance.groupBy({
+      by: ["productId"],
+      where: { quantity: { gt: 0 }, location: place, ...byProduct },
+      orderBy: { productId: "asc" },
+    }),
+    client.stockMovementLine.groupBy({
+      by: ["productId"],
+      where: {
+        createdAt: { gte: idleSince.range.gte },
+        location: place,
+        ...byProduct,
+      },
+      orderBy: { productId: "asc" },
     }),
     seesAccuracy
       ? accuracyFigures(client, {
@@ -573,6 +576,19 @@ export async function getWarehouseIndicators(
   });
 
   // Products with stock that did not move in the last days.
+  const moved = new Set(movedLately.map((row) => row.productId));
+  const idleAll = withStock
+    .map((row) => row.productId)
+    .filter((id) => !moved.has(id));
+  const idleProducts =
+    idleAll.length === 0
+      ? []
+      : await client.product.findMany({
+          where: { id: { in: idleAll } },
+          orderBy: [{ name: "asc" }, { id: "asc" }],
+          take: KPI_TOP_PRODUCTS,
+          select: { id: true, name: true, sku: true, unitCode: true },
+        });
   const idleIds = idleProducts.map((p) => p.id);
   const [idleBalances, idleLast, idleCosts] =
     idleIds.length === 0
@@ -763,7 +779,7 @@ export async function getWarehouseIndicators(
       truncated: tasksTruncated,
     },
     exits: { lines: exitLines, top },
-    idle: { days: idleDaysCount, count: idleCount, rows: idleRows },
+    idle: { days: idleDaysCount, count: idleAll.length, rows: idleRows },
     zones: [...zones.values()].sort(
       (a, b) =>
         b.tasks + b.movementLines - (a.tasks + a.movementLines) ||

@@ -148,7 +148,10 @@ Productos con existencias hoy en el lugar (Σ saldo > 0, todos los estados)
 **sin ninguna línea de movimiento en el lugar en los últimos N días**
 (cualquier tipo), N = ajuste `inventory.kpi.idle_days` (30, 60, 90 por
 omisión, 180). No depende del periodo elegido (se dice en pantalla). Cuántos
-son (`count` en la base con `some`/`none`) y los primeros 20 por nombre y id,
+son (dos `groupBy` por producto en la base: con existencias en el lugar y con
+movimiento reciente en el lugar, y la resta; medido con 10,000 productos
+cuesta la mitad que un `count` con `some`/`none`) y los primeros 20 por
+nombre y id,
 con su existencia, la fecha de su último movimiento en el lugar y, con
 costos, el valor a costo promedio vigente. Con `?producto=`, solo ese.
 
@@ -256,7 +259,14 @@ ignora.
   ubicación y fecha y por producto y fecha; `shipment` por estado y
   `shippedAt`; `stock_count`).
 - **Sin tablas de resumen**: se mide con `npm run load:test` (la pantalla entra
-  a `screens()`); si no llegara a la meta se reconsideraría con medición.
+  a `screens()`; la persona de la carga es ahora Almacén y Supervisión, para
+  que los indicadores se lean de verdad). Medición en este contenedor (4
+  núcleos, 16 GB, app compilada, 10,000 productos): el servicio solo tarda unos
+  170 ms; con una persona, p95 de 362 ms; con 20 personas a la vez, 615 ms,
+  cuando Inicio e Inventario también pasaban de 500 ms en la misma corrida
+  (la máquina estaba saturada). *Pendiente de volver a medir en el equipo de
+  referencia; si no llegara a la meta, la primera opción es cargar el bloque
+  de personas y zonas aparte.*
 
 ## Lo que varía por empresa
 
