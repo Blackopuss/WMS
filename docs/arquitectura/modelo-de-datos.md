@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-145 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+150 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -37,7 +37,7 @@
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 11 | [purchasing](modulos/purchasing.md) |
 | Calidad | 6 | [quality](modulos/quality.md) |
-| Producción | 10 | [production](modulos/production.md) |
+| Producción | 15 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
 
@@ -1394,13 +1394,14 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `processStepId` | `String? · Char(36)` |  | A step of a process (WMS-74, ADR 0069). |
 | `warehouseTaskId` | `String? · Char(36)` |  | A warehouse task, photographed where it was left (WMS-37B, ADR 0076). |
 | `purchaseReceiptId` | `String? · Char(36)` |  | A receipt, for what was rejected at the door (WMS-84, ADR 0079). |
+| `productionReportId` | `String? · Char(36)` |  | A production report, photographed by who reports (WMS-29, ADR 0087). |
 | `position` | `Int` |  | Order inside its owner (0, 1, 2…). |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
-- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`); (`organizationId`, `purchaseReceiptId`, `position`).
-- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict); `purchaseReceipt` → `PurchaseReceipt` por (`organizationId`, `purchaseReceiptId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`); (`organizationId`, `purchaseReceiptId`, `position`); (`organizationId`, `productionReportId`, `position`).
+- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict); `purchaseReceipt` → `PurchaseReceipt` por (`organizationId`, `purchaseReceiptId`) (al borrar: Restrict); `productionReport` → `ProductionReport` por (`organizationId`, `productionReportId`) (al borrar: Restrict).
 
 ### StorageCleanup · `storage_cleanup`
 
@@ -1920,7 +1921,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 #### Enumeraciones de Inventario › Existencias y movimientos
 
-- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`, `FACILITY_TRANSFER`, `DISPOSAL`.
+- `StockMovementType`: `ENTRY`, `EXIT`, `TRANSFER`, `ADJUSTMENT`, `INITIAL`, `REVERSAL`, `RECEIPT`, `RETURN`, `STATUS_CHANGE`, `SHIPMENT`, `CUSTOMER_RETURN`, `FACILITY_TRANSFER`, `DISPOSAL`, `PRODUCTION`.
 - `StockDirection`: `IN`, `OUT`.
 - `StockStatus`: `AVAILABLE`, `RECEIVING`, `INSPECTION`, `QUARANTINE`, `DAMAGED`, `REJECTED`, `IN_TRANSIT`, `BLOCKED`, `REPAIR`.
 
@@ -3688,6 +3689,121 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `userId`).
 - Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict).
 
+### ProductionReport · `production_report`
+
+A production report (WMS-29, ADR 0087), «R-01» inside its order: how much was made good and bad. Its movement (PRODUCTION) took the materials of the recipe and put what was made in inspection, in the area; it is a lot of its own (P12). Never changes, except being reversed once (trigger); never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  | 1, 2, 3… inside the order. |
+| `movementId` | `String · Char(36)` |  |  |
+| `goodQuantity` | `Decimal · Decimal(12, 3)` |  | In the unit of the order. |
+| `badQuantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `badReason` | `String? · VarChar(300)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `lotCode` | `String? · VarChar(60)` |  | The code of the lot made (the same for every output by lot), to show. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `reversedAt` | `DateTime? · DateTime(3)` |  |  |
+| `reversedByUserId` | `String? · Char(36)` |  |  |
+| `reverseReason` | `String? · VarChar(300)` |  |  |
+| `reversalMovementId` | `String? · Char(36)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `orderId`, `number`); (`organizationId`, `movementId`); (`organizationId`, `reversalMovementId`).
+- Índices: (`organizationId`, `createdByUserId`, `createdAt`); (`organizationId`, `createdAt`).
+- Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict); `reversalMovement` → `StockMovement` por (`organizationId`, `reversalMovementId`) (al borrar: Restrict).
+
+### ProductionReportLine · `production_report_line`
+
+One line of the movement of a report (WMS-29): a material that left (with how much of it came out of what was set aside for the order) or something that came in. Never changes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `reportId` | `String · Char(36)` |  |  |
+| `kind` | `ProductionReportLineKind` |  |  |
+| `orderLineId` | `String? · Char(36)` |  |  |
+| `orderOutputId` | `String? · Char(36)` |  |  |
+| `movementLineId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | In the unit of the product. |
+| `reservedQuantity` | `Decimal · Decimal(12, 3)` | `0` | Of a material: how much came out of what was set aside for the order. |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementLineId`).
+- Índices: (`organizationId`, `reportId`); (`organizationId`, `orderLineId`); (`organizationId`, `orderOutputId`).
+- Relaciones: `report` → `ProductionReport` por (`organizationId`, `reportId`) (al borrar: Restrict); `orderLine` → `ProductionOrderLine` por (`organizationId`, `orderLineId`) (al borrar: Restrict); `orderOutput` → `ProductionOrderOutput` por (`organizationId`, `orderOutputId`) (al borrar: Restrict); `movementLine` → `StockMovementLine` por (`organizationId`, `movementLineId`) (al borrar: Restrict).
+
+### ProductionScrap · `production_scrap`
+
+Material of a production order scrapped beyond the recipe (WMS-29): its DISPOSAL, out of the cost of what is made. Never changes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `orderLineId` | `String · Char(36)` |  |  |
+| `movementId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `reason` | `String · VarChar(500)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `movementId`).
+- Índices: (`organizationId`, `orderId`, `createdAt`); (`organizationId`, `orderLineId`).
+- Relaciones: `order` → `ProductionOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `orderLine` → `ProductionOrderLine` por (`organizationId`, `orderLineId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+### ProductionLotNumbering · `production_lot_numbering`
+
+How a company names the lots it produces (WMS-29, D8): one per company. prefix + date + consecutive, e.g. «CR-2611-0001».
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `prefix` | `String · VarChar(12)` | `""` |  |
+| `dateFormat` | `String · VarChar(8)` | `"NONE"` | NONE, YYYY, YYMM, YYMMDD (calendar of the company). |
+| `digits` | `Int` | `4` | 3 to 6. |
+| `resetEvery` | `String · VarChar(8)` | `"NEVER"` | NEVER, YEAR, MONTH. |
+| `sequenceScope` | `String · VarChar(8)` | `"PRODUCT"` | PRODUCT or COMPANY: whose consecutive it is. |
+| `updatedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); `organizationId`.
+
+### ProductionLotSequence · `production_lot_sequence`
+
+The last consecutive used (WMS-29): per product (or '' for the whole company) and period ('' , «2026», «202611»). Only goes up (trigger).
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `scopeKey` | `String · VarChar(36)` |  |  |
+| `period` | `String · VarChar(6)` |  |  |
+| `lastNumber` | `Int` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `scopeKey`, `period`).
+
 ### ProductionRequest · `production_request`
 
 A production request (WMS-28B, ADR 0075), `SP-0001`: someone with nothing to their name asks to produce a product of their area that is close to its minimum. It sets nothing aside. Submitted → accepted (an order is born from it), rejected (with a reason) or cancelled by who asked (PRODUCTION_REQUEST_TRANSITIONS and trigger). Never deleted; what was asked never changes.
@@ -3724,3 +3840,4 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `RecipeVersionStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.
 - `ProductionOrderStatus`: `DRAFT`, `RELEASED`, `IN_PROGRESS`, `CLOSED`, `CANCELLED`.
 - `ProductionRequestStatus`: `SUBMITTED`, `ACCEPTED`, `REJECTED`, `CANCELLED`.
+- `ProductionReportLineKind`: `INPUT`, `OUTPUT`.

@@ -59,7 +59,9 @@ const schema = z.object({
     .trim()
     .min(3, "Escribe qué pasó.")
     .max(500, "Usa como máximo 500 caracteres."),
-  serials: z.union([z.string().max(20000), z.array(z.string()).max(5000)]).optional(),
+  serials: z
+    .union([z.string().max(20000), z.array(z.string()).max(5000)])
+    .optional(),
   idempotencyKey: z.string().trim(),
 });
 
@@ -175,11 +177,15 @@ async function scrapIn(
     where: { id: idOf(data.orderLineId), orderId: idOf(orderId) },
     select: { id: true, productId: true },
   });
-  if (!line) return refuse("invalid", "Elige un material de esta orden.", "orderLineId");
+  if (!line)
+    return refuse("invalid", "Elige un material de esta orden.", "orderLineId");
   // Products → order (ADR 0087).
   await lockRows(tx, "product", [line.productId]);
   await lockProductionOrder(tx, orderId, userId).catch((error) => {
-    if (error instanceof Error && error.message === "production order rejected") {
+    if (
+      error instanceof Error &&
+      error.message === "production order rejected"
+    ) {
       refuse("not_found", "Esta orden de producción no existe.");
     }
     throw error;
@@ -368,7 +374,9 @@ async function scrapIn(
       lotId: take.lotId,
       quantity: take.quantity,
       serials:
-        take.units.length > 0 ? take.units.map((unit) => unit.serial) : undefined,
+        take.units.length > 0
+          ? take.units.map((unit) => unit.serial)
+          : undefined,
     })),
     reason: `Merma de producción (${numberText}): ${data.reason}`.slice(0, 500),
     reference: `${numberText} · merma`,
@@ -514,7 +522,9 @@ export async function applyApprovedScrap(
         fieldErrors?: Record<string, string>;
       };
       throw new ApprovalExpired(
-        result.formError ?? Object.values(result.fieldErrors ?? {})[0] ?? NO_LONGER,
+        result.formError ??
+          Object.values(result.fieldErrors ?? {})[0] ??
+          NO_LONGER,
       );
     }
     if (isAppError(error) && error.kind === "forbidden") {
@@ -530,9 +540,13 @@ export async function applyApprovedScrap(
 export async function scrapNeedsApproval(
   actor: ProductionActor,
 ): Promise<boolean> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "production.scrap.create",
+  );
   return approvalRequired(
     forOrganization(actor.organizationId),
     SCRAP_APPROVAL.key,
   );
 }
-

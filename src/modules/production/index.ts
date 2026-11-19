@@ -142,9 +142,7 @@ export {
 // WMS-66: what Producción offers to the global search (ADR 0081).
 export { PRODUCTION_SEARCH_SOURCES } from "./search";
 // WMS-29 (ADR 0087): production reports, scrap of material, lot numbering.
-export {
-  PRODUCTION_ORDER_REPORTED_OPERATION,
-} from "./order-process";
+export { PRODUCTION_ORDER_REPORTED_OPERATION } from "./order-process";
 export { PRODUCTION_BATCH_PROCESS } from "./report-process";
 export {
   consumeNow,

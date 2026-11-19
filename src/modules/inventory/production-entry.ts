@@ -125,7 +125,13 @@ export async function planMaterialTakes(
     const ia = input.area.has(a.locationId!) ? 0 : 1;
     const ib = input.area.has(b.locationId!) ? 0 : 1;
     if (ia !== ib) return ia - ib;
-    return a.locationId! < b.locationId! ? -1 : a.locationId! > b.locationId! ? 1 : a.id < b.id ? -1 : 1;
+    return a.locationId! < b.locationId!
+      ? -1
+      : a.locationId! > b.locationId!
+        ? 1
+        : a.id < b.id
+          ? -1
+          : 1;
   });
   const takes = new Map<string, MaterialTake>();
   const looseLeft = new Map<string, Decimal>();
@@ -248,7 +254,11 @@ async function planSerialTakes(
   });
   const list = parseSerialList(input.serials);
   if (!list.ok) return fail(`${input.product.name}: ${list.error}`);
-  const count = serialCountProblem(list.serials.length, input.quantity, "salen");
+  const count = serialCountProblem(
+    list.serials.length,
+    input.quantity,
+    "salen",
+  );
   if (count) return fail(`${input.product.name}: ${count}`);
   const units = await tx.serialUnit.findMany({
     where: {
@@ -525,7 +535,11 @@ export async function postProduction(
     { mode: "report" },
   );
   if (!placed.ok) {
-    return { ok: false, output: entering[placed.index]?.index, error: placed.message };
+    return {
+      ok: false,
+      output: entering[placed.index]?.index,
+      error: placed.message,
+    };
   }
 
   // Cost (ADR 0031, 0087): read before any balance changes.
@@ -720,7 +734,8 @@ async function addBalance(
 }
 
 export type ProductionReversalResult =
-  { ok: true; movementId: string; notes: string[] } | { ok: false; error: string };
+  | { ok: true; movementId: string; notes: string[] }
+  | { ok: false; error: string };
 
 /**
  * Undoes the PRODUCTION movement of a report (ADR 0087, «Reversa»): only
@@ -736,7 +751,11 @@ export async function reverseProduction(
     movementId: string;
     reason: string;
     /** Per line of the movement: set aside again for this order line. */
-    rereserve: { movementLineId: string; sourceId: string; quantity: Decimal }[];
+    rereserve: {
+      movementLineId: string;
+      sourceId: string;
+      quantity: Decimal;
+    }[];
   },
 ): Promise<ProductionReversalResult> {
   const { organizationId, userId } = actor;
@@ -783,7 +802,10 @@ export async function reverseProduction(
     select: { id: true, name: true },
   });
   const nameOf = new Map(products.map((row) => [row.id, row.name]));
-  const lastLineId = lines.reduce((max, line) => (line.id > max ? line.id : max), "");
+  const lastLineId = lines.reduce(
+    (max, line) => (line.id > max ? line.id : max),
+    "",
+  );
   const serialsOf = await serialsOfLines(
     tx,
     lines.map((line) => line.id),
@@ -842,7 +864,12 @@ export async function reverseProduction(
       if (units.length > 0) {
         const now = await tx.serialUnit.findMany({
           where: { id: { in: units.map((unit) => unit.id) } },
-          select: { serial: true, locationId: true, status: true, containerId: true },
+          select: {
+            serial: true,
+            locationId: true,
+            status: true,
+            containerId: true,
+          },
         });
         const gone = now.find(
           (unit) =>

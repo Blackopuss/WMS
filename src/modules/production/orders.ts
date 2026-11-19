@@ -978,11 +978,7 @@ export async function setProductionOrderAssignees(
 // ── Releasing ────────────────────────────────────────────────────────────
 
 /** The area and every location inside it (no task brings what is there). */
-export async function insideArea(
-  tx: Tx,
-  facilityId: string,
-  areaId: string,
-) {
+export async function insideArea(tx: Tx, facilityId: string, areaId: string) {
   const rows = await tx.location.findMany({
     where: { facilityId, parentId: { not: null } },
     select: { id: true, parentId: true },

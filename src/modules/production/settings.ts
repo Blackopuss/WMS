@@ -86,8 +86,6 @@ export const LOW_MARGIN = {
   defaultValue: "25",
 } as const satisfies SettingDefinition;
 
-
-
 /**
  * WMS-29 (ADR 0087, D5): a photo of what was made with each report.
  * Required by default (D5); the founder may change it.

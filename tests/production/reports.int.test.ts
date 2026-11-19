@@ -1,7 +1,6 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { dec, newId } from "@/lib";
-import { getStockByLocation } from "@/modules/inventory";
 import { approvalTypes } from "@/modules/registry";
 import { decideApproval, updateApprovalRule } from "@/platform/approvals";
 import {
@@ -167,27 +166,31 @@ describe("reporting production", () => {
       fieldErrors: { photos: expect.any(String) },
     });
     await setting(owner, "production.report.photo", "optional");
-    expect(
-      await report(owner, id, "1", { bad: "1" }),
-    ).toMatchObject({ ok: false, fieldErrors: { badReason: expect.any(String) } });
+    expect(await report(owner, id, "1", { bad: "1" })).toMatchObject({
+      ok: false,
+      fieldErrors: { badReason: expect.any(String) },
+    });
     const done = await report(owner, id, "1", {
       bad: "1",
       badReason: "Se rompió al armar",
     });
     expect(done.ok).toBe(true);
     // 2 crates of material (one good, one bad): 8 boards out.
-    expect(
-      (await stockAt(owner.organizationId, board))[0]?.quantity,
-    ).toBe("92");
-    expect(
-      (await stockAt(owner.organizationId, crate))[0]?.quantity,
-    ).toBe("1");
+    expect((await stockAt(owner.organizationId, board))[0]?.quantity).toBe(
+      "92",
+    );
+    expect((await stockAt(owner.organizationId, crate))[0]?.quantity).toBe("1");
     await balanced(owner.organizationId);
   });
 
   it("costs what is made with its materials", async () => {
-    const { owner, facilityId: _f, area, crate, board, screw } =
-      await workshop();
+    const {
+      owner,
+      area,
+      crate,
+      board,
+      screw,
+    } = await workshop();
     await setting(owner, "production.report.photo", "optional");
     // Value the materials: boards at 10, screws at 1.
     await db.productCost.updateMany({
@@ -255,7 +258,6 @@ describe("reporting production", () => {
     await balanced(owner.organizationId);
   });
 });
-
 
 describe("lots, serials and what comes out", () => {
   it("names the lot of each report: «OP-0001-01» without a rule, the company's rule with one", async () => {
@@ -418,9 +420,9 @@ describe("lots, serials and what comes out", () => {
       quantity: "1.5",
       costShare: "20",
     });
-    expect(
-      await activateRecipeVersion(owner, created.versionId),
-    ).toMatchObject({ ok: true });
+    expect(await activateRecipeVersion(owner, created.versionId)).toMatchObject(
+      { ok: true },
+    );
     const id = await released(owner, plank, area, "8");
     // 2 planks: half a log (rounded up to 1) and 0.75 kg of dust.
     const first = await report(owner, id, "2");
@@ -594,12 +596,9 @@ describe("scrap of material", () => {
       "100",
     );
     if (asked.ok || asked.reason !== "pending_approval") return;
-    const decided = await decideApproval(
-      boss,
-      approvalTypes,
-      asked.requestId,
-      { decision: "approve" },
-    );
+    const decided = await decideApproval(boss, approvalTypes, asked.requestId, {
+      decision: "approve",
+    });
     expect(decided).toMatchObject({ ok: true });
     expect((await stockAt(owner.organizationId, board))[0]?.quantity).toBe(
       "97",

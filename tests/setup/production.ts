@@ -194,7 +194,11 @@ export async function order(
   return made.orderId;
 }
 
-export async function setting(actor: ProductionActor, key: string, value: string) {
+export async function setting(
+  actor: ProductionActor,
+  key: string,
+  value: string,
+) {
   const result = await updateOperationSetting(
     actor,
     operationSettings,
@@ -249,4 +253,3 @@ export async function workshop(modules?: string[]) {
   await enter(owner, screw, shelf, "100");
   return { owner, facilityId, area, shelf, crate, board, screw };
 }
-

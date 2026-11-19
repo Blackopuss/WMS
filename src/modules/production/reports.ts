@@ -356,7 +356,8 @@ async function planReport(
         consumed,
         reachable,
       });
-      plan.fits = plan.fits === null || fits.lessThan(plan.fits) ? fits : plan.fits;
+      plan.fits =
+        plan.fits === null || fits.lessThan(plan.fits) ? fits : plan.fits;
     }
   }
   const recipeOut = new Map(
@@ -446,9 +447,14 @@ async function lotCodesFor(
       where: { productId, code },
       select: { id: true },
     })) !== null;
-  const row = await tx.productionLotNumbering.findFirst({ select: { id: true } });
+  const row = await tx.productionLotNumbering.findFirst({
+    select: { id: true },
+  });
   if (!row) {
-    const code = defaultLotCode(formatProductionNumber(order.number), reportNumber);
+    const code = defaultLotCode(
+      formatProductionNumber(order.number),
+      reportNumber,
+    );
     for (const output of byLot) {
       if (await taken(output.productId, code)) {
         stop(
@@ -465,9 +471,14 @@ async function lotCodesFor(
     where: { id: row.id },
   });
   const rule = numbering as unknown as LotNumberingRule;
-  const day = (await dayWindow(tx, new Date()))?.day ?? new Date().toISOString().slice(0, 10);
+  const day =
+    (await dayWindow(tx, new Date()))?.day ??
+    new Date().toISOString().slice(0, 10);
   const period = lotPeriod(rule.resetEvery, day);
-  const next = async (scopeKey: string, fits: (code: string) => Promise<boolean>) => {
+  const next = async (
+    scopeKey: string,
+    fits: (code: string) => Promise<boolean>,
+  ) => {
     const sequence = await tx.productionLotSequence.findFirst({
       where: { scopeKey, period },
       select: { id: true, lastNumber: true },
@@ -478,7 +489,10 @@ async function lotCodesFor(
       const code = formatLotCode(rule, day, number);
       const normalized = normalizeLotCode(code);
       if (!normalized.ok) {
-        return stop("not_allowed", `El código de lote ${code} no sirve: revisa la nomenclatura.`);
+        return stop(
+          "not_allowed",
+          `El código de lote ${code} no sirve: revisa la nomenclatura.`,
+        );
       }
       if (await fits(normalized.code)) {
         if (sequence) {
@@ -517,7 +531,10 @@ async function lotCodesFor(
     for (const output of byLot) {
       codes.set(
         output.productId,
-        await next(output.productId, async (candidate) => !(await taken(output.productId, candidate))),
+        await next(
+          output.productId,
+          async (candidate) => !(await taken(output.productId, candidate)),
+        ),
       );
     }
   }
@@ -570,7 +587,10 @@ export async function reportProduction(
   return inReport(organizationId, async (tx) => {
     await lockRows(tx, "product", productIds);
     await lockProductionOrder(tx, orderId, userId).catch((error) => {
-      if (error instanceof Error && error.message === "production order rejected") {
+      if (
+        error instanceof Error &&
+        error.message === "production order rejected"
+      ) {
         stop("not_found", NOT_FOUND);
       }
       throw error;
@@ -655,11 +675,7 @@ export async function reportProduction(
       return stop("invalid", "Escribe cuánto hiciste.", "good");
     }
     if (bad.greaterThan(0) && (data.badReason ?? "").length < 3) {
-      return stop(
-        "invalid",
-        "Escribe por qué salieron malas.",
-        "badReason",
-      );
+      return stop("invalid", "Escribe por qué salieron malas.", "badReason");
     }
     const done = await standing(tx, order.id);
     const left = dec(order.quantity.toString()).minus(done.good);
@@ -673,7 +689,10 @@ export async function reportProduction(
       );
     }
     for (const line of order.lines) {
-      if (line.product.status !== "ACTIVE" || line.product.unitCode !== line.unitCode) {
+      if (
+        line.product.status !== "ACTIVE" ||
+        line.product.unitCode !== line.unitCode
+      ) {
         return stop(
           "not_allowed",
           `${line.product.name} cambió (archivado o con otra unidad): no se puede consumir con esta orden.`,
@@ -682,7 +701,11 @@ export async function reportProduction(
     }
     const photoMode = await readSetting(tx, REPORT_PHOTO);
     if (photoMode === "off" && photoMode0 > 0) {
-      return stop("invalid", "Tu empresa no usa fotos en los reportes.", "photos");
+      return stop(
+        "invalid",
+        "Tu empresa no usa fotos en los reportes.",
+        "photos",
+      );
     }
     if (photoMode === "required" && photoMode0 === 0) {
       return stop("invalid", "Toma una foto de lo que hiciste.", "photos");
@@ -754,9 +777,11 @@ export async function reportProduction(
       return stop("not_allowed", posted.error);
     }
     const lotCode =
-      [...new Set(posted.outputs.map((output) => output.lotCode).filter(Boolean))].join(
-        ", ",
-      ) || null;
+      [
+        ...new Set(
+          posted.outputs.map((output) => output.lotCode).filter(Boolean),
+        ),
+      ].join(", ") || null;
     const reportId = newId();
     await tx.productionReport.create({
       data: {
@@ -943,7 +968,11 @@ export async function reverseProductionReport(
     },
   });
   if (!found) {
-    return { ok: false, reason: "not_found", formError: "Este reporte no existe." };
+    return {
+      ok: false,
+      reason: "not_found",
+      formError: "Este reporte no existe.",
+    };
   }
   return inReport(organizationId, async (tx) => {
     await lockRows(
@@ -952,7 +981,10 @@ export async function reverseProductionReport(
       found.lines.map((line) => line.productId),
     );
     await lockProductionOrder(tx, found.orderId, userId).catch((error) => {
-      if (error instanceof Error && error.message === "production order rejected") {
+      if (
+        error instanceof Error &&
+        error.message === "production order rejected"
+      ) {
         stop("not_found", "Este reporte no existe.");
       }
       throw error;
@@ -996,7 +1028,11 @@ export async function reverseProductionReport(
     }
     const reversed = await reverseProduction(tx, actor, {
       movementId: report.movementId,
-      reason: `Se revirtió ${formatProductionNumber(report.order.number)} · ${formatReportNumber(report.number)}: ${why}`.slice(0, 500),
+      reason:
+        `Se revirtió ${formatProductionNumber(report.order.number)} · ${formatReportNumber(report.number)}: ${why}`.slice(
+          0,
+          500,
+        ),
       rereserve: report.lines
         .filter((line) => line.kind === "INPUT" && line.orderLineId)
         .map((line) => ({
@@ -1058,9 +1094,11 @@ export async function reachesProductionReport(
   });
   if (!report) return false;
   return (
-    (await locationsOutOfScope(client, actor.userId, [
-      report.order.areaLocationId,
-    ])).length === 0
+    (
+      await locationsOutOfScope(client, actor.userId, [
+        report.order.areaLocationId,
+      ])
+    ).length === 0
   );
 }
 
@@ -1136,8 +1174,8 @@ export async function warnMaterialShortage(
   const order = await readOrder(client, orderId);
   if (
     !order ||
-    (await locationsOutOfScope(client, userId, [order.areaLocationId]))
-      .length > 0
+    (await locationsOutOfScope(client, userId, [order.areaLocationId])).length >
+      0
   ) {
     return { ok: false, formError: NOT_FOUND };
   }
@@ -1159,7 +1197,10 @@ export async function warnMaterialShortage(
     const result = await notify(tx, MATERIAL_SHORT_NOTICE, {
       organizationId,
       actorUserId: userId,
-      text: `${who ?? "Alguien"} avisa que falta material en ${numberText}${names ? `: ${names.slice(0, 3).join(", ")}${names.length > 3 ? " y más" : ""}` : ""}.`.slice(0, 300),
+      text: `${who ?? "Alguien"} avisa que falta material en ${numberText}${names ? `: ${names.slice(0, 3).join(", ")}${names.length > 3 ? " y más" : ""}` : ""}.`.slice(
+        0,
+        300,
+      ),
       href: `/produccion/${order.id}`,
       key: `production_order:${order.id}:short:${hour}`,
       to: {
@@ -1270,7 +1311,11 @@ async function previewOf(
   const fits =
     plan.fits === null
       ? null
-      : goodThatFits({ fits: plan.fits, before: done.good.plus(done.bad), bad: "0" });
+      : goodThatFits({
+          fits: plan.fits,
+          before: done.good.plus(done.bad),
+          bad: "0",
+        });
   return {
     orderId: order.id,
     numberText: formatProductionNumber(order.number),
@@ -1286,7 +1331,10 @@ async function previewOf(
             (fits.greaterThan(left) ? left : fits).toString(),
             order.unitCode,
           ),
-    photoMode: (await readSetting(client, REPORT_PHOTO)) as ReportPreview["photoMode"],
+    photoMode: (await readSetting(
+      client,
+      REPORT_PHOTO,
+    )) as ReportPreview["photoMode"],
     mayReport: await mayReport(actor, order.assignees),
     materials,
     outputs: order.outputs.map((output) => ({
@@ -1422,7 +1470,9 @@ export async function getOrderProgress(
     ),
     executedBy: [
       ...new Set(
-        reports.filter((row) => !row.reversedAt).map((row) => name(row.createdByUserId)),
+        reports
+          .filter((row) => !row.reversedAt)
+          .map((row) => name(row.createdByUserId)),
       ),
     ].sort((a, b) => a.localeCompare(b, "es")),
     materials: order.lines.map((line) => ({
@@ -1557,8 +1607,11 @@ export async function getProductionReport(
   });
   if (!row) return null;
   if (
-    (await locationsOutOfScope(client, actor.userId, [row.order.areaLocationId]))
-      .length > 0
+    (
+      await locationsOutOfScope(client, actor.userId, [
+        row.order.areaLocationId,
+      ])
+    ).length > 0
   ) {
     return null;
   }
@@ -1579,8 +1632,11 @@ export async function getProductionReport(
       client,
       row.movement.lines.map((line) => line.id),
     ),
-    evidencePhotoLinksOf(actor, "production_report", [row.id], async () =>
-      new Set([row.id]),
+    evidencePhotoLinksOf(
+      actor,
+      "production_report",
+      [row.id],
+      async () => new Set([row.id]),
     ),
   ]);
   const nameOf = new Map(people.map((each) => [each.userId, each.user.name]));
@@ -1592,7 +1648,9 @@ export async function getProductionReport(
     ? null
     : inputs.reduce(
         (sum, line) =>
-          sum.plus(dec(line.unitCost!.toString()).times(line.baseQuantity.toString())),
+          sum.plus(
+            dec(line.unitCost!.toString()).times(line.baseQuantity.toString()),
+          ),
         dec(0),
       );
   return {
@@ -1644,4 +1702,3 @@ export async function getProductionReport(
       (row.order.status === "RELEASED" || row.order.status === "IN_PROGRESS"),
   };
 }
-

@@ -98,6 +98,17 @@ const NOT_SERVICES = new Set([
   "productionRequestProblem",
   "isNearMinimum",
   "reachableQuantity",
+  // WMS-29: pure rules of reports and lots, and who reaches a report (the
+  // owner of its photos, asked by the platform).
+  "consumeNow",
+  "cumulativeThatFits",
+  "goodThatFits",
+  "produceNow",
+  "defaultLotCode",
+  "formatLotCode",
+  "formatReportNumber",
+  "lotPeriod",
+  "reachesProductionReport",
 ]);
 
 const services = Object.entries(production).filter(
@@ -144,6 +155,20 @@ describe("Producción without the module (MOD-05)", () => {
         "listRequestableProducts",
         "rejectProductionRequest",
         "submitProductionRequest",
+        // WMS-29 (ADR 0087).
+        "discardReportPhoto",
+        "findProductionReportByKey",
+        "getLotNumbering",
+        "getOrderProgress",
+        "getProductionReport",
+        "getReportPreview",
+        "reportMaterialScrap",
+        "reportProduction",
+        "reverseProductionReport",
+        "saveLotNumbering",
+        "scrapNeedsApproval",
+        "uploadReportPhoto",
+        "warnMaterialShortage",
       ].sort(),
     );
   });

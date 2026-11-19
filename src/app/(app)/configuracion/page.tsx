@@ -6,6 +6,7 @@ import {
   KeyRound,
   LifeBuoy,
   ListChecks,
+  Tags,
   ListOrdered,
   ListPlus,
   ListTree,
@@ -50,6 +51,10 @@ export default async function ConfiguracionPage() {
   // WMS-30A: the defects of Calidad, set up once like the custom fields.
   const showDefects =
     access.moduleState("quality") !== "none" && access.can("quality.plan.read");
+  // WMS-29: how the lots of what is produced are named, set once.
+  const showLotNumbering =
+    access.moduleState("production") === "active" &&
+    access.can("platform.organization.update");
   // WMS-42: equipment is registered rarely, so it lives here too.
   const showEquipment =
     access.moduleState("inventory") !== "none" &&
@@ -151,6 +156,14 @@ export default async function ConfiguracionPage() {
               icon={ListChecks}
               title="Defectos"
               description="Lo que Calidad anota al rechazar algo."
+            />
+          )}
+          {showLotNumbering && (
+            <SettingsLink
+              href="/configuracion/lotes-de-produccion"
+              icon={Tags}
+              title="Lotes de lo producido"
+              description="Cómo se nombra el lote de cada reporte de producción."
             />
           )}
           {showEquipment && (
@@ -350,6 +363,7 @@ function SettingsLink({
     | "/configuracion/campos"
     | "/configuracion/procesos"
     | "/configuracion/defectos"
+    | "/configuracion/lotes-de-produccion"
     | "/configuracion/equipos-del-almacen"
     | "/configuracion/equipo"
     | "/configuracion/avisos"

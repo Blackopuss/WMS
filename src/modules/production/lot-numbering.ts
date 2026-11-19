@@ -54,6 +54,12 @@ export async function getLotNumbering(
   actor: ProductionActor,
 ): Promise<LotNumberingView> {
   await assertModulePermission(actor.organizationId, actor.userId, PERMISSION);
+  // The module (it is a setting of Producción).
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "production.order.read",
+  );
   const row = await forOrganization(
     actor.organizationId,
   ).productionLotNumbering.findFirst({
@@ -108,6 +114,8 @@ export async function saveLotNumbering(
 ): Promise<LotNumberingResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(organizationId, userId, PERMISSION);
+  // The module, active (not in read only): who sets it up creates orders.
+  await assertModulePermission(organizationId, userId, "production.order.create");
   const entitlements = await getEntitlements(organizationId);
   if (!entitlements.hasModule("production")) {
     return {
