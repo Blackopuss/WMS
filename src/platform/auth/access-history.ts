@@ -9,16 +9,20 @@ import {
   formatDateTime,
   formatIp,
   log,
+  newId,
   type DeviceKind,
 } from "@/lib";
 import { claimSecurityEvent, recordSecurityEvent } from "@/platform/audit";
 import {
+  InvalidEmailError,
   accessAlertEmail,
   sendEmail,
   type AccessAlertKind,
 } from "@/platform/email";
+import { notify } from "@/platform/notifications";
 import { db, forOrganization } from "@/server";
 
+import { ACCESS_ALERT_NOTICE } from "./access-notices";
 import { afterResponse, auth } from "./auth";
 import { assertNotTerminalSession } from "./terminal-session";
 import { blockedFor, clientIp, throttleKeys } from "./throttle";
@@ -127,7 +131,33 @@ async function takeMailSlot(userId: string): Promise<boolean> {
   return false;
 }
 
-type AlertOutcome = "sent" | "duplicate" | "not_mailed";
+/**
+ * At most this many access alerts reach the bell of a person in a day
+ * (UTC), like the mails: each takes a numbered slot with a key unique per
+ * person (review of WMS-88). What finds none stays in the history.
+ */
+export const ACCESS_BELL_ALERTS_PER_DAY = 5;
+
+async function takeBellSlot(userId: string): Promise<boolean> {
+  const day = today();
+  const used = await db.securityEvent.count({
+    where: { userId, dedupeKey: { startsWith: `bell_slot:${day}:` } },
+  });
+  for (let slot = used + 1; slot <= ACCESS_BELL_ALERTS_PER_DAY; slot += 1) {
+    if (
+      await claimSecurityEvent({
+        userId,
+        action: ALERT_CLAIM,
+        dedupeKey: `bell_slot:${day}:${slot}`,
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type AlertOutcome = "queued" | "duplicate" | "not_mailed";
 
 /**
  * One alert to the owner of the account, once per `dedupeKey`. It is
@@ -190,46 +220,359 @@ async function raiseAlert(input: {
     if (why) {
       // In the history, once a day; the alert may still be mailed another
       // day (a new device is not learnt until then).
-      await claimSecurityEvent({
-        ...row,
-        metadata: { mail: why },
-        dedupeKey: `${input.dedupeKey}:not_mailed:${day}`,
-      });
+      const notMailedKey = `${input.dedupeKey}:not_mailed:${day}`;
+      if (
+        await claimSecurityEvent({
+          ...row,
+          metadata: { mail: why },
+          dedupeKey: notMailedKey,
+        })
+      ) {
+        // The bell (WMS-88): not for a PIN of someone who has none.
+        if (input.mail !== false) {
+          bellAlert(input.userId, input.kind, input.deviceKey, notMailedKey);
+        }
+      }
       return "not_mailed";
     }
-    const claimed = await claimSecurityEvent({
-      ...row,
-      metadata: { mail: "sent" },
-      dedupeKey: input.dedupeKey,
-    });
-    if (!claimed) return "duplicate";
-    const membership = await db.membership.findFirst({
-      where: { userId: input.userId, status: "ACTIVE" },
-      orderBy: { createdAt: "asc" },
-      select: { organization: { select: { timeZone: true } } },
-    });
-    const message = accessAlertEmail({
-      to: user.email,
-      name: user.name,
-      kind: input.kind,
-      when: formatDateTime(
-        new Date(),
-        membership?.organization.timeZone ?? DEFAULT_TIME_ZONE,
-      ),
-      device: describeDeviceKey(input.deviceKey)?.label ?? "Otro navegador",
-      ipAddress: formatIp(input.ipAddress ?? null),
-      recoverUrl: appUrl("/recuperar-contrasena"),
-      historyUrl: appUrl("/configuracion/accesos"),
-    });
-    afterResponse(() =>
-      sendEmail(message).catch((error: unknown) =>
-        log.error("access.alert_email_failed", error),
-      ),
-    );
-    return "sent";
+    // WMS-88 (ADR 0084): the alert and its mail are written together; the
+    // mail leaves after the response and is tried again if it fails. The
+    // history says what really happened to it.
+    const emailId = await queueAlertMail(row, input.dedupeKey, input.kind);
+    if (!emailId) return "duplicate";
+    afterResponse(() => deliverAccessAlertEmail(emailId).then(() => {}));
+    bellAlert(input.userId, input.kind, input.deviceKey, input.dedupeKey);
+    return "queued";
   } catch (error) {
     log.error("access.alert_failed", error);
     return "not_mailed";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The mail of an alert (WMS-88, ADR 0084)
+
+/** Tries of one alert mail, the first included. */
+export const ACCESS_ALERT_MAIL_ATTEMPTS = 5;
+/** Waits before each try again (after the 1st, 2nd, 3rd and 4th). */
+const ALERT_MAIL_RETRY_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
+/** A try that holds its row longer than this died: another may take it. */
+const ALERT_MAIL_CLAIM_STALE_MS = 5 * 60_000;
+/** Rows one round of the worker tries at most. */
+const ALERT_MAIL_ROUND_MAX = 50;
+/**
+ * Mails are kept as long as their alert (review of WMS-88): the history
+ * says what happened to each one for as long as it lists the alert.
+ */
+export const ACCESS_ALERT_MAIL_KEEP_DAYS = 366;
+
+/**
+ * Writes the alert row and its mail together (the row once per key).
+ * Returns the id of the mail, or null when the alert already existed.
+ */
+async function queueAlertMail(
+  row: {
+    userId: string;
+    action: string;
+    deviceKey: string | null;
+    ipAddress: string | null;
+  },
+  dedupeKey: string,
+  kind: AccessAlertKind,
+): Promise<string | null> {
+  try {
+    return await db.$transaction(async (tx) => {
+      await recordSecurityEvent(
+        { ...row, metadata: { mail: "queued" }, dedupeKey },
+        tx,
+      );
+      const event = await tx.securityEvent.findUnique({
+        where: { userId_dedupeKey: { userId: row.userId, dedupeKey } },
+        select: { id: true, createdAt: true },
+      });
+      if (!event) throw new Error("alert row not written");
+      const id = newId();
+      await tx.accessAlertEmail.create({
+        data: {
+          id,
+          userId: row.userId,
+          securityEventId: event.id,
+          kind,
+          deviceKey: row.deviceKey,
+          ipAddress: row.ipAddress,
+          occurredAt: event.createdAt,
+          nextAttemptAt: event.createdAt,
+        },
+      });
+      return id;
+    });
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code === "P2002") return null;
+    throw error;
+  }
+}
+
+export type AlertMailOutcome = "sent" | "retry" | "failed" | "not_taken";
+
+/**
+ * One try of the mail of an alert. The try takes the row with a
+ * conditional update (`claimToken`): two processes never send the same
+ * row at once, and only the try that holds it closes it. Sent: `SENT`.
+ * Failed: it waits for its next try, and after ACCESS_ALERT_MAIL_ATTEMPTS
+ * ends `FAILED`. The address is read from the account now, only when it
+ * is confirmed. It takes no slot of the daily limit (the alert took one).
+ * Never throws.
+ */
+export async function deliverAccessAlertEmail(
+  emailId: string,
+  now: Date = new Date(),
+): Promise<AlertMailOutcome> {
+  const token = newId();
+  try {
+    const taken = await db.accessAlertEmail.updateMany({
+      where: {
+        id: emailId,
+        status: "QUEUED",
+        attempts: { lt: ACCESS_ALERT_MAIL_ATTEMPTS },
+        nextAttemptAt: { lte: now },
+        OR: [
+          { claimedAt: null },
+          {
+            claimedAt: {
+              lt: new Date(now.getTime() - ALERT_MAIL_CLAIM_STALE_MS),
+            },
+          },
+        ],
+      },
+      data: { claimToken: token, claimedAt: now, attempts: { increment: 1 } },
+    });
+    if (taken.count === 0) return "not_taken";
+    const row = await db.accessAlertEmail.findUnique({
+      where: { id: emailId },
+    });
+    if (!row || row.claimToken !== token) return "not_taken";
+    const close = async (
+      data: Parameters<typeof db.accessAlertEmail.updateMany>[0]["data"],
+    ) => {
+      await db.accessAlertEmail.updateMany({
+        where: { id: row.id, claimToken: token, status: "QUEUED" },
+        data,
+      });
+    };
+    const user = await db.user.findUnique({
+      where: { id: row.userId },
+      select: { email: true, name: true, emailVerified: true },
+    });
+    if (!user || !user.emailVerified) {
+      await close({
+        status: "FAILED",
+        claimToken: null,
+        reason: "El correo de la cuenta no está confirmado.",
+      });
+      return "failed";
+    }
+    const membership = await db.membership.findFirst({
+      where: { userId: row.userId, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+      select: { organization: { select: { timeZone: true } } },
+    });
+    try {
+      await sendEmail(
+        accessAlertEmail({
+          to: user.email,
+          name: user.name,
+          kind: row.kind as AccessAlertKind,
+          when: formatDateTime(
+            row.occurredAt,
+            membership?.organization.timeZone ?? DEFAULT_TIME_ZONE,
+          ),
+          device: describeDeviceKey(row.deviceKey)?.label ?? "Otro navegador",
+          ipAddress: formatIp(row.ipAddress),
+          recoverUrl: appUrl("/recuperar-contrasena"),
+          historyUrl: appUrl("/configuracion/accesos"),
+        }),
+      );
+    } catch (error) {
+      // Never the error itself in the log: it may carry the address.
+      log.warn("access.alert_email_failed", {
+        emailId: row.id,
+        attempt: row.attempts,
+      });
+      if (
+        error instanceof InvalidEmailError ||
+        row.attempts >= ACCESS_ALERT_MAIL_ATTEMPTS
+      ) {
+        await close({
+          status: "FAILED",
+          claimToken: null,
+          reason:
+            error instanceof InvalidEmailError
+              ? "El correo no se pudo armar con los datos de la cuenta."
+              : "No se pudo entregar el correo después de varios intentos.",
+        });
+        return "failed";
+      }
+      const wait =
+        ALERT_MAIL_RETRY_MS[
+          Math.min(row.attempts, ALERT_MAIL_RETRY_MS.length) - 1
+        ]!;
+      await close({
+        claimToken: null,
+        claimedAt: null,
+        nextAttemptAt: new Date(now.getTime() + wait),
+        reason: "No se pudo entregar; se volverá a intentar.",
+      });
+      return "retry";
+    }
+    await close({
+      status: "SENT",
+      sentAt: new Date(),
+      claimToken: null,
+      reason: null,
+    });
+    return "sent";
+  } catch (error) {
+    log.error("access.alert_email_try_failed", error, { emailId });
+    return "not_taken";
+  }
+}
+
+/**
+ * The worker, every minute: tries again the alert mails whose turn came
+ * (and those whose try died holding them). Safe to run twice at once.
+ */
+export async function retryAccessAlertEmails(
+  now: Date = new Date(),
+): Promise<{ tried: number; sent: number; abandoned: number }> {
+  // A try that died holding its row after using the last attempt never
+  // got a result: it ends as failed (review of WMS-88).
+  const abandoned = await db.accessAlertEmail.updateMany({
+    where: {
+      status: "QUEUED",
+      attempts: { gte: ACCESS_ALERT_MAIL_ATTEMPTS },
+      OR: [
+        { claimedAt: null },
+        {
+          claimedAt: {
+            lt: new Date(now.getTime() - ALERT_MAIL_CLAIM_STALE_MS),
+          },
+        },
+      ],
+    },
+    data: {
+      status: "FAILED",
+      claimToken: null,
+      reason: "El último intento se interrumpió sin saber si salió.",
+    },
+  });
+  const due = await db.accessAlertEmail.findMany({
+    where: {
+      status: "QUEUED",
+      attempts: { lt: ACCESS_ALERT_MAIL_ATTEMPTS },
+      nextAttemptAt: { lte: now },
+      OR: [
+        { claimedAt: null },
+        {
+          claimedAt: {
+            lt: new Date(now.getTime() - ALERT_MAIL_CLAIM_STALE_MS),
+          },
+        },
+      ],
+    },
+    orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
+    take: ALERT_MAIL_ROUND_MAX,
+    select: { id: true },
+  });
+  let sent = 0;
+  for (const row of due) {
+    if ((await deliverAccessAlertEmail(row.id, now)) === "sent") sent += 1;
+  }
+  return { tried: due.length, sent, abandoned: abandoned.count };
+}
+
+// ---------------------------------------------------------------------------
+// In the bell (WMS-88, ADR 0084)
+
+/** Companies of a person that get the notice of an alert, at most. */
+const BELL_COMPANIES_MAX = 20;
+
+function bellText(kind: AccessAlertKind, deviceKey?: string | null): string {
+  const device = describeDeviceKey(deviceKey)?.label ?? "un navegador";
+  switch (kind) {
+    case "new_device":
+      return `Alerta de seguridad: entraron a tu cuenta desde ${device}. Si no fuiste tú, cambia tu contraseña.`;
+    case "password_new_device":
+      return `Alerta de seguridad: escribieron bien tu contraseña desde ${device} y falló el código. Si no fuiste tú, cambia tu contraseña.`;
+    case "failed_attempts":
+      return "Alerta de seguridad: bloqueamos tu cuenta un rato por muchos intentos fallidos.";
+    case "code_locked":
+      return "Alerta de seguridad: escribieron bien tu contraseña y fallaron varias veces el código. Cambia tu contraseña.";
+    case "pin_locked":
+      return "Alerta de seguridad: bloqueamos tu PIN un rato por muchos intentos fallidos.";
+  }
+}
+
+/**
+ * The alert also as a notice of the bell, in each company where the person
+ * is an active member, after the response. Once per alert (its key). The
+ * text speaks of the person's own account: never of another company, never
+ * the IP. Never throws.
+ */
+function bellAlert(
+  userId: string,
+  kind: AccessAlertKind,
+  deviceKey: string | null | undefined,
+  key: string,
+): void {
+  afterResponse(() => writeBellAlert(userId, kind, deviceKey, key));
+}
+
+export async function writeBellAlert(
+  userId: string,
+  kind: AccessAlertKind,
+  deviceKey: string | null | undefined,
+  key: string,
+): Promise<void> {
+  try {
+    const memberships = await db.membership.findMany({
+      where: { userId, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+      take: BELL_COMPANIES_MAX,
+      select: { organizationId: true },
+    });
+    // Only where the person keeps it on (the default is on).
+    const off = new Set(
+      (
+        await db.notificationPreference.findMany({
+          where: {
+            userId,
+            typeKey: ACCESS_ALERT_NOTICE.key,
+            enabled: false,
+            organizationId: {
+              in: memberships.map((each) => each.organizationId),
+            },
+          },
+          select: { organizationId: true },
+        })
+      ).map((row) => row.organizationId),
+    );
+    const places = memberships.filter((each) => !off.has(each.organizationId));
+    // The slot of the day is taken only when a notice will be written.
+    if (places.length === 0 || !(await takeBellSlot(userId))) return;
+    for (const { organizationId } of places) {
+      await forOrganization(organizationId).$transaction((tx) =>
+        notify(tx, ACCESS_ALERT_NOTICE, {
+          organizationId,
+          actorUserId: null,
+          to: { userIds: [userId] },
+          text: bellText(kind, deviceKey),
+          href: "/configuracion/accesos",
+          key: `access:${key}`,
+        }),
+      );
+    }
+  } catch (error) {
+    log.error("access.bell_alert_failed", error);
   }
 }
 
@@ -308,7 +651,7 @@ export async function noteSignIn(input: {
     });
     // Learnt only once the person was told; a request that lost the race
     // leaves it to the one that sends.
-    if (outcome === "sent") await learnDevice(input.userId, deviceKey);
+    if (outcome === "queued") await learnDevice(input.userId, deviceKey);
   } catch (error) {
     log.error("access.device_check_failed", error);
   }
@@ -536,16 +879,34 @@ export type AccessHistoryRow = {
 };
 
 const MAIL_TEXT: Record<string, string> = {
-  sent: "Se envió el correo de alerta.",
+  // Before WMS-88 «sent» meant «scheduled»: that is all that is known.
+  sent: "Se programó el correo de alerta.",
+  // WMS-88: the mail row is gone only when the alert itself is about to go.
+  queued: "Se programó el correo de alerta.",
   daily_limit: `No se envió correo: ya se habían enviado ${ACCESS_ALERTS_PER_DAY} alertas ese día.`,
   unverified: "No se envió correo: el correo de la cuenta no está confirmado.",
   no_pin: "No se envió correo: no tiene PIN.",
 };
 
-function mailTextOf(action: string, metadata: unknown): string | null {
+type MailState = { status: string; attempts: number } | undefined;
+
+function mailTextOf(
+  action: string,
+  metadata: unknown,
+  mail: MailState,
+): string | null {
   if (!SUSPICIOUS_ACTIONS.has(action)) return null;
-  const mail = (metadata as { mail?: unknown } | null)?.mail;
-  return typeof mail === "string" ? (MAIL_TEXT[mail] ?? null) : null;
+  // WMS-88: what really happened to the mail.
+  if (mail) {
+    if (mail.status === "SENT") return "Se envió el correo de alerta.";
+    if (mail.status === "FAILED")
+      return "No se pudo enviar el correo de alerta.";
+    return mail.attempts > 0
+      ? "El correo de alerta no ha salido; se volverá a intentar."
+      : "El correo de alerta está programado.";
+  }
+  const said = (metadata as { mail?: unknown } | null)?.mail;
+  return typeof said === "string" ? (MAIL_TEXT[said] ?? null) : null;
 }
 
 export type AccessHistoryPage = {
@@ -600,6 +961,18 @@ export async function readAccessHistory(
     ids.add(terminalId);
     byCompany.set(event.eventOrganizationId, ids);
   }
+  const alertIds = events
+    .filter((event) => SUSPICIOUS_ACTIONS.has(event.action))
+    .map((event) => event.id);
+  const mails = new Map(
+    (alertIds.length > 0
+      ? await db.accessAlertEmail.findMany({
+          where: { securityEventId: { in: alertIds } },
+          select: { securityEventId: true, status: true, attempts: true },
+        })
+      : []
+    ).map((row) => [row.securityEventId, row]),
+  );
   const names = new Map<string, string>();
   for (const [organizationId, ids] of byCompany) {
     const terminals = await forOrganization(
@@ -627,7 +1000,7 @@ export async function readAccessHistory(
         : WARNING_ACTIONS.has(event.action)
           ? ("warning" as const)
           : ("normal" as const),
-      mailText: mailTextOf(event.action, event.metadata),
+      mailText: mailTextOf(event.action, event.metadata, mails.get(event.id)),
     };
   });
   return { rows, page, pageCount, total };
@@ -643,4 +1016,69 @@ export async function listMyAccessHistory(
 ): Promise<AccessHistoryPage> {
   await assertNotTerminalSession(userId);
   return readAccessHistory({ userId, action: { in: ACCESS_ACTIONS } }, page);
+}
+
+// ---------------------------------------------------------------------------
+// Retention (WMS-88, ADR 0084)
+
+/**
+ * Access events and the internal rows of a day are kept this long. The
+ * database allows deleting nothing younger (trigger
+ * `security_event_no_delete`): changing it is a migration too.
+ */
+export const SECURITY_EVENT_KEEP_DAYS = 365;
+
+/**
+ * What the retention may delete: the events the history lists (alerts
+ * included) and the rows of a day. Never `access.device_known` nor the
+ * events that are not accesses. The trigger repeats this list.
+ */
+export const PURGEABLE_SECURITY_ACTIONS: readonly string[] = [
+  ...ACCESS_ACTIONS,
+  MAIL_SLOT,
+  ALERT_CLAIM,
+];
+
+const PURGE_BATCH = 1000;
+const PURGE_BATCHES = 20;
+
+/**
+ * The round of the worker (hourly): access events older than
+ * SECURITY_EVENT_KEEP_DAYS (one day more, so the clock of the app never
+ * asks before the database allows), and alert mails that ended more than
+ * ACCESS_ALERT_MAIL_KEEP_DAYS ago. In batches by id. Safe to repeat.
+ */
+export async function purgeExpiredSecurityEvents(
+  now: Date = new Date(),
+): Promise<{ events: number; mails: number }> {
+  const before = new Date(
+    now.getTime() - (SECURITY_EVENT_KEEP_DAYS + 1) * 86_400_000,
+  );
+  let events = 0;
+  for (let batch = 0; batch < PURGE_BATCHES; batch += 1) {
+    const rows = await db.securityEvent.findMany({
+      where: {
+        createdAt: { lt: before },
+        action: { in: [...PURGEABLE_SECURITY_ACTIONS] },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: PURGE_BATCH,
+      select: { id: true },
+    });
+    if (rows.length === 0) break;
+    const removed = await db.securityEvent.deleteMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+    });
+    events += removed.count;
+    if (rows.length < PURGE_BATCH) break;
+  }
+  const mails = await db.accessAlertEmail.deleteMany({
+    where: {
+      status: { not: "QUEUED" },
+      createdAt: {
+        lt: new Date(now.getTime() - ACCESS_ALERT_MAIL_KEEP_DAYS * 86_400_000),
+      },
+    },
+  });
+  return { events, mails: mails.count };
 }

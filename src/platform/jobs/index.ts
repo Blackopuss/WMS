@@ -21,6 +21,7 @@ export type {
 export {
   allOrganizations,
   organizationsWithModule,
+  runAccountRounds,
   runScheduledRounds,
 } from "./rounds";
-export type { ScheduledRound } from "./rounds";
+export type { AccountRound, ScheduledRound } from "./rounds";

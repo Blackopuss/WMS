@@ -1785,7 +1785,12 @@ export async function receiveFacilityTransfer(
           await notify(tx, TRANSFER_DIFFERENCES_NOTICE, {
             organizationId,
             actorUserId: userId,
-            to: { userIds: [transfer.sentByUserId] },
+            // WMS-88: who sent it reached the origin.
+            to: {
+              userIds: [transfer.sentByUserId],
+              permissions: ["inventory.facility_transfer.read"],
+              facilityId: transfer.fromFacilityId,
+            },
             text: `El traslado ${numberText} se recibió en ${transfer.toFacility.name} con mercancía dañada.`,
             href: `/movimientos/traslados/${transfer.id}`,
             key: `facility_transfer:${transfer.id}:damaged:${receiptId}`,
@@ -2197,7 +2202,12 @@ export async function resolveFacilityTransfer(
           await notify(tx, TRANSFER_DIFFERENCES_NOTICE, {
             organizationId,
             actorUserId: userId,
-            to: { userIds: [transfer.sentByUserId] },
+            // WMS-88: who sent it reached the origin.
+            to: {
+              userIds: [transfer.sentByUserId],
+              permissions: ["inventory.facility_transfer.read"],
+              facilityId: transfer.fromFacilityId,
+            },
             text: `En ${transfer.toFacility.name} dieron por perdido parte del traslado ${numberText}: ${amount} de ${product.name}.`,
             href: `/movimientos/traslados/${transfer.id}`,
             key: `facility_transfer:${transfer.id}:lost:${newId()}`,

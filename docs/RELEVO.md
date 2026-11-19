@@ -21,7 +21,7 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | WMS-66 Búsqueda global (permisos y alcance; revisor) | `session_01QMjUPTXNNfJr8phb53Ukb4` | `wms-66-busqueda-global` | Opus, medio | 0081 (`20261119110000`) | abierto |
 | WMS-32 Indicadores de almacén (permisos, alcance y costos; revisor) | `session_01QMjUPWFSksAhndeQ1UGQxR` | `wms-32-indicadores-almacen` | Opus, medio | 0082 (`20261119120000`) | abierto |
 | WMS-43 Asistente de configuración inicial | `session_01QMjUPWjqnyim6TcuhoF9Am` | `wms-43-asistente-inicial` | Opus, medio | 0083 (`20261119130000`) | Cerrado y unido el 2026-11-19 |
-| WMS-88 Pendientes de avisos por correo (ADR 0060) y del historial de accesos (ADR 0064) (seguridad; revisor) | `session_01QMjUPY8CFA5E9GkWMRc1Tj` | `wms-88-avisos-accesos-pendientes` | Opus, medio | 0084 (`20261119140000`) | abierto |
+| WMS-88 Pendientes de avisos por correo (ADR 0060) y del historial de accesos (ADR 0064) (seguridad; revisor) | `session_01QMjUPY8CFA5E9GkWMRc1Tj` | `wms-88-avisos-accesos-pendientes` | Opus, medio | 0084 (`20261119140000`) | Cerrado y unido el 2026-11-19 |
 | WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
 | WMS-46 Manuales por rol, instalación, actualización y respaldo (`docs/manuales/`) | `session_01QMjUPWnxq17jsxbEu38ox6` | `wms-46-manuales` | Sonnet, medio | sin ADR | **Cerrado y unido el 2026-11-19.** |
 

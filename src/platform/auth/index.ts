@@ -26,14 +26,31 @@ export {
   ACCESS_ACTIONS,
   ACCESS_ACTION_LABELS,
   ACCESS_ALERTS_PER_DAY,
+  ACCESS_ALERT_MAIL_ATTEMPTS,
+  ACCESS_ALERT_MAIL_KEEP_DAYS,
+  ACCESS_BELL_ALERTS_PER_DAY,
   ACCESS_HISTORY_PAGE_SIZE,
+  PURGEABLE_SECURITY_ACTIONS,
+  SECURITY_EVENT_KEEP_DAYS,
   alertFailedAttempts,
   alertPinLocked,
+  deliverAccessAlertEmail,
   listMyAccessHistory,
   noteSignIn,
+  purgeExpiredSecurityEvents,
   readAccessHistory,
+  retryAccessAlertEmails,
+  writeBellAlert,
 } from "./access-history";
-export type { AccessHistoryPage, AccessHistoryRow } from "./access-history";
+export {
+  ACCESS_ALERT_NOTICE,
+  ACCESS_NOTIFICATION_TYPES,
+} from "./access-notices";
+export type {
+  AccessHistoryPage,
+  AccessHistoryRow,
+  AlertMailOutcome,
+} from "./access-history";
 export { BACKUP_CODE_COUNT, normalizeBackupCode } from "./backup-codes";
 export { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "./password";
 export { verifyAccountPassword } from "./account-password";

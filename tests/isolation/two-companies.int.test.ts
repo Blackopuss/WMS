@@ -1422,6 +1422,16 @@ beforeAll(async () => {
         day: new Date("2026-11-14T00:00:00.000Z"),
       },
     });
+    // WMS-88: a link to stop notices by mail.
+    await db.noticeUnsubscribe.create({
+      data: {
+        id: newId(),
+        organizationId,
+        userId: who,
+        tokenHash: newId().replace(/-/g, "").padEnd(64, "0"),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    });
     const incidentId = newId();
     await db.incident.create({
       data: {

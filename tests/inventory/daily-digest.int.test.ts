@@ -4,6 +4,7 @@ import { newId } from "@/lib";
 import {
   DAILY_DIGEST_NOTICE,
   DIGEST_LINES,
+  digestSections,
   registerEntry,
   runDailyDigestRound,
   sendDailyDigest,
@@ -391,5 +392,37 @@ describe("the daily summary by mail", () => {
     expect(
       await db.dailyDigest.findUniqueOrThrow({ where: { id } }),
     ).toMatchObject({ status: "SKIPPED" });
+  });
+});
+
+// WMS-88 (ADR 0084): low stock is read once for the jobs of a round, and
+// each person is still checked before the copy is used.
+describe("low stock read once (WMS-88)", () => {
+  it("reuses the company's figure and still leaves out who is limited", async () => {
+    const boss = await company("Empresa bajos");
+    const sara = await member(boss.organizationId, "supervisor", "Sara B");
+    const lia = await member(boss.organizationId, "supervisor", "Lía B");
+    const home = (await listFacilities(boss)).find((each) => each.isDefault)!;
+    const scoped = await setMemberScope(boss.organizationId, boss.userId, {
+      userId: lia.userId,
+      facilities: [{ facilityId: home.id }],
+    });
+    if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    const first = await product(boss, `BAJ-${newId().slice(-6)}`, false);
+    await enter(boss, first, "1");
+    await setMinimum(boss, { productId: first, quantity: "5" });
+
+    const titleOf = async (person: InventoryActor) =>
+      (await digestSections(person)).find((section) =>
+        section.title.startsWith("Existencias bajas"),
+      )?.title ?? null;
+    expect(await titleOf(boss)).toBe("Existencias bajas (1)");
+    // A second product goes low meanwhile: the copy of the round is used.
+    const second = await product(boss, `BAJ-${newId().slice(-6)}`, false);
+    await enter(boss, second, "1");
+    await setMinimum(boss, { productId: second, quantity: "5" });
+    expect(await titleOf(sara)).toBe("Existencias bajas (1)");
+    // Limited: nothing, even with the copy ready.
+    expect(await titleOf(lia)).toBeNull();
   });
 });
