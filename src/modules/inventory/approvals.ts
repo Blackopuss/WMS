@@ -1,7 +1,12 @@
 import type { ApprovalType } from "@/platform/approvals";
 
-import { ADJUSTMENT_APPROVAL, COUNT_APPROVAL } from "./approval-keys";
+import {
+  ADJUSTMENT_APPROVAL,
+  COUNT_APPROVAL,
+  DISPOSAL_APPROVAL,
+} from "./approval-keys";
 import { applyApprovedCount } from "./counts";
+import { applyApprovedDisposal } from "./disposal";
 import { applyApprovedAdjustment } from "./movements";
 import {
   ADJUSTMENT_APPROVAL_THRESHOLD,
@@ -37,6 +42,18 @@ export const INVENTORY_APPROVAL_TYPES: readonly ApprovalType[] = [
     href: (request) =>
       request.sourceType === "stock_count" && request.sourceId
         ? `/conteos/${request.sourceId}`
+        : null,
+  },
+  {
+    ...DISPOSAL_APPROVAL,
+    module: "inventory",
+    description:
+      "Desechar mercancía dañada o rechazada espera a que alguien lo autorice, con el motivo a la vista. Si autorizas las correcciones de existencias, enciende también esta: si no, lo disponible puede pasarse a dañado y desecharse sin autorización.",
+    requestPermissions: ["inventory.disposal.create"],
+    approve: applyApprovedDisposal,
+    href: (request) =>
+      request.sourceType === "product" && request.sourceId
+        ? `/inventario/${request.sourceId}`
         : null,
   },
 ];

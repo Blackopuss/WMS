@@ -20,7 +20,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PageContainer, PageHeader, ReadOnlyNotice } from "@/components";
+import { PageContainer, PageHeader, ReadOnlyNotice } from "@/components/states";
 import { PendingNotices } from "@/components/pending-notices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

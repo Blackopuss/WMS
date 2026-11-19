@@ -394,6 +394,7 @@ export {
   SHIPMENT_PAGE_SIZE,
   addShipmentOrders,
   cancelShipment,
+  countOrdersToArm,
   countOrdersToShip,
   createShipment,
   dispatchShipment,
@@ -745,7 +746,11 @@ export { planCrossDock, rankWaitingLines } from "./cross-dock-rules";
 export type { CrossDockSent } from "./cross-docking";
 // WMS-41 (ADR 0053): what Inventario may ask to authorize.
 export { INVENTORY_APPROVAL_TYPES } from "./approvals";
-export { ADJUSTMENT_APPROVAL, COUNT_APPROVAL } from "./approval-keys";
+export {
+  ADJUSTMENT_APPROVAL,
+  COUNT_APPROVAL,
+  DISPOSAL_APPROVAL,
+} from "./approval-keys";
 export type { AdjustmentResult, PendingApproval } from "./movements";
 // WMS-25 (ADR 0054): picking waves, walking order and several tasks at once.
 export { PICKING_MODE } from "./settings";
@@ -883,6 +888,7 @@ export {
 export { changeTaskEquipment, taskEquipmentChoices } from "./tasks";
 export {
   DISPOSABLE_STATUSES,
+  disposalNeedsApproval,
   disposeStock,
   findDisposalConfirmation,
   postDisposal,
@@ -896,6 +902,11 @@ export {
   REPAIR_THROUGH_INSPECTION,
   repairExitsOf,
 } from "./repair-release";
+export {
+  STOCK_STATUS_FILTER_OPTIONS,
+  chosenStockStatus,
+  productsInStatusWhere,
+} from "./status-filter";
 export {
   INSPECTION_PAGE_SIZE,
   countAwaitingInspection,
