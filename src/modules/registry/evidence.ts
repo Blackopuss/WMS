@@ -1,5 +1,6 @@
 import { reachesIncident, reachesTask } from "@/modules/inventory";
 import type { EvidenceOwners } from "@/platform/files";
+import { reachesPurchaseReceipt } from "@/modules/purchasing";
 import { processStepReach } from "@/platform/processes";
 
 import { processDocuments } from "./processes";
@@ -17,4 +18,6 @@ export const evidenceOwners: EvidenceOwners = {
   process_step: processStepReach(processDocuments),
   // WMS-37B (ADR 0076): a warehouse task, for who reaches it.
   warehouse_task: reachesTask,
+  // WMS-84 (ADR 0079): a receipt, for what was rejected at the door.
+  purchase_receipt: reachesPurchaseReceipt,
 };

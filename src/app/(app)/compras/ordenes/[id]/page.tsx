@@ -3,14 +3,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PrintLabelLink } from "@/components/label-print-form";
+import { PhotoGallery } from "@/components/photo-gallery";
 import {
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-  PrintLabelLink,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime, newId } from "@/lib";
@@ -23,8 +24,11 @@ import {
   getOrderDeliveries,
   getOrderReceipts,
   getPurchaseOrder,
+  rejectionPhotoMode,
 } from "@/modules/purchasing";
 import { getModuleAccess } from "@/platform/billing";
+
+import { FILE_PURPOSES } from "@/platform/files";
 
 import { DeliveryPanel } from "./delivery-panel";
 import { CancelOrder, CloseOrder, SubmitOrder } from "./order-buttons";
@@ -118,6 +122,8 @@ export default async function OrdenPage({
     canReceive && (await containersEnabled(actor))
       ? CONTAINER_KIND_SUGGESTIONS
       : null;
+  // WMS-84: whether the company takes photos of what is rejected.
+  const rejectionPhoto = canReceive ? await rejectionPhotoMode(actor) : "off";
   // The PDF carries prices: for who may export orders (not Consulta).
   const canExport = access.can("purchasing.order.export");
   const zone = access.organization.timeZone;
@@ -175,6 +181,10 @@ export default async function OrdenPage({
                     ""
                   }
                   containerKinds={palletKinds}
+                  rejectionPhoto={rejectionPhoto}
+                  maxPhotos={
+                    FILE_PURPOSES.receipt_rejection_photo.evidence.perRecord
+                  }
                 />
               )}
               {canSubmit && (
@@ -421,7 +431,9 @@ ${order.closeReason ?? ""}`,
           >
             Recepciones
           </h2>
-          {receipts.lines.some((line) => line.pendingText) && (
+          {receipts.lines.some(
+            (line) => line.pendingText || line.rejectedText,
+          ) && (
             <ul className="divide-y border-b">
               {receipts.lines.map((line) => (
                 <li
@@ -440,6 +452,9 @@ ${order.closeReason ?? ""}`,
                         ? ` · faltante: ${line.pendingText}`
                         : ` · faltan ${line.pendingText}`
                       : ""}
+                    {/* WMS-84: rejected at the door; it stays pending. */}
+                    {line.rejectedText &&
+                      ` · rechazado al recibir: ${line.rejectedText}`}
                   </span>
                 </li>
               ))}
@@ -477,6 +492,38 @@ ${order.closeReason ?? ""}`,
                       </li>
                     ))}
                   </ul>
+                  {/* WMS-84 (ADR 0079): rejected at the door, never entered. */}
+                  {receipt.rejections.length > 0 && (
+                    <div className="space-y-2 border-l-2 border-warning pl-3 text-sm">
+                      <p className="font-medium">Rechazado al recibir</p>
+                      <ul className="space-y-2">
+                        {receipt.rejections.map((row) => (
+                          <li
+                            key={row.id}
+                            className="[overflow-wrap:anywhere] tabular-nums"
+                          >
+                            {row.quantityText} de {row.productName}{" "}
+                            <span className="text-muted-foreground">
+                              ({row.sku})
+                              {row.lotCode && ` · lote ${row.lotCode}`}
+                              {row.serials.length > 0 &&
+                                ` · series ${row.serials.join(", ")}`}
+                            </span>
+                            <span className="block whitespace-pre-line text-muted-foreground">
+                              Por qué: {row.reason}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-muted-foreground">
+                        No entró al inventario; sigue pendiente en la orden.
+                      </p>
+                      <PhotoGallery
+                        photos={receipt.photos}
+                        label={`lo rechazado al recibir ${order.numberText}`}
+                      />
+                    </div>
+                  )}
                   {/* WMS-26: a label for each serial that came. */}
                   {receipt.lines.some((line) => line.bySerial) &&
                     access.can("inventory.stock.read") && (

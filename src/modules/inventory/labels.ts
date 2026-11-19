@@ -367,10 +367,13 @@ async function serialLabels(
     ) {
       return { ok: false, reason: "not_found" };
     }
-    const lines = await client.stockMovementLine.findMany({
-      where: { movementId: receipt.movementId },
-      select: { id: true },
-    });
+    // WMS-84: a receipt that only rejected has no movement, so no units.
+    const lines = receipt.movementId
+      ? await client.stockMovementLine.findMany({
+          where: { movementId: receipt.movementId },
+          select: { id: true },
+        })
+      : [];
     const moves = await client.serialMove.findMany({
       where: {
         movementLineId: { in: lines.map((line) => line.id) },

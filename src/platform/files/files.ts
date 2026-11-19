@@ -442,7 +442,12 @@ const FILE_SELECT = {
   storageKey: true,
   createdByUserId: true,
   evidencePhoto: {
-    select: { incidentId: true, processStepId: true, warehouseTaskId: true },
+    select: {
+      incidentId: true,
+      processStepId: true,
+      warehouseTaskId: true,
+      purchaseReceiptId: true,
+    },
   },
 } as const;
 
@@ -459,6 +464,7 @@ type FileRow = {
     incidentId: string | null;
     processStepId: string | null;
     warehouseTaskId: string | null;
+    purchaseReceiptId: string | null;
   } | null;
 };
 

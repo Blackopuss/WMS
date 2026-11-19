@@ -137,13 +137,16 @@ async function figuresOf(
             where: {
               contactId: supplierId,
               sentAt: { not: null },
-              receipts: { some: {} },
+              // WMS-84: a receipt that only rejected brought nothing in;
+              // the first arrival is the first receipt with a movement.
+              receipts: { some: { movementId: { not: null } } },
             },
             orderBy: [{ sentAt: "desc" }, { id: "desc" }],
             take: takeSent,
             select: {
               sentAt: true,
               receipts: {
+                where: { movementId: { not: null } },
                 orderBy: [{ createdAt: "asc" }, { id: "asc" }],
                 take: 1,
                 select: { createdAt: true },

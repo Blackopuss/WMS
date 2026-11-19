@@ -8,6 +8,20 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-89** Auditoría de dependencias: `effect` fijado a 3.22.1 con `overrides` de npm por el aviso GHSA-7589-6fvf-x4pw (ReDoS en `Schema.TemplateLiteral`, `effect <= 3.22.0`), que llegaba por `prisma → @prisma/config` y ponía en rojo el último paso de CI. Prisma sigue en 7.10.1 (no hay estable más nueva; la 8 es candidata y fija el mismo `effect`). `@prisma/config` solo lo usa la CLI para validar `prisma.config.ts`; la app y el worker no lo cargan. El `overrides` se quita cuando Prisma publique una estable con `effect` corregido (ADR 0002).
+- **WMS-84** Rechazo de recepción con su nota: al recibir una orden de compra
+  se puede rechazar todo o parte de lo que llega y no cuadra, con nota
+  obligatoria de por qué se regresa, lote y series que traía como evidencia
+  escrita y fotos opcionales (ajuste `purchasing.receipt.rejection_photo`).
+  Lo rechazado no entra al inventario (ni movimiento, saldo, valor, último
+  costo, lote ni serie), no cuenta como recibido y sigue pendiente en la
+  orden; se ve en la orden, en «Pendientes por recibir» y en «Compras por
+  proveedor» («Rechazos al recibir», distinto de «Devoluciones por calidad»),
+  y sale en la API de recepciones y en el webhook
+  `purchasing.receipt.rejected`. Tabla nueva `purchase_receipt_rejection`
+  (inmutable) y `purchase_receipt.movementId` puede quedar vacío; sin permiso
+  nuevo. ADR 0079.
+
 - **WMS-32** Indicadores de almacén: pantalla Inventario › «Indicadores»
   (`/inventario/indicadores`) con pedidos completos y a tiempo, tiempos de
   surtido y de recepción a acomodo, exactitud de conteos, productos de mayor
