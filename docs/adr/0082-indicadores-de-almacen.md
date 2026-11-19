@@ -205,7 +205,11 @@ su última tarea `PICK` (entregada o cancelada). Se muestran **mediana** y
 
 Por tarea de acomodo (`PUTAWAY`) entregada en el periodo cuyo origen está en
 el lugar: de su creación (nace en la misma transacción que la recepción o la
-entrada, ADR 0042) a su entrega. Mediana, percentil 90 y cuántas. Solo existe
+entrada, ADR 0042) a su entrega. Mediana, percentil 90 y cuántas. Se
+filtra por el origen: con zonas limitadas, un acomodo que sale de un lugar
+de paso del alcance y queda fuera de él sí entra en este conteo y en su
+mediana (es una sola cifra, sin nombre de zona ni de lugar; la tabla por
+zona sí lo excluye). Solo existe
 con el acomodo por tareas (`inventory.putaway.mode = tasks`); sin tareas el
 bloque dice que no hay datos y por qué.
 **Fuera:** la descarga (llegada del camión a recepción) no se guarda; el
