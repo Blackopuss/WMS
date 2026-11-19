@@ -563,14 +563,20 @@ describe("setup guide: the rest (WMS-43, review)", () => {
     // 15 for a new company and 7 for one that operates after the review.
     // Only the SQL this test process sends counts (other load on the same
     // server does not change it).
-    expect(await cost()).toBeLessThanOrEqual(15);
+    const settingUp = await cost();
+    // A floor too: if the queries stopped going through the wrapped adapter
+    // the count would be 0 and the ceiling alone would still pass.
+    expect(settingUp).toBeGreaterThan(0);
+    expect(settingUp).toBeLessThanOrEqual(15);
     const product = await createProduct(owner, { sku: "P-1", name: "Pieza" });
     if (!product.ok) throw new Error("product setup failed");
     await registerEntry(owner, {
       productId: product.productId,
       quantity: "1",
     });
-    expect(await cost()).toBeLessThanOrEqual(7);
+    const operating = await cost();
+    expect(operating).toBeGreaterThan(0);
+    expect(operating).toBeLessThanOrEqual(7);
     expect(statements.wrapped).toBe(true);
   });
 });
