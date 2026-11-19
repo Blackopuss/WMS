@@ -593,6 +593,7 @@ export {
   ADJUSTMENT_APPROVAL_THRESHOLD,
   DIGEST_DAYS,
   DIGEST_HOUR,
+  KPI_IDLE_DAYS,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -919,6 +920,29 @@ export {
   type AwaitingInspectionItem,
   type AwaitingInspectionPage,
 } from "./inspection";
+export {
+  KPI_COST_GROUPS_MAX,
+  KPI_IDLE_SCAN_MAX,
+  KPI_ORDERS_MAX,
+  KPI_TASK_ROWS_MAX,
+  KPI_TOP_PRODUCTS,
+  getWarehouseIndicators,
+  type KpiIdleRow,
+  type KpiPersonRow,
+  type KpiProductRow,
+  type KpiTimes,
+  type KpiZoneRow,
+  type TaskKindCounts,
+  type WarehouseIndicators,
+} from "./indicators";
+export {
+  KPI_DEFAULT_PRESET,
+  KPI_MAX_DAYS,
+  KPI_PRESETS,
+  durationText,
+  type KpiPeriod,
+  type KpiPreset,
+} from "./indicator-rules";
 
 // WMS-66: what Inventario offers to the global search (ADR 0081).
 export { INVENTORY_SEARCH_SOURCES } from "./search";

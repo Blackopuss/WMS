@@ -237,6 +237,8 @@ export const TERMINAL_COST_PERMISSIONS: readonly Permission[] = [
 export const TERMINAL_DESK_ONLY: readonly Permission[] = [
   "production.recipe.manage",
   "quality.plan.manage",
+  // WMS-32 (ADR 0082): how each person worked is not for a shared device.
+  "inventory.worker_performance.read",
 ];
 
 /** True when a PIN session keeps this permission of its roles. */

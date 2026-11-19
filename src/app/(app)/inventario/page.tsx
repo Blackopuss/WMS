@@ -1,5 +1,6 @@
 import {
   Boxes,
+  ChartColumn,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -321,6 +322,7 @@ export default async function InventarioPage({
       />
       {!showArchived &&
         (access.can("inventory.movement.read") ||
+          access.can("inventory.kpi.read") ||
           showContainers ||
           showReplenishment ||
           showRequests) && (
@@ -332,6 +334,15 @@ export default async function InventarioPage({
               >
                 <ScanSearch aria-hidden="true" className="size-4" />
                 Rastrear lote, serie o pedido
+              </Link>
+            )}
+            {access.can("inventory.kpi.read") && (
+              <Link
+                href="/inventario/indicadores"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <ChartColumn aria-hidden="true" className="size-4" />
+                Indicadores
               </Link>
             )}
             {showContainers && (
