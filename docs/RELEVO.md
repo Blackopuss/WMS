@@ -1,11 +1,36 @@
 # Relevo entre sesiones
 
-Actualizado: 2026-11-17 (cierre de la sesión de coordinación, 03:32 UTC). Para quien abre un chat nuevo sobre este repositorio:
+Actualizado: 2026-11-19 (relevo de la sesión de coordinación). Para quien abre un chat nuevo sobre este repositorio:
 dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando. El
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
 
-## Relevo de quien coordina (2026-11-17, 03:32 UTC)
+## Relevo de quien coordina (2026-11-19)
+
+Una sesión nueva (`session_01QMjUPVCDkWanf5mfnUYJRu`) relevó a quien coordinaba. El fundador indicó ese día: abrir WMS-83 con la forma de trabajo del relevo y «además implementa lo que queda pendiente y no choca con ningún paso, digamos que si el 83 pide el 82 no hagas el 83, entonces abre todos los chats que se puedan para implementar multiagéntico; cuando el chat de implementación pase de los 500k de contexto, creas otro chat para que siga implementando». Es decir: (1) se abren a la vez todos los pasos pendientes cuyas dependencias ya están hechas y que no se pisan; (2) el relevo de un chat que implementa pasa de 400,000 a 500,000 tokens; (3) quien coordina no implementa ni escribe código.
+
+Lectura de quien coordina, que el fundador puede corregir: los pasos que tocan el corazón de las existencias siguen yendo uno tras otro (WMS-83, después WMS-84, después producción WMS-29 → WMS-31 → WMS-30B → WMS-79, y WMS-85), y la indicación de implementar lo pendiente se toma como que el alto a producción queda levantado cuando le toque su turno en esa fila (se le avisó al fundador en el chat).
+
+Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; reportan con `send_message` a la sesión que coordina:
+
+| Paso | Sesión | Rama | Modelo | ADR | Estado |
+| --- | --- | --- | --- | --- | --- |
+| WMS-83 Desechar pide autorización (corazón; revisor independiente) | `session_01QMjUPTxqZT1kLarRWwnutb` | `wms-83-desechar-autorizacion` | Opus, medio | 0078 (migración `20261119100000`) | abierto |
+| WMS-86 Rendimiento en teléfono de la app y del sitio (solo interfaz) | `session_01QMjUPVqXqM4RByBNbvToqk` | `wms-86-rendimiento-telefono` | Opus, medio | 0080 | abierto |
+| WMS-66 Búsqueda global (permisos y alcance; revisor) | `session_01QMjUPTXNNfJr8phb53Ukb4` | `wms-66-busqueda-global` | Opus, medio | 0081 (`20261119110000`) | abierto |
+| WMS-32 Indicadores de almacén (permisos, alcance y costos; revisor) | `session_01QMjUPWFSksAhndeQ1UGQxR` | `wms-32-indicadores-almacen` | Opus, medio | 0082 (`20261119120000`) | abierto |
+| WMS-43 Asistente de configuración inicial | `session_01QMjUPWjqnyim6TcuhoF9Am` | `wms-43-asistente-inicial` | Opus, medio | 0083 (`20261119130000`) | abierto |
+| WMS-88 Pendientes de avisos por correo (ADR 0060) y del historial de accesos (ADR 0064) (seguridad; revisor) | `session_01QMjUPY8CFA5E9GkWMRc1Tj` | `wms-88-avisos-accesos-pendientes` | Opus, medio | 0084 (`20261119140000`) | abierto |
+| WMS-87 Pendientes chicos de interfaz de las revisiones visuales | `session_01QMjUPUsapzSy1cJkVrM2ZV` | `wms-87-pendientes-interfaz` | Sonnet, medio | sin ADR | abierto |
+| WMS-46 Manuales por rol, instalación, actualización y respaldo (`docs/manuales/`) | `session_01QMjUPWnxq17jsxbEu38ox6` | `wms-46-manuales` | Sonnet, medio | sin ADR | abierto |
+
+WMS-86, WMS-87 y WMS-88 son números nuevos. El siguiente ADR libre es el 0085 (el 0079 sigue apartado para WMS-84).
+
+**Sin abrir, con su razón:** WMS-84 (después de WMS-83); producción WMS-29 → WMS-31 → WMS-30B → WMS-79 (después de WMS-84, uno tras otro); WMS-85 (corazón; sin decisión del fundador); WMS-33 (depende de producción); WMS-34 y WMS-65 (dependen de WMS-32); WMS-64 automatizaciones (crea tareas y bloquea: corazón, y falta definir su flujo); WMS-44 y WMS-45 (después de WMS-43); WMS-62, WMS-69, WMS-47, WMS-48 y WMS-70 (esperan al fundador: integraciones, precios, servidor).
+
+**Relevo de los chats que implementan: 500,000 tokens** (fundador, 2026-11-19; reemplaza los 400,000). Al **cerrar cada paso, `main` queda igual que `pruebas`.** Entorno de quien coordina levantado el 2026-11-19; la corrida de CI del commit `6e23dd9` estaba en curso al abrir.
+
+## Relevo anterior de quien coordina (2026-11-17, 03:32 UTC)
 
 El chat que coordinaba (`session_01QMjUPVEbPAkRHP3gBSqvpY`) pasó con mucho de
 400,000 tokens y el fundador pidió cerrar todo para empezar una sesión nueva
@@ -332,7 +357,7 @@ npm run skills:link                           # enlaza .agents/skills
 
 Quien coordina no implementa: reparte, revisa e integra.
 
-**Forma de trabajo de producción y calidad (fundador, 2026-11-16):** quien coordina reparte, revisa e integra, no implementa, y escribe poco en su chat para cuidar el contexto. Cada paso lo implementa un chat nuevo con el modelo Opus (`claude-opus-5-5`) en esfuerzo medio, en su propia rama creada desde `pruebas`: escribe su ADR con el flujo antes de programar, sube solo a su rama y manda su reporte y sus hallazgos a quien coordina. Documentación y pendientes chicos sin existencias ni permisos pueden ir con Sonnet (`claude-sonnet-5-5`) en esfuerzo medio. Lo que toca seguridad, permisos o existencias lo lee además un revisor independiente antes de unir, y sus hallazgos regresan al chat que implementó. Un chat que pasa de 400,000 tokens hace relevo a un chat nuevo. Lo que el fundador comenta o decide se anota el mismo día en `MEMORY.md`, el plan, `AGENTS.md` y el relevo. Antes de subir código, `npm run check` y `npm run build` en local, y después comprobar CI; un cambio solo de `.md` puede subirse directo a `pruebas` y `main`. En el primer paso que toque código se sube `timeout-minutes` de `.github/workflows/ci.yml` a 30. **Al cerrar cada paso, `main` queda igual que `pruebas`.** Sin emojis.
+**Forma de trabajo de producción y calidad (fundador, 2026-11-16):** quien coordina reparte, revisa e integra, no implementa, y escribe poco en su chat para cuidar el contexto. Cada paso lo implementa un chat nuevo con el modelo Opus (`claude-opus-5-5`) en esfuerzo medio, en su propia rama creada desde `pruebas`: escribe su ADR con el flujo antes de programar, sube solo a su rama y manda su reporte y sus hallazgos a quien coordina. Documentación y pendientes chicos sin existencias ni permisos pueden ir con Sonnet (`claude-sonnet-5-5`) en esfuerzo medio. Lo que toca seguridad, permisos o existencias lo lee además un revisor independiente antes de unir, y sus hallazgos regresan al chat que implementó. Un chat que pasa de 400,000 tokens hace relevo a un chat nuevo (desde el 2026-11-19 el relevo es a los 500,000 tokens, fundador). Lo que el fundador comenta o decide se anota el mismo día en `MEMORY.md`, el plan, `AGENTS.md` y el relevo. Antes de subir código, `npm run check` y `npm run build` en local, y después comprobar CI; un cambio solo de `.md` puede subirse directo a `pruebas` y `main`. En el primer paso que toque código se sube `timeout-minutes` de `.github/workflows/ci.yml` a 30. **Al cerrar cada paso, `main` queda igual que `pruebas`.** Sin emojis.
 
 1. Por paso, un worktree en una rama nueva desde `pruebas`
    (`git worktree add /home/user/wt/<nombre> -b <rama> pruebas`), con su copia
@@ -346,7 +371,7 @@ Quien coordina no implementa: reparte, revisa e integra.
    de arriba, sube **solo** a su rama y manda su reporte y sus hallazgos a
    quien coordina, que revisa y confirma antes de unir). El worktree local
    sigue sirviendo para un paso que se haga en el mismo contenedor.
-   **Relevo a los 400,000 tokens (fundador, 2026-11-14):** cuando la ventana
+   **Relevo a los 400,000 tokens (fundador, 2026-11-14; desde el 2026-11-19, a los 500,000):** cuando la ventana
    de contexto de un chat que implementa pasa de 400,000 tokens
    (`get_session` sin argumentos, `external_metadata.context_usage.used_tokens`),
    sube lo que tenga a su rama y manda un relevo a quien coordina, que abre un
