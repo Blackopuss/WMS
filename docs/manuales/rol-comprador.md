@@ -25,7 +25,7 @@ Inicio, Recepción, Inventario, Movimientos (solo lectura), Compras y Configurac
 5. **Cancelar orden** (borrador o enviada) pide el motivo y queda guardada como cancelada.
 
 ### Recibir lo que llega
-- **Recepción** lista las órdenes por recibir (la más antigua primero); la fila abre la orden. Ahí toca **Recibir mercancía**. Escribe lo que llegó de cada producto (lo que no llegó, déjalo en 0), elige **¿Dónde lo guardas?**, anota la remisión o factura y, si aplica, lote, caducidad, series o **De eso, dañado**. Toca **Confirmar recepción**. Si el sistema avisa que algo no cabe, léelo antes de **Recibir de todos modos**.
+- **Recepción** lista las órdenes por recibir (la más antigua primero); la fila abre la orden. Ahí toca **Recibir mercancía**. Escribe lo que llegó de cada producto (lo que no llegó, déjalo en 0), elige **¿Dónde lo guardas?**, anota la remisión o factura y, si aplica, lote, caducidad, series o **De eso, dañado**. Toca **Confirmar recepción**. Si el sistema avisa que algo no cabe, léelo antes de **Recibir de todos modos**. Si algo no cuadra con la orden (otro producto, de más, lote o caducidad que no son, empaque abierto), ábrelo en **¿Rechazas algo?** de su producto: escribe cuánto rechazas y **Por qué se regresa** (obligatorio; queda como evidencia) y, si tu empresa lo usa, toma **Fotos de lo rechazado**. Lo rechazado no entra al inventario y sigue pendiente en la orden: el proveedor puede reponerlo. En la orden se ve como «Rechazado al recibir», aparte de lo dañado y de lo que Calidad rechaza y se devuelve.
 - Si llega solo una parte, la orden queda **Recibida en parte**. Para dejar de esperar lo que falta: **Cerrar con faltante** (con motivo).
 
 ### Devolver al proveedor

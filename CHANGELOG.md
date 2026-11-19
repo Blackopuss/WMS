@@ -8,6 +8,19 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-84** Rechazo de recepción con su nota: al recibir una orden de compra
+  se puede rechazar todo o parte de lo que llega y no cuadra, con nota
+  obligatoria de por qué se regresa, lote y series que traía como evidencia
+  escrita y fotos opcionales (ajuste `purchasing.receipt.rejection_photo`).
+  Lo rechazado no entra al inventario (ni movimiento, saldo, valor, último
+  costo, lote ni serie), no cuenta como recibido y sigue pendiente en la
+  orden; se ve en la orden, en «Pendientes por recibir» y en «Compras por
+  proveedor» («Rechazos al recibir», distinto de «Devoluciones por calidad»),
+  y sale en la API de recepciones y en el webhook
+  `purchasing.receipt.rejected`. Tabla nueva `purchase_receipt_rejection`
+  (inmutable) y `purchase_receipt.movementId` puede quedar vacío; sin permiso
+  nuevo. ADR 0079.
+
 - **WMS-32** Indicadores de almacén: pantalla Inventario › «Indicadores»
   (`/inventario/indicadores`) con pedidos completos y a tiempo, tiempos de
   surtido y de recepción a acomodo, exactitud de conteos, productos de mayor

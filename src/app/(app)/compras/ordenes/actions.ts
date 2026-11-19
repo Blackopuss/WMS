@@ -9,6 +9,7 @@ import {
   cancelPurchaseOrder,
   closePurchaseOrder,
   createPurchaseOrder,
+  discardRejectionPhoto,
   findReceiptConfirmation,
   findReturnConfirmation,
   receivePurchaseOrder,
@@ -18,7 +19,9 @@ import {
   submitPurchaseOrder,
   updateOrderLine,
   updatePurchaseOrder,
+  uploadRejectionPhoto,
   type OrderField,
+  type RejectionPhotoResult,
   type ReceiveField,
   type ReceiveLineField,
 } from "@/modules/purchasing";
@@ -424,6 +427,14 @@ export type ReceiveFormState = {
     onPallet?: boolean;
     containerCode?: string;
     containerKind?: string;
+    /**
+     * WMS-84: what is rejected at the door, by order line: how much
+     * (`rej:<id>`), why (`rjr:<id>`), its lot and serials (`rjl:`, `rjs:`).
+     */
+    rejected?: Record<string, string>;
+    rejectedReasons?: Record<string, string>;
+    rejectedLots?: Record<string, string>;
+    rejectedSerials?: Record<string, string>;
   };
   /** Changes with every answer, so selects show what was chosen. */
   answers: number;
@@ -460,12 +471,33 @@ export async function receivePurchaseOrderAction(
   // serials), per part like the quantity.
   const damaged: Record<string, string> = {};
   const damagedSerials: Record<string, string> = {};
+  // WMS-84: what is rejected at the door, one per order line.
+  const rejected: Record<string, string> = {};
+  const rejectedReasons: Record<string, string> = {};
+  const rejectedLots: Record<string, string> = {};
+  const rejectedSerials: Record<string, string> = {};
+  const rejectedFields: [string, Record<string, string>, number][] = [
+    ["rej:", rejected, 40],
+    ["rjr:", rejectedReasons, 2_000],
+    ["rjl:", rejectedLots, 100],
+    ["rjs:", rejectedSerials, 40_000],
+  ];
   // A product by lot may arrive in several lots: its extra parts are
   // `q:<id>~1`, `lot:<id>~1`, `exp:<id>~1`… (WMS-21); the place is the
   // line's.
   const MAX = 2_000;
   for (const [name, value] of formData.entries()) {
     if (typeof value !== "string") continue;
+    const rejectedField = rejectedFields.find(([prefix]) =>
+      name.startsWith(prefix),
+    );
+    if (rejectedField) {
+      const [, into, max] = rejectedField;
+      if (Object.keys(into).length < 200) {
+        into[name.slice(4, 40)] = value.slice(0, max);
+      }
+      continue;
+    }
     if (name.startsWith("dmg:") && Object.keys(damaged).length < MAX) {
       damaged[name.slice(4, 44)] = value.slice(0, 40);
       continue;
@@ -509,6 +541,10 @@ export async function receivePurchaseOrderAction(
     onPallet: formData.get("onPallet") === "1",
     containerCode: String(formData.get("containerCode") ?? "").slice(0, 200),
     containerKind: String(formData.get("containerKind") ?? "").slice(0, 200),
+    rejected,
+    rejectedReasons,
+    rejectedLots,
+    rejectedSerials,
   };
   const answers = prev.answers + 1;
   // What a capacity warning would be about: what goes where.
@@ -549,6 +585,21 @@ export async function receivePurchaseOrderAction(
         ),
         // Only the button of the warning about these values carries it.
         acceptCapacity: formData.get("acceptCapacity") === stamp,
+        // WMS-84: what is rejected at the door, with its reason.
+        rejections: Object.entries(rejected)
+          .filter(([, quantity]) => quantity.trim() !== "")
+          .map(([key, quantity]) => ({
+            orderLineId: orderLineOf(key),
+            quantity,
+            reason: rejectedReasons[key] ?? "",
+            lotCode: rejectedLots[key] || undefined,
+            serials: rejectedSerials[key] || undefined,
+          })),
+        photoIds: formData
+          .getAll("photoIds")
+          .map((id) => idPath(String(id)))
+          .filter(Boolean)
+          .slice(0, 10),
         // WMS-53: «Llegó en una tarima».
         container: values.onPallet
           ? { code: values.containerCode, kind: values.containerKind }
@@ -602,6 +653,43 @@ export async function receivePurchaseOrderAction(
         }
       : {}),
   };
+}
+
+/**
+ * A photo of what is rejected at the door (WMS-84). Checked and kept
+ * unlinked, for the person only, until the receipt is confirmed; the
+ * company and the person come from the session.
+ */
+export async function uploadRejectionPhotoAction(
+  formData: FormData,
+): Promise<RejectionPhotoResult> {
+  const { user, organization } = await requireOrganizationContext();
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "No llegó la foto. Tómala otra vez." };
+  }
+  try {
+    return await uploadRejectionPhoto(
+      { organizationId: organization.id, userId: user.id },
+      { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
+    );
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** «Quitar» a photo of a rejection taken and not saved (WMS-84). */
+export async function discardRejectionPhotoAction(
+  fileId: string,
+): Promise<{ ok: boolean }> {
+  const { user, organization } = await requireOrganizationContext();
+  return discardRejectionPhoto(
+    { organizationId: organization.id, userId: user.id },
+    idPath(fileId),
+  );
 }
 
 /**

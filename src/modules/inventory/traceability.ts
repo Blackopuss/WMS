@@ -441,7 +441,8 @@ async function originsOf(
     },
   });
   return receipts.map((receipt) => ({
-    movementId: receipt.movementId,
+    // Found by its movement: never empty here (WMS-84).
+    movementId: receipt.movementId ?? "",
     receivedAt: receipt.createdAt,
     purchase: purchasing
       ? {
@@ -912,7 +913,12 @@ export async function tracePurchaseOrder(
     ),
   );
   const movementLines = await client.stockMovementLine.findMany({
-    where: { movementId: { in: order.receipts.map((r) => r.movementId) } },
+    where: {
+      movementId: {
+        // WMS-84: a receipt that only rejected has no movement.
+        in: order.receipts.flatMap((r) => (r.movementId ? [r.movementId] : [])),
+      },
+    },
     select: { id: true, movementId: true, lineNumber: true },
   });
   const moves = await client.serialMove.findMany({
