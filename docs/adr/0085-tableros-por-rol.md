@@ -239,8 +239,19 @@ contador global del servidor):
 - Un cambio de comportamiento menor: «De recibir a acomodar» dice que está
   incompleto cuando las tareas de acomodo leídas pasan del tope, no cuando
   lo pasan todas las tareas del periodo (es más exacto).
-- `npm run load:test`: la pantalla «Indicadores por almacén» entra a
-  `screens()`; la medición queda en el reporte de cierre.
+- `npm run load:test` (2026-11-19, este contenedor: 4 núcleos, 16 GB, app
+  compilada; la pantalla «Indicadores por almacén» entra a `screens()`): con
+  100 y 1,000 productos todo queda bajo la meta (Indicadores p95 de 112 a
+  205 ms con 20 personas; por almacén de 216 a 260 ms). Con 10,000
+  productos Indicadores pasa de la meta (587 ms con una persona, 902 ms con
+  20; por almacén 1,049 ms con 20), igual que Inicio (845 ms con 20).
+  **No lo causa este paso:** con los mismos datos y la misma máquina, el
+  servicio de WMS-32 sin cambios tarda unos 740 ms y el de este paso con la
+  comparación unos 770 ms; la vista por almacén sola, 26 ms. La medición de
+  WMS-32 (362 ms) no se reprodujo aquí. Pendiente fuera de este paso:
+  buscar qué lectura de los indicadores crece con el catálogo (la primera
+  sospecha es «sin movimiento», que agrupa hasta 20,000 productos) y volver
+  a medir en el equipo de referencia.
 
 ## Lo que no entra
 
