@@ -783,3 +783,16 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   DIGEST_HOUR,
   ...EQUIPMENT_SETTINGS,
 ];
+
+/**
+ * WMS-43 (ADR 0083): the settings the setup guide asks about before
+ * operating — the ones that change the everyday route of the goods. All
+ * keep their default until someone chooses.
+ */
+export const SETUP_SETTINGS: readonly SettingDefinition[] = [
+  PICKING_MODE,
+  PICKING_STRATEGY,
+  PUTAWAY_MODE,
+  CONTAINERS_MODE,
+  PACKING_MODE,
+];

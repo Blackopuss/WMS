@@ -6,6 +6,7 @@ import {
   KeyRound,
   LifeBuoy,
   ListChecks,
+  ListOrdered,
   ListPlus,
   ListTree,
   MapPin,
@@ -51,6 +52,10 @@ export default async function ConfiguracionPage() {
   const showEquipment =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.equipment.read");
+  // WMS-43: the setup guide, whole; reachable always, not only while new.
+  const showSetup =
+    access.moduleState("inventory") !== "none" &&
+    access.can("inventory.product.read");
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
@@ -73,7 +78,8 @@ export default async function ConfiguracionPage() {
   return (
     <PageContainer>
       <PageHeader title="Configuración" />
-      {(showLocations ||
+      {(showSetup ||
+        showLocations ||
         showDefects ||
         showEquipment ||
         access.can("platform.team.read") ||
@@ -86,6 +92,14 @@ export default async function ConfiguracionPage() {
           <h2 id="empresa" className="text-lg font-semibold">
             Tu negocio
           </h2>
+          {showSetup && (
+            <SettingsLink
+              href="/configuracion/inicial"
+              icon={ListOrdered}
+              title="Configuración inicial"
+              description="Almacén, ubicaciones, equipo y productos, paso a paso."
+            />
+          )}
           {showLocations && (
             <SettingsLink
               href="/configuracion/almacenes"
@@ -325,6 +339,7 @@ function SettingsLink({
 }: {
   href:
     | "/ubicaciones"
+    | "/configuracion/inicial"
     | "/configuracion/almacenes"
     | "/configuracion/operacion"
     | "/configuracion/campos"
