@@ -29,8 +29,12 @@ registerHooks({
 const { db } = await import("@/server/db");
 const { runWorker } = await import("@/platform/jobs/queue");
 const { jobHandlers } = await import("@/modules/registry/jobs");
-const { scheduledRounds } = await import("@/modules/registry/rounds");
-const { runScheduledRounds } = await import("@/platform/jobs/rounds");
+const { accountRounds, scheduledRounds } =
+  await import("@/modules/registry/rounds");
+const { runAccountRounds, runScheduledRounds } =
+  await import("@/platform/jobs/rounds");
+const { retryAccessAlertEmails } =
+  await import("@/platform/auth/access-history");
 const {
   ALERT_EVERY_MS,
   HEARTBEAT_EVERY_MS,
@@ -106,10 +110,27 @@ const runRounds = () => {
   runScheduledRounds(scheduledRounds, (round, organizationId, error) =>
     log.error("scheduled_round_failed", error, { round, organizationId }),
   )
+    .then(() =>
+      // WMS-88 (ADR 0084): work of no company (the access history).
+      runAccountRounds(accountRounds, (round, error) =>
+        log.error("account_round_failed", error, { round }),
+      ),
+    )
     .catch((error: unknown) => log.error("scheduled_rounds_failed", error))
     .finally(() => (rounding = false));
 };
 const firstRounds = setTimeout(runRounds, 60_000);
+
+// WMS-88 (ADR 0084): access alert mails that failed are tried again, once a
+// minute, never two turns at once.
+let retrying = false;
+const alertMails = setInterval(() => {
+  if (retrying) return;
+  retrying = true;
+  retryAccessAlertEmails()
+    .catch((error: unknown) => log.error("access_alert_retry_failed", error))
+    .finally(() => (retrying = false));
+}, 60_000);
 const rounds = setInterval(runRounds, ROUNDS_EVERY_MS);
 
 await runWorker(jobHandlers, {
@@ -131,5 +152,6 @@ clearInterval(alerts);
 clearInterval(storageProbe);
 clearTimeout(firstRounds);
 clearInterval(rounds);
+clearInterval(alertMails);
 await db.$disconnect();
 log.info("worker_stopped", { workerId });

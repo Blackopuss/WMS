@@ -771,6 +771,7 @@ export {
   DIGEST_LINES,
   dailyDigestJobHandlers,
   digestSections,
+  purgeEndedDigests,
   runDailyDigestRound,
   sendDailyDigest,
 } from "./daily-digest";

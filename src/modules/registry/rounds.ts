@@ -1,10 +1,16 @@
 import {
+  purgeEndedDigests,
   runCycleCountRound,
   runDailyDigestRound,
   runEquipmentMaintenanceRound,
   runReplenishmentRound,
 } from "@/modules/inventory";
-import { allOrganizations, type ScheduledRound } from "@/platform/jobs";
+import { purgeExpiredSecurityEvents } from "@/platform/auth";
+import {
+  allOrganizations,
+  type AccountRound,
+  type ScheduledRound,
+} from "@/platform/jobs";
 import {
   organizationsWithWebhookHistory,
   purgeWebhookHistory,
@@ -32,15 +38,17 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     module: "inventory",
     run: (organizationId) => runCycleCountRound(organizationId),
   },
-  // WMS-39 (ADR 0057): read notices older than 90 days. A platform table,
-  // run for every company of the WMS (all of them have Inventario).
+  // WMS-39 (ADR 0057): read notices older than 90 days.
   // WMS-39B (ADR 0060): and the mails of notices that ended that long ago.
+  // WMS-88 (ADR 0084): for every company, with or without a plan, and also
+  // the daily summaries that ended that long ago.
   {
     name: "platform.notifications_cleanup",
-    module: "inventory",
+    organizations: allOrganizations,
     run: async (organizationId) => ({
       notices: await purgeReadNotifications(organizationId),
       mails: await purgeFinishedNoticeEmails(organizationId),
+      digests: await purgeEndedDigests(organizationId),
     }),
   },
   // WMS-37 (ADR 0063): photos taken and never linked to a record, a day
@@ -78,5 +86,17 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "platform.webhooks_cleanup",
     organizations: organizationsWithWebhookHistory,
     run: (organizationId) => purgeWebhookHistory(organizationId),
+  },
+];
+
+/**
+ * Work of the platform that belongs to no company (WMS-88, ADR 0084), run
+ * by the worker in the same hourly turn.
+ */
+export const accountRounds: readonly AccountRound[] = [
+  // The access history keeps access events for SECURITY_EVENT_KEEP_DAYS.
+  {
+    name: "platform.security_events_cleanup",
+    run: () => purgeExpiredSecurityEvents(),
   },
 ];

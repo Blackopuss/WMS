@@ -87,6 +87,26 @@ const dayDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
 const isDuplicate = (error: unknown) =>
   (error as { code?: string } | null)?.code === "P2002";
 
+/**
+ * Removes the company's summaries that ended more than DIGEST_KEEP_DAYS
+ * ago. It runs in the cleanup round of notices, for every company
+ * (WMS-88, ADR 0084: also without Inventario in force).
+ */
+export async function purgeEndedDigests(
+  organizationId: string,
+  now: Date = new Date(),
+): Promise<{ removed: number }> {
+  const result = await forOrganization(organizationId).dailyDigest.deleteMany({
+    where: {
+      status: { not: "QUEUED" },
+      createdAt: {
+        lt: new Date(now.getTime() - DIGEST_KEEP_DAYS * 86_400_000),
+      },
+    },
+  });
+  return { removed: result.count };
+}
+
 export type DigestRoundResult = {
   queued: number;
   day?: string;
@@ -104,15 +124,6 @@ export async function runDailyDigestRound(
   now: Date = new Date(),
 ): Promise<DigestRoundResult> {
   const client = forOrganization(organizationId);
-  // Ended summaries older than the limit go away first.
-  await client.dailyDigest.deleteMany({
-    where: {
-      status: { not: "QUEUED" },
-      createdAt: {
-        lt: new Date(now.getTime() - DIGEST_KEEP_DAYS * 86_400_000),
-      },
-    },
-  });
   if (!(await isEmailChannelOn(client))) {
     return { queued: 0, reason: "channel_off" };
   }

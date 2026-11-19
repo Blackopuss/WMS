@@ -6,12 +6,17 @@ import { ForbiddenError, newId } from "@/lib";
 import { recordSecurityEvent } from "@/platform/audit";
 import {
   ACCESS_ALERTS_PER_DAY,
+  ACCESS_ALERT_MAIL_ATTEMPTS,
   ACCESS_HISTORY_PAGE_SIZE,
+  SECURITY_EVENT_KEEP_DAYS,
   alertFailedAttempts,
   alertPinLocked,
   auth,
   confirmTotpEnrollment,
+  deliverAccessAlertEmail,
   listMyAccessHistory,
+  purgeExpiredSecurityEvents,
+  retryAccessAlertEmails,
   signIn,
   startTotpEnrollment,
   verifySignInCode,
@@ -382,7 +387,7 @@ describe("failed tries", () => {
       await settle();
       const alerts = await events(hana.id, "access.alert_new_device");
       const mailed = alerts.filter(
-        (a) => (a.metadata as { mail?: string }).mail === "sent",
+        (a) => (a.metadata as { mail?: string }).mail === "queued",
       );
       expect(alerts).toHaveLength(devices.length);
       expect(mailed).toHaveLength(ACCESS_ALERTS_PER_DAY);
@@ -571,7 +576,7 @@ describe("second step", () => {
         await events(hugo.id, "access.alert_password_new_device"),
       ).toHaveLength(1);
       const [codeAlert] = await events(hugo.id, "access.alert_code_locked");
-      expect(codeAlert?.metadata).toEqual({ mail: "sent" });
+      expect(codeAlert?.metadata).toEqual({ mail: "queued" });
       expect(alertMails(hugo.email).map((m) => m.subject)).toContain(
         "Alguien tiene tu contraseña de WMS",
       );
@@ -722,4 +727,207 @@ describe("who sees the history", () => {
     expect(last.rows).toHaveLength(3);
     expect(last.rows[0]?.tone).toBe("warning");
   });
+});
+
+// WMS-88 (ADR 0084): the history says what really happened to the mail of
+// an alert; a failure is tried again, without a second mail or a slot.
+describe("the mail of an alert (WMS-88)", () => {
+  const mailOf = async (userId: string) =>
+    db.accessAlertEmail.findFirstOrThrow({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+  const slots = (userId: string) =>
+    db.securityEvent.count({ where: { userId, action: "access.mail_slot" } });
+  const minutes = (n: number) => new Date(Date.now() + n * 60_000);
+
+  it(
+    "a mail that fails is tried again and the history tells the truth",
+    async () => {
+      const iris = await newAccount("iris");
+      const good = iris.email;
+      const bad = `iris.${counter}.${stamp}@correo.invalid`;
+      await db.user.update({ where: { id: iris.id }, data: { email: bad } });
+      await alertFailedAttempts(iris.id, from(UA.laptop));
+      const [alert] = await events(iris.id, "access.alert_failed_attempts");
+      expect(alert?.metadata).toEqual({ mail: "queued" });
+      expect((await listMyAccessHistory(iris.id)).rows[0]?.mailText).toBe(
+        "El correo de alerta está programado.",
+      );
+      await settle();
+      expect(await mailOf(iris.id)).toMatchObject({
+        status: "QUEUED",
+        attempts: 1,
+        securityEventId: alert?.id,
+      });
+      expect((await listMyAccessHistory(iris.id)).rows[0]?.mailText).toBe(
+        "El correo de alerta no ha salido; se volverá a intentar.",
+      );
+      // Not before its turn.
+      expect(await deliverAccessAlertEmail((await mailOf(iris.id)).id)).toBe(
+        "not_taken",
+      );
+      await db.user.update({ where: { id: iris.id }, data: { email: good } });
+      await retryAccessAlertEmails(minutes(2));
+      expect(await mailOf(iris.id)).toMatchObject({ status: "SENT" });
+      expect(alertMails(good)).toHaveLength(1);
+      expect((await listMyAccessHistory(iris.id)).rows[0]?.mailText).toBe(
+        "Se envió el correo de alerta.",
+      );
+      // The retry took no slot of the day.
+      expect(await slots(iris.id)).toBe(1);
+      // Run again: nothing more leaves.
+      await retryAccessAlertEmails(minutes(120));
+      expect(alertMails(good)).toHaveLength(1);
+    },
+    SLOW,
+  );
+
+  it(
+    "tries at once send it only once",
+    async () => {
+      const jose = await newAccount("jose");
+      await alertFailedAttempts(jose.id, from(UA.laptop));
+      afterQueue.length = 0; // the test tries by itself
+      const { id } = await mailOf(jose.id);
+      const outcomes = await Promise.all(
+        Array.from({ length: 4 }, () => deliverAccessAlertEmail(id)),
+      );
+      expect(outcomes.filter((each) => each === "sent")).toHaveLength(1);
+      expect(alertMails(jose.email)).toHaveLength(1);
+      const rounds = await Promise.all([
+        retryAccessAlertEmails(minutes(10)),
+        retryAccessAlertEmails(minutes(10)),
+      ]);
+      expect(rounds.reduce((sum, each) => sum + each.sent, 0)).toBe(0);
+      expect(alertMails(jose.email)).toHaveLength(1);
+    },
+    SLOW,
+  );
+
+  it(
+    "gives up after its tries, says so, and takes no more slots",
+    async () => {
+      const kai = await newAccount("kai");
+      await db.user.update({
+        where: { id: kai.id },
+        data: { email: `kai.${counter}.${stamp}@correo.invalid` },
+      });
+      await alertFailedAttempts(kai.id, from(UA.laptop));
+      await settle();
+      for (let i = 0; i < ACCESS_ALERT_MAIL_ATTEMPTS; i += 1) {
+        await retryAccessAlertEmails(minutes(200 * (i + 1)));
+      }
+      expect(await mailOf(kai.id)).toMatchObject({
+        status: "FAILED",
+        attempts: ACCESS_ALERT_MAIL_ATTEMPTS,
+      });
+      expect((await listMyAccessHistory(kai.id)).rows[0]?.mailText).toBe(
+        "No se pudo enviar el correo de alerta.",
+      );
+      expect(await slots(kai.id)).toBe(1);
+    },
+    SLOW,
+  );
+
+  it(
+    "an address no longer confirmed when it is its turn: it does not leave",
+    async () => {
+      const lu = await newAccount("lu");
+      await alertFailedAttempts(lu.id, from(UA.laptop));
+      afterQueue.length = 0;
+      await db.user.update({
+        where: { id: lu.id },
+        data: { emailVerified: false },
+      });
+      expect(await deliverAccessAlertEmail((await mailOf(lu.id)).id)).toBe(
+        "failed",
+      );
+      expect(alertMails(lu.email)).toHaveLength(0);
+    },
+    SLOW,
+  );
+});
+
+describe("retention of the access history (WMS-88)", () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+  const write = (userId: string, action: string, days: number) =>
+    db.securityEvent.create({
+      data: {
+        id: newId(),
+        userId,
+        action,
+        createdAt: daysAgo(days),
+        ...(action === "access.device_known"
+          ? { dedupeKey: `device:old-${newId()}` }
+          : {}),
+      },
+    });
+
+  it(
+    "removes only access events older than the limit; the database refuses the rest",
+    async () => {
+      const mia = await newPerson("mia");
+      const old = SECURITY_EVENT_KEEP_DAYS + 30;
+      const oldFail = await write(mia, "sign_in.failed", old);
+      const oldAlert = await write(mia, "access.alert_new_device", old);
+      const oldDevice = await write(mia, "access.device_known", old);
+      const oldMfa = await write(mia, "mfa.enabled", old);
+      const recent = await write(mia, "sign_in.failed", 10);
+      await purgeExpiredSecurityEvents();
+      const left = new Set((await events(mia)).map((each) => each.id));
+      expect(left.has(oldFail.id)).toBe(false);
+      expect(left.has(oldAlert.id)).toBe(false);
+      expect(left.has(oldDevice.id)).toBe(true);
+      expect(left.has(oldMfa.id)).toBe(true);
+      expect(left.has(recent.id)).toBe(true);
+      // Not even the app can delete what the policy keeps.
+      for (const id of [recent.id, oldDevice.id, oldMfa.id]) {
+        await expect(
+          db.securityEvent.deleteMany({ where: { id } }),
+        ).rejects.toThrow();
+      }
+      await expect(
+        db.securityEvent.updateMany({
+          where: { id: recent.id },
+          data: { action: "sign_in.succeeded" },
+        }),
+      ).rejects.toThrow();
+      // Repeating removes nothing more.
+      await purgeExpiredSecurityEvents();
+      expect((await events(mia)).length).toBe(left.size);
+    },
+    SLOW,
+  );
+
+  it(
+    "removes alert mails that ended long ago, never one that waits",
+    async () => {
+      const noe = await newPerson("noe");
+      const make = (status: "SENT" | "QUEUED", days: number) =>
+        db.accessAlertEmail.create({
+          data: {
+            id: newId(),
+            userId: noe,
+            securityEventId: newId(),
+            kind: "failed_attempts",
+            occurredAt: daysAgo(days),
+            nextAttemptAt: daysAgo(days),
+            status,
+            createdAt: daysAgo(days),
+          },
+        });
+      const ended = await make("SENT", 120);
+      const waiting = await make("QUEUED", 120);
+      const fresh = await make("SENT", 5);
+      await purgeExpiredSecurityEvents();
+      const left = (
+        await db.accessAlertEmail.findMany({ where: { userId: noe } })
+      ).map((row) => row.id);
+      expect(left).not.toContain(ended.id);
+      expect(left).toEqual(expect.arrayContaining([waiting.id, fresh.id]));
+      await db.accessAlertEmail.deleteMany({ where: { userId: noe } });
+    },
+    SLOW,
+  );
 });
