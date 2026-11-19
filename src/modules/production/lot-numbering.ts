@@ -115,7 +115,11 @@ export async function saveLotNumbering(
   const { organizationId, userId } = actor;
   await assertModulePermission(organizationId, userId, PERMISSION);
   // The module, active (not in read only): who sets it up creates orders.
-  await assertModulePermission(organizationId, userId, "production.order.create");
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "production.order.create",
+  );
   const entitlements = await getEntitlements(organizationId);
   if (!entitlements.hasModule("production")) {
     return {

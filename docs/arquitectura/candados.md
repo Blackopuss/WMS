@@ -39,6 +39,16 @@ capacidad → progreso del proceso**, y dentro de cada tabla en orden de id
 pedido → tarea en el surtido, orden de compra después de las ubicaciones en
 una recepción) están en el documento de su módulo.
 
+**Reporte de producción (WMS-29, ADR 0087):** productos (materiales y
+salidas) → orden de producción → su estado «En proceso» (antes de bloquear
+cualquier ubicación) → nomenclatura de lotes de la empresa (si hay) →
+ubicaciones de donde sale y el área → capacidad del área → progreso de la
+orden y del lote → archivos de las fotos. No toma el almacén. La reversa:
+productos → orden → reporte → ubicaciones → progreso del lote. La merma:
+el material → orden → ubicaciones (→ solicitud de aprobación). Carrera en
+`tests/server/lock-order.int.test.ts` («reporting production never
+deadlocks…»).
+
 ## Almacenes
 
 Una sola puerta, en `src/platform/locations/facility-lock.ts`:

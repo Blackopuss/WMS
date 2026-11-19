@@ -687,7 +687,9 @@ describe("locks in one order (WMS-76)", () => {
       ]);
       for (const result of results) {
         if (result.status === "rejected") {
-          errors.push(String((result.reason as Error)?.message ?? result.reason));
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
         }
       }
       const reported = results[0];

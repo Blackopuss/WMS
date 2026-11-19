@@ -145,6 +145,8 @@ const SCREENS = [
   "/produccion?estado=all",
   "/produccion/solicitudes",
   "/produccion/solicitudes/nueva",
+  // WMS-29: how the lots produced are named.
+  "/configuracion/lotes-de-produccion",
   // WMS-66: the global search, empty, with results and with none.
   "/buscar",
   "/buscar?q=a",
@@ -457,6 +459,9 @@ try {
       ["/tareas", /^\/procesos\/[0-9a-f-]{36}(\?etapa=[0-9a-f-]{36})?$/],
       // WMS-87: the card of the product, with its recipe and inspection blocks.
       ["/inventario?q=KIT-001", /^\/inventario\/[0-9a-f-]{36}$/],
+      // WMS-29: reporting production and the scrap of material of an order.
+      ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/reportar"],
+      ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/merma"],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

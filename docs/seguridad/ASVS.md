@@ -81,6 +81,7 @@ Estados: **Cumple** (con evidencia), **Parcial**, **Pendiente** (con paso del pl
 | V14 | Respaldos cifrados | Cumple | `deploy/bin/respaldo`: restauración de prueba antes de guardar y cifrado con `age`; configuración solo-root en `/etc/almacen` (ADR 0024, auditoría 3). Respaldo continuo y simulacro medido: PIL-02/03. |
 | V15 Codificación segura y arquitectura | Dependencias con versión exacta y auditoría | Cumple | `.npmrc save-exact`; `npm audit --omit=dev` en CI. |
 | V16 Registro de seguridad y errores | Bitácora inmutable de cambios sensibles | Cumple | ADR 0006; `audit.int.test.ts`. |
+| V4 / V8 / V11 | Reporte de producción (WMS-29) | Cumple | ADR 0087: consumo automático de la receta bajo el candado de los productos y de la orden, nunca más de lo que falta ni dos veces lo mismo (reportes simultáneos), solo de ubicaciones del alcance, lo producido siempre en inspección (servicio y disparador), clave de confirmación, reversa solo con lo producido intacto, merma con aprobación propia `production.scrap` y costos solo con `inventory.cost.read` (`reports.int.test.ts`, `case-5-5.int.test.ts`, `scope.int.test.ts`, `lock-order.int.test.ts`; `REVISION_PRODUCCION.md`). |
 | V16 | Errores sin detalles internos al usuario | Cumple | Mensajes genéricos; detalles solo en el log del servidor. |
 | V16 | Monitoreo y alertas | Cumple | `/api/salud` y alertas por correo de cambios de estado (PIL-04, ADR 0025). |
 | V17 WebRTC | — | N/A | No se usa. |

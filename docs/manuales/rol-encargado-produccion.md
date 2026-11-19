@@ -10,9 +10,9 @@ Inicio, Tareas, Producción, Inventario, Incidencias y Configuración.
 
 ## Qué existe hoy y qué todavía no
 
-**Disponible hoy:** recetas, órdenes (crear, cambiar, liberar y cancelar) y solicitudes de producción.
+**Disponible hoy:** recetas, órdenes (crear, cambiar, liberar y cancelar), solicitudes de producción, **reportes de producción** (reportar, ver y revertir) y **merma de material**.
 
-**Todavía no disponible:** el reporte de lo producido (cuánto se consumió, cuánto salió, merma), la verificación de lo producido, el **cierre de la orden** y los turnos. Por eso una orden liberada hoy se queda en **Liberada**: todavía no pasa a «En proceso» ni a «Cerrada», y no se consumen materiales ni se da de alta producto terminado. Una orden ya empezada no se cancela (hoy ninguna empieza).
+**Todavía no disponible:** la verificación de lo producido por Calidad, el **cierre de la orden** y los turnos. Una orden pasa a **En proceso** con su primer reporte y desde ahí ya no se cancela; el cierre llega después. Mientras tanto, lo producido queda en inspección y lo libera a mano quien puede cambiar el estado de las existencias (Administrador, Almacén o Supervisor de almacén, con **Cambiar estado**).
 
 ## Tus tareas del día
 
@@ -32,6 +32,14 @@ El sistema rechaza activar si hay un ciclo (no puedes armar y desarmar el mismo 
 4. **Cambiar personas** (quién hace la orden) o **Cancelar orden** (con motivo; lo apartado vuelve a estar libre).
 Una orden necesita un área: una ubicación con uso **Producción** (la crea en **Ubicaciones** quien administra o el rol [Almacén](rol-almacen.md); tú no puedes). Sin área, el sistema avisa **No hay áreas de producción**.
 
+### Reportes de producción
+- En la orden, **Reportar producción** registra cuánto se hizo (buenas y malas) con su foto; el consumo sale solo de la receta y lo hecho entra **en inspección** al área con su propio lote. Lo mismo lo hace el Operario. Si la orden tiene personas asignadas, reportan ellas y tú.
+- La orden muestra el **Avance** (buenas, malas, falta), quién la ejecutó, lo consumido y la lista de reportes (**R-01**, **R-02**…). Abre uno para ver qué materiales usó (con lotes y series), qué lote salió y sus fotos.
+- **Revertir reporte** (en el reporte, con motivo) regresa los materiales a donde estaban y saca lo producido de inspección. Solo se puede mientras nadie haya movido ni liberado lo producido.
+- **Reportar merma de material** registra material perdido fuera de la receta; no entra al costo de lo producido. Si la empresa enciende la regla **Merma de material de producción** en **Configuración › Reglas de aprobación**, la merma espera tu autorización.
+- **Avisar que falta material**: cuando alguien de tu área lo toca, te llega un aviso.
+- El nombre del lote de cada reporte lo decide **Configuración › Lotes de lo producido** (lo cambia el Administrador). Sin configurar, se llama como la orden y el reporte: **OP-0001-01**.
+
 ### Solicitudes de producción
 En **Producción › Solicitudes de producción** (**Solicitudes por atender (N)**):
 1. Abre la solicitud (**SP-0001**). Ves las existencias del producto, lo que hace falta de cada material y para cuánto alcanza.
@@ -47,4 +55,4 @@ Corregir existencias (Almacén o Supervisor), administrar equipos o ver costos, 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-19
+Vigente al 2026-11-20

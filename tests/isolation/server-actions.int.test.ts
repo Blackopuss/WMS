@@ -209,8 +209,7 @@ const REVIEWED: Record<string, Review> = {
   },
   saveLotNumberingAction: {
     input: "prefijo, fecha, dígitos, reinicio y alcance del consecutivo",
-    identity:
-      "sesión y empresa activa; escribe solo la fila de esa empresa",
+    identity: "sesión y empresa activa; escribe solo la fila de esa empresa",
     coveredBy: "tests/production/reports.int.test.ts",
   },
   // WMS-28B (ADR 0075): production requests.

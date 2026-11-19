@@ -3,7 +3,11 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { dec, newId } from "@/lib";
 import { changeStockStatus } from "@/modules/inventory";
 import { approvalTypes, processDocuments } from "@/modules/registry";
-import { createFacility, switchFacility, archiveFacility } from "@/platform/locations";
+import {
+  createFacility,
+  switchFacility,
+  archiveFacility,
+} from "@/platform/locations";
 import {
   completeStage,
   publishProcess,
@@ -199,13 +203,7 @@ describe("reporting production", () => {
   });
 
   it("costs what is made with its materials", async () => {
-    const {
-      owner,
-      area,
-      crate,
-      board,
-      screw,
-    } = await workshop();
+    const { owner, area, crate, board, screw } = await workshop();
     await setting(owner, "production.report.photo", "optional");
     // Value the materials: boards at 10, screws at 1.
     await db.productCost.updateMany({
@@ -716,9 +714,9 @@ describe("limits of a report", () => {
       (await traceProduction(owner, { lotId: view!.outputs[0]!.lotId! }))
         ?.madeIn,
     ).toEqual([expect.objectContaining({ label: "OP-0001 · R-01" })]);
-    expect((await traceProduction(owner, { lotId: used.id }))?.usedIn).toEqual(
-      [expect.objectContaining({ reportId: done.reportId })],
-    );
+    expect((await traceProduction(owner, { lotId: used.id }))?.usedIn).toEqual([
+      expect.objectContaining({ reportId: done.reportId }),
+    ]);
   });
 
   it("the first report waits for the stages the company put before it, and starts the process of its lot", async () => {
@@ -746,7 +744,11 @@ describe("limits of a report", () => {
     );
     if (!saved.ok) throw new Error(saved.error);
     expect(
-      await publishProcess(owner, processDocuments, PRODUCTION_ORDER_PROCESS.key),
+      await publishProcess(
+        owner,
+        processDocuments,
+        PRODUCTION_ORDER_PROCESS.key,
+      ),
     ).toMatchObject({ ok: true });
     const lotStages = await saveProcessDraft(
       owner,
@@ -765,7 +767,11 @@ describe("limits of a report", () => {
     );
     if (!lotStages.ok) throw new Error(lotStages.error);
     expect(
-      await publishProcess(owner, processDocuments, PRODUCTION_BATCH_PROCESS.key),
+      await publishProcess(
+        owner,
+        processDocuments,
+        PRODUCTION_BATCH_PROCESS.key,
+      ),
     ).toMatchObject({ ok: true });
     const id = await released(owner, crate, area, "2");
     expect(await report(owner, id, "1")).toMatchObject({
