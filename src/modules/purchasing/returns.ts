@@ -513,7 +513,9 @@ export async function returnToSupplier(
       // arrived with that receipt line (its movement line, by number).
       const receivedUnits = await serialUnitsOfReceipt(
         tx,
-        current.movementId,
+        // A receipt that only rejected (WMS-84) has no lines to return, so
+        // it never gets here with lines.
+        current.movementId ?? "",
         chosen.map((item) => item.line.lineNumber),
       );
       const numberText = formatOrderNumber(current.order.number);

@@ -62,6 +62,29 @@ Resistió (sin hallazgos):
 - **Correo y PDF:** el destinatario sale de la ficha del proveedor (validada al guardarla y otra vez al pedir el envío), fijado en el renglón del envío; nombres aplanados a una línea; `replyTo` a quien envía; límites por orden y por empresa; el PDF escapa el texto.
 - **Rutas y acciones:** PDF y reportes por `GET` con `requireOrganizationContext`, `attachment` + `nosniff` + `no-store`, nombre de archivo armado por el servidor y la misma respuesta 404 sin permiso que sin orden; las Server Actions toman persona y empresa de la sesión, recortan lo que reciben y limpian los ids que van a una dirección (`idPath`).
 
+## Rechazo de recepción (WMS-84, ADR 0079, 2026-11-19)
+
+Lo que no cuadra con la orden se rechaza en la puerta, con nota obligatoria
+y fotos opcionales; **no entra al inventario** y sigue pendiente.
+
+| Amenaza | Control | Prueba |
+| --- | --- | --- |
+| Rechazar para sacar mercancía sin autorización (rodeo a WMS-41/WMS-83) | Lo rechazado nunca entra: no hay saldo que desechar, ajustar ni liberar | `receipts-rejected.int.test.ts` |
+| Recibir y rechazar de más | Recibido + rechazado de cada línea se suma bajo el candado de la orden y nunca pasa de lo pendiente (NEG-24) | concurrencia con `Promise.all` |
+| Reintento que duplica o una clave reusada que oculta un cambio | `sameReceipt` y `sameRejections` (línea, cantidad, lote); otra cosa es `KEY_REUSED` | idem |
+| Rechazo sin evidencia | Motivo de 3 a 500 caracteres en el servicio y `CHECK` en la base; renglón inmutable (disparadores) | idem |
+| Rechazar en una orden de otro almacén o empresa | La orden se busca con `forOrganization` y `orderInScope` antes de todo; el disparador liga el rechazo a una línea de la misma orden y producto | `scope.int.test.ts`, `two-companies.int.test.ts` |
+| Ligar la foto de otra persona o verla sin alcance | `attachEvidencePhotos` (solo fotos propias, sin ligar, del propósito); ver exige `purchasing.receipt.read` y que la orden exista para la persona (`reachesPurchaseReceipt`) | idem |
+| Quién rechaza | El mismo permiso de recibir (`purchasing.receipt.create`); con el plan vencido es escritura y se rechaza | idem |
+
+| ID | Severidad | Hallazgo | Estado |
+| --- | --- | --- | --- |
+| CMP-S15 | Informativa | La nota del rechazo es texto libre y viaja en el webhook `purchasing.receipt.rejected` y en la API: puede llevar lo que la persona escriba (incluso nombres). | Aceptado: es evidencia de la empresa para sus propios sistemas; la pantalla avisa que queda como evidencia. |
+| CMP-S17 | Informativa | Revisión independiente: en la API (`onlyLinesInScope`), una recepción cuyas líneas recibidas están todas fuera de la zona de la persona se sigue mostrando si tiene rechazos (id, fecha, remisión, rechazos y fotos). | Aceptado: lo rechazado no tiene ubicación y la orden ya es visible para la persona (`orderInScope`); ADR 0079. |
+| CMP-S18 | Media | Revisión independiente: una recepción sin movimiento (todo rechazado) no la espera el código anterior; al volver de versión, rastreo, etiquetas y «Compras por proveedor» de esa orden podrían fallar o contar de más. | Documentado en el ADR 0079 («Riesgos y pendientes»); nada de existencias depende de ello. |
+| CMP-S19 | Baja | Revisión independiente: una recepción que solo rechaza contaba como «primera llegada» al comparar proveedores. | **Corregido:** la primera llegada es la primera recepción con movimiento (`receipts-rejected.int.test.ts`). |
+| CMP-S16 | Informativa | Lo rechazado que se queda físicamente en el almacén hasta que el proveedor pasa por ello no aparece en existencias (solo en la orden). | Decisión que el fundador puede cambiar (ADR 0079, opción B). |
+
 ## Siguiente revisión
 
 Antes del piloto (PIL): los pendientes de despliegue (CMP-S06, CMP-S04 con IMP-S05) y, al construir Ventas o CRM, la nota CMP-S12.

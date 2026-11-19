@@ -110,6 +110,9 @@ const NOT_SERVICES = new Set([
   "requestTransitionProblem",
   "isPurchaseRequestStatus",
   "formatRequestNumber",
+  // WMS-84: asked by the platform before opening a photo of a receipt (the
+  // file's purpose already asks its permission).
+  "reachesPurchaseReceipt",
 ]);
 
 const services = Object.entries(purchasing).filter(
@@ -139,6 +142,7 @@ describe("Compras without the module (CMP-16)", () => {
         "countRequestsToAttend",
         "createPurchaseOrder",
         "createPurchaseRequest",
+        "discardRejectionPhoto",
         "findReceiptConfirmation",
         "findReturnConfirmation",
         "generateSuggestedOrders",
@@ -157,6 +161,7 @@ describe("Compras without the module (CMP-16)", () => {
         "listSuppliersOfProduct",
         "receivePurchaseOrder",
         "rejectPurchaseRequest",
+        "rejectionPhotoMode",
         "removeOrderLine",
         "removeRequestLine",
         "requestOrderDelivery",
@@ -168,6 +173,7 @@ describe("Compras without the module (CMP-16)", () => {
         "updatePurchaseOrder",
         "updatePurchaseRequest",
         "updateRequestLine",
+        "uploadRejectionPhoto",
       ].sort(),
     );
   });

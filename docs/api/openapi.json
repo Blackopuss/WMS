@@ -1964,7 +1964,7 @@
           "Compras"
         ],
         "summary": "Recepciones de una orden de compra",
-        "description": "Cada recepción con lo que entró, en la unidad del producto, a qué ubicación y si llegó dañado. De la más reciente a la más antigua.\n\nCapacidad de la llave: `receipts.read` (Leer recepciones).",
+        "description": "Cada recepción con lo que entró, en la unidad del producto, a qué ubicación y si llegó dañado, y lo que se rechazó al recibir (`rejections`: no entró al inventario y sigue pendiente en la orden; la cantidad va en los términos de la línea de la orden). De la más reciente a la más antigua.\n\nCapacidad de la llave: `receipts.read` (Leer recepciones).",
         "operationId": "getPurchaseOrdersIdReceipts",
         "parameters": [
           {
@@ -2056,13 +2056,76 @@
                               ],
                               "additionalProperties": false
                             }
+                          },
+                          "rejections": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "orderLineId": {
+                                  "type": "string"
+                                },
+                                "productId": {
+                                  "type": "string"
+                                },
+                                "sku": {
+                                  "type": "string"
+                                },
+                                "quantity": {
+                                  "type": "string",
+                                  "pattern": "^-?\\d+(\\.\\d+)?$",
+                                  "description": "Cantidad decimal exacta, como texto."
+                                },
+                                "presentationId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "unitCode": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                },
+                                "lotCode": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "serials": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "orderLineId",
+                                "productId",
+                                "sku",
+                                "quantity",
+                                "presentationId",
+                                "unitCode",
+                                "reason",
+                                "lotCode",
+                                "serials"
+                              ],
+                              "additionalProperties": false
+                            }
                           }
                         },
                         "required": [
                           "id",
                           "createdAt",
                           "reference",
-                          "lines"
+                          "lines",
+                          "rejections"
                         ],
                         "additionalProperties": false
                       }

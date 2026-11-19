@@ -146,3 +146,19 @@ versión. Las fotos de una entrega repetida (respuesta perdida y
 reintento con fotos nuevas) quedan sin ligar hasta que la ronda de limpieza
 las borra a las 24 horas, y cuentan mientras tanto en el tope de 30 fotos
 sin ligar por persona.
+
+## Fotos de lo rechazado al recibir (WMS-84, ADR 0079, 2026-11-19)
+
+- Propósito `receipt_rejection_photo` (escribe `purchasing.receipt.create`,
+  lee `purchasing.receipt.read`; hasta 5 por recepción).
+  Dueño: la recepción (`evidence_photo.purchaseReceiptId`, con el `CHECK` de
+  un solo dueño y de propósito por dueño ampliados). No está atada a su
+  registro (`boundToOwner`): la recepción nace junto con sus fotos, como una
+  incidencia.
+- Se ligan con `attachEvidencePhotos` al final de la transacción de la
+  recepción, solo si hay algún rechazo (sin rechazo, la recepción se
+  rechaza antes de escribir). Ver: `reachesPurchaseReceipt` (la orden existe
+  para la persona, `orderInScope`) en `evidenceOwners`.
+- Ajuste `purchasing.receipt.rejection_photo` (`off`, `optional` por
+  omisión, `required`), leído dentro de la transacción; con `off` no se
+  suben fotos nuevas.

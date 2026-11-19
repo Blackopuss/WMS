@@ -569,11 +569,11 @@ const REVIEWED: Record<string, Review> = {
   },
   receivePurchaseOrderAction: {
     input:
-      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B); si llegó en tarima, su etiqueta y tipo (WMS-53); por línea, cuánto llegó dañado y sus series (WMS-54)",
+      "id de orden, id de ubicación, remisión, clave de confirmación y la aceptación del aviso de capacidad (WMS-22B); si llegó en tarima, su etiqueta y tipo (WMS-53); por línea, cuánto llegó dañado y sus series (WMS-54); por línea, cuánto se rechaza al recibir, por qué, lote y series que traía, e ids de fotos sin ligar (WMS-84)",
     identity:
       "sesión y empresa activa (requireOrganizationContext); la orden y la ubicación se buscan solo en esa empresa; los pedidos que reciben lo que llega (cross-docking) son solo de esa empresa y del almacén de la recepción",
     coveredBy:
-      "tests/purchasing/receipts.int.test.ts, tests/inventory/capacity.int.test.ts, tests/purchasing/receipts-damaged.int.test.ts, tests/inventory/cross-docking.int.test.ts",
+      "tests/purchasing/receipts.int.test.ts, tests/inventory/capacity.int.test.ts, tests/purchasing/receipts-damaged.int.test.ts, tests/inventory/cross-docking.int.test.ts, tests/purchasing/receipts-rejected.int.test.ts",
   },
   checkReceiptAction: {
     input: "clave de confirmación",
@@ -1430,6 +1430,19 @@ const REVIEWED: Record<string, Review> = {
     identity:
       "sesión y empresa activa (requireOrganizationContext); el servicio exige quality.plan.manage y bloquea el defecto solo en esa empresa",
     coveredBy: "tests/quality/defects.int.test.ts",
+  },
+  uploadRejectionPhotoAction: {
+    input:
+      "una foto (FormData «photo»); nombre y bytes, el tipo lo decide el servidor por el contenido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige purchasing.receipt.create; la foto queda en esa empresa a nombre de la persona y sin ligar, visible solo para ella hasta confirmar la recepción",
+    coveredBy: "tests/purchasing/receipts-rejected.int.test.ts",
+  },
+  discardRejectionPhotoAction: {
+    input: "id de una foto",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); exige purchasing.receipt.create; solo borra una foto propia de esa empresa con el propósito de rechazo y sin ligar",
+    coveredBy: "tests/purchasing/receipts-rejected.int.test.ts",
   },
   uploadIncidentPhotoAction: {
     input:
