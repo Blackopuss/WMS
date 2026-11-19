@@ -1834,7 +1834,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `productId`, `code`).
-- Índices: (`organizationId`, `expiresOn`).
+- Índices: (`organizationId`, `expiresOn`); (`organizationId`, `code`).
 - Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
 
 ### SerialUnit · `serial_unit`

@@ -2740,6 +2740,8 @@ model Lot {
   @@unique([organizationId, productId, code])
   /// The list of lots about to expire reads by date.
   @@index([organizationId, expiresOn])
+  /// WMS-66: a lot by its code in any product (global search and trace).
+  @@index([organizationId, code])
   @@map("lot")
 }
 

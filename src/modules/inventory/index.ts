@@ -919,3 +919,6 @@ export {
   type AwaitingInspectionItem,
   type AwaitingInspectionPage,
 } from "./inspection";
+
+// WMS-66: what Inventario offers to the global search (ADR 0081).
+export { INVENTORY_SEARCH_SOURCES } from "./search";

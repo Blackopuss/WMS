@@ -15,6 +15,7 @@ import {
  */
 const PROTECTED = [
   "/inicio",
+  "/buscar",
   "/recepcion",
   "/tareas",
   "/pedidos",

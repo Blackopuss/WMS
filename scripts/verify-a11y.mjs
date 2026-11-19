@@ -143,6 +143,10 @@ const SCREENS = [
   "/produccion?estado=all",
   "/produccion/solicitudes",
   "/produccion/solicitudes/nueva",
+  // WMS-66: the global search, empty, with results and with none.
+  "/buscar",
+  "/buscar?q=a",
+  "/buscar?q=sin-resultado-wms66",
   // WMS-87: the two lists of stock that waits for a decision.
   "/inventario/por-inspeccionar",
   "/inventario/en-restauracion",
