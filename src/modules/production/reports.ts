@@ -1272,6 +1272,15 @@ async function previewOf(
     serials: {},
     previewOnly: true,
   });
+  // The same reach as the report: the person's scope, and the area when
+  // materials are brought to the line.
+  const mode = await readSetting(client, MATERIALS_MODE);
+  const area = await insideArea(
+    client as unknown as Tx,
+    order.facilityId,
+    order.areaLocationId,
+  );
+  const scope = await locationScopeWhere(client, actor.userId);
   // A material is enough when what is within reach makes at least what is
   // left of the order (or one more step when nothing is left).
   const base = order.recipeVersion.baseQuantity.toString();
@@ -1287,9 +1296,9 @@ async function previewOf(
           tracking: line.product.tracking,
         },
         facilityId: order.facilityId,
-        within: null,
-        onlyIn: null,
-        area: new Set(),
+        within: isLimited(scope) ? scope : null,
+        onlyIn: mode === "issue" ? area : null,
+        area,
       });
       const fits = cumulativeThatFits({
         recipeQuantity: line.recipeQuantity.toString(),

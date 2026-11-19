@@ -655,36 +655,38 @@ describe("locks in one order (WMS-76)", () => {
       const released = await releaseProductionOrder(owner, first);
       if (!released.ok) throw new Error(JSON.stringify(released));
       const line = (await production.linesOf(first))[0]!;
-      const toReverse = previous;
-      const results = await Promise.allSettled([
-        reportProduction(owner, first, {
-          good: "2",
-          idempotencyKey: newId(),
-        }),
-        registerExit(owner, {
-          productId: other,
-          locationId: shelf,
-          quantity: "1",
-        }),
-        registerTransfer(owner, {
-          productId: moved,
-          locationId: shelf,
-          toLocationId: area,
-          quantity: "1",
-          acceptCapacity: true,
-        }),
-        editLocation(owner, area, { name: `Línea ${++counter}` }),
-        releaseProductionOrder(owner, second),
-        reportMaterialScrap(owner, first, {
-          orderLineId: line.id,
-          quantity: "1",
-          reason: "Se rompió",
-          idempotencyKey: newId(),
-        }),
-        toReverse
-          ? reverseProductionReport(owner, toReverse, "Prueba de candados")
-          : Promise.resolve(null),
-      ]);
+      const toReverse: string | null = previous;
+      const results: PromiseSettledResult<unknown>[] = await Promise.allSettled(
+        [
+          reportProduction(owner, first, {
+            good: "2",
+            idempotencyKey: newId(),
+          }),
+          registerExit(owner, {
+            productId: other,
+            locationId: shelf,
+            quantity: "1",
+          }),
+          registerTransfer(owner, {
+            productId: moved,
+            locationId: shelf,
+            toLocationId: area,
+            quantity: "1",
+            acceptCapacity: true,
+          }),
+          editLocation(owner, area, { name: `Línea ${++counter}` }),
+          releaseProductionOrder(owner, second),
+          reportMaterialScrap(owner, first, {
+            orderLineId: line.id,
+            quantity: "1",
+            reason: "Se rompió",
+            idempotencyKey: newId(),
+          }),
+          toReverse
+            ? reverseProductionReport(owner, toReverse, "Prueba de candados")
+            : Promise.resolve(null),
+        ],
+      );
       for (const result of results) {
         if (result.status === "rejected") {
           errors.push(
@@ -692,7 +694,9 @@ describe("locks in one order (WMS-76)", () => {
           );
         }
       }
-      const reported = results[0];
+      const reported = results[0] as PromiseSettledResult<
+        Awaited<ReturnType<typeof reportProduction>>
+      >;
       previous =
         reported.status === "fulfilled" && reported.value.ok
           ? reported.value.reportId
