@@ -111,7 +111,7 @@ documentos es de toda la empresa dentro del alcance**, como la ficha.
 | Ubicaciones | Código exacto, o cada palabra en nombre o código (no en la ruta) | `inventory.location.read` | **Almacén activo**, sin archivadas ni tránsito, y alcance: las condiciones de `listLocations` filtradas en la base (la pantalla de ubicaciones es del almacén activo) | 5 | `/ubicaciones#ubicacion-<id>` |
 | Lotes | Código exacto (`normalizeLotCode`), cualquier producto | `inventory.stock.read` | Lote con algún movimiento en el alcance (regla del rastreo) | 5 | `/inventario/lotes/[id]` |
 | Series | Serie exacta (`normalizeSerial`), cualquier producto | `inventory.movement.read` | Unidad con algún movimiento en el alcance (`traceSerial`) | 5 | `/inventario/rastrear?serie=…` |
-| Tarimas y cajas | Código exacto | `inventory.stock.read` | La condición de `getContainer`: su ubicación en el alcance | 1 | `/inventario/tarimas/[id]` |
+| Tarimas y cajas | Código exacto (también cerradas y bultos de empaque, como su ficha) | `inventory.stock.read` | La condición de `getContainer`: su ubicación en el alcance | 1 | `/inventario/tarimas/[id]` |
 | Pedidos | `PS-n` | `inventory.outbound.read` | `getOutboundOrder` | 1 | `/pedidos/[id]` |
 | Embarques | `EM-n` | `inventory.shipment.read` | `getShipment` | 1 | `/pedidos/embarques/[id]` |
 | Devoluciones | `DV-n` | `inventory.customer_return.read` | `getCustomerReturn` | 1 | `/pedidos/devoluciones/[id]` |
@@ -170,13 +170,14 @@ texto es un número de su tipo. Por eso (revisión independiente, 2026-11-19):
   …)`: `contains` recorre las ubicaciones de un almacén, que son pocas
   comparadas con productos o movimientos.
 - **Costo medido** (una persona sin límite): 63 a 64 consultas por búsqueda
-  antes de la revisión (medido con `SHOW GLOBAL STATUS 'Questions'`), 23 a 24
-  después, sea cual sea el texto («consulta», seis palabras, una clave exacta;
-  «PS-0001» suma el servicio de la ficha si existe). `global-search.int.test.ts`
-  cuenta solo las consultas de su propio proceso (evento `query` de Prisma,
-  encendido con `WMS_QUERY_EVENTS=1` antes de crear el cliente y nunca en
-  producción; el contador del servidor lo mueven otras corridas) y fija un
-  máximo de 25.
+  antes de la revisión (medido con `SHOW GLOBAL STATUS 'Questions'`), 23
+  después, sea cual sea el texto («consulta», seis palabras, una clave exacta);
+  un número de documento que existe suma el servicio de su ficha, con sus
+  propias revisiones: 38 con «PS-0001». `global-search.int.test.ts` cuenta
+  solo las consultas de su propio proceso (evento `query` de Prisma, encendido
+  con `WMS_QUERY_EVENTS=1` antes de crear el cliente y nunca en producción; el
+  contador del servidor lo mueven otras corridas) y fija un máximo de 25 para
+  texto y 40 para un número que existe.
 - Las fuentes corren en paralelo. La pantalla está en `screens()` de la prueba
   de carga; meta p95 < 500 ms.
 
@@ -190,11 +191,20 @@ texto es un número de su tipo. Por eso (revisión independiente, 2026-11-19):
   objetivo); nada de botones de solo ícono.
 - «Ver todos» lleva a la lista con lo buscado; si el texto codificado no cabe
   en una dirección (acentos y otras letras crecen al codificarse), lleva las
-  primeras palabras que caben.
+  primeras palabras que caben. En ese caso la lista busca menos palabras y
+  puede traer más de lo que la búsqueda encontró; la caja de la lista muestra
+  lo que de verdad buscó. Pasa solo con textos de más de unos 50 caracteres
+  con acentos.
 - Sin descripción que repita el título. Ayuda de una línea bajo el campo.
 - Se agrega a `verify-a11y` y `verify-ui`.
 
 ## Consecuencias
+
+- **Tarimas cerradas y bultos de empaque se encuentran por su código**, igual
+  que en su ficha (`getContainer`) y en el rastreo, que tampoco los filtran:
+  una etiqueta vieja escaneada lleva a la historia de esa tarima o de ese
+  bulto (qué tuvo, a qué pedido fue), que es lo que se busca. Decisión que el
+  fundador puede cambiar.
 
 - Una pantalla de detalle nueva que valga la pena buscar declara su fuente en su
   módulo, con el permiso de su pantalla, y agrega su caso a

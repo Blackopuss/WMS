@@ -533,6 +533,9 @@ describe("global search", () => {
   it("costs a bounded number of queries, whatever is typed", async () => {
     const owner = await company();
     await product(owner, `QRY-${stamp}`, "Consulta medida");
+    // An order that exists: «PS-0001» also runs the getter of its page.
+    const order = await createOutboundOrder(owner, { recipient: "Medido" });
+    if (!order.ok) throw new Error(JSON.stringify(order));
     // Only the queries of this process (Prisma events), never the counter
     // of the whole server, which other runs on the same MySQL move.
     let counting = false;
@@ -557,12 +560,18 @@ describe("global search", () => {
       counting = false;
       measured[text] = count;
     }
+    // The number found its order (the getter ran) and costs more than text.
+    expect(
+      idsOf(await search(owner, "PS-0001"), "inventory.outbound_order"),
+    ).toEqual([order.orderId]);
+    expect(measured["PS-0001"]).toBeGreaterThan(measured.consulta!);
     // 63 before the review of WMS-66 (every list service checked its
-    // permission again and the whole tree of locations was read); 23 to 24
-    // after (a number adds the getter of its page).
+    // permission again and the whole tree of locations was read); 23
+    // after, and 38 for a number that exists (the getter of its page, with
+    // its own checks, runs too).
     for (const [text, queries] of Object.entries(measured)) {
       expect(queries, text).toBeGreaterThan(0);
-      expect(queries, text).toBeLessThanOrEqual(25);
+      expect(queries, text).toBeLessThanOrEqual(text === "PS-0001" ? 40 : 25);
     }
   });
 
