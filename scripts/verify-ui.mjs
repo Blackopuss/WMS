@@ -1070,6 +1070,43 @@ try {
     await page.close();
   }
 
+  // WMS-66: the global search. Read-only: nothing is saved.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/inicio`, { waitUntil: "networkidle" });
+    const entry = page.getByRole("link", { name: "Buscar" }).first();
+    const box = await entry.boundingBox();
+    check(
+      box !== null && box.height >= 44,
+      "WMS-66: «Buscar» is in the phone header, with its word, 44px",
+    );
+    await page.goto(`${BASE}/buscar?q=a`, { waitUntil: "networkidle" });
+    const state = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      h1: document.querySelectorAll("h1").length,
+      focused: document.activeElement?.id,
+    }));
+    check(
+      state.overflow <= 0 && state.h1 === 1,
+      "WMS-66 320px: /buscar fits and has one heading",
+    );
+    check(state.focused === "q", "WMS-66: the search box takes the focus");
+    await page.goto(`${BASE}/buscar?q=sin-resultado-wms66`, {
+      waitUntil: "networkidle",
+    });
+    check(
+      ((await page.locator("main").textContent()) ?? "").includes(
+        "Sin resultados",
+      ),
+      "WMS-66: a search with nothing says so",
+    );
+    await page.close();
+  }
+
   // WMS-83 (desechar con autorización): the screen fits on a phone and an
   // empty form explains its error without writing anything.
   {
@@ -1241,6 +1278,93 @@ try {
       "WMS-43: an unknown step is ignored",
     );
     await page.close();
+  }
+
+  // WMS-88: the page to stop notices by mail. Opening it changes nothing;
+  // the button answers, and the focus goes to what it says. A link that
+  // works and an expired one come from `npx tsx
+  // scripts/verify-unsubscribe-links.mts` (VERIFY_UNSUBSCRIBE_VALID and
+  // VERIFY_UNSUBSCRIBE_EXPIRED; only the demo account); an invented one
+  // always runs.
+  {
+    const invented = `00000000-0000-4000-8000-000000000000.${"A".repeat(43)}`;
+    const cases = [
+      { name: "invented", token: invented, works: false },
+      ...(process.env.VERIFY_UNSUBSCRIBE_EXPIRED
+        ? [
+            {
+              name: "expired",
+              token: process.env.VERIFY_UNSUBSCRIBE_EXPIRED,
+              works: false,
+            },
+          ]
+        : []),
+      ...(process.env.VERIFY_UNSUBSCRIBE_VALID
+        ? [
+            {
+              name: "valid",
+              token: process.env.VERIFY_UNSUBSCRIBE_VALID,
+              works: true,
+            },
+          ]
+        : []),
+    ];
+    for (const width of [390, 1280]) {
+      for (const each of cases) {
+        const page = await newPage(browser, {
+          viewport: { width, height: 844 },
+        });
+        await page.goto(
+          `${BASE}/baja-de-avisos?t=${encodeURIComponent(each.token)}`,
+          { waitUntil: "networkidle" },
+        );
+        const button = page.getByRole("button", {
+          name: "Dejar de recibir avisos por correo",
+        });
+        const box = await button.boundingBox();
+        check(
+          (box?.height ?? 0) >= 44,
+          `WMS-88 ${width}px (${each.name}): the unsubscribe button is a 44px target`,
+        );
+        check(
+          (await page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          )) <= 0,
+          `WMS-88 ${width}px (${each.name}): no horizontal overflow`,
+        );
+        await button.click();
+        // Not Next's route announcer (also role=alert): the card's answer.
+        const answer = page.locator(
+          each.works ? "[role=status]" : "[role=alert]",
+          {
+            hasText: each.works
+              ? "Ya no recibirás avisos por correo"
+              : "no es válido o ya venció",
+          },
+        );
+        const focused = await answer
+          .first()
+          .evaluate((node) => document.activeElement === node);
+        const text = (await answer.first().textContent()) ?? "";
+        check(
+          focused &&
+            (each.works
+              ? text.includes("Ya no recibirás avisos por correo")
+              : text.includes("no es válido o ya venció")),
+          `WMS-88 ${width}px (${each.name}): the answer is said and focused`,
+        );
+        // It never says the person, the address or the company.
+        const body = await page.locator("body").innerText();
+        check(
+          !body.includes("@") && !body.includes("Empresa Demo"),
+          `WMS-88 ${width}px (${each.name}): says nothing of the person or company`,
+        );
+        await page.screenshot({
+          path: `${OUT}/wms88-baja-${each.name}-${width}.png`,
+        });
+        await page.close();
+      }
+    }
   }
 
   // WMS-87 (pendientes de interfaz). Read-only: nothing is saved.

@@ -591,6 +591,7 @@ export {
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
   ADJUSTMENT_APPROVAL_THRESHOLD,
+  DIGEST_DAYS,
   DIGEST_HOUR,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
@@ -799,6 +800,8 @@ export {
   DIGEST_LINES,
   dailyDigestJobHandlers,
   digestSections,
+  digestGoesOn,
+  purgeEndedDigests,
   runDailyDigestRound,
   sendDailyDigest,
 } from "./daily-digest";
@@ -916,3 +919,6 @@ export {
   type AwaitingInspectionItem,
   type AwaitingInspectionPage,
 } from "./inspection";
+
+// WMS-66: what Inventario offers to the global search (ADR 0081).
+export { INVENTORY_SEARCH_SOURCES } from "./search";

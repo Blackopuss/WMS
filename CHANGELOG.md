@@ -8,6 +8,22 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-66** Búsqueda global: una pantalla `/buscar` («Buscar» junto a
+  «Avisos», en escritorio y teléfono) que encuentra productos, ubicaciones,
+  lotes, series, tarimas y documentos por número (pedidos, embarques,
+  devoluciones, traslados, tareas, incidencias, órdenes y solicitudes de
+  compra, órdenes y solicitudes de producción) y proveedores, cada tipo solo
+  si la persona puede abrir su pantalla y cada resultado solo si esa pantalla
+  lo mostraría; una lectura exacta con un solo resultado lo abre. Motor en
+  `src/platform/search`, fuentes en cada módulo; índice nuevo
+  `lot(organizationId, code)`. Sin tablas ni permisos nuevos. ADR 0081.
+- **WMS-88** Pendientes de avisos por correo y del historial de accesos: los
+  avisos dirigidos a personas revalidan permiso y lugar al crearse y al
+  mandar el correo; el correo de alerta de accesos tiene estado real y se
+  reintenta; retención de `security_event` a 365 días; limpieza de avisos
+  para toda empresa; resumen diario con menos consultas y días elegibles;
+  correo en HTML con enlace de baja sin entrar a la app; alertas de accesos
+  en la campana (ADR 0084).
 - **WMS-43** Asistente de configuración inicial: la guía de primer uso crece
   a «Configura tu empresa» (almacén, ubicaciones, equipo, ajustes de
   operación, productos, existencias y primer movimiento), derivada de lo que

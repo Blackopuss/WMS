@@ -755,7 +755,7 @@ describe("attempts", () => {
         where: { userId: victim, action: { startsWith: "access.alert_" } },
       });
       expect(alerts.map((a) => [a.action, a.metadata])).toEqual([
-        ["access.alert_pin_locked", { mail: "sent" }],
+        ["access.alert_pin_locked", { mail: "queued" }],
       ]);
       const failure = await db.securityEvent.findFirstOrThrow({
         where: { userId: victim, action: "pin_sign_in.failed" },

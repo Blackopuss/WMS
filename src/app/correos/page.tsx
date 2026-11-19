@@ -52,6 +52,27 @@ export default async function CorreosPage() {
                 <pre className="mt-3 overflow-x-auto font-sans text-sm whitespace-pre-wrap text-muted-foreground">
                   {m.text}
                 </pre>
+                {m.unsubscribeUrl && (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Baja de un clic (cabecera List-Unsubscribe):{" "}
+                    {m.unsubscribeUrl}
+                  </p>
+                )}
+                {m.html && (
+                  // WMS-88: how the HTML version looks, isolated (no scripts,
+                  // no same origin).
+                  <details className="mt-3">
+                    <summary className="inline-flex min-h-11 cursor-pointer items-center rounded text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+                      Ver la versión en HTML
+                    </summary>
+                    <iframe
+                      sandbox=""
+                      srcDoc={m.html}
+                      title={`Versión en HTML de «${m.subject}»`}
+                      className="mt-2 h-[32rem] w-full rounded-lg border bg-white"
+                    />
+                  </details>
+                )}
                 {m.attachments?.map((file) => (
                   <p key={file.name} className="mt-3 text-sm">
                     Adjunto:{" "}

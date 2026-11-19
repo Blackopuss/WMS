@@ -29,7 +29,17 @@ function createClient(): PrismaClient {
     allowPublicKeyRetrieval:
       process.env.NODE_ENV !== "production" || isLoopbackHost(host),
   });
-  return new PrismaClient({ adapter });
+  // A test that measures how many queries an operation costs (WMS-66) asks
+  // for query events before this module loads; never in production.
+  const countQueries =
+    process.env.NODE_ENV !== "production" &&
+    process.env.WMS_QUERY_EVENTS === "1";
+  return new PrismaClient({
+    adapter,
+    ...(countQueries
+      ? { log: [{ emit: "event" as const, level: "query" as const }] }
+      : {}),
+  });
 }
 
 // Reuse one client across hot reloads in development, but only while the

@@ -966,7 +966,12 @@ export async function acceptProductionRequest(
     await notify(tx, REQUEST_ANSWERED_NOTICE, {
       organizationId,
       actorUserId: userId,
-      to: { userIds: [row.requestedByUserId] },
+      // WMS-88: the same rule that lets them see the request.
+      to: {
+        userIds: [row.requestedByUserId],
+        permissions: ["production.request.read"],
+        locationId: row.areaLocationId,
+      },
       text: `Se aceptó tu solicitud ${numberText}: nació la orden ${made.numberText} (${quantityText} de ${row.product.name}).`,
       href: `/produccion/${made.id}`,
       key: `production_request:${row.id}:answered`,
@@ -1054,7 +1059,12 @@ export async function rejectProductionRequest(
     await notify(tx, REQUEST_ANSWERED_NOTICE, {
       organizationId,
       actorUserId: userId,
-      to: { userIds: [row.requestedByUserId] },
+      // WMS-88: the same rule that lets them see the request.
+      to: {
+        userIds: [row.requestedByUserId],
+        permissions: ["production.request.read"],
+        locationId: row.areaLocationId,
+      },
       text: `Se rechazó tu solicitud ${numberText} de ${row.product.name}: ${why}`,
       href: `/produccion/solicitudes/${row.id}`,
       key: `production_request:${row.id}:answered`,

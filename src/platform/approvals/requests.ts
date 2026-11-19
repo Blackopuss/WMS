@@ -516,7 +516,12 @@ export async function decideApproval(
         await notify(tx, APPROVAL_DECIDED_NOTICE, {
           organizationId,
           actorUserId: userId,
-          to: { userIds: [request.requestedByUserId] },
+          // WMS-88: only while they still reach where it was asked.
+          to: {
+            userIds: [request.requestedByUserId],
+            facilityId: request.facilityId,
+            locationId: request.locationId,
+          },
           text:
             status === "APPROVED"
               ? `Se autorizó: ${request.summary}`
@@ -563,6 +568,8 @@ async function expire(
         typeKey: true,
         summary: true,
         requestedByUserId: true,
+        facilityId: true,
+        locationId: true,
       },
     });
     if (!request || request.status !== "PENDING") return;
@@ -592,7 +599,12 @@ async function expire(
     await notify(tx, APPROVAL_DECIDED_NOTICE, {
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
-      to: { userIds: [request.requestedByUserId] },
+      // WMS-88: only while they still reach where it was asked.
+      to: {
+        userIds: [request.requestedByUserId],
+        facilityId: request.facilityId,
+        locationId: request.locationId,
+      },
       text: `Venció lo que pediste autorizar: ${request.summary}. ${why}`,
       href: `/aprobaciones/${request.id}`,
       key: `approval:${request.id}:decided`,

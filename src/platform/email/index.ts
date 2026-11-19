@@ -31,3 +31,5 @@ export {
   verificationEmail,
 } from "./templates";
 export type { AccessAlertKind } from "./templates";
+export { escapeHtml, htmlEmail } from "./html";
+export type { HtmlBlock } from "./html";

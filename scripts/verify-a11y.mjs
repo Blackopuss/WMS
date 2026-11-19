@@ -143,6 +143,10 @@ const SCREENS = [
   "/produccion?estado=all",
   "/produccion/solicitudes",
   "/produccion/solicitudes/nueva",
+  // WMS-66: the global search, empty, with results and with none.
+  "/buscar",
+  "/buscar?q=a",
+  "/buscar?q=sin-resultado-wms66",
   // WMS-87: the two lists of stock that waits for a decision.
   "/inventario/por-inspeccionar",
   "/inventario/en-restauracion",
@@ -170,6 +174,16 @@ const PUBLIC = [
   "/verifica-tu-correo",
   "/invitacion",
   "/no-existe-esta-pagina",
+  // WMS-88: the page to stop notices by mail, with an invented link and,
+  // when given (scripts/verify-unsubscribe-links.mts), a working and an
+  // expired one. Opening it changes nothing.
+  `/baja-de-avisos?t=00000000-0000-4000-8000-000000000000.${"A".repeat(43)}`,
+  ...[
+    process.env.VERIFY_UNSUBSCRIBE_VALID,
+    process.env.VERIFY_UNSUBSCRIBE_EXPIRED,
+  ]
+    .filter(Boolean)
+    .map((token) => `/baja-de-avisos?t=${encodeURIComponent(token)}`),
 ];
 
 /** Forms sent empty: the focus must land on a described, invalid field. */

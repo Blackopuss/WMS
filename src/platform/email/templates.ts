@@ -1,3 +1,4 @@
+import { htmlEmail, type HtmlBlock } from "./html";
 import type { EmailAttachment, EmailMessage } from "./send";
 
 /** Spanish email copy. Plain text first: readable in every client. */
@@ -280,6 +281,11 @@ export function noticeEmail(input: {
   allUrl: string;
   /** Where the person stops getting them by mail. */
   settingsUrl: string;
+  /**
+   * Links to stop every notice by mail without signing in (WMS-88): the
+   * page for the body, the one-click address for List-Unsubscribe.
+   */
+  unsubscribe?: { pageUrl: string; oneClickUrl: string };
 }): EmailMessage {
   const company = oneLine(input.organizationName, 80);
   const total = input.items.length + input.more;
@@ -288,6 +294,15 @@ export function noticeEmail(input: {
     total === 1 && first
       ? `${company}: ${oneLine(first.text, 110)}`
       : `${company}: ${total} avisos nuevos`;
+  const intro =
+    total === 1
+      ? `Tienes un aviso nuevo en ${company}:`
+      : `Tienes ${total} avisos nuevos en ${company}:`;
+  const moreText =
+    input.more > 0
+      ? `Y ${input.more} ${input.more === 1 ? "aviso más" : "avisos más"}`
+      : null;
+  const why = "Recibes este correo porque lo pediste en WMS.";
   return {
     to: input.to,
     subject,
@@ -295,24 +310,80 @@ export function noticeEmail(input: {
     text: [
       "Hola:",
       "",
-      total === 1
-        ? `Tienes un aviso nuevo en ${company}:`
-        : `Tienes ${total} avisos nuevos en ${company}:`,
+      intro,
       "",
       ...input.items.flatMap((item) => [
         `- ${oneLine(item.text, 300)}`,
         `  ${item.url}`,
       ]),
-      ...(input.more > 0
-        ? [
-            "",
-            `Y ${input.more} ${input.more === 1 ? "aviso más" : "avisos más"}: ${input.allUrl}`,
-          ]
-        : []),
+      ...(moreText ? ["", `${moreText}: ${input.allUrl}`] : []),
       "",
-      `Recibes este correo porque lo pediste en WMS. Para dejar de recibirlo: ${input.settingsUrl}`,
+      `${why} Para dejar de recibirlo: ${input.settingsUrl}`,
+      ...unsubscribeLines(input.unsubscribe?.pageUrl),
     ].join("\n"),
+    html: htmlEmail({
+      title: subject,
+      blocks: [
+        { kind: "paragraph", text: "Hola:" },
+        { kind: "paragraph", text: intro },
+        {
+          kind: "items",
+          items: input.items.map((item) => ({
+            text: oneLine(item.text, 300),
+            url: item.url,
+          })),
+        },
+        ...(moreText
+          ? [{ kind: "link" as const, text: moreText, url: input.allUrl }]
+          : []),
+      ],
+      footer: footerLines(why, input.settingsUrl, input.unsubscribe?.pageUrl),
+    }),
+    ...oneClickHeader(input.unsubscribe?.oneClickUrl),
   };
+}
+
+/**
+ * The one-click header only with a full web address: without the address
+ * of the app (BETTER_AUTH_URL, development) the mail goes out without it
+ * instead of failing (review of WMS-88).
+ */
+function oneClickHeader(url: string | undefined): { unsubscribeUrl?: string } {
+  return isWebAddress(url) ? { unsubscribeUrl: url } : {};
+}
+
+/** A full web address (a relative one means the app has no address). */
+function isWebAddress(url: string | undefined): url is string {
+  return Boolean(url && /^https?:\/\/[^/\s]/.test(url));
+}
+
+function unsubscribeLines(url: string | undefined): string[] {
+  return isWebAddress(url)
+    ? [`Para dejar de recibir todos los avisos por correo sin entrar: ${url}`]
+    : [];
+}
+
+function footerLines(
+  why: string,
+  settingsUrl: string,
+  unsubscribeUrl: string | undefined,
+) {
+  return [
+    {
+      text: `${why} Elige cuáles recibes en`,
+      url: settingsUrl,
+      linkText: "Avisos que recibo",
+    },
+    ...(isWebAddress(unsubscribeUrl)
+      ? [
+          {
+            text: "O deja de recibir todos los avisos por correo sin entrar:",
+            url: unsubscribeUrl,
+            linkText: "Darme de baja",
+          },
+        ]
+      : []),
+  ];
 }
 
 /**
@@ -334,11 +405,37 @@ export function dailyDigestEmail(input: {
     note?: string;
   }[];
   settingsUrl: string;
+  /**
+   * Links to stop every notice by mail without signing in (WMS-88): the
+   * page for the body, the one-click address for List-Unsubscribe.
+   */
+  unsubscribe?: { pageUrl: string; oneClickUrl: string };
 }): EmailMessage {
   const company = oneLine(input.organizationName, 80);
+  const subject = `${company}: resumen del ${oneLine(input.dayLabel, 40)}`;
+  const why = "Recibes este resumen porque lo pediste en WMS.";
+  const blocks: HtmlBlock[] = [
+    { kind: "paragraph", text: "Hola:" },
+    { kind: "paragraph", text: `Esto pide atención hoy en ${company}:` },
+  ];
+  for (const section of input.sections) {
+    blocks.push({ kind: "heading", text: oneLine(section.title, 120) });
+    blocks.push({
+      kind: "items",
+      items: section.lines.map((line) => ({ text: oneLine(line, 300) })),
+    });
+    blocks.push({
+      kind: "link",
+      text: section.more > 0 ? `Y ${section.more} más` : "Ver en WMS",
+      url: section.url,
+    });
+    if (section.note) {
+      blocks.push({ kind: "note", text: oneLine(section.note, 200) });
+    }
+  }
   return {
     to: input.to,
-    subject: `${company}: resumen del ${oneLine(input.dayLabel, 40)}`,
+    subject,
     actionUrl: input.sections[0]?.url,
     text: [
       "Hola:",
@@ -354,8 +451,15 @@ export function dailyDigestEmail(input: {
         ...(section.note ? [oneLine(section.note, 200)] : []),
       ]),
       "",
-      `Recibes este resumen porque lo pediste en WMS. Para dejar de recibirlo: ${input.settingsUrl}`,
+      `${why} Para dejar de recibirlo: ${input.settingsUrl}`,
+      ...unsubscribeLines(input.unsubscribe?.pageUrl),
     ].join("\n"),
+    html: htmlEmail({
+      title: subject,
+      blocks,
+      footer: footerLines(why, input.settingsUrl, input.unsubscribe?.pageUrl),
+    }),
+    ...oneClickHeader(input.unsubscribe?.oneClickUrl),
   };
 }
 

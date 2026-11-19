@@ -12,7 +12,7 @@ pasa `jobHandlers` y `scheduledRounds` de `src/modules/registry`.
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
 | Cola | `queue.ts` | `enqueueJob(tx, organizationId, { type, payload, … })`, `runWorker`, `runNextJob`, `settleFailedJobs`, `getJob`; tipos `JobHandler` (`handle`, `retryDelayMs?`, `onFailed?`) y `JobContext` |
-| Rondas | `rounds.ts` | `runScheduledRounds`, `organizationsWithModule`, `allOrganizations` (todas las empresas, para una ronda de plataforma que sigue con el plan vencido; WMS-37); tipo `ScheduledRound` |
+| Rondas | `rounds.ts` | `runScheduledRounds`, `organizationsWithModule`, `allOrganizations` (todas las empresas, para una ronda de plataforma que sigue con el plan vencido; WMS-37); tipo `ScheduledRound`; `runAccountRounds` y tipo `AccountRound` (WMS-88: trabajo de plataforma que no es de ninguna empresa, como la retención del historial de accesos; el worker lo corre en la misma vuelta horaria) |
 
 Rondas registradas hoy: `inventory.cycle_counts` (WMS-55, los conteos del día
 de los programas de conteo cíclico). Una ronda trabaja con

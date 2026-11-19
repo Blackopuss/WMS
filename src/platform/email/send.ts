@@ -37,6 +37,16 @@ export type EmailMessage = {
   /** Where an answer goes, when not to the sender of the system. */
   replyTo?: string;
   attachments?: EmailAttachment[];
+  /**
+   * The same message in HTML (WMS-88): built only by `htmlEmail`, which
+   * escapes every text. Plain text stays the message of record.
+   */
+  html?: string;
+  /**
+   * A link to stop these mails without signing in (WMS-88): it goes out
+   * as `List-Unsubscribe` with one-click (RFC 8058).
+   */
+  unsubscribeUrl?: string;
 };
 
 export type StoredAttachment = {
@@ -62,6 +72,22 @@ const ADDRESS =
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 const ATTACHMENT_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,119}$/;
 const CONTENT_TYPE = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/;
+/** The HTML of one message, at most. */
+const MAX_HTML_LENGTH = 200_000;
+
+/** A link that may go in a header: http(s), no spaces, no `<>`. */
+function headerUrl(value: string): string {
+  const text = String(value);
+  if (
+    text.length > 500 ||
+    CONTROL.test(text) ||
+    /[\s<>"]/.test(text) ||
+    !/^https?:\/\/[^/]/.test(text)
+  ) {
+    throw new InvalidEmailError("Invalid unsubscribe link");
+  }
+  return text;
+}
 
 /**
  * Thrown for a message that must not leave as it is. It is a defect of
@@ -115,7 +141,19 @@ function checked(message: EmailMessage): Omit<StoredEmail, "id" | "sentAt"> {
     ...(message.actionUrl ? { actionUrl: message.actionUrl } : {}),
     ...(message.replyTo ? { replyTo: address(message.replyTo, "reply") } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
+    ...(message.html !== undefined ? { html: checkedHtml(message.html) } : {}),
+    ...(message.unsubscribeUrl
+      ? { unsubscribeUrl: headerUrl(message.unsubscribeUrl) }
+      : {}),
   };
+}
+
+function checkedHtml(value: string): string {
+  const html = String(value);
+  if (html.length === 0 || html.length > MAX_HTML_LENGTH) {
+    throw new InvalidEmailError("Invalid HTML");
+  }
+  return html;
 }
 
 const MAIL_DIR = path.join(process.cwd(), ".local", "mail");
@@ -240,6 +278,15 @@ async function sendSmtp(stored: StoredEmail): Promise<void> {
     ...(stored.replyTo ? { replyTo: stored.replyTo } : {}),
     subject: stored.subject,
     text: stored.text,
+    ...(stored.html ? { html: stored.html } : {}),
+    ...(stored.unsubscribeUrl
+      ? {
+          list: {
+            unsubscribe: stored.unsubscribeUrl,
+          },
+          headers: { "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+        }
+      : {}),
     attachments: stored.attachments?.map((file) => ({
       filename: file.name,
       contentType: file.contentType,

@@ -19,13 +19,14 @@ mandado por el worker; y un tipo puede ser **solo por correo**
 
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
-| Definiciones | `definitions.ts` | tipo `NotificationType` (`key` `modulo.cosa`, `module`, `label`, `description`, `defaultEnabled`, `channels` `app`/`email`, `visibleWith`), `assertValidNotificationTypes` (un tipo solo por correo debe venir apagado), `isEmailOnly`, `noticeText` (una línea, máximo 300 caracteres) |
+| Definiciones | `definitions.ts` | tipo `NotificationType` (`key` `modulo.cosa`, `module`, `label`, `description`, `defaultEnabled`, `channels` `app`/`email`/`app_only`, `visibleWith`), `assertValidNotificationTypes` (un tipo solo por correo debe venir apagado), `isEmailOnly`, `isAppOnly` (WMS-88: nunca se ofrece ni se manda por correo), `noticeText` (una línea, máximo 300 caracteres) |
 | Avisar | `notify.ts` | `notify(tx, tipo, { organizationId, actorUserId, to, text, href, key })` dentro de la transacción del hecho (y, para quien lo pidió por correo, renglón `notification_email` + trabajo `notifications.send_email` en la misma transacción); `memberName(tx, userId)` para escribir «Olivia reportó…»; `nextMailAt` (agrupar `NOTICE_EMAIL_GROUP_MS`, espaciar `NOTICE_EMAIL_GAP_MS`) |
 | Correo | `emails.ts` | `sendNoticeEmails` (el worker: reclama lo que espera de la persona, vuelve a comprobar membresía, correo confirmado, preferencia, canal, plan, permisos y alcance, y manda un solo correo), `failNoticeEmails`, `noticeEmailJobHandlers(tipos)` (lo registra `src/modules/registry/jobs.ts`), `wantsEmail`, `emailSubscribers`, `memberAddress`, `isEmailChannelOn`/`companySendsNoticeEmails`, `appLink`, `purgeFinishedNoticeEmails` |
 | Ajuste | `settings.ts` | `NOTICE_EMAIL_CHANNEL` (`platform.notices.email`: `on` por omisión, `off` apaga el canal en toda la empresa), en `NOTIFICATION_SETTINGS` y `operationSettings` |
 | Leer y marcar | `notifications.ts` | `countUnreadNotifications` (una consulta sobre el índice; la usa el layout), `listRecentNotifications` (la campana), `listNotifications` (paginada, `/avisos`), `openNotification` (marca leído y dice a dónde lleva), `markAllNotificationsRead` |
 | Preferencias | `notifications.ts` | `getNotificationPreferences(actor, tipos, módulos)` (en la app, por correo, solo correo), `setNotificationPreference(actor, tipos, clave, valor, canal)` (`app` o `email`; apagar en la app apaga el correo, pedir correo enciende la app; una fila solo cuando algo difiere del valor por omisión) |
-| Limpieza | `notifications.ts`, `emails.ts` | `purgeReadNotifications(organizationId)`: borra los leídos hace más de `READ_NOTICE_DAYS` (90); `purgeFinishedNoticeEmails`: los correos terminados de esa antigüedad; ambos en la ronda `platform.notifications_cleanup` de `scheduledRounds` |
+| Baja sin entrar | `unsubscribe.ts` | `createUnsubscribeLink(organizationId, userId)` (el worker, al armar cada correo: página y dirección de un clic; solo guarda el `sha256` del secreto, vence a los `UNSUBSCRIBE_LINK_DAYS` 60 días), `unsubscribeFromNoticeEmails(token, headers)` (límite por IP con `reserveAttempt` antes de verificar; apaga el correo de todos los tipos de esa persona en esa empresa y deja `SKIPPED` lo que esperaba), `purgeExpiredUnsubscribeLinks` |
+| Limpieza | `notifications.ts`, `emails.ts`, `unsubscribe.ts` | `purgeReadNotifications(organizationId)`: borra los leídos hace más de `READ_NOTICE_DAYS` (90); `purgeFinishedNoticeEmails`: los correos terminados de esa antigüedad; `purgeExpiredUnsubscribeLinks`: los enlaces de baja vencidos; en la ronda `platform.notifications_cleanup` de `scheduledRounds`, **para toda empresa** (`allOrganizations`, WMS-88), junto con los resúmenes diarios terminados (`purgeEndedDigests` de Inventario) |
 
 ### Quién recibe un aviso (`to`)
 
@@ -36,6 +37,13 @@ mandado por el worker; y un tipo puede ser **solo por correo**
 - `facilityId` o `locationId`: solo quien alcance ese almacén o esa
   ubicación (WMS-20, decidido con `inScope` y la ruta de la ubicación de
   `placeOfLocation`).
+- `locationIds` (WMS-88): varias ubicaciones que debe alcanzar **todas** (una
+  tarea: origen y destino). `wholeCompany` (WMS-88): solo quien ve toda la
+  empresa (titular o sin límite de almacén o zona).
+
+Un aviso dirigido a personas (`userIds`) lleva además el permiso de lectura
+de su documento y su lugar (WMS-88, ADR 0084: tabla en el ADR), así quien
+perdió el rol o el alcance no lo recibe, ni por correo después.
 
 Siempre: solo membresías activas, nunca `actorUserId`, sin quien apagó el
 tipo (o, si el tipo viene apagado, solo quien lo encendió), como mucho
@@ -75,20 +83,29 @@ destinatario al crearse.
   ya no aplica queda `SKIPPED` con su motivo.
 - Destinatario: el correo confirmado de la cuenta. Enlace:
   `BETTER_AUTH_URL` + la ruta interna. Con el plan vencido no sale.
+- Desde WMS-88 sale con texto y HTML (`htmlEmail` de `platform/email`, todo
+  escapado) y con su propio enlace de baja: en el cuerpo, la página
+  pública `/baja-de-avisos` (abrirla no cambia nada; el botón sí); en la
+  cabecera `List-Unsubscribe`, `POST /api/baja-de-avisos` (RFC 8058).
 
 ## Tablas
 
 `notification` (texto, destino y llave fijos; solo `readAt` cambia, una vez;
 solo se borran los leídos), `notification_preference` (persona + tipo +
 `enabled` + `email`), `notification_email` (copia del texto y destino del
-aviso, lo que exigía, estado `QUEUED`/`SENT`/`SKIPPED`/`FAILED`, `claimedBy`)
-y `daily_digest` (resumen diario por persona y día; lo escribe Inventario).
+aviso, lo que exigía, estado `QUEUED`/`SENT`/`SKIPPED`/`FAILED`, `claimedBy`),
+`daily_digest` (resumen diario por persona y día; lo escribe Inventario) y
+`notice_unsubscribe` (WMS-88: enlace de baja, solo el hash del secreto,
+vencimiento y `usedAt`).
 
 ## Tipos declarados
 
 - Plataforma (aprobaciones): `approvals.pending`, `approvals.decided`.
 - Plataforma (procesos, WMS-74): `processes.ready` (relevo a la siguiente
   área) y `processes.assigned`.
+- Plataforma (accesos, WMS-88): `platform.access_alert`, solo en la app
+  (`app_only`): la alerta de accesos de la propia cuenta, en cada empresa
+  donde la persona es miembro activo; la escribe `access-history.ts`.
 
 Desde WMS-74, `memberReaches` compara `to.roles` con los roles **vigentes**
 (`activeRoles`: un rol ligado a un módulo cuenta solo con su módulo activo),
@@ -113,8 +130,10 @@ service worker no guarda nada de esto.
 
 ## Pendientes
 
-Correo en HTML; darse de baja desde el correo sin entrar a la app.
+Elegir los días del resumen por persona (hoy por empresa, ajuste
+`inventory.digest.days`); bajarse de un solo tipo desde el correo.
 
 ## ADR
 
-0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario).
+0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0084
+(pendientes de avisos y accesos).

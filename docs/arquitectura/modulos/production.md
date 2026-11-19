@@ -47,6 +47,7 @@ Inventario al entregarse).
 | `recipe-rules.ts`, `recipe-states.ts` | Reglas puras: porcentajes, partes del costo, qué impide activar, ciclos (`findRecipeCycle`), estados (`RECIPE_VERSION_TRANSITIONS`) |
 | `order-rules.ts`, `order-states.ts` | Reglas puras de la orden: escalar la receta (materiales hacia arriba, salidas hacia abajo), estados (`PRODUCTION_ORDER_TRANSITIONS`), `formatProductionNumber` |
 | `request-rules.ts`, `request-states.ts` | Reglas puras de la solicitud: cerca del mínimo (`isNearMinimum`), para cuánto alcanza el material (`reachableQuantity`), estados (`PRODUCTION_REQUEST_TRANSITIONS`), `formatProductionRequestNumber` |
+| `search.ts` | `PRODUCTION_SEARCH_SOURCES` (WMS-66, ADR 0081): órdenes `OP-` y solicitudes `SP-` por número (confirmadas con `getProductionOrder`/`getProductionRequest`) |
 
 Cada servicio empieza con `assertModulePermission` (`production.recipe.*`
 o `production.order.*`). Candados: un cambio del borrador bloquea su

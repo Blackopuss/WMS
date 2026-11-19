@@ -6,7 +6,7 @@ import { forOrganization } from "@/server";
 import { isAllowed, type Permission } from "@/platform/authorization";
 import { readSetting } from "@/platform/settings";
 
-import { isEmailOnly, type NotificationType } from "./definitions";
+import { isAppOnly, isEmailOnly, type NotificationType } from "./definitions";
 import { NOTICE_EMAIL_CHANNEL } from "./settings";
 
 /**
@@ -180,6 +180,8 @@ export type NotificationPreferenceView = {
   email: boolean;
   /** Only by mail (a summary): there is no notice in the app. */
   emailOnly: boolean;
+  /** Only in the app (WMS-88): never offered by mail. */
+  appOnly: boolean;
   /** Offered only to who holds one of these (empty: everybody). */
   visibleWith: readonly Permission[];
 };
@@ -209,8 +211,10 @@ export async function getNotificationPreferences(
         description: type.description,
         enabled,
         // By mail only while it is on in the app (ADR 0060).
-        email: row?.email === true && (emailOnly || enabled),
+        email:
+          !isAppOnly(type) && row?.email === true && (emailOnly || enabled),
         emailOnly,
+        appOnly: isAppOnly(type),
         visibleWith: type.visibleWith ?? [],
       };
     });
@@ -238,6 +242,10 @@ export async function setNotificationPreference(
   if (!type) return { ok: false, reason: "not_found" };
   const emailOnly = isEmailOnly(type);
   if (emailOnly && channel === "app") return { ok: false, reason: "not_found" };
+  // WMS-88: what the screen does not offer by mail is refused here too.
+  if (isAppOnly(type) && channel === "email") {
+    return { ok: false, reason: "not_allowed" };
+  }
   // What the screen does not offer is refused here too (ADR 0060).
   if (type.visibleWith && type.visibleWith.length > 0) {
     let allowed = false;

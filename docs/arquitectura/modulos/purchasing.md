@@ -98,6 +98,7 @@ Reglas que no se rompen:
 | Comparar proveedores | `supplier-comparison.ts` | `compareSuppliers`: último costo por unidad del producto, días de entrega y cumplimiento (y dañado) de las últimas 10 órdenes de cada proveedor, con tope de 500 órdenes (`truncated`) y el sugerido |
 | Reportes | `reports.ts` | `getPendingReport` (con «Rechazado al recibir» por línea, WMS-84), `getPurchasesBySupplier` (con «Devoluciones por calidad», las que salieron de «Rechazado», y «Rechazos al recibir», WMS-84), `buildPurchaseReport` (archivo) |
 | Al quitar el módulo | `deactivation.ts` | `purchasingOpenWork`: lo que quedaría a medias, para la consola |
+| Búsqueda global | `search.ts` | `PURCHASING_SEARCH_SOURCES` (WMS-66, ADR 0081): órdenes `OC-` y solicitudes `SC-` por número (confirmadas con `getPurchaseOrder`/`getPurchaseRequest`) y proveedores por nombre o RFC (una consulta con las condiciones de `listSuppliers`) |
 
 Proveedores (`createSupplier`, `listSuppliers`…) viven en
 [contacts](contacts.md) y usan los permisos `purchasing.supplier.*`.

@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-143 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+145 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -11,12 +11,12 @@
 | Plataforma › Equipo, permisos y alcance | 6 | [authorization](modulos/authorization.md) |
 | Plataforma › Plan, módulos y pagos | 10 | [billing](modulos/billing.md) |
 | Plataforma › Derechos y cupos | 2 | [entitlements](modulos/entitlements.md) |
-| Plataforma › Bitácora | 2 | [audit](modulos/audit.md) |
+| Plataforma › Bitácora | 3 | [audit](modulos/audit.md) |
 | Plataforma › Aceptación de documentos | 1 | [legal](modulos/legal.md) |
 | Plataforma › Ajustes de operación | 1 | [settings](modulos/settings.md) |
 | Plataforma › Aprobaciones | 2 | [approvals](modulos/approvals.md) |
 | Plataforma › Procesos | 7 | [processes](modulos/processes.md) |
-| Plataforma › Avisos | 4 | [notifications](modulos/notifications.md) |
+| Plataforma › Avisos | 5 | [notifications](modulos/notifications.md) |
 | Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
@@ -642,7 +642,37 @@ No es de una empresa (sin `organizationId`).
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`userId`, `dedupeKey`).
-- Índices: (`userId`, `createdAt`).
+- Índices: (`userId`, `createdAt`); `createdAt`.
+
+### AccessAlertEmail · `access_alert_email`
+
+The mail of an access alert (WMS-88, ADR 0084): per person, like `security_event` (not a company table). Never the address: it is read from the account when sending. Ended rows go after 90 days.
+
+No es de una empresa (sin `organizationId`).
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `userId` | `String · Char(36)` |  |  |
+| `securityEventId` | `String · Char(36)` |  | única. The alert row it mails (no foreign key: the history is append-only). |
+| `kind` | `String · VarChar(40)` |  |  |
+| `deviceKey` | `String? · VarChar(80)` |  |  |
+| `ipAddress` | `String? · VarChar(64)` |  |  |
+| `occurredAt` | `DateTime · DateTime(3)` |  |  |
+| `status` | `AccessAlertEmailStatus` | `QUEUED` |  |
+| `attempts` | `Int` | `0` |  |
+| `nextAttemptAt` | `DateTime · DateTime(3)` |  |  |
+| `claimToken` | `String? · Char(36)` |  | The attempt that holds it; closing needs the same token. |
+| `claimedAt` | `DateTime? · DateTime(3)` |  |  |
+| `sentAt` | `DateTime? · DateTime(3)` |  |  |
+| `reason` | `String? · VarChar(300)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Índices: (`status`, `nextAttemptAt`); (`status`, `createdAt`).
+
+#### Enumeraciones de Plataforma › Bitácora
+
+- `AccessAlertEmailStatus`: `QUEUED`, `SENT`, `FAILED`.
 
 ## Plataforma › Aceptación de documentos
 
@@ -1025,6 +1055,25 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `userId`, `day`).
 - Índices: (`organizationId`, `createdAt`).
+
+### NoticeUnsubscribe · `notice_unsubscribe`
+
+A link to stop notices by mail without signing in (WMS-88, ADR 0084). Only the sha256 of its secret is kept; it gives no session.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `userId` | `String · Char(36)` |  |  |
+| `tokenHash` | `String · Char(64)` |  |  |
+| `expiresAt` | `DateTime · DateTime(3)` |  |  |
+| `usedAt` | `DateTime? · DateTime(3)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `tokenHash`).
+- Índices: (`organizationId`, `expiresAt`).
 
 #### Enumeraciones de Plataforma › Avisos
 
@@ -1786,7 +1835,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `productId`, `code`).
-- Índices: (`organizationId`, `expiresOn`).
+- Índices: (`organizationId`, `expiresOn`); (`organizationId`, `code`).
 - Relaciones: `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
 
 ### SerialUnit · `serial_unit`
