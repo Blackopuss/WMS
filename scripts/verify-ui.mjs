@@ -428,10 +428,18 @@ try {
     );
 
     // Dark mode: the switch toggles the theme, persists and is reversible.
-    const toggle = page
-      .getByRole("switch", { name: "Modo oscuro" })
-      .filter({ visible: true })
-      .first();
+    // On the phone it lives in «Más» (WMS-86).
+    const openThemeSwitch = async () => {
+      if (mobile) {
+        await page.getByRole("button", { name: "Más" }).click();
+        await page.getByRole("dialog", { name: "Más opciones" }).waitFor();
+      }
+      return page
+        .getByRole("switch", { name: "Modo oscuro" })
+        .filter({ visible: true })
+        .first();
+    };
+    const toggle = await openThemeSwitch();
     await toggle.focus();
     await page.keyboard.press("Space");
     await page.waitForTimeout(300);
@@ -448,12 +456,9 @@ try {
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
     await page.screenshot({ path: `${OUT}/shell-dark-${viewport.name}.png` });
-    await page
-      .getByRole("switch", { name: "Modo oscuro" })
-      .filter({ visible: true })
-      .first()
-      .click();
+    await (await openThemeSwitch()).click();
     await page.waitForTimeout(300);
+    if (mobile) await page.keyboard.press("Escape");
     const backToLight = await page.evaluate(
       () => !document.documentElement.classList.contains("dark"),
     );

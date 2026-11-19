@@ -133,7 +133,10 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md md:hidden print:hidden">
-          <Warehouse aria-hidden="true" className="size-5 text-primary" />
+          <Warehouse
+            aria-hidden="true"
+            className="size-5 shrink-0 text-primary"
+          />
           <span className="min-w-0 truncate font-semibold">
             {current?.label ?? titleOf(pathname)}
           </span>
@@ -145,7 +148,8 @@ export function AppShell({
             compact
             className={canSearch ? undefined : "ml-auto"}
           />
-          <ThemeToggle />
+          {/* The theme switch lives in «Más» on the phone (WMS-86): with
+              «Buscar» and «Avisos» it left no room for the section's name. */}
         </header>
         <OfflineNotice />
 
@@ -304,6 +308,9 @@ function MoreMenu({
           </ul>
         </nav>
         <div className="mx-4 space-y-1 border-t pt-3">
+          <div className="px-1">
+            <ThemeToggle showLabel />
+          </div>
           {switcher}
           <UserBlock user={user} signOutAction={signOutAction} />
         </div>

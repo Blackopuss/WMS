@@ -85,6 +85,14 @@ Los números de antes y después quedan en `docs/ux/RENDIMIENTO_TELEFONO.md`.
    descargue a pedido atrapa su falla y deja la pantalla como estaba.
 4. **Barra inferior:** la lista reparte el ancho entre los botones que haya
    (`flex-1`), así tres secciones y «Más» ocupan toda la barra.
+5. **Encabezado del teléfono con «Buscar» (al unir WMS-66):** con «Buscar»,
+   «Avisos» y el interruptor de tema, el nombre de la sección se cortaba a
+   390 px («Configuración» en 60 px) y desaparecía a 320 px. El interruptor de
+   tema pasa a la hoja «Más» (con su etiqueta, como en la barra lateral de
+   escritorio): es un ajuste ocasional. El título se queda porque «Más» abre
+   secciones que la barra inferior no marca. Medido: a 390 px «Configuración»
+   cabe entero (110 px); a 320 px se recorta con puntos suspensivos. «Buscar» y
+   «Avisos» conservan su texto y 44 px.
 
 ## Qué no cambia
 
