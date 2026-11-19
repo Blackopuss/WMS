@@ -8,6 +8,17 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-32** Indicadores de almacén: pantalla Inventario › «Indicadores»
+  (`/inventario/indicadores`) con pedidos completos y a tiempo, tiempos de
+  surtido y de recepción a acomodo, exactitud de conteos, productos de mayor
+  movimiento con rotación y días de inventario, productos sin movimiento y
+  rendimiento por persona y por zona, con filtros de periodo (hasta 92 días),
+  almacén, producto y persona; solo lectura, dentro del alcance por almacén y
+  zona, y costos solo con `inventory.cost.read`. Permisos nuevos
+  `inventory.kpi.read` e `inventory.worker_performance.read`, ajuste
+  `inventory.kpi.idle_days` e índice `warehouse_task(organizationId,
+  deliveredAt)`. ADR 0082.
+
 - **WMS-66** Búsqueda global: una pantalla `/buscar` («Buscar» junto a
   «Avisos», en escritorio y teléfono) que encuentra productos, ubicaciones,
   lotes, series, tarimas y documentos por número (pedidos, embarques,

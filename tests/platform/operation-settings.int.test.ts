@@ -32,6 +32,7 @@ import {
   setOutboundLine,
   DIGEST_DAYS,
   DIGEST_HOUR,
+  KPI_IDLE_DAYS,
   type InventoryActor,
 } from "@/modules/inventory";
 import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
@@ -260,6 +261,8 @@ describe("operation settings", () => {
       { key: DIGEST_HOUR.key, value: "7", defaultValue: "7" },
       // WMS-88: the days of the daily summary.
       { key: DIGEST_DAYS.key, value: "all", defaultValue: "all" },
+      // WMS-32: 90 days without movement for the indicators.
+      { key: KPI_IDLE_DAYS.key, value: "90", defaultValue: "90" },
       // WMS-42: equipment (shown on its own screen).
       {
         key: "inventory.equipment.maintenance_notice",
@@ -304,6 +307,7 @@ describe("operation settings", () => {
       { key: PICKING_MODE.key, value: "orders" },
       { key: DIGEST_HOUR.key, value: "7" },
       { key: DIGEST_DAYS.key, value: "all" },
+      { key: KPI_IDLE_DAYS.key, value: "90" },
       { key: "inventory.equipment.maintenance_notice", value: "7" },
       { key: "inventory.equipment.on_broken_report", value: "stop" },
       { key: "platform.notices.email", value: "on" },

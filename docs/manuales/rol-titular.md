@@ -26,6 +26,9 @@ Mientras tu empresa no registre su primer movimiento, **Inicio** muestra **Confi
 
 Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para empezar a trabajar con la ubicación «General». El avance se calcula con lo que ya existe: un paso que no hiciste y que quedó antes de uno hecho aparece como **(saltado)** y lo puedes hacer después desde la misma pantalla.
 
+## Indicadores del almacén
+**Inventario › Indicadores** (pantalla «Indicadores»; también el enlace **Indicadores** junto a **Lo que se hizo hoy** en Inicio): de un periodo (**7 días**, **30 días**, **90 días**, **Este mes**, **Mes anterior**, o fechas en **Más filtros**), pedidos completos y a tiempo, tiempo de surtido, **De recibir a acomodar**, exactitud, **Productos de mayor movimiento** con su rotación y días de inventario, **Sin movimiento**, **Rendimiento por persona** y **Rendimiento por zona**. Toca un producto o una persona para ver solo lo suyo (**Quitar** lo deshace). Con varios almacenes, eliges cuál en **Más filtros**. Desde una terminal con PIN no ves **Rendimiento por persona**. Con costos ves además el valor de lo que salió y de lo que no se mueve.
+
 ## Lo que no puedes hacer (y a quién pedirlo)
 - Cambiar precios o activar módulos tú mismo: lo hace el personal de la plataforma.
 - Modificar o borrar movimientos o la bitácora: nadie puede; las correcciones se hacen con un nuevo movimiento (reversa o ajuste).
@@ -33,4 +36,4 @@ Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para emp
 ## Si tienes un problema
 **Reportar un problema** (ver [común](comun.md), sección 8). Para ayuda del sistema, da acceso a soporte como se describe arriba.
 
-Vigente al 2026-11-19 (configuración inicial: WMS-43)
+Vigente al 2026-11-19 (configuración inicial: WMS-43; indicadores: WMS-32)

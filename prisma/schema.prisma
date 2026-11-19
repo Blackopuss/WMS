@@ -2700,6 +2700,8 @@ model WarehouseTask {
   @@index([organizationId, crossDockMovementId])
   @@index([organizationId, equipmentId, status])
   @@index([organizationId, equipmentTypeId])
+  /// Tasks delivered in a period (warehouse indicators, WMS-32).
+  @@index([organizationId, deliveredAt])
   @@map("warehouse_task")
 }
 
