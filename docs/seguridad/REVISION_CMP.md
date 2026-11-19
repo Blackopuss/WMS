@@ -80,6 +80,9 @@ y fotos opcionales; **no entra al inventario** y sigue pendiente.
 | ID | Severidad | Hallazgo | Estado |
 | --- | --- | --- | --- |
 | CMP-S15 | Informativa | La nota del rechazo es texto libre y viaja en el webhook `purchasing.receipt.rejected` y en la API: puede llevar lo que la persona escriba (incluso nombres). | Aceptado: es evidencia de la empresa para sus propios sistemas; la pantalla avisa que queda como evidencia. |
+| CMP-S17 | Informativa | Revisión independiente: en la API (`onlyLinesInScope`), una recepción cuyas líneas recibidas están todas fuera de la zona de la persona se sigue mostrando si tiene rechazos (id, fecha, remisión, rechazos y fotos). | Aceptado: lo rechazado no tiene ubicación y la orden ya es visible para la persona (`orderInScope`); ADR 0079. |
+| CMP-S18 | Media | Revisión independiente: una recepción sin movimiento (todo rechazado) no la espera el código anterior; al volver de versión, rastreo, etiquetas y «Compras por proveedor» de esa orden podrían fallar o contar de más. | Documentado en el ADR 0079 («Riesgos y pendientes»); nada de existencias depende de ello. |
+| CMP-S19 | Baja | Revisión independiente: una recepción que solo rechaza contaba como «primera llegada» al comparar proveedores. | **Corregido:** la primera llegada es la primera recepción con movimiento (`receipts-rejected.int.test.ts`). |
 | CMP-S16 | Informativa | Lo rechazado que se queda físicamente en el almacén hasta que el proveedor pasa por ello no aparece en existencias (solo en la orden). | Decisión que el fundador puede cambiar (ADR 0079, opción B). |
 
 ## Siguiente revisión

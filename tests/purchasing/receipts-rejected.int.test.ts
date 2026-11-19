@@ -10,14 +10,18 @@ import {
 import {
   RECEIPT_REJECTION_PHOTO,
   addOrderLine,
+  compareSuppliers,
   createPurchaseOrder,
+  createPurchaseRequest,
   discardRejectionPhoto,
   getOrderReceipts,
   getPendingReport,
   getPurchasesBySupplier,
+  linkProductSupplier,
   receivePurchaseOrder,
   returnToSupplier,
   submitPurchaseOrder,
+  submitPurchaseRequest,
   uploadRejectionPhoto,
   type PurchasingActor,
 } from "@/modules/purchasing";
@@ -336,6 +340,21 @@ describe("rejected at the door when receiving (WMS-84)", () => {
         lines: [{ orderLineId, quantity: "0" }],
       }),
     ).toMatchObject({ ok: false });
+    // Rejected again in a second delivery: no cap of its own, it says how
+    // many deliveries, and the 3 boxes are still pending.
+    expect(
+      await receivePurchaseOrder(owner, orderId, {
+        idempotencyKey: newId(),
+        lines: [{ orderLineId, quantity: "0" }],
+        rejections: [
+          { orderLineId, quantity: "3", reason: "Otra vez abiertas" },
+        ],
+      }),
+    ).toMatchObject({ ok: true, status: "SENT" });
+    expect((await getOrderReceipts(owner, orderId))!.lines[0]).toMatchObject({
+      pendingText: "3 cajas",
+      rejectedText: "6 cajas en 2 entregas",
+    });
     await clean(owner);
   });
 
@@ -691,6 +710,47 @@ describe("rejected at the door when receiving (WMS-84)", () => {
       await uploadRejectionPhoto(owner, { name: "b.jpg", bytes: TEST_JPEG }),
     ).toMatchObject({ ok: false });
     await clean(owner);
+  });
+
+  it("a receipt that only rejected is not an arrival when comparing suppliers", async () => {
+    const owner = await company();
+    const productId = await product(owner);
+    const orderId = await sentOrder(owner, [{ productId, quantity: "5" }]);
+    const { contactId } = await db.purchaseOrder.findUniqueOrThrow({
+      where: { id: orderId },
+    });
+    const linked = await linkProductSupplier(owner, {
+      productId,
+      supplierId: contactId,
+    });
+    if (!linked.ok) throw new Error(JSON.stringify(linked));
+    const orderLineId = await lineIdOf(owner, orderId);
+    const rejected = await receivePurchaseOrder(owner, orderId, {
+      idempotencyKey: newId(),
+      lines: [{ orderLineId, quantity: "0" }],
+      rejections: [{ orderLineId, quantity: "5", reason: "Otro modelo" }],
+    });
+    expect(rejected).toMatchObject({ ok: true });
+
+    const asker = await member(owner.organizationId, "warehouse");
+    const request = await createPurchaseRequest(asker, {
+      productId,
+      capture: "base",
+      quantity: "5",
+    });
+    if (!request.ok) throw new Error(JSON.stringify(request));
+    await submitPurchaseRequest(asker, request.requestId);
+    const compared = await compareSuppliers(owner, request.requestId);
+    if (!compared || !compared.visible) throw new Error("not visible");
+    // Nothing arrived: no delivery time, and the order is still waiting.
+    expect(compared.lines[0]!.options).toEqual([
+      expect.objectContaining({
+        supplierId: contactId,
+        leadDays: null,
+        leadOrders: 0,
+        fulfillmentOrders: 0,
+      }),
+    ]);
   });
 
   it("the reports tell it apart from the quality rejection", async () => {

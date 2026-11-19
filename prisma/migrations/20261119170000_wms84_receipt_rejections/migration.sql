@@ -1,6 +1,8 @@
 -- WMS-84 (ADR 0079): what is rejected at the door when receiving. It never
 -- enters the stock: a receipt may now have no movement (everything was
--- rejected). Expansion only: nothing that exists changes.
+-- rejected). Expansion only, with one caveat: once a receipt without
+-- movement is written, the previous version of the code does not expect it
+-- (ADR 0079, «Riesgos y pendientes»).
 
 -- AlterTable
 ALTER TABLE `evidence_photo` ADD COLUMN `purchaseReceiptId` CHAR(36) NULL;

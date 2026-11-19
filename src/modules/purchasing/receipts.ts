@@ -291,24 +291,45 @@ export async function receivedByLine(
 
 /**
  * What was rejected at the door of each line of an order (WMS-84), in the
- * terms it was ordered in. It does not count as received.
+ * terms it was ordered in, and in how many receipts. It does not count as
+ * received and has no cap of its own: a line of 10 rejected three times
+ * shows 30 rejected in 3 deliveries and still 10 pending.
  */
 export async function rejectedByLine(
   client: Pick<Tx, "purchaseReceiptRejection">,
   orderLineIds: string[],
-): Promise<Map<string, Decimal>> {
+): Promise<Map<string, { quantity: Decimal; receipts: number }>> {
   if (orderLineIds.length === 0) return new Map();
   const rows = await client.purchaseReceiptRejection.groupBy({
-    by: ["orderLineId"],
+    by: ["orderLineId", "receiptId"],
     where: { orderLineId: { in: orderLineIds } },
     _sum: { quantity: true },
   });
-  return new Map(
-    rows.map((row) => [
-      row.orderLineId,
-      dec(row._sum.quantity?.toString() ?? 0),
-    ]),
-  );
+  const result = new Map<string, { quantity: Decimal; receipts: number }>();
+  for (const row of rows) {
+    const now = result.get(row.orderLineId) ?? {
+      quantity: dec(0),
+      receipts: 0,
+    };
+    result.set(row.orderLineId, {
+      quantity: now.quantity.plus(row._sum.quantity?.toString() ?? 0),
+      receipts: now.receipts + 1,
+    });
+  }
+  return result;
+}
+
+/** «3 piezas», or «30 piezas en 3 entregas» (WMS-84). */
+export function rejectedText(
+  rejected: { quantity: Decimal; receipts: number } | undefined,
+  presentation: { name: string } | null,
+  unitCode: string,
+): string | null {
+  if (!rejected) return null;
+  const amount = inTermsOf(rejected.quantity, presentation, unitCode);
+  return rejected.receipts > 1
+    ? `${amount} en ${rejected.receipts} entregas`
+    : amount;
 }
 
 /**
@@ -2061,9 +2082,11 @@ export async function getOrderReceipts(
       pendingText: left.greaterThan(0)
         ? inTermsOf(left, line.presentation, line.unitCode)
         : null,
-      rejectedText: rejected.has(line.id)
-        ? inTermsOf(rejected.get(line.id)!, line.presentation, line.unitCode)
-        : null,
+      rejectedText: rejectedText(
+        rejected.get(line.id),
+        line.presentation,
+        line.unitCode,
+      ),
       pendingQuantity: left.greaterThan(0) ? left.toFixed() : "0",
       byLot: line.product.tracking === "LOT",
       bySerial: line.product.tracking === "SERIAL",

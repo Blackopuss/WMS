@@ -130,20 +130,29 @@ en `REJECTED` con su retención (B), sin quitar A como valor por omisión.
    lo dañado:**
    - **En la orden:** cada recepción muestra «Rechazado al recibir» con
      producto, cuánto, lote y series que traía, la nota, quién y cuándo, y
-     sus fotos; cada línea de la orden muestra «Rechazado: 2 cajas». Lo
+     sus fotos; cada línea de la orden muestra «rechazado al recibir:
+     2 cajas» (o «30 piezas en 3 entregas» si se rechazó en varias). Lo
      dañado sigue como «Dañado» (entró) y el rechazo de calidad como una
      devolución que salió de «Rechazado».
    - **Pendientes por recibir:** columna «Rechazado al recibir».
    - **Compras por proveedor:** «Rechazos al recibir» (renglones de rechazo
      del periodo) aparte de «Devoluciones», y de estas, «Devoluciones por
-     calidad» (las que salieron de «Rechazado»).
+     calidad» (las que salieron de «Rechazado»). Una recepción que solo
+     rechaza no cuenta como recepción.
+   - **Comparar proveedores** (solicitudes de compra): una recepción que
+     solo rechaza no es una llegada; los días de entrega se miden hasta la
+     primera recepción con movimiento, así que rechazar no mejora el
+     cumplimiento del proveedor.
    - **API** (`GET /api/v1/purchase-orders/{id}/receipts`): cada recepción
      agrega `rejections` (aditivo).
    - **Rastreo** de la orden de compra: sin cambio (sigue lo que entró).
 6. **Reintentos e idempotencia.** La misma clave de confirmación cubre lo
-   recibido y lo rechazado: `sameReceipt` compara también los rechazos
-   (línea, cantidad, lote; la nota no, para no tratar como otra recepción un
-   reintento con un espacio de más). La misma clave con otros rechazos es
+   recibido y lo rechazado: `sameReceipt` compara lo recibido y
+   `sameRejections` lo rechazado (línea, cantidad y lote). No se comparan la
+   nota (un espacio de más no es otra recepción), las series de lo rechazado
+   ni las fotos: una foto nueva enviada en un reintento no se liga (la
+   recepción ya existía), queda sin ligar y la borra la ronda de fotos
+   huérfanas a las 24 horas. La misma clave con otros rechazos es
    `KEY_REUSED`. Una respuesta perdida se verifica con
    `findReceiptConfirmation`, como hoy.
 7. **Concurrencia.** Dos recepciones de la misma orden van en fila por el
@@ -154,6 +163,33 @@ en `REJECTED` con su retención (B), sin quitar A como valor por omisión.
 8. **Plan vencido y soporte.** Rechazar es escritura de
    `purchasing.receipt.create`: con el plan vencido queda en solo lectura y
    soporte de plataforma no lo hace.
+
+### Alcance por zona en la API
+
+`getOrderReceipts` con `onlyLinesInScope` (la API) oculta las líneas
+recibidas en ubicaciones fuera de la zona de la persona y, antes, las
+recepciones que quedaban sin líneas. Una recepción con rechazos se sigue
+mostrando (id, fecha, remisión, rechazos y fotos) aunque todas sus líneas
+recibidas queden fuera: lo rechazado no tiene ubicación y la orden ya es
+visible para la persona (`orderInScope`). Se deja así a propósito; se
+anota en `REVISION_CMP.md` (CMP-S17).
+
+## Riesgos y pendientes
+
+- **Volver a la versión anterior (`volver`).** La migración es de
+  expansión, con una salvedad: una vez escrita una recepción sin movimiento
+  (`purchase_receipt.movementId` vacío, todo rechazado), el código anterior
+  no la espera: el rastreo de esa orden (`tracePurchaseOrder`, que buscaría
+  líneas de movimiento con un id vacío), las etiquetas de series de esa
+  recepción (`serialLabels`, `where: { movementId: null }`) y «Compras por
+  proveedor» (la contaría como recepción) podrían fallar o contar de más en
+  esa orden. Lo mismo hicieron WMS-30-0 y WMS-75 con sus valores nuevos.
+  Si hubiera que volver, esas órdenes se revisan a mano; nada de existencias
+  depende de ellas.
+- La tabla de rechazos tampoco existe para el código anterior: lo rechazado
+  deja de verse en la orden hasta volver a esta versión (no se pierde).
+- Pendiente: rechazar desde la API, avisos por rechazo, revisión en
+  navegador (`verify:ui`, `verify:a11y`) del formulario.
 
 ## Foto opcional
 
@@ -203,6 +239,11 @@ en `REJECTED` con su retención (B), sin quitar A como valor por omisión.
    sin otra orden.
 5. Lote y series de lo rechazado son evidencia escrita opcional, sin crear
    lotes ni series en el sistema.
+6. Lo rechazado no tiene tope acumulado: cada recepción rechaza hasta lo
+   pendiente en ese momento, y como lo rechazado sigue pendiente, una línea
+   de 10 rechazada en tres entregas muestra «30 piezas en 3 entregas» y
+   «faltan 10». Es coherente con «sigue pendiente»; un tope por línea sería
+   otra decisión.
 
 ## Pruebas
 

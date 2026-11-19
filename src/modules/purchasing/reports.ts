@@ -11,7 +11,12 @@ import { forOrganization } from "@/server";
 import { PURCHASE_ORDER_STATUS_LABELS } from "./order-states";
 import { formatOrderNumber, visibleOrdersWhere } from "./orders";
 import type { PurchasingActor } from "./product-suppliers";
-import { inTermsOf, receivedByLine, rejectedByLine } from "./receipts";
+import {
+  inTermsOf,
+  receivedByLine,
+  rejectedByLine,
+  rejectedText,
+} from "./receipts";
 
 /**
  * Reports of Compras (CMP-15): what is still to be received, and what was
@@ -183,9 +188,11 @@ export async function getPendingReport(
       receivedText: got.greaterThan(0)
         ? inTermsOf(got, line.presentation, line.unitCode)
         : null,
-      rejectedText: rejected.has(line.id)
-        ? inTermsOf(rejected.get(line.id)!, line.presentation, line.unitCode)
-        : null,
+      rejectedText: rejectedText(
+        rejected.get(line.id),
+        line.presentation,
+        line.unitCode,
+      ),
       pendingText: inTermsOf(left, line.presentation, line.unitCode),
       pendingQuantity: left.toFixed(),
       unitText: line.presentation
