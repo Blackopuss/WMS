@@ -54,6 +54,9 @@ implementó el paso; la leerá un revisor independiente antes de unir.
 | La dirección queda en un registro | El renglón no guarda la dirección; el log del fallo lleva solo el id del renglón y el intento (el error del servidor de correo puede traer la dirección) | Revisión de código |
 | Borrar huellas con la retención | El disparador `security_event_no_delete` solo deja borrar eventos de acceso (y filas internas del día) con más de 365 días según el reloj de la base; nunca `access.device_known` ni los eventos que no son accesos; las actualizaciones siguen prohibidas. La app pide un día de margen | «removes only access events older than the limit; the database refuses the rest» |
 | Que un dispositivo conocido vuelva a alertar o se aprenda en silencio por la purga | `access.device_known` nunca se purga | La misma prueba |
+| Un intento muere con el correo tomado y queda esperando para siempre | Al agotar los intentos, la ronda lo cierra `FAILED` aunque no haya resultado; nunca se vuelve a tomar | «a try that died after the last attempt…» |
+| El historial pierde el estado del correo antes que la alerta | Los renglones de correo duran lo mismo que su alerta (366 días); sin renglón, la fila dice «Se programó» | «an alert whose mail row is gone…» |
+| Inundar la campana | Tope de 5 alertas por persona y día con turnos atómicos | «the bell gets at most its daily cap…» |
 | La alerta en la campana revela algo de otra empresa | El texto es fijo por clase de alerta, de la cuenta de la persona, sin IP; un aviso por empresa donde es miembro activo; nunca por correo como aviso (`app_only`), también en el servidor | «reaches each company of the person once, and never as a second mail» |
 | La campana avisa del PIN de quien no tiene PIN | Igual que el correo: no se escribe | «not for the PIN of someone who has none» |
 

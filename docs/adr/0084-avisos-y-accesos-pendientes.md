@@ -118,7 +118,12 @@ dicen «Se programó el correo de alerta» (es lo único que se sabe).
   traerla).
 - **Aprender el dispositivo:** como antes, al programar el correo (riesgo
   aceptado en ADR 0064; con reintentos es menor).
-- Los renglones terminados se borran a los 90 días (ronda de §3).
+- Los renglones terminados se borran con su alerta (366 días, ronda de
+  §3): el historial siempre dice qué pasó con el correo. Si el renglón ya
+  no está, la fila dice «Se programó el correo de alerta».
+- Un intento que muere con el renglón tomado (proceso caído) ya usó su
+  turno: si fue el último, la ronda lo cierra `FAILED` («El último intento
+  se interrumpió sin saber si salió») y nunca se vuelve a tomar.
 
 ## 3. Retención de `security_event`
 
@@ -212,7 +217,10 @@ estilos externos; los textos de clientes ya pasaron por `oneLine`/
 `noticeText`. Los enlaces son solo los que arma `appLink` (ruta interna
 validada). `sendEmail` acepta `html` y `unsubscribeUrl` (validada: http o
 https, sin espacios ni caracteres de control, hasta 500 caracteres) y sigue
-rechazando cabeceras con saltos de línea.
+rechazando cabeceras con saltos de línea. Sin la dirección de la app
+(`BETTER_AUTH_URL`, desarrollo) el correo sale sin la cabecera de baja en
+vez de fallar. Si la base falla al usar un enlace, el intento apartado se
+devuelve.
 
 **Días del resumen.** Ajuste de empresa `inventory.digest.days`: «Todos los
 días» (por omisión), «De lunes a viernes» o «De lunes a sábado», en el
@@ -229,6 +237,10 @@ empresa donde la persona tiene membresía activa (hasta 20), con
 `actorUserId` vacío, texto fijo por clase de alerta (sin IP), enlace a
 `/configuracion/accesos` y la llave de la alerta (una vez).
 
+- **Tope diario:** como mucho 5 alertas por persona y día (UTC) llegan a
+  la campana, con turnos numerados de llave única (como los del correo;
+  filas internas `access.claim` con llave `bell_slot:`). Lo que pasa del
+  tope queda en el historial.
 - **Nunca por correo como aviso:** la alerta ya tiene su propio correo. El
   tipo se declara `channels: "app_only"` (nuevo): la pantalla no ofrece
   «Recibir por correo» y el servidor lo rechaza.

@@ -27,6 +27,8 @@ export {
   ACCESS_ACTION_LABELS,
   ACCESS_ALERTS_PER_DAY,
   ACCESS_ALERT_MAIL_ATTEMPTS,
+  ACCESS_ALERT_MAIL_KEEP_DAYS,
+  ACCESS_BELL_ALERTS_PER_DAY,
   ACCESS_HISTORY_PAGE_SIZE,
   PURGEABLE_SECURITY_ACTIONS,
   SECURITY_EVENT_KEEP_DAYS,
@@ -38,6 +40,7 @@ export {
   purgeExpiredSecurityEvents,
   readAccessHistory,
   retryAccessAlertEmails,
+  writeBellAlert,
 } from "./access-history";
 export {
   ACCESS_ALERT_NOTICE,

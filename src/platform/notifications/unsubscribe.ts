@@ -91,6 +91,20 @@ export async function unsubscribeFromNoticeEmails(
       message: tooManyAttemptsMessage(wait),
     };
   }
+  try {
+    return await useLink(token, keys);
+  } catch (error) {
+    // A failure of the database is not a guess: the attempt goes back
+    // (review of WMS-88).
+    await refundAttempt(keys).catch(() => {});
+    throw error;
+  }
+}
+
+async function useLink(
+  token: string,
+  keys: Parameters<typeof refundAttempt>[0],
+): Promise<UnsubscribeResult> {
   const text = String(token ?? "").slice(0, 100);
   const dot = text.indexOf(".");
   const organizationId = dot > 0 ? text.slice(0, dot) : "";

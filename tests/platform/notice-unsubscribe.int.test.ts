@@ -348,6 +348,26 @@ describe("the mail itself", () => {
   });
 });
 
+describe("without the address of the app (review of WMS-88)", () => {
+  it("the mail goes out without the one-click header instead of failing", async () => {
+    const message = noticeEmail({
+      to: `sin.base.${stamp}@example.test`,
+      organizationName: "Empresa",
+      items: [{ text: "Algo", url: "/avisos" }],
+      more: 0,
+      allUrl: "/avisos",
+      settingsUrl: "/configuracion/avisos",
+      unsubscribe: {
+        pageUrl: "/baja-de-avisos?t=x",
+        oneClickUrl: "/api/baja-de-avisos?t=x",
+      },
+    });
+    expect(message.unsubscribeUrl).toBeUndefined();
+    await sendEmail(message);
+    expect(memoryOutboxFor(`sin.base.${stamp}@example.test`)).toHaveLength(1);
+  });
+});
+
 describe("days of the daily summary", () => {
   it("goes out only on the days the company chose", async () => {
     // 2026-11-22 is a Sunday; 2026-11-21 a Saturday; 2026-11-23 a Monday.

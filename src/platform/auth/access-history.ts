@@ -131,6 +131,32 @@ async function takeMailSlot(userId: string): Promise<boolean> {
   return false;
 }
 
+/**
+ * At most this many access alerts reach the bell of a person in a day
+ * (UTC), like the mails: each takes a numbered slot with a key unique per
+ * person (review of WMS-88). What finds none stays in the history.
+ */
+export const ACCESS_BELL_ALERTS_PER_DAY = 5;
+
+async function takeBellSlot(userId: string): Promise<boolean> {
+  const day = today();
+  const used = await db.securityEvent.count({
+    where: { userId, dedupeKey: { startsWith: `bell_slot:${day}:` } },
+  });
+  for (let slot = used + 1; slot <= ACCESS_BELL_ALERTS_PER_DAY; slot += 1) {
+    if (
+      await claimSecurityEvent({
+        userId,
+        action: ALERT_CLAIM,
+        dedupeKey: `bell_slot:${day}:${slot}`,
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 type AlertOutcome = "queued" | "duplicate" | "not_mailed";
 
 /**
@@ -234,8 +260,11 @@ const ALERT_MAIL_RETRY_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
 const ALERT_MAIL_CLAIM_STALE_MS = 5 * 60_000;
 /** Rows one round of the worker tries at most. */
 const ALERT_MAIL_ROUND_MAX = 50;
-/** Ended mails are kept this many days (the history keeps its row). */
-export const ACCESS_ALERT_MAIL_KEEP_DAYS = 90;
+/**
+ * Mails are kept as long as their alert (review of WMS-88): the history
+ * says what happened to each one for as long as it lists the alert.
+ */
+export const ACCESS_ALERT_MAIL_KEEP_DAYS = 366;
 
 /**
  * Writes the alert row and its mail together (the row once per key).
@@ -304,6 +333,7 @@ export async function deliverAccessAlertEmail(
       where: {
         id: emailId,
         status: "QUEUED",
+        attempts: { lt: ACCESS_ALERT_MAIL_ATTEMPTS },
         nextAttemptAt: { lte: now },
         OR: [
           { claimedAt: null },
@@ -413,10 +443,32 @@ export async function deliverAccessAlertEmail(
  */
 export async function retryAccessAlertEmails(
   now: Date = new Date(),
-): Promise<{ tried: number; sent: number }> {
+): Promise<{ tried: number; sent: number; abandoned: number }> {
+  // A try that died holding its row after using the last attempt never
+  // got a result: it ends as failed (review of WMS-88).
+  const abandoned = await db.accessAlertEmail.updateMany({
+    where: {
+      status: "QUEUED",
+      attempts: { gte: ACCESS_ALERT_MAIL_ATTEMPTS },
+      OR: [
+        { claimedAt: null },
+        {
+          claimedAt: {
+            lt: new Date(now.getTime() - ALERT_MAIL_CLAIM_STALE_MS),
+          },
+        },
+      ],
+    },
+    data: {
+      status: "FAILED",
+      claimToken: null,
+      reason: "El último intento se interrumpió sin saber si salió.",
+    },
+  });
   const due = await db.accessAlertEmail.findMany({
     where: {
       status: "QUEUED",
+      attempts: { lt: ACCESS_ALERT_MAIL_ATTEMPTS },
       nextAttemptAt: { lte: now },
       OR: [
         { claimedAt: null },
@@ -435,7 +487,7 @@ export async function retryAccessAlertEmails(
   for (const row of due) {
     if ((await deliverAccessAlertEmail(row.id, now)) === "sent") sent += 1;
   }
-  return { tried: due.length, sent };
+  return { tried: due.length, sent, abandoned: abandoned.count };
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +534,7 @@ export async function writeBellAlert(
   key: string,
 ): Promise<void> {
   try {
+    if (!(await takeBellSlot(userId))) return;
     const memberships = await db.membership.findMany({
       where: { userId, status: "ACTIVE" },
       orderBy: { createdAt: "asc" },
@@ -810,6 +863,8 @@ export type AccessHistoryRow = {
 const MAIL_TEXT: Record<string, string> = {
   // Before WMS-88 «sent» meant «scheduled»: that is all that is known.
   sent: "Se programó el correo de alerta.",
+  // WMS-88: the mail row is gone only when the alert itself is about to go.
+  queued: "Se programó el correo de alerta.",
   daily_limit: `No se envió correo: ya se habían enviado ${ACCESS_ALERTS_PER_DAY} alertas ese día.`,
   unverified: "No se envió correo: el correo de la cuenta no está confirmado.",
   no_pin: "No se envió correo: no tiene PIN.",

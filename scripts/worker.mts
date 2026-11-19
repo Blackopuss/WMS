@@ -107,16 +107,18 @@ let rounding = false;
 const runRounds = () => {
   if (rounding) return;
   rounding = true;
+  // WMS-88: the rounds of the companies and those of no company run each
+  // on their own: one failing never skips the other.
   runScheduledRounds(scheduledRounds, (round, organizationId, error) =>
     log.error("scheduled_round_failed", error, { round, organizationId }),
   )
+    .catch((error: unknown) => log.error("scheduled_rounds_failed", error))
     .then(() =>
-      // WMS-88 (ADR 0084): work of no company (the access history).
       runAccountRounds(accountRounds, (round, error) =>
         log.error("account_round_failed", error, { round }),
       ),
     )
-    .catch((error: unknown) => log.error("scheduled_rounds_failed", error))
+    .catch((error: unknown) => log.error("account_rounds_failed", error))
     .finally(() => (rounding = false));
 };
 const firstRounds = setTimeout(runRounds, 60_000);

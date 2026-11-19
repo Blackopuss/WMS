@@ -339,10 +339,17 @@ export function noticeEmail(input: {
       ],
       footer: footerLines(why, input.settingsUrl, input.unsubscribe?.pageUrl),
     }),
-    ...(input.unsubscribe
-      ? { unsubscribeUrl: input.unsubscribe.oneClickUrl }
-      : {}),
+    ...oneClickHeader(input.unsubscribe?.oneClickUrl),
   };
+}
+
+/**
+ * The one-click header only with a full web address: without the address
+ * of the app (BETTER_AUTH_URL, development) the mail goes out without it
+ * instead of failing (review of WMS-88).
+ */
+function oneClickHeader(url: string | undefined): { unsubscribeUrl?: string } {
+  return url && /^https?:\/\/[^/\s]/.test(url) ? { unsubscribeUrl: url } : {};
 }
 
 function unsubscribeLines(url: string | undefined): string[] {
@@ -447,9 +454,7 @@ export function dailyDigestEmail(input: {
       blocks,
       footer: footerLines(why, input.settingsUrl, input.unsubscribe?.pageUrl),
     }),
-    ...(input.unsubscribe
-      ? { unsubscribeUrl: input.unsubscribe.oneClickUrl }
-      : {}),
+    ...oneClickHeader(input.unsubscribe?.oneClickUrl),
   };
 }
 
