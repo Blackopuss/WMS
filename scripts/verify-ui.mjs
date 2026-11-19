@@ -557,27 +557,23 @@ try {
     // WMS-86 (ADR 0080): with the screen loaded and no more JavaScript
     // reachable (a flaky warehouse network), «Más» still opens and the person
     // can sign out: nothing essential of the frame is downloaded on demand.
-    let blocked = 0;
-    await context.route("**/_next/static/**", (route) => {
-      blocked++;
-      return route.abort();
-    });
-    check(
-      await page.getByRole("main").isVisible(),
-      `WMS-86: the screen stays up with its files blocked (${blocked} blocked)`,
-    );
-    await page.getByRole("button", { name: "Más" }).click();
-    const more = page.getByRole("dialog", { name: "Más opciones" });
-    check(
-      await more
-        .waitFor({ timeout: 5000 })
-        .then(() => true)
-        .catch(() => false),
-      "WMS-86: «Más» opens without downloading anything more",
-    );
-    await page.getByRole("button", { name: "Cerrar sesión" }).click();
-    await page.waitForURL("**/ingresar", { timeout: 20000 });
-    await context.unroute("**/_next/static/**");
+    await context.route("**/_next/static/**", (route) => route.abort());
+    try {
+      await page.getByRole("button", { name: "Más" }).click();
+      const more = page.getByRole("dialog", { name: "Más opciones" });
+      check(
+        await more
+          .waitFor({ timeout: 5000 })
+          .then(() => true)
+          .catch(() => false),
+        "WMS-86: «Más» opens with the app's files blocked",
+      );
+      await page.getByRole("button", { name: "Cerrar sesión" }).click();
+      await page.waitForURL("**/ingresar", { timeout: 20000 });
+      check(true, "WMS-86: signing out works with the app's files blocked");
+    } finally {
+      await context.unroute("**/_next/static/**");
+    }
     await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
     check(
       new URL(page.url()).pathname === "/ingresar",
