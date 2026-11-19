@@ -9,6 +9,7 @@ import {
   planSetupSteps,
   registerEntry,
   setupAbilities,
+  waitsForCatalog,
   type InventoryActor,
 } from "@/modules/inventory";
 import { moduleRegistry, operationSettings } from "@/modules/registry";
@@ -36,6 +37,7 @@ import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 
 import { grantSeats } from "../setup/plan";
+import { migratorConnection } from "../setup/test-db";
 
 // WMS-43 (ADR 0083): the setup guide reads where a company is from what
 // exists — warehouse, locations, team, settings, products, stock — within
@@ -119,6 +121,10 @@ function offeredTo(role: Role) {
   ];
 }
 
+/** As the screens call it for who sees the team and changes settings. */
+const FULL = { seesTeam: true, changesSettings: true };
+const read = (actor: InventoryActor) => getFirstSteps(actor, FULL);
+
 const NOTHING = {
   facilityReady: false,
   hasOwnLocations: false,
@@ -136,7 +142,7 @@ afterAll(() => db.$disconnect());
 describe("setup guide: what is done (WMS-43)", () => {
   it("an empty company has nothing done and starts with its warehouse", async () => {
     const owner = await company();
-    const steps = await getFirstSteps(owner);
+    const steps = await read(owner);
     expect(steps).toEqual(NOTHING);
     const plan = planSetupSteps(
       doneSteps(steps),
@@ -155,24 +161,24 @@ describe("setup guide: what is done (WMS-43)", () => {
       name: "Principal",
       code: "PRINCIPAL",
     });
-    expect((await getFirstSteps(owner)).facilityReady).toBe(false);
+    expect((await read(owner)).facilityReady).toBe(false);
     const renamed = await updateFacility(owner, main.id, {
       name: "Bodega central",
       code: "CENTRAL",
     });
     expect(renamed.ok).toBe(true);
-    expect((await getFirstSteps(owner)).facilityReady).toBe(true);
+    expect((await read(owner)).facilityReady).toBe(true);
 
     const zone = await createLocation(owner, { name: "Zona A", level: 1 });
     expect(zone.ok).toBe(true);
-    expect((await getFirstSteps(owner)).hasOwnLocations).toBe(true);
+    expect((await read(owner)).hasOwnLocations).toBe(true);
 
     const invited = await createInvitation(owner.organizationId, owner.userId, {
       email: `invitada.${stamp}@example.test`,
       roles: ["warehouse"],
     });
     expect(invited.ok).toBe(true);
-    expect((await getFirstSteps(owner)).hasTeam).toBe(true);
+    expect((await read(owner)).hasTeam).toBe(true);
 
     // A setting outside the setup list does not count; one of the list does.
     const other = await updateOperationSetting(
@@ -182,7 +188,7 @@ describe("setup guide: what is done (WMS-43)", () => {
       "10",
     );
     expect(other.ok).toBe(true);
-    expect((await getFirstSteps(owner)).settingsChosen).toBe(false);
+    expect((await read(owner)).settingsChosen).toBe(false);
     const setup = SETUP_SETTINGS[0]!;
     const changed = await updateOperationSetting(
       owner,
@@ -197,7 +203,7 @@ describe("setup guide: what is done (WMS-43)", () => {
     if (!product.ok) throw new Error("product setup failed");
     await registerEntry(owner, { productId: product.productId, quantity: "3" });
 
-    const steps = await getFirstSteps(owner);
+    const steps = await read(owner);
     expect(steps).toEqual({
       facilityReady: true,
       hasOwnLocations: true,
@@ -222,7 +228,7 @@ describe("setup guide: what is done (WMS-43)", () => {
     if (!product.ok) throw new Error("product setup failed");
     await registerEntry(owner, { productId: product.productId, quantity: "3" });
     const plan = planSetupSteps(
-      doneSteps(await getFirstSteps(owner)),
+      doneSteps(await read(owner)),
       offeredSteps(setupAbilities(() => true)),
     );
     expect(plan.current).toBeNull();
@@ -242,7 +248,7 @@ describe("setup guide: what is done (WMS-43)", () => {
       where: { id: zone.locationId },
       data: { archivedAt: new Date() },
     });
-    expect((await getFirstSteps(owner)).hasOwnLocations).toBe(false);
+    expect((await read(owner)).hasOwnLocations).toBe(false);
   });
 
   it("an expired invitation is no team", async () => {
@@ -256,9 +262,9 @@ describe("setup guide: what is done (WMS-43)", () => {
       where: { organizationId: owner.organizationId },
       data: { expiresAt: new Date(Date.now() - 1000) },
     });
-    expect((await getFirstSteps(owner)).hasTeam).toBe(false);
+    expect((await read(owner)).hasTeam).toBe(false);
     await member(owner.organizationId, "operator");
-    expect((await getFirstSteps(owner)).hasTeam).toBe(true);
+    expect((await read(owner)).hasTeam).toBe(true);
   });
 });
 
@@ -304,9 +310,28 @@ describe("setup guide: who sees what (WMS-43)", () => {
       roles: ["warehouse"],
     });
     const operator = await member(owner.organizationId, "operator");
-    const steps = await getFirstSteps(operator);
+    // The screens pass what the session allows: the floor sees neither.
+    const subject = {
+      isOwner: false,
+      roles: ["operator"],
+      modules: new Map([["inventory", "active"]] as const),
+    };
+    const steps = await getFirstSteps(operator, {
+      seesTeam: can(subject, "platform.team.read"),
+      changesSettings: can(subject, "platform.organization.update"),
+    });
     expect(steps.hasTeam).toBeNull();
     expect(steps.settingsChosen).toBeNull();
+    // A PIN session of a shared terminal keeps no team nor settings, even
+    // for an administrator: nothing of them is offered or read.
+    const atTerminal = { ...subject, roles: ["administrator"], terminal: true };
+    expect(can(atTerminal, "platform.team.read")).toBe(false);
+    expect(can(atTerminal, "platform.organization.update")).toBe(false);
+    const offered = offeredSteps(
+      setupAbilities((permission: Permission) => can(atTerminal, permission)),
+    );
+    expect(offered.has("equipo")).toBe(false);
+    expect(offered.has("operacion")).toBe(false);
     // Who reads nothing of the catalog is refused (NEG: forklift reads it,
     // so try a member without roles).
     const noRole = await newUser();
@@ -341,8 +366,8 @@ describe("setup guide: who sees what (WMS-43)", () => {
 
     // The owner sees two warehouses; the limited one only the main one,
     // still with the name it was born with.
-    expect((await getFirstSteps(owner)).facilityReady).toBe(true);
-    expect((await getFirstSteps(limited)).facilityReady).toBe(false);
+    expect((await read(owner)).facilityReady).toBe(true);
+    expect((await read(limited)).facilityReady).toBe(false);
 
     // A location in the other warehouse is not «done» for who cannot reach it.
     await db.membership.updateMany({
@@ -351,8 +376,8 @@ describe("setup guide: who sees what (WMS-43)", () => {
     });
     const zone = await createLocation(owner, { name: "Zona S", level: 1 });
     expect(zone.ok).toBe(true);
-    expect((await getFirstSteps(owner)).hasOwnLocations).toBe(true);
-    expect((await getFirstSteps(limited)).hasOwnLocations).toBe(false);
+    expect((await read(owner)).hasOwnLocations).toBe(true);
+    expect((await read(limited)).hasOwnLocations).toBe(false);
   });
 
   it("without a contracted plan the guide cannot be read", async () => {
@@ -377,7 +402,7 @@ describe("setup guide: who sees what (WMS-43)", () => {
     expect(
       (await getEntitlements(owner.organizationId)).moduleState("inventory"),
     ).toBe("read_only");
-    expect((await getFirstSteps(owner)).hasProducts).toBe(false);
+    expect((await read(owner)).hasProducts).toBe(false);
     await expect(
       createLocation(owner, { name: "Zona", level: 1 }),
     ).rejects.toMatchObject({ code: "module_read_only" });
@@ -398,12 +423,127 @@ describe("setup guide: who sees what (WMS-43)", () => {
       quantity: "1",
     });
 
-    expect(await getFirstSteps(ours)).toEqual(NOTHING);
+    expect(await read(ours)).toEqual(NOTHING);
     await expect(
       getFirstSteps({
         organizationId: theirs.organizationId,
         userId: ours.userId,
       }),
     ).rejects.toMatchObject({ kind: "forbidden" });
+  });
+});
+
+describe("setup guide: the rest (WMS-43, review)", () => {
+  it("the floor with an empty catalog gets no action that leads nowhere", async () => {
+    const owner = await company();
+    const operator = await member(owner.organizationId, "operator");
+    expect(offeredTo("operator")).toEqual(["movimiento"]);
+    const steps = await getFirstSteps(operator);
+    expect(steps.hasProducts).toBe(false);
+    // The guide shows the step without actions and says why (SetupGuide).
+    expect(waitsForCatalog("movimiento", steps)).toBe(true);
+    expect(waitsForCatalog("existencias", steps)).toBe(true);
+    expect(waitsForCatalog("productos", steps)).toBe(false);
+    const product = await createProduct(owner, { sku: "P-1", name: "Pieza" });
+    if (!product.ok) throw new Error("product setup failed");
+    expect(waitsForCatalog("movimiento", await getFirstSteps(operator))).toBe(
+      false,
+    );
+  });
+
+  it("someone limited to zones sees their zones and what is inside", async () => {
+    const owner = await company();
+    const zoneA = await createLocation(owner, { name: "Zona A", level: 1 });
+    const zoneB = await createLocation(owner, { name: "Zona B", level: 1 });
+    if (!zoneA.ok || !zoneB.ok) throw new Error("location setup failed");
+    const main = await db.facility.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, isDefault: true },
+    });
+    const limited = await member(owner.organizationId, "administrator");
+    const scoped = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: limited.userId,
+      facilities: [{ facilityId: main.id, zoneIds: [zoneA.locationId] }],
+    });
+    if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    expect((await read(limited)).hasOwnLocations).toBe(true);
+
+    // With its own zone archived, a place inside it still counts; one
+    // only in the other zone does not.
+    const aisle = await createLocation(owner, {
+      name: "Pasillo 1",
+      level: 2,
+      parentId: zoneA.locationId,
+    });
+    if (!aisle.ok) throw new Error(JSON.stringify(aisle));
+    await db.location.update({
+      where: { id: zoneA.locationId },
+      data: { archivedAt: new Date() },
+    });
+    expect((await read(limited)).hasOwnLocations).toBe(true);
+    await db.location.update({
+      where: { id: aisle.locationId },
+      data: { archivedAt: new Date() },
+    });
+    expect((await read(limited)).hasOwnLocations).toBe(false);
+    expect((await read(owner)).hasOwnLocations).toBe(true);
+  });
+
+  it("the team is ready with a second person, whoever looks", async () => {
+    const owner = await company();
+    expect((await read(owner)).hasTeam).toBe(false);
+    const admin = await member(owner.organizationId, "administrator");
+    expect((await read(owner)).hasTeam).toBe(true);
+    expect((await read(admin)).hasTeam).toBe(true);
+  });
+
+  it("on Inicio, a company that operates reads only what it read before", async () => {
+    const owner = await company();
+    const product = await createProduct(owner, { sku: "P-1", name: "Pieza" });
+    if (!product.ok) throw new Error("product setup failed");
+    await registerEntry(owner, { productId: product.productId, quantity: "1" });
+    const steps = await getFirstSteps(owner, { ...FULL, whileSettingUp: true });
+    expect(steps).toMatchObject({
+      facilityReady: null,
+      hasOwnLocations: null,
+      hasTeam: null,
+      settingsChosen: null,
+      complete: true,
+    });
+    expect(
+      planSetupSteps(doneSteps(steps), offeredSteps(setupAbilities(() => true)))
+        .current,
+    ).toBeNull();
+  });
+
+  it("costs few queries: as before WMS-43 once the company operates", async () => {
+    const owner = await company();
+    const connection = await migratorConnection();
+    const selects = async () => {
+      const rows = (await connection.query(
+        "SHOW GLOBAL STATUS LIKE 'Com_select'",
+      )) as { Value: string }[];
+      return Number(rows[0]!.Value);
+    };
+    const inicio = { ...FULL, whileSettingUp: true };
+    const cost = async () => {
+      await getFirstSteps(owner, inicio); // caches warm
+      const before = await selects();
+      await getFirstSteps(owner, inicio);
+      return (await selects()) - before;
+    };
+    try {
+      // Measured on 2026-11-19: 7 before WMS-43; 26 in its first version;
+      // 15 for a new company and 7 for one that operates after the review.
+      expect(await cost()).toBeLessThanOrEqual(15);
+      const product = await createProduct(owner, { sku: "P-1", name: "Pieza" });
+      if (!product.ok) throw new Error("product setup failed");
+      await registerEntry(owner, {
+        productId: product.productId,
+        quantity: "1",
+      });
+      expect(await cost()).toBeLessThanOrEqual(7);
+    } finally {
+      await connection.end();
+    }
   });
 });

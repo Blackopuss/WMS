@@ -71,8 +71,9 @@ async function company(): Promise<InventoryActor> {
 const NOTHING = {
   facilityReady: false,
   hasOwnLocations: false,
-  hasTeam: false,
-  settingsChosen: false,
+  // Not asked for: the team and the settings are not read (WMS-43).
+  hasTeam: null,
+  settingsChosen: null,
   hasProducts: false,
   hasStock: false,
   hasMovement: false,

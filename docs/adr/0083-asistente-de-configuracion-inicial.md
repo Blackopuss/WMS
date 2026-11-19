@@ -50,8 +50,8 @@ empresa». No se agrega una segunda guía:
 | Paso | Lleva a | Se ofrece si (`access.allows`) | Listo cuando |
 | --- | --- | --- | --- |
 | Tu almacén | `/configuracion/almacenes` | `inventory.location.update` | hay más de un almacén activo en su alcance, o el principal ya no se llama «Principal» / «PRINCIPAL», o tiene dirección |
-| Tus ubicaciones | `/ubicaciones` (y «Cambiar niveles», `/ubicaciones/niveles`) | `inventory.location.create` | hay alguna ubicación propia sin archivar en su alcance (ni «General», ni «Preparación», ni tránsito) |
-| Tu equipo | `/configuracion/equipo` | `platform.team.invite` | hay otra persona con membresía activa o una invitación pendiente sin vencer |
+| Tus ubicaciones | `/ubicaciones` (y «Cambiar niveles», `/ubicaciones/niveles`) | `inventory.location.create` | hay alguna ubicación propia sin archivar en su alcance (ni «General», ni «Preparación», ni tránsito); para quien está limitado a zonas, una de sus zonas o algo directamente dentro de ella |
+| Tu equipo | `/configuracion/equipo` | `platform.team.invite` | hay al menos dos membresías activas (quien mire) o una invitación pendiente sin vencer |
 | Cómo trabaja tu almacén | ajustes en la misma pantalla y «Ver todos los ajustes» (`/configuracion/operacion`) | `platform.organization.update` | algún ajuste de la lista inicial tiene un valor guardado |
 | Tus productos | `/inventario/importar` o `/inventario/nuevo` | `inventory.import.create` o `inventory.product.create` | hay al menos un producto |
 | Cuánto tienes | `/movimientos/saldo-inicial` o `/inventario/importar` (el archivo admite existencias, IMP-09) | `inventory.opening.create` o `inventory.import.create` | hay alguna línea de movimiento |
@@ -106,12 +106,41 @@ desaparece: queda enlazada en Configuración («Configuración inicial»).
   sean de un módulo: es la opción conservadora; **el fundador puede cambiarla**.
 - Configuración inicial exige `inventory.product.read` (lo mismo que la guía);
   sin él, `NoAccessState`. Sin Inventario contratado, `NoModuleState`.
-- Los datos de cada paso se leen **dentro del alcance** de la persona
-  (`facilityInScope`, `locationScopeWhere`): quien está limitado a un almacén
-  ve «listo» solo por lo que hay en el suyo. Los datos de equipo y de ajustes
-  solo se leen si la persona tiene `platform.team.read` /
-  `platform.organization.update` (si no, el paso ni se ofrece y el dato no se
-  consulta).
+- **Almacén y ubicaciones se leen dentro del alcance** de la persona
+  (`loadScope` una vez y `facilityInScope`): quien está limitado a un almacén
+  ve «listo» solo por lo que hay en el suyo. Para quien está limitado a
+  zonas no se recorre el árbol: basta una de sus zonas (que ya es una
+  ubicación propia) o algo directamente dentro de ella; si archivó la zona y
+  todo lo de su primer nivel, el paso se ve «no listo» aunque quede algo más
+  hondo (aceptado: es una pregunta de sí o no).
+- **Productos, existencias y primer movimiento son de toda la empresa**, como
+  antes de este paso: el catálogo no tiene almacén y las tres respuestas son
+  sí o no, sin cifras ni nombres. Filtrarlas por alcance haría que quien está
+  limitado a un almacén vacío viera «Trae tus productos» aunque la empresa ya
+  tiene catálogo, y le ofrecería una alta que no necesita.
+- **Tu equipo** está listo con dos membresías activas o una invitación
+  pendiente, mire quien mire: el titular más una persona más ya es un
+  equipo. Por eso, para un administrador que fue invitado, el paso casi
+  siempre sale listo; es lo que se busca (alguien ya invitó) y no depende de
+  quién lo vea.
+- **La pantalla pasa lo que ya sabe** de la sesión (`seesTeam` =
+  `platform.team.read`, `changesSettings` = `platform.organization.update`,
+  de `access.can`, que ya aplica el recorte de una sesión de PIN): el
+  servicio no vuelve a leer permisos y, sin esos datos, no lee equipo ni
+  ajustes (`null`). En una terminal con PIN nada de eso se ofrece ni se lee.
+- **Costo en Inicio:** Inicio pide `whileSettingUp`: si ya hay un movimiento
+  que no es saldo inicial, todo lo anterior está listo o saltado y la guía no
+  se pinta, así que solo se leen las tres preguntas de siempre (7 consultas,
+  igual que antes de WMS-43). Con la empresa todavía configurándose son 15.
+  La primera versión de este paso hacía 26 en cada carga; la prueba
+  «costs few queries» fija los topes.
+- Con el catálogo vacío, «Cuánto tienes» y «Tu primer movimiento» no ofrecen
+  acciones (llevarían a una búsqueda vacía, como los botones que Inicio ya
+  esconde): dicen que primero hacen falta productos y, a quien no puede
+  darlos de alta, que los pida a quien lleva el inventario
+  (`waitsForCatalog`).
+- El enlace «Configuración inicial» de Configuración aparece solo si la
+  persona tiene algún paso que hacer.
 - La lista de ajustes de la pantalla sale de `getOperationSettings`, que exige
   `platform.organization.update`; sin ese permiso no se llama.
 - El titular con dos pasos obligatorios sigue igual: `requireSession` lo

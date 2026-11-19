@@ -132,7 +132,13 @@ export default async function InicioPage({
       showLow ? listLowStock(actor) : null,
       showMovements ? listRecentMovements(actor, { limit: SHOWN }) : null,
       showPlan ? getPlanOverview(moduleRegistry, actor.organizationId) : null,
-      showGuide ? getFirstSteps(actor) : null,
+      showGuide
+        ? getFirstSteps(actor, {
+            seesTeam: access.can("platform.team.read"),
+            changesSettings: access.can("platform.organization.update"),
+            whileSettingUp: true,
+          })
+        : null,
       showTasks ? countMyTasks(actor) : null,
       showIncoming ? listPurchaseOrders(actor, { toReceive: true }) : null,
     ],
@@ -486,6 +492,7 @@ export default async function InicioPage({
           plan={setup.plan}
           open={setup.open}
           can={setup.can}
+          hasProducts={firstSteps?.hasProducts ?? false}
           view="home"
           hrefFor={(key) => `/inicio?guia=${key}#configura`}
         />

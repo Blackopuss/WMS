@@ -86,7 +86,10 @@ export default async function ConfiguracionInicialPage({
   };
   const can = setupAbilities((permission) => access.allows(permission));
   const [steps, settings] = await Promise.all([
-    getFirstSteps(actor),
+    getFirstSteps(actor, {
+      seesTeam: access.can("platform.team.read"),
+      changesSettings: access.can("platform.organization.update"),
+    }),
     can.chooseSettings
       ? getOperationSettings(actor, SETUP_SETTINGS)
       : Promise.resolve([]),
@@ -121,6 +124,7 @@ export default async function ConfiguracionInicialPage({
               plan={plan}
               open={open}
               can={can}
+              hasProducts={steps.hasProducts}
               view="full"
               hrefFor={(key) => `/configuracion/inicial?paso=${key}`}
               settings={

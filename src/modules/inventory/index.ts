@@ -225,7 +225,11 @@ export {
   type ExportKind,
   type ExportResult,
 } from "./exports";
-export { getFirstSteps, type FirstSteps } from "./first-steps";
+export {
+  getFirstSteps,
+  type FirstSteps,
+  type FirstStepsOptions,
+} from "./first-steps";
 export {
   SETUP_STEP_KEYS,
   doneSteps,
@@ -235,6 +239,7 @@ export {
   setupAbilities,
   stepAfter,
   stepBefore,
+  waitsForCatalog,
 } from "./setup-rules";
 export type {
   PlannedStep,

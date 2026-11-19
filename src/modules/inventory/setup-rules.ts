@@ -142,12 +142,23 @@ export function offeredSteps(can: SetupAbilities): Set<SetupStepKey> {
 /** What is done, step by step, from what exists in the company. */
 export function doneSteps(steps: FirstSteps): Record<SetupStepKey, boolean> {
   return {
-    almacen: steps.facilityReady,
-    ubicaciones: steps.hasOwnLocations,
+    almacen: steps.facilityReady === true,
+    ubicaciones: steps.hasOwnLocations === true,
     equipo: steps.hasTeam === true,
     operacion: steps.settingsChosen === true,
     productos: steps.hasProducts,
     existencias: steps.hasStock,
     movimiento: steps.hasMovement,
   };
+}
+
+/**
+ * Stock and movements need a product: with an empty catalog these steps
+ * offer nothing to do yet (their screens would only find an empty search).
+ */
+export function waitsForCatalog(
+  key: SetupStepKey,
+  steps: Pick<FirstSteps, "hasProducts">,
+): boolean {
+  return !steps.hasProducts && (key === "existencias" || key === "movimiento");
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   stepAfter,
   stepBefore,
+  waitsForCatalog,
   type SetupAbilities,
   type SetupPlan,
   type SetupStepKey,
@@ -141,6 +142,7 @@ export function SetupGuide({
   view,
   hrefFor,
   settings,
+  hasProducts,
 }: {
   plan: SetupPlan;
   /** The step shown open. */
@@ -151,6 +153,8 @@ export function SetupGuide({
   hrefFor: (key: SetupStepKey) => string;
   /** The settings of «Cómo trabaja tu almacén» (full view only). */
   settings?: React.ReactNode;
+  /** The catalog has products: stock and movements need one. */
+  hasProducts: boolean;
 }) {
   const total = plan.steps.length;
   return (
@@ -169,7 +173,17 @@ export function SetupGuide({
       </div>
       <ol className="divide-y">
         {plan.steps.map((step, index) => {
-          const text = stepText(step.key, can, view);
+          const waits = waitsForCatalog(step.key, { hasProducts });
+          const text = waits
+            ? {
+                ...stepText(step.key, can, view),
+                body:
+                  can.importProducts || can.createProduct
+                    ? "Primero agrega tus productos: sin ellos no hay nada que capturar ni mover."
+                    : "Todavía no hay productos en el catálogo. Pídele a quien lleva el inventario en tu empresa que los agregue.",
+                actions: [],
+              }
+            : stepText(step.key, can, view);
           const isOpen = step.key === open;
           const next = stepAfter(plan, step.key);
           const previous = stepBefore(plan, step.key);

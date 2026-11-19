@@ -27,6 +27,7 @@ import { formatDateTime } from "@/lib";
 import { getMfaStatus, listActiveSessions } from "@/platform/auth";
 import { getSupportAccess } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
+import { offeredSteps, setupAbilities } from "@/modules/inventory";
 import { processDocuments } from "@/modules/registry";
 import { hasProcessDocuments } from "@/platform/processes";
 import { getMyPinStatus } from "@/platform/terminals";
@@ -52,10 +53,12 @@ export default async function ConfiguracionPage() {
   const showEquipment =
     access.moduleState("inventory") !== "none" &&
     access.can("inventory.equipment.read");
-  // WMS-43: the setup guide, whole; reachable always, not only while new.
+  // WMS-43: the setup guide, whole; reachable always, not only while new,
+  // but only for who has some step of it to do.
   const showSetup =
-    access.moduleState("inventory") !== "none" &&
-    access.can("inventory.product.read");
+    access.can("inventory.product.read") &&
+    offeredSteps(setupAbilities((permission) => access.allows(permission)))
+      .size > 0;
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
