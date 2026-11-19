@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import {
   SHIPMENT_STATUS_LABELS,
-  countOrdersToShip,
+  countOrdersToArm,
   listShipments,
   type ShipmentStatus,
 } from "@/modules/inventory";
@@ -75,7 +75,7 @@ export default async function EmbarquesPage({
           ? Number(pagina)
           : undefined,
     }),
-    countOrdersToShip(actor),
+    countOrdersToArm(actor),
   ]);
   const href = (page: number, status: string | null = list.status) => {
     const params = new URLSearchParams();
@@ -103,7 +103,11 @@ export default async function EmbarquesPage({
       {ready > 0 && (
         <p className="-mt-2 text-sm text-muted-foreground">
           <Link
-            href="/pedidos?estado=por-despachar"
+            href={
+              newButton
+                ? "/pedidos/embarques/nuevo"
+                : "/pedidos?estado=por-despachar"
+            }
             className="inline-flex min-h-11 items-center font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {ready === 1

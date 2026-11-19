@@ -1,6 +1,7 @@
 "use client";
 
 import { NativeSelect } from "@/components/ui/native-select";
+import { cn } from "cn";
 
 /**
  * Select of the list's filters (INV-12): choosing an option applies it at
@@ -15,6 +16,7 @@ export function FilterSelect({
   allLabel,
   noneLabel,
   options,
+  className,
 }: {
   id: string;
   name: string;
@@ -26,9 +28,13 @@ export function FilterSelect({
   /** Omit it when the filter has no «without one» option. */
   noneLabel?: string;
   options: { id: string; name: string }[];
+  /** Extra classes of the wrapper (e.g. a row of its own on a phone). */
+  className?: string;
 }) {
   return (
-    <div className="min-w-0 flex-1">
+    // A select that is too narrow cuts the option it shows (WMS-87): on a
+    // phone two of them do not share a row.
+    <div className={cn("min-w-44 flex-1", className)}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>

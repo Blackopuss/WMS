@@ -1559,6 +1559,29 @@ export async function countOrdersToShip(
   });
 }
 
+/**
+ * Orders the person may still put in a new shipment: the same condition as
+ * `listReadyOrders` (WMS-87), so the number of «Embarques» and the list of
+ * «Armar embarque» always agree. An order already in an open shipment does
+ * not count; `countOrdersToShip` (Inicio) does, until it leaves.
+ */
+export async function countOrdersToArm(actor: InventoryActor): Promise<number> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.shipment.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  const facility = await activeFacilityOf(client, actor.userId);
+  return client.outboundOrder.count({
+    where: {
+      facilityId: facility.id,
+      status: { in: await readyStatuses(client) },
+      ...IN_NO_SHIPMENT,
+    },
+  });
+}
+
 export type ShipmentLineView = {
   /** WMS-60: exact data for the API. */
   productId: string;

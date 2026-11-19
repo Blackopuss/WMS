@@ -1,6 +1,15 @@
 "use client";
 
+import { Inter } from "next/font/google";
+
 import "./globals.css";
+
+// The root layout is gone here, so its font variable is too (WMS-87).
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 /**
  * Last resort when the root layout itself fails (PIL-07): its own document,
@@ -19,7 +28,7 @@ export default function GlobalError({
       ? String((error as Error & { digest?: string }).digest ?? "")
       : "";
   return (
-    <html lang="es-MX">
+    <html lang="es-MX" className={inter.variable}>
       <body className="grid min-h-dvh place-items-center bg-background p-4 font-sans text-foreground">
         <title>Algo salió mal · WMS</title>
         <main className="max-w-sm space-y-4 text-center">

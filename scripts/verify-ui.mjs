@@ -1140,6 +1140,76 @@ try {
     }
     await page.close();
   }
+  // WMS-87 (pendientes de interfaz). Read-only: nothing is saved.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    const fits = async (path, label) => {
+      await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+      const state = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      check(
+        state.overflow <= 0 && state.h1 === 1,
+        `WMS-87 320px: ${label ?? path} fits and has one heading`,
+      );
+    };
+    for (const path of [
+      "/inventario/por-inspeccionar",
+      "/inventario/en-restauracion",
+      "/pedidos/embarques",
+      "/ubicaciones/etiquetas",
+    ]) {
+      await fits(path);
+    }
+    // The filter by the state of the stock: folded, applied from the list,
+    // kept in the address and in «Quitar filtros»; an unknown value is ignored.
+    await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
+    const fold = page.locator("main details summary", {
+      hasText: "Más filtros",
+    });
+    check(
+      (await fold.count()) === 1,
+      "WMS-87: «Más filtros» holds the stock state",
+    );
+    await fold.first().click();
+    await page.selectOption("#existencias", "REPAIR");
+    await page.waitForURL(/existencias=REPAIR/);
+    check(
+      ((await page.locator("main").textContent()) ?? "").includes(
+        "en restauración en este almacén",
+      ),
+      "WMS-87: the applied stock state is said",
+    );
+    check(
+      await page
+        .locator("main details")
+        .first()
+        .evaluate((d) => d.open),
+      "WMS-87: «Más filtros» stays open while one is applied",
+    );
+    await fits("/inventario?existencias=nada", "an unknown stock state");
+    check(
+      !((await page.locator("main").textContent()) ?? "").includes(
+        "en este almacén",
+      ),
+      "WMS-87: an unknown stock state is ignored",
+    );
+    // A select never cuts the option it shows (the list of movements).
+    await page.goto(`${BASE}/movimientos`, { waitUntil: "networkidle" });
+    const widths = await page.evaluate(() =>
+      [...document.querySelectorAll("select")].map((el) => el.clientWidth),
+    );
+    check(
+      widths.every((width) => width >= 170),
+      "WMS-87: the filters of Movimientos are wide enough on a phone",
+    );
+    await page.close();
+  }
 } finally {
   await browser.close();
 }

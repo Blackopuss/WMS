@@ -372,6 +372,7 @@ export {
   SHIPMENT_PAGE_SIZE,
   addShipmentOrders,
   cancelShipment,
+  countOrdersToArm,
   countOrdersToShip,
   createShipment,
   dispatchShipment,
@@ -873,6 +874,11 @@ export {
   REPAIR_THROUGH_INSPECTION,
   repairExitsOf,
 } from "./repair-release";
+export {
+  STOCK_STATUS_FILTER_OPTIONS,
+  chosenStockStatus,
+  productsInStatusWhere,
+} from "./status-filter";
 export {
   INSPECTION_PAGE_SIZE,
   countAwaitingInspection,
