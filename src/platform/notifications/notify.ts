@@ -18,7 +18,12 @@ import { placeOfLocation } from "@/platform/locations";
 import { parseSettingValue } from "@/platform/settings";
 import type { TenantDb } from "@/server";
 
-import { isEmailOnly, noticeText, type NotificationType } from "./definitions";
+import {
+  isAppOnly,
+  isEmailOnly,
+  noticeText,
+  type NotificationType,
+} from "./definitions";
 import { NOTICE_EMAIL_CHANNEL } from "./settings";
 
 /**
@@ -189,9 +194,10 @@ export async function notify(
     skipDuplicates: true,
   });
 
-  const byMail = rows.filter(
-    (row) => choice.get(row.recipientUserId)?.email === true,
-  );
+  // WMS-88: a type only for the bell never leaves by mail.
+  const byMail = isAppOnly(type)
+    ? []
+    : rows.filter((row) => choice.get(row.recipientUserId)?.email === true);
   if (byMail.length > 0) {
     await queueNoticeEmails(tx, input, type.key, to, byMail);
   }

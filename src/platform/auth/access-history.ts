@@ -19,8 +19,10 @@ import {
   sendEmail,
   type AccessAlertKind,
 } from "@/platform/email";
+import { notify } from "@/platform/notifications";
 import { db, forOrganization } from "@/server";
 
+import { ACCESS_ALERT_NOTICE } from "./access-notices";
 import { afterResponse, auth } from "./auth";
 import { assertNotTerminalSession } from "./terminal-session";
 import { blockedFor, clientIp, throttleKeys } from "./throttle";
@@ -192,11 +194,19 @@ async function raiseAlert(input: {
     if (why) {
       // In the history, once a day; the alert may still be mailed another
       // day (a new device is not learnt until then).
-      await claimSecurityEvent({
-        ...row,
-        metadata: { mail: why },
-        dedupeKey: `${input.dedupeKey}:not_mailed:${day}`,
-      });
+      const notMailedKey = `${input.dedupeKey}:not_mailed:${day}`;
+      if (
+        await claimSecurityEvent({
+          ...row,
+          metadata: { mail: why },
+          dedupeKey: notMailedKey,
+        })
+      ) {
+        // The bell (WMS-88): not for a PIN of someone who has none.
+        if (input.mail !== false) {
+          bellAlert(input.userId, input.kind, input.deviceKey, notMailedKey);
+        }
+      }
       return "not_mailed";
     }
     // WMS-88 (ADR 0084): the alert and its mail are written together; the
@@ -205,6 +215,7 @@ async function raiseAlert(input: {
     const emailId = await queueAlertMail(row, input.dedupeKey, input.kind);
     if (!emailId) return "duplicate";
     afterResponse(() => deliverAccessAlertEmail(emailId).then(() => {}));
+    bellAlert(input.userId, input.kind, input.deviceKey, input.dedupeKey);
     return "queued";
   } catch (error) {
     log.error("access.alert_failed", error);
@@ -425,6 +436,73 @@ export async function retryAccessAlertEmails(
     if ((await deliverAccessAlertEmail(row.id, now)) === "sent") sent += 1;
   }
   return { tried: due.length, sent };
+}
+
+// ---------------------------------------------------------------------------
+// In the bell (WMS-88, ADR 0084)
+
+/** Companies of a person that get the notice of an alert, at most. */
+const BELL_COMPANIES_MAX = 20;
+
+function bellText(kind: AccessAlertKind, deviceKey?: string | null): string {
+  const device = describeDeviceKey(deviceKey)?.label ?? "un navegador";
+  switch (kind) {
+    case "new_device":
+      return `Alerta de seguridad: entraron a tu cuenta desde ${device}. Si no fuiste tú, cambia tu contraseña.`;
+    case "password_new_device":
+      return `Alerta de seguridad: escribieron bien tu contraseña desde ${device} y falló el código. Si no fuiste tú, cambia tu contraseña.`;
+    case "failed_attempts":
+      return "Alerta de seguridad: bloqueamos tu cuenta un rato por muchos intentos fallidos.";
+    case "code_locked":
+      return "Alerta de seguridad: escribieron bien tu contraseña y fallaron varias veces el código. Cambia tu contraseña.";
+    case "pin_locked":
+      return "Alerta de seguridad: bloqueamos tu PIN un rato por muchos intentos fallidos.";
+  }
+}
+
+/**
+ * The alert also as a notice of the bell, in each company where the person
+ * is an active member, after the response. Once per alert (its key). The
+ * text speaks of the person's own account: never of another company, never
+ * the IP. Never throws.
+ */
+function bellAlert(
+  userId: string,
+  kind: AccessAlertKind,
+  deviceKey: string | null | undefined,
+  key: string,
+): void {
+  afterResponse(() => writeBellAlert(userId, kind, deviceKey, key));
+}
+
+export async function writeBellAlert(
+  userId: string,
+  kind: AccessAlertKind,
+  deviceKey: string | null | undefined,
+  key: string,
+): Promise<void> {
+  try {
+    const memberships = await db.membership.findMany({
+      where: { userId, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+      take: BELL_COMPANIES_MAX,
+      select: { organizationId: true },
+    });
+    for (const { organizationId } of memberships) {
+      await forOrganization(organizationId).$transaction((tx) =>
+        notify(tx, ACCESS_ALERT_NOTICE, {
+          organizationId,
+          actorUserId: null,
+          to: { userIds: [userId] },
+          text: bellText(kind, deviceKey),
+          href: "/configuracion/accesos",
+          key: `access:${key}`,
+        }),
+      );
+    }
+  } catch (error) {
+    log.error("access.bell_alert_failed", error);
+  }
 }
 
 /** Whether the person knows this device, and any device at all. */

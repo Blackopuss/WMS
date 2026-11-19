@@ -8,7 +8,7 @@ import { enqueueJob, type JobHandlers } from "@/platform/jobs";
 import { readSetting } from "@/platform/settings";
 import { forOrganization } from "@/server";
 
-import { isEmailOnly, type NotificationType } from "./definitions";
+import { isAppOnly, isEmailOnly, type NotificationType } from "./definitions";
 import {
   MEMBER_SELECT,
   NOTICE_EMAIL_GAP_MS,
@@ -298,7 +298,7 @@ export async function sendNoticeEmails(
   const wanted = new Map<string, boolean>();
   for (const row of rows) {
     const type = byKey.get(row.typeKey);
-    if (!type || isEmailOnly(type)) {
+    if (!type || isEmailOnly(type) || isAppOnly(type)) {
       dropped.push({ id: row.id, reason: "Ese tipo de aviso ya no existe." });
       continue;
     }

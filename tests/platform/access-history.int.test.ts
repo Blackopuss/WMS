@@ -4,7 +4,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ForbiddenError, newId } from "@/lib";
 import { recordSecurityEvent } from "@/platform/audit";
+import { notificationTypes } from "@/modules/registry";
+import { setNotificationPreference } from "@/platform/notifications";
 import {
+  ACCESS_ALERT_NOTICE,
   ACCESS_ALERTS_PER_DAY,
   ACCESS_ALERT_MAIL_ATTEMPTS,
   ACCESS_HISTORY_PAGE_SIZE,
@@ -927,6 +930,70 @@ describe("retention of the access history (WMS-88)", () => {
       expect(left).not.toContain(ended.id);
       expect(left).toEqual(expect.arrayContaining([waiting.id, fresh.id]));
       await db.accessAlertEmail.deleteMany({ where: { userId: noe } });
+    },
+    SLOW,
+  );
+});
+
+// WMS-88 (ADR 0084): an access alert is also a notice of the bell, in each
+// company of the person, never by mail as a notice.
+describe("access alerts in the bell (WMS-88)", () => {
+  const bell = (userId: string) =>
+    db.notification.findMany({
+      where: { recipientUserId: userId, typeKey: ACCESS_ALERT_NOTICE.key },
+    });
+
+  it(
+    "reaches each company of the person once, and never as a second mail",
+    async () => {
+      const olga = await newAccount("olga");
+      const one = await newCompany(`Bell uno ${stamp}`);
+      const two = await newCompany(`Bell dos ${stamp}`);
+      await join(one.org, olga.id, ["supervisor"]);
+      await join(two.org, olga.id, ["operator"]);
+      // Even asking for it by mail is refused.
+      expect(
+        await setNotificationPreference(
+          { organizationId: one.org, userId: olga.id },
+          notificationTypes,
+          ACCESS_ALERT_NOTICE.key,
+          true,
+          "email",
+        ),
+      ).toEqual({ ok: false, reason: "not_allowed" });
+      await signIn({ email: olga.email, password }, from(UA.laptop));
+      await signIn({ email: olga.email, password }, from(UA.phone));
+      await signIn({ email: olga.email, password }, from(UA.phone));
+      await settle();
+      const notices = await bell(olga.id);
+      expect(notices.map((each) => each.organizationId).sort()).toEqual(
+        [one.org, two.org].sort(),
+      );
+      expect(notices[0]?.text).toContain("Chrome en Android");
+      expect(notices[0]?.text).not.toMatch(/203\.0\.113/);
+      expect(notices[0]?.href).toBe("/configuracion/accesos");
+      expect(
+        await db.notificationEmail.count({
+          where: { recipientUserId: olga.id },
+        }),
+      ).toBe(0);
+    },
+    SLOW,
+  );
+
+  it(
+    "not for the PIN of someone who has none",
+    async () => {
+      const pepe = await newPerson("pepe");
+      const place = await newCompany(`Bell PIN ${stamp}`);
+      await join(place.org, pepe, ["operator"]);
+      await alertPinLocked(pepe, false);
+      await settle();
+      expect(await bell(pepe)).toHaveLength(0);
+      await alertPinLocked(pepe, true);
+      await settle();
+      // The day's alert was already decided: nothing more today.
+      expect(await bell(pepe)).toHaveLength(0);
     },
     SLOW,
   );

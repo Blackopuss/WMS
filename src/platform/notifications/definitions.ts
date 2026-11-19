@@ -22,14 +22,21 @@ export type NotificationType = {
    * Where it reaches the person (WMS-39B, ADR 0060). `app` (the default):
    * the bell, and by mail too if the person asks. `email`: only by mail
    * (a summary), never a notice in the app; off unless asked for.
+   * `app_only` (WMS-88, ADR 0084): only the bell, never by mail (what
+   * already has a mail of its own, such as an access alert).
    */
-  channels?: "app" | "email";
+  channels?: "app" | "email" | "app_only";
   /**
    * Shown in the preferences only to who holds one of these (a summary
    * nobody could read is not offered). Empty or absent: to everybody.
    */
   visibleWith?: readonly Permission[];
 };
+
+/** Whether a type is never offered nor sent by mail (WMS-88). */
+export function isAppOnly(type: Pick<NotificationType, "channels">): boolean {
+  return type.channels === "app_only";
+}
 
 /** Whether a type reaches the person only by mail. */
 export function isEmailOnly(type: Pick<NotificationType, "channels">): boolean {

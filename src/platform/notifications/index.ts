@@ -2,6 +2,7 @@
 export {
   NOTIFICATION_TEXT_MAX,
   assertValidNotificationTypes,
+  isAppOnly,
   isEmailOnly,
   noticeText,
 } from "./definitions";

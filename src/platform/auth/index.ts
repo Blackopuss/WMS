@@ -39,6 +39,10 @@ export {
   readAccessHistory,
   retryAccessAlertEmails,
 } from "./access-history";
+export {
+  ACCESS_ALERT_NOTICE,
+  ACCESS_NOTIFICATION_TYPES,
+} from "./access-notices";
 export type {
   AccessHistoryPage,
   AccessHistoryRow,
