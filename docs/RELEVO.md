@@ -27,6 +27,7 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | WMS-34 Tableros por rol y exportación (permisos, alcance y costos; revisor) | `session_01QMjUPUeDQy5JCijJEKBDBR` | `wms-34-tableros-por-rol` | Opus, medio | 0085 (`20261119180000` si hiciera falta) | abierto el 2026-11-19, al unirse WMS-32 |
 | WMS-65 Slotting: sugerencias de reubicación por rotación (solo recomienda; crea tareas con `createTask`; revisor) | `session_01QMjUPVq6Xuy8QV3GQkuTzg` | `wms-65-slotting` | Opus, medio | 0086 (`20261119190000`) | abierto el 2026-11-19, al unirse WMS-32 |
 | WMS-29 Reporte de producción con foto: consumo automático de la receta, movimiento `PRODUCTION`, lote en inspección, costo, merma, reversa, rastreo (corazón; revisor independiente) | `session_01QMjUPVUzokpmEWUQHrfePF` | `wms-29-reporte-produccion` | Opus, medio | 0087 (`20261120100000`) | abierto el 2026-11-19, al unirse WMS-84 |
+| WMS-89 Auditoría de dependencias: `effect` 3.22.1 por `overrides` (aviso GHSA-7589-6fvf-x4pw vía `prisma → @prisma/config`; CI fallaba solo en `npm audit`) | `session_01QMjUPVRnaEXyTub59B6RoH` | `wms-89-auditoria-effect` | Opus, medio | ADR 0002 (sección nueva) | Cerrado y unido el 2026-11-19 |
 
 Huecos de la app que salieron de la revisión de los manuales (no son de los manuales): transferir la titularidad no tiene pantalla ni Server Action (`ownership.ts` existe, ninguna ruta lo usa; pendiente sin número), y el Inspector de calidad no tiene enlace a «Por inspeccionar» (requisito de WMS-30B).
 
