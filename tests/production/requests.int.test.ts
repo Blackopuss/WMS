@@ -753,7 +753,10 @@ describe("who decides", () => {
       reachText: "Con el material libre alcanza para 10 piezas de 20 piezas.",
       reachesAll: false,
     });
-    expect(JSON.stringify(view)).not.toMatch(/Zona lejana|Rack|500|540/);
+    // Quantities as shown (a bare «500» can appear inside a generated key).
+    expect(JSON.stringify(view)).not.toMatch(
+      /Zona lejana|Rack|500 piezas|540 piezas/,
+    );
     // Who sees the whole warehouse counts everything.
     const whole = await getProductionRequest(w.encargado, id);
     expect(whole?.decision).toMatchObject({
