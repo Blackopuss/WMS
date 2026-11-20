@@ -346,7 +346,9 @@ export async function sendProducedToWait(
         select: { id: true, expiresOn: true },
       })
     : [];
-  const expiryOf = new Map(lots.map((lot) => [lot.id, lotDayOf(lot.expiresOn)]));
+  const expiryOf = new Map(
+    lots.map((lot) => [lot.id, lotDayOf(lot.expiresOn)]),
+  );
   const skipExpired =
     [...expiryOf.values()].some(Boolean) &&
     (await readSetting(tx, PICK_EXPIRED)) !== "allow";
