@@ -595,11 +595,14 @@ export async function getWarehouseIndicators(
     putawayMode,
   };
   const previous = previousPeriod(period);
+  // Its own days: with «Este mes» it ends before the current one starts
+  // (the same days of the month before), so never `startDay` here.
   const previousStart = windowOf(previous.from, timeZone);
-  if (!previousStart) throw new Error("Unreadable period");
+  const previousEnd = windowOf(previous.next, timeZone);
+  if (!previousStart || !previousEnd) throw new Error("Unreadable period");
   const previousRange = {
     gte: previousStart.range.gte,
-    lt: startDay.range.gte,
+    lt: previousEnd.range.gte,
   };
 
   const [

@@ -159,6 +159,12 @@ describe("previousPeriod", () => {
     ).toMatchObject({ from: "2026-01-01", to: "2026-01-31", days: 31 });
   });
 
+  it("this month on its first day: the first day of the month before", () => {
+    expect(
+      previousPeriod(resolvePeriod("2026-12-01", { preset: "mes" })),
+    ).toMatchObject({ from: "2026-11-01", to: "2026-11-01", days: 1 });
+  });
+
   it("this month: the same days of the month before, never past its end", () => {
     expect(
       previousPeriod(resolvePeriod("2026-11-19", { preset: "mes" })),
@@ -171,15 +177,15 @@ describe("previousPeriod", () => {
 
 describe("changes", () => {
   it("counts with their share when the one before is not zero", () => {
-    expect(countChange(15, 12)).toBe("+3 (+25.0 %)");
-    expect(countChange(9, 12)).toBe("−3 (−25.0 %)");
-    expect(countChange(4, 0)).toBe("+4");
+    expect(countChange(15, 12)).toBe("Subió 3 (25.0 %)");
+    expect(countChange(9, 12)).toBe("Bajó 3 (25.0 %)");
+    expect(countChange(4, 0)).toBe("Subió 4");
     expect(countChange(7, 7)).toBe("Sin cambio");
   });
 
   it("shares in points, times faster or slower", () => {
-    expect(shareChange("80.0", "75.0")).toBe("+5.0 puntos");
-    expect(shareChange("70.0", "75.5")).toBe("−5.5 puntos");
+    expect(shareChange("80.0", "75.0")).toBe("Subió 5.0 puntos");
+    expect(shareChange("70.0", "75.5")).toBe("Bajó 5.5 puntos");
     expect(shareChange(null, "75.0")).toBe("—");
     expect(timeChange(30 * 60_000, 45 * 60_000)).toBe("15 min más rápido");
     expect(timeChange(2 * 3_600_000, 3_600_000)).toBe("1 h más lento");

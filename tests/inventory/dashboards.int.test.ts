@@ -20,6 +20,7 @@ import { setMemberScope, type Role } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { createProduct } from "@/platform/catalog";
+import { readSpreadsheet } from "@/platform/files";
 import {
   createFacility,
   createLocation,
@@ -277,6 +278,62 @@ describe("period against the one before", () => {
     expect(previous.receiving).toEqual(alone.receiving);
   }, 120_000);
 
+  it("this month compares the same days of the month before", async () => {
+    const owner = await company();
+    const shelf = await place(owner, "Zona M");
+    const item = await product(owner, "Brocha");
+    // Mexico City is UTC−6: noon there is 18:00 UTC.
+    const at = (day: string) => new Date(`${day}T18:00:00Z`);
+    for (const day of [
+      "2030-10-05",
+      "2030-10-25",
+      "2030-11-03",
+      "2031-02-28",
+      "2031-03-01",
+      "2031-03-30",
+      "2030-11-01",
+      "2030-11-02",
+    ]) {
+      await exitAt(owner, {
+        at: at(day),
+        productId: item,
+        locationId: shelf,
+        quantity: "1",
+      });
+    }
+    const check = async (
+      now: string,
+      from: string,
+      to: string,
+      lines: number,
+    ) => {
+      const seen = await getWarehouseIndicators(owner, {
+        preset: "mes",
+        now: at(now),
+      });
+      expect(seen.previous!.period).toMatchObject({ from, to });
+      expect(seen.previous!.exits.lines).toBe(lines);
+      const alone = await getWarehouseIndicators(owner, {
+        from,
+        to,
+        now: at(now),
+        compare: false,
+      });
+      expect(seen.previous!.exits.lines).toBe(alone.exits.lines);
+      expect(seen.previous!.orders).toEqual(alone.orders);
+      expect(seen.previous!.tasksDelivered).toBe(alone.tasksDelivered);
+      return seen;
+    };
+    // The 10th: October 1 to 10 (the exit of the 25th does not count).
+    const tenth = await check("2030-11-10", "2030-10-01", "2030-10-10", 1);
+    expect(tenth.exits.lines).toBe(3);
+    // March 31 against all of February (28 days), never into March.
+    const march = await check("2031-03-31", "2031-02-01", "2031-02-28", 1);
+    expect(march.exits.lines).toBe(2);
+    // The first day of the month: the first day of the month before.
+    await check("2030-12-01", "2030-11-01", "2030-11-01", 1);
+  }, 120_000);
+
   it("money only with costs, also in the period before", async () => {
     const { owner, now } = await twoWarehouses();
     const supervisor = await member(owner.organizationId, "supervisor");
@@ -529,11 +586,37 @@ describe("listOpenWorkByPerson", () => {
       { userId: ana.userId, name: "Ana", open: 2, blocked: 1 },
     ]);
     expect(JSON.stringify(seen)).not.toContain(beto.userId);
+    // Beto has nothing inside the zone: the filter is ignored and he is not
+    // named; the list is the open one of the zone (Ana's two and the loose).
     const list = await listTasks(limited, {
       view: "open",
       person: beto.userId,
     });
-    expect(list.total).toBe(0);
+    expect(list.person).toBeNull();
+    expect(list.total).toBe(3);
+    expect(JSON.stringify(list)).not.toContain("Beto");
+  }, 120_000);
+
+  it("a person is a filter only with open tasks in reach, active or not", async () => {
+    const { owner, beto } = await scenario();
+    // Someone of the team with nothing open: ignored.
+    const idle = await member(owner.organizationId, "operator", "Ciro");
+    const none = await listTasks(owner, { view: "open", person: idle.userId });
+    expect(none.person).toBeNull();
+    expect(none.total).toBe(5);
+    // Disabled but still with a task to his name: it can be followed.
+    await db.membership.updateMany({
+      where: { organizationId: owner.organizationId, userId: beto.userId },
+      data: { status: "DISABLED" },
+    });
+    const left = await listTasks(owner, { view: "open", person: beto.userId });
+    expect(left.person).toMatchObject({ userId: beto.userId, name: "Beto" });
+    expect(left.total).toBe(1);
+    expect(
+      (await listOpenWorkByPerson(owner)).rows.find(
+        (row) => row.userId === beto.userId,
+      ),
+    ).toMatchObject({ open: 1 });
   }, 120_000);
 
   it("two companies never mix and the reads are few", async () => {
@@ -600,6 +683,83 @@ describe("export of the indicators", () => {
     expect(trail?.targetId).toBe("indicadores");
     expect(JSON.stringify(trail?.metadata)).toContain("Indicadores de almacén");
     expect(JSON.stringify(trail?.metadata)).not.toContain("$");
+  }, 120_000);
+
+  it("the Excel file reads back; cells never start a formula", async () => {
+    const owner = await company();
+    const shelf = await place(owner, "Zona F");
+    const risky = await product(owner, '=HYPERLINK("http://x")');
+    const now = new Date();
+    for (const back of [1, 2, 9]) {
+      await exitAt(owner, {
+        at: new Date(now.getTime() - back * DAY),
+        productId: risky,
+        locationId: shelf,
+        quantity: "1",
+      });
+    }
+    const xlsx = await buildExport(owner, {
+      kind: "indicadores",
+      format: "xlsx",
+      indicators: { preset: "7" },
+    });
+    if (!xlsx.ok) throw new Error(JSON.stringify(xlsx));
+    // The reader opens the first sheet: the summary.
+    const read = readSpreadsheet(xlsx.name, xlsx.bytes);
+    if (!read.ok) throw new Error(read.error);
+    expect(read.rows).toContainEqual([
+      "Indicador",
+      "Este periodo",
+      "Periodo anterior",
+      "Cambio",
+    ]);
+    const exits = read.rows.find((row) => row[0] === "Salidas (líneas)");
+    expect(exits).toEqual(["Salidas (líneas)", "2", "1", "Subió 1 (100.0 %)"]);
+    // No change starts with a sign (it would arrive as «'+1»).
+    for (const row of read.rows) {
+      for (const cell of row) expect(cell).not.toMatch(/^'/);
+    }
+    const csv = await buildExport(owner, {
+      kind: "indicadores",
+      format: "csv",
+      indicators: { preset: "7" },
+    });
+    if (!csv.ok) throw new Error(JSON.stringify(csv));
+    const text = csv.bytes.toString("utf8");
+    expect(text).toContain("'=HYPERLINK");
+    expect(text).not.toMatch(/(^|,|")=HYPERLINK/m);
+    expect(text).not.toMatch(/,'[+-]/);
+  }, 120_000);
+
+  it("with zones, the file holds only what the zone reaches", async () => {
+    const owner = await company();
+    const zoneA = await place(owner, "Zona Visible");
+    const zoneB = await place(owner, "Zona Secreta");
+    const seen = await product(owner, "Producto visible");
+    const hidden = await product(owner, "Producto secreto");
+    const now = new Date();
+    for (const [productId, locationId] of [
+      [seen, zoneA],
+      [hidden, zoneB],
+    ]) {
+      await exitAt(owner, {
+        at: new Date(now.getTime() - DAY),
+        productId: productId!,
+        locationId: locationId!,
+        quantity: "1",
+      });
+    }
+    const viewer = await member(owner.organizationId, "manager");
+    const scoped = await setMemberScope(owner.organizationId, owner.userId, {
+      userId: viewer.userId,
+      facilities: [{ facilityId: await facilityOf(zoneA), zoneIds: [zoneA] }],
+    });
+    if (!scoped.ok) throw new Error(JSON.stringify(scoped));
+    const text = await csvText(viewer, { preset: "7" });
+    expect(text).toContain("Producto visible");
+    expect(text).toContain("Zona Visible");
+    expect(text).not.toContain("secreto");
+    expect(text).not.toContain("Secreta");
   }, 120_000);
 
   it("by warehouse: only what the person reaches", async () => {

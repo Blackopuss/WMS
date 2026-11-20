@@ -247,28 +247,28 @@ export function previousPeriod(period: KpiPeriod): KpiPeriod {
   };
 }
 
-const signed = (value: string) =>
-  value.startsWith("-") ? `−${value.slice(1)}` : `+${value}`;
-
 /**
- * Change of a count against the previous period: «+12 (25.0 %)», «−3»,
- * «Sin cambio». The share only when the previous is not zero.
+ * Change of a count against the previous period: «Subió 12 (25.0 %)»,
+ * «Bajó 3», «Sin cambio». The share only when the previous is not zero.
+ * Words, not «+»/«−»: a cell starting with a sign would reach a
+ * spreadsheet as a neutralized formula («'+12»).
  */
 export function countChange(now: number, before: number): string {
   const diff = now - before;
   if (diff === 0) return "Sin cambio";
-  const text = signed(diff.toLocaleString("es-MX"));
+  const verb = diff > 0 ? "Subió" : "Bajó";
+  const text = `${verb} ${Math.abs(diff).toLocaleString("es-MX")}`;
   if (before === 0) return text;
-  const share = dec(diff).times(100).dividedBy(before).toFixed(1);
-  return `${text} (${signed(share)} %)`;
+  const share = dec(Math.abs(diff)).times(100).dividedBy(before).toFixed(1);
+  return `${text} (${share} %)`;
 }
 
-/** Change of a share in points: «+5.0 puntos»; «—» without one of them. */
+/** Change of a share in points: «Subió 5.0 puntos»; «—» without one. */
 export function shareChange(now: string | null, before: string | null) {
   if (now === null || before === null) return "—";
   const diff = dec(now).minus(before);
   if (diff.isZero()) return "Sin cambio";
-  return `${signed(diff.toFixed(1))} puntos`;
+  return `${diff.greaterThan(0) ? "Subió" : "Bajó"} ${diff.abs().toFixed(1)} puntos`;
 }
 
 /** Change of a time: «12 min más rápido», «1 h más lento»; «—» without one. */

@@ -3023,21 +3023,35 @@ export async function listTasks(
       ? await dayWindow(client, options.day)
       : null;
   // A person asked for in the open view counts only if they are in the
-  // team; anything else is ignored (WMS-34).
-  const askedPerson =
+  // team (active or not) and have open tasks in this warehouse inside the
+  // scope of who looks; otherwise the filter is ignored and nobody is named
+  // (WMS-34, ADR 0085; the rule of WMS-32 for people).
+  const scopeAnd = Object.keys(scope).length > 0 ? { AND: [scope] } : {};
+  let askedPerson =
     view === "open" && typeof options.person === "string" && options.person
       ? await client.membership.findFirst({
           where: { userId: options.person.slice(0, 36) },
           select: { userId: true, user: { select: { name: true } } },
         })
       : null;
+  if (
+    askedPerson &&
+    (await client.warehouseTask.count({
+      where: {
+        ...assignedOpenWhere(facility.id, askedPerson.userId),
+        ...scopeAnd,
+      },
+    })) === 0
+  ) {
+    askedPerson = null;
+  }
   const where = {
     ...(window
       ? deliveredOnWhere(window, { facilityId: facility.id })
       : askedPerson
         ? assignedOpenWhere(facility.id, askedPerson.userId)
         : { ...byView, fromLocation: { facilityId: facility.id } }),
-    ...(Object.keys(scope).length > 0 ? { AND: [scope] } : {}),
+    ...scopeAnd,
   };
   const total = await client.warehouseTask.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / TASK_PAGE_SIZE));
