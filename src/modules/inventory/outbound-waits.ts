@@ -15,7 +15,10 @@ import {
 import { notify } from "@/platform/notifications";
 
 import { formatStock, type InventoryActor } from "./movements";
-import { OUTBOUND_WAIT_DROPPED_NOTICE } from "./notices";
+import {
+  OUTBOUND_WAIT_DROPPED_NOTICE,
+  PRODUCTION_REQUEST_WITHDRAWN_NOTICE,
+} from "./notices";
 import { formatOutboundNumber } from "./outbound-states";
 import { createPickTasks, nextTaskNumber, settlePickedOrder } from "./picking";
 import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
@@ -196,7 +199,11 @@ export async function cancelAskedFor(
   if (waitIds.length === 0) return 0;
   const asked = await tx.productionRequest.findMany({
     where: { lineWaitId: { in: [...waitIds] }, status: "SUBMITTED" },
-    select: { id: true, number: true },
+    select: {
+      id: true,
+      areaLocationId: true,
+      product: { select: { name: true } },
+    },
   });
   let cancelled = 0;
   for (const row of asked) {
@@ -216,8 +223,39 @@ export async function cancelAskedFor(
       action: "production.request_cancelled",
       target: { type: "production_request", id: row.id },
       reason: why.slice(0, 300),
-      metadata: { solicitud: `SP-${String(row.number).padStart(4, "0")}` },
     });
+    // Whoever had it to decide: the same people `production.request_to_decide`
+    // reaches (Inventario cannot import that type, so it has its own). The
+    // text names neither the order nor its recipient; once per request.
+    const notice = {
+      organizationId: actor.organizationId,
+      actorUserId: actor.userId,
+      text: `Se canceló una solicitud de producción de ${row.product.name}: el pedido ya no la necesita.`.slice(
+        0,
+        300,
+      ),
+      href: `/produccion/solicitudes/${row.id}`,
+      key: `production_request:${row.id}:no_longer_needed`,
+    };
+    const sent = await notify(tx, PRODUCTION_REQUEST_WITHDRAWN_NOTICE, {
+      ...notice,
+      to: {
+        permissions: ["production.request.decide"],
+        roles: ["production_supervisor", "warehouse", "supervisor"],
+        ownerByRole: false,
+        locationId: row.areaLocationId,
+      },
+    });
+    if (sent.sent === 0) {
+      await notify(tx, PRODUCTION_REQUEST_WITHDRAWN_NOTICE, {
+        ...notice,
+        to: {
+          permissions: ["production.request.decide"],
+          roles: ["administrator"],
+          locationId: row.areaLocationId,
+        },
+      });
+    }
   }
   return cancelled;
 }

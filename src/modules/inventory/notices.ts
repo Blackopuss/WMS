@@ -122,6 +122,22 @@ export const OUTBOUND_WAIT_DROPPED_NOTICE: NotificationType = {
   visibleWith: ["inventory.outbound.read"],
 };
 
+/**
+ * A production request asked for an outbound order was cancelled because
+ * the order no longer needs it (WMS-79, ADR 0094). Its own type because
+ * Inventario cannot import Producción's `production.request_to_decide`;
+ * it reaches the same people.
+ */
+export const PRODUCTION_REQUEST_WITHDRAWN_NOTICE: NotificationType = {
+  key: "inventory.production_request_withdrawn",
+  module: "inventory",
+  label: "Una solicitud de producción ya no hace falta",
+  description:
+    "Cuando se cancela una solicitud de producción que tenías por decidir porque el pedido ya no la necesita.",
+  defaultEnabled: true,
+  visibleWith: ["production.request.decide"],
+};
+
 export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   TASK_ASSIGNED_NOTICE,
   TASK_BLOCKED_NOTICE,
@@ -135,4 +151,5 @@ export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   EQUIPMENT_MAINTENANCE_NOTICE_TYPE,
   EQUIPMENT_OUT_OF_SERVICE_NOTICE,
   OUTBOUND_WAIT_DROPPED_NOTICE,
+  PRODUCTION_REQUEST_WITHDRAWN_NOTICE,
 ];

@@ -315,6 +315,29 @@ espera ya no está abierta, como defensa. La verificación
 Inventario para leer la espera de una orden: ese sentido de dependencia ya
 existía.
 
+**Excepción explícita:** `cancelAskedFor` es la única escritura de
+Inventario sobre `production_request`, y es una sola transición
+condicionada (`SUBMITTED → CANCELLED` con `updateMany` filtrado por estado,
+que respeta la tabla de estados y su disparador), con bitácora
+`production.request_cancelled` (la bitácora muestra la solicitud por su id;
+Inventario no arma el número `SP-…` a mano) y un aviso propio,
+`inventory.production_request_withdrawn`, a quien la tenía por decidir:
+los mismos destinatarios que `production.request_to_decide` (por
+`production.request.decide`, con los roles Encargado, Almacén y Supervisor
+y el área como lugar; si nadie lo recibe, Administración), sin nombrar
+pedido ni cliente, una vez por solicitud. Es un tipo propio de Inventario
+porque Inventario no puede importar el de Producción. **No es un gancho de
+`makeToOrder`** porque los caminos que cierran una espera no siempre lo
+tienen: la recepción de una compra y la entrada manual que reparten por
+cross-docking, la verificación de Calidad y «Apartar lo que ya hay» no
+reciben `makeToOrder`, y la cancelación debe ocurrir también con Producción
+quitado o en solo lectura (con un gancho, una solicitud quedaría por
+atender para un pedido que ya no la necesita). Precedentes de Inventario
+que ya leen tablas de Producción sin importar el módulo: `hierarchy.ts`
+(lee `productionOrder` para no cambiar un área con órdenes abiertas) e
+`issue.ts` (lee `productionOrderLine` para las tareas «Surtir a
+producción»).
+
 ## Candados
 
 Orden global (ADR 0074): productos → almacén → ubicaciones → documento →
@@ -425,6 +448,17 @@ ignora las esperas: con él, un pedido que espera podría pasar a «Surtido».
   pedido por lo que falta.
 - Si una persona libera a mano lo producido con «Cambiar estado», la línea
   sigue esperando hasta que alguien pulsa «Apartar lo que ya hay».
+- `collectOrigins` (Calidad, iniciar la verificación) revisa de más antiguo
+  a más nuevo hasta 2,000 filas, con dos consultas por fila, dentro de la
+  transacción de iniciar la verificación: después de unas 2,000 salidas ya
+  verificadas del mismo producto en la misma área vuelve a ocultar las
+  nuevas, y antes de eso el costo crece. Pendiente: filtrar lo ya cubierto
+  en la consulta.
+- Quien está limitado a una zona y alcanza el almacén del pedido aparta de
+  todo el almacén con «Apartar lo que ya hay», igual que al liberar.
+- No se ejecutó en la revisión: pérdidas con autorización combinadas con el
+  reparto del sobrante, sesión de PIN, plan vencido y demostración, ni las
+  pantallas en navegador.
 
 ## Decisiones que el fundador puede cambiar
 

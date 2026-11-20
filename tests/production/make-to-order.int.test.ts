@@ -355,6 +355,53 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     await balanced(owner.organizationId);
   });
 
+  it("a request cancelled because the order no longer needs it tells who had it to decide, once", async () => {
+    const { owner, crate, area, shelf, facilityId } = await shop();
+    const decider = await member(owner.organizationId, [
+      "production_supervisor",
+    ]);
+    const elsewhere = await member(
+      owner.organizationId,
+      ["production_supervisor"],
+      [{ facilityId, locationId: shelf }],
+    );
+    const operator = await member(owner.organizationId, [
+      "production_operator",
+    ]);
+    const orderId = await outbound(owner, crate, "2");
+    await releaseOutboundOrder(owner, orderId, { makeToOrder });
+    const [request] = await requestsOf(orderId);
+    expect(request!.areaLocationId).toBe(area);
+    expect(
+      await cancelOutboundOrder(owner, orderId, "El cliente canceló"),
+    ).toMatchObject({ ok: true });
+    expect((await requestsOf(orderId))[0]!.status).toBe("CANCELLED");
+    const told = async (userId: string) =>
+      db.notification.findMany({
+        where: {
+          recipientUserId: userId,
+          typeKey: "inventory.production_request_withdrawn",
+        },
+      });
+    const sent = await told(decider.userId);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.href).toBe(`/produccion/solicitudes/${request!.id}`);
+    expect(sent[0]!.text).toMatch(/ya no la necesita/);
+    expect(sent[0]!.text).not.toMatch(/PS-|Cliente/);
+    expect(await told(elsewhere.userId)).toHaveLength(0);
+    expect(await told(operator.userId)).toHaveLength(0);
+    expect(await told(owner.userId)).toHaveLength(0);
+    const audit = await db.auditEvent.findFirst({
+      where: {
+        organizationId: owner.organizationId,
+        action: "production.request_cancelled",
+        targetId: request!.id,
+      },
+    });
+    expect(audit).not.toBeNull();
+    await balanced(owner.organizationId);
+  });
+
   it("cancelling the order cancels its request; an accepted order goes on without the link", async () => {
     const { owner, crate, area } = await shop();
     const first = await outbound(owner, crate, "2");
