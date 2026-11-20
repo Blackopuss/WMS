@@ -443,7 +443,7 @@ export type ProductionEntryResult =
         units: SerialPick[];
         unitCost: Decimal | null;
       }[];
-      /** Value of the materials (null when one had no known cost). */
+      /** Value of the materials with a known cost (null when none had one). */
       value: Decimal | null;
       notes: string[];
     }
@@ -471,6 +471,12 @@ export async function postProduction(
     areaId: string;
     reference: string;
     idempotencyKey: string;
+    /**
+     * Every material of the order (not only what this report takes),
+     * already locked by the caller. Decides whether what is made has a
+     * cost at all (WMS-92): only when none of them has a known cost.
+     */
+    orderMaterialIds: readonly string[];
     /**
      * The codes of the lots made, by product, asked after the locations
      * and the capacity (the caller's numbering lock goes there).
@@ -629,14 +635,28 @@ export async function postProduction(
   }
 
   // Cost (ADR 0031, 0087): read before any balance changes.
-  const costs = await openCostBook(tx, organizationId, productIds);
-  let value: Decimal | null = dec(0);
+  const costs = await openCostBook(tx, organizationId, [
+    ...productIds,
+    ...input.orderMaterialIds,
+  ]);
+  // WMS-92 (fundador, 2026-11-20): the value is what the materials WITH a
+  // known cost take out in THIS report; one without cost leaves without
+  // cost and adds nothing. What is made enters without cost only when no
+  // material of the order has a known cost (read before any exit): if one
+  // has, the value is explicit even when it is 0 (this report took only
+  // materials without cost, or none), so what is made never adds up to
+  // more than what left of the materials.
+  const orderHasCost = input.orderMaterialIds.some(
+    (id) => costs.price(id) !== null,
+  );
+  let known = dec(0);
   const takeCosts = input.takes.map((take) => {
     const cost = costs.exit(take.productId, take.quantity);
-    if (cost === null) value = null;
-    else if (value !== null) value = value.plus(cost.times(take.quantity));
+    if (cost !== null) known = known.plus(cost.times(take.quantity));
     return cost;
   });
+  const value: Decimal | null =
+    orderHasCost || input.takes.length === 0 ? known : null;
   const shareTotal = entering.reduce(
     (sum, { output }) => sum.plus(dec(output.costShare)),
     dec(0),
@@ -648,7 +668,7 @@ export async function postProduction(
         ? position === 0
           ? value
           : dec(0)
-        : (value as Decimal).times(dec(output.costShare)).dividedBy(shareTotal);
+        : value.times(dec(output.costShare)).dividedBy(shareTotal);
       unitCost = part.dividedBy(output.quantity);
     }
     outputs[index]!.unitCost = costs.entry(

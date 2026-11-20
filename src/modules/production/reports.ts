@@ -855,6 +855,7 @@ export async function reportProduction(
       areaId: order.areaLocationId,
       reference: numberText,
       idempotencyKey: data.idempotencyKey,
+      orderMaterialIds: order.lines.map((line) => line.productId),
       // The numbering of the company, as late as possible: after the
       // locations and the capacity (ADR 0087). A report that fails later
       // rolls back its consecutive: no gap, no repeat.
@@ -890,6 +891,7 @@ export async function reportProduction(
         badReason: bad.greaterThan(0) ? data.badReason : null,
         unitCode: order.unitCode,
         lotCode: lotCode?.slice(0, 60) ?? null,
+        costKnown: posted.value !== null,
         createdByUserId: userId,
       },
     });
@@ -1659,8 +1661,13 @@ export type ProductionReportView = {
     at: Date;
     reason: string;
   } | null;
-  /** Only for who reads costs: the value of the materials. */
+  /** Only for who reads costs: the value of the materials with a cost. */
   valueText?: string | null;
+  /**
+   * Only for who reads costs: materials that left with no known cost, so
+   * the cost of what was made does not include them (WMS-92).
+   */
+  uncostedMaterials?: string[];
   inputs: {
     productName: string;
     quantityText: string;
@@ -1706,6 +1713,7 @@ export async function getProductionReport(
       badReason: true,
       unitCode: true,
       lotCode: true,
+      costKnown: true,
       reversedAt: true,
       reversedByUserId: true,
       reverseReason: true,
@@ -1779,15 +1787,34 @@ export async function getProductionReport(
   const costOf = (value: { toString(): string } | null) =>
     costs ? (value ? value.toString() : null) : undefined;
   const inputs = row.movement.lines.filter((line) => line.direction === "OUT");
-  const value = inputs.some((line) => line.unitCost === null)
+  // WMS-92: the value counts only the materials with a known cost; it is
+  // unknown when no material of the order had one when reporting (saved
+  // with the report: the lines alone cannot tell it, since what was made
+  // may have entered at its own average). Reports from before WMS-92 have
+  // no mark: unknown when no material left with a cost.
+  const costed = inputs.filter((line) => line.unitCost !== null);
+  const unknown =
+    row.costKnown === null
+      ? inputs.length > 0 && costed.length === 0
+      : !row.costKnown;
+  const value = unknown
     ? null
-    : inputs.reduce(
+    : costed.reduce(
         (sum, line) =>
           sum.plus(
             dec(line.unitCost!.toString()).times(line.baseQuantity.toString()),
           ),
         dec(0),
       );
+  const uncosted = unknown
+    ? []
+    : [
+        ...new Set(
+          inputs
+            .filter((line) => line.unitCost === null)
+            .map((line) => line.product.name),
+        ),
+      ];
   return {
     id: row.id,
     numberText: formatReportNumber(row.number),
@@ -1810,7 +1837,12 @@ export async function getProductionReport(
           reason: row.reverseReason ?? "",
         }
       : null,
-    ...(costs ? { valueText: value ? value.toFixed(2) : null } : {}),
+    ...(costs
+      ? {
+          valueText: value ? value.toFixed(2) : null,
+          uncostedMaterials: uncosted,
+        }
+      : {}),
     inputs: inputs.map((line) => ({
       productName: line.product.name,
       quantityText: formatStock(line.baseQuantity.toString(), line.unitCode),

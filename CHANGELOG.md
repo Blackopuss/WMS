@@ -8,6 +8,20 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-92** Costo de lo producido cuando un material no tiene costo (ADR 0087,
+  actualizado, Fase 3): el valor de lo producido en un reporte es la suma de lo
+  que salió de los materiales con costo (cada uno a su costo promedio); un
+  material sin costo sale sin costo y aporta cero, y el valor se reparte entre
+  las salidas por su parte del costo de la receta. Si algún material de la
+  orden tiene costo, el valor del reporte es siempre explícito (aunque sea 0),
+  así un reporte que solo consume materiales sin costo no agrega valor; entra
+  sin costo solo si ningún material de la orden lo tiene (al promedio vigente
+  del producto si ya tenía). La ficha del reporte avisa, solo a quien ve costos,
+  qué materiales no tienen costo. Columna `production_report.costKnown`
+  (migración `20261120133000_wms92_report_cost_known`). Revisor independiente
+  en dos vueltas (la primera «no unir» por un reporte posterior que creaba
+  valor; la segunda «unir»). Decisión del fundador: «Y lo de material haz que
+  tome el costo de todo lo demás».
 - **WMS-29** Reporte de producción (ADR 0087, Fase 3): quien produce dice
   cuánto hizo (y cuántas piezas malas, con motivo) en `/produccion/[id]/reportar`,
   con foto (obligatoria por omisión, ajuste `production.report.photo`); el
@@ -19,8 +33,8 @@ cerrar cada paso.
   `PRODUCTION` (no se reversa desde Inventario). Nunca se produce más de lo
   que pide la orden; si el material no alcanza no guarda nada y avisa para
   cuánto alcanza («Avisar que falta material»). El costo de lo producido es
-  solo de materiales, al costo promedio; si un material no tiene costo, lo
-  producido entra sin costo. «Revertir reporte» (con motivo, mientras todo lo
+  solo de materiales, al costo promedio (WMS-92 corrigió el caso de un material
+  sin costo). «Revertir reporte» (con motivo, mientras todo lo
   producido siga intacto en inspección) y «Reportar merma de material»
   (`postDisposal` con `takesAvailable`; tipo de aprobación propio
   `production.scrap`, apagado por omisión). La orden pasa a «En proceso» con
@@ -31,8 +45,7 @@ cerrar cada paso.
   Revisor independiente en dos vueltas (la primera «no unir» por un
   interbloqueo entre la merma y la entrega de una tarea «Surtir a producción»
   y por el cambio del ajuste de materiales con órdenes abiertas; la segunda
-  «unir»). **Decisión abierta al fundador:** un material sin costo deja ese
-  valor fuera del inventario.
+  «unir»).
 - **WMS-44** Empresa de demostración (ADR 0089, Fase 5): el personal de
   plataforma la crea desde la consola interna (`/interno/demostraciones`,
   en dos pasos: primero muestra el nombre y el correo de la cuenta y solo un
