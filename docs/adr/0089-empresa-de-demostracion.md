@@ -101,6 +101,7 @@ basta leerla antes de la transacción de la operación):
 | Mandar una orden de compra por correo al proveedor (`requestOrderDelivery`) | Rechazado: no sale correo a terceros. El PDF se descarga igual. |
 | Crear llaves de la API (`createApiKey`) | Rechazado. |
 | Crear destinos de webhooks (`createWebhookEndpoint`) | Rechazado: nada sale hacia afuera. |
+| Transferir la titularidad (`offerOwnershipTransfer`, `acceptOwnershipTransfer`; WMS-90) | Rechazado bajo el candado de la empresa, y la pantalla no lo ofrece: una demostración no pasa a otra persona (la empresa real se crea con otra cuenta). |
 
 - Los proveedores ficticios usan correos de `example.test` (dominio
   reservado, RFC 6761). Aunque la titular cambie el correo de un proveedor a
@@ -213,8 +214,8 @@ cuenta.
    cuenta).
 3. El plan fijo: 100 productos, 3 usuarios, 1 almacén, 1 GB, todos los
    módulos, 14 días.
-4. Que una demostración no reciba pagos, no mande órdenes por correo y no
-   tenga API ni webhooks.
+4. Que una demostración no reciba pagos, no mande órdenes por correo, no
+   tenga API ni webhooks y no se transfiera a otra persona.
 5. Que una demostración nunca se convierta en empresa real (hoy la titular
    crea su empresa real con otra cuenta).
 6. Que no haya personas de ejemplo.

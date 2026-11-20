@@ -176,6 +176,12 @@ export default async function TitularidadPage({
           </ul>
           <CancelOfferForm />
         </section>
+      ) : access.organization.isDemo ? (
+        // WMS-44 (ADR 0089): a demonstration is not handed to someone else.
+        <p className="text-sm">
+          Esta es una empresa de demostración: no se transfiere. Para usar WMS
+          con tu empresa real, se crea con otra cuenta.
+        </p>
       ) : candidates.length === 0 ? (
         <p className="text-sm">
           No hay otra persona activa en tu equipo a quien ofrecer la empresa.

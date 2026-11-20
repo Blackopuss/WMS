@@ -17,6 +17,11 @@ import {
 import { jobHandlers } from "@/modules/registry/jobs";
 import { listAuditTrail } from "@/platform/audit";
 import { createApiKey, createWebhookEndpoint } from "@/platform/api";
+// The services without the screen's confirmation (WMS-90): not in index.ts.
+import {
+  acceptOwnershipTransfer,
+  offerOwnershipTransfer,
+} from "@/platform/authorization/ownership";
 import {
   DEMO_PLAN,
   DEMO_PREPARE_JOB,
@@ -442,6 +447,30 @@ describe("loading the data", () => {
     ).toMatchObject({ ok: false, reason: "not_allowed" });
     expect(
       await db.apiKey.count({ where: { organizationId: demo.organizationId } }),
+    ).toBe(0);
+  });
+
+  it("is never handed to someone else (ownership transfer)", async () => {
+    const member = await newUser("Persona invitada");
+    await db.membership.create({
+      data: {
+        id: newId(),
+        organizationId: demo.organizationId,
+        userId: member.id,
+      },
+    });
+    expect(
+      await offerOwnershipTransfer(demo.organizationId, demo.owner.id, {
+        toUserId: member.id,
+      }),
+    ).toMatchObject({ ok: false, reason: "demo_company" });
+    expect(
+      await acceptOwnershipTransfer(demo.organizationId, member.id, newId()),
+    ).toMatchObject({ ok: false, reason: "demo_company" });
+    expect(
+      await db.ownershipTransfer.count({
+        where: { organizationId: demo.organizationId },
+      }),
     ).toBe(0);
   });
 
