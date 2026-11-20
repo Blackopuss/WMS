@@ -177,6 +177,8 @@ export {
 } from "./settings";
 export { PURCHASING_NOTIFICATION_TYPES } from "./notices";
 export { PURCHASING_WEBHOOK_EVENTS } from "./webhooks";
+// WMS-64 (ADR 0092): what Compras offers to automations.
+export { PURCHASING_AUTOMATION_TRIGGERS } from "./automations";
 
 // WMS-66: what Compras offers to the global search (ADR 0081).
 export { PURCHASING_SEARCH_SOURCES } from "./search";

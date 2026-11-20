@@ -121,6 +121,9 @@ export const TENANT_MODELS = [
   "ProductionScrap",
   "ProductionLotNumbering",
   "ProductionLotSequence",
+  "AutomationRule",
+  "AutomationRun",
+  "AutomationScan",
   "ProductionRequest",
   "RecipeLock",
   "Notification",
@@ -393,6 +396,7 @@ export const LOCKABLE = {
   productionOrder: "production_order",
   productionReport: "production_report",
   productionLotNumbering: "production_lot_numbering",
+  automationRule: "automation_rule",
 } as const;
 
 /**

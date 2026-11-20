@@ -12,6 +12,7 @@ import {
 } from "@/platform/authorization";
 import { getEntitlements } from "@/platform/entitlements";
 import type { JobHandler } from "@/platform/jobs";
+import { queueAutomationEvent } from "@/platform/automations";
 import { enqueueJob } from "@/platform/jobs";
 import { notify, type NotificationType } from "@/platform/notifications";
 import {
@@ -442,7 +443,7 @@ export async function listWebhookEndpoints(
 
 export type WebhookEmitTx = Pick<
   Tx,
-  "webhookEndpoint" | "webhookEvent" | "job"
+  "webhookEndpoint" | "webhookEvent" | "job" | "automationRule"
 >;
 
 /**
@@ -453,12 +454,17 @@ export type WebhookEmitTx = Pick<
  * destinations later, outside the locks of the fact; with no destination
  * listening, nothing is written. `data` carries ids, numbers of documents
  * and quantities as text; never costs.
+ *
+ * WMS-64 (ADR 0092): the same fact is what automations listen to. When a
+ * rule turned on listens, one more job is queued here (and nothing else
+ * changes for the service that emits).
  */
 export async function emitWebhookEvent(
   tx: WebhookEmitTx,
   type: Pick<WebhookEventType, "key" | "module">,
   input: { organizationId: string; data: Record<string, unknown> },
 ): Promise<{ eventId: string } | null> {
+  await queueAutomationEvent(tx, type, input);
   const endpoints = await tx.webhookEndpoint.findMany({
     where: { status: "ACTIVE", removedAt: null },
     select: { events: true },

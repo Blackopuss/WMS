@@ -118,6 +118,9 @@ const SCREENS = [
   "/aprobaciones",
   "/aprobaciones?vista=mias",
   "/configuracion/aprobaciones",
+  // WMS-64: automation rules (list and the form of a new one).
+  "/configuracion/automatizaciones",
+  "/configuracion/automatizaciones/nueva",
   // WMS-38: shared terminals and the person's PIN.
   "/configuracion/terminales",
   "/configuracion/pin",

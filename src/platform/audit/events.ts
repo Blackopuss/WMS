@@ -71,7 +71,9 @@ export async function recordAuditEvent(
     delegation &&
     delegation.organizationId === event.organizationId &&
     delegation.userId === event.actorUserId
-      ? { llaveApi: delegation.apiKeyId }
+      ? delegation.automation
+        ? { automatizacion: delegation.automation.ruleId }
+        : { llaveApi: delegation.apiKeyId ?? "" }
       : null;
   const metadata = sanitizeMetadata(
     viaKey ? { ...(event.metadata ?? {}), ...viaKey } : event.metadata,

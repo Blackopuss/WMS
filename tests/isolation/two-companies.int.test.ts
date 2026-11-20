@@ -1514,6 +1514,42 @@ beforeAll(async () => {
     });
     // A notice, a preference, and an incident with its note (WMS-39).
     const who = organizationId === orgA ? ids.ana : ids.beto;
+    // An automation rule and one of its runs (WMS-64).
+    const automationRuleId = newId();
+    await db.automationRule.create({
+      data: {
+        id: automationRuleId,
+        organizationId,
+        name: "Regla de prueba",
+        triggerKey: "inventory.stock_status.changed",
+        conditions: {},
+        actions: [
+          { key: "platform.notify", options: { roles: ["warehouse"] } },
+        ],
+        actorUserId: who,
+        createdByUserId: who,
+      },
+    });
+    await db.automationRun.create({
+      data: {
+        id: newId(),
+        organizationId,
+        ruleId: automationRuleId,
+        ruleVersion: 1,
+        triggerKey: "inventory.stock_status.changed",
+        eventKey: `iso:${organizationId}`,
+        summary: "Prueba",
+        subject: {},
+      },
+    });
+    await db.automationScan.create({
+      data: {
+        id: newId(),
+        organizationId,
+        ruleId: automationRuleId,
+        placeKey: "",
+      },
+    });
     await db.notification.create({
       data: {
         id: newId(),

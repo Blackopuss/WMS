@@ -10,9 +10,11 @@ import {
   webhookDeliveryHandler,
   webhookFanoutHandler,
 } from "@/platform/api";
+import { automationJobHandlers } from "@/platform/automations";
 import type { JobHandlers } from "@/platform/jobs";
 import { noticeEmailJobHandlers } from "@/platform/notifications";
 
+import { automationCatalog } from "./automations";
 import { demoJobHandlers } from "./demo";
 import { notificationTypes } from "./notifications";
 
@@ -35,4 +37,6 @@ export const jobHandlers: JobHandlers = {
   [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler(),
   // WMS-44 (ADR 0089): load the data of a demonstration company.
   ...demoJobHandlers,
+  // WMS-64 (ADR 0092): evaluate the rules of a fact and run their actions.
+  ...automationJobHandlers(automationCatalog),
 };

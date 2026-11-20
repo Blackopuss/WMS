@@ -12,7 +12,15 @@ export type Delegation = {
   organizationId: string;
   /** The person the key acts for (who created it). */
   userId: string;
-  apiKeyId: string;
+  /** The API key that acts (WMS-60); absent for an automation. */
+  apiKeyId?: string;
+  /**
+   * WMS-64 (ADR 0092): an automation rule acts for the person of the rule,
+   * cut down to the permission of one action. `chain` holds the rules that
+   * led here (the last one included) and `depth` how deep the chain is, so
+   * a fact caused here never fires the same rule again nor goes too deep.
+   */
+  automation?: { ruleId: string; depth: number; chain: readonly string[] };
   /** Permissions the key may use (catalog ids). */
   permissions: readonly string[];
   /** Warehouse the key works in. */

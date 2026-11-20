@@ -3,6 +3,7 @@ import { PRODUCTION_NOTIFICATION_TYPES } from "@/modules/production";
 import { PURCHASING_NOTIFICATION_TYPES } from "@/modules/purchasing";
 import { API_NOTIFICATION_TYPES } from "@/platform/api";
 import { APPROVAL_NOTIFICATION_TYPES } from "@/platform/approvals";
+import { AUTOMATION_NOTIFICATION_TYPES } from "@/platform/automations";
 import { ACCESS_NOTIFICATION_TYPES } from "@/platform/auth";
 import { TEAM_NOTIFICATION_TYPES } from "@/platform/authorization";
 import { PROCESS_NOTIFICATION_TYPES } from "@/platform/processes";
@@ -26,6 +27,7 @@ export const notificationTypes: readonly NotificationType[] = [
   ...ACCESS_NOTIFICATION_TYPES,
   ...TERMINAL_NOTIFICATION_TYPES,
   ...PROCESS_NOTIFICATION_TYPES,
+  ...AUTOMATION_NOTIFICATION_TYPES,
   ...INVENTORY_NOTIFICATION_TYPES,
   ...PURCHASING_NOTIFICATION_TYPES,
   ...PRODUCTION_NOTIFICATION_TYPES,

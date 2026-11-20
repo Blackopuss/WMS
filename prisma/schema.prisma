@@ -268,6 +268,10 @@ model Organization {
   productionLotNumberings      ProductionLotNumbering[]
   productionLotSequences       ProductionLotSequence[]
   recipeLock                   RecipeLock?
+  /// Automations of the company (WMS-64, ADR 0092).
+  automationRules              AutomationRule[]
+  automationRuns               AutomationRun[]
+  automationScans              AutomationScan[]
   qualityInspections           QualityInspection[]
   qualityInspectionResults     QualityInspectionResult[]
   qualityInspectionAnswers     QualityInspectionAnswer[]
@@ -329,6 +333,8 @@ model Facility {
   purchaseOrders     PurchaseOrder[]
   /// API keys that work in this warehouse (WMS-60).
   apiKeys            ApiKey[]
+  /// Automation rules limited to this warehouse (WMS-64).
+  automationRules    AutomationRule[]
   qualityInspections QualityInspection[]
 
   @@unique([organizationId, id])
@@ -5670,4 +5676,123 @@ model QualityInspectionDefect {
   @@unique([organizationId, inspectionId, defectId])
   @@index([organizationId, defectId])
   @@map("quality_inspection_defect")
+}
+
+enum AutomationRuleStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AutomationRunStatus {
+  PENDING
+  RUNNING
+  DONE
+  SKIPPED
+  FAILED
+}
+
+/// A rule of the company (WMS-64, ADR 0092): when a trigger of the catalog
+/// happens (in a warehouse or in any), if its conditions hold, do its
+/// actions acting for `actorUserId`. Never deleted: archived.
+model AutomationRule {
+  id                  String               @id @db.Char(36)
+  organizationId      String               @db.Char(36)
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name                String               @db.VarChar(80)
+  /// Key of a trigger of the catalog («inventory.lot.expiring»).
+  triggerKey          String               @db.VarChar(80)
+  /// NULL: every warehouse.
+  facilityId          String?              @db.Char(36)
+  facility            Facility?            @relation(fields: [organizationId, facilityId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// Values of the conditions of the trigger, checked against the catalog.
+  conditions          Json
+  /// One to three actions of the catalog, each with its options.
+  actions             Json
+  status              AutomationRuleStatus @default(ACTIVE)
+  /// MANUAL, ACTOR, FAILURES or MODULE while PAUSED; NULL otherwise.
+  pauseReason         String?              @db.VarChar(12)
+  /// Who the actions act for: who saved or turned it on the last time.
+  actorUserId         String               @db.Char(36)
+  createdByUserId     String               @db.Char(36)
+  /// Goes up on every change; each run says which version it ran.
+  version             Int                  @default(1)
+  consecutiveFailures Int                  @default(0)
+  createdAt           DateTime             @default(now()) @db.DateTime(3)
+  updatedAt           DateTime             @updatedAt @db.DateTime(3)
+  archivedAt          DateTime?            @db.DateTime(3)
+  runs                AutomationRun[]
+  scans               AutomationScan[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status, triggerKey])
+  @@index([organizationId, facilityId])
+  @@map("automation_rule")
+}
+
+/// What a rule did (or why not) for one fact or one state (WMS-64). One per
+/// rule and `eventKey`; rule, key and version never change, and a finished
+/// run never changes (trigger). Removed after 90 days.
+model AutomationRun {
+  id             String              @id @db.Char(36)
+  organizationId String              @db.Char(36)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  ruleId         String              @db.Char(36)
+  rule           AutomationRule      @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  ruleVersion    Int
+  triggerKey     String              @db.VarChar(80)
+  /// «evt:<job>», «state:<subject>[:<day>][#<try>]» or «limit:<hour>».
+  eventKey       String              @db.VarChar(191)
+  /// A state: what it is about («state:<subject>[:<day>]»), the same for
+  /// every try; only a run that did not end skipped or failed attends it.
+  subjectKey     String?             @db.VarChar(191)
+  /// A state that fires once: its attended run is kept after 90 days, so
+  /// the subject does not fire again.
+  remembers      Boolean             @default(false)
+  /// 1 for a fact caused by a person; more inside a chain of automations.
+  depth          Int                 @default(1)
+  /// One line of what happened, without costs.
+  summary        String              @db.VarChar(300)
+  /// What the actions need: ids of the fact (product, location, lot…).
+  subject        Json
+  status         AutomationRunStatus @default(PENDING)
+  /// Why it was skipped or failed, in one line people read.
+  reason         String?             @db.VarChar(300)
+  /// One entry per action: done or not, a line and a link.
+  results        Json?
+  claimToken     String?             @db.Char(36)
+  attempts       Int                 @default(0)
+  createdAt      DateTime            @default(now()) @db.DateTime(3)
+  finishedAt     DateTime?           @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, ruleId, eventKey])
+  @@index([organizationId, ruleId, subjectKey])
+  @@index([organizationId, ruleId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("automation_run")
+}
+
+/// WMS-64 (ADR 0092): where the hourly round left the review of the state
+/// of a rule in one warehouse («» = the whole company), so the next round
+/// goes on from there and nothing new waits behind what was attended.
+model AutomationScan {
+  id             String         @id @db.Char(36)
+  organizationId String         @db.Char(36)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  ruleId         String         @db.Char(36)
+  rule           AutomationRule @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The warehouse; empty for a figure of the whole company.
+  placeKey       String         @db.VarChar(36)
+  /// The page the next round starts from (1 = from the beginning).
+  nextPage       Int            @default(1)
+  /// The last round stopped before the end of what is in that state.
+  unfinished     Boolean        @default(false)
+  /// What the last round reviewed before stopping.
+  reviewed       Int            @default(0)
+  updatedAt      DateTime       @default(now()) @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, ruleId, placeKey])
+  @@map("automation_scan")
 }

@@ -1411,6 +1411,20 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y el módulo del tipo, y escribe solo en esa empresa",
     coveredBy: "tests/platform/approvals.int.test.ts",
   },
+  // WMS-64 (ADR 0092): automation rules.
+  saveAutomationAction: {
+    input:
+      "id de la regla (si se edita), nombre y la definición en JSON (disparador, almacén, condiciones y acciones), revisada contra el catálogo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y ver toda la empresa, busca la regla solo en esa empresa y la pone a nombre de esa persona",
+    coveredBy: "tests/platform/automations.int.test.ts",
+  },
+  changeAutomationAction: {
+    input: "id de la regla y si se enciende, se apaga o se archiva",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el servicio exige platform.organization.update y ver toda la empresa y solo encuentra reglas de esa empresa",
+    coveredBy: "tests/platform/automations.int.test.ts",
+  },
   // WMS-57 (ADR 0055): purchase requests.
   createPurchaseRequestAction: {
     input:
