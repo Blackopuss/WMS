@@ -1482,4 +1482,62 @@ describe("third review (ADR 0091)", () => {
       fieldErrors: { "outcome.1.serials": "La serie SA está repetida." },
     });
   });
+
+  it("from the 51st report in the same place a verification still starts (review of WMS-79)", async () => {
+    const { owner, crate, area, shelf, board, screw } = await workshop();
+    await setting(owner, "production.report.photo", "off");
+    await enter(owner, board, shelf, "300");
+    await enter(owner, screw, shelf, "300");
+    const id = await order(owner, crate, area, "60");
+    expect(await releaseProductionOrder(owner, id)).toMatchObject({ ok: true });
+    const lines: string[] = [];
+    for (let n = 0; n < 52; n++) {
+      const done = await reportProduction(owner, id, {
+        good: "1",
+        idempotencyKey: newId(),
+      });
+      if (!done.ok) throw new Error(JSON.stringify(done));
+      lines.push(
+        (
+          await db.productionReportLine.findFirstOrThrow({
+            where: { reportId: done.reportId, kind: "OUTPUT" },
+          })
+        ).id,
+      );
+    }
+    // The first 51 decided: only the last one still waits.
+    for (const lineId of lines.slice(0, 51)) {
+      const started = await startInspection(owner, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId,
+        idempotencyKey: newId(),
+      });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      const decided = await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: newId(),
+        outcomes: [{ status: "AVAILABLE", quantity: "1", toLocationId: area }],
+      });
+      if (!decided.ok) throw new Error(JSON.stringify(decided));
+    }
+    const start = await getInspectionStart(owner, {
+      productId: crate,
+      locationId: area,
+    });
+    expect(start?.origins.some((origin) => origin.lineId === lines[51])).toBe(
+      true,
+    );
+    expect(
+      await startInspection(owner, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId: lines[51]!,
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+  }, 180_000);
 });

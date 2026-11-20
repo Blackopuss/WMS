@@ -65,13 +65,13 @@ en «Sin acomodar».
 | Quien libera crea solicitudes sin poder pedir producción | Es el pedido el que pide (permiso `inventory.outbound.release`, sin las tres condiciones de la solicitud manual), con cantidad = lo que falta de la línea; quien acepta sigue con sus límites (no más de lo pedido sin poder crear y liberar órdenes). |
 | Nombrar un pedido o un cliente a quien no lo ve | El aviso a quien decide no nombra el pedido; las fichas de solicitud, orden y lote lo nombran solo a quien tiene `inventory.outbound.read` y alcanza el almacén; la ficha del pedido nombra solicitud y orden solo a quien las lee y alcanza el área (`make-to-order.int.test.ts`). |
 | Liberar u operar esperas de un almacén fuera del alcance | El pedido «no existe» (`scope.int.test.ts`). |
-| Pedir producción con Producción quitado o en solo lectura | `makeable` no ofrece nada y `closed` no escribe; liberar sigue como antes. |
+| Pedir producción con Producción quitado o en solo lectura | `makeable` no ofrece nada; liberar sigue como antes. Las solicitudes por atender de una espera que se cierra se cancelan igual (Inventario, `cancelAskedFor`). |
+| Surtir un lote caducado hecho para un pedido | `sendProducedToWait` aplica la misma regla que liberar y el cross-docking (`inventory.picking.expired`). |
 | Costos | Ninguna pantalla ni aviso del paso los muestra. |
-
 | Apartar para un pedido lo que otro ya tiene apartado | «Apartar lo que ya hay» y el reparto de lo que sobra usan `pickSources`/`freeToTake` bajo los candados de productos y pedidos; la liga manda sobre el cross-docking. |
 
 Riesgos residuales: si se libera a mano lo producido con «Cambiar estado»,
 la línea sigue esperando hasta que alguien pulsa «Apartar lo que ya hay»; quien llame a los
 servicios del pedido sin `makeToOrder` obtiene el comportamiento anterior
-(al cancelar, la solicitud queda por atender y aceptarla se rechaza).
+(sin esperas nuevas).
 

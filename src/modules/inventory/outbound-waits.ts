@@ -4,6 +4,7 @@ import { dec, newId, type Decimal } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { assertModulePermission } from "@/platform/billing";
 import { isFacilityInScope } from "@/platform/locations";
+import { readSetting } from "@/platform/settings";
 import {
   LOCKING_TRANSACTION,
   forOrganization,
@@ -18,7 +19,10 @@ import { OUTBOUND_WAIT_DROPPED_NOTICE } from "./notices";
 import { formatOutboundNumber } from "./outbound-states";
 import { createPickTasks, nextTaskNumber, settlePickedOrder } from "./picking";
 import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
-import { freeToTake } from "./reservations";
+import { dayWindow } from "./calendar-day";
+import { isExpired, lotDayOf } from "./lot-rules";
+import { freeToTake, reserveStock } from "./reservations";
+import { PICK_EXPIRED } from "./settings";
 import { formatTaskNumber } from "./task-states";
 import {
   OUTBOUND_WAIT_STATUS_LABELS,
@@ -92,16 +96,6 @@ export type MakeToOrder = {
     actor: InventoryActor,
     input: { facilityId: string; lines: MakeToOrderLine[] },
   ): Promise<{ waitId: string; requestId: string; numberText: string }[]>;
-  /**
-   * Under the lock of the order: these waits closed; what was still asked
-   * of them is cancelled. Answers how many requests were cancelled.
-   */
-  closed(
-    tx: Tx,
-    actor: InventoryActor,
-    waitIds: readonly string[],
-    why: string,
-  ): Promise<number>;
 };
 
 // ── Inside the transaction of the caller (order locked) ─────────────────
@@ -148,6 +142,7 @@ export async function openProductionWaits(
  */
 export async function creditLineWaits(
   tx: Tx,
+  actor: InventoryActor,
   amounts: ReadonlyMap<string, Decimal>,
 ): Promise<string[]> {
   const lineIds = [...amounts.keys()].filter((id) =>
@@ -160,9 +155,11 @@ export async function creditLineWaits(
   });
   const done: string[] = [];
   for (const wait of waits) {
-    const received = dec(wait.received.toString()).plus(
-      amounts.get(wait.lineId)!,
-    );
+    const sum = dec(wait.received.toString()).plus(amounts.get(wait.lineId)!);
+    // Never counts more than it waits for.
+    const received = sum.greaterThan(wait.quantity.toString())
+      ? dec(wait.quantity.toString())
+      : sum;
     const complete = received.greaterThanOrEqualTo(wait.quantity.toString());
     await tx.outboundLineWait.update({
       where: { id: wait.id },
@@ -177,7 +174,52 @@ export async function creditLineWaits(
     });
     if (complete) done.push(wait.id);
   }
+  // What was still asked of them is no longer needed.
+  await cancelAskedFor(tx, actor, done, "Ya llegó lo que esperaba el pedido.");
   return done;
+}
+
+/**
+ * The linked production requests still asked («Por atender») of waits that
+ * closed are cancelled, in the same transaction and under the lock of the
+ * order (review of WMS-79: done by Inventario, so no request is left asked
+ * whatever closed the wait, also with Producción removed). Conditional:
+ * a request someone accepted first keeps its answer, and its order goes on
+ * without the link. Answers how many were cancelled.
+ */
+export async function cancelAskedFor(
+  tx: Tx,
+  actor: InventoryActor,
+  waitIds: readonly string[],
+  why: string,
+): Promise<number> {
+  if (waitIds.length === 0) return 0;
+  const asked = await tx.productionRequest.findMany({
+    where: { lineWaitId: { in: [...waitIds] }, status: "SUBMITTED" },
+    select: { id: true, number: true },
+  });
+  let cancelled = 0;
+  for (const row of asked) {
+    const changed = await tx.productionRequest.updateMany({
+      where: { id: row.id, status: "SUBMITTED" },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelledByUserId: actor.userId,
+      },
+    });
+    if (changed.count === 0) continue;
+    cancelled += 1;
+    await recordAuditEvent(tx, {
+      organizationId: actor.organizationId,
+      actorUserId: actor.userId,
+      action: "production.request_cancelled",
+      target: { type: "production_request", id: row.id },
+      reason: why.slice(0, 300),
+      metadata: { solicitud: `SP-${String(row.number).padStart(4, "0")}` },
+    });
+  }
+  return cancelled;
 }
 
 /**
@@ -231,7 +273,12 @@ export async function sendProducedToWait(
   tx: Tx,
   actor: InventoryActor,
   input: { waitId: string; arrivals: readonly ProducedArrival[] },
-): Promise<{ sent: Decimal[]; notes: string[] }> {
+): Promise<{
+  sent: Decimal[];
+  notes: string[];
+  orderId?: string;
+  facilityId?: string;
+}> {
   const sent = input.arrivals.map(() => dec(0));
   const wait = await tx.outboundLineWait.findFirst({
     where: { id: input.waitId },
@@ -288,11 +335,30 @@ export async function sendProducedToWait(
   let next = await nextTaskNumber(tx);
   const first = next;
   let total = dec(0);
+  // An expired lot is not picked unless the company allows it (ADR 0040),
+  // as in releasing and in cross-docking.
+  const lotIds = [
+    ...new Set(input.arrivals.flatMap((a) => (a.lotId ? [a.lotId] : []))),
+  ];
+  const lots = lotIds.length
+    ? await tx.lot.findMany({
+        where: { id: { in: lotIds } },
+        select: { id: true, expiresOn: true },
+      })
+    : [];
+  const expiryOf = new Map(lots.map((lot) => [lot.id, lotDayOf(lot.expiresOn)]));
+  const skipExpired =
+    [...expiryOf.values()].some(Boolean) &&
+    (await readSetting(tx, PICK_EXPIRED)) !== "allow";
+  const today = skipExpired ? (await dayWindow(tx, new Date()))?.day : null;
   for (const [index, arrival] of input.arrivals.entries()) {
     if (!budget.greaterThan(0)) break;
     if (
       arrival.productId !== wait.productId ||
-      !arrival.quantity.greaterThan(0)
+      !arrival.quantity.greaterThan(0) ||
+      (today &&
+        arrival.lotId &&
+        isExpired(expiryOf.get(arrival.lotId) ?? null, today))
     ) {
       continue;
     }
@@ -305,6 +371,23 @@ export async function sendProducedToWait(
     if (free.lessThan(take)) take = free;
     if (budget.lessThan(take)) take = budget;
     if (!take.greaterThan(0)) continue;
+    if (arrival.locationId === staging.id) {
+      // Approved straight into «Preparación»: it is set aside there for the
+      // line, where a picking ends, with no task.
+      const kept = await reserveStock(tx, actor, {
+        productId: arrival.productId,
+        locationId: staging.id,
+        lotId: arrival.lotId,
+        quantity: take,
+        source: { type: OUTBOUND_LINE_SOURCE, id: wait.line.id },
+      });
+      if (!kept.ok) continue;
+      usedAt.set(slot, used.plus(take));
+      sent[index] = take;
+      budget = budget.minus(take);
+      total = total.plus(take);
+      continue;
+    }
     next = await createPickTasks(tx, actor, {
       order: {
         number: formatOutboundNumber(wait.order.number),
@@ -335,16 +418,24 @@ export async function sendProducedToWait(
     total = total.plus(take);
   }
   if (!total.greaterThan(0)) return { sent, notes: [] };
-  await creditLineWaits(tx, new Map([[wait.line.id, total]]));
+  await creditLineWaits(tx, actor, new Map([[wait.line.id, total]]));
   const tasks: string[] = [];
   for (let number = first; number < next; number++) {
     tasks.push(formatTaskNumber(number));
   }
+  const where =
+    tasks.length === 0
+      ? "ya en preparación"
+      : tasks.length === 1
+        ? `tarea ${tasks[0]}`
+        : `tareas ${tasks.join(", ")}`;
   return {
     sent,
     notes: [
-      `${formatStock(total.toString(), wait.unitCode)} ${total.equals(1) ? "va" : "van"} directo al pedido ${formatOutboundNumber(wait.order.number)} (${tasks.length === 1 ? `tarea ${tasks[0]}` : `tareas ${tasks.join(", ")}`}).`,
+      `${formatStock(total.toString(), wait.unitCode)} ${total.equals(1) ? "va" : "van"} directo al pedido ${formatOutboundNumber(wait.order.number)} (${where}).`,
     ],
+    orderId: wait.order.id,
+    facilityId: wait.order.facilityId,
   };
 }
 
@@ -560,9 +651,7 @@ export async function stopWaitingForProduction(
         summary: `El pedido ${numberText} ya no espera producción.`,
       };
     }
-    const cancelled = options.makeToOrder
-      ? await options.makeToOrder.closed(tx, actor, closed, why)
-      : 0;
+    const cancelled = await cancelAskedFor(tx, actor, closed, why);
     // Nothing left to pick: it is picked with what it has.
     await settlePickedOrder(tx, order.id);
     // Who released it hears about it (unless it was them).

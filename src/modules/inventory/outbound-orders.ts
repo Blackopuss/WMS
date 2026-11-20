@@ -35,6 +35,7 @@ import {
 } from "./picking";
 import { releaseReservations, type ReservationSource } from "./reservations";
 import {
+  cancelAskedFor,
   closeOrderWaits,
   creditLineWaits,
   openProductionWaits,
@@ -950,7 +951,7 @@ export async function reserveWhatThereIs(
             `No hay nada libre de lo que le falta al pedido ${numberText}.`,
           );
         }
-        await creditLineWaits(tx, taken);
+        await creditLineWaits(tx, actor, taken);
         await recordAuditEvent(tx, {
           organizationId,
           actorUserId: userId,
@@ -981,8 +982,6 @@ export async function cancelOutboundOrder(
   actor: InventoryActor,
   orderId: string,
   reason: string,
-  /** WMS-79: cancels what was still asked to production for it. */
-  options: { makeToOrder?: MakeToOrder } = {},
 ): Promise<OutboundResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -1053,14 +1052,12 @@ export async function cancelOutboundOrder(
       "CANCELLED",
       `Se canceló el pedido: ${why}`,
     );
-    if (waits.length > 0 && options.makeToOrder) {
-      await options.makeToOrder.closed(
-        tx,
-        actor,
-        waits,
-        `Se canceló el pedido ${formatOutboundNumber(order.number)}: ${why}`,
-      );
-    }
+    await cancelAskedFor(
+      tx,
+      actor,
+      waits,
+      `Se canceló el pedido ${formatOutboundNumber(order.number)}: ${why}`,
+    );
     // WMS-25: its wave ends when this was the last of its open work.
     await settleWaveOf(tx, order.id);
     await recordAuditEvent(tx, {

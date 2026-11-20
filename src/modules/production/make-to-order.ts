@@ -203,46 +203,6 @@ async function askLines(
   return made;
 }
 
-async function closeWaitRequests(
-  tx: Tx,
-  actor: InventoryActor,
-  waitIds: readonly string[],
-  why: string,
-): Promise<number> {
-  const { organizationId, userId } = actor;
-  if (waitIds.length === 0) return 0;
-  // In read-only Producción nothing is written: accepting it is refused
-  // because its wait is closed.
-  if (!(await productionActive(tx, organizationId))) return 0;
-  const asked = await tx.productionRequest.findMany({
-    where: { lineWaitId: { in: [...waitIds] }, status: "SUBMITTED" },
-    select: { id: true, number: true },
-  });
-  let cancelled = 0;
-  for (const row of asked) {
-    // Conditional: a decision that got there first keeps its result.
-    const changed = await tx.productionRequest.updateMany({
-      where: { id: row.id, status: "SUBMITTED" },
-      data: {
-        status: "CANCELLED",
-        cancelledAt: new Date(),
-        cancelledByUserId: userId,
-      },
-    });
-    if (changed.count === 0) continue;
-    cancelled += 1;
-    await recordAuditEvent(tx, {
-      organizationId,
-      actorUserId: userId,
-      action: "production.request_cancelled",
-      target: { type: "production_request", id: row.id },
-      reason: why.slice(0, 300),
-      metadata: { solicitud: formatProductionRequestNumber(row.number) },
-    });
-  }
-  return cancelled;
-}
-
 /** What the app hands to the services of the outbound order. */
 export const makeToOrder: MakeToOrder = {
   areasFor: async (client, facilityId, productIds) => [
@@ -259,7 +219,6 @@ export const makeToOrder: MakeToOrder = {
     return { areas, changed };
   },
   ask: askLines,
-  closed: closeWaitRequests,
 };
 
 /**

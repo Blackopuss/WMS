@@ -149,6 +149,14 @@ orden nació de una solicitud ligada a una espera **abierta**:
    producido de una orden ligada es de **una** línea.
 3. La espera suma lo recibido (`received`); cuando llega a lo que espera
    queda `DONE` («Ya llegó lo que faltaba»).
+Un lote **caducado** no se aparta para el pedido salvo que la empresa
+surta caducados (`inventory.picking.expired`, ADR 0040), igual que al
+liberar y en el cross-docking: sigue a acomodo y la espera sigue abierta.
+Lo aprobado **directo a «Preparación»** se aparta ahí para la línea sin
+tarea (es donde termina un surtido). El resumen de la decisión nombra el
+pedido («van directo al pedido PS-0001») solo a quien lee pedidos; a los
+demás, «se apartó para un pedido que lo espera».
+
 4. **Lo que sobra** (se produjo o aprobó más de lo que la línea espera):
    con cross-docking encendido (`inventory.crossdock.mode = on`) se reparte
    a las demás líneas que esperan el producto en ese almacén con la regla
@@ -275,7 +283,7 @@ tablas (regla de WMS-82): lo sostienen los servicios.
 
 Inventario no importa Producción. Lo que Inventario necesita de Producción al
 liberar se le **pasa** desde la aplicación, como los tipos de aprobación:
-`MakeToOrder` (tipo de Inventario) con cuatro funciones que implementa
+`MakeToOrder` (tipo de Inventario) con tres funciones que implementa
 Producción (`makeToOrder` de `src/modules/production/make-to-order.ts`,
 expuesto por `src/modules/registry`):
 
@@ -286,14 +294,23 @@ expuesto por `src/modules/registry`):
   no activo, nada;
 - `ask(tx, actor, order, lines)`: crea las solicitudes ligadas (salta las
   esperas con una solicitud activa) y sus avisos;
-- `closed(tx, actor, waitIds, why)`: cancela las solicitudes por atender de
-  esas esperas (con Producción no activo no hace nada: aceptar las rechaza).
+`releaseOutboundOrder`, `createWave` y `askProductionAgain` reciben
+`{ makeToOrder }`; las Server Actions de la ficha del pedido y de las olas
+lo pasan. **Quien libere sin `makeToOrder` obtiene el comportamiento de
+hoy** (sin esperas nuevas).
 
-`releaseOutboundOrder`, `createWave`, `cancelOutboundOrder`,
-`stopWaitingForProduction` y `askProductionAgain` reciben `{ makeToOrder }`. Las Server Actions de la
-ficha del pedido lo pasan. **Quien llame a esos servicios sin `makeToOrder`
-obtiene el comportamiento de hoy** (sin esperas nuevas; al cancelar, las
-solicitudes por atender quedan y aceptarlas se rechaza). La verificación
+**Cerrar lo que ya no hace falta lo hace Inventario** (`cancelAskedFor`,
+revisión de WMS-79): cuando una espera se cierra por cualquier camino
+(llega todo por la verificación, por el cross-docking de una compra o
+entrada, o por «Apartar lo que ya hay»; se deja de esperar; se cancela el
+pedido), sus solicitudes aún por atender pasan a canceladas en la misma
+transacción, bajo el candado del pedido, con una actualización condicionada
+(si alguien la aceptó primero, conserva su respuesta y su orden sigue sin
+liga) y bitácora `production.request_cancelled`. Es la única escritura de
+Inventario sobre una tabla de Producción, y lo hace también con Producción
+quitado o en solo lectura: una solicitud nunca queda «por atender» para un
+pedido que ya no la necesita. Aceptar sigue rechazando una solicitud cuya
+espera ya no está abierta, como defensa. La verificación
 (Calidad) llama a Inventario (`sendProducedToWait`) y Producción llama a
 Inventario para leer la espera de una orden: ese sentido de dependencia ya
 existía.
@@ -379,6 +396,13 @@ solicitud, apartar solo al liberar con «Cambiar estado» (se cubre con
 cuando la espera se completa.
 
 ## Riesgos y migración
+
+**Defecto previo de WMS-30B corregido aquí:** los orígenes de una
+verificación se leían con `take: 50` antes de descartar lo ya cubierto;
+desde el reporte 51 del mismo producto en la misma área no se podía iniciar
+ninguna verificación (y un pedido ligado esperaría para siempre). Ahora se
+leen por páginas (`collectOrigins`) hasta juntar 50 que aún esperan o
+revisar 2,000 filas, también en recepciones y devoluciones.
 
 Migraciones `20261120170000_wms79_outbound_line_wait` y
 `20261120170100_wms79_produced_pick`, de expansión: tabla nueva, columna

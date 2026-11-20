@@ -260,9 +260,7 @@ export async function cancelOutboundAction(
   reason: string,
 ): Promise<OutboundStepState> {
   return step(orderId, (who, id) =>
-    cancelOutboundOrder(who, id, String(reason ?? "").slice(0, 400), {
-      makeToOrder,
-    }),
+    cancelOutboundOrder(who, id, String(reason ?? "").slice(0, 400)),
   );
 }
 

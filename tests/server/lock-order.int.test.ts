@@ -1657,13 +1657,13 @@ describe("locks in one order (WMS-76)", () => {
             { status: "AVAILABLE", quantity: "4", toLocationId: area },
           ],
         }),
-        cancelOutboundOrder(owner, a.id, "Prueba de candados", { makeToOrder }),
+        cancelOutboundOrder(owner, a.id, "Prueba de candados"),
         releaseOutboundOrder(owner, b, {
           takeWhatThereIs: true,
           makeToOrder,
         }),
         acceptProductionRequest(owner, c.requestId),
-        cancelOutboundOrder(owner, c.id, "Prueba", { makeToOrder }),
+        cancelOutboundOrder(owner, c.id, "Prueba"),
         askProductionAgain(owner, d.id, { makeToOrder }),
         stopWaitingForProduction(owner, e.id, "Prueba de candados", {
           makeToOrder,
@@ -1712,6 +1712,107 @@ describe("locks in one order (WMS-76)", () => {
         },
       });
       if (orphan > 0) errors.push(`round ${round}: request left asked`);
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    expect(await reconcileValue(owner.organizationId)).toEqual([]);
+  }, 300_000);
+
+  it("«Apartar lo que ya hay» never deadlocks with the verification of the linked lot, cross-docking to the same line, cancelling the order nor itself (WMS-79)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop(["inventory", "production"]);
+    await production.setting(owner, "production.report.photo", "off");
+    await production.setting(owner, "inventory.outbound.make_to_order", "on");
+    await production.setting(owner, "inventory.crossdock.mode", "on");
+    await production.enter(owner, board, shelf, "5000");
+    await production.enter(owner, screw, shelf, "5000");
+    const general = await db.location.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, isDefault: true },
+    });
+    const errors: string[] = [];
+    for (let round = 0; round < 6; round++) {
+      const sink = await createOutboundOrder(owner, { recipient: "Resto" });
+      if (!sink.ok) throw new Error("setup");
+      await setOutboundLine(owner, sink.orderId, {
+        productId: crate,
+        quantity: "10000",
+      });
+      await releaseOutboundOrder(owner, sink.orderId, {
+        takeWhatThereIs: true,
+      });
+      const made = await createOutboundOrder(owner, { recipient: "Cliente" });
+      if (!made.ok) throw new Error("setup");
+      await setOutboundLine(owner, made.orderId, {
+        productId: crate,
+        quantity: "6",
+      });
+      const released = await releaseOutboundOrder(owner, made.orderId, {
+        makeToOrder,
+      });
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const request = await db.productionRequest.findFirstOrThrow({
+        where: { lineWait: { orderId: made.orderId } },
+      });
+      const accepted = await acceptProductionRequest(owner, request.id);
+      if (!accepted.ok) throw new Error(JSON.stringify(accepted));
+      const report = await reportProduction(owner, accepted.orderId!, {
+        good: "3",
+        idempotencyKey: newId(),
+      });
+      if (!report.ok) throw new Error(JSON.stringify(report));
+      const lot = await db.productionReportLine.findFirstOrThrow({
+        where: { reportId: report.reportId, kind: "OUTPUT" },
+      });
+      const started = await startInspection(owner, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId: lot.id,
+        idempotencyKey: newId(),
+      });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      // Free stock on a shelf for «Apartar lo que ya hay».
+      await production.enter(owner, crate, shelf, "2");
+      const results = await Promise.allSettled([
+        reserveWhatThereIs(owner, made.orderId),
+        reserveWhatThereIs(owner, made.orderId),
+        decideInspection(owner, {
+          inspectionId: started.inspectionId,
+          idempotencyKey: newId(),
+          outcomes: [
+            { status: "AVAILABLE", quantity: "3", toLocationId: area },
+          ],
+        }),
+        registerEntry(owner, {
+          productId: crate,
+          locationId: general.id,
+          quantity: "2",
+          acceptRepeat: true,
+        }),
+        round % 2 === 0
+          ? cancelOutboundOrder(owner, made.orderId, "Prueba de candados")
+          : Promise.resolve({ ok: true }),
+      ]);
+      results.forEach((result, at) => {
+        if (result.status === "rejected") {
+          errors.push(
+            `round ${round}, ${at}: ${String((result.reason as Error)?.message ?? result.reason)}`,
+          );
+        }
+      });
+      // Never more set aside for the line than it asks.
+      const line = await db.outboundOrderLine.findFirstOrThrow({
+        where: { orderId: made.orderId },
+        include: { order: true },
+      });
+      const held = await db.stockReservation.aggregate({
+        where: { sourceId: line.id, state: "ACTIVE" },
+        _sum: { remaining: true },
+      });
+      const total = Number(held._sum.remaining ?? 0);
+      if (line.order.status === "CANCELLED" ? total !== 0 : total > 6) {
+        errors.push(`round ${round}: ${total} set aside`);
+      }
     }
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);

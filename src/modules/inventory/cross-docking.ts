@@ -253,6 +253,8 @@ export async function sendToWaitingOrders(
       !arrival.quantity.greaterThan(0) ||
       !place ||
       place.archivedAt ||
+      // Never from «Preparación» (it would be a task to itself).
+      place.isStaging ||
       (!isWaitingPlace(place) && !options.fromProductionArea) ||
       (today && isExpired(expiresOn, today))
     ) {
@@ -437,7 +439,7 @@ export async function sendToWaitingOrders(
 
   // WMS-79 (ADR 0094): what went to a line that waits for production
   // counts toward its wait (the orders are locked).
-  await creditLineWaits(tx, byLine);
+  await creditLineWaits(tx, actor, byLine);
 
   const sentOrders: CrossDockSent[] = [];
   const notes: string[] = [];

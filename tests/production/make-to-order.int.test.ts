@@ -4,6 +4,8 @@ import { newId } from "@/lib";
 import {
   acceptTask,
   askProductionAgain,
+  confirmPickGroup,
+  deliverPickGroup,
   cancelOutboundOrder,
   confirmPick,
   createOutboundOrder,
@@ -19,6 +21,9 @@ import {
   acceptProductionRequest,
   cancelProductionOrder,
   closeProductionOrder,
+  createRecipe,
+  activateRecipeVersion,
+  setRecipeInput,
   getProductionReport,
   outboundOrderFor,
   PRODUCTION_BATCH_PROCESS,
@@ -355,9 +360,7 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     const first = await outbound(owner, crate, "2");
     await releaseOutboundOrder(owner, first, { makeToOrder });
     expect(
-      await cancelOutboundOrder(owner, first, "El cliente canceló", {
-        makeToOrder,
-      }),
+      await cancelOutboundOrder(owner, first, "El cliente canceló"),
     ).toMatchObject({ ok: true });
     expect((await waitsOf(first))[0]!.status).toBe("CANCELLED");
     expect((await requestsOf(first))[0]!.status).toBe("CANCELLED");
@@ -367,9 +370,7 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     const [request] = await requestsOf(second);
     const accepted = await acceptProductionRequest(owner, request!.id);
     expect(accepted).toMatchObject({ ok: true });
-    await cancelOutboundOrder(owner, second, "Ya no lo quiere", {
-      makeToOrder,
-    });
+    await cancelOutboundOrder(owner, second, "Ya no lo quiere");
     const reported = await reportProduction(
       owner,
       accepted.ok ? accepted.orderId! : "",
@@ -401,19 +402,17 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     await balanced(owner.organizationId);
   });
 
-  it("a request whose order no longer waits is not accepted", async () => {
+  it("a request still asked of a wait that closed is cancelled, whatever closed it", async () => {
     const { owner, crate } = await shop();
     const orderId = await outbound(owner, crate, "2");
     await releaseOutboundOrder(owner, orderId, { makeToOrder });
     const [request] = await requestsOf(orderId);
-    // Without handing makeToOrder, the request stays asked.
     await cancelOutboundOrder(owner, orderId, "Se canceló");
-    expect((await requestsOf(orderId))[0]!.status).toBe("SUBMITTED");
+    expect((await requestsOf(orderId))[0]!.status).toBe("CANCELLED");
     expect(await acceptProductionRequest(owner, request!.id)).toMatchObject({
       ok: false,
-      formError: "Ya no hace falta para el pedido: recházala.",
     });
-    expect((await requestsOf(orderId))[0]!.status).toBe("SUBMITTED");
+    expect(await productionOpenWork(owner.organizationId)).toEqual([]);
   });
 
   it("without Producción in use, or a product without recipe or area, nothing changes", async () => {
@@ -484,10 +483,11 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     const [wait] = await waitsOf(orderId);
     expect(wait).toMatchObject({ status: "DONE" });
     expect(wait!.received.toString()).toBe("3");
+    // What was still asked is no longer needed.
     const [request] = await requestsOf(orderId);
+    expect(request!.status).toBe("CANCELLED");
     expect(await acceptProductionRequest(owner, request!.id)).toMatchObject({
       ok: false,
-      formError: "Ya no hace falta para el pedido: recházala.",
     });
     await balanced(owner.organizationId);
   });
@@ -650,6 +650,140 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     expect((await getProductionReport(owner, reportId))?.leftInArea).toEqual(
       [],
     );
+    await balanced(owner.organizationId);
+  });
+
+  it("an expired lot made for the order is not set aside: it goes on to put-away and the order keeps waiting", async () => {
+    const { owner, area, board, shelf } = await shop();
+    const jam = await product(owner, "Conserva", {
+      tracking: "LOT",
+      lotExpiry: "REQUIRED",
+    });
+    const made = await createRecipe(owner, jam, { baseQuantity: "1" });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await setRecipeInput(owner, made.versionId, {
+      productId: board,
+      quantity: "1",
+    });
+    await activateRecipeVersion(owner, made.versionId);
+    await enter(owner, board, shelf, "10");
+    const orderId = await outbound(owner, jam, "2");
+    await releaseOutboundOrder(owner, orderId, { makeToOrder });
+    const [request] = await requestsOf(orderId);
+    const accepted = await acceptProductionRequest(owner, request!.id);
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted));
+    const output = await db.productionOrderOutput.findFirstOrThrow({
+      where: { orderId: accepted.orderId! },
+    });
+    const reported = await reportProduction(owner, accepted.orderId!, {
+      good: "2",
+      idempotencyKey: key(),
+      outputExpiry: { [output.id]: "2020-01-01" },
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    const line = await db.productionReportLine.findFirstOrThrow({
+      where: { reportId: reported.reportId, kind: "OUTPUT" },
+      include: { movementLine: true },
+    });
+    const started = await startInspection(owner, {
+      productId: jam,
+      locationId: area,
+      origin: "PRODUCTION",
+      lineId: line.id,
+      lotId: line.movementLine.lotId,
+      idempotencyKey: key(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const decided = await decideInspection(owner, {
+      inspectionId: started.inspectionId,
+      idempotencyKey: key(),
+      outcomes: [{ status: "AVAILABLE", quantity: "2", toLocationId: area }],
+    });
+    expect(decided).toMatchObject({ ok: true });
+    expect(
+      await db.warehouseTask.count({
+        where: { kind: "PICK", outboundLine: { orderId } },
+      }),
+    ).toBe(0);
+    expect((await waitsOf(orderId))[0]).toMatchObject({ status: "OPEN" });
+    await balanced(owner.organizationId);
+  });
+
+  it("approved straight into «Preparación» is set aside there for the order, with no task", async () => {
+    const { owner, crate, area } = await shop();
+    const orderId = await outbound(owner, crate, "2");
+    await releaseOutboundOrder(owner, orderId, { makeToOrder });
+    const staging = await db.location.findFirstOrThrow({
+      where: { organizationId: owner.organizationId, isStaging: true },
+    });
+    const [request] = await requestsOf(orderId);
+    const accepted = await acceptProductionRequest(owner, request!.id);
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted));
+    const reported = await reportProduction(owner, accepted.orderId!, {
+      good: "2",
+      idempotencyKey: key(),
+    });
+    if (!reported.ok) throw new Error(JSON.stringify(reported));
+    const line = await db.productionReportLine.findFirstOrThrow({
+      where: { reportId: reported.reportId, kind: "OUTPUT" },
+    });
+    const started = await startInspection(owner, {
+      productId: crate,
+      locationId: area,
+      origin: "PRODUCTION",
+      lineId: line.id,
+      idempotencyKey: key(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [
+          { status: "AVAILABLE", quantity: "2", toLocationId: staging.id },
+        ],
+      }),
+    ).toMatchObject({ ok: true });
+    const held = await db.stockReservation.findMany({
+      where: { productId: crate, state: "ACTIVE" },
+    });
+    expect(
+      held.map((row) => [row.locationId, row.remaining.toString()]),
+    ).toEqual([[staging.id, "2"]]);
+    expect((await waitsOf(orderId))[0]).toMatchObject({ status: "DONE" });
+    await balanced(owner.organizationId);
+  });
+
+  it("a wave delivered as a group does not leave a waiting order picked", async () => {
+    const { owner, crate, board, shelf } = await shop();
+    await setting(owner, "inventory.picking.mode", "waves");
+    const orderId = await outbound(owner, board, "2");
+    await setOutboundLine(owner, orderId, { productId: crate, quantity: "1" });
+    expect(
+      await createWave(owner, { orderIds: [orderId] }, { makeToOrder }),
+    ).toMatchObject({ ok: true });
+    const tasks = await db.warehouseTask.findMany({
+      where: { kind: "PICK", outboundLine: { orderId } },
+      include: { product: true, fromLocation: true },
+    });
+    expect(tasks).toHaveLength(1);
+    const shelfRow = await db.location.findUniqueOrThrow({
+      where: { id: shelf },
+    });
+    expect(
+      await confirmPickGroup(
+        owner,
+        tasks.map((task) => task.id),
+        { productCode: tasks[0]!.product!.sku, locationCode: shelfRow.name },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      await deliverPickGroup(
+        owner,
+        tasks.map((task) => task.id),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(await statusOf(orderId)).toBe("PICKING");
     await balanced(owner.organizationId);
   });
 });

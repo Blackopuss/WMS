@@ -157,14 +157,13 @@ La ficha del lote dice lo aprobado que quedó en el área sin tarea
 **Pedido del cliente ligado a producción (WMS-79, ADR 0094,
 `make-to-order.ts`):** `makeToOrder` (expuesto por `src/modules/registry`)
 es lo que la aplicación entrega a los servicios del pedido de salida de
-Inventario (`releaseOutboundOrder`, `cancelOutboundOrder`,
-`stopWaitingForProduction`, `askProductionAgain`): `areasFor` (áreas antes
+Inventario (`releaseOutboundOrder`, `createWave`, `askProductionAgain`): `areasFor` (áreas antes
 de los candados), `makeable` (bajo los candados: receta vigente y área de la
 receta o la única del almacén; nada sin Producción activo), `ask` (crea las
 solicitudes ligadas, `production_request.lineWaitId`, a nombre de quien
 libera, sin las tres condiciones de la solicitud manual, y avisa a quien
-decide sin nombrar el pedido) y `closed` (cancela las solicitudes por
-atender de esperas cerradas). Aceptar una solicitud ligada no asigna
+decide sin nombrar el pedido); las solicitudes por atender de una espera
+que se cierra las cancela Inventario (`cancelAskedFor`). Aceptar una solicitud ligada no asigna
 personas por omisión y se rechaza si su espera ya no está abierta («Ya no
 hace falta para el pedido: recházala»). Rechazar la solicitud, cancelar la
 orden o cerrarla con menos de lo que espera el pedido avisa
