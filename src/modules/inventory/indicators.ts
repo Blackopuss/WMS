@@ -21,6 +21,7 @@ import {
 import { accuracyFigures, type AccuracyFigures } from "./count-accuracy";
 import {
   daysOfInventory,
+  previousPeriod,
   resolvePeriod,
   rotationOf,
   shareOf,
@@ -143,8 +144,12 @@ export type WarehouseIndicators = {
   };
   picking: KpiTimes & { orders: number };
   receiving: KpiTimes & { withTasks: boolean };
+  /** Tasks delivered in the period whose origin is in the place (WMS-34). */
+  tasksDelivered: number;
   /** Only with `inventory.count_accuracy.read`. */
   accuracy?: AccuracyFigures;
+  /** The headline figures of the period before (WMS-34, ADR 0085). */
+  previous?: KpiHeadline & { period: KpiPeriod };
   exits: {
     lines: number;
     /** Total value that left. Only with costs. */
@@ -174,6 +179,284 @@ const emptyKinds = (): TaskKindCounts => ({
 
 const median = (values: number[]) => timeFigures(values).medianMs;
 
+/**
+ * The headline figures of a period in a place (WMS-34, ADR 0085): what the
+ * period comparison, the view by warehouse and the file show, computed by
+ * the same function as the indicators themselves (every definition is in
+ * ADR 0082), so they can never tell another number.
+ */
+export type KpiHeadline = {
+  orders: WarehouseIndicators["orders"];
+  picking: WarehouseIndicators["picking"];
+  receiving: WarehouseIndicators["receiving"];
+  tasksDelivered: number;
+  /** Only with `inventory.count_accuracy.read`. */
+  accuracy?: AccuracyFigures;
+  exits: {
+    lines: number;
+    /** Only with costs. */
+    value?: string;
+    valueTruncated?: boolean;
+    /** The exact sum, to add warehouses up. Only with costs. */
+    rawValue?: string;
+  };
+};
+
+type Client = ReturnType<typeof forOrganization>;
+
+type HeadlineContext = {
+  facilityId: string;
+  /** The warehouse and, for who is limited, its zones. */
+  place: object;
+  scoped: Awaited<ReturnType<typeof locationScopeWhere>>;
+  range: { gte: Date; lt: Date };
+  window: DayWindow;
+  /** First day and the day after the last. */
+  days: [string, string];
+  timeZone: string;
+  costs: boolean;
+  seesAccuracy: boolean;
+  productId: string | null;
+  personId: string | null;
+  putawayMode: string;
+};
+
+/**
+ * An exit (ADR 0082): an OUT line of a manual exit or a shipment, not
+ * reversed, in the place and the period.
+ */
+function exitLineWhere(
+  place: object,
+  range: { gte: Date; lt: Date },
+  productId: string | null,
+) {
+  return {
+    direction: "OUT" as const,
+    createdAt: range,
+    location: place,
+    movement: {
+      type: { in: ["EXIT" as const, "SHIPMENT" as const] },
+      reversedBy: { is: null },
+    },
+    ...(productId ? { productId } : {}),
+  };
+}
+
+/** Tasks delivered in the period whose origin is in the place. */
+function deliveredTaskWhere(
+  place: object,
+  range: { gte: Date; lt: Date },
+  productId: string | null,
+  personId: string | null,
+) {
+  return {
+    status: "DELIVERED" as const,
+    deliveredAt: range,
+    fromLocation: place,
+    ...(productId ? { productId } : {}),
+    ...(personId ? { assignedToUserId: personId } : {}),
+  };
+}
+
+async function periodHeadline(
+  client: Client,
+  context: HeadlineContext,
+): Promise<KpiHeadline> {
+  const { facilityId, place, scoped, range, window, costs, timeZone } = context;
+  const exitLine = exitLineWhere(place, range, context.productId);
+  const taskWhere = deliveredTaskWhere(
+    place,
+    range,
+    context.productId,
+    context.personId,
+  );
+  const shippedWhere = shippedOnWhere(facilityId, window);
+  const pickedWhere = pickedOnWhere(facilityId, window);
+  const [
+    exitLines,
+    costGroups,
+    accuracy,
+    shippedCount,
+    shippedOrders,
+    pickedCount,
+    pickedOrders,
+    putawayRows,
+    tasksDelivered,
+  ] = await Promise.all([
+    client.stockMovementLine.count({ where: exitLine }),
+    costs
+      ? client.stockMovementLine.groupBy({
+          by: ["unitCost"],
+          where: exitLine,
+          _sum: { baseQuantity: true },
+          orderBy: { unitCost: "asc" },
+          take: KPI_COST_GROUPS_MAX + 1,
+        })
+      : Promise.resolve(null),
+    context.seesAccuracy
+      ? accuracyFigures(client, {
+          location: {
+            facilityId,
+            ...(isLimited(scoped) ? scoped : {}),
+          },
+          costs,
+          days: context.days,
+          range,
+        })
+      : Promise.resolve(undefined),
+    client.outboundOrder.count({ where: shippedWhere }),
+    client.outboundOrder.findMany({
+      where: shippedWhere,
+      orderBy: { id: "asc" },
+      take: KPI_ORDERS_MAX,
+      select: {
+        id: true,
+        dueOn: true,
+        lines: { select: { id: true, quantity: true } },
+        shipments: {
+          where: {
+            openOrderId: { not: null },
+            shipment: { status: "SHIPPED" },
+          },
+          select: { shipment: { select: { shippedAt: true } } },
+        },
+      },
+    }),
+    client.outboundOrder.count({ where: pickedWhere }),
+    client.outboundOrder.findMany({
+      where: pickedWhere,
+      orderBy: { id: "asc" },
+      take: KPI_ORDERS_MAX,
+      select: {
+        releasedAt: true,
+        lines: {
+          select: {
+            tasks: {
+              where: { kind: "PICK" },
+              select: { deliveredAt: true, cancelledAt: true },
+            },
+          },
+        },
+      },
+    }),
+    client.warehouseTask.findMany({
+      where: { ...taskWhere, kind: "PUTAWAY" },
+      orderBy: { id: "asc" },
+      take: KPI_TASK_ROWS_MAX + 1,
+      select: { createdAt: true, deliveredAt: true },
+    }),
+    client.warehouseTask.count({ where: taskWhere }),
+  ]);
+
+  // Orders shipped in the period: complete and on time.
+  const orderLineIds = shippedOrders.flatMap((o) => o.lines.map((l) => l.id));
+  const shippedSums =
+    orderLineIds.length === 0
+      ? []
+      : await client.shipmentLine.groupBy({
+          by: ["orderLineId"],
+          where: { orderId: { in: shippedOrders.map((o) => o.id) } },
+          orderBy: { orderLineId: "asc" },
+          _sum: { quantity: true },
+        });
+  const shippedOf = new Map(
+    shippedSums.map((row) => [row.orderLineId, String(row._sum.quantity ?? 0)]),
+  );
+  let complete = 0;
+  let withDueDay = 0;
+  let onTime = 0;
+  let completeOnTime = 0;
+  for (const order of shippedOrders) {
+    const isComplete = order.lines.every((line) =>
+      dec(shippedOf.get(line.id) ?? 0).greaterThanOrEqualTo(
+        line.quantity.toString(),
+      ),
+    );
+    if (isComplete) complete += 1;
+    if (!order.dueOn) continue;
+    withDueDay += 1;
+    const shippedAt = order.shipments
+      .map((s) => s.shipment.shippedAt)
+      .filter((at): at is Date => at !== null)
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+    const isOnTime = shippedOnTime(
+      shippedAt ?? null,
+      order.dueOn.toISOString().slice(0, 10),
+      timeZone,
+    );
+    if (isOnTime) onTime += 1;
+    if (isOnTime && isComplete) completeOnTime += 1;
+  }
+
+  // Picking time: release → last picking task closed.
+  const pickTimes: number[] = [];
+  for (const order of pickedOrders) {
+    if (!order.releasedAt) continue;
+    let last = 0;
+    for (const line of order.lines) {
+      for (const task of line.tasks) {
+        const closed = task.deliveredAt ?? task.cancelledAt;
+        if (closed && closed.getTime() > last) last = closed.getTime();
+      }
+    }
+    if (last > 0) pickTimes.push(last - order.releasedAt.getTime());
+  }
+
+  // Receiving: creation → delivery of the put-away tasks.
+  const putawayTimes = putawayRows
+    .slice(0, KPI_TASK_ROWS_MAX)
+    .flatMap((row) =>
+      row.deliveredAt
+        ? [row.deliveredAt.getTime() - row.createdAt.getTime()]
+        : [],
+    );
+
+  const result: KpiHeadline = {
+    orders: {
+      shipped: shippedCount,
+      read: shippedOrders.length,
+      complete,
+      withDueDay,
+      onTime,
+      completeOnTime,
+      completeShare: shareOf(complete, shippedOrders.length),
+      onTimeShare: shareOf(onTime, withDueDay),
+      completeOnTimeShare: shareOf(completeOnTime, withDueDay),
+      truncated: shippedCount > shippedOrders.length,
+    },
+    picking: {
+      orders: pickedCount,
+      ...timeFigures(pickTimes),
+      truncated: pickedCount > pickedOrders.length,
+    },
+    receiving: {
+      withTasks: context.putawayMode === "tasks" || putawayTimes.length > 0,
+      ...timeFigures(putawayTimes),
+      truncated: putawayRows.length > KPI_TASK_ROWS_MAX,
+    },
+    tasksDelivered,
+    exits: { lines: exitLines },
+  };
+  if (accuracy) result.accuracy = accuracy;
+  if (costs && costGroups) {
+    const raw = costGroups
+      .slice(0, KPI_COST_GROUPS_MAX)
+      .reduce(
+        (sum, group) =>
+          sum.plus(
+            dec(String(group._sum.baseQuantity ?? 0)).times(
+              String(group.unitCost ?? 0),
+            ),
+          ),
+        dec(0),
+      );
+    result.exits.valueTruncated = costGroups.length > KPI_COST_GROUPS_MAX;
+    result.exits.value = formatValue(raw);
+    result.exits.rawValue = raw.toString();
+  }
+  return result;
+}
+
 export async function getWarehouseIndicators(
   actor: InventoryActor,
   options: {
@@ -183,6 +466,8 @@ export async function getWarehouseIndicators(
     facilityId?: unknown;
     productId?: unknown;
     personId?: unknown;
+    /** False skips the period before (WMS-34); the screen compares. */
+    compare?: boolean;
     /** For tests of the calendar's edges; screens never pass it. */
     now?: Date;
   } = {},
@@ -194,20 +479,29 @@ export async function getWarehouseIndicators(
   );
   const client = forOrganization(actor.organizationId);
   // The company's zone is read once; every day below is worked out from it.
-  const [timeZone, active, scope, scoped, subject, allFacilities, idleDays] =
-    await Promise.all([
-      companyTimeZone(client),
-      activeFacilityOf(client, actor.userId),
-      loadScope(client, actor.userId),
-      locationScopeWhere(client, actor.userId),
-      loadSubject(actor.organizationId, actor.userId),
-      client.facility.findMany({
-        where: { archivedAt: null },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-        select: { id: true, name: true },
-      }),
-      readSetting(client, KPI_IDLE_DAYS),
-    ]);
+  const [
+    timeZone,
+    active,
+    scope,
+    scoped,
+    subject,
+    allFacilities,
+    idleDays,
+    putawayMode,
+  ] = await Promise.all([
+    companyTimeZone(client),
+    activeFacilityOf(client, actor.userId),
+    loadScope(client, actor.userId),
+    locationScopeWhere(client, actor.userId),
+    loadSubject(actor.organizationId, actor.userId),
+    client.facility.findMany({
+      where: { archivedAt: null },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: { id: true, name: true },
+    }),
+    readSetting(client, KPI_IDLE_DAYS),
+    readSetting(client, PUTAWAY_MODE),
+  ]);
   // The other reads are of the same module as `inventory.kpi.read`, which
   // just passed with its entitlement: the role decides, read once.
   const costs = can(subject, "inventory.cost.read");
@@ -278,44 +572,60 @@ export async function getWarehouseIndicators(
   }
   const personId = personMember?.userId ?? null;
   const byProduct = product ? { productId: product.id } : {};
-  const exitLine = {
-    direction: "OUT" as const,
-    createdAt: range,
-    location: place,
-    movement: {
-      type: { in: ["EXIT" as const, "SHIPMENT" as const] },
-      reversedBy: { is: null },
-    },
-    ...byProduct,
+  const exitLine = exitLineWhere(place, range, product?.id ?? null);
+  const taskWhere = deliveredTaskWhere(
+    place,
+    range,
+    product?.id ?? null,
+    personId,
+  );
+
+  const headlineContext: HeadlineContext = {
+    facilityId: facility.id,
+    place,
+    scoped,
+    range,
+    window,
+    days: [period.from, period.next],
+    timeZone,
+    costs,
+    seesAccuracy,
+    productId: product?.id ?? null,
+    personId,
+    putawayMode,
   };
-  const taskWhere = {
-    status: "DELIVERED" as const,
-    deliveredAt: range,
-    fromLocation: place,
-    ...byProduct,
-    ...(personId ? { assignedToUserId: personId } : {}),
+  const previous = previousPeriod(period);
+  // Its own days: with «Este mes» it ends before the current one starts
+  // (the same days of the month before), so never `startDay` here.
+  const previousStart = windowOf(previous.from, timeZone);
+  const previousEnd = windowOf(previous.next, timeZone);
+  if (!previousStart || !previousEnd) throw new Error("Unreadable period");
+  const previousRange = {
+    gte: previousStart.range.gte,
+    lt: previousEnd.range.gte,
   };
-  const shippedWhere = shippedOnWhere(facility.id, window);
-  const pickedWhere = pickedOnWhere(facility.id, window);
 
   const [
+    headline,
+    before,
     topGroups,
-    exitLines,
-    costGroups,
     withStock,
-    accuracy,
-    shippedCount,
-    shippedOrders,
-    pickedCount,
-    pickedOrders,
     taskRows,
     tasksByPerson,
     tasksFrom,
     tasksPlaced,
     movementsByPerson,
     linesByLocation,
-    putawayMode,
   ] = await Promise.all([
+    periodHeadline(client, headlineContext),
+    options.compare === false
+      ? Promise.resolve(null)
+      : periodHeadline(client, {
+          ...headlineContext,
+          range: previousRange,
+          window: { day: previous.from, range: previousRange },
+          days: [previous.from, previous.next],
+        }),
     product
       ? Promise.resolve(null)
       : client.stockMovementLine.groupBy({
@@ -326,16 +636,6 @@ export async function getWarehouseIndicators(
           orderBy: [{ _count: { productId: "desc" } }, { productId: "asc" }],
           take: KPI_TOP_PRODUCTS,
         }),
-    client.stockMovementLine.count({ where: exitLine }),
-    costs
-      ? client.stockMovementLine.groupBy({
-          by: ["unitCost"],
-          where: exitLine,
-          _sum: { baseQuantity: true },
-          orderBy: { unitCost: "asc" },
-          take: KPI_COST_GROUPS_MAX + 1,
-        })
-      : Promise.resolve(null),
     // Idle products: those with stock in the place (grouped in the
     // database, capped) minus those of them that moved there lately. Two
     // group-bys cost less than a count with EXISTS per product (measured
@@ -345,52 +645,6 @@ export async function getWarehouseIndicators(
       where: { quantity: { gt: 0 }, location: place, ...byProduct },
       orderBy: { productId: "asc" },
       take: KPI_IDLE_SCAN_MAX + 1,
-    }),
-    seesAccuracy
-      ? accuracyFigures(client, {
-          location: {
-            facilityId: facility.id,
-            ...(isLimited(scoped) ? scoped : {}),
-          },
-          costs,
-          days: [period.from, period.next],
-          range,
-        })
-      : Promise.resolve(undefined),
-    client.outboundOrder.count({ where: shippedWhere }),
-    client.outboundOrder.findMany({
-      where: shippedWhere,
-      orderBy: { id: "asc" },
-      take: KPI_ORDERS_MAX,
-      select: {
-        id: true,
-        dueOn: true,
-        lines: { select: { id: true, quantity: true } },
-        shipments: {
-          where: {
-            openOrderId: { not: null },
-            shipment: { status: "SHIPPED" },
-          },
-          select: { shipment: { select: { shippedAt: true } } },
-        },
-      },
-    }),
-    client.outboundOrder.count({ where: pickedWhere }),
-    client.outboundOrder.findMany({
-      where: pickedWhere,
-      orderBy: { id: "asc" },
-      take: KPI_ORDERS_MAX,
-      select: {
-        releasedAt: true,
-        lines: {
-          select: {
-            tasks: {
-              where: { kind: "PICK" },
-              select: { deliveredAt: true, cancelledAt: true },
-            },
-          },
-        },
-      },
     }),
     client.warehouseTask.findMany({
       where: taskWhere,
@@ -459,7 +713,6 @@ export async function getWarehouseIndicators(
       orderBy: { locationId: "asc" },
       _count: { _all: true },
     }),
-    readSetting(client, PUTAWAY_MODE),
   ]);
 
   // Products: the busiest by exit lines (or the one filtered), with their
@@ -660,60 +913,6 @@ export async function getWarehouseIndicators(
     return row;
   });
 
-  // Orders shipped in the period: complete and on time.
-  const orderLineIds = shippedOrders.flatMap((o) => o.lines.map((l) => l.id));
-  const shippedSums =
-    orderLineIds.length === 0
-      ? []
-      : await client.shipmentLine.groupBy({
-          by: ["orderLineId"],
-          where: { orderId: { in: shippedOrders.map((o) => o.id) } },
-          orderBy: { orderLineId: "asc" },
-          _sum: { quantity: true },
-        });
-  const shippedOf = new Map(
-    shippedSums.map((row) => [row.orderLineId, String(row._sum.quantity ?? 0)]),
-  );
-  let complete = 0;
-  let withDueDay = 0;
-  let onTime = 0;
-  let completeOnTime = 0;
-  for (const order of shippedOrders) {
-    const isComplete = order.lines.every((line) =>
-      dec(shippedOf.get(line.id) ?? 0).greaterThanOrEqualTo(
-        line.quantity.toString(),
-      ),
-    );
-    if (isComplete) complete += 1;
-    if (!order.dueOn) continue;
-    withDueDay += 1;
-    const shippedAt = order.shipments
-      .map((s) => s.shipment.shippedAt)
-      .filter((at): at is Date => at !== null)
-      .sort((a, b) => a.getTime() - b.getTime())[0];
-    const isOnTime = shippedOnTime(
-      shippedAt ?? null,
-      order.dueOn.toISOString().slice(0, 10),
-      timeZone,
-    );
-    if (isOnTime) onTime += 1;
-    if (isOnTime && isComplete) completeOnTime += 1;
-  }
-
-  // Picking time: release → last picking task closed.
-  const pickTimes: number[] = [];
-  for (const order of pickedOrders) {
-    if (!order.releasedAt) continue;
-    let last = 0;
-    for (const line of order.lines) {
-      for (const task of line.tasks) {
-        const closed = task.deliveredAt ?? task.cancelledAt;
-        if (closed && closed.getTime() > last) last = closed.getTime();
-      }
-    }
-    if (last > 0) pickTimes.push(last - order.releasedAt.getTime());
-  }
-
   // Delivered tasks: times of putaway, per person and per zone.
   const tasksTruncated = taskRows.length > KPI_TASK_ROWS_MAX;
   const rows = taskRows.slice(0, KPI_TASK_ROWS_MAX);
@@ -743,13 +942,9 @@ export async function getWarehouseIndicators(
     client,
     [...locationIds].filter((id) => reachable.has(id)),
   );
-  const putawayTimes: number[] = [];
   const timesByPerson = new Map<string, number[]>();
   const timesByZone = new Map<string, number[]>();
   for (const row of rows) {
-    if (row.kind === "PUTAWAY" && row.deliveredAt) {
-      putawayTimes.push(row.deliveredAt.getTime() - row.createdAt.getTime());
-    }
     if (!row.acceptedAt || !row.deliveredAt) continue;
     const took = row.deliveredAt.getTime() - row.acceptedAt.getTime();
     if (row.assignedToUserId) {
@@ -799,29 +994,20 @@ export async function getWarehouseIndicators(
     facility,
     facilities,
     product,
-    orders: {
-      shipped: shippedCount,
-      read: shippedOrders.length,
-      complete,
-      withDueDay,
-      onTime,
-      completeOnTime,
-      completeShare: shareOf(complete, shippedOrders.length),
-      onTimeShare: shareOf(onTime, withDueDay),
-      completeOnTimeShare: shareOf(completeOnTime, withDueDay),
-      truncated: shippedCount > shippedOrders.length,
+    orders: headline.orders,
+    picking: headline.picking,
+    receiving: headline.receiving,
+    tasksDelivered: headline.tasksDelivered,
+    exits: {
+      lines: headline.exits.lines,
+      ...(headline.exits.value !== undefined
+        ? {
+            value: headline.exits.value,
+            valueTruncated: headline.exits.valueTruncated,
+          }
+        : {}),
+      top,
     },
-    picking: {
-      orders: pickedCount,
-      ...timeFigures(pickTimes),
-      truncated: pickedCount > pickedOrders.length,
-    },
-    receiving: {
-      withTasks: putawayMode === "tasks" || putawayTimes.length > 0,
-      ...timeFigures(putawayTimes),
-      truncated: tasksTruncated,
-    },
-    exits: { lines: exitLines, top },
     idle: {
       days: idleDaysCount,
       count: idleAll.length,
@@ -836,23 +1022,8 @@ export async function getWarehouseIndicators(
     ),
     tasksTruncated,
   };
-  if (accuracy) result.accuracy = accuracy;
-  if (costs && costGroups) {
-    result.exits.valueTruncated = costGroups.length > KPI_COST_GROUPS_MAX;
-    result.exits.value = formatValue(
-      costGroups
-        .slice(0, KPI_COST_GROUPS_MAX)
-        .reduce(
-          (sum, group) =>
-            sum.plus(
-              dec(String(group._sum.baseQuantity ?? 0)).times(
-                String(group.unitCost ?? 0),
-              ),
-            ),
-          dec(0),
-        ),
-    );
-  }
+  if (headline.accuracy) result.accuracy = headline.accuracy;
+  if (before) result.previous = { period: previous, ...before };
 
   if (seesPeople) {
     result.person = personMember
@@ -900,6 +1071,169 @@ export async function getWarehouseIndicators(
         (a.name ?? "").localeCompare(b.name ?? "", "es") ||
         a.userId.localeCompare(b.userId),
     );
+  }
+  return result;
+}
+
+/** Warehouses compared at most in the view by warehouse. */
+export const KPI_FACILITIES_MAX = 10;
+
+export type KpiFacilityRow = KpiHeadline & {
+  facilityId: string;
+  name: string;
+};
+
+export type IndicatorsByFacility = {
+  period: KpiPeriod;
+  rows: KpiFacilityRow[];
+  /** More warehouses in the scope than were compared. */
+  truncated: boolean;
+  /**
+   * The whole company, added up from the rows (WMS-34, ADR 0085). Only for
+   * who has no limit of warehouse or zone and only when every warehouse
+   * was compared; medians cannot be added up and are left out.
+   */
+  company?: {
+    shipped: number;
+    read: number;
+    complete: number;
+    withDueDay: number;
+    onTime: number;
+    completeOnTime: number;
+    completeShare: string | null;
+    onTimeShare: string | null;
+    completeOnTimeShare: string | null;
+    pickedOrders: number;
+    tasksDelivered: number;
+    exitLines: number;
+    accuracy?: { rows: number; exact: number; share: string | null };
+    exitValue?: string;
+    truncated: boolean;
+  };
+};
+
+/**
+ * The headline figures of a period for each warehouse the person reaches
+ * (WMS-34, ADR 0085), each one inside the person's zones, with the same
+ * function as the indicators. Product and person filters do not apply.
+ */
+export async function getIndicatorsByFacility(
+  actor: InventoryActor,
+  options: {
+    preset?: unknown;
+    from?: unknown;
+    to?: unknown;
+    /** For tests of the calendar's edges; screens never pass it. */
+    now?: Date;
+  } = {},
+): Promise<IndicatorsByFacility> {
+  await assertModulePermission(
+    actor.organizationId,
+    actor.userId,
+    "inventory.kpi.read",
+  );
+  const client = forOrganization(actor.organizationId);
+  const [timeZone, scope, scoped, subject, allFacilities, putawayMode] =
+    await Promise.all([
+      companyTimeZone(client),
+      loadScope(client, actor.userId),
+      locationScopeWhere(client, actor.userId),
+      loadSubject(actor.organizationId, actor.userId),
+      client.facility.findMany({
+        where: { archivedAt: null },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: { id: true, name: true },
+      }),
+      readSetting(client, PUTAWAY_MODE),
+    ]);
+  const costs = can(subject, "inventory.cost.read");
+  const seesAccuracy = can(subject, "inventory.count_accuracy.read");
+  const today = dayOf(options.now ?? new Date(), timeZone);
+  const period = resolvePeriod(today, {
+    preset: options.preset,
+    from: options.from,
+    to: options.to,
+  });
+  const startDay = windowOf(period.from, timeZone);
+  const endDay = windowOf(period.next, timeZone);
+  if (!startDay || !endDay) throw new Error("Unreadable period");
+  const range = { gte: startDay.range.gte, lt: endDay.range.gte };
+  const window: DayWindow = { day: period.from, range };
+
+  const reached = allFacilities.filter((f) => facilityInScope(scope, f.id));
+  const compared = reached.slice(0, KPI_FACILITIES_MAX);
+  const headlines = await Promise.all(
+    compared.map((facility) =>
+      periodHeadline(client, {
+        facilityId: facility.id,
+        place: {
+          facilityId: facility.id,
+          ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+        },
+        scoped,
+        range,
+        window,
+        days: [period.from, period.next],
+        timeZone,
+        costs,
+        seesAccuracy,
+        productId: null,
+        personId: null,
+        putawayMode,
+      }),
+    ),
+  );
+  const rows: KpiFacilityRow[] = compared.map((facility, at) => ({
+    facilityId: facility.id,
+    name: facility.name,
+    ...headlines[at]!,
+  }));
+  const truncated = reached.length > compared.length;
+  const result: IndicatorsByFacility = { period, rows, truncated };
+
+  // The whole company only for who sees all of it, and only when every
+  // warehouse was compared (ADR 0038: no figure of the company otherwise).
+  if (scope === null && !truncated && rows.length > 0) {
+    const sum = (pick: (row: KpiFacilityRow) => number) =>
+      rows.reduce((total, row) => total + pick(row), 0);
+    const read = sum((r) => r.orders.read);
+    const complete = sum((r) => r.orders.complete);
+    const withDueDay = sum((r) => r.orders.withDueDay);
+    const onTime = sum((r) => r.orders.onTime);
+    const completeOnTime = sum((r) => r.orders.completeOnTime);
+    const company: NonNullable<IndicatorsByFacility["company"]> = {
+      shipped: sum((r) => r.orders.shipped),
+      read,
+      complete,
+      withDueDay,
+      onTime,
+      completeOnTime,
+      completeShare: shareOf(complete, read),
+      onTimeShare: shareOf(onTime, withDueDay),
+      completeOnTimeShare: shareOf(completeOnTime, withDueDay),
+      pickedOrders: sum((r) => r.picking.orders),
+      tasksDelivered: sum((r) => r.tasksDelivered),
+      exitLines: sum((r) => r.exits.lines),
+      truncated: rows.some(
+        (r) =>
+          r.orders.truncated ||
+          r.picking.truncated ||
+          r.receiving.truncated ||
+          r.accuracy?.truncated ||
+          r.exits.valueTruncated,
+      ),
+    };
+    if (seesAccuracy) {
+      const lines = sum((r) => r.accuracy?.rows ?? 0);
+      const exact = sum((r) => r.accuracy?.exact ?? 0);
+      company.accuracy = { rows: lines, exact, share: shareOf(exact, lines) };
+    }
+    if (costs) {
+      company.exitValue = formatValue(
+        rows.reduce((total, r) => total.plus(r.exits.rawValue ?? 0), dec(0)),
+      );
+    }
+    result.company = company;
   }
   return result;
 }

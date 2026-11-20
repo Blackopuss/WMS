@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { DaySummary } from "@/modules/inventory";
+import type { DaySummary, OpenWorkRow } from "@/modules/inventory";
 
 const count = (value: number) => value.toLocaleString("es-MX");
 const plural = (value: number, one: string, many: string) =>
@@ -16,9 +16,12 @@ const tileClass = "flex min-h-24 flex-col gap-2 rounded-xl border bg-card p-4";
  */
 export function DaySummaryBlock({
   summary,
+  openWork,
   links,
 }: {
   summary: DaySummary;
+  /** WMS-34: open tasks per person; null for who does not read tasks. */
+  openWork?: { rows: OpenWorkRow[]; truncated: boolean } | null;
   links: {
     movements: boolean;
     tasks: boolean;
@@ -163,6 +166,67 @@ export function DaySummaryBlock({
           </ul>
         )}
       </div>
+      {openWork && (
+        <div className="rounded-xl border bg-card">
+          <h3 className="border-b px-4 py-3 font-medium sm:px-5">
+            Trabajo abierto por persona
+          </h3>
+          {openWork.rows.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground sm:px-5">
+              Nadie tiene tareas sin terminar en este almacén.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {openWork.rows.map((person) => {
+                const name =
+                  person.name ?? "Alguien que ya no está en el equipo";
+                const detail = [
+                  plural(
+                    person.open,
+                    "tarea sin terminar",
+                    "tareas sin terminar",
+                  ),
+                  person.blocked > 0 &&
+                    plural(person.blocked, "con problema", "con problema"),
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                const body = (
+                  <>
+                    <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
+                      {name}
+                    </span>
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      {detail}
+                    </span>
+                  </>
+                );
+                const rowClass =
+                  "flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-5";
+                return (
+                  <li key={person.userId}>
+                    {links.tasks ? (
+                      <Link
+                        href={`/tareas?vista=open&persona=${encodeURIComponent(person.userId)}`}
+                        className={`${rowClass} outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50`}
+                      >
+                        {body}
+                      </Link>
+                    ) : (
+                      <div className={rowClass}>{body}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {openWork.truncated && (
+            <p className="border-t px-4 py-3 text-sm text-muted-foreground sm:px-5">
+              Se muestran las {openWork.rows.length} personas con más tareas.
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

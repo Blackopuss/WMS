@@ -43,6 +43,7 @@ import {
   isSetupStepKey,
   offeredSteps,
   listLowStock,
+  listOpenWorkByPerson,
   listRecentMovements,
   planSetupSteps,
   setupAbilities,
@@ -117,6 +118,11 @@ export default async function InicioPage({
   // WMS-73: what the day has done so far, for who runs or supervises.
   const showSummary = inventory && access.can("inventory.summary.read");
   const summary = showSummary ? await getDaySummary(actor) : null;
+  // WMS-34: what each person still has open, for the same people.
+  const openWork =
+    showSummary && access.can("inventory.task.read")
+      ? await listOpenWorkByPerson(actor)
+      : null;
 
   // WMS-74: stages of processes count with the tasks (the same rule as
   // Tareas; who works no stage of a document it reads queries nothing).
@@ -538,6 +544,7 @@ export default async function InicioPage({
       {summary && (
         <DaySummaryBlock
           summary={summary}
+          openWork={openWork}
           links={{
             movements: showMovements,
             tasks: showTasks,
