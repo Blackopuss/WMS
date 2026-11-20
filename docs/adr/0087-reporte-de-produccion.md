@@ -127,8 +127,10 @@ Bajo el candado de los productos, por cada línea, en este orden:
 
 - **Materiales por serie:** las series escaneadas mandan: cada unidad debe
   estar disponible, en una ubicación al alcance (en modo `issue`, en el
-  área o donde haya algo apartado para la línea sin tarea que lo respalde),
-  sin tarea abierta ni tarima; por cada ubicación y lote se toma
+  área o donde haya algo apartado para la línea sin tarea que lo respalde;
+  fuera del área, como mucho tantas series como lo apartado ahí: unidades
+  libres fuera del área no se toman y el reporte responde «no alcanza»,
+  igual que sin serie), sin tarea abierta ni tarima; por cada ubicación y lote se toma
   primero lo apartado ahí para la línea y el resto debe estar libre. El
   número de series debe ser exactamente lo que se consume.
 - **Fuera del alcance:** lo apartado en ubicaciones que quien reporta no

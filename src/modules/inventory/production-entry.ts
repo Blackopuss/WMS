@@ -383,6 +383,12 @@ async function planSerialTakes(
       used.push({ id: reservation.id, quantity: take });
       left = left.minus(take);
     }
+    if (left.greaterThan(0) && input.onlyIn && !input.onlyIn.has(locationId)) {
+      // With `issue`, outside the area only what is set aside there with no
+      // task behind it is taken; free units only in the area. Short, like a
+      // material without serials (ADR 0087).
+      return { ok: false, reachable: input.quantity.minus(left) };
+    }
     if (left.greaterThan(0)) {
       const free = await freeToTake(tx, input.product.id, locationId, null);
       if (free.lessThan(left)) {

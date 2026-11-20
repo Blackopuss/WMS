@@ -916,6 +916,31 @@ describe("where materials come from, whatever the setting says now (ADR 0087)", 
     await balanced(owner.organizationId);
   });
 
+  it("bringing materials to the line, a material by serial takes free units only in the area", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const chip = await product(owner, "Chip", { tracking: "SERIAL" });
+    const board = await product(owner, "Placa");
+    await enter(owner, chip, shelf, "6", {
+      serials: "S1\nS2\nS3\nS4\nS5\nS6",
+    });
+    await recipe(owner, board, [[chip, "1"]]);
+    const id = await released(owner, board, area, "1");
+    await setting(owner, "production.materials.mode", "issue");
+    const line = (await linesOf(id))[0]!;
+    // One chip is set aside on the shelf; two more there are free.
+    expect(
+      await report(owner, id, "1", {
+        bad: "2",
+        badReason: "Se dañaron",
+        materialSerials: { [line.id]: "S1\nS2\nS3" },
+      }),
+    ).toMatchObject({ ok: false, reason: "short" });
+    const set = (await reservedOf(line.id, shelf))[0]!;
+    expect(set.remaining).toBe("1");
+    await balanced(owner.organizationId);
+  });
+
   it("scrap never takes what an open task still has to bring", async () => {
     const { owner, area, crate, board } = await workshop();
     await setting(owner, "production.materials.mode", "issue");
