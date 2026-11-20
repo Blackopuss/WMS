@@ -23,6 +23,7 @@ import {
   type SerialPick,
 } from "./serials";
 import { lotColumns } from "./stock-status";
+import { OPEN_TASK_STATUSES } from "./task-states";
 import { lineCost, openCostBook } from "./valuation";
 
 /**
@@ -70,8 +71,11 @@ export type MaterialPlanInput = {
   /** The scope of who reports (`locationScopeWhere`), or null: no limit. */
   within: object | null;
   /**
-   * With `production.materials.mode = issue`: only what is in the area
-   * (and inside it). Null: wherever it is.
+   * With `production.materials.mode = issue`: what is FREE is taken only in
+   * the area (and inside it). Null: wherever it is. What is set aside for
+   * the line does not depend on it (ADR 0087, «De dónde, sin depender del
+   * ajuste»): it is taken wherever it is, except what an open ISSUE task
+   * still has to carry.
    */
   onlyIn: ReadonlySet<string> | null;
   /** The area and what is inside it: set aside there is taken first. */
@@ -84,9 +88,86 @@ const placeWhere = (input: MaterialPlanInput) => ({
   facilityId: input.facilityId,
   archivedAt: null,
   isTransit: null,
-  ...(input.onlyIn ? { id: { in: [...input.onlyIn] } } : {}),
   ...(input.within ?? {}),
 });
+
+type LineReservation = {
+  id: string;
+  locationId: string;
+  lotId: string | null;
+  /** What is left of it that no open ISSUE task still has to carry. */
+  usable: Decimal;
+  expiresOn: Date | null;
+};
+
+/**
+ * What is set aside for an order line within reach, minus what its open
+ * ISSUE tasks still have to carry from there (their origin, product and
+ * lot). Decided by what the order has, never by the company's current
+ * `production.materials.mode`: an order released in either mode keeps
+ * producing after the setting changes, and an ISSUE task always finds what
+ * it carries when it is delivered.
+ */
+async function lineReservations(
+  tx: Tx,
+  input: MaterialPlanInput,
+): Promise<LineReservation[]> {
+  const [reservations, tasks] = await Promise.all([
+    tx.stockReservation.findMany({
+      where: {
+        sourceType: PRODUCTION_ORDER_LINE_SOURCE,
+        sourceId: input.lineId,
+        state: "ACTIVE",
+        productId: input.product.id,
+        location: placeWhere(input),
+      },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        locationId: true,
+        lotId: true,
+        remaining: true,
+        lot: { select: { expiresOn: true } },
+      },
+    }),
+    tx.warehouseTask.findMany({
+      where: {
+        kind: "ISSUE",
+        productionOrderLineId: input.lineId,
+        status: { in: [...OPEN_TASK_STATUSES] },
+      },
+      select: { fromLocationId: true, lotId: true, quantity: true },
+    }),
+  ]);
+  const carried = new Map<string, Decimal>();
+  for (const task of tasks) {
+    const slot = `${task.fromLocationId} ${task.lotId ?? ""}`;
+    carried.set(
+      slot,
+      (carried.get(slot) ?? dec(0)).plus((task.quantity ?? 0).toString()),
+    );
+  }
+  const rows: LineReservation[] = [];
+  for (const reservation of reservations) {
+    const slot = `${reservation.locationId} ${reservation.lotId ?? ""}`;
+    let usable = dec(reservation.remaining.toString());
+    const backing = carried.get(slot);
+    if (backing?.greaterThan(0)) {
+      const kept = minOf(usable, backing);
+      carried.set(slot, backing.minus(kept));
+      usable = usable.minus(kept);
+    }
+    if (!usable.greaterThan(0)) continue;
+    rows.push({
+      id: reservation.id,
+      locationId: reservation.locationId!,
+      lotId: reservation.lotId,
+      usable,
+      expiresOn: reservation.lot?.expiresOn ?? null,
+    });
+  }
+  return rows;
+}
 
 /**
  * Where a quantity of one material is taken from: first what is set aside
@@ -102,32 +183,17 @@ export async function planMaterialTakes(
 ): Promise<MaterialPlan> {
   if (input.product.tracking === "SERIAL") return planSerialTakes(tx, input);
   const wanted = input.quantity;
-  const reservations = await tx.stockReservation.findMany({
-    where: {
-      sourceType: PRODUCTION_ORDER_LINE_SOURCE,
-      sourceId: input.lineId,
-      state: "ACTIVE",
-      productId: input.product.id,
-      location: placeWhere(input),
-    },
-    select: {
-      id: true,
-      locationId: true,
-      lotId: true,
-      remaining: true,
-      lot: { select: { expiresOn: true } },
-    },
-  });
+  const reservations = await lineReservations(tx, input);
   reservations.sort((a, b) => {
-    const ea = lotDayOf(a.lot?.expiresOn) ?? "9999-99-99";
-    const eb = lotDayOf(b.lot?.expiresOn) ?? "9999-99-99";
+    const ea = lotDayOf(a.expiresOn) ?? "9999-99-99";
+    const eb = lotDayOf(b.expiresOn) ?? "9999-99-99";
     if (ea !== eb) return ea < eb ? -1 : 1;
-    const ia = input.area.has(a.locationId!) ? 0 : 1;
-    const ib = input.area.has(b.locationId!) ? 0 : 1;
+    const ia = input.area.has(a.locationId) ? 0 : 1;
+    const ib = input.area.has(b.locationId) ? 0 : 1;
     if (ia !== ib) return ia - ib;
-    return a.locationId! < b.locationId!
+    return a.locationId < b.locationId
       ? -1
-      : a.locationId! > b.locationId!
+      : a.locationId > b.locationId
         ? 1
         : a.id < b.id
           ? -1
@@ -138,7 +204,7 @@ export async function planMaterialTakes(
   let left = wanted;
   let reachable = dec(0);
   for (const reservation of reservations) {
-    const locationId = reservation.locationId!;
+    const locationId = reservation.locationId;
     const slot = `${locationId} ${reservation.lotId ?? ""}`;
     if (!looseLeft.has(slot)) {
       const balance = await tx.stockBalance.findFirst({
@@ -160,10 +226,7 @@ export async function planMaterialTakes(
       const loose = dec(balance?.quantity.toString() ?? 0).minus(contained);
       looseLeft.set(slot, loose.isNegative() ? dec(0) : loose);
     }
-    const usable = minOf(
-      dec(reservation.remaining.toString()),
-      looseLeft.get(slot)!,
-    );
+    const usable = minOf(reservation.usable, looseLeft.get(slot)!);
     if (!usable.greaterThan(0)) continue;
     reachable = reachable.plus(usable);
     if (!left.greaterThan(0)) continue;
@@ -260,12 +323,21 @@ async function planSerialTakes(
     "salen",
   );
   if (count) return fail(`${input.product.name}: ${count}`);
+  // Set aside for the line (minus what open ISSUE tasks carry) is taken
+  // wherever it is; free units, only in the area with `issue`.
+  const setAside = await lineReservations(tx, input);
+  const allowed = input.onlyIn
+    ? [...new Set([...input.onlyIn, ...setAside.map((row) => row.locationId)])]
+    : null;
   const units = await tx.serialUnit.findMany({
     where: {
       productId: input.product.id,
       serial: { in: list.serials },
       status: "AVAILABLE",
-      location: placeWhere(input),
+      location: {
+        ...placeWhere(input),
+        ...(allowed ? { id: { in: allowed } } : {}),
+      },
     },
     select: { id: true, serial: true, locationId: true },
   });
@@ -300,21 +372,14 @@ async function planSerialTakes(
       { verb: "salen" },
     );
     if (!answer.ok) return fail(answer.error);
-    const reservations = await tx.stockReservation.findMany({
-      where: {
-        sourceType: PRODUCTION_ORDER_LINE_SOURCE,
-        sourceId: input.lineId,
-        state: "ACTIVE",
-        locationId,
-      },
-      orderBy: { id: "asc" },
-      select: { id: true, remaining: true },
-    });
+    const reservations = setAside.filter(
+      (row) => row.locationId === locationId,
+    );
     let left = quantity;
     const used: { id: string; quantity: Decimal }[] = [];
     for (const reservation of reservations) {
       if (!left.greaterThan(0)) break;
-      const take = minOf(dec(reservation.remaining.toString()), left);
+      const take = minOf(reservation.usable, left);
       used.push({ id: reservation.id, quantity: take });
       left = left.minus(take);
     }

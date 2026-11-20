@@ -637,7 +637,8 @@ export {
   parseSerialList,
   serialsText,
 } from "./serial-rules";
-export { serialsOfLines as serialUnitsOfLines } from "./serials";
+export { serialKey, serialsOfLines as serialUnitsOfLines } from "./serials";
+export { parseCalendarDay } from "./lot-rules";
 export {
   SERIAL_PAGE_SIZE,
   findTraceMatches,

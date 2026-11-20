@@ -101,8 +101,9 @@ automático y acumulado (`report-rules.ts`: `consumeNow`, `produceNow`,
 `cumulativeThatFits`, `goodThatFits`): materiales `ceil_paso(receta × (buenas
 + malas acumuladas) ÷ base)` menos lo ya consumido, salidas `floor_paso`
 con las buenas acumuladas. De dónde: lo apartado de la línea al alcance de
-quien reporta (en modo `issue`, solo dentro del área), luego lo libre con
-`pickSources` (`planMaterialTakes` de Inventario). Si no alcanza, no guarda
+quien reporta, menos lo que una tarea `ISSUE` abierta todavía tiene que
+llevar (sin depender del ajuste vigente), luego lo libre con `pickSources`
+(en modo `issue`, solo dentro del área; `planMaterialTakes` de Inventario). Si no alcanza, no guarda
 y responde qué falta y para cuánto alcanza. Lo hecho entra en `INSPECTION`
 en el área con un lote nuevo (`lot-numbering.ts`: nomenclatura de la
 empresa o `OP-0001-01`), costeado con los materiales repartidos por la
@@ -114,7 +115,8 @@ operación «Producción reportada» y empieza el proceso del lote
 `production.report.photo` (propósito `production_report_photo`,
 `reachesProductionReport`). `reverseProductionReport`: reversa entera
 mientras lo producido siga intacto en inspección (`reverseProduction` de
-Inventario), re-aparta lo que había salido de lo apartado.
+Inventario), re-aparta lo que había salido de lo apartado; exige alcanzar
+todas las ubicaciones que el reporte tocó.
 `reportMaterialScrap` (`scrap.ts`): `DISPOSAL` con `postDisposal(…,
 { takesAvailable: true })` después de consumir lo apartado; tipo de
 aprobación propio `production.scrap`. `warnMaterialShortage`: aviso

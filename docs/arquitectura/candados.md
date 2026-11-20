@@ -44,10 +44,14 @@ salidas) → orden de producción → su estado «En proceso» (antes de bloquea
 cualquier ubicación) → ubicaciones de donde sale y el área → capacidad del
 área → nomenclatura de lotes de la empresa (si hay) → progreso de la orden
 y del lote → archivos de las fotos (demostración en el ADR 0087). No toma el almacén. La reversa:
-productos → orden → reporte → ubicaciones → progreso del lote. La merma:
-el material → orden → ubicaciones (→ solicitud de aprobación). Carrera en
-`tests/server/lock-order.int.test.ts` («reporting production never
-deadlocks…»).
+todos los productos de la orden → orden → reporte → ubicaciones → progreso
+del lote. La merma: todos los productos de la orden → orden → ubicaciones
+(autorizada, la solicitud antes, como toda autorización). La merma y la
+reversa bloquean todos los productos de la orden, no solo los que mueven:
+con uno solo cerraban un ciclo con la entrega de una tarea `ISSUE` de otro
+material de la misma orden (que sostiene el área y espera la orden).
+Carreras en `tests/server/lock-order.int.test.ts` («reporting production
+never deadlocks…», «scrap of one material…», «reversing a report…»).
 
 ## Almacenes
 

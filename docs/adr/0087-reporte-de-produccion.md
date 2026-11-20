@@ -114,20 +114,21 @@ versión de la receta que copió la orden:
 Bajo el candado de los productos, por cada línea, en este orden:
 
 1. **Lo apartado para la línea** (reservas `production_order_line` activas)
-   en ubicaciones **al alcance de quien reporta** y, en modo `issue`, solo
-   **dentro del área** (lo que aún no se surte no está en la línea): lo que
-   caduca antes primero, después lo que está dentro del área, después por
-   ubicación. Se toma como mucho lo suelto (saldo disponible menos lo que
-   está en una tarima de almacenamiento: lo de una tarima no se toma
-   suelto, ADR 0043).
+   en ubicaciones **al alcance de quien reporta**, **menos lo que una tarea
+   `ISSUE` abierta de esa línea todavía tiene que llevar** desde ahí (su
+   origen, producto y lote), donde esté: lo que caduca antes primero,
+   después lo que está dentro del área, después por ubicación. Se toma como
+   mucho lo suelto (saldo disponible menos lo que está en una tarima de
+   almacenamiento: lo de una tarima no se toma suelto, ADR 0043).
 2. **Lo libre**, con `pickSources` (lo que caduca antes primero; no
    caducados salvo el ajuste), en el almacén de la orden, al alcance de
    quien reporta y, en modo `issue`, solo dentro del área.
 3. Si no alcanza: no se guarda (ver arriba).
 
 - **Materiales por serie:** las series escaneadas mandan: cada unidad debe
-  estar disponible, en una ubicación al alcance (y en el área en modo
-  `issue`), sin tarea abierta ni tarima; por cada ubicación y lote se toma
+  estar disponible, en una ubicación al alcance (en modo `issue`, en el
+  área o donde haya algo apartado para la línea sin tarea que lo respalde),
+  sin tarea abierta ni tarima; por cada ubicación y lote se toma
   primero lo apartado ahí para la línea y el resto debe estar libre. El
   número de series debe ser exactamente lo que se consume.
 - **Fuera del alcance:** lo apartado en ubicaciones que quien reporta no
@@ -137,8 +138,29 @@ Bajo el candado de los productos, por cada línea, en este orden:
 - **Lo apartado que no se usa** se queda apartado para la orden; lo suelta
   el cierre (WMS-31) o la cancelación.
 - **Tareas `ISSUE` a medias:** no se tocan; lo que traen sigue apartado en
-  su origen hasta que se entregan (en modo `issue` no se consume desde el
-  origen).
+  su origen hasta que se entregan, y ni el reporte ni la merma lo toman,
+  en cualquier modo.
+
+### De dónde, sin depender del ajuste vigente
+
+Corrección de la revisión independiente: decidir por el valor **de hoy** de
+`production.materials.mode` rompía las órdenes abiertas cuando la empresa
+lo cambiaba. De `issue` a `direct`, el reporte consumía en el origen lo
+apartado que respaldaba una tarea `ISSUE` y la tarea ya no podía entregarse
+ni cancelarse; de `direct` a `issue`, el reporte respondía «no alcanza»
+aunque lo apartado para la orden estaba en el estante y no existía ninguna
+tarea que lo trajera. Ahora **lo apartado se decide por lo que la orden
+tiene de verdad**, sin columna nueva: nunca se toma lo que respalda una
+tarea `ISSUE` abierta (se resta por origen y lote), sí lo ya entregado al
+área, y sí lo apartado fuera del área que ninguna tarea respalda. El ajuste
+solo decide **lo libre** (en `issue`, solo en el área). Así una orden
+liberada en cualquier modo sigue produciendo después del cambio y cada
+tarea encuentra lo que lleva al entregarse (pruebas «where materials come
+from, whatever the setting says now»). Se descartó guardar el modo en la
+orden al liberarla: exigía columna, migración y resolver por sus tareas
+las órdenes ya liberadas, y la regla por lo que la orden tiene da el mismo
+resultado sin eso. En modo `issue` sin cambios de ajuste el resultado es el
+de antes: lo apartado fuera del área siempre tiene su tarea.
 - Lo apartado para la orden ya restaba de lo libre, así que tomarlo nunca
   quita nada a otro documento; lo libre se toma con las reglas de siempre.
 
@@ -254,6 +276,16 @@ muestra.
   en la misma ubicación y lote.
 - Un movimiento `REVERSAL` con `reversesMovementId` = el del reporte (la
   base impide reversar dos veces); el reporte queda marcado una vez.
+- **Alcance (WMS-20):** quien revierte debe alcanzar todas las ubicaciones
+  que el movimiento del reporte tocó (los orígenes de los materiales y el
+  área); si no, se rechaza sin nombrarlas («que lo revierta alguien que
+  las alcance»). Corrección de la revisión independiente: antes solo se
+  exigía alcanzar el área.
+- Más estricta de lo necesario, a propósito (seguro): con productos sin
+  lote, dos reportes que dejan lo producido en la misma casilla
+  `INSPECTION` del área se estorban: revertir uno cuenta como «salida
+  posterior» del otro. Se revierte el más reciente primero o se corrige al
+  verificar.
 - La orden **no** regresa a «Liberada» aunque ya no tenga reportes vigentes
   (la tabla de estados no lo admite): se cierra con faltante (WMS-31).
 - El lote creado se queda (los lotes no se borran) y su número no se
@@ -279,6 +311,12 @@ muestra.
   0078, la descripción de la regla dice que **una empresa que autoriza los
   desechos debe encender también esta**, para no dejar un rodeo. (El
   fundador puede cambiar que sean reglas separadas.)
+- Un **material archivado** que sigue en el área se puede reportar como
+  merma (está ahí y se rompió; la merma no consume receta). En la práctica
+  archivar rechaza un producto con existencias, así que solo pasa con datos
+  anteriores (prueba «an archived material still in the area may be
+  scrapped»). El reporte, en cambio, sí rechaza consumir un material
+  archivado.
 - Foto de la merma: pendiente (no hay propósito todavía).
 
 ## Candados
@@ -297,12 +335,16 @@ tareas → capacidad → progreso → archivos.
   (`assertStagesDone`, `reachMilestone`, `completeOperationStage`) y
   `startProcess` del lote → archivos de las fotos. No toma el almacén:
   como liberar, deja que la llave foránea lo revise.
-- **Reversa:** productos → orden → ubicaciones (área y orígenes) → progreso
-  del lote. Las reservas que se vuelven a apartar no esperan a nadie.
-- **Merma:** productos (el material) → orden → ubicaciones → (solicitud de
-  aprobación, si la hay).
-- **Configurar la nomenclatura:** solo su fila (crearla bajo el candado de
-  la empresa, `lockOrganization`, la primera vez).
+- **Reversa:** **todos los productos de la orden** (materiales y salidas, de
+  una vez) → orden → ubicaciones (área y orígenes) → progreso del lote. Las
+  reservas que se vuelven a apartar no esperan a nadie.
+- **Merma:** **todos los productos de la orden** (de una vez) → orden →
+  ubicaciones. Autorizada (`applyApprovedScrap`): la solicitud (la toma
+  `decideApproval` primero, como toda autorización) → los mismos candados
+  en el mismo orden, con el mismo código.
+- **Configurar la nomenclatura:** solo su fila; la primera vez la crea y,
+  si dos la crean a la vez, la llave única de la empresa detiene a la
+  segunda, que vuelve a intentar y actualiza.
 - La documentación del orden de candados de la orden (ADR 0073/0074) se
   amplía con estos casos en `docs/arquitectura/candados.md`; las carreras
   nuevas van en `tests/server/lock-order.int.test.ts`.
@@ -312,14 +354,21 @@ tareas → capacidad → progreso → archivos.
 El reporte toma la orden antes que las ubicaciones (al revés que el orden
 global, por la regla de WMS-28). Es seguro porque **toda transacción que
 bloquea esta orden toma antes un producto que el reporte también toma**, y
-**toda transacción que bloquea una ubicación toma antes sus productos**:
+**toda transacción que bloquea una ubicación toma antes sus productos**.
+Por eso la merma y la reversa bloquean **todos** los productos de la orden,
+no solo los que mueven (corrección de la revisión independiente: la merma
+de un material, con solo ese producto, cerraba un ciclo con la entrega de
+la tarea `ISSUE` de otro material de la misma orden —la tarea sostenía el
+área y esperaba la orden; la merma sostenía la orden y esperaba el área—,
+25 de 25 vueltas; la reversa, igual con un material cuyo consumo en ese
+reporte redondeó a 0 y no estaba en sus líneas):
 
 | Operación | Qué toma, en orden | Por qué no cierra un ciclo con el reporte |
 | --- | --- | --- |
-| Pasos y entrega de una tarea `ISSUE` de la orden | su material → ubicaciones → la orden → la tarea | Su material es un material de la orden: espera (o hace esperar) al reporte en el producto, antes de tocar la orden o una ubicación. Prueba «Surtir a producción deliveries». |
+| Pasos y entrega de una tarea `ISSUE` de la orden | su material → ubicaciones → la orden → la tarea | Su material es un material de la orden y **el reporte, la merma y la reversa toman todos los productos de la orden**: espera (o hace esperar) en el producto, antes de tocar la orden o una ubicación. Pruebas «Surtir a producción deliveries», «scrap of one material…» y «reversing a report… consumed none of». |
 | Liberar y cancelar la orden | materiales → la orden | Los mismos productos primero; no toma ubicaciones. Prueba «releases». |
 | Aceptar una solicitud | materiales → la solicitud → almacén compartido → una orden **nueva** | Nunca toma una orden existente ni una ubicación. Usa el núcleo de liberar (cubierto por la prueba de liberaciones). |
-| Otro reporte, la reversa y la merma | productos → la orden → (reporte) → ubicaciones | El mismo orden que el reporte. Prueba con reportes, merma y reversa a la vez. |
+| Otro reporte, la reversa y la merma | todos los productos de la orden → la orden → (reporte) → ubicaciones | El mismo orden que el reporte. Prueba con reportes, merma y reversa a la vez. |
 | `changeTree` (editar, mover o archivar ubicaciones o almacenes) | todos los almacenes → ubicaciones | No bloquea órdenes de producción (cuenta las abiertas sin candado) y el cambio de estado de la orden no revisa la llave foránea del almacén (no cambia `facilityId`). Archivar un almacén usa `nowait` y responde «ocupado». Pruebas «changes of the area» y «archiving a shelf». |
 | Salidas, reubicaciones, surtido y recepciones sobre las mismas ubicaciones | sus productos → ubicaciones | No bloquean la orden; si sostienen una ubicación ya sostienen sus productos, que no son del reporte (si lo fueran, habrían esperado al reporte en el producto). Pruebas «exits, moves» y «exits from the area». |
 | La nomenclatura | solo reportes (después de la capacidad) y guardar la configuración (solo su fila) | Nadie la sostiene mientras espera algo que el reporte tenga. |
@@ -356,8 +405,11 @@ junto con la de desechos.
 
 - La clave del formulario es la del movimiento `PRODUCTION`. Repetida por
   la misma persona con lo mismo (orden, buenas, malas, series de
-  materiales y de salidas, caducidades) responde `repeated` con el reporte;
-  con otra cosa, `KEY_REUSED`. Se revisa después de los candados de
+  materiales y de salidas, caducidad de cada lote producido) responde
+  `repeated` con el reporte; con otra cosa, `KEY_REUSED` (`sameDetails`
+  compara las series como conjuntos, sin mayúsculas ni acentos, y la
+  caducidad como día; pruebas «a repeated confirmation compares serials and
+  expiry»). Se revisa después de los candados de
   productos y orden, antes de validar.
 - Respuesta perdida (INV-22): `findProductionReportByKey` busca el reporte
   de esa clave y persona; la pantalla lo consulta antes de dejar reintentar.
@@ -459,13 +511,19 @@ junto con la de desechos.
 1. Con personas asignadas, solo ellas (y quien crea órdenes) reportan.
 2. Foto del reporte obligatoria por omisión.
 3. Solo se consume de ubicaciones al alcance de quien reporta.
-4. Un material sin costo deja lo producido sin costo.
+4. Un material sin costo deja lo producido sin costo: los materiales que sí
+   tienen costo salen a su promedio y ese valor no pasa a lo producido
+   (desaparece del valor del inventario). Alternativa: costear con los que
+   sí tienen y avisar.
 5. Las piezas malas no producen subproductos.
 6. La merma tiene su propia regla de autorización, separada de la de
    desechos.
 7. Revertir solo mientras todo lo producido siga intacto en inspección.
 8. Reporte solo con piezas malas permitido.
 9. Sin turnos todavía.
+10. Revertir exige alcanzar todas las ubicaciones que el reporte tocó.
+11. Se puede reportar como merma un material archivado que sigue en el
+    área.
 
 ## Consecuencias
 

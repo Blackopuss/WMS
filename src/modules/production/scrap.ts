@@ -179,8 +179,24 @@ async function scrapIn(
   });
   if (!line)
     return refuse("invalid", "Elige un material de esta orden.", "orderLineId");
-  // Products → order (ADR 0087).
-  await lockRows(tx, "product", [line.productId]);
+  // Products → order (ADR 0087): EVERY product of the order, materials and
+  // what comes out, in one call, like the report. Only this material would
+  // leave a cycle with the delivery of an ISSUE task of another material of
+  // the same order (that task holds its product and the area, and waits for
+  // the order). The products of an order do not change.
+  const [inputs, outputs] = await Promise.all([
+    tx.productionOrderLine.findMany({
+      where: { orderId: idOf(orderId) },
+      select: { productId: true },
+    }),
+    tx.productionOrderOutput.findMany({
+      where: { orderId: idOf(orderId) },
+      select: { productId: true },
+    }),
+  ]);
+  await lockRows(tx, "product", [
+    ...new Set([...inputs, ...outputs].map((row) => row.productId)),
+  ]);
   await lockProductionOrder(tx, orderId, userId).catch((error) => {
     if (
       error instanceof Error &&
@@ -212,12 +228,13 @@ async function scrapIn(
           unitCode: true,
           quantityStep: true,
           tracking: true,
-          status: true,
         },
       },
     },
   });
   if (!material) return refuse("invalid", "Elige un material.", "orderLineId");
+  // An archived material that is still in the area may be scrapped (it is
+  // there and it broke): unlike the report, scrap consumes no recipe.
 
   // A repeated confirmation (INV-21).
   const replay = await tx.stockMovement.findFirst({

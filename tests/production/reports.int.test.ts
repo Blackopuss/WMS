@@ -1,7 +1,13 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { dec, newId } from "@/lib";
-import { changeStockStatus, disposeStock } from "@/modules/inventory";
+import {
+  acceptTask,
+  changeStockStatus,
+  deliverTask,
+  disposeStock,
+  pickUpTask,
+} from "@/modules/inventory";
 import { approvalTypes, processDocuments } from "@/modules/registry";
 import {
   createFacility,
@@ -860,5 +866,206 @@ describe("limits of a report", () => {
     void createFacility;
     void switchFacility;
     void archiveFacility;
+  });
+});
+
+describe("where materials come from, whatever the setting says now (ADR 0087)", () => {
+  const issueTasks = (orderId: string) =>
+    db.warehouseTask.findMany({
+      where: { kind: "ISSUE", productionOrderLine: { orderId } },
+      orderBy: { id: "asc" },
+      select: { id: true, productId: true, status: true },
+    });
+
+  it("an order released bringing materials to the line keeps working after switching to «direct»", async () => {
+    const { owner, area, crate, board } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await setting(owner, "production.materials.mode", "issue");
+    const id = await released(owner, crate, area, "2");
+    const tasks = await issueTasks(id);
+    expect(tasks).toHaveLength(2);
+    const boardTask = tasks.find((task) => task.productId === board)!;
+    const screwTask = tasks.find((task) => task.productId !== board)!;
+    await acceptTask(owner, boardTask.id);
+    await pickUpTask(owner, boardTask.id);
+    await setting(owner, "production.materials.mode", "direct");
+    // What the open tasks carry is not taken: the report takes free stock.
+    expect(await report(owner, id, "2")).toMatchObject({ ok: true });
+    expect(await deliverTask(owner, boardTask.id)).toMatchObject({ ok: true });
+    await acceptTask(owner, screwTask.id);
+    await pickUpTask(owner, screwTask.id);
+    expect(await deliverTask(owner, screwTask.id)).toMatchObject({ ok: true });
+    expect(
+      (await issueTasks(id)).every((task) => task.status === "DELIVERED"),
+    ).toBe(true);
+    await balanced(owner.organizationId);
+  });
+
+  it("an order released «direct» keeps producing after switching to bringing materials to the line", async () => {
+    const { owner, area, shelf, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "2");
+    expect(await issueTasks(id)).toHaveLength(0);
+    await setting(owner, "production.materials.mode", "issue");
+    // What is set aside for the order, with no task behind it, is taken
+    // where it is.
+    expect(await report(owner, id, "2")).toMatchObject({ ok: true });
+    for (const line of await linesOf(id)) {
+      expect(await reservedOf(line.id, shelf)).toEqual([]);
+    }
+    await balanced(owner.organizationId);
+  });
+
+  it("scrap never takes what an open task still has to bring", async () => {
+    const { owner, area, crate, board } = await workshop();
+    await setting(owner, "production.materials.mode", "issue");
+    const id = await released(owner, crate, area, "2");
+    await setting(owner, "production.materials.mode", "direct");
+    const line = (await linesOf(id)).find((each) => each.productId === board)!;
+    expect(
+      await reportMaterialScrap(owner, id, {
+        orderLineId: line.id,
+        quantity: "1",
+        reason: "Se rompió",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    const task = (await issueTasks(id)).find(
+      (each) => each.productId === board,
+    )!;
+    await acceptTask(owner, task.id);
+    await pickUpTask(owner, task.id);
+    expect(await deliverTask(owner, task.id)).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("a repeated confirmation compares serials and expiry", () => {
+  it("other serials of a material or of what is made are another report", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const motor = await product(owner, "Motor", { tracking: "SERIAL" });
+    const machine = await product(owner, "Máquina", { tracking: "SERIAL" });
+    await enter(owner, motor, shelf, "3", { serials: "M1\nM2\nM3" });
+    await recipe(owner, machine, [[motor, "1"]]);
+    const id = await released(owner, machine, area, "3");
+    const line = (await linesOf(id))[0]!;
+    const output = await db.productionOrderOutput.findFirstOrThrow({
+      where: { orderId: id },
+    });
+    const same = key();
+    const first = {
+      good: "1",
+      idempotencyKey: same,
+      materialSerials: { [line.id]: "M2" },
+      outputSerials: { [output.id]: "MAQ-1" },
+    };
+    expect(await reportProduction(owner, id, first)).toMatchObject({
+      ok: true,
+    });
+    expect(await reportProduction(owner, id, first)).toMatchObject({
+      ok: true,
+      repeated: true,
+    });
+    expect(
+      await reportProduction(owner, id, {
+        ...first,
+        materialSerials: { [line.id]: "M3" },
+      }),
+    ).toMatchObject({ ok: false, reason: "not_allowed" });
+    const otherOutput = await reportProduction(owner, id, {
+      ...first,
+      outputSerials: { [output.id]: "MAQ-2" },
+    });
+    expect(otherOutput.ok).toBe(false);
+    expect((await getOrderProgress(owner, id))?.goodText).toBe("1 pieza");
+    await balanced(owner.organizationId);
+  });
+
+  it("another expiry of the lot made is another report", async () => {
+    const { owner, area, crate, board } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const jam = await product(owner, "Conserva", {
+      tracking: "LOT",
+      lotExpiry: "OPTIONAL",
+    });
+    await recipe(owner, jam, [[board, "1"]]);
+    void crate;
+    const id = await released(owner, jam, area, "3");
+    const output = await db.productionOrderOutput.findFirstOrThrow({
+      where: { orderId: id },
+    });
+    const same = key();
+    const first = {
+      good: "1",
+      idempotencyKey: same,
+      outputExpiry: { [output.id]: "2027-03-05" },
+    };
+    expect(await reportProduction(owner, id, first)).toMatchObject({
+      ok: true,
+    });
+    expect(await reportProduction(owner, id, first)).toMatchObject({
+      repeated: true,
+    });
+    expect(
+      (
+        await reportProduction(owner, id, {
+          ...first,
+          outputExpiry: { [output.id]: "2027-04-05" },
+        })
+      ).ok,
+    ).toBe(false);
+    expect(
+      (await reportProduction(owner, id, { ...first, outputExpiry: {} })).ok,
+    ).toBe(false);
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("limits of scrap and reversal", () => {
+  it("an archived material still in the area may be scrapped", async () => {
+    const { owner, area, crate, board } = await workshop();
+    const id = await released(owner, crate, area, "2");
+    // Archiving refuses a product with stock; a product archived with stock
+    // (data from before) is the only way to get here.
+    await db.product.update({
+      where: { id: board },
+      data: { status: "ARCHIVED" },
+    });
+    const line = (await linesOf(id)).find((each) => each.productId === board)!;
+    expect(
+      await reportMaterialScrap(owner, id, {
+        orderLineId: line.id,
+        quantity: "1",
+        reason: "Se rompió",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    await db.product.update({
+      where: { id: board },
+      data: { status: "ACTIVE" },
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("a reversal that would touch places out of reach is refused without naming them", async () => {
+    const { owner, facilityId, area, shelf, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "2");
+    const done = await report(owner, id, "1");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const boss = await member(
+      owner.organizationId,
+      ["production_supervisor"],
+      [{ facilityId, locationId: area }],
+    );
+    const answer = await reverseProductionReport(boss, done.reportId, "Mal");
+    expect(answer).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect(JSON.stringify(answer)).not.toContain("Rack");
+    void shelf;
+    expect(
+      await reverseProductionReport(owner, done.reportId, "Mal"),
+    ).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
   });
 });

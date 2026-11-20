@@ -7,11 +7,15 @@ import {
   KEY_REUSED,
   dayWindow,
   formatStock,
+  lotDayOf,
   normalizeLotCode,
+  parseCalendarDay,
+  parseSerialList,
   planMaterialTakes,
   postProduction,
   reachableMaterial,
   reverseProduction,
+  serialKey,
   serialUnitsOfLines,
   type MaterialTake,
 } from "@/modules/inventory";
@@ -412,17 +416,92 @@ export type ProductionReportInput = z.input<typeof reportSchema> & {
 };
 
 /** Who may report an order: its people, or anybody when it has none. */
-async function mayReport(
+function mayReport(
   actor: ProductionActor,
   assignees: readonly { userId: string }[],
-): Promise<boolean> {
+  createsOrders: boolean,
+): boolean {
   if (assignees.length === 0) return true;
   if (assignees.some((person) => person.userId === actor.userId)) return true;
-  return isAllowed(
-    actor.organizationId,
-    actor.userId,
-    "production.order.create",
+  return createsOrders;
+}
+
+/**
+ * Whether the person creates orders (may report one with other people).
+ * Read before opening a transaction: `isAllowed` uses its own connection
+ * (MOD-08).
+ */
+const createsOrders = (actor: ProductionActor) =>
+  isAllowed(actor.organizationId, actor.userId, "production.order.create");
+
+/** The serials of a form, normalized as a set («» when not readable). */
+function serialSet(input: unknown): Set<string> | null {
+  const list = parseSerialList(input);
+  return list.ok ? new Set(list.serials.map(serialKey)) : null;
+}
+
+const sameSet = (a: Set<string> | null, b: Set<string>) =>
+  !!a && a.size === b.size && [...a].every((item) => b.has(item));
+
+/**
+ * A repeated key is the same report only with the same serials of
+ * materials and of outputs and the same expiry of each lot made (ADR 0087,
+ * INV-21); otherwise KEY_REUSED.
+ */
+async function sameDetails(
+  tx: Tx,
+  reportId: string,
+  order: NonNullable<Awaited<ReturnType<typeof readOrder>>>,
+  typed: {
+    materialSerials: Record<string, unknown>;
+    outputSerials: Record<string, unknown>;
+    outputExpiry: Record<string, string>;
+  },
+): Promise<boolean> {
+  const lines = await tx.productionReportLine.findMany({
+    where: { reportId },
+    select: {
+      orderLineId: true,
+      orderOutputId: true,
+      movementLineId: true,
+      movementLine: { select: { lot: { select: { expiresOn: true } } } },
+    },
+  });
+  const units = await serialUnitsOfLines(
+    tx,
+    lines.map((line) => line.movementLineId),
   );
+  const stored = new Map<string, Set<string>>();
+  for (const line of lines) {
+    const key = line.orderLineId ?? `out:${line.orderOutputId}`;
+    const set = stored.get(key) ?? new Set<string>();
+    for (const unit of units.get(line.movementLineId) ?? []) {
+      set.add(serialKey(unit.serial));
+    }
+    stored.set(key, set);
+  }
+  for (const line of order.lines) {
+    if (line.product.tracking !== "SERIAL") continue;
+    const typedSet = serialSet(typed.materialSerials[line.id]);
+    if (!sameSet(typedSet, stored.get(line.id) ?? new Set())) return false;
+  }
+  for (const output of order.outputs) {
+    if (output.product.tracking === "SERIAL") {
+      const typedSet = serialSet(typed.outputSerials[output.id]);
+      if (!sameSet(typedSet, stored.get(`out:${output.id}`) ?? new Set())) {
+        return false;
+      }
+    }
+    if (output.product.tracking === "LOT") {
+      const made = lines.find((line) => line.orderOutputId === output.id);
+      const before = lotDayOf(made?.movementLine.lot?.expiresOn) ?? null;
+      const text = (typed.outputExpiry[output.id] ?? "").trim();
+      const now = text === "" ? null : parseCalendarDay(text);
+      if (text !== "" && now === null) return false;
+      if (made && before !== now) return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -584,6 +663,7 @@ export async function reportProduction(
     ...before.outputs.map((output) => output.productId),
   ];
   const photoMode0 = data.photoIds.length;
+  const mayCreate = await createsOrders(actor);
   return inReport(organizationId, async (tx) => {
     await lockRows(tx, "product", productIds);
     await lockProductionOrder(tx, orderId, userId).catch((error) => {
@@ -628,6 +708,17 @@ export async function reportProduction(
       } catch {
         same = false;
       }
+      if (
+        same &&
+        report &&
+        !(await sameDetails(tx, report.id, order, {
+          materialSerials,
+          outputSerials,
+          outputExpiry,
+        }))
+      ) {
+        same = false;
+      }
       if (!same || !report) {
         return stop("not_allowed", KEY_REUSED);
       }
@@ -646,7 +737,7 @@ export async function reportProduction(
           : "Esta orden ya no está abierta: no se puede reportar.",
       );
     }
-    if (!(await mayReport(actor, order.assignees))) {
+    if (!mayReport(actor, order.assignees, mayCreate)) {
       return stop(
         "not_allowed",
         "Esta orden tiene personas asignadas: repórtala tú solo si te asignaron.",
@@ -968,7 +1059,12 @@ export async function reverseProductionReport(
     where: { id: idOf(reportId) },
     select: {
       orderId: true,
-      lines: { select: { productId: true } },
+      order: {
+        select: {
+          lines: { select: { productId: true } },
+          outputs: { select: { productId: true } },
+        },
+      },
     },
   });
   if (!found) {
@@ -978,12 +1074,18 @@ export async function reverseProductionReport(
       formError: "Este reporte no existe.",
     };
   }
+  // Every product of the order, like the report (ADR 0087): a material
+  // whose consumption in this report rounded to 0 is not in its lines, and
+  // the delivery of its ISSUE task to the area would close a cycle.
+  const productIds = [
+    ...new Set(
+      [...found.order.lines, ...found.order.outputs].map(
+        (row) => row.productId,
+      ),
+    ),
+  ];
   return inReport(organizationId, async (tx) => {
-    await lockRows(
-      tx,
-      "product",
-      found.lines.map((line) => line.productId),
-    );
+    await lockRows(tx, "product", productIds);
     await lockProductionOrder(tx, found.orderId, userId).catch((error) => {
       if (
         error instanceof Error &&
@@ -1028,6 +1130,26 @@ export async function reverseProductionReport(
       return stop(
         "not_allowed",
         "La orden ya no está abierta: este reporte ya no se revierte.",
+      );
+    }
+    // WMS-20: every place the reversal touches (where materials go back,
+    // the area) is within reach of who reverses it; never named.
+    const places = await tx.stockMovementLine.findMany({
+      where: { movementId: report.movementId },
+      select: { locationId: true },
+    });
+    if (
+      (
+        await locationsOutOfScope(
+          tx,
+          userId,
+          places.map((place) => place.locationId),
+        )
+      ).length > 0
+    ) {
+      return stop(
+        "not_allowed",
+        "Este reporte tomó material de ubicaciones fuera de tu alcance: que lo revierta alguien que las alcance.",
       );
     }
     const reversed = await reverseProduction(tx, actor, {
@@ -1348,7 +1470,7 @@ async function previewOf(
       client,
       REPORT_PHOTO,
     )) as ReportPreview["photoMode"],
-    mayReport: await mayReport(actor, order.assignees),
+    mayReport: mayReport(actor, order.assignees, await createsOrders(actor)),
     materials,
     outputs: order.outputs.map((output) => ({
       outputId: output.id,
