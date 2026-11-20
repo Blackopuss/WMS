@@ -314,9 +314,12 @@ export {
 export type { StockStatus } from "./stock-status";
 export {
   MANUAL_STOCK_STATUSES,
+  StatusChangeRejected,
   changeStockStatus,
   permissionForStatusChange,
+  writeStatusChange,
 } from "./status-change";
+export { CapacityNotice } from "./placement";
 export type {
   StatusChangeField,
   StatusChangeInput,
@@ -458,6 +461,8 @@ export {
 export {
   CUSTOMER_RETURN_MAX_LINES,
   CUSTOMER_RETURN_PAGE_SIZE,
+  CustomerReturnRejected,
+  applyReturnDecision,
   countReturnsToReview,
   decideCustomerReturn,
   findCustomerReturnByKey,

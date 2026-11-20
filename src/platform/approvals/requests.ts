@@ -557,9 +557,30 @@ async function expire(
   id: string,
   why: string,
 ): Promise<void> {
-  await forOrganization(actor.organizationId).$transaction(async (tx) => {
+  await forOrganization(actor.organizationId).$transaction(
+    (tx) => expireApprovalRequest(tx, actor, types, id, why),
+    LOCKING_TRANSACTION,
+  );
+}
+
+/**
+ * Expires a pending request inside the caller's transaction (WMS-30B: a
+ * document that is let go of without its module closes the request that
+ * was waiting on it). Locks the request FIRST, like `decideApproval`: the
+ * caller calls it before taking any other lock of its own (order request
+ * → the rest). Returns whether it was pending and is now expired; does
+ * nothing to a request that is no longer pending.
+ */
+export async function expireApprovalRequest(
+  tx: Client,
+  actor: Actor,
+  types: readonly Pick<ApprovalType, "key" | "label">[],
+  id: string,
+  why: string,
+): Promise<boolean> {
+  {
     const [locked] = await lockRows(tx, "approvalRequest", [id]);
-    if (!locked) return;
+    if (!locked) return false;
     const request = await tx.approvalRequest.findFirst({
       where: { id: locked },
       select: {
@@ -572,7 +593,7 @@ async function expire(
         locationId: true,
       },
     });
-    if (!request || request.status !== "PENDING") return;
+    if (!request || request.status !== "PENDING") return false;
     await tx.approvalRequest.updateMany({
       where: { id: request.id, status: "PENDING" },
       data: {
@@ -609,7 +630,8 @@ async function expire(
       href: `/aprobaciones/${request.id}`,
       key: `approval:${request.id}:decided`,
     });
-  }, LOCKING_TRANSACTION);
+    return true;
+  }
 }
 
 export type CancelApprovalResult =

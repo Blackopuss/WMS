@@ -24,6 +24,18 @@ import { company, member } from "./company";
  * permission, and what the platform console asks before removing it.
  */
 const NOT_SERVICES = new Set([
+  "applyApprovedLoss",
+  "lossOpenKey",
+  "canInspectionMove",
+  "causesFor",
+  "decisionTotals",
+  "formatInspectionNumber",
+  "inspectionNumberOf",
+  "needsPhoto",
+  "outcomesFor",
+  "reachesQualityInspection",
+  // Answers null instead of refusing: the screen of a report asks it.
+  "reportVerifications",
   "judgeAnswer",
   "resolveSampling",
   "sampleSize",
@@ -32,9 +44,29 @@ const NOT_SERVICES = new Set([
   "qualityOpenWork",
 ]);
 
-const services = Object.entries(quality).filter(
+/**
+ * WMS-30B (ADR 0091): the verification also serves a company with
+ * Producción and without Calidad, for produced output (P5), with
+ * `production.output.verify`: these refuse without Producción.
+ */
+const VERIFICATION_SERVICES = new Set([
+  "cancelInspection",
+  "countOpenInspections",
+  "decideInspection",
+  "discardInspectionPhoto",
+  "findInspectionDecision",
+  "getInspection",
+  "getInspectionStart",
+  "listInspections",
+  "startInspection",
+  "uploadInspectionPhoto",
+]);
+
+const all = Object.entries(quality).filter(
   ([name, value]) => typeof value === "function" && !NOT_SERVICES.has(name),
 ) as [string, (...args: unknown[]) => Promise<unknown>][];
+const services = all.filter(([name]) => !VERIFICATION_SERVICES.has(name));
+const verification = all.filter(([name]) => VERIFICATION_SERVICES.has(name));
 
 afterEach(() => invalidateEntitlements());
 afterAll(() => db.$disconnect());
@@ -63,6 +95,25 @@ describe("Calidad without the module", () => {
     const admin = await member(owner.organizationId, "administrator");
     for (const actor of [owner, admin]) {
       for (const [name, service] of services) {
+        await expect(
+          service(actor, newId(), { name: "Prueba", label: "Prueba" }),
+          name,
+        ).rejects.toMatchObject({
+          kind: "forbidden",
+          code: "module_not_contracted",
+        });
+      }
+    }
+  });
+
+  it("the verification refuses without Producción, for the titular and an administrator", async () => {
+    expect(verification.map(([name]) => name).sort()).toEqual(
+      [...VERIFICATION_SERVICES].sort(),
+    );
+    const owner = await company(["inventory"]);
+    const admin = await member(owner.organizationId, "administrator");
+    for (const actor of [owner, admin]) {
+      for (const [name, service] of verification) {
         await expect(
           service(actor, newId(), { name: "Prueba", label: "Prueba" }),
           name,

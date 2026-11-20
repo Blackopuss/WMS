@@ -1263,6 +1263,8 @@ try {
       "/configuracion/defectos",
       // WMS-29.
       "/configuracion/lotes-de-produccion",
+      // WMS-30B.
+      "/calidad/verificaciones",
     ]) {
       await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
       const state = await page.evaluate(() => ({

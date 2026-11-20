@@ -228,13 +228,19 @@ describe("roles with their modules", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("Almacén and Supervisor de almacén decide requests, never orders (NEG-28)", async () => {
+  // WMS-30B (ADR 0091): as the jefe de almacén (P3, P5) they also verify
+  // what was produced when the company has no Calidad.
+  it("Almacén and Supervisor de almacén decide requests and verify output, never orders (NEG-28)", async () => {
     for (const role of ["warehouse", "supervisor"]) {
       const userId = people[role]!;
       await expectGrants(
         org,
         userId,
-        ["production.request.decide", "production.request.read"],
+        [
+          "production.request.decide",
+          "production.request.read",
+          "production.output.verify",
+        ],
         true,
       );
       await expectGrants(
@@ -246,7 +252,6 @@ describe("roles with their modules", () => {
           "production.order.cancel",
           "production.order.close",
           "production.recipe.manage",
-          "production.output.verify",
         ],
         false,
       );

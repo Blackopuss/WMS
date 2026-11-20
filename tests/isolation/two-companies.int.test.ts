@@ -1920,12 +1920,65 @@ beforeAll(async () => {
         acceptable: true,
       },
     });
+    const qualityDefectId = newId();
     await db.qualityDefect.create({
       data: {
-        id: newId(),
+        id: qualityDefectId,
         organizationId,
         name: "Rayado",
         createdByUserId: author,
+      },
+    });
+    // A verification of Calidad, decided, with its result, answer and
+    // defect (WMS-30B).
+    const qualityInspectionId = newId();
+    await db.qualityInspection.create({
+      data: {
+        id: qualityInspectionId,
+        organizationId,
+        number: 1,
+        facilityId: location.facilityId,
+        productId,
+        locationId: location.id,
+        stockStatus: "INSPECTION",
+        origin: "OTHER",
+        expectedQuantity: "1",
+        unitCode: "piece",
+        byQuality: true,
+        startKey: `iso-start-${qualityInspectionId}`,
+        createdByUserId: author,
+      },
+    });
+    await db.qualityInspectionResult.create({
+      data: {
+        id: newId(),
+        organizationId,
+        inspectionId: qualityInspectionId,
+        position: 0,
+        kind: "MISSING",
+        cause: "MERMA",
+        quantity: "1",
+        reason: "Se rompió",
+        movementId: scrapMovementId,
+      },
+    });
+    await db.qualityInspectionAnswer.create({
+      data: {
+        id: newId(),
+        organizationId,
+        inspectionId: qualityInspectionId,
+        pointId: qualityPointId,
+        answer: null,
+        result: "skipped",
+      },
+    });
+    await db.qualityInspectionDefect.create({
+      data: {
+        id: newId(),
+        organizationId,
+        inspectionId: qualityInspectionId,
+        defectId: qualityDefectId,
+        quantity: "1",
       },
     });
     await db.qualityDefectCatalog.create({

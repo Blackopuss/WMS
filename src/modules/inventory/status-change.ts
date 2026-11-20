@@ -249,6 +249,13 @@ export async function writeStatusChange(
     returnLineId?: string | null;
     /** WMS-30B: the document deciding what it holds (ADR 0068). */
     holdSource?: HoldSource | null;
+    /**
+     * WMS-30B: the caller already ran `checkPlacement` once for every
+     * arrival of its transaction (several destinations at once), after its
+     * locks; a second call here would take capacity rows in another batch
+     * and could deadlock against another transaction (WMS-22B).
+     */
+    placementChecked?: boolean;
   } = {},
 ): Promise<Extract<StatusChangeResult, { ok: true }>> {
   const { organizationId, userId } = actor;
@@ -431,19 +438,21 @@ export async function writeStatusChange(
   // WMS-22B: the place it ends up in must admit it in its new state
   // (a quarantine location takes nothing available) and, when it
   // moves, the product itself and its room.
-  const placed = await checkPlacement(
-    tx,
-    [
-      {
-        productId: product.id,
-        quantity: base,
-        toLocationId: destination.id,
-        fromLocationId: location.id,
-        status: data.to,
-      },
-    ],
-    { mode: "ask", accepted: options.acceptCapacity === true },
-  );
+  const placed = options.placementChecked
+    ? { ok: true as const, notes: [] as string[] }
+    : await checkPlacement(
+        tx,
+        [
+          {
+            productId: product.id,
+            quantity: base,
+            toLocationId: destination.id,
+            fromLocationId: location.id,
+            status: data.to,
+          },
+        ],
+        { mode: "ask", accepted: options.acceptCapacity === true },
+      );
   if (!placed.ok) {
     if (placed.reason === "over_capacity" && !placed.blocked) {
       throw new CapacityNotice(placed.message);

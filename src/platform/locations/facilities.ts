@@ -501,6 +501,12 @@ async function refuseWhatStaysOpen(tx: Tx, facilityId: string) {
         }),
       "Este almacén tiene solicitudes de producción por atender.",
     ],
+    // WMS-30B (ADR 0091): nor an open verification.
+    [
+      () =>
+        tx.qualityInspection.count({ where: { facilityId, state: "OPEN" } }),
+      "Este almacén tiene verificaciones abiertas: decídelas o cancélalas primero.",
+    ],
     [
       () =>
         tx.approvalRequest.count({ where: { facilityId, status: "PENDING" } }),

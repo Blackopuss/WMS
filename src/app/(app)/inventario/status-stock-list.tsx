@@ -12,14 +12,16 @@ import {
 /**
  * The list of stock in one state that is not available (WMS-30-0 «Por
  * inspeccionar», WMS-75 «En restauración»): one row per balance, the row
- * opens «Cambiar estado» with that stock chosen for who decides, the
- * product for the others. What an open document holds is decided there.
+ * opens «Iniciar verificación» for who verifies (WMS-30B), «Cambiar
+ * estado» with that stock chosen for who decides, the product for the
+ * others. What an open document holds is decided there.
  */
 export function StatusStockList({
   list,
   status,
   basePath,
   decides,
+  verifies = false,
   timeZone,
   heading,
   emptyTitle,
@@ -29,6 +31,8 @@ export function StatusStockList({
   status: "INSPECTION" | "REPAIR";
   basePath: string;
   decides: boolean;
+  /** WMS-30B: who verifies opens «Iniciar verificación» instead. */
+  verifies?: boolean;
   timeZone: string;
   heading: string;
   emptyTitle: string;
@@ -75,9 +79,15 @@ export function StatusStockList({
                     <p className="font-medium">
                       <Link
                         href={
-                          decides && item.decidable
-                            ? `/inventario/${item.productId}/estado?origen=${encodeURIComponent(source)}`
-                            : `/inventario/${item.productId}`
+                          verifies
+                            ? `/calidad/verificar?${new URLSearchParams({
+                                producto: item.productId,
+                                ubicacion: item.locationId,
+                                ...(item.lotId ? { lote: item.lotId } : {}),
+                              }).toString()}`
+                            : decides && item.decidable
+                              ? `/inventario/${item.productId}/estado?origen=${encodeURIComponent(source)}`
+                              : `/inventario/${item.productId}`
                         }
                         className="rounded underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                       >

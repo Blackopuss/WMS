@@ -10,29 +10,44 @@ Inicio, Tareas (para las etapas de proceso), Producción (solo lectura), Inventa
 
 ## Qué existe hoy y qué todavía no
 
-**Todavía no disponible:** registrar la inspección (anotar los puntos de un plan, liberar o rechazar lo producido o recibido eligiendo un defecto). Aunque tu rol incluya esos permisos, hoy no hay pantalla para ellos.
-
 **Disponible hoy:**
-- Ver los **planes de inspección** de los productos.
-- Ver el **catálogo de defectos**.
+- **Verificar** lo producido, lo recibido en inspección, lo devuelto por un cliente y lo que está en cuarentena: contar, contestar el plan, anotar defectos y decidir cada parte.
+- Ver los **planes de inspección** y el **catálogo de defectos**.
 - Hacer las **etapas de proceso** que te asignen.
 - Reportar incidencias.
 
+**Todavía no disponible:** acomodar lo aprobado del área de producción y el cierre de la orden (llegan con un paso posterior).
+
 ## Tus tareas del día
 
+### Lo que espera verificación
+**Inicio** te avisa «N renglones por inspeccionar». Ábrelo, o ve a **Inventario › Por inspeccionar**. Cada renglón es un producto en un lugar (y lote). Tócalo para **Iniciar verificación**:
+1. Elige **¿De dónde viene?**: lo producido (orden y reporte), lo recibido de un proveedor, lo devuelto por un cliente u **Otro** (por ejemplo, lo que regresó de restauración). Con **Otro** escribe cuánto verificas.
+2. Toca **Iniciar verificación**. Lo que vas a revisar queda **retenido**: nadie más lo cambia mientras la verificación esté abierta.
+
+Si lo producido tiene una etapa anterior sin terminar (por ejemplo «Lijado»), la pantalla dice **Esperando…** y no se puede verificar hasta que termine.
+
+### Decidir
+En la verificación:
+- Contesta los **Puntos del plan** (si el producto tiene plan para ese origen).
+- En **Lo que se contó**, escribe cuántas son **Aprobadas** y, si hace falta, abre **Rechazadas, dañadas, en cuarentena o a restauración** y reparte el resto, cada una con **Por qué**. En **Dónde quedan** puedes moverlas a otro lugar del mismo almacén.
+- Si contaste menos de lo esperado, abre **Falta algo de lo esperado** y di qué pasó: **Merma**, **Eran menos desde el inicio** (solo en lo producido) u **Otra causa**, con lo que pasó. **Pide foto.**
+- Si la revisión es **por muestra** sin tamaño, escribe **Cuántas revisaste**.
+- **Defectos encontrados** (opcional) y **Fotos**.
+- Toca **Confirmar**. Contadas más lo que falta debe ser exactamente lo esperado; no se puede contar de más.
+
+Si la empresa pide autorizar las pérdidas, la decisión queda **pendiente de autorización** y no se aplica nada hasta que alguien la autorice; mientras tanto no se puede decidir otra vez ni cancelar.
+
+Si el lugar no admite nada disponible (por ejemplo, un área dentro de una cuarentena), elige en **Dónde quedan** a dónde van las aprobadas.
+
+### Ver y cancelar verificaciones
+**Inventario › Por inspeccionar › Verificaciones**: las abiertas y las terminadas. **Cancelar verificación** (con su porqué) suelta lo retenido sin mover nada.
+
 ### Consultar el plan de un producto
-**Inventario › <producto>:** en el bloque **Inspección** está el enlace **Plan de inspección** con su versión, o **Sin plan de inspección** (entonces la calidad se revisa como dice el ajuste de la empresa: completa o por muestra). Toca **Plan de inspección** para ver:
-- **Revisión de calidad:** **Completa**, o **Por muestra** (cuántas se revisan, o un porcentaje con mínimo y tope).
-- A qué aplica: producido, recibido o devuelto.
-- Los **puntos**: qué se revisa y qué se anota (sí o no, número con mínimo y máximo, opción de lista, texto), si es **Obligatorio** u **Opcional** y si **Pide foto**.
-- **Versiones anteriores**.
-No puedes crear ni cambiar planes: lo hace Administración o el titular.
+**Inventario › <producto>:** en el bloque **Inspección** está el enlace **Plan de inspección** con su versión, o **Sin plan de inspección** (entonces la calidad se revisa como dice el ajuste de la empresa: completa o por muestra). No puedes crear ni cambiar planes: lo hace Administración o el titular.
 
 ### Ver los defectos
-**Configuración › Defectos:** el catálogo con su gravedad (**Menor**, **Mayor** o **Crítica**, solo informativa). Hoy ninguna pantalla los usa para rechazar algo.
-
-### Lo que llegó «En inspección»
-Cuando un producto está marcado como **Inspeccionar al recibir**, lo sano de una recepción entra **En inspección** y no está disponible. La lista **Por inspeccionar** la ven quienes pueden decidir, no tu rol. **Decidir** (liberar, mandar a dañado, a rechazado o a restauración) se hace con **Cambiar estado**, y requiere permisos que el rol Inspector no tiene hoy: pídeselo al [Supervisor de almacén](rol-supervisor-almacen.md) o a [Almacén](rol-almacen.md).
+**Configuración › Defectos:** el catálogo con su gravedad (**Menor**, **Mayor** o **Crítica**, solo informativa).
 
 ### Etapas de proceso
 Si tu empresa publicó etapas con tu área, aparecen en **Tareas** con la insignia **Etapa**: toma la etapa, sube la nota o foto que pida y termínala.
@@ -43,4 +58,4 @@ Producir, crear órdenes, corregir existencias, cambiar planes o ver costos: [En
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-19
+Vigente al 2026-11-20

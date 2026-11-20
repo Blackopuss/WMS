@@ -8,6 +8,23 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-30B** Verificación e inspección de Calidad (ADR 0091, Fase 3): lo
+  producido, lo recibido en inspección, lo devuelto por un cliente y «Otro»
+  (incluida la cuarentena) se verifican con un documento `IN-0001`
+  (`/calidad/verificar`, `/calidad/verificaciones`): iniciar retiene lo que se
+  verifica; decidir, en un solo envío, manda lo contado a disponible,
+  rechazado, dañado, cuarentena o restauración y lo que no está a merma,
+  reporte de más u otra causa (al costo promedio), con plan de inspección,
+  defectos y foto. Las pérdidas pueden pedir autorización con tipos propios
+  (`quality.loss`, `production.verification_loss`, apagados por omisión).
+  Sin Calidad verifica lo producido quien tiene `production.output.verify`,
+  que ahora tienen también Almacén y Supervisor de almacén. La operación
+  «Verificación» entra al proceso del lote; avisa a quien reportó. Función
+  nueva del motor de aprobaciones `expireApprovalRequest`. Migración
+  `20261120140000_wms30b_quality_inspections`. Revisor independiente en dos
+  vueltas (la primera «no unir» por un interbloqueo de capacidad, «Otro» que
+  se saltaba etapas y un «Cancelar» ofrecido a quien no podía; la segunda
+  «unir»). Amenazas en `docs/seguridad/REVISION_CALIDAD.md`.
 - **WMS-92** Costo de lo producido cuando un material no tiene costo (ADR 0087,
   actualizado, Fase 3): el valor de lo producido en un reporte es la suma de lo
   que salió de los materiales con costo (cada uno a su costo promedio); un

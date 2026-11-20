@@ -12,7 +12,7 @@ Inicio, Tareas, Producción, Inventario, Incidencias y Configuración.
 
 **Disponible hoy:** recetas, órdenes (crear, cambiar, liberar y cancelar), solicitudes de producción, **reportes de producción** (reportar, ver y revertir) y **merma de material**.
 
-**Todavía no disponible:** la verificación de lo producido por Calidad, el **cierre de la orden** y los turnos. Una orden pasa a **En proceso** con su primer reporte y desde ahí ya no se cancela; el cierre llega después. Mientras tanto, lo producido queda en inspección y lo libera a mano quien puede cambiar el estado de las existencias (Administrador, Almacén o Supervisor de almacén, con **Cambiar estado**).
+**Todavía no disponible:** el **cierre de la orden**, acomodar lo aprobado del área y los turnos. Una orden pasa a **En proceso** con su primer reporte y desde ahí ya no se cancela; el cierre llega después. Lo producido queda en inspección hasta que se verifica (abajo).
 
 ## Tus tareas del día
 
@@ -49,10 +49,14 @@ En **Producción › Solicitudes de producción** (**Solicitudes por atender (N)
 ### Procesos
 Si la empresa publicó un proceso para la orden de producción, **Tareas** muestra con la insignia **Etapa** las que te tocan, y puedes asignarlas a otra persona.
 
+### Verificar lo producido (WMS-30B)
+- **Con Calidad** contratada, lo producido lo verifica el Inspector de calidad; tú lo ves en el reporte (**Verificación**) y recibes el aviso **Se verificó lo que reportaste** cuando lo reportaste tú.
+- **Sin Calidad**, verificas tú: en el reporte, **Iniciar verificación** (o desde **Inventario › Por inspeccionar**); cuentas, repartes lo contado (**Aprobadas**, rechazadas, dañadas, en cuarentena o a restauración) y dices qué pasó con lo que falta (**Merma**, **Eran menos desde el inicio** u **Otra causa**, con foto). Si quitaron Calidad con verificaciones abiertas, puedes cancelarlas para soltar lo retenido.
+
 ## Lo que no puedes hacer (y a quién pedirlo)
 Corregir existencias (Almacén o Supervisor), administrar equipos o ver costos, ni cambiar la configuración (Administrador).
 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-20
+Vigente al 2026-11-20 (verificación: WMS-30B)

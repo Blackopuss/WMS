@@ -109,9 +109,10 @@ type Failure = {
 export type CustomerReturnResult =
   { ok: true; returnId: string; summary: string; repeated?: true } | Failure;
 
-class Rejected extends Error {
+export class CustomerReturnRejected extends Error {
   constructor(readonly result: Failure) {
     super("customer return rejected");
+    this.name = "CustomerReturnRejected";
   }
 }
 
@@ -120,7 +121,7 @@ const stop = (
   message: string,
   field?: CustomerReturnField,
 ): never => {
-  throw new Rejected(
+  throw new CustomerReturnRejected(
     field
       ? { ok: false, reason, fieldErrors: { [field]: message } }
       : { ok: false, reason, formError: message },
@@ -128,7 +129,7 @@ const stop = (
 };
 
 const stopLine = (index: number, message: string): never => {
-  throw new Rejected({
+  throw new CustomerReturnRejected({
     ok: false,
     reason: "invalid",
     lineErrors: { [index]: message },
@@ -1218,7 +1219,7 @@ export async function receiveCustomerReturn(
         };
       }, LOCKING_TRANSACTION);
     } catch (error) {
-      if (error instanceof Rejected) return error.result;
+      if (error instanceof CustomerReturnRejected) return error.result;
       if (error instanceof CapacityNotice) return error.result;
       if (isClash(error, "number") && attempt < 4) continue;
       if (isClash(error, "idempotencyKey")) {
@@ -1341,228 +1342,21 @@ export async function decideCustomerReturn(
         const [returnId] = await lockRows(tx, "customerReturn", [
           id36(input.returnId),
         ]);
-        const doc = returnId
-          ? await tx.customerReturn.findFirst({
-              where: { id: returnId },
-              select: {
-                id: true,
-                number: true,
-                status: true,
-                facilityId: true,
-                locationId: true,
-                lines: {
-                  orderBy: { lineNumber: "asc" },
-                  select: {
-                    id: true,
-                    productId: true,
-                    lotId: true,
-                    quantity: true,
-                    unitCode: true,
-                    movementLineId: true,
-                    product: {
-                      select: {
-                        name: true,
-                        unitCode: true,
-                        quantityStep: true,
-                        tracking: true,
-                      },
-                    },
-                    decisions: { select: { quantity: true, movementId: true } },
-                  },
-                },
-              },
-            })
-          : null;
-        if (!doc || !(await isFacilityInScope(tx, userId, doc.facilityId))) {
-          return stop("not_found", NOT_FOUND);
-        }
-        await assertLocationsInScope(tx, userId, [
-          doc.locationId,
-          toLocationId,
-        ]);
-        const numberText = formatCustomerReturnNumber(doc.number);
-
-        const replay = await tx.stockMovement.findFirst({
-          where: { idempotencyKey: key },
-          select: {
-            id: true,
-            createdByUserId: true,
-            returnDecision: {
-              select: { lineId: true, outcome: true, quantity: true },
-            },
-          },
-        });
-        if (replay) {
-          const same =
-            replay.createdByUserId === userId &&
-            replay.returnDecision?.lineId === id36(input.lineId) &&
-            replay.returnDecision.outcome === outcome &&
-            safeQuantity(input.quantity) ===
-              dec(replay.returnDecision.quantity.toString()).toString();
-          if (!same) return stop("not_allowed", KEY_REUSED);
-          return {
-            ok: true as const,
-            returnId: doc.id,
-            repeated: true as const,
-            summary:
-              "Esta decisión ya estaba registrada. No se registró de nuevo.",
-          };
-        }
-        if (doc.status !== "RECEIVED") {
-          return stop(
-            "not_allowed",
-            `La devolución ${numberText} ya está revisada: no queda nada en inspección.`,
-          );
-        }
-        const line = doc.lines.find((each) => each.id === id36(input.lineId));
-        if (!line) return stop("not_found", NOT_FOUND);
-        const decided = line.decisions.reduce(
-          (sum, d) => sum.plus(d.quantity.toString()),
-          dec(0),
-        );
-        const pending = dec(line.quantity.toString()).minus(decided);
-        if (!pending.greaterThan(0)) {
-          return stop(
-            "not_allowed",
-            `Ya se decidió todo lo que regresó de ${line.product.name}.`,
-          );
-        }
-        const parsedQuantity = parseQuantity(
-          {
-            unitCode: line.product.unitCode,
-            quantityStep: line.product.quantityStep.toString(),
-          },
-          String(input.quantity ?? ""),
-        );
-        if (!parsedQuantity.ok) {
-          return stop("invalid", parsedQuantity.error, "quantity");
-        }
-        const quantity = parsedQuantity.quantity;
-        if (quantity.greaterThan(pending)) {
-          return stop(
-            "invalid",
-            `Por revisar quedan ${formatStock(pending.toString(), line.unitCode)}.`,
-            "quantity",
-          );
-        }
-        // The units by serial: only those of this line still to decide;
-        // with none typed and all of them deciding, all of them.
-        let serials: unknown = input.serials;
-        if (line.product.tracking === "SERIAL") {
-          const ids = await pendingUnits(tx, line);
-          const units = await tx.serialUnit.findMany({
-            where: { id: { in: ids } },
-            orderBy: { serial: "asc" },
-            select: { serial: true },
-          });
-          const typed = parseSerialList(serials);
-          const blank = typed.ok && typed.serials.length === 0;
-          if (blank && quantity.equals(units.length)) {
-            serials = units.map((unit) => unit.serial);
-          } else if (typed.ok) {
-            const mine = new Set(units.map((unit) => serialKey(unit.serial)));
-            const foreign = typed.serials.find(
-              (serial) => !mine.has(serialKey(serial)),
-            );
-            if (foreign) {
-              return stop(
-                "invalid",
-                `La serie ${foreign} no está por revisar en esta devolución.`,
-                "serials",
-              );
-            }
-          }
-        }
-
-        const done = await writeStatusChange(
-          tx,
-          actor,
-          {
-            productId: line.productId,
-            locationId: doc.locationId,
-            from: "INSPECTION",
-            to: outcome,
-            toLocationId,
-            lotId: line.lotId,
-            quantity: quantity.toString(),
-            serials,
-            reason: `Devolución ${numberText}: ${reason}`.slice(0, 500),
-            idempotencyKey: key,
-            reference: numberText,
-          },
-          {
-            acceptCapacity: input.acceptCapacity === true,
-            returnLineId: line.id,
-          },
-        );
-        await tx.customerReturnDecision.create({
-          data: {
-            id: newId(),
-            organizationId,
-            returnId: doc.id,
-            lineId: line.id,
-            outcome,
-            quantity: quantity.toString(),
-            reason,
-            locationId: toLocationId,
-            movementId: done.movementId,
-            decidedByUserId: userId,
-          },
-        });
-        // WMS-52: what is available again in a place «de paso» gets its
-        // put-away task when the company works that way.
-        const putaway =
-          outcome === "AVAILABLE"
-            ? await createPutawayTasks(tx, actor, [
-                {
-                  productId: line.productId,
-                  locationId: toLocationId,
-                  lotId: line.lotId,
-                  quantity,
-                  status: "AVAILABLE",
-                },
-              ])
-            : { note: null };
-        // Resolved when nothing of it is left in inspection.
-        const left = doc.lines.some((each) => {
-          const already = each.decisions.reduce(
-            (sum, d) => sum.plus(d.quantity.toString()),
-            dec(0),
-          );
-          const now = each.id === line.id ? already.plus(quantity) : already;
-          return dec(each.quantity.toString()).greaterThan(now);
-        });
-        if (!left) {
-          await tx.customerReturn.update({
-            where: { id: doc.id },
-            data: { status: "RESOLVED", resolvedAt: new Date() },
-          });
-        }
-        await recordAuditEvent(tx, {
-          organizationId,
-          actorUserId: userId,
-          action: "inventory.customer_return_decided",
-          target: { type: "customer_return", id: doc.id },
+        return applyReturnDecision(tx, actor, {
+          returnId: returnId ?? null,
+          lineId: id36(input.lineId),
+          outcome,
+          quantity: input.quantity,
           reason,
-          metadata: {
-            devolucion: numberText,
-            producto: line.product.name,
-            resultado: STOCK_STATUS_LABELS[outcome],
-            cantidad: formatStock(quantity.toString(), line.unitCode),
-            movementId: done.movementId,
-          },
+          toLocationId,
+          serials: input.serials,
+          idempotencyKey: key,
+          acceptCapacity: input.acceptCapacity === true,
+          inspectionId: null,
         });
-        return {
-          ok: true as const,
-          returnId: doc.id,
-          summary:
-            `${formatStock(quantity.toString(), line.unitCode)} de ${line.product.name}: ${OUTCOME_SENTENCE[outcome]}.` +
-            (left ? "" : ` La devolución ${numberText} quedó revisada.`) +
-            (putaway.note ? ` ${putaway.note}` : ""),
-        };
       }, LOCKING_TRANSACTION);
     } catch (error) {
-      if (error instanceof Rejected) return error.result;
+      if (error instanceof CustomerReturnRejected) return error.result;
       if (error instanceof CapacityNotice) return error.result;
       if (error instanceof StatusChangeRejected) {
         const result = error.result;
@@ -1587,6 +1381,271 @@ export async function decideCustomerReturn(
       throw error;
     }
   }
+}
+
+/**
+ * The core of one decision of a customer return line, inside the caller's
+ * transaction and after its locks (product → locations → the return):
+ * `decideCustomerReturn` and a verification of Calidad (WMS-30B, ADR
+ * 0091) use it. The caller already checked who may decide. While a
+ * verification is open on the line, only that verification
+ * (`inspectionId`) decides it.
+ */
+export async function applyReturnDecision(
+  tx: Tx,
+  actor: InventoryActor,
+  args: {
+    /** The return, already locked (null when it does not exist). */
+    returnId: string | null;
+    lineId: string;
+    outcome: ReturnOutcome;
+    quantity: string;
+    reason: string;
+    toLocationId: string;
+    serials?: unknown;
+    idempotencyKey: string;
+    acceptCapacity: boolean;
+    inspectionId: string | null;
+    /** WMS-30B: the caller checked every arrival at once. */
+    placementChecked?: boolean;
+  },
+): Promise<
+  Extract<CustomerReturnResult, { ok: true }> & { movementId?: string }
+> {
+  const { organizationId, userId } = actor;
+  const { outcome, reason, toLocationId } = args;
+  const key = args.idempotencyKey;
+  const returnId = args.returnId;
+  const doc = returnId
+    ? await tx.customerReturn.findFirst({
+        where: { id: returnId },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          facilityId: true,
+          locationId: true,
+          lines: {
+            orderBy: { lineNumber: "asc" },
+            select: {
+              id: true,
+              productId: true,
+              lotId: true,
+              quantity: true,
+              unitCode: true,
+              movementLineId: true,
+              product: {
+                select: {
+                  name: true,
+                  unitCode: true,
+                  quantityStep: true,
+                  tracking: true,
+                },
+              },
+              decisions: { select: { quantity: true, movementId: true } },
+            },
+          },
+        },
+      })
+    : null;
+  if (!doc || !(await isFacilityInScope(tx, userId, doc.facilityId))) {
+    return stop("not_found", NOT_FOUND);
+  }
+  await assertLocationsInScope(tx, userId, [doc.locationId, toLocationId]);
+  const numberText = formatCustomerReturnNumber(doc.number);
+
+  const replay = await tx.stockMovement.findFirst({
+    where: { idempotencyKey: key },
+    select: {
+      id: true,
+      createdByUserId: true,
+      returnDecision: {
+        select: { lineId: true, outcome: true, quantity: true },
+      },
+    },
+  });
+  if (replay) {
+    const same =
+      replay.createdByUserId === userId &&
+      replay.returnDecision?.lineId === args.lineId &&
+      replay.returnDecision.outcome === outcome &&
+      safeQuantity(args.quantity) ===
+        dec(replay.returnDecision.quantity.toString()).toString();
+    if (!same) return stop("not_allowed", KEY_REUSED);
+    return {
+      ok: true as const,
+      returnId: doc.id,
+      repeated: true as const,
+      summary: "Esta decisión ya estaba registrada. No se registró de nuevo.",
+    };
+  }
+  if (doc.status !== "RECEIVED") {
+    return stop(
+      "not_allowed",
+      `La devolución ${numberText} ya está revisada: no queda nada en inspección.`,
+    );
+  }
+  const line = doc.lines.find((each) => each.id === args.lineId);
+  if (!line) return stop("not_found", NOT_FOUND);
+  // WMS-30B (ADR 0091): a line Calidad is verifying is decided only by
+  // that verification. Read under the lock of the return, which the
+  // verification also takes.
+  const verifying = await tx.qualityInspection.findFirst({
+    where: { customerReturnLineId: line.id, state: "OPEN" },
+    select: { id: true, number: true },
+  });
+  if (verifying && verifying.id !== args.inspectionId) {
+    return stop(
+      "not_allowed",
+      `Esta devolución se está verificando (IN-${String(verifying.number).padStart(4, "0")}): se decide desde esa verificación.`,
+    );
+  }
+  const decided = line.decisions.reduce(
+    (sum, d) => sum.plus(d.quantity.toString()),
+    dec(0),
+  );
+  const pending = dec(line.quantity.toString()).minus(decided);
+  if (!pending.greaterThan(0)) {
+    return stop(
+      "not_allowed",
+      `Ya se decidió todo lo que regresó de ${line.product.name}.`,
+    );
+  }
+  const parsedQuantity = parseQuantity(
+    {
+      unitCode: line.product.unitCode,
+      quantityStep: line.product.quantityStep.toString(),
+    },
+    String(args.quantity ?? ""),
+  );
+  if (!parsedQuantity.ok) {
+    return stop("invalid", parsedQuantity.error, "quantity");
+  }
+  const quantity = parsedQuantity.quantity;
+  if (quantity.greaterThan(pending)) {
+    return stop(
+      "invalid",
+      `Por revisar quedan ${formatStock(pending.toString(), line.unitCode)}.`,
+      "quantity",
+    );
+  }
+  // The units by serial: only those of this line still to decide;
+  // with none typed and all of them deciding, all of them.
+  let serials: unknown = args.serials;
+  if (line.product.tracking === "SERIAL") {
+    const ids = await pendingUnits(tx, line);
+    const units = await tx.serialUnit.findMany({
+      where: { id: { in: ids } },
+      orderBy: { serial: "asc" },
+      select: { serial: true },
+    });
+    const typed = parseSerialList(serials);
+    const blank = typed.ok && typed.serials.length === 0;
+    if (blank && quantity.equals(units.length)) {
+      serials = units.map((unit) => unit.serial);
+    } else if (typed.ok) {
+      const mine = new Set(units.map((unit) => serialKey(unit.serial)));
+      const foreign = typed.serials.find(
+        (serial) => !mine.has(serialKey(serial)),
+      );
+      if (foreign) {
+        return stop(
+          "invalid",
+          `La serie ${foreign} no está por revisar en esta devolución.`,
+          "serials",
+        );
+      }
+    }
+  }
+
+  const done = await writeStatusChange(
+    tx,
+    actor,
+    {
+      productId: line.productId,
+      locationId: doc.locationId,
+      from: "INSPECTION",
+      to: outcome,
+      toLocationId,
+      lotId: line.lotId,
+      quantity: quantity.toString(),
+      serials,
+      reason: `Devolución ${numberText}: ${reason}`.slice(0, 500),
+      idempotencyKey: key,
+      reference: numberText,
+    },
+    {
+      acceptCapacity: args.acceptCapacity,
+      returnLineId: line.id,
+      placementChecked: args.placementChecked === true,
+    },
+  );
+  await tx.customerReturnDecision.create({
+    data: {
+      id: newId(),
+      organizationId,
+      returnId: doc.id,
+      lineId: line.id,
+      outcome,
+      quantity: quantity.toString(),
+      reason,
+      locationId: toLocationId,
+      movementId: done.movementId,
+      decidedByUserId: userId,
+    },
+  });
+  // WMS-52: what is available again in a place «de paso» gets its
+  // put-away task when the company works that way.
+  const putaway =
+    outcome === "AVAILABLE"
+      ? await createPutawayTasks(tx, actor, [
+          {
+            productId: line.productId,
+            locationId: toLocationId,
+            lotId: line.lotId,
+            quantity,
+            status: "AVAILABLE",
+          },
+        ])
+      : { note: null };
+  // Resolved when nothing of it is left in inspection.
+  const left = doc.lines.some((each) => {
+    const already = each.decisions.reduce(
+      (sum, d) => sum.plus(d.quantity.toString()),
+      dec(0),
+    );
+    const now = each.id === line.id ? already.plus(quantity) : already;
+    return dec(each.quantity.toString()).greaterThan(now);
+  });
+  if (!left) {
+    await tx.customerReturn.update({
+      where: { id: doc.id },
+      data: { status: "RESOLVED", resolvedAt: new Date() },
+    });
+  }
+  await recordAuditEvent(tx, {
+    organizationId,
+    actorUserId: userId,
+    action: "inventory.customer_return_decided",
+    target: { type: "customer_return", id: doc.id },
+    reason,
+    metadata: {
+      devolucion: numberText,
+      producto: line.product.name,
+      resultado: STOCK_STATUS_LABELS[outcome],
+      cantidad: formatStock(quantity.toString(), line.unitCode),
+      movementId: done.movementId,
+    },
+  });
+  return {
+    ok: true as const,
+    returnId: doc.id,
+    movementId: done.movementId,
+    summary:
+      `${formatStock(quantity.toString(), line.unitCode)} de ${line.product.name}: ${OUTCOME_SENTENCE[outcome]}.` +
+      (left ? "" : ` La devolución ${numberText} quedó revisada.`) +
+      (putaway.note ? ` ${putaway.note}` : ""),
+  };
 }
 
 const OUTCOME_SENTENCE: Record<ReturnOutcome, string> = {

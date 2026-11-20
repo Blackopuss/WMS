@@ -162,6 +162,45 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); receta y área se buscan solo en esa empresa y en el alcance de la persona",
     coveredBy: "tests/production/orders.int.test.ts",
   },
+  // WMS-30B (ADR 0091): verifications of Calidad.
+  startInspectionAction: {
+    input:
+      "producto, ubicación, lote y estado de la casilla y clave de confirmación (fijados por la página), origen elegido (tipo e id de la línea) y cantidad para «Otro»",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la casilla y la línea de origen se leen solo en esa empresa y dentro del alcance de la persona",
+    coveredBy: "tests/quality/inspections.int.test.ts",
+  },
+  decideInspectionAction: {
+    input:
+      "id de la verificación y clave de confirmación (fijados por la página), cantidad, motivo, destino y series por destino o causa, respuestas a los puntos del plan, defectos, cuántas se revisaron e ids de fotos subidas por la persona",
+    identity:
+      "sesión y empresa activa; la verificación se bloquea solo en esa empresa y existe solo dentro del alcance; las fotos se ligan solo si las subió la misma persona para esa verificación",
+    coveredBy: "tests/quality/inspections.int.test.ts",
+  },
+  checkInspectionDecisionAction: {
+    input: "clave de confirmación",
+    identity:
+      "sesión y empresa activa; solo busca decisiones de la misma persona en esa empresa",
+    coveredBy: "tests/quality/inspections.int.test.ts",
+  },
+  cancelInspectionAction: {
+    input: "id de la verificación y motivo",
+    identity:
+      "sesión y empresa activa; la verificación se bloquea solo en esa empresa y dentro del alcance",
+    coveredBy: "tests/inventory/scope.int.test.ts",
+  },
+  uploadInspectionPhotoAction: {
+    input: "id de la verificación y archivo de la foto",
+    identity:
+      "sesión y empresa activa; la foto queda atada a esa verificación, a nombre de la persona",
+    coveredBy: "tests/quality/inspections.int.test.ts",
+  },
+  discardInspectionPhotoAction: {
+    input: "id del archivo",
+    identity:
+      "sesión y empresa activa; solo una foto de la persona aún sin ligar",
+    coveredBy: "tests/quality/inspections.int.test.ts",
+  },
   // WMS-29 (ADR 0087): production reports, scrap and lot numbering.
   reportProductionAction: {
     input:

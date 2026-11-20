@@ -161,6 +161,10 @@ export const TENANT_MODELS = [
   "QualityPlanPointOption",
   "QualityDefect",
   "QualityDefectCatalog",
+  "QualityInspection",
+  "QualityInspectionResult",
+  "QualityInspectionAnswer",
+  "QualityInspectionDefect",
 ] as const;
 
 const tenantModels = new Set<string>(TENANT_MODELS);
@@ -382,6 +386,7 @@ export const LOCKABLE = {
   qualityPlan: "quality_plan",
   qualityDefect: "quality_defect",
   qualityDefectCatalog: "quality_defect_catalog",
+  qualityInspection: "quality_inspection",
   storedFile: "stored_file",
   membership: "membership",
   processDefinition: "process_definition",

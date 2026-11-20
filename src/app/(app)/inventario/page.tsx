@@ -191,12 +191,17 @@ export default async function InventarioPage({
     !showArchived && access.can("inventory.stock.read")
       ? await countUnplacedStock(actor)
       : 0;
-  // WMS-30-0: what waits for inspection, for who decides it; only if any.
+  // WMS-30-0: what waits for inspection, for who decides or verifies it;
+  // only if any.
   const inspectingCount =
     !showArchived &&
     access.can("inventory.stock.read") &&
     (access.allows("inventory.status.release") ||
-      access.allows("inventory.status.change"))
+      access.allows("inventory.status.change") ||
+      // WMS-30B (ADR 0091): who verifies, with Calidad or without it.
+      access.allows("quality.inspection.create") ||
+      (access.moduleState("quality") === "none" &&
+        access.allows("production.output.verify")))
       ? await countAwaitingInspection(actor)
       : 0;
   // WMS-75: what is being restored, for who decides it; only if any.

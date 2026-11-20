@@ -253,9 +253,9 @@ Permisos del módulo Producción; ninguno da nada sin el módulo contratado (MOD
 | `production.report.reverse` | Corregir un reporte con su reversa; WMS-29. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
 | `production.scrap.create` | Reportar merma extra de material, fuera del costo del producto; WMS-29. | Sí | Sí | No | No | No | No | No | No | No | Sí | Sí | No |
 | `production.shift.manage` | Configurar los turnos de producción por almacén; WMS-29. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
-| `production.output.verify` | Verificar lo producido cuando la empresa no tiene Calidad (P5); con Calidad lo hace el Inspector; WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
+| `production.output.verify` | Verificar lo producido cuando la empresa no tiene Calidad (P5): el Encargado de producción y el jefe de almacén (Administración, Almacén y Supervisor de almacén, P3); con Calidad lo hace el Inspector; WMS-30B (ADR 0091). | Sí | Sí | Sí | No | No | Sí | No | No | No | No | Sí | No |
 
-Almacén y Supervisor de almacén **deciden** solicitudes de producción (P7c) y leen recetas y órdenes para hacerlo, pero no reciben ningún permiso que cambie órdenes: aceptar crea la orden por el servicio de WMS-28B, que guarda quién aprobó y quién ejecutó (P7d); cancelar y cerrar siguen siendo del Encargado de producción y de Administración. Sin Calidad, verifican lo producido con `inventory.status.release` (P3, P5).
+Almacén y Supervisor de almacén **deciden** solicitudes de producción (P7c) y leen recetas y órdenes para hacerlo, pero no reciben ningún permiso que cambie órdenes: aceptar crea la orden por el servicio de WMS-28B, que guarda quién aprobó y quién ejecutó (P7d); cancelar y cerrar siguen siendo del Encargado de producción y de Administración. Sin Calidad, verifican lo producido con `production.output.verify` (P3, P5; WMS-30B, ADR 0091); con Calidad lo verifica el Inspector y ellos liberan a mano con «Cambiar estado» solo lo que no está retenido.
 
 ### Calidad (WMS-59, ADR 0062)
 
@@ -265,8 +265,8 @@ Calidad no se contrata sin Producción (D9). El rol IC no da nada sin Calidad.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `quality.inspection.read` | Consultar lo que espera verificación, inspecciones e historial; WMS-30B. | Sí | Sí | No | No | Sí | No | No | No | Sí | No | No | Sí |
 | `quality.inspection.create` | Iniciar una verificación (retiene lo reportado mientras está abierta); WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | No | Sí |
-| `quality.inspection.decide` | Decidir contadas, aprobadas, rechazadas y en cuarentena, con foto y causa en las diferencias (P4); pide además el permiso de Inventario del cambio que escribe; WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | No | Sí |
-| `quality.lot.release` | Liberar a disponible un lote verificado; WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | No | Sí |
+| `quality.inspection.decide` | Decidir contadas, aprobadas, rechazadas y en cuarentena, con foto y causa en las diferencias (P4); no pide además el permiso de Inventario del cambio que escribe (ADR 0091); lo que está en cuarentena pide también `quality.lot.release`; WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | No | Sí |
+| `quality.lot.release` | Iniciar y decidir la verificación de lo que está en cuarentena; WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | No | Sí |
 | `quality.plan.read` | Consultar planes de inspección y defectos; WMS-30A. | Sí | Sí | No | No | Sí | No | No | No | Sí | No | No | Sí |
 | `quality.plan.manage` | Crear y cambiar planes de inspección y defectos; WMS-30A. | Sí | Sí | No | No | No | No | No | No | No | No | No | No |
 

@@ -120,6 +120,11 @@ export default async function DevolucionPage({
           .filter((place) => place.id !== view.locationId)
           .map((place) => ({ id: place.id, path: place.path }))
       : [];
+  // WMS-30B (ADR 0091): with Calidad, a line can go through a verification.
+  const verifies =
+    view.status === "RECEIVED" &&
+    access.moduleState("quality") === "active" &&
+    access.allows("quality.inspection.create");
   const timeZone = access.organization.timeZone;
   const placeName = view.placePath.split(" › ").at(-1) ?? view.placePath;
 
@@ -232,6 +237,22 @@ export default async function DevolucionPage({
                     </li>
                   ))}
                 </ul>
+              )}
+              {verifies && line.pendingText && (
+                <p className="text-sm">
+                  <Link
+                    href={`/calidad/verificar?${new URLSearchParams({
+                      producto: line.productId,
+                      ubicacion: view.locationId,
+                      ...(line.lotId ? { lote: line.lotId } : {}),
+                      origen: "CUSTOMER_RETURN",
+                      linea: line.id,
+                    }).toString()}`}
+                    className={linkClass}
+                  >
+                    Verificar con Calidad
+                  </Link>
+                </p>
               )}
               {decides && line.pendingText && (
                 <div className="border-t pt-3">

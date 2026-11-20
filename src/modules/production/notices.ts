@@ -44,9 +44,24 @@ export const MATERIAL_SHORT_NOTICE: NotificationType = {
   visibleWith: ["production.request.decide", "production.order.release"],
 };
 
+/**
+ * WMS-30B (ADR 0091): what someone reported was verified (by Calidad or,
+ * without it, by who verifies produced output).
+ */
+export const OUTPUT_VERIFIED_NOTICE: NotificationType = {
+  key: "production.output_verified",
+  module: "production",
+  label: "Se verificó lo que reportaste",
+  description:
+    "Cuando se verifica lo que reportaste como producido: cuánto se aprobó y qué pasó con lo demás.",
+  defaultEnabled: true,
+  visibleWith: ["production.report.create"],
+};
+
 export const PRODUCTION_NOTIFICATION_TYPES: readonly NotificationType[] = [
   REQUEST_TO_DECIDE_NOTICE,
   REQUEST_ANSWERED_NOTICE,
   ORDER_FROM_REQUEST_NOTICE,
   MATERIAL_SHORT_NOTICE,
+  OUTPUT_VERIFIED_NOTICE,
 ];

@@ -331,12 +331,13 @@ describe("production and quality roles (WMS-59, ADR 0062)", () => {
     }
   });
 
-  it("Almacén and Supervisor de almacén decide requests but get no power over orders (P7c, P7d)", () => {
+  it("Almacén and Supervisor de almacén decide requests and verify output without Calidad, but get no power over orders (P3, P5, P7c, P7d)", () => {
     for (const role of ["warehouse", "supervisor"] as const) {
       expect(
         [...of(role)].filter((p) => p.startsWith("production.")).sort(),
       ).toEqual([
         "production.order.read",
+        "production.output.verify",
         "production.recipe.read",
         "production.request.decide",
         "production.request.read",

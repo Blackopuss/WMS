@@ -19,8 +19,9 @@ export const metadata: Metadata = { title: "Por inspeccionar" };
 /**
  * What waits for inspection in the warehouse the person works in
  * (WMS-30-0, ADR 0068): derived from the balances every time it is
- * opened. Each row opens «Cambiar estado» with that stock chosen; what an
- * open document holds (a customer return) is decided from that document.
+ * opened. Each row opens «Iniciar verificación» for who verifies
+ * (WMS-30B), «Cambiar estado» with that stock chosen for who decides;
+ * what an open document holds is decided from that document.
  */
 export default async function PorInspeccionarPage({
   searchParams,
@@ -66,6 +67,17 @@ export default async function PorInspeccionarPage({
   const decides =
     access.allows("inventory.status.release") ||
     access.allows("inventory.status.change");
+  // WMS-30B (ADR 0091): with Calidad, who creates verifications; without
+  // it, who verifies produced output (P5).
+  const quality = access.moduleState("quality");
+  const verifies =
+    quality !== "none"
+      ? access.allows("quality.inspection.create")
+      : access.allows("production.output.verify");
+  const seesVerifications =
+    quality !== "none"
+      ? access.can("quality.inspection.read")
+      : access.allows("production.output.verify");
 
   return (
     <PageContainer>
@@ -80,11 +92,22 @@ export default async function PorInspeccionarPage({
         status="INSPECTION"
         basePath="/inventario/por-inspeccionar"
         decides={decides}
+        verifies={verifies}
         timeZone={access.organization.timeZone}
         heading="En inspección"
         emptyTitle="Nada espera inspección"
         emptyDescription="Lo que se recibe de un producto que se inspecciona al recibir aparece aquí hasta que se decide."
       />
+      {seesVerifications && (
+        <p className="text-sm">
+          <Link
+            href="/calidad/verificaciones"
+            className="inline-flex min-h-11 items-center rounded font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
+          >
+            Verificaciones
+          </Link>
+        </p>
+      )}
     </PageContainer>
   );
 }

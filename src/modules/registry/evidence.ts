@@ -2,6 +2,7 @@ import { reachesIncident, reachesTask } from "@/modules/inventory";
 import type { EvidenceOwners } from "@/platform/files";
 import { reachesProductionReport } from "@/modules/production";
 import { reachesPurchaseReceipt } from "@/modules/purchasing";
+import { reachesQualityInspection } from "@/modules/quality";
 import { processStepReach } from "@/platform/processes";
 
 import { processDocuments } from "./processes";
@@ -23,4 +24,6 @@ export const evidenceOwners: EvidenceOwners = {
   purchase_receipt: reachesPurchaseReceipt,
   // WMS-29 (ADR 0087): a production report, for who reaches its order.
   production_report: reachesProductionReport,
+  // WMS-30B (ADR 0091): a verification, for who reaches its place.
+  quality_inspection: reachesQualityInspection,
 };
