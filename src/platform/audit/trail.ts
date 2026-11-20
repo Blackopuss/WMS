@@ -61,6 +61,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "facility.created": "Creó un almacén",
   "facility.updated": "Cambió un almacén",
   "facility.archived": "Archivó un almacén",
+  "facility.reactivated": "Reactivó un almacén",
   "location.staging_changed": "Cambió la ubicación de preparación",
   "inventory.task_released": "Liberó una tarea de traslado con problema",
   "product_supplier.created": "Vinculó un producto con un proveedor",

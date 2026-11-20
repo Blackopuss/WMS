@@ -6,6 +6,20 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-20
+
+- **WMS-85** Reactivar un almacén archivado: servicio `reactivateFacility`
+  (`src/platform/locations/facilities.ts`), permiso nuevo
+  `inventory.facility.reactivate` (titular y Administración; no se conserva en
+  una sesión de PIN) y pantalla en Configuración › Almacenes («Archivados» al
+  pie y «Reactivar almacén» en la ficha). Con todos los almacenes bloqueados y
+  las ubicaciones a reactivar tomadas sin esperar, vuelven el almacén y las
+  ubicaciones que se archivaron con él (misma marca de archivo, más «General»
+  y tránsito), dentro del límite `facilities` del plan y con bitácora
+  `facility.reactivated`. Es la salida para las existencias heredadas de un
+  almacén archivado antes de WMS-82: se reactiva, se sacan y se vuelve a
+  archivar. Sin migración. Revisor independiente: «unir». ADR 0088.
+
 ## 2026-11-19
 
 - **WMS-86** Rendimiento en teléfono de la app y del sitio (solo interfaz):

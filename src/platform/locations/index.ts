@@ -89,11 +89,14 @@ export {
   archiveFacility,
   createFacility,
   getActiveFacility,
+  listArchivedFacilities,
   listFacilities,
+  reactivateFacility,
   switchFacility,
   updateFacility,
 } from "./facilities";
 export type {
+  ArchivedFacility,
   FacilityField,
   FacilityInput,
   FacilityResult,

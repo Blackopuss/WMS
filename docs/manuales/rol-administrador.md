@@ -21,7 +21,7 @@ En una empresa nueva, **Configuración › Configuración inicial** (y **Configu
 - Reglas que te protegen y al titular: no cambias al titular, no te cambias tus propios roles y los roles de otro administrador solo los cambia el titular.
 
 ### Almacenes y ubicaciones
-- **Configuración › Almacenes:** **Crear almacén** (nombre, código corto sin espacios, dirección). **Archivar almacén** solo si está vacío (sin existencias, pedidos sin terminar ni tareas). Un almacén archivado no recibe nada.
+- **Configuración › Almacenes:** **Crear almacén** (nombre, código corto sin espacios, dirección). **Archivar almacén** solo si está vacío (sin existencias, pedidos sin terminar ni tareas). Un almacén archivado no recibe nada. Los archivados aparecen al pie, en **Archivados** (con **Tiene existencias** si quedó algo dentro); al abrir uno, **Reactivar almacén** lo devuelve con las ubicaciones que tenía al archivarse, si cabe en tu plan. No vuelven las terminales, los equipos ni las llaves de la API que se quitaron. No se hace desde una terminal con PIN.
 - **Configuración › Ubicaciones:** **Agregar ubicación** (nivel, nombre, **Código** que se escanea, **Uso**, capacidad y restricciones opcionales), **Cambiar niveles**, **Imprimir etiquetas**, mover, archivar y reactivar. Una ubicación solo se archiva vacía.
 
 ### Operación (`Configuración › Operación`)
@@ -59,4 +59,4 @@ En **Inventario**: **Agregar producto**, **Importar Excel**, **Descargar en Exce
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Para el sistema mismo (servidor, respaldos), ver los manuales de [instalación](instalacion.md), [actualización](actualizacion.md) y [respaldo y restauración](respaldo-y-restauracion.md).
 
-Vigente al 2026-11-19 (configuración inicial: WMS-43; indicadores: WMS-32; tableros: WMS-34)
+Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; tableros: WMS-34; reactivar un almacén: WMS-85)
