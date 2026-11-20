@@ -6,6 +6,7 @@ import {
   CONTAINERS_MODE,
   SLOTTING_CONSOLIDATE,
   SLOTTING_FAST_CLASSES,
+  SUGGESTION_CHANGED,
   acceptSlottingSuggestion,
   acceptTask,
   createTask,
@@ -71,7 +72,7 @@ async function company(): Promise<InventoryActor> {
     staff,
     created.organizationId,
     {
-      productLimit: 40,
+      productLimit: 400,
       users: 10,
       facilities: 3,
       modules: ["inventory"],
@@ -429,11 +430,60 @@ describe("relocation suggestions (WMS-65)", () => {
         quantity: "20",
       }),
     ]);
-    const done = await accept(owner, rows[0]!);
+    // A lot that expires even earlier arrives: the shown origin is no
+    // longer the first one, so accepting it answers that it changed.
+    const sooner = await place(owner, "Rack antes", { code: "A-03" });
+    await enter(owner, item.id, sooner, "4", {
+      lotCode: "L-ANTES",
+      lotExpiresOn: "2029-01-01",
+    });
+    expect(await accept(owner, rows[0]!)).toMatchObject({
+      ok: false,
+      reason: "changed",
+    });
+    const fresh = ofProduct(await list(owner), item.id);
+    expect(fresh).toEqual([
+      expect.objectContaining({ fromLocationId: sooner, lotCode: "L-ANTES" }),
+    ]);
+    const done = await accept(owner, fresh[0]!);
     expect(done).toMatchObject({ ok: true });
     if (!done.ok) return;
     await deliver(owner, done.taskId);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("two suggestions of one product never contradict each other", async () => {
+    const owner = await company();
+    const little = await place(owner, "Rack X", { code: "A-01" });
+    const most = await place(owner, "Rack Y", { code: "A-02" });
+    const face = await place(owner, "Surtido", {
+      type: "PICKING",
+      code: "S-01",
+    });
+    const item = await product(owner);
+    await enter(owner, item.id, little, "2");
+    await enter(owner, item.id, most, "11");
+    await exit(owner, item.id, most, "1");
+    // Brought closer from Y; joining X into Y would undo it.
+    expect(ofProduct(await list(owner), item.id)).toEqual([
+      expect.objectContaining({
+        kind: "closer",
+        fromLocationId: most,
+        toLocationId: face,
+      }),
+    ]);
+    const closer = ofProduct(await list(owner), item.id)[0]!;
+    expect(await accept(owner, closer)).toMatchObject({ ok: true });
+    // A hand-made «join X into Y» meets the open task leaving Y.
+    expect(
+      await accept(owner, {
+        ...closer,
+        kind: "consolidate",
+        fromLocationId: little,
+        toLocationId: most,
+        lotId: null,
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   it("takes out of picking what has not moved, unless a rule keeps it there", async () => {
@@ -572,10 +622,19 @@ describe("relocation suggestions (WMS-65)", () => {
       expect.objectContaining({ toLocationId: faceA }),
     ]);
     expect(JSON.stringify(seen)).not.toContain(faceB);
-    // The owner's suggestion names zone B: for them it changed.
-    expect(
-      await accept(zoned, ofProduct(await list(owner), item.id)[0]!),
-    ).toMatchObject({ ok: false, reason: "changed" });
+    // The owner's suggestion names zone B: for them it changed, also once
+    // the owner turned it into a task (nothing of zone B is revealed).
+    const ownerRow = ofProduct(await list(owner), item.id)[0]!;
+    expect(await accept(zoned, ownerRow)).toMatchObject({
+      ok: false,
+      reason: "changed",
+    });
+    expect(await accept(owner, ownerRow)).toMatchObject({ ok: true });
+    expect(await accept(zoned, ownerRow)).toEqual({
+      ok: false,
+      reason: "changed",
+      formError: SUGGESTION_CHANGED,
+    });
 
     // Another warehouse: nothing of the first one.
     const second = await createFacility(owner, { name: "Bodega B", code: "B" });
@@ -678,6 +737,55 @@ describe("relocation suggestions (WMS-65)", () => {
       queries.restore();
     }
   });
+  it("many idle products and one storage place: one suggestion, bounded reads", async () => {
+    const owner = await company();
+    const faces = [];
+    for (let i = 1; i <= 3; i++) {
+      faces.push(
+        await place(owner, `Surtido ${i}`, {
+          type: "PICKING",
+          code: `S-0${i}`,
+        }),
+      );
+    }
+    await place(owner, "Rack", { code: "A-01" });
+    for (let i = 0; i < 150; i++) {
+      const item = await product(owner);
+      await enter(owner, item.id, faces[i % 3]!, "1");
+    }
+    const later = new Date(Date.now() + 120 * DAY);
+    const queries = await countingQueries();
+    try {
+      queries.reset();
+      const rows = await list(owner, later);
+      expect(rows.filter((row) => row.kind === "idle")).toHaveLength(1);
+      expect(queries.count()).toBeLessThanOrEqual(55);
+    } finally {
+      queries.restore();
+    }
+  }, 240_000);
+
+  it("many fast products and restricted picking places: nothing, bounded reads", async () => {
+    const owner = await company();
+    const shelf = await place(owner, "Rack", { code: "A-01" });
+    const other = await product(owner);
+    for (let i = 1; i <= 10; i++) {
+      await place(owner, `Solo otro ${i}`, {
+        type: "PICKING",
+        code: `S-${String(i).padStart(2, "0")}`,
+        limits: { products: other.sku },
+      });
+    }
+    for (let i = 0; i < 100; i++) await fastProduct(owner, shelf, "2", "1");
+    const queries = await countingQueries();
+    try {
+      queries.reset();
+      expect(await list(owner)).toEqual([]);
+      expect(queries.count()).toBeLessThanOrEqual(55);
+    } finally {
+      queries.restore();
+    }
+  }, 240_000);
 });
 
 /**

@@ -120,6 +120,9 @@ almacenaje); siempre se trabaja con existencias **disponibles** (`AVAILABLE`).
   abierta (de cualquier tipo) de ese producto, o un destino con cualquier
   tarea abierta hacia él, no se sugiere: **lo que ya va en camino no se
   vuelve a sugerir**.
+- **Sin contradicciones:** dos sugerencias de un mismo producto nunca usan
+  como origen lo que la otra usa como destino ni al revés (por ejemplo,
+  «acercar de Y» y «juntar X en Y» no salen juntas).
 - **Series:** entran como cualquier producto (la tarea pide escanear las
   series al recoger, como todo traslado).
 - **Orden y tope:** primero «acercar» (clase A antes que B, después por
@@ -150,15 +153,21 @@ toLocationId })`:
 1. Permisos: `inventory.slotting.read` y `inventory.task.create`
    (`assertModulePermission`: con el plan vencido el módulo está en solo
    lectura y no se crea nada).
-2. Vuelve a calcular **solo esa sugerencia** (mismo tipo, producto, origen y
-   lote) con las mismas reglas, sin candados. Si ya no existe o su destino ya
+2. Antes de leer nada más, comprueba que origen y destino sean del almacén
+   activo y estén dentro de su alcance; si no, responde «Esta sugerencia
+   cambió…» como si no existieran (nunca dice si hay una tarea ahí). Después
+   vuelve a calcular **solo esa sugerencia** (mismo tipo, producto, origen y
+   lote) con las mismas reglas, sin candados; en «acercar», el origen debe
+   seguir siendo el primero en orden de salida (si llegó un lote que caduca
+   antes, la sugerencia cambió). Si ya no existe o su destino ya
    no es el que la persona vio, responde «Esta sugerencia cambió…» sin
    escribir. **El navegador nunca manda cantidades**: la cantidad es la que
    decide el servidor en ese momento (la respuesta la dice).
 3. Llama al núcleo de `createTask` con producto, origen, destino, lote y
    cantidad decididos, más una **guarda que corre bajo sus candados**
-   (producto → ubicaciones): si ya hay una tarea abierta de ese producto desde
-   ese origen, o cualquier tarea abierta hacia ese destino, no crea nada y
+   (producto → ubicaciones): si ya hay una tarea abierta de ese producto que
+   sale del origen o del destino, o que llega al origen, o cualquier tarea
+   abierta hacia ese destino (la misma regla del plan), no crea nada y
    responde «Ya hay una tarea…» (`repeated` si es de ese producto entre esas
    ubicaciones). Así **dos aceptaciones a la vez no crean dos tareas**: la
    segunda espera el candado del producto (o de la ubicación de destino) y ve
@@ -196,10 +205,13 @@ transacción por aceptación. La lectura de la lista no toma candados.
   nombra ni se cuenta.
 - La **clasificación** (ABC, sin movimiento) y la condición «ya tiene lugar de
   surtido» miran todo el almacén, como los conteos cíclicos: son propiedades
-  del producto en ese almacén, no se muestran como cifras. *Riesgo aceptado:*
-  quien está limitado a una zona puede deducir que un producto tiene (o no)
-  lugar de surtido en otra zona del mismo almacén porque no se le sugiere
-  acercarlo.
+  del producto en ese almacén, no se muestran como cifras. *Riesgo aceptado
+  (así quedó):* quien está limitado a una zona puede deducir (a) que un
+  producto tiene lugar de surtido en otra zona del mismo almacén, porque no
+  se le sugiere acercarlo, (b) que un producto de su zona sale en otra zona
+  (clase A) aunque en la suya no salga, y (c) que un producto se movió en
+  otra zona, porque no se le sugiere sacarlo de surtido. Nunca se nombra ni se
+  cuenta un lugar, documento o cifra de fuera.
 
 ## Lo que varía por empresa (ajustes de Operación › Inventario)
 
@@ -221,12 +233,31 @@ ni ronda automática.
 
 ## Costo
 
-Sin tablas ni migraciones. La lista hace un número de consultas acotado: unas
-fijas por tipo (saldos candidatos, ubicaciones, reglas, tareas abiertas,
-clasificación) más, por sugerencia que se muestra, las de `freeToMoveFrom` y
-`checkPlacement` de sus candidatos (hasta 10 destinos probados). Una prueba
-cuenta las sentencias de su propio adaptador con un escenario fijo y fija el
-máximo.
+Sin tablas ni migraciones. **El costo no crece con los candidatos**
+(corrección de la revisión: la primera versión consultaba por candidato y
+llegaba a 645 sentencias con 150 productos sin movimiento y una ubicación de
+almacenaje, y a 1,074 con 100 productos de clase A y 10 lugares de surtido
+restringidos):
+
+- Cada tipo decide primero si queda algún destino posible; si no, no lee
+  candidatos.
+- Lo que hace falta de los candidatos se lee **en lote** (por conjunto de
+  productos y ubicaciones): saldos, apartados y tarimas en tres consultas
+  agrupadas que repiten la cuenta de `freeToMoveFrom` (disponible − apartado
+  ahí − dentro de tarimas de almacenaje; de la ubicación y del lote, la
+  menor), las reglas de ubicación una vez por tipo, y lo de la preferencia de
+  acomodo (mismo producto, lote o categoría) en una consulta cada uno.
+  `createTask` vuelve a comprobar todo bajo sus candados al aceptar.
+- Restricciones y cuarentena se deciden en memoria (`restrictionProblem`);
+  solo un destino con capacidad consulta la base (`checkPlacement`), con un
+  presupuesto de **40 comprobaciones por lista** y 50,000 pares revisados en
+  memoria. Agotado, la lista se corta y trae `truncated`.
+- Se deja de buscar al llegar al tope de sugerencias o cuando ya no queda
+  destino libre.
+
+Medido con la prueba (cuenta solo las sentencias de su propio adaptador):
+unas 50 sentencias fijas más menos de 3 por sugerencia extra; los dos
+escenarios de la revisión quedan en 47 y 37, con tope de 55 en la prueba.
 
 ## Consecuencias
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { dec, type Decimal } from "@/lib";
+import { Decimal, dec } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
 import {
   LOCATION_PARENTS,
@@ -21,11 +21,11 @@ import { formatStock, type InventoryActor } from "./movements";
 import {
   checkPlacement,
   loadPlacementRules,
+  restrictionProblem,
   type PlacementRules,
 } from "./placement";
 import { putawayPreferenceOf, rankPutawayPlaces } from "./putaway-rules";
 import { largestThatFits } from "./replenishment-rules";
-import { freeToMoveFrom } from "./reservations";
 import {
   KPI_IDLE_DAYS,
   PICKING_STRATEGY,
@@ -147,8 +147,12 @@ type Busy = {
   to: Set<string>;
   /** Destinations already given to a suggestion of this list. */
   used: Set<string>;
-  /** «product|location» already the origin of a suggestion. */
-  origins: Set<string>;
+  /**
+   * «product|location» already an origin or a destination of a suggestion
+   * of this list: two suggestions of one product never contradict each
+   * other (one taking out of where the other brings in).
+   */
+  planned: Set<string>;
 };
 
 const at = (productId: string, locationId: string) =>
@@ -167,7 +171,7 @@ async function busyOf(tx: Tx, facilityId: string): Promise<Busy> {
     productAt: new Set(),
     to: new Set(),
     used: new Set(),
-    origins: new Set(),
+    planned: new Set(),
   };
   for (const task of tasks) {
     busy.to.add(task.toLocationId);
@@ -179,50 +183,82 @@ async function busyOf(tx: Tx, facilityId: string): Promise<Busy> {
   return busy;
 }
 
-/** The largest amount (whole steps, up to `most`) the place admits now. */
+/**
+ * How much work one list may do beyond its fixed reads (ADR 0086): what
+ * the database is asked per candidate is bounded, whatever the size of the
+ * warehouse. Spent up, the list stops and says it is `truncated`.
+ */
+type Budget = {
+  /** Capacity checks (each reads the occupancy of the place). */
+  checks: number;
+  /** Candidate pairs looked at in memory (restrictions, tasks). */
+  looks: number;
+  spent: boolean;
+};
+
+/** Capacity checks of one list. */
+const CHECKS_MAX = 40;
+/** Pairs looked at in memory by one list. */
+const LOOKS_MAX = 50_000;
+
+const newBudget = (): Budget => ({ checks: 0, looks: 0, spent: false });
+
+/**
+ * The largest amount (whole steps, up to `most`; with `whole`, all or
+ * nothing) the place admits now. Restrictions and quarantine are decided
+ * in memory with the rules read once; only a place under a capacity asks
+ * the database (`checkPlacement`), and that spends the budget.
+ */
 async function fittingAmount(
-  tx: Tx,
+  context: Context,
   input: {
-    productId: string;
+    card: ProductCard;
     fromLocationId: string;
     toLocationId: string;
     most: Decimal;
-    step: Decimal;
     whole: boolean;
   },
-  /** Read once by the caller with every origin and destination. */
   rules: PlacementRules,
 ): Promise<Decimal> {
+  const { budget } = context;
+  budget.looks += 1;
+  if (budget.looks > LOOKS_MAX) {
+    budget.spent = true;
+    return dec(0);
+  }
+  const arrival = {
+    productId: input.card.id,
+    toLocationId: input.toLocationId,
+    fromLocationId: input.fromLocationId,
+    status: "AVAILABLE" as const,
+  };
+  if (restrictionProblem(rules, arrival, input.card)) return dec(0);
+  const limited = rules
+    .chainOf(input.toLocationId)
+    .some((node) => rules.capacities.has(node.id));
+  if (!limited) return input.most;
   const admits = async (quantity: Decimal) => {
+    if (budget.checks >= CHECKS_MAX) {
+      budget.spent = true;
+      return false;
+    }
+    budget.checks += 1;
     const placed = await checkPlacement(
-      tx,
-      [
-        {
-          productId: input.productId,
-          quantity,
-          toLocationId: input.toLocationId,
-          fromLocationId: input.fromLocationId,
-          status: "AVAILABLE",
-        },
-      ],
+      context.tx,
+      [{ ...arrival, quantity }],
       { mode: "report" },
       rules,
     );
-    return placed;
+    return placed.ok && placed.notes.length === 0;
   };
-  const full = await admits(input.most);
-  if (full.ok && full.notes.length === 0) return input.most;
-  // A restriction never lets anything in; with «whole», a part is useless.
-  if (!full.ok && full.reason === "restricted") return dec(0);
-  if (input.whole || !input.step.greaterThan(0)) return dec(0);
+  if (await admits(input.most)) return input.most;
+  const step = dec(input.card.quantityStep.toString());
+  if (input.whole || !step.greaterThan(0) || budget.spent) return dec(0);
   const steps = await largestThatFits(
-    input.most.dividedToIntegerBy(input.step).toNumber(),
-    async (k) => {
-      const placed = await admits(input.step.times(k));
-      return placed.ok && placed.notes.length === 0;
-    },
+    input.most.dividedToIntegerBy(step).toNumber(),
+    (k) => admits(step.times(k)),
   );
-  return input.step.times(steps);
+  return step.times(steps);
 }
 
 type Context = {
@@ -231,6 +267,7 @@ type Context = {
   facilityId: string;
   scopeAnd: object;
   busy: Busy;
+  budget: Budget;
   limit: number;
   only: Only | null;
   /** «Today» (tests move it). */
@@ -251,12 +288,138 @@ const leafOf = (context: Context, type: "PICKING" | "STORAGE") => ({
 
 const blocked = (busy: Busy, productId: string, from: string) =>
   busy.productAt.has(at(productId, from)) ||
-  busy.origins.has(at(productId, from));
+  busy.planned.has(at(productId, from));
 
 const destinationFree = (busy: Busy, productId: string, to: string) =>
   !busy.to.has(to) &&
   !busy.used.has(to) &&
-  !busy.productAt.has(at(productId, to));
+  !busy.productAt.has(at(productId, to)) &&
+  !busy.planned.has(at(productId, to));
+
+function plan(context: Context, raw: Raw): Raw {
+  context.busy.used.add(raw.toLocationId);
+  context.busy.planned.add(at(raw.productId, raw.fromLocationId));
+  context.busy.planned.add(at(raw.productId, raw.toLocationId));
+  return raw;
+}
+
+const lotKeyOf = (lotId: string | null | undefined) => lotId ?? "";
+const atLot = (productId: string, locationId: string, lotId: string | null) =>
+  `${productId}|${locationId}|${lotKeyOf(lotId)}`;
+
+/**
+ * What is free to move, read in bulk for many products and places: the
+ * same arithmetic as `freeToMoveFrom` (available − reserved there − inside
+ * storage containers; of the place and of the lot there, the least), in
+ * three grouped queries instead of three per row. And what else of the
+ * product each place holds (another state or lot), so a place that must
+ * empty can be told apart. The task itself checks again under its locks.
+ */
+type Stock = {
+  /** Free to move of a product, lot and place. */
+  free(productId: string, locationId: string, lotId: string | null): Decimal;
+  /** The place holds only this lot of the product, available. */
+  onlyThis(
+    productId: string,
+    locationId: string,
+    lotId: string | null,
+  ): boolean;
+};
+
+async function stockOf(
+  tx: Tx,
+  productIds: string[],
+  locationIds: string[],
+): Promise<Stock> {
+  const products = [...new Set(productIds)];
+  const places = [...new Set(locationIds)];
+  if (products.length === 0 || places.length === 0) {
+    return { free: () => dec(0), onlyThis: () => false };
+  }
+  const [balances, reserved, contained] = await Promise.all([
+    tx.stockBalance.findMany({
+      where: {
+        productId: { in: products },
+        locationId: { in: places },
+        quantity: { gt: 0 },
+      },
+      select: {
+        productId: true,
+        locationId: true,
+        status: true,
+        lotKey: true,
+        quantity: true,
+      },
+    }),
+    tx.stockReservation.groupBy({
+      by: ["productId", "locationId", "lotId"],
+      where: {
+        productId: { in: products },
+        locationId: { in: places },
+        state: "ACTIVE",
+      },
+      _sum: { remaining: true },
+    }),
+    tx.containerItem.groupBy({
+      by: ["productId", "locationId", "lotKey"],
+      where: {
+        productId: { in: products },
+        locationId: { in: places },
+        status: "AVAILABLE",
+        container: { purpose: "STORAGE" },
+      },
+      _sum: { quantity: true },
+    }),
+  ]);
+  const add = (map: Map<string, Decimal>, key: string, value: Decimal) =>
+    map.set(key, (map.get(key) ?? dec(0)).plus(value));
+  const placeFree = new Map<string, Decimal>();
+  const lotFree = new Map<string, Decimal>();
+  const kinds = new Map<string, number>();
+  const plain = new Map<string, string>();
+  for (const row of balances) {
+    const place = at(row.productId, row.locationId);
+    kinds.set(place, (kinds.get(place) ?? 0) + 1);
+    plain.set(place, row.status === "AVAILABLE" ? row.lotKey : "\u0000");
+    if (row.status !== "AVAILABLE") continue;
+    const quantity = dec(row.quantity.toString());
+    add(placeFree, place, quantity);
+    add(lotFree, `${place}|${row.lotKey}`, quantity);
+  }
+  for (const row of reserved) {
+    if (!row.locationId) continue;
+    const place = at(row.productId, row.locationId);
+    const quantity = dec((row._sum.remaining ?? 0).toString()).negated();
+    add(placeFree, place, quantity);
+    if (row.lotId) add(lotFree, `${place}|${row.lotId}`, quantity);
+  }
+  for (const row of contained) {
+    const place = at(row.productId, row.locationId);
+    const quantity = dec((row._sum.quantity ?? 0).toString()).negated();
+    add(placeFree, place, quantity);
+    add(lotFree, `${place}|${row.lotKey}`, quantity);
+  }
+  const free = (
+    productId: string,
+    locationId: string,
+    lotId: string | null,
+  ) => {
+    const place = placeFree.get(at(productId, locationId)) ?? dec(0);
+    const least = lotId
+      ? Decimal.min(
+          place,
+          lotFree.get(atLot(productId, locationId, lotId)) ?? dec(0),
+        )
+      : place;
+    return least.isNegative() ? dec(0) : least;
+  };
+  return {
+    free,
+    onlyThis: (productId, locationId, lotId) =>
+      kinds.get(at(productId, locationId)) === 1 &&
+      plain.get(at(productId, locationId)) === lotKeyOf(lotId),
+  };
+}
 
 // ── 1. Closer to picking ────────────────────────────────────────────────
 
@@ -273,8 +436,24 @@ async function closerSuggestions(
     .map(([id]) => id);
   if (only) fastIds = fastIds.filter((id) => id === only.productId);
   if (fastIds.length === 0) return { found: [], truncated: false };
-  const truncated = fastIds.length > SLOTTING_SCAN_MAX;
+  let truncated = fastIds.length > SLOTTING_SCAN_MAX;
   fastIds = fastIds.sort().slice(0, SLOTTING_SCAN_MAX);
+
+  // First: is there any destination at all? Empty picking leaves.
+  const empties = await tx.location.findMany({
+    where: {
+      ...leafOf(context, "PICKING"),
+      balances: { none: { quantity: { gt: 0 } } },
+      ...(only ? { id: only.toLocationId } : {}),
+    },
+    take: SLOTTING_SCAN_MAX,
+    select: { id: true, code: true },
+  });
+  const usable = empties.filter(
+    (place) => !ruleLocations.has(place.id) && !busy.to.has(place.id),
+  );
+  if (usable.length === 0) return { found: [], truncated };
+
   // Already with a picking place anywhere in the warehouse: not suggested.
   const inPicking = await tx.stockBalance.groupBy({
     by: ["productId"],
@@ -301,35 +480,26 @@ async function closerSuggestions(
       abcClass: classes.get(card.id)!,
     })),
   );
-  const [balances, empties] = await Promise.all([
-    tx.stockBalance.findMany({
-      where: {
-        productId: { in: ranked.map((card) => card.id) },
-        quantity: { gt: 0 },
-        ...AVAILABLE_ANY_LOT,
-        location: leafOf(context, "STORAGE"),
-        ...(only ? { locationId: only.fromLocationId } : {}),
-      },
-      orderBy: { id: "asc" },
-      take: SLOTTING_SCAN_MAX + 1,
-      select: {
-        productId: true,
-        locationId: true,
-        quantity: true,
-        lot: { select: { id: true, expiresOn: true } },
-      },
-    }),
-    tx.location.findMany({
-      where: {
-        ...leafOf(context, "PICKING"),
-        balances: { none: { quantity: { gt: 0 } } },
-        ...(only ? { id: only.toLocationId } : {}),
-      },
-      take: SLOTTING_SCAN_MAX,
-      select: { id: true, code: true },
-    }),
-  ]);
-  const usable = empties.filter((place) => !ruleLocations.has(place.id));
+  const balances = await tx.stockBalance.findMany({
+    where: {
+      productId: { in: ranked.map((card) => card.id) },
+      quantity: { gt: 0 },
+      ...AVAILABLE_ANY_LOT,
+      location: leafOf(context, "STORAGE"),
+    },
+    orderBy: { id: "asc" },
+    take: SLOTTING_SCAN_MAX + 1,
+    select: {
+      productId: true,
+      locationId: true,
+      quantity: true,
+      lot: { select: { id: true, expiresOn: true } },
+    },
+  });
+  truncated ||= balances.length > SLOTTING_SCAN_MAX;
+  const rows = balances.slice(0, SLOTTING_SCAN_MAX);
+  if (rows.length === 0) return { found: [], truncated };
+
   // The path only matters (walking order) for places without a code.
   const paths = await pathsOf(
     tx,
@@ -342,85 +512,98 @@ async function closerSuggestions(
       path: paths.get(place.id) ?? "",
     })),
   );
-  if (destinations.length === 0) {
-    return {
-      found: [],
-      truncated: truncated || balances.length > SLOTTING_SCAN_MAX,
-    };
-  }
   const skipExpired =
-    balances.some((row) => row.lot?.expiresOn) &&
+    rows.some((row) => row.lot?.expiresOn) &&
     (await readSetting(tx, PICK_EXPIRED)) !== "allow";
   const today = skipExpired ? (await dayWindow(tx, context.now))?.day : null;
-  const strategy = await readSetting(tx, PICKING_STRATEGY);
-  const rules = await loadPlacementRules(tx, [
-    ...destinations.map((place) => place.id),
-    ...new Set(balances.map((row) => row.locationId)),
+  const [strategy, rules, stock] = await Promise.all([
+    readSetting(tx, PICKING_STRATEGY),
+    loadPlacementRules(tx, [
+      ...destinations.map((place) => place.id),
+      ...new Set(rows.map((row) => row.locationId)),
+    ]),
+    stockOf(
+      tx,
+      rows.map((row) => row.productId),
+      rows.map((row) => row.locationId),
+    ),
   ]);
+  const byProduct = new Map<string, typeof rows>();
+  for (const row of rows) {
+    byProduct.set(row.productId, [
+      ...(byProduct.get(row.productId) ?? []),
+      row,
+    ]);
+  }
   const found: Raw[] = [];
   for (const card of ranked) {
-    if (found.length >= context.limit) break;
-    const rows = rankStockSources(
-      balances
-        .filter((row) => row.productId === card.id)
+    if (found.length >= context.limit || context.budget.spent) break;
+    // No destination left for anyone: nothing more to try.
+    if (!destinations.some((place) => !busy.used.has(place.id))) break;
+    const sources = rankStockSources(
+      (byProduct.get(card.id) ?? [])
         .map((row) => ({
           locationId: row.locationId,
           lotId: row.lot?.id ?? null,
           expiresOn: lotDayOf(row.lot?.expiresOn),
           quantity: dec(row.quantity.toString()),
         }))
-        .filter((row) => !today || !isExpired(row.expiresOn, today))
-        .filter((row) => !only || row.lotId === only.lotId),
+        .filter((row) => !today || !isExpired(row.expiresOn, today)),
       strategy,
     );
-    // The first origin in taking order: what expires first is never left
-    // behind what is brought closer.
-    const first = rows[0];
-    if (!first || blocked(busy, card.id, first.locationId)) continue;
-    const free = await freeToMoveFrom(
-      tx,
-      card.id,
-      first.locationId,
-      first.lotId,
+    // The first origin in taking order that has something free: what
+    // expires first is never left behind what is brought closer.
+    const first = sources.find((row) =>
+      stock.free(card.id, row.locationId, row.lotId).greaterThan(0),
     );
-    if (!free.greaterThan(0)) continue;
-    const step = dec(card.quantityStep.toString());
+    if (!first || blocked(busy, card.id, first.locationId)) continue;
+    // Accepting: the origin must still be the first one.
+    if (
+      only &&
+      (first.locationId !== only.fromLocationId || first.lotId !== only.lotId)
+    ) {
+      continue;
+    }
+    const free = stock.free(card.id, first.locationId, first.lotId);
     let tried = 0;
     for (const place of destinations) {
-      if (tried >= DESTINATIONS_TRIED) break;
+      if (tried >= DESTINATIONS_TRIED || context.budget.spent) break;
       if (!destinationFree(busy, card.id, place.id)) continue;
-      tried += 1;
       const amount = await fittingAmount(
-        tx,
+        context,
         {
-          productId: card.id,
+          card,
           fromLocationId: first.locationId,
           toLocationId: place.id,
           most: free,
-          step,
           whole: false,
         },
         rules,
       );
-      if (!amount.greaterThan(0)) continue;
-      busy.used.add(place.id);
-      busy.origins.add(at(card.id, first.locationId));
-      found.push({
-        kind: "closer",
-        productId: card.id,
-        lotId: first.lotId,
-        fromLocationId: first.locationId,
-        toLocationId: place.id,
-        quantity: amount,
-        reason: slottingReason("closer", { abcClass: classes.get(card.id) }),
-      });
+      if (!amount.greaterThan(0)) {
+        // A restriction costs nothing: only a capacity check counts.
+        if (
+          rules.chainOf(place.id).some((node) => rules.capacities.has(node.id))
+        ) {
+          tried += 1;
+        }
+        continue;
+      }
+      found.push(
+        plan(context, {
+          kind: "closer",
+          productId: card.id,
+          lotId: first.lotId,
+          fromLocationId: first.locationId,
+          toLocationId: place.id,
+          quantity: amount,
+          reason: slottingReason("closer", { abcClass: classes.get(card.id) }),
+        }),
+      );
       break;
     }
   }
-  return {
-    found,
-    truncated: truncated || balances.length > SLOTTING_SCAN_MAX,
-  };
+  return { found, truncated: truncated || context.budget.spent };
 }
 
 // ── Storage destinations (idle and consolidate share the reading) ───────
@@ -456,30 +639,6 @@ async function storagePlaces(context: Context): Promise<StoragePlace[]> {
     .map((row, index) => ({ id: row.id, readingOrder: index }));
 }
 
-/**
- * Everything at a location of the product is this lot and available, and
- * all of it is free to move: the place empties of the product.
- */
-async function wholeIsFree(
-  tx: Tx,
-  productId: string,
-  locationId: string,
-  lotId: string | null,
-  quantity: Decimal,
-): Promise<boolean> {
-  const others = await tx.stockBalance.count({
-    where: {
-      productId,
-      locationId,
-      quantity: { gt: 0 },
-      NOT: { status: "AVAILABLE", lotKey: lotId ?? "" },
-    },
-  });
-  if (others > 0) return false;
-  const free = await freeToMoveFrom(tx, productId, locationId, lotId);
-  return free.equals(quantity);
-}
-
 // ── 2. Out of picking what does not move ────────────────────────────────
 
 async function idleSuggestions(
@@ -491,6 +650,12 @@ async function idleSuggestions(
 ): Promise<{ found: Raw[]; truncated: boolean }> {
   const { tx, facilityId, busy, only } = context;
   if (remaining <= 0) return { found: [], truncated: false };
+  // First: is there any destination at all?
+  const storage = (await places()).filter(
+    (place) =>
+      !busy.to.has(place.id) && (!only || place.id === only.toLocationId),
+  );
+  if (storage.length === 0) return { found: [], truncated: false };
   const balances = await tx.stockBalance.findMany({
     where: {
       quantity: { gt: 0 },
@@ -501,7 +666,7 @@ async function idleSuggestions(
         ? {
             productId: only.productId,
             locationId: only.fromLocationId,
-            lotKey: only.lotId ?? "",
+            lotKey: lotKeyOf(only.lotId),
           }
         : {}),
     },
@@ -514,10 +679,14 @@ async function idleSuggestions(
       quantity: true,
     },
   });
-  const truncated = balances.length > SLOTTING_SCAN_MAX;
+  let truncated = balances.length > SLOTTING_SCAN_MAX;
   const candidates = balances
     .slice(0, SLOTTING_SCAN_MAX)
-    .filter((row) => !rulePairs.has(at(row.productId, row.locationId)));
+    .filter(
+      (row) =>
+        !rulePairs.has(at(row.productId, row.locationId)) &&
+        !busy.productAt.has(at(row.productId, row.locationId)),
+    );
   if (candidates.length === 0) return { found: [], truncated };
   const since = new Date(context.now.getTime() - idleDays * 86_400_000);
   const moved = await tx.stockMovementLine.groupBy({
@@ -531,123 +700,148 @@ async function idleSuggestions(
   const active = new Set(moved.map((row) => row.productId));
   const idle = candidates.filter((row) => !active.has(row.productId));
   if (idle.length === 0) return { found: [], truncated };
-  const storage = await places();
-  if (storage.length === 0) return { found: [], truncated };
-  const cards = new Map(
-    (
-      (await tx.product.findMany({
-        where: { id: { in: [...new Set(idle.map((row) => row.productId))] } },
-        select: PRODUCT_CARD,
-      })) as ProductCard[]
-    ).map((card) => [card.id, card]),
-  );
+  const productIds = [...new Set(idle.map((row) => row.productId))];
   const ids = storage.map((place) => place.id);
-  const held = await tx.stockBalance.groupBy({
-    by: ["locationId"],
-    where: { locationId: { in: ids }, quantity: { gt: 0 } },
-    _sum: { quantity: true },
-  });
+  const cards = (await tx.product.findMany({
+    where: { id: { in: productIds } },
+    select: PRODUCT_CARD,
+  })) as ProductCard[];
+  const cardOf = new Map(cards.map((card) => [card.id, card]));
+  const categories = [
+    ...new Set(
+      cards.flatMap((card) => (card.categoryId ? [card.categoryId] : [])),
+    ),
+  ];
+  // Everything the ranking needs, for every idle product at once.
+  const [held, same, family, rules, stock] = await Promise.all([
+    tx.stockBalance.groupBy({
+      by: ["locationId"],
+      where: { locationId: { in: ids }, quantity: { gt: 0 } },
+      _sum: { quantity: true },
+    }),
+    tx.stockBalance.findMany({
+      where: {
+        productId: { in: productIds },
+        locationId: { in: ids },
+        quantity: { gt: 0 },
+      },
+      select: { productId: true, locationId: true, lotKey: true },
+    }),
+    categories.length > 0
+      ? tx.stockBalance.findMany({
+          where: {
+            locationId: { in: ids },
+            quantity: { gt: 0 },
+            product: { categoryId: { in: categories } },
+          },
+          distinct: ["locationId", "productId"],
+          select: {
+            locationId: true,
+            productId: true,
+            product: { select: { categoryId: true } },
+          },
+        })
+      : Promise.resolve([]),
+    loadPlacementRules(tx, [
+      ...ids,
+      ...new Set(idle.map((row) => row.locationId)),
+    ]),
+    stockOf(
+      tx,
+      productIds,
+      idle.map((row) => row.locationId),
+    ),
+  ]);
   const unitsAt = new Map(
     held.map((row) => [row.locationId, (row._sum.quantity ?? 0).toString()]),
   );
   const preference = putawayPreferenceOf(
     await readSetting(tx, PUTAWAY_PREFERENCE),
   );
-  const rules = await loadPlacementRules(tx, [
-    ...ids,
-    ...new Set(idle.map((row) => row.locationId)),
-  ]);
   const found: Raw[] = [];
   for (const row of idle) {
-    if (found.length >= remaining) break;
-    const card = cards.get(row.productId);
+    if (found.length >= remaining || context.budget.spent) break;
+    const card = cardOf.get(row.productId);
     if (!card || blocked(busy, row.productId, row.locationId)) continue;
+    const open = storage.filter((place) =>
+      destinationFree(busy, row.productId, place.id),
+    );
+    // No destination left for anyone: nothing more to try.
+    if (!storage.some((place) => !busy.used.has(place.id))) break;
+    if (open.length === 0) continue;
     const quantity = dec(row.quantity.toString());
+    // All of it leaves, so the picking place empties of the product.
     if (
-      !(await wholeIsFree(
-        tx,
-        row.productId,
-        row.locationId,
-        row.lotId,
-        quantity,
-      ))
+      !stock.onlyThis(row.productId, row.locationId, row.lotId) ||
+      !stock.free(row.productId, row.locationId, row.lotId).equals(quantity)
     ) {
       continue;
     }
-    const open = storage.filter(
-      (place) =>
-        destinationFree(busy, row.productId, place.id) &&
-        (!only || place.id === only.toLocationId),
-    );
-    if (open.length === 0) continue;
-    const [same, family] = await Promise.all([
-      tx.stockBalance.findMany({
-        where: {
-          productId: row.productId,
-          locationId: { in: open.map((place) => place.id) },
-          quantity: { gt: 0 },
-        },
-        select: { locationId: true, lotKey: true },
-      }),
-      card.categoryId
-        ? tx.stockBalance.findMany({
-            where: {
-              locationId: { in: open.map((place) => place.id) },
-              quantity: { gt: 0 },
-              productId: { not: row.productId },
-              product: { categoryId: card.categoryId },
-            },
-            distinct: ["locationId"],
-            select: { locationId: true },
-          })
-        : Promise.resolve([]),
-    ]);
-    const productAt = new Set(same.map((item) => item.locationId));
-    const lotAt = new Set(
-      same
-        .filter((item) => row.lotId !== null && item.lotKey === row.lotId)
-        .map((item) => item.locationId),
-    );
-    const familyAt = new Set(family.map((item) => item.locationId));
     const ranked = rankPutawayPlaces(
       open.map((place) => ({
         id: place.id,
         readingOrder: place.readingOrder,
         units: unitsAt.get(place.id) ?? "0",
-        sameProduct: productAt.has(place.id),
-        sameLot: lotAt.has(place.id),
-        sameCategory: familyAt.has(place.id),
+        sameProduct: same.some(
+          (item) =>
+            item.productId === row.productId && item.locationId === place.id,
+        ),
+        sameLot:
+          row.lotId !== null &&
+          same.some(
+            (item) =>
+              item.productId === row.productId &&
+              item.locationId === place.id &&
+              item.lotKey === row.lotId,
+          ),
+        sameCategory:
+          card.categoryId !== null &&
+          family.some(
+            (item) =>
+              item.locationId === place.id &&
+              item.productId !== row.productId &&
+              item.product.categoryId === card.categoryId,
+          ),
       })),
       preference,
-    ).slice(0, DESTINATIONS_TRIED);
+    );
+    let tried = 0;
     for (const place of ranked) {
+      if (tried >= DESTINATIONS_TRIED || context.budget.spent) break;
       const amount = await fittingAmount(
-        tx,
+        context,
         {
-          productId: row.productId,
+          card,
           fromLocationId: row.locationId,
           toLocationId: place.id,
           most: quantity,
-          step: dec(card.quantityStep.toString()),
           whole: true,
         },
         rules,
       );
-      if (!amount.greaterThan(0)) continue;
-      busy.used.add(place.id);
-      busy.origins.add(at(row.productId, row.locationId));
-      found.push({
-        kind: "idle",
-        productId: row.productId,
-        lotId: row.lotId,
-        fromLocationId: row.locationId,
-        toLocationId: place.id,
-        quantity,
-        reason: slottingReason("idle", { idleDays }),
-      });
+      if (!amount.greaterThan(0)) {
+        if (
+          rules.chainOf(place.id).some((node) => rules.capacities.has(node.id))
+        ) {
+          tried += 1;
+        }
+        continue;
+      }
+      found.push(
+        plan(context, {
+          kind: "idle",
+          productId: row.productId,
+          lotId: row.lotId,
+          fromLocationId: row.locationId,
+          toLocationId: place.id,
+          quantity,
+          reason: slottingReason("idle", { idleDays }),
+        }),
+      );
       break;
     }
   }
+  truncated ||= context.budget.spent;
   return { found, truncated };
 }
 
@@ -655,16 +849,23 @@ async function idleSuggestions(
 
 async function consolidateSuggestions(
   context: Context,
+  places: () => Promise<StoragePlace[]>,
   remaining: number,
 ): Promise<{ found: Raw[]; truncated: boolean }> {
   const { tx, busy, only } = context;
   if (remaining <= 0) return { found: [], truncated: false };
+  // First: is there any destination at all? (A storage leaf with nothing
+  // on its way to it.)
+  const storage = (await places()).filter((place) => !busy.to.has(place.id));
+  if (storage.length < 2) return { found: [], truncated: false };
   const where = {
     quantity: { gt: 0 },
     ...AVAILABLE_ANY_LOT,
     location: leafOf(context, "STORAGE"),
     product: { status: "ACTIVE" as const },
-    ...(only ? { productId: only.productId, lotKey: only.lotId ?? "" } : {}),
+    ...(only
+      ? { productId: only.productId, lotKey: lotKeyOf(only.lotId) }
+      : {}),
   };
   const groups = await tx.stockBalance.groupBy({
     by: ["productId", "lotKey"],
@@ -673,75 +874,109 @@ async function consolidateSuggestions(
     orderBy: [{ productId: "asc" }, { lotKey: "asc" }],
     take: SLOTTING_SCAN_MAX + 1,
   });
-  const truncated = groups.length > SLOTTING_SCAN_MAX;
+  let truncated = groups.length > SLOTTING_SCAN_MAX;
+  const kept = groups.slice(0, SLOTTING_SCAN_MAX);
+  if (kept.length === 0) return { found: [], truncated };
+  // Every row of those groups, at once.
+  const productIds = [...new Set(kept.map((group) => group.productId))];
+  const wanted = new Set(
+    kept.map((group) => `${group.productId}|${group.lotKey}`),
+  );
+  const ROWS_MAX = SLOTTING_SCAN_MAX * 4;
+  const read = await tx.stockBalance.findMany({
+    where: { ...where, productId: { in: productIds } },
+    orderBy: { id: "asc" },
+    take: ROWS_MAX + 1,
+    select: {
+      productId: true,
+      locationId: true,
+      lotId: true,
+      lotKey: true,
+      quantity: true,
+    },
+  });
+  truncated ||= read.length > ROWS_MAX;
+  const rows = read
+    .slice(0, ROWS_MAX)
+    .filter((row) => wanted.has(`${row.productId}|${row.lotKey}`));
+  const [cards, rules, stock] = await Promise.all([
+    tx.product.findMany({
+      where: { id: { in: productIds } },
+      select: PRODUCT_CARD,
+    }) as Promise<ProductCard[]>,
+    loadPlacementRules(tx, [...new Set(rows.map((row) => row.locationId))]),
+    stockOf(
+      tx,
+      productIds,
+      rows.map((row) => row.locationId),
+    ),
+  ]);
+  const cardOf = new Map(cards.map((card) => [card.id, card]));
   const found: Raw[] = [];
-  for (const group of groups.slice(0, SLOTTING_SCAN_MAX)) {
-    if (found.length >= remaining) break;
-    const rows = await tx.stockBalance.findMany({
-      where: { ...where, productId: group.productId, lotKey: group.lotKey },
-      select: { locationId: true, lotId: true, quantity: true },
-    });
-    const lotId = rows[0]?.lotId ?? null;
-    const facts = [];
-    for (const row of rows) {
+  for (const group of kept) {
+    if (found.length >= remaining || context.budget.spent) break;
+    const card = cardOf.get(group.productId);
+    const members = rows.filter(
+      (row) => row.productId === group.productId && row.lotKey === group.lotKey,
+    );
+    if (!card || members.length < 2) continue;
+    const lotId = members[0]!.lotId;
+    const facts = members.map((row) => {
       const quantity = dec(row.quantity.toString());
-      const movable =
-        !blocked(busy, group.productId, row.locationId) &&
-        (!only || row.locationId === only.fromLocationId) &&
-        (await wholeIsFree(
-          tx,
-          group.productId,
-          row.locationId,
-          lotId,
-          quantity,
-        ));
-      facts.push({ locationId: row.locationId, quantity, movable });
-    }
+      return {
+        locationId: row.locationId,
+        quantity,
+        movable:
+          !blocked(busy, group.productId, row.locationId) &&
+          (!only || row.locationId === only.fromLocationId) &&
+          stock.onlyThis(group.productId, row.locationId, lotId) &&
+          stock.free(group.productId, row.locationId, lotId).equals(quantity),
+      };
+    });
     const quantityAt = new Map(
       facts.map((row) => [row.locationId, row.quantity]),
     );
-    let loaded: Promise<PlacementRules> | null = null;
-    const groupRules = () =>
-      (loaded ??= loadPlacementRules(
-        tx,
-        rows.map((row) => row.locationId),
-      ));
     let done = false;
     for (const pair of consolidationPlan(facts)) {
-      if (done) break;
+      if (done || context.budget.spent) break;
+      let tried = 0;
       for (const target of pair.targets) {
+        if (tried >= DESTINATIONS_TRIED || context.budget.spent) break;
         if (!destinationFree(busy, group.productId, target)) continue;
         if (only && target !== only.toLocationId) continue;
         const most = quantityAt.get(pair.fromId)!;
         const amount = await fittingAmount(
-          tx,
+          context,
           {
-            productId: group.productId,
+            card,
             fromLocationId: pair.fromId,
             toLocationId: target,
             most,
-            step: dec(1),
             whole: true,
           },
-          await groupRules(),
+          rules,
         );
-        if (!amount.greaterThan(0)) continue;
-        busy.used.add(target);
-        busy.origins.add(at(group.productId, pair.fromId));
-        found.push({
-          kind: "consolidate",
-          productId: group.productId,
-          lotId,
-          fromLocationId: pair.fromId,
-          toLocationId: target,
-          quantity: most,
-          reason: slottingReason("consolidate", { places: rows.length }),
-        });
+        if (!amount.greaterThan(0)) {
+          tried += 1;
+          continue;
+        }
+        found.push(
+          plan(context, {
+            kind: "consolidate",
+            productId: group.productId,
+            lotId,
+            fromLocationId: pair.fromId,
+            toLocationId: target,
+            quantity: most,
+            reason: slottingReason("consolidate", { places: members.length }),
+          }),
+        );
         done = true;
         break;
       }
     }
   }
+  truncated ||= context.budget.spent;
   return { found, truncated };
 }
 
@@ -773,6 +1008,7 @@ async function planSuggestions(
     facilityId,
     scopeAnd: isLimited(scoped) ? { AND: [scoped] } : {},
     busy,
+    budget: newBudget(),
     limit: only ? 1 : slottingLimitOf(limitSetting),
     only,
     now,
@@ -814,6 +1050,7 @@ async function planSuggestions(
   if (wants("consolidate") && consolidate === "on") {
     const joined = await consolidateSuggestions(
       context,
+      places,
       context.limit - raw.length,
     );
     raw.push(...joined.found);
@@ -976,6 +1213,19 @@ export async function acceptSlottingSuggestion(
   };
   const client = forOrganization(organizationId);
   const facility = await activeFacilityOf(client, userId);
+  // Both places in the person's warehouse and zones before reading
+  // anything else: what lies outside answers as if it did not exist.
+  const scoped = await locationScopeWhere(client, userId);
+  const reachable = await client.location.count({
+    where: {
+      id: { in: [only.fromLocationId, only.toLocationId] },
+      facilityId: facility.id,
+      ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+    },
+  });
+  if (only.fromLocationId === only.toLocationId || reachable !== 2) {
+    return { ok: false, reason: "changed", formError: SUGGESTION_CHANGED };
+  }
   const decided = await client.$transaction(
     (tx) =>
       planSuggestions(tx, actor, facility.id, only, options.now ?? new Date()),
@@ -1017,9 +1267,12 @@ export async function acceptSlottingSuggestion(
         OR: [
           {
             productId: task.productId,
+            // The plan's rule: no open task of the product leaves or
+            // arrives at either end (so two suggestions never contradict).
             OR: [
               { fromLocationId: task.fromLocationId },
               { toLocationId: task.fromLocationId },
+              { fromLocationId: task.toLocationId },
             ],
           },
           { toLocationId: task.toLocationId },
