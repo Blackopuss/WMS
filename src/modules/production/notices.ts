@@ -69,6 +69,20 @@ export const ORDER_CLOSED_NOTICE: NotificationType = {
   visibleWith: ["production.order.read"],
 };
 
+/**
+ * WMS-79 (ADR 0094): production for an outbound order was rejected,
+ * cancelled or closed short, and the order still waits.
+ */
+export const OUTBOUND_WAITING_NOTICE: NotificationType = {
+  key: "production.outbound_waiting",
+  module: "production",
+  label: "Un pedido sigue esperando producción",
+  description:
+    "Cuando se rechaza, se cancela o se cierra corta la producción de un pedido de un almacén que alcanzas.",
+  defaultEnabled: true,
+  visibleWith: ["inventory.outbound.release"],
+};
+
 export const PRODUCTION_NOTIFICATION_TYPES: readonly NotificationType[] = [
   REQUEST_TO_DECIDE_NOTICE,
   REQUEST_ANSWERED_NOTICE,
@@ -76,4 +90,5 @@ export const PRODUCTION_NOTIFICATION_TYPES: readonly NotificationType[] = [
   MATERIAL_SHORT_NOTICE,
   OUTPUT_VERIFIED_NOTICE,
   ORDER_CLOSED_NOTICE,
+  OUTBOUND_WAITING_NOTICE,
 ];

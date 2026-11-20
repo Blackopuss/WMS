@@ -296,6 +296,27 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa",
     coveredBy: "tests/inventory/outbound-orders.int.test.ts",
   },
+  stopWaitingAction: {
+    input: "id del pedido y el motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa y dentro del alcance",
+    coveredBy:
+      "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
+  },
+  reserveWhatThereIsAction: {
+    input: "id del pedido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos y pedido se bloquean solo en esa empresa y dentro del alcance",
+    coveredBy:
+      "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
+  },
+  askProductionAgainAction: {
+    input: "id del pedido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos, áreas y pedido se bloquean solo en esa empresa y dentro del alcance",
+    coveredBy:
+      "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
+  },
   startPackingAction: {
     input: "id del pedido",
     identity:

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { isAppError } from "@/lib";
 import { cancelWave, createWave, type WaveField } from "@/modules/inventory";
+import { makeToOrder } from "@/modules/registry";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
 /**
@@ -38,6 +39,8 @@ export async function createWaveAction(
     result = await createWave(
       { organizationId: organization.id, userId: user.id },
       { orderIds },
+      // WMS-79 (ADR 0094): what production can make is asked to it.
+      { makeToOrder },
     );
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {

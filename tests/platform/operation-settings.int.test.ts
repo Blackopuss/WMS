@@ -36,6 +36,7 @@ import {
   SLOTTING_CONSOLIDATE,
   SLOTTING_FAST_CLASSES,
   SLOTTING_LIMIT,
+  MAKE_TO_ORDER_MODE,
   type InventoryActor,
 } from "@/modules/inventory";
 import { COMPARE_MIN_FULFILLMENT } from "@/modules/purchasing";
@@ -252,6 +253,9 @@ describe("operation settings", () => {
       { key: COUNT_REVIEW_THRESHOLD.key, value: "off", defaultValue: "off" },
       // WMS-54: what arrives is put away unless the company cross-docks.
       { key: CROSS_DOCK_MODE.key, value: "off", defaultValue: "off" },
+      // WMS-79: what an order lacks is not asked to production unless the
+      // company says so.
+      { key: MAKE_TO_ORDER_MODE.key, value: "off", defaultValue: "off" },
       // WMS-41: every correction waits, once the company asks for it.
       {
         key: ADJUSTMENT_APPROVAL_THRESHOLD.key,
@@ -310,6 +314,7 @@ describe("operation settings", () => {
       { key: ABC_PERIOD.key, value: "90" },
       { key: COUNT_REVIEW_THRESHOLD.key, value: "off" },
       { key: CROSS_DOCK_MODE.key, value: "off" },
+      { key: MAKE_TO_ORDER_MODE.key, value: "off" },
       { key: ADJUSTMENT_APPROVAL_THRESHOLD.key, value: "any" },
       { key: PICKING_MODE.key, value: "orders" },
       { key: DIGEST_HOUR.key, value: "7" },

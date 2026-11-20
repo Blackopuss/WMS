@@ -27,6 +27,7 @@ import { ProcessPanel } from "../../procesos/process-panel";
 
 import { CancelOrder, OrderPeople, ReleaseOrder } from "./order-controls";
 import { WarnShortage } from "./warn-shortage";
+import { OutboundLinkNote } from "../outbound-link";
 
 export const metadata: Metadata = { title: "Orden de producción" };
 
@@ -137,6 +138,7 @@ export default async function OrdenProduccionPage({
       {back}
       {moduleState === "read_only" && <ReadOnlyNotice module="Producción" />}
       <PageHeader title={`Orden ${order.numberText}`} />
+      <OutboundLinkNote actor={actor} of={{ orderId: order.id }} />
       <div className="-mt-2 flex flex-wrap items-center gap-x-6 gap-y-1">
         <Badge variant={draft ? "secondary" : "default"}>
           {order.statusLabel}

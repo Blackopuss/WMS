@@ -28,6 +28,7 @@ En una empresa nueva, **Configuración › Configuración inicial** (y **Configu
 Aquí eliges cómo trabaja tu empresa; lo que no cambies queda en su valor por omisión. Los principales:
 - **Surtido:** de dónde se surte primero (más existencias, menos existencias o el lote más antiguo; lo que caduca antes siempre sale primero), si se surten lotes caducados, y si es **Pedido por pedido** o **Por olas**.
 - **Acomodo:** si cada quien reubica lo que llega o se crean **tareas de acomodo**; qué lugar se recomienda; si lo que llega para un pedido que espera va directo a preparación.
+- **Pedidos:** si lo que le falta a un pedido al liberarlo **Queda pendiente** (como siempre) o **Se pide a producción** (con Producción: nace la solicitud de producción del producto con receta y el pedido no sale hasta que llegue o alguien deje de esperar; pon el área en la receta si el almacén tiene varias).
 - **Tarimas y cajas**, **Verificar y empacar pedidos**, **Datos del transporte al despachar**, **Devoluciones sin pedido**.
 - **Entradas** (aviso de entrada repetida), **Ubicaciones** (qué pasa al pasar la capacidad), **Lotes** (avisar de lotes por caducar).
 - **Fotos:** al reportar un problema y al entregar una tarea (sin foto, opcional u obligatoria).
@@ -69,4 +70,4 @@ En **Configuración › Automatizaciones** creas reglas que se leen como una fra
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Para el sistema mismo (servidor, respaldos), ver los manuales de [instalación](instalacion.md), [actualización](actualizacion.md) y [respaldo y restauración](respaldo-y-restauracion.md).
 
-Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85; tableros: WMS-34; sugerencias de reubicación: WMS-65; titularidad: WMS-90; automatizaciones: WMS-64; verificación: WMS-30B)
+Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85; tableros: WMS-34; sugerencias de reubicación: WMS-65; titularidad: WMS-90; automatizaciones: WMS-64; verificación: WMS-30B; pedido ligado a producción: WMS-79)

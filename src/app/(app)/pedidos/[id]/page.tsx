@@ -21,14 +21,18 @@ import {
   returnsOfOrder,
   waveOfOrder,
 } from "@/modules/inventory";
+import { productionForOutboundOrder } from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
 
 import {
   AddLineForm,
+  AskProductionAgain,
   CancelOrder,
   ReleaseOrder,
   RemoveLine,
+  ReserveWhatThereIs,
   StartPacking,
+  StopWaiting,
 } from "./order-controls";
 
 export const metadata: Metadata = { title: "Pedido" };
@@ -130,6 +134,32 @@ export default async function PedidoPage({
     order.status === "SHIPPED" && access.can("inventory.customer_return.read")
       ? await returnsOfOrder(actor, order.id)
       : [];
+  // WMS-79 (ADR 0094): what production does for the lines that wait,
+  // named only within the reach of who looks.
+  const waits = order.lineItems.filter((line) => line.production);
+  const production =
+    waits.length > 0 && access.moduleState("production") !== "none"
+      ? await productionForOutboundOrder(actor, order.id)
+      : new Map();
+  const mayHandleWait =
+    active &&
+    order.waitsForProduction &&
+    access.allows("inventory.outbound.release");
+  const mayAskAgain =
+    mayHandleWait &&
+    access.moduleState("production") === "active" &&
+    waits.some(
+      (line) =>
+        line.production?.status === "OPEN" && !production.get(line.id)?.active,
+    );
+  // WMS-79: a line short of a released order can set aside what is free now.
+  const mayTopUp =
+    active &&
+    (order.status === "RELEASED" || order.status === "PICKING") &&
+    access.allows("inventory.outbound.release") &&
+    order.lineItems.some(
+      (line) => line.shortText !== null || line.production?.status === "OPEN",
+    );
   const mayPack =
     active &&
     access.allows("inventory.outbound.pack") &&
@@ -212,6 +242,71 @@ export default async function PedidoPage({
           </Link>
           , junto con otros pedidos.
         </p>
+      )}
+      {waits.length > 0 && (
+        <section
+          aria-labelledby="produccion"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2 id="produccion" className="border-b p-4 font-medium sm:px-5">
+            Producción
+          </h2>
+          <ul className="divide-y">
+            {waits.map((line) => {
+              const wait = line.production!;
+              const made = production.get(line.id);
+              return (
+                <li key={line.id} className="space-y-1 p-4 text-sm sm:px-5">
+                  <p className="font-medium [overflow-wrap:anywhere]">
+                    {line.productName}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {wait.status === "OPEN"
+                      ? `Espera producción: ${wait.leftText} de ${wait.quantityText}.`
+                      : `${wait.statusLabel}${wait.closeReason ? `: ${wait.closeReason}` : "."}`}
+                  </p>
+                  {(made?.request || made?.order) && (
+                    <p className="flex flex-wrap gap-x-4">
+                      {made.request && (
+                        <Link
+                          href={`/produccion/solicitudes/${made.request.id}`}
+                          className="inline-flex min-h-11 items-center rounded font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          Solicitud {made.request.numberText} ·{" "}
+                          {made.request.statusLabel}
+                        </Link>
+                      )}
+                      {made.order && (
+                        <Link
+                          href={`/produccion/${made.order.id}`}
+                          className="inline-flex min-h-11 items-center rounded font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          Orden {made.order.numberText} ·{" "}
+                          {made.order.statusLabel}
+                        </Link>
+                      )}
+                    </p>
+                  )}
+                  {wait.status === "OPEN" && made && !made.active && (
+                    <p className="text-warning">Sin producción en curso.</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {mayHandleWait && (
+            <div className="flex flex-wrap items-start gap-3 border-t p-4 sm:px-5">
+              {mayTopUp && <ReserveWhatThereIs orderId={order.id} />}
+              {mayAskAgain && <AskProductionAgain orderId={order.id} />}
+              <StopWaiting orderId={order.id} />
+            </div>
+          )}
+        </section>
+      )}
+      {mayTopUp && !order.waitsForProduction && (
+        <div className="max-w-3xl">
+          <ReserveWhatThereIs orderId={order.id} />
+        </div>
       )}
       {order.shipment && access.can("inventory.shipment.read") && (
         <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">

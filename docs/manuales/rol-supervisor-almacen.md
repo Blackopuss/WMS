@@ -23,7 +23,8 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 3. **Asignar tareas:** en una tarea, **Asignar**. En una ola, **Repartir** o **Asignar las de <zona> a**.
 4. **Incidencias:** abre la incidencia y **Atender**, **Resolver** (di qué se hizo) o **Descartar** (di por qué). Una incidencia nunca cambia existencias: si hace falta, usa **Cambiar estado** o **Corregir existencias**.
 5. **Cambios de estado y devoluciones:** libera lo que pasó inspección con **Cambiar estado** (a disponible, dañado, rechazado o a restauración) y decide lo que regresó un cliente en **Pedidos › Devoluciones**.
-6. **Autorizaciones:** en **Aprobaciones** (desde Configuración › Solicitudes) autorizas o rechazas solo lo que tu rol puede hacer por sí mismo.
+6. **Pedidos que esperan producción:** un pedido con la insignia **Espera producción** no sale hasta que llegue lo que se produce para él. En su ficha, bloque **Producción**: **Pedir producción de nuevo** si se rechazó o se cerró corta, o **Dejar de esperar** (con motivo) para que salga con lo que tiene. Si ya hay existencias libres de lo que le falta, **Apartar lo que ya hay**.
+7. **Autorizaciones:** en **Aprobaciones** (desde Configuración › Solicitudes) autorizas o rechazas solo lo que tu rol puede hacer por sí mismo.
 7. **Pedidos y embarques:** libera, cancela, arma embarque y confirma salida.
 8. **Solicitudes de producción:** si el módulo está contratado, las puedes decidir (ver [Encargado](rol-encargado-produccion.md)); aceptas como mucho lo que se pidió.
 
@@ -36,4 +37,4 @@ Crear órdenes de compra ni ver costos (Comprador); cambiar la configuración o 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-20 (indicadores: WMS-32; tableros: WMS-34; sugerencias de reubicación: WMS-65; verificación: WMS-30B)
+Vigente al 2026-11-20 (indicadores: WMS-32; tableros: WMS-34; sugerencias de reubicación: WMS-65; verificación: WMS-30B; pedido ligado a producción: WMS-79)

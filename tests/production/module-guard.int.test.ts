@@ -114,6 +114,12 @@ const NOT_SERVICES = new Set([
   // the screens of the trace ask it besides Inventario's.
   "findProductionOrderByNumber",
   "traceProduction",
+  // WMS-79 (ADR 0094): the link to an outbound order, read inside the
+  // verification's transaction, and what the screens show of it (nothing
+  // without the module or the permission to read).
+  "lineWaitOfReport",
+  "outboundOrderFor",
+  "productionForOutboundOrder",
 ]);
 
 const services = Object.entries(production).filter(

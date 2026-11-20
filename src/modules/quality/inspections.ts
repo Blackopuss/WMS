@@ -18,6 +18,9 @@ import {
   postDisposal,
   releaseHold,
   serialKey,
+  lockOrdersForProduced,
+  sendProducedToWait,
+  sendToWaitingOrders,
   settleProductionStored,
   writeStatusChange,
   type InventoryActor,
@@ -30,6 +33,7 @@ import {
   PRODUCTION_BATCH_VERIFICATION_OPERATION,
   formatProductionNumber,
   formatReportNumber,
+  lineWaitOfReport,
   reachesProductionReport,
 } from "@/modules/production";
 import {
@@ -512,6 +516,40 @@ type OriginCandidate = InspectionOriginOption & {
   returnId?: string;
 };
 
+/** Origins offered per kind, at most. */
+const ORIGINS_SHOWN = 50;
+/** Rows read per kind, at most, looking for origins that still wait. */
+const ORIGINS_SCANNED = 2000;
+
+/**
+ * Reads a kind of origin page by page until it has `ORIGINS_SHOWN` that
+ * still wait (or nothing is left): what is already covered never hides
+ * what still waits (WMS-79 review: with `take` before filtering, from the
+ * 51st report of a product in an area no verification could start).
+ */
+async function collectOrigins<T extends { id: string }>(
+  page: (after: string | null) => Promise<T[]>,
+  toCandidate: (row: T) => Promise<OriginCandidate | null>,
+): Promise<OriginCandidate[]> {
+  const found: OriginCandidate[] = [];
+  let after: string | null = null;
+  for (let read = 0; read < ORIGINS_SCANNED;) {
+    const rows = await page(after);
+    for (const row of rows) {
+      const candidate = await toCandidate(row);
+      if (candidate) found.push(candidate);
+      if (found.length >= ORIGINS_SHOWN) return found;
+    }
+    if (rows.length < ORIGINS_SHOWN) break;
+    read += rows.length;
+    after = rows.at(-1)!.id;
+  }
+  return found;
+}
+
+const pageAfter = (after: string | null) =>
+  after ? { cursor: { id: after }, skip: 1 } : {};
+
 /** Where what is in a slot may come from (derived, nothing stored). */
 async function originsOf(
   client: Client | Tx,
@@ -527,120 +565,135 @@ async function originsOf(
       select: { id: true, number: true },
     });
   if (slot.status === "INSPECTION") {
-    const outputs = await client.productionReportLine.findMany({
-      where: {
-        kind: "OUTPUT",
-        productId: slot.product.id,
-        report: { reversedAt: null },
-        movementLine: {
-          locationId: slot.location.id,
-          status: "INSPECTION",
-          lotId: lotKey,
-        },
-      },
-      orderBy: { id: "asc" },
-      take: 50,
-      select: {
-        id: true,
-        quantity: true,
-        report: {
+    const outputs = await collectOrigins(
+      (after) =>
+        client.productionReportLine.findMany({
+          where: {
+            kind: "OUTPUT",
+            productId: slot.product.id,
+            report: { reversedAt: null },
+            movementLine: {
+              locationId: slot.location.id,
+              status: "INSPECTION",
+              lotId: lotKey,
+            },
+          },
+          orderBy: { id: "asc" },
+          take: ORIGINS_SHOWN,
+          ...pageAfter(after),
           select: {
             id: true,
-            number: true,
-            createdByUserId: true,
-            order: { select: { number: true, areaLocationId: true } },
+            quantity: true,
+            report: {
+              select: {
+                id: true,
+                number: true,
+                createdByUserId: true,
+                order: { select: { number: true, areaLocationId: true } },
+              },
+            },
           },
-        },
+        }),
+      async (line) => {
+        const pending = dec(line.quantity.toString()).minus(
+          await coveredOf(client, { productionReportLineId: line.id }),
+        );
+        const opened = await open(line.id);
+        if (!pending.greaterThan(0) && !opened) return null;
+        return {
+          origin: "PRODUCTION",
+          lineId: line.id,
+          label: `${formatProductionNumber(line.report.order.number)} · ${formatReportNumber(line.report.number)}`,
+          pending: pending.toString(),
+          pendingLabel: formatStock(pending.toString(), unit),
+          openId: opened?.id ?? null,
+          openNumber: opened ? formatInspectionNumber(opened.number) : null,
+          reportId: line.report.id,
+          reportCreatedBy: line.report.createdByUserId,
+          areaLocationId: line.report.order.areaLocationId,
+        };
       },
-    });
-    for (const line of outputs) {
-      const pending = dec(line.quantity.toString()).minus(
-        await coveredOf(client, { productionReportLineId: line.id }),
-      );
-      const opened = await open(line.id);
-      if (!pending.greaterThan(0) && !opened) continue;
-      out.push({
-        origin: "PRODUCTION",
-        lineId: line.id,
-        label: `${formatProductionNumber(line.report.order.number)} · ${formatReportNumber(line.report.number)}`,
-        pending: pending.toString(),
-        pendingLabel: formatStock(pending.toString(), unit),
-        openId: opened?.id ?? null,
-        openNumber: opened ? formatInspectionNumber(opened.number) : null,
-        reportId: line.report.id,
-        reportCreatedBy: line.report.createdByUserId,
-        areaLocationId: line.report.order.areaLocationId,
-      });
-    }
+    );
+    out.push(...outputs);
   }
   if (!mode.byQuality) return out;
   if (slot.status === "INSPECTION") {
-    const receipts = await client.purchaseReceiptLine.findMany({
-      where: {
-        productId: slot.product.id,
-        locationId: slot.location.id,
-        status: "INSPECTION",
-        lotId: lotKey,
+    const receipts = await collectOrigins(
+      (after) =>
+        client.purchaseReceiptLine.findMany({
+          where: {
+            productId: slot.product.id,
+            locationId: slot.location.id,
+            status: "INSPECTION",
+            lotId: lotKey,
+          },
+          orderBy: { id: "desc" },
+          take: ORIGINS_SHOWN,
+          ...pageAfter(after),
+          select: {
+            id: true,
+            baseQuantity: true,
+            receipt: { select: { order: { select: { number: true } } } },
+          },
+        }),
+      async (line) => {
+        const pending = dec(line.baseQuantity.toString()).minus(
+          await coveredOf(client, { purchaseReceiptLineId: line.id }),
+        );
+        const opened = await open(line.id);
+        if (!pending.greaterThan(0) && !opened) return null;
+        return {
+          origin: "RECEIPT",
+          lineId: line.id,
+          label: `Recepción de compra · OC-${String(line.receipt.order.number).padStart(4, "0")}`,
+          pending: pending.toString(),
+          pendingLabel: formatStock(pending.toString(), unit),
+          openId: opened?.id ?? null,
+          openNumber: opened ? formatInspectionNumber(opened.number) : null,
+        } satisfies OriginCandidate;
       },
-      orderBy: { id: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        baseQuantity: true,
-        receipt: { select: { order: { select: { number: true } } } },
+    );
+    out.push(...receipts);
+    const returns = await collectOrigins(
+      (after) =>
+        client.customerReturnLine.findMany({
+          where: {
+            productId: slot.product.id,
+            lotId: lotKey,
+            return: { status: "RECEIVED", locationId: slot.location.id },
+          },
+          orderBy: { id: "asc" },
+          take: ORIGINS_SHOWN,
+          ...pageAfter(after),
+          select: {
+            id: true,
+            quantity: true,
+            returnId: true,
+            return: { select: { number: true } },
+            decisions: { select: { quantity: true } },
+          },
+        }),
+      async (line) => {
+        const decided = line.decisions.reduce(
+          (sum, each) => sum.plus(each.quantity.toString()),
+          dec(0),
+        );
+        const pending = dec(line.quantity.toString()).minus(decided);
+        if (!pending.greaterThan(0)) return null;
+        const opened = await open(line.id);
+        return {
+          origin: "CUSTOMER_RETURN",
+          lineId: line.id,
+          label: `Devolución ${formatCustomerReturnNumber(line.return.number)}`,
+          pending: pending.toString(),
+          pendingLabel: formatStock(pending.toString(), unit),
+          openId: opened?.id ?? null,
+          openNumber: opened ? formatInspectionNumber(opened.number) : null,
+          returnId: line.returnId,
+        } satisfies OriginCandidate;
       },
-    });
-    for (const line of receipts) {
-      const pending = dec(line.baseQuantity.toString()).minus(
-        await coveredOf(client, { purchaseReceiptLineId: line.id }),
-      );
-      const opened = await open(line.id);
-      if (!pending.greaterThan(0) && !opened) continue;
-      out.push({
-        origin: "RECEIPT",
-        lineId: line.id,
-        label: `Recepción de compra · OC-${String(line.receipt.order.number).padStart(4, "0")}`,
-        pending: pending.toString(),
-        pendingLabel: formatStock(pending.toString(), unit),
-        openId: opened?.id ?? null,
-        openNumber: opened ? formatInspectionNumber(opened.number) : null,
-      });
-    }
-    const returns = await client.customerReturnLine.findMany({
-      where: {
-        productId: slot.product.id,
-        lotId: lotKey,
-        return: { status: "RECEIVED", locationId: slot.location.id },
-      },
-      orderBy: { id: "asc" },
-      take: 50,
-      select: {
-        id: true,
-        quantity: true,
-        returnId: true,
-        return: { select: { number: true } },
-        decisions: { select: { quantity: true } },
-      },
-    });
-    for (const line of returns) {
-      const decided = line.decisions.reduce(
-        (sum, each) => sum.plus(each.quantity.toString()),
-        dec(0),
-      );
-      const pending = dec(line.quantity.toString()).minus(decided);
-      if (!pending.greaterThan(0)) continue;
-      const opened = await open(line.id);
-      out.push({
-        origin: "CUSTOMER_RETURN",
-        lineId: line.id,
-        label: `Devolución ${formatCustomerReturnNumber(line.return.number)}`,
-        pending: pending.toString(),
-        pendingLabel: formatStock(pending.toString(), unit),
-        openId: opened?.id ?? null,
-        openNumber: opened ? formatInspectionNumber(opened.number) : null,
-        returnId: line.returnId,
-      });
-    }
+    );
+    out.push(...returns);
   }
   // M2: «Otro» reaches only what no origin of its own waits for.
   const { free } = await slotQuantities(client, slot);
@@ -1611,6 +1664,19 @@ async function decideCore(
     select: SLOT_PRODUCT,
   });
   if (!product) return { ok: false, reason: "not_found", formError: NOT_FOUND };
+  // WMS-79 (ADR 0094): the outbound line the lot was made for, if any (the
+  // link never changes, so it is read before the locks).
+  const lineWaitId =
+    known.origin === "PRODUCTION" && known.productionReportId
+      ? await lineWaitOfReport(client, known.productionReportId)
+      : null;
+  // Who does not read outbound orders (or reach their warehouse) is told
+  // «a un pedido», never its number (review of WMS-79).
+  const seesOrders =
+    lineWaitId !== null &&
+    (await isAllowed(organizationId, userId, "inventory.outbound.read")) &&
+    (await locationsOutOfScope(client, userId, [known.locationId])).length ===
+      0;
   const rule = {
     unitCode: product.unitCode,
     quantityStep: product.quantityStep.toString(),
@@ -1728,6 +1794,17 @@ async function decideCore(
   const run = async (tx: Tx): Promise<DecideInspectionResult> => {
     await lockRows(tx, "product", [known.productId]);
     await lockRows(tx, "location", [known.locationId, ...destinations]);
+    // WMS-79: the outbound order it was made for, after the locations and
+    // before this document (ADR 0094).
+    // With cross-docking, also the orders that may wait for the product,
+    // in the same call (ADR 0094).
+    const crossDock = lineWaitId
+      ? await lockOrdersForProduced(tx, actor, {
+          waitId: lineWaitId,
+          productId: known.productId,
+          locationId: known.locationId,
+        })
+      : null;
     if (returnId) await lockRows(tx, "customerReturn", [returnId]);
     await lockRows(tx, "qualityInspection", [known.id]);
     const row = await lockedOrReadInspection(tx, known.id);
@@ -2105,6 +2182,8 @@ async function decideCore(
       movementId: string;
     }[] = [];
     const arrivals: PutawayArrival[] = [];
+    // WMS-79: the movement that made each arrival available.
+    const arrivalMovements: string[] = [];
     for (const each of outcomes) {
       const reason = each.reason ?? "Se verificó y cumple.";
       let movementId: string;
@@ -2161,6 +2240,7 @@ async function decideCore(
               productionReportId:
                 origin === "PRODUCTION" ? row.productionReportId : null,
             });
+            arrivalMovements.push(movementId);
           }
         }
       } catch (error) {
@@ -2298,7 +2378,64 @@ async function decideCore(
         planVersionId: plan?.versionId ?? null,
       },
     });
-    const putaway = await createPutawayTasks(tx, actor, arrivals);
+    // WMS-79 (ADR 0094): what an outbound order waits for is set aside for
+    // it, with its picking task, before put-away; the rest goes on.
+    // The link comes first; with cross-docking, what is left goes to the
+    // other orders that wait for it, by their urgency.
+    let toPutAway = arrivals;
+    const sentNotes: string[] = [];
+    if (lineWaitId && arrivals.length > 0) {
+      const left = arrivals.map((each) => each.quantity);
+      const sent = await sendProducedToWait(tx, actor, {
+        waitId: lineWaitId,
+        arrivals: arrivals.map((each, index) => ({
+          ...each,
+          movementId: arrivalMovements[index],
+        })),
+      });
+      sent.sent.forEach((quantity, index) => {
+        left[index] = left[index]!.minus(quantity);
+      });
+      sentNotes.push(...sent.notes);
+      if (crossDock) {
+        for (const movementId of new Set(arrivalMovements)) {
+          const indexes = arrivals
+            .map((_, index) => index)
+            .filter(
+              (index) =>
+                arrivalMovements[index] === movementId &&
+                left[index]!.greaterThan(0),
+            );
+          if (indexes.length === 0) continue;
+          const docked = await sendToWaitingOrders(
+            tx,
+            actor,
+            crossDock,
+            indexes.map((index) => ({
+              ...arrivals[index]!,
+              quantity: left[index]!,
+            })),
+            movementId,
+            { fromProductionArea: true },
+          );
+          docked.sent.forEach((quantity, at) => {
+            const index = indexes[at]!;
+            left[index] = left[index]!.minus(quantity);
+          });
+          sentNotes.push(...docked.notes);
+        }
+      }
+      toPutAway = arrivals
+        .map((each, index) => ({ ...each, quantity: left[index]! }))
+        .filter((each) => each.quantity.greaterThan(0));
+    }
+    const sentNote =
+      sentNotes.length === 0
+        ? ""
+        : seesOrders
+          ? sentNotes.join(" ")
+          : "Lo aprobado que esperaba un pedido se apartó para él, con su tarea de surtido.";
+    const putaway = await createPutawayTasks(tx, actor, toPutAway);
 
     // P10, P10b: the stage «Verificación» of the lot, after the writes.
     if (origin === "PRODUCTION" && row.productionReportId) {
@@ -2387,7 +2524,9 @@ async function decideCore(
     return {
       ok: true as const,
       inspectionId: row.id,
-      summary: putaway.note ? `${summary} ${putaway.note}` : summary,
+      summary: [summary, sentNote, putaway.note ?? ""]
+        .filter(Boolean)
+        .join(" "),
     };
   };
 

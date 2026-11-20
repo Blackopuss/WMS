@@ -11,6 +11,7 @@ import { isExpired, lotDayOf } from "./lot-rules";
 import { formatStock, type InventoryActor } from "./movements";
 import { formatOutboundNumber } from "./outbound-states";
 import { createPickTasks, nextTaskNumber } from "./picking";
+import { creditLineWaits } from "./outbound-waits";
 import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
 import { freeToTake } from "./reservations";
 import { CROSS_DOCK_MODE, PICK_EXPIRED } from "./settings";
@@ -69,6 +70,21 @@ export async function lockCrossDockOrders(
     return null;
   }
   if ((await readSetting(tx, CROSS_DOCK_MODE)) !== "on") return null;
+  return {
+    orderIds: await lockRows(
+      tx,
+      "outboundOrder",
+      await candidatesOf(tx, actor, input),
+    ),
+  };
+}
+
+/** The orders that may wait for these products, within reach. */
+async function candidatesOf(
+  tx: Tx,
+  actor: InventoryActor,
+  input: { productIds: readonly string[]; facilityIds: readonly string[] },
+): Promise<string[]> {
   const candidates = await tx.outboundOrder.findMany({
     where: {
       status: { in: [...WAITING_STATUSES] },
@@ -90,7 +106,45 @@ export async function lockCrossDockOrders(
     }
     if (facilities.get(order.facilityId)) allowed.push(order.id);
   }
-  return { orderIds: await lockRows(tx, "outboundOrder", allowed) };
+  return allowed;
+}
+
+/**
+ * WMS-79 (ADR 0094): what a verification approves of a lot made for an
+ * outbound order goes first to that order and, with cross-docking on, what
+ * is left to the other orders that wait for it. Locks in ONE call the
+ * order of the wait and, with cross-docking, the orders that may wait for
+ * the product in the warehouse of `locationId` (after the locations,
+ * before the verification). Answers the cross-docking lock (null when the
+ * company does not cross-dock).
+ */
+export async function lockOrdersForProduced(
+  tx: Tx,
+  actor: InventoryActor,
+  input: { waitId: string; productId: string; locationId: string },
+): Promise<CrossDockLock> {
+  const [wait, place] = await Promise.all([
+    tx.outboundLineWait.findFirst({
+      where: { id: input.waitId },
+      select: { orderId: true },
+    }),
+    tx.location.findFirst({
+      where: { id: input.locationId },
+      select: { facilityId: true },
+    }),
+  ]);
+  const crossDocks =
+    place !== null && (await readSetting(tx, CROSS_DOCK_MODE)) === "on";
+  const candidates = crossDocks
+    ? await candidatesOf(tx, actor, {
+        productIds: [input.productId],
+        facilityIds: [place!.facilityId],
+      })
+    : [];
+  await lockRows(tx, "outboundOrder", [
+    ...new Set([...(wait ? [wait.orderId] : []), ...candidates]),
+  ]);
+  return crossDocks ? { orderIds: candidates } : null;
 }
 
 /** What arrived, one entry per line of the entry. */
@@ -145,6 +199,11 @@ export async function sendToWaitingOrders(
   lock: CrossDockLock,
   arrivals: readonly CrossDockArrivalInput[],
   movementId: string,
+  /**
+   * WMS-79: what a verification approved in a production area (not a
+   * place «de paso»), left after the order it was made for.
+   */
+  options: { fromProductionArea?: boolean } = {},
 ): Promise<CrossDockResult> {
   if (!lock || lock.orderIds.length === 0) return nothing(arrivals.length);
 
@@ -194,7 +253,9 @@ export async function sendToWaitingOrders(
       !arrival.quantity.greaterThan(0) ||
       !place ||
       place.archivedAt ||
-      !isWaitingPlace(place) ||
+      // Never from «Preparación» (it would be a task to itself).
+      place.isStaging ||
+      (!isWaitingPlace(place) && !options.fromProductionArea) ||
       (today && isExpired(expiresOn, today))
     ) {
       usable.push(dec(0));
@@ -327,6 +388,7 @@ export async function sendToWaitingOrders(
   const nameOf = new Map(names.map((row) => [row.id, row.name]));
 
   let next = await nextTaskNumber(tx);
+  const byLine = new Map<string, Decimal>();
   type Sent = {
     parts: Map<string, { quantity: Decimal; unitCode: string }>;
     tasks: number[];
@@ -360,6 +422,7 @@ export async function sendToWaitingOrders(
       crossDockMovementId: movementId,
     });
     sent[share.arrival] = sent[share.arrival]!.plus(share.quantity);
+    byLine.set(line.id, (byLine.get(line.id) ?? dec(0)).plus(share.quantity));
     const entry: Sent = byOrder.get(order.id) ?? {
       parts: new Map(),
       tasks: [],
@@ -373,6 +436,10 @@ export async function sendToWaitingOrders(
     for (let number = first; number < next; number++) entry.tasks.push(number);
     byOrder.set(order.id, entry);
   }
+
+  // WMS-79 (ADR 0094): what went to a line that waits for production
+  // counts toward its wait (the orders are locked).
+  await creditLineWaits(tx, actor, byLine);
 
   const sentOrders: CrossDockSent[] = [];
   const notes: string[] = [];

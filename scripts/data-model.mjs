@@ -293,6 +293,7 @@ export const AREAS = [
       "StockHoldUnit",
       "OutboundOrder",
       "OutboundOrderLine",
+      "OutboundLineWait",
       "OutboundPackShortage",
       "ReplenishmentRule",
       "PickWave",

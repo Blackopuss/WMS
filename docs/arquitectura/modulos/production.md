@@ -154,6 +154,26 @@ cuando todo el lote está decidido y sin acomodos abiertos
 La ficha del lote dice lo aprobado que quedó en el área sin tarea
 (`leftInArea`, con «Cambiar de lugar»).
 
+**Pedido del cliente ligado a producción (WMS-79, ADR 0094,
+`make-to-order.ts`):** `makeToOrder` (expuesto por `src/modules/registry`)
+es lo que la aplicación entrega a los servicios del pedido de salida de
+Inventario (`releaseOutboundOrder`, `createWave`, `askProductionAgain`): `areasFor` (áreas antes
+de los candados), `makeable` (bajo los candados: receta vigente y área de la
+receta o la única del almacén; nada sin Producción activo), `ask` (crea las
+solicitudes ligadas, `production_request.lineWaitId`, a nombre de quien
+libera, sin las tres condiciones de la solicitud manual, y avisa a quien
+decide sin nombrar el pedido); las solicitudes por atender de una espera
+que se cierra las cancela Inventario (`cancelAskedFor`). Aceptar una solicitud ligada no asigna
+personas por omisión y se rechaza si su espera ya no está abierta («Ya no
+hace falta para el pedido: recházala»). Rechazar la solicitud, cancelar la
+orden o cerrarla con menos de lo que espera el pedido avisa
+`production.outbound_waiting` (`noticeOrderStillWaits`) a quien libera
+pedidos en ese almacén. `lineWaitOfReport` lo usa la verificación (Calidad)
+para apartar lo aprobado para el pedido. Pantallas: `outboundOrderFor`
+(«Para el pedido PS-0001 de …» solo a quien lee pedidos y alcanza el
+almacén) y `productionForOutboundOrder` (la solicitud y la orden de cada
+línea, solo a quien las lee y alcanza el área).
+
 ## Permisos
 
 `production.recipe.read|manage`, `production.order.read|create|release|cancel|close`,
@@ -189,7 +209,7 @@ módulo no dan nada.
 | `production_scrap` | Merma de material de una orden: su `DISPOSAL`, línea, cantidad y motivo |
 | `production_lot_numbering` | Nomenclatura de lotes de lo producido (una por empresa) |
 | `production_lot_sequence` | Último consecutivo por producto (o empresa) y periodo; solo sube |
-| `production_request` | Solicitud `SP-0001`: almacén, área, producto, cantidad pedida y su unidad, motivo, estado (`SUBMITTED → ACCEPTED | REJECTED | CANCELLED`, disparador `production_request_transition`), quién pidió, decidió (con motivo si rechazó) o canceló. Lo pedido no cambia y no se borra |
+| `production_request` | Solicitud `SP-0001`: almacén, área, producto, cantidad pedida y su unidad, motivo, estado (`SUBMITTED → ACCEPTED | REJECTED | CANCELLED`, disparador `production_request_transition`), quién pidió, decidió (con motivo si rechazó) o canceló, y la espera de una línea de pedido que la originó (`lineWaitId`, WMS-79). Lo pedido no cambia y no se borra |
 
 Materiales y salidas de una receta solo cambian mientras su versión es
 borrador; los de una orden, mientras la orden es borrador (disparadores);
@@ -223,7 +243,7 @@ omisión, `issue`) y `production.release.short` (`ask` por omisión,
 `optional`, `off`; WMS-29). Sin trabajos en segundo plano. Avisos
 (`notices.ts`): `production.request_to_decide`,
 `production.request_answered`, `production.order_from_request` y
-`production.material_short` (WMS-29) y `production.order_closed` (WMS-31). Aprobación: `production.scrap`
+`production.material_short` (WMS-29), `production.order_closed` (WMS-31) y `production.outbound_waiting` (WMS-79). Aprobación: `production.scrap`
 (`approvals.ts`, apagada por omisión).
 
 ## Bitácora
@@ -248,7 +268,8 @@ con órdenes abiertas o solicitudes por atender de ese almacén.
 
 0062 (roles y permisos de producción y calidad), 0066 (recetas), 0073
 (órdenes de producción), 0075 (solicitudes de producción), 0087
-(reporte de producción), 0093 (cierre de la orden y producto a su lugar).
+(reporte de producción), 0093 (cierre de la orden y producto a su lugar),
+0094 (pedido del cliente ligado a producción).
 
 ## Pruebas
 
@@ -257,7 +278,8 @@ con órdenes abiertas o solicitudes por atender de ese almacén.
 activaciones simultáneas, roles, solo lectura, entre empresas) y
 `tests/production/module-guard.int.test.ts` (guarda del módulo),
 `tests/production/close.int.test.ts` (cierre, conciliación, acomodo de lo
-aprobado y «Se guardó") y
+aprobado y «Se guardó"), `tests/production/make-to-order.int.test.ts`
+(pedido ligado a producción, WMS-79) y
 `tests/production/reports.int.test.ts` y `case-5-5.int.test.ts` (WMS-29:
 consumo, no producir de más, faltante, costo, lotes, series, subproductos,
 reversa, merma con y sin autorización, concurrencia, alcance, rastreo,

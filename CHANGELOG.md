@@ -8,6 +8,19 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-79** Pedido del cliente ligado a producción y embarque (ADR 0094,
+  Fase 3): con el ajuste `inventory.outbound.make_to_order` (apagado por
+  omisión) y Producción activo, al liberar un pedido lo que falta de una línea
+  con receta vigente y área abre su espera de producción y su solicitud
+  ligada; lo producido, al aprobarse en la verificación, se aparta para esa
+  línea y sigue a surtido; un pedido que espera no queda «Surtido» ni se
+  despacha hasta que llegue lo que faltaba, se pida de nuevo o alguien deje de
+  esperar con motivo; «Apartar lo que ya hay» en la ficha del pedido.
+  Migraciones `20261120170000_wms79_outbound_line_wait` y
+  `20261120170100_wms79_produced_pick`. Revisor independiente en dos vueltas
+  (la primera «no unir»; la segunda «unir»). Corrige además un defecto de
+  WMS-30B (desde el reporte 51 del mismo producto no se podía iniciar una
+  verificación). Amenazas en `docs/seguridad/REVISION_PRODUCCION.md`.
 - **WMS-64** Automatizaciones por empresa (ADR 0092, Fase 4): reglas
   «cuando pasa X, en un almacén o en todos, si se cumplen condiciones, hacer
   Y» en Configuración › «Automatizaciones»; ocho disparadores (cuatro hechos

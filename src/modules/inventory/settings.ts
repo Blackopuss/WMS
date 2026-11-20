@@ -586,6 +586,31 @@ export const COUNT_REVIEW_THRESHOLD = {
  * order that waits for it goes straight to its staging location (a picking
  * task) instead of being put away. Off by default: nothing changes.
  */
+/**
+ * WMS-79 (ADR 0094): what falls short of an outbound line when releasing
+ * it, for a product with a recipe in force, is asked to production; the
+ * order waits for it before it is picked complete. Only with Producción.
+ */
+export const MAKE_TO_ORDER_MODE = {
+  key: "inventory.outbound.make_to_order",
+  module: "inventory",
+  area: "Pedidos",
+  label: "Lo que le falta a un pedido al liberarlo",
+  options: [
+    {
+      value: "off",
+      label: "Queda pendiente",
+      help: "El pedido se libera con lo que hay, como siempre.",
+    },
+    {
+      value: "on",
+      label: "Se pide a producción",
+      help: "Con Producción: si el producto tiene receta, nace su solicitud de producción ligada al pedido y el pedido no sale hasta que llegue o alguien deje de esperar. Pon el área en la receta si el almacén tiene varias.",
+    },
+  ],
+  defaultValue: "off",
+} as const satisfies SettingDefinition;
+
 export const CROSS_DOCK_MODE = {
   key: "inventory.crossdock.mode",
   module: "inventory",
@@ -885,6 +910,7 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   ABC_PERIOD,
   COUNT_REVIEW_THRESHOLD,
   CROSS_DOCK_MODE,
+  MAKE_TO_ORDER_MODE,
   ADJUSTMENT_APPROVAL_THRESHOLD,
   PICKING_MODE,
   DIGEST_HOUR,

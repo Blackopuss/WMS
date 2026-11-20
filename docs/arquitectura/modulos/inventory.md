@@ -44,6 +44,25 @@ código»):
   decide solo `putawayTarget`. Un apartado de tarea (`TASK_HOLD`) solo
   cuenta en su ubicación: las lecturas de todo un producto filtran con
   `PRODUCT_HOLDS`.
+- Pedido ligado a producción (WMS-79, ADR 0094, `outbound-waits.ts`):
+  con `inventory.outbound.make_to_order = on` y un `MakeToOrder` entregado
+  por la aplicación, liberar abre una espera (`outbound_line_wait`: cuánto
+  espera, lo recibido, `OPEN → DONE | DROPPED | CANCELLED` con
+  `OUTBOUND_WAIT_TRANSITIONS` y su disparador; `openLineId` único) por cada
+  línea corta que Producción puede hacer, y no detiene la liberación por
+  ella. Mientras una espera está abierta `settlePickedOrder` no deja el
+  pedido «Surtido» y `dispatchShipment` lo rechaza. `sendProducedToWait`
+  aparta lo aprobado por la verificación para la línea, con su tarea `PICK`
+  (`createPickTasks`), antes del acomodo; `creditLineWaits` suma a la espera
+  lo que manda la verificación o el cross-docking. «Dejar de esperar»
+  (`stopWaitingForProduction`) y cancelar el pedido cierran las esperas;
+  `askProductionAgain` pide otra solicitud para lo que falta;
+  `reserveWhatThereIs` («Apartar lo que ya hay») aparta lo libre para lo que
+  le falta a un pedido liberado o en surtido y suma a su espera. Las olas
+  (`createWave`) también piden producción. En la verificación, la liga manda
+  y lo que sobra se reparte con cross-docking si está encendido
+  (`lockOrdersForProduced`, `sendToWaitingOrders` con `fromProductionArea`).
+  Toda escritura de una espera ocurre bajo el candado de su pedido.
 - Producto a su lugar (WMS-31, ADR 0093): el área de producción **no** es
   un lugar de paso; solo una llegada con `productionReportId` (lo que una
   verificación aprueba de un lote producido) sale de una ubicación de uso

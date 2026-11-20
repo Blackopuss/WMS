@@ -1686,5 +1686,19 @@ export async function productionOpenWork(
         : `${requests} solicitudes de producción por atender.`,
     );
   }
+  // WMS-79 (ADR 0094): outbound orders that wait for production keep
+  // waiting; «Dejar de esperar» lets them go.
+  const waiting = await client.outboundLineWait.findMany({
+    where: { status: "OPEN" },
+    select: { orderId: true },
+    distinct: ["orderId"],
+  });
+  if (waiting.length > 0) {
+    work.push(
+      waiting.length === 1
+        ? "1 pedido espera producción: seguirá esperando hasta que alguien deje de esperar."
+        : `${waiting.length} pedidos esperan producción: seguirán esperando hasta que alguien deje de esperar.`,
+    );
+  }
   return work;
 }

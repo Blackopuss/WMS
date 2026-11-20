@@ -550,6 +550,21 @@ beforeAll(async () => {
         unitCode: "piece",
       },
     });
+    // What its line waits from production (WMS-79).
+    const lineWaitId = newId();
+    await db.outboundLineWait.create({
+      data: {
+        id: lineWaitId,
+        organizationId,
+        orderId: outboundId,
+        lineId: outboundLineId,
+        productId,
+        quantity: "1",
+        unitCode: "piece",
+        openLineId: outboundLineId,
+        openedByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     // What was missing when packing it (WMS-15).
     await db.outboundPackShortage.create({
       data: {
@@ -1309,6 +1324,7 @@ beforeAll(async () => {
         quantity: "1",
         unitCode: "piece",
         requestedByUserId: author,
+        lineWaitId,
       },
     });
     await db.productionRequest.update({

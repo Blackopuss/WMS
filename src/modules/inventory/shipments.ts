@@ -1044,6 +1044,16 @@ export async function dispatchShipment(
             `${number} tiene tareas de surtido abiertas: termínalas antes de que salga.`,
           );
         }
+        // WMS-79 (ADR 0094): never without what production makes for it.
+        const waiting = await tx.outboundLineWait.count({
+          where: { orderId: order.id, status: "OPEN" },
+        });
+        if (waiting > 0) {
+          return stop(
+            "not_allowed",
+            `${number} espera producción: no sale hasta que llegue o alguien deje de esperar.`,
+          );
+        }
       }
       const boxIds = (
         await tx.container.findMany({

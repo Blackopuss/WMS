@@ -68,6 +68,24 @@ escribir): por eso no le aplica la regla de bloquear todos los productos de
 la orden. Carreras en `tests/server/lock-order.int.test.ts` («deciding a
 verification never deadlocks…»).
 
+**Pedido ligado a producción (WMS-79, ADR 0094):** dentro de «documento»
+el pedido de salida va antes que la solicitud y la orden de producción, la
+verificación y el embarque. Liberar con producción: productos de las líneas
+→ almacén (solo si se crea «Preparación») → áreas de producción en
+compartido (`lockRows(…, { mode: "share" })`, porque el disparador de
+inserción de `production_request` lee el área) → pedido → solicitudes y
+esperas → tareas. «Pedir producción de nuevo»: productos → áreas
+(compartido) → pedido. «Dejar de esperar» y cancelar el pedido: pedido →
+solicitudes (actualización condicionada). Crear una ola: productos → almacén → áreas (compartido) → pedidos → ola.
+«Apartar lo que ya hay»: productos → almacén → pedido. Decidir una
+verificación de un lote ligado: producto → ubicaciones → pedido ligado y,
+con cross-docking, los pedidos que pueden esperar el producto, en una sola
+llamada (`lockOrdersForProduced`) → verificación → tareas → capacidad →
+progreso → archivos. Toda escritura de
+una espera ocurre bajo el candado de su pedido. Carrera en
+`tests/server/lock-order.int.test.ts` («an outbound order that waits for
+production never deadlocks…»).
+
 **Cierre de la orden de producción (WMS-31, ADR 0093):** todos los
 productos de la orden (materiales y salidas, una `lockRows`) → la orden →
 sus tareas `ISSUE` abiertas → progreso del proceso de la orden. No toma el

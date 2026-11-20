@@ -275,6 +275,9 @@ export default async function PedidosPage({
                       >
                         {order.statusLabel}
                       </Badge>
+                      {order.waitsForProduction && (
+                        <Badge variant="secondary">Espera producción</Badge>
+                      )}
                     </span>
                     <span className="block text-sm text-muted-foreground tabular-nums">
                       {order.numberText}

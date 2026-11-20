@@ -103,6 +103,9 @@ import {
   registerQuickExit,
   registerTransfer,
   releaseOutboundOrder,
+  stopWaitingForProduction,
+  askProductionAgain,
+  reserveWhatThereIs,
   reverseMovement,
   setMinimum,
   setOutboundLine,
@@ -161,6 +164,7 @@ import {
 import {
   approvalTypes,
   evidenceOwners,
+  makeToOrder,
   moduleRegistry,
   operationSettings,
   searchSources,
@@ -679,6 +683,17 @@ describe("PC-12: limited to warehouse B", () => {
     expect(await getOutboundOrder(limited, order.orderId)).toBeNull();
     expect((await listOutboundOrders(limited)).items).toEqual([]);
     expect(await releaseOutboundOrder(limited, order.orderId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
+    // Nor waiting for production for it (WMS-79).
+    expect(
+      await stopWaitingForProduction(limited, order.orderId, "Ya no se espera"),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await askProductionAgain(limited, order.orderId, { makeToOrder }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await reserveWhatThereIs(limited, order.orderId)).toMatchObject({
       ok: false,
       reason: "not_found",
     });

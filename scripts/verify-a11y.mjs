@@ -482,6 +482,9 @@ try {
       // WMS-30B: starting a verification from the tray, and one verification.
       ["/inventario/por-inspeccionar", /^\/calidad\/verificar\?/],
       ["/calidad/verificaciones", /^\/calidad\/verificaciones\/[0-9a-f-]{36}$/],
+      // WMS-79: a released order (with its block «Producción» when it
+      // waits for production).
+      ["/pedidos?estado=RELEASED", /^\/pedidos\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

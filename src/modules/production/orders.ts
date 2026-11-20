@@ -43,6 +43,7 @@ import {
   type TenantDb,
 } from "@/server";
 
+import { noticeOrderStillWaits } from "./make-to-order";
 import {
   PRODUCTION_ORDER_PROCESS,
   PRODUCTION_ORDER_RELEASED_OPERATION,
@@ -1452,6 +1453,13 @@ export async function cancelProductionOrder(
       order.id,
       "CANCELLED",
     );
+    // WMS-79 (ADR 0094): the outbound order it was made for still waits.
+    await noticeOrderStillWaits(
+      tx,
+      actor,
+      await lineWaitOfOrder(tx, order.id),
+      `Se canceló la orden ${formatProductionNumber(order.number)}.`,
+    );
     await recordAuditEvent(tx, {
       organizationId,
       actorUserId: userId,
@@ -1985,4 +1993,19 @@ export async function listProducibleProducts(
     page,
     pageCount,
   };
+}
+
+/**
+ * WMS-79 (ADR 0094): the wait of the outbound line an order was made for
+ * (through the request it was born from); null when it has none.
+ */
+export async function lineWaitOfOrder(
+  client: Tx | Client,
+  orderId: string,
+): Promise<string | null> {
+  const row = await client.productionOrder.findFirst({
+    where: { id: orderId },
+    select: { request: { select: { lineWaitId: true } } },
+  });
+  return row?.request?.lineWaitId ?? null;
 }
