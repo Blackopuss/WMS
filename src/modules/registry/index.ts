@@ -7,6 +7,7 @@ import { qualityModule } from "@/modules/quality";
 import { createModuleRegistry } from "@/platform/billing";
 
 export { approvalTypes } from "./approvals";
+export { automationCatalog } from "./automations";
 export { customFieldReservedLabels } from "./custom-fields";
 export { DEMO_DATASET_KEYS } from "./demo";
 export { evidenceOwners } from "./evidence";

@@ -17,6 +17,7 @@ import {
   UserRoundCheck,
   Users,
   Warehouse,
+  Workflow,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -270,6 +271,15 @@ export default async function ConfiguracionPage() {
             description="Qué necesita autorización y quién la da."
           />
         )}
+        {/* WMS-64 (ADR 0092): rules «cuando pasa X, hacer Y». */}
+        {access.can("platform.automation.read") && (
+          <SettingsLink
+            href="/configuracion/automatizaciones"
+            icon={Workflow}
+            title="Automatizaciones"
+            description="Cuando pasa algo, avisar, abrir una incidencia o un conteo."
+          />
+        )}
       </section>
       {/* WMS-39: which notices of the bell the person receives. */}
       <section aria-labelledby="avisos" className="space-y-3">
@@ -410,7 +420,8 @@ function SettingsLink({
     | "/configuracion/accesos"
     | "/configuracion/titularidad"
     | "/aprobaciones"
-    | "/configuracion/aprobaciones";
+    | "/configuracion/aprobaciones"
+    | "/configuracion/automatizaciones";
   icon: LucideIcon;
   title: string;
   description: string;

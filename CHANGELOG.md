@@ -8,6 +8,18 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-64** Automatizaciones por empresa (ADR 0092, Fase 4): reglas
+  «cuando pasa X, en un almacén o en todos, si se cumplen condiciones, hacer
+  Y» en Configuración › «Automatizaciones»; ocho disparadores (cuatro hechos
+  que ya publican webhooks y cuatro estados que revisa una ronda horaria) y
+  cuatro acciones (avisar, abrir una incidencia, abrir un conteo y bloquear
+  un lote por caducar); cada acción corre el servicio de siempre a nombre de
+  la persona que guardó la regla, recortada a ese permiso, con topes contra
+  círculos y pausa tras cinco fallas. Permiso `platform.automation.read`
+  (Gerencia lee). Migraciones `20261120150000_wms64_automations`,
+  `20261120150100_wms64_run_subject` y `20261120150200_wms64_scan_cursor`.
+  Revisor independiente en cuatro vueltas (las tres primeras «no unir»; la
+  cuarta «unir»). Amenazas en `docs/seguridad/REVISION_AUTOMATIZACIONES.md`.
 - **WMS-31** Producto a su lugar y cierre de la orden de producción (ADR 0093,
   Fase 3): lo aprobado de un lote sale del área de producción con su tarea de
   acomodo (con acomodo por tareas; el área no es lugar de paso y ningún acomodo

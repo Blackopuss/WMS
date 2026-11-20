@@ -15,7 +15,15 @@ import {
   organizationsWithWebhookHistory,
   purgeWebhookHistory,
 } from "@/platform/api";
+import {
+  organizationsWithAutomationRuns,
+  organizationsWithAutomations,
+  purgeAutomationRuns,
+  runAutomationRound,
+} from "@/platform/automations";
 import { processStorageCleanup, purgeOrphanPhotos } from "@/platform/files";
+
+import { automationCatalog } from "./automations";
 import {
   purgeExpiredUnsubscribeLinks,
   purgeFinishedNoticeEmails,
@@ -88,6 +96,20 @@ export const scheduledRounds: readonly ScheduledRound[] = [
     name: "platform.webhooks_cleanup",
     organizations: organizationsWithWebhookHistory,
     run: (organizationId) => purgeWebhookHistory(organizationId),
+  },
+  // WMS-64 (ADR 0092): the states the rules of a company listen to, and
+  // turning off the rules whose module left; only companies with a rule on.
+  {
+    name: "platform.automations",
+    organizations: organizationsWithAutomations,
+    run: (organizationId) =>
+      runAutomationRound(organizationId, automationCatalog),
+  },
+  // Runs of automations older than 90 days.
+  {
+    name: "platform.automations_cleanup",
+    organizations: organizationsWithAutomationRuns,
+    run: (organizationId) => purgeAutomationRuns(organizationId),
   },
 ];
 

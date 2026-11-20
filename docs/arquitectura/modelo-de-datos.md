@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-156 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+159 tablas en 33 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -19,6 +19,7 @@
 | Plataforma › Avisos | 5 | [notifications](modulos/notifications.md) |
 | Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
+| Plataforma › Automatizaciones | 3 | [automations](modulos/automations.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 3 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
@@ -1287,6 +1288,97 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - `WebhookEndpointStatus`: `ACTIVE`, `PAUSED`.
 - `WebhookDeliveryStatus`: `PENDING`, `DELIVERED`, `FAILED`, `SKIPPED`.
+
+## Plataforma › Automatizaciones
+
+Reglas de cada empresa («cuando pasa algo, si se cumple, hacer esto»), a nombre de quién actúan, el historial de lo que hizo cada una o por qué no (90 días) y dónde dejó la ronda la revisión de cada estado.
+
+Documento: [modulos/automations.md](modulos/automations.md).
+
+### AutomationRule · `automation_rule`
+
+A rule of the company (WMS-64, ADR 0092): when a trigger of the catalog happens (in a warehouse or in any), if its conditions hold, do its actions acting for `actorUserId`. Never deleted: archived.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `name` | `String · VarChar(80)` |  |  |
+| `triggerKey` | `String · VarChar(80)` |  | Key of a trigger of the catalog («inventory.lot.expiring»). |
+| `facilityId` | `String? · Char(36)` |  | NULL: every warehouse. |
+| `conditions` | `Json` |  | Values of the conditions of the trigger, checked against the catalog. |
+| `actions` | `Json` |  | One to three actions of the catalog, each with its options. |
+| `status` | `AutomationRuleStatus` | `ACTIVE` |  |
+| `pauseReason` | `String? · VarChar(12)` |  | MANUAL, ACTOR, FAILURES or MODULE while PAUSED; NULL otherwise. |
+| `actorUserId` | `String · Char(36)` |  | Who the actions act for: who saved or turned it on the last time. |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `version` | `Int` | `1` | Goes up on every change; each run says which version it ran. |
+| `consecutiveFailures` | `Int` | `0` |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+| `archivedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`).
+- Índices: (`organizationId`, `status`, `triggerKey`); (`organizationId`, `facilityId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict).
+
+### AutomationRun · `automation_run`
+
+What a rule did (or why not) for one fact or one state (WMS-64). One per rule and `eventKey`; rule, key and version never change, and a finished run never changes (trigger). Removed after 90 days.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `ruleId` | `String · Char(36)` |  |  |
+| `ruleVersion` | `Int` |  |  |
+| `triggerKey` | `String · VarChar(80)` |  |  |
+| `eventKey` | `String · VarChar(191)` |  | «evt:<job>», «state:<subject>[:<day>][#<try>]» or «limit:<hour>». |
+| `subjectKey` | `String? · VarChar(191)` |  | A state: what it is about («state:<subject>[:<day>]»), the same for every try; only a run that did not end skipped or failed attends it. |
+| `remembers` | `Boolean` | `false` | A state that fires once: its attended run is kept after 90 days, so the subject does not fire again. |
+| `depth` | `Int` | `1` | 1 for a fact caused by a person; more inside a chain of automations. |
+| `summary` | `String · VarChar(300)` |  | One line of what happened, without costs. |
+| `subject` | `Json` |  | What the actions need: ids of the fact (product, location, lot…). |
+| `status` | `AutomationRunStatus` | `PENDING` |  |
+| `reason` | `String? · VarChar(300)` |  | Why it was skipped or failed, in one line people read. |
+| `results` | `Json?` |  | One entry per action: done or not, a line and a link. |
+| `claimToken` | `String? · Char(36)` |  |  |
+| `attempts` | `Int` | `0` |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `finishedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `ruleId`, `eventKey`).
+- Índices: (`organizationId`, `ruleId`, `subjectKey`); (`organizationId`, `ruleId`, `createdAt`); (`organizationId`, `createdAt`).
+- Relaciones: `rule` → `AutomationRule` por (`organizationId`, `ruleId`) (al borrar: Restrict).
+
+### AutomationScan · `automation_scan`
+
+WMS-64 (ADR 0092): where the hourly round left the review of the state of a rule in one warehouse («» = the whole company), so the next round goes on from there and nothing new waits behind what was attended.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `ruleId` | `String · Char(36)` |  |  |
+| `placeKey` | `String · VarChar(36)` |  | The warehouse; empty for a figure of the whole company. |
+| `nextPage` | `Int` | `1` | The page the next round starts from (1 = from the beginning). |
+| `unfinished` | `Boolean` | `false` | The last round stopped before the end of what is in that state. |
+| `reviewed` | `Int` | `0` | What the last round reviewed before stopping. |
+| `updatedAt` | `DateTime · DateTime(3)` | `now()` | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `ruleId`, `placeKey`).
+- Relaciones: `rule` → `AutomationRule` por (`organizationId`, `ruleId`) (al borrar: Restrict).
+
+#### Enumeraciones de Plataforma › Automatizaciones
+
+- `AutomationRuleStatus`: `ACTIVE`, `PAUSED`, `ARCHIVED`.
+- `AutomationRunStatus`: `PENDING`, `RUNNING`, `DONE`, `SKIPPED`, `FAILED`.
 
 ## Plataforma › Campos personalizados
 
