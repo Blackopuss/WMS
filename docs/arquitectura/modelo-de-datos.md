@@ -1337,7 +1337,9 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `ruleId` | `String · Char(36)` |  |  |
 | `ruleVersion` | `Int` |  |  |
 | `triggerKey` | `String · VarChar(80)` |  |  |
-| `eventKey` | `String · VarChar(191)` |  | «evt:<job>», «state:<subject>[:<day>]» or «limit:<hour>». |
+| `eventKey` | `String · VarChar(191)` |  | «evt:<job>», «state:<subject>[:<day>][#<try>]» or «limit:<hour>». |
+| `subjectKey` | `String? · VarChar(191)` |  | A state: what it is about («state:<subject>[:<day>]»), the same for every try; only a run that did not end skipped or failed attends it. |
+| `remembers` | `Boolean` | `false` | A state that fires once: its attended run is kept after 90 days, so the subject does not fire again. |
 | `depth` | `Int` | `1` | 1 for a fact caused by a person; more inside a chain of automations. |
 | `summary` | `String · VarChar(300)` |  | One line of what happened, without costs. |
 | `subject` | `Json` |  | What the actions need: ids of the fact (product, location, lot…). |
@@ -1350,7 +1352,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `finishedAt` | `DateTime? · DateTime(3)` |  |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `ruleId`, `eventKey`).
-- Índices: (`organizationId`, `ruleId`, `createdAt`); (`organizationId`, `createdAt`).
+- Índices: (`organizationId`, `ruleId`, `subjectKey`); (`organizationId`, `ruleId`, `createdAt`); (`organizationId`, `createdAt`).
 - Relaciones: `rule` → `AutomationRule` por (`organizationId`, `ruleId`) (al borrar: Restrict).
 
 #### Enumeraciones de Plataforma › Automatizaciones
