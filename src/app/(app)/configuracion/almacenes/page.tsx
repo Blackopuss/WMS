@@ -7,7 +7,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { getModuleAccess } from "@/platform/billing";
 import { getActiveFacility, listFacilities } from "@/platform/locations";

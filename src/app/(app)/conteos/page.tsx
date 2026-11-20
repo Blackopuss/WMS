@@ -15,7 +15,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
 import { listCountPage, listStockLocations } from "@/modules/inventory";

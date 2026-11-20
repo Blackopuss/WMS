@@ -12,7 +12,7 @@ import Link from "next/link";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useRef, useState } from "react";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

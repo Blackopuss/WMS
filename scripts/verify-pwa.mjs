@@ -298,7 +298,12 @@ try {
       .waitFor({ timeout: 3000 });
     check(true, `${viewport.name}: con dos códigos a la vista no lee ninguno`);
     await page.evaluate((code) => window.__scanQueue.push([code]), barcode);
-    await page.waitForURL(`**/inventario?q=${barcode}`, { timeout: 5000 });
+    // The search form may add its other filters (WMS-87: «existencias»).
+    await page.waitForURL(
+      (url) =>
+        url.pathname === "/inventario" && url.searchParams.get("q") === barcode,
+      { timeout: 5000 },
+    );
     check(
       await page.getByText(`Producto cámara ${stamp}`).first().isVisible(),
       `${viewport.name}: la lectura buscó como el lector (encontró el producto)`,

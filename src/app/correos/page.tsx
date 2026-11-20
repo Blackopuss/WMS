@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { EmptyState, PageContainer, PageHeader } from "@/components";
+import { EmptyState, PageContainer, PageHeader } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { listDevOutbox } from "@/platform/email";

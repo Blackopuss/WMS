@@ -8,7 +8,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { newId } from "@/lib";
 import { QUICK_EXIT_MAX_LINES } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";

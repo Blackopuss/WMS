@@ -8,7 +8,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { listAwaitingInspection } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
-import { visibleNavItems } from "@/components";
+import { visibleNavItems } from "@/components/app-shell/nav";
 import { newId } from "@/lib";
 import * as purchasing from "@/modules/purchasing";
 import { moduleRegistry } from "@/modules/registry";

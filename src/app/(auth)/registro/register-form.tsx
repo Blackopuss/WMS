@@ -4,12 +4,10 @@ import { CircleAlert, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 
-import {
-  FormField,
-  LegalConsent,
-  PasswordInput,
-  WarehouseCard,
-} from "@/components";
+import { FormField } from "@/components/form-field";
+import { LegalConsent } from "@/components/legal-consent";
+import { PasswordInput } from "@/components/password-input";
+import { WarehouseCard } from "@/components/warehouse-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
