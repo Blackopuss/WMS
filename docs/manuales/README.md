@@ -37,10 +37,10 @@ Aviso importante: **hoy el WMS no tiene servidor de producción**, y lo de **Clo
 
 ## Producción y Calidad
 
-Existen hoy: recetas, órdenes de producción (crear, liberar y cancelar), solicitudes de producción, planes de inspección y el catálogo de defectos. **Todavía no están disponibles**: el reporte de lo producido, el cierre de la orden y registrar la inspección de Calidad. Los manuales de Producción y Calidad lo repiten donde importa.
+Existen hoy: recetas, órdenes de producción (crear, liberar, cancelar y cerrar con lo hecho), solicitudes de producción, el reporte de lo producido, la verificación de Calidad, el acomodo de lo aprobado, planes de inspección y el catálogo de defectos. **Todavía no están disponibles**: turnos y reproceso. Los manuales de Producción y Calidad lo repiten donde importa.
 
 ## Cómo mantener estos manuales
 
 Un manual se revisa cuando cambia una pantalla, un botón o un permiso de lo que describe, y se actualiza la línea final «Vigente al…». Si algo del manual no coincide con la app, la app manda: corrige el manual.
 
-Vigente al 2026-11-19
+Vigente al 2026-11-20

@@ -12,7 +12,9 @@ Inicio, Tareas, Producción, Inventario, Incidencias y Configuración.
 
 **Disponible hoy:** ver recetas y órdenes, **reportar lo que produjiste** con su foto, **reportar merma de material**, avisar que falta material, pedir producción cuando no tienes nada que hacer, hacer las tareas que te asignen y reportar incidencias.
 
-**Todavía no disponible:** registrar turnos o paros, y la verificación de lo producido por Calidad.
+**Todavía no disponible:** registrar turnos o paros.
+
+Cuando una orden se cierra (lo hace el Encargado, también si quedó con faltante), ya no admite reportes ni merma; si estabas asignado o la pediste, te llega el aviso **Se cerró una orden de producción**.
 
 ## Tus tareas del día
 
@@ -52,4 +54,4 @@ Crear o cambiar recetas y órdenes, decidir solicitudes, corregir existencias o 
 ## Si algo falla
 **Reportar un problema** (**Inicio** o **Incidencias**; ver [común](comun.md), sección 8). Si el material no está, toca **Avisar que falta material** en la orden o repórtalo como incidencia.
 
-Vigente al 2026-11-20
+Vigente al 2026-11-20 (cierre de la orden: WMS-31)

@@ -9,6 +9,7 @@ import {
   locationPath,
   locationScopeWhere,
 } from "@/platform/locations";
+import { assertStagesDone, completeOperationStage } from "@/platform/processes";
 import { readSetting } from "@/platform/settings";
 import {
   LOCKING_TRANSACTION,
@@ -19,6 +20,11 @@ import {
 
 import type { InventoryActor } from "./movements";
 import { nextTaskNumber } from "./picking";
+import {
+  PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_BATCH_STORED_OPERATION,
+  productionLotSettled,
+} from "./production-batch";
 import { checkPlacement, loadPlacementRules } from "./placement";
 import {
   putawayPreferenceOf,
@@ -31,6 +37,7 @@ import { AVAILABLE_ANY_LOT, type StockStatus } from "./stock-status";
 import { OPEN_TASK_STATUSES, formatTaskNumber } from "./task-states";
 import { theContainer } from "./container-rules";
 import {
+  IN_PRODUCTION_AREA,
   STORE_PLACE,
   facilityHasPlaces,
   isWaitingPlace,
@@ -112,6 +119,8 @@ export async function putawayTarget(
       id: { not: input.fromLocationId },
       // A leaf: goods go on the shelf, not on the aisle that holds it.
       children: { none: { archivedAt: null } },
+      // WMS-31: never inside an area of production.
+      NOT: IN_PRODUCTION_AREA,
       ...(isLimited(scoped) ? { AND: [scoped] } : {}),
     },
     take: MAX_CANDIDATES,
@@ -214,7 +223,28 @@ export type PutawayArrival = {
   /** In the product's unit. */
   quantity: Decimal;
   status: StockStatus;
+  /**
+   * WMS-31 (ADR 0093): the lot produced it comes from, when a verification
+   * approved it. Only then a location of use «Producción» is an origin of
+   * a put-away (the area is not a place «de paso»: it also keeps the
+   * materials set aside for orders).
+   */
+  productionReportId?: string | null;
 };
+
+/**
+ * Whether goods that arrived at this place leave it with a put-away task:
+ * a place «de paso», or the production area for what was approved of a
+ * lot produced (WMS-31).
+ */
+const leavesWithTask = (
+  place: { isDefault: boolean | null; isStaging: boolean | null; type: string },
+  arrival: PutawayArrival,
+) =>
+  isWaitingPlace(place) ||
+  (Boolean(arrival.productionReportId) &&
+    place.type === "PRODUCTION" &&
+    place.isStaging !== true);
 
 export type CreatedPutaway = {
   tasks: { id: string; number: number; recommended: boolean }[];
@@ -273,7 +303,12 @@ export async function createPutawayTasks(
   for (const arrival of wanted) {
     const place = placeOf.get(arrival.locationId);
     const product = productOf.get(arrival.productId);
-    if (!place || place.archivedAt || !product || !isWaitingPlace(place)) {
+    if (
+      !place ||
+      place.archivedAt ||
+      !product ||
+      !leavesWithTask(place, arrival)
+    ) {
       continue;
     }
     if (!hasPlaces.has(place.facilityId)) {
@@ -327,12 +362,50 @@ export async function createPutawayTasks(
         quantity: quantity.toString(),
         unitCode: product.unitCode,
         createdByUserId: actor.userId,
+        productionReportId: arrival.productionReportId ?? null,
       },
     });
     tasks.push({ id, number, recommended: target !== null });
     number += 1;
   }
   return { tasks, note: noteOf(tasks) };
+}
+
+/**
+ * WMS-31 (ADR 0093): «Se guardó» of a lot produced, by itself, when the
+ * whole lot is settled: every output of the report is decided by a
+ * verification (none open, nothing left without one) and no put-away task
+ * of the lot is open. Called after a verification of the lot is decided
+ * and after a put-away of the lot is delivered. With put-away by hand,
+ * a lot with nothing approved, or one approved straight to where it is
+ * kept, it ends with its last decision. Locks the progress of the lot
+ * first, then reads: two decisions or deliveries at once queue on that
+ * lock, so the second sees the first. Earlier stages still pending never
+ * stop the delivery: the stage stays to do. Without a process nothing
+ * happens. Call it last (… → capacity → progress).
+ */
+export async function settleProductionStored(
+  tx: Tx,
+  actor: InventoryActor,
+  productionReportId: string,
+): Promise<{ applied: boolean }> {
+  const stages = await assertStagesDone(
+    tx,
+    PRODUCTION_BATCH_PROCESS,
+    productionReportId,
+    PRODUCTION_BATCH_STORED_OPERATION,
+  );
+  if (!stages.ok) return { applied: false };
+  if (!(await productionLotSettled(tx, productionReportId))) {
+    return { applied: false };
+  }
+  return completeOperationStage(
+    tx,
+    PRODUCTION_BATCH_PROCESS,
+    actor,
+    productionReportId,
+    PRODUCTION_BATCH_STORED_OPERATION,
+  );
 }
 
 /**

@@ -44,6 +44,20 @@ código»):
   decide solo `putawayTarget`. Un apartado de tarea (`TASK_HOLD`) solo
   cuenta en su ubicación: las lecturas de todo un producto filtran con
   `PRODUCT_HOLDS`.
+- Producto a su lugar (WMS-31, ADR 0093): el área de producción **no** es
+  un lugar de paso; solo una llegada con `productionReportId` (lo que una
+  verificación aprueba de un lote producido) sale de una ubicación de uso
+  «Producción» con su acomodo, y la tarea guarda el lote
+  (`warehouse_task.productionReportId`, inmutable, solo `PUTAWAY`). Ningún
+  acomodo se recomienda ni se entrega en un área de producción ni dentro de
+  una (`IN_PRODUCTION_AREA`). Cancelar un acomodo de un lote también revisa
+  «Se guardó». `cancelLockedTasks` cancela tareas ya bloqueadas por su
+  documento con bitácora y aviso `inventory.task_cancelled`. `settleProductionStored`
+  completa la operación «Se guardó» del lote (`production-batch.ts`, el
+  documento de proceso del lote, declarado aquí porque Inventario no
+  importa Producción) cuando todo el lote está decidido y no queda ningún
+  acomodo abierto del lote (al decidir cada verificación y al entregar
+  cada acomodo), tomando antes el progreso del lote.
 - Tarimas y contenedores (WMS-53, ADR 0043): un contenedor agrupa parte del
   saldo de su ubicación (`container_item`) sin entrar en la llave del saldo.
   Lo que está dentro no se toma suelto: `freeToTake`/`freeToMoveFrom` lo

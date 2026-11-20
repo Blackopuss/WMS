@@ -6,6 +6,12 @@
  * come in a list, like approval types). Pure: no database.
  */
 import type { Permission } from "@/platform/authorization";
+import type { TenantDb } from "@/server";
+
+/** The transaction of the process, as an operation's `settle` receives it. */
+export type ProcessSettleTx = Parameters<
+  Parameters<TenantDb["$transaction"]>[0]
+>[0];
 
 /** A fixed state of the document, in the order the document goes. */
 export type ProcessMilestone = {
@@ -29,6 +35,19 @@ export type ProcessOperation = {
    * for ever («Esperando que el documento llegue a …»).
    */
   leadsTo: string | null;
+  /**
+   * Optional (WMS-31 review): asked by the engine every time the stage of
+   * this operation becomes READY (its earlier stages just got done), inside
+   * the same transaction and under the lock of the progress the engine
+   * already holds. Answers whether the operation already happened (then
+   * the stage is done right there). It only reads: it takes no lock of its
+   * own and writes nothing. If it throws, the action that made the stage
+   * ready is undone (`ProcessOperationFailed`).
+   */
+  settle?: (
+    tx: ProcessSettleTx,
+    input: { organizationId: string; documentId: string },
+  ) => Promise<boolean>;
 };
 
 export type ProcessDocument = {

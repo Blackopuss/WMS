@@ -19,6 +19,12 @@ export const PRODUCTION_ORDER_RELEASED_OPERATION = "production.order.released";
  */
 export const PRODUCTION_ORDER_REPORTED_OPERATION = "production.order.reported";
 
+/**
+ * WMS-31 (ADR 0093): closing the order, with what was made; the company
+ * may put stages before it (a clean-up of the area, a count).
+ */
+export const PRODUCTION_ORDER_CLOSED_OPERATION = "production.order.closed";
+
 export const PRODUCTION_ORDER_PROCESS: ProcessDocument = {
   key: "production.order",
   module: "production",
@@ -50,6 +56,12 @@ export const PRODUCTION_ORDER_PROCESS: ProcessDocument = {
       label: "Producción reportada",
       milestone: "RELEASED",
       leadsTo: "IN_PROGRESS",
+    },
+    {
+      key: PRODUCTION_ORDER_CLOSED_OPERATION,
+      label: "Orden cerrada",
+      milestone: "IN_PROGRESS",
+      leadsTo: "CLOSED",
     },
   ],
   readPermission: "production.order.read",

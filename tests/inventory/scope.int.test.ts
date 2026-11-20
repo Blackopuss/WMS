@@ -131,6 +131,8 @@ import {
 import {
   acceptProductionRequest,
   activateRecipeVersion,
+  closeProductionOrder,
+  getProductionOrderClosing,
   createProductionOrder,
   createRecipe,
   findProductionOrderByNumber,
@@ -2381,6 +2383,54 @@ describe("PC-12: verifications (WMS-30B)", () => {
         inspectionId: started.inspectionId,
         reason: "Prueba",
       }),
+    ).toMatchObject({ ok: true });
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: closing a production order (WMS-31)", () => {
+  it("an order of an area of A is not closed nor reconciled from B", async () => {
+    await updateOperationSetting(
+      owner,
+      operationSettings,
+      "production.report.photo",
+      "optional",
+    );
+    const area = await createLocation(owner, {
+      level: 1,
+      name: "Línea cierre A",
+      type: "PRODUCTION",
+    });
+    if (!area.ok) throw new Error(JSON.stringify(area));
+    const box = await createProduct(owner, {
+      sku: "ALC-CIERRE",
+      name: "Caja cerrada",
+    });
+    if (!box.ok) throw new Error(JSON.stringify(box));
+    const recipe = await createRecipe(owner, box.productId, {
+      baseQuantity: "1",
+    });
+    if (!recipe.ok) throw new Error(JSON.stringify(recipe));
+    await setRecipeInput(owner, recipe.versionId, { productId, quantity: "1" });
+    await activateRecipeVersion(owner, recipe.versionId);
+    const made = await createProductionOrder(owner, {
+      productId: box.productId,
+      quantity: "2",
+      areaLocationId: area.locationId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await releaseProductionOrder(owner, made.orderId);
+    const done = await reportProduction(owner, made.orderId, {
+      good: "1",
+      idempotencyKey: newId(),
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    expect(await getProductionOrderClosing(limited, made.orderId)).toBeNull();
+    expect(
+      await closeProductionOrder(limited, made.orderId, "Desde fuera"),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(
+      await closeProductionOrder(free, made.orderId, "Faltó material"),
     ).toMatchObject({ ok: true });
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });

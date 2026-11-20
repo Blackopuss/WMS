@@ -207,6 +207,22 @@ describe("shared terminal (WMS-38)", () => {
     expect(can(titular, "production.recipe.read")).toBe(true);
   });
 
+  it("closes an order from a terminal with PIN only with its permission; support never (WMS-31)", () => {
+    const encargado: Subject = {
+      ...member("production_supervisor"),
+      terminal: true,
+    };
+    const operario: Subject = {
+      ...member("production_operator"),
+      terminal: true,
+    };
+    expect(can(encargado, "production.order.close")).toBe(true);
+    expect(can(operario, "production.order.close")).toBe(false);
+    const support: Subject = { ...owner(), support: true };
+    expect(can(support, "production.order.close")).toBe(false);
+    expect(can(support, "production.order.read")).toBe(true);
+  });
+
   it("reports production, scrap and reversals from the floor (WMS-29)", () => {
     const operario: Subject = {
       ...member("production_operator"),

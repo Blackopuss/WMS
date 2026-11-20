@@ -8,6 +8,18 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-31** Producto a su lugar y cierre de la orden de producción (ADR 0093,
+  Fase 3): lo aprobado de un lote sale del área de producción con su tarea de
+  acomodo (con acomodo por tareas; el área no es lugar de paso y ningún acomodo
+  se entrega dentro de una); la etapa «Se guardó» del lote se completa sola
+  con el gancho nuevo `settle` del motor de procesos; `closeProductionOrder`
+  (`production.order.close`) cierra la orden en proceso con lo producido (con
+  motivo si falta), cancela las tareas «Surtir a producción» sin recoger y
+  libera lo apartado; pantalla `/produccion/[id]/cerrar` con la conciliación.
+  Migración `20261120160000_wms31_production_putaway`. Revisor independiente
+  en dos vueltas (la primera «no unir» por una etapa «Se guardó» que quedaba
+  lista para siempre; la segunda «unir»). Amenazas en
+  `docs/seguridad/REVISION_PRODUCCION.md`.
 - **WMS-30B** Verificación e inspección de Calidad (ADR 0091, Fase 3): lo
   producido, lo recibido en inspección, lo devuelto por un cliente y «Otro»
   (incluida la cuarentena) se verifican con un documento `IN-0001`

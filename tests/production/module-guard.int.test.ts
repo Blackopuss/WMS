@@ -173,6 +173,9 @@ describe("Producción without the module (MOD-05)", () => {
         "saveLotNumbering",
         "scrapNeedsApproval",
         "uploadReportPhoto",
+        // WMS-31 (ADR 0093).
+        "closeProductionOrder",
+        "getProductionOrderClosing",
         "warnMaterialShortage",
       ].sort(),
     );

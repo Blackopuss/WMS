@@ -1696,3 +1696,185 @@ describe("review of WMS-74", () => {
     ).rejects.toMatchObject({ code: "whole_company_required" });
   });
 });
+
+describe("an operation that may already have happened (WMS-31 review)", () => {
+  let answer: boolean | "throw" = false;
+  let calls = 0;
+  const SETTLE_DOC: ProcessDocument = {
+    key: "test.settle",
+    module: "inventory",
+    label: "Documento con revisión",
+    milestones: [
+      { key: "OPEN", label: "Abierto" },
+      { key: "CANCELLED", label: "Cancelado", closes: true },
+    ],
+    operations: [
+      {
+        key: "test.first",
+        label: "Primero",
+        milestone: "OPEN",
+        leadsTo: null,
+      },
+      {
+        key: "test.kept",
+        label: "Se guardó",
+        milestone: "OPEN",
+        leadsTo: null,
+        settle: async () => {
+          calls += 1;
+          if (answer === "throw") throw new Error("boom");
+          return answer;
+        },
+      },
+    ],
+    readPermission: "inventory.stock.read",
+    href: (id) => `/inventario?documento=${id}`,
+  };
+  const ALL = [...DOCUMENTS, SETTLE_DOC];
+  const TWO: DraftInput = {
+    stages: [
+      { name: "Paso", kind: "MANUAL", milestone: "OPEN", roles: ["warehouse"] },
+      { name: "Guardado", kind: "OPERATION", operationKey: "test.kept" },
+    ],
+  };
+
+  async function ready(owner: Actor, facilityId: string) {
+    const saved = await saveProcessDraft(owner, ALL, SETTLE_DOC.key, TWO);
+    if (!saved.ok) throw new Error(saved.error);
+    const published = await publishProcess(owner, ALL, SETTLE_DOC.key);
+    if (!published.ok) throw new Error("publish refused");
+    const started = await start(owner, facilityId, { doc: SETTLE_DOC });
+    return started.progressId!;
+  }
+
+  it("is not asked while the stage waits, and is asked once when it becomes ready", async () => {
+    const { owner, facilityId } = await newCompany();
+    answer = false;
+    calls = 0;
+    const progressId = await ready(owner, facilityId);
+    expect(calls).toBe(0);
+    const paso = await stateOf(owner.organizationId, progressId, "Paso");
+    expect(
+      await completeStage(owner, ALL, {
+        stateId: paso.id,
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(calls).toBe(1);
+    expect(
+      (await stateOf(owner.organizationId, progressId, "Guardado")).status,
+    ).toBe("READY");
+  });
+
+  it("ends the stage right there when the operation already happened", async () => {
+    const { owner, facilityId } = await newCompany();
+    answer = true;
+    calls = 0;
+    const progressId = await ready(owner, facilityId);
+    const paso = await stateOf(owner.organizationId, progressId, "Paso");
+    expect(
+      await completeStage(owner, ALL, {
+        stateId: paso.id,
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(calls).toBe(1);
+    expect(
+      (await stateOf(owner.organizationId, progressId, "Guardado")).status,
+    ).toBe("DONE");
+    expect(
+      (
+        await db.processProgress.findFirstOrThrow({
+          where: { id: progressId },
+        })
+      ).status,
+    ).toBe("DONE");
+  });
+
+  it("inside a module's call a failing check is logged, undoes nothing, and a later evaluation ends the stage", async () => {
+    const { owner, facilityId } = await newCompany();
+    const ONLY: DraftInput = {
+      stages: [
+        { name: "Guardado", kind: "OPERATION", operationKey: "test.kept" },
+      ],
+    };
+    const saved = await saveProcessDraft(owner, ALL, SETTLE_DOC.key, ONLY);
+    if (!saved.ok) throw new Error(saved.error);
+    const published = await publishProcess(owner, ALL, SETTLE_DOC.key);
+    if (!published.ok) throw new Error("publish refused");
+    // startProcess: the stage is ready at once and its check fails.
+    answer = "throw";
+    const started = await start(owner, facilityId, { doc: SETTLE_DOC });
+    expect(started.started).toBe(true);
+    expect(
+      (await stateOf(owner.organizationId, started.progressId!, "Guardado"))
+        .status,
+    ).toBe("READY");
+    // Any later evaluation asks again: now it ends the stage.
+    answer = true;
+    await forOrganization(owner.organizationId).$transaction(
+      (tx) => reachMilestone(tx, SETTLE_DOC, owner, started.documentId, "OPEN"),
+      LOCKING_TRANSACTION,
+    );
+    expect(
+      (await stateOf(owner.organizationId, started.progressId!, "Guardado"))
+        .status,
+    ).toBe("DONE");
+  });
+
+  it("a failing check after completeOperationStage keeps the operation", async () => {
+    const { owner, facilityId } = await newCompany();
+    const PAIR: DraftInput = {
+      stages: [
+        { name: "Primero", kind: "OPERATION", operationKey: "test.first" },
+        { name: "Guardado", kind: "OPERATION", operationKey: "test.kept" },
+      ],
+    };
+    const saved = await saveProcessDraft(owner, ALL, SETTLE_DOC.key, PAIR);
+    if (!saved.ok) throw new Error(saved.error);
+    const published = await publishProcess(owner, ALL, SETTLE_DOC.key);
+    if (!published.ok) throw new Error("publish refused");
+    answer = false;
+    const started = await start(owner, facilityId, { doc: SETTLE_DOC });
+    answer = "throw";
+    const done = await forOrganization(owner.organizationId).$transaction(
+      (tx) =>
+        completeOperationStage(
+          tx,
+          SETTLE_DOC,
+          owner,
+          started.documentId,
+          "test.first",
+        ),
+      LOCKING_TRANSACTION,
+    );
+    expect(done).toEqual({ applied: true });
+    expect(
+      (await stateOf(owner.organizationId, started.progressId!, "Primero"))
+        .status,
+    ).toBe("DONE");
+    expect(
+      (await stateOf(owner.organizationId, started.progressId!, "Guardado"))
+        .status,
+    ).toBe("READY");
+  });
+
+  it("a check that fails undoes the action of the person, with a clear message", async () => {
+    const { owner, facilityId } = await newCompany();
+    answer = "throw";
+    const progressId = await ready(owner, facilityId);
+    const paso = await stateOf(owner.organizationId, progressId, "Paso");
+    expect(
+      await completeStage(owner, ALL, {
+        stateId: paso.id,
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("No se pudo revisar"),
+    });
+    expect(
+      (await stateOf(owner.organizationId, progressId, "Paso")).status,
+    ).toBe("READY");
+  });
+});
