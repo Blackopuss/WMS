@@ -68,12 +68,23 @@ export {
   OWNERSHIP_MESSAGES,
   OWNERSHIP_OFFER_DAYS,
   acceptOwnershipTransfer,
+  acceptOwnershipWithConfirmation,
+  cancelOwnershipFromScreen,
   cancelOwnershipTransfer,
+  declineOwnershipFromScreen,
+  declineOwnershipTransfer,
+  getOwnershipOfferFor,
+  listOwnershipCandidates,
   getPendingOwnershipTransfer,
   offerOwnershipTransfer,
+  offerOwnershipWithConfirmation,
 } from "./ownership";
 export type {
   OfferOwnershipResult,
+  OwnershipCandidate,
+  OwnershipOfferForMe,
+  OwnershipScreenField,
+  OwnershipScreenResult,
   OwnershipActionResult,
   OwnershipReason,
   PendingOwnershipTransfer,
@@ -153,4 +164,8 @@ export type {
   SessionRevokeResult,
 } from "./team-sessions";
 export { listMemberAccessHistory } from "./team-access-history";
-export { SESSIONS_CLOSED_NOTICE, TEAM_NOTIFICATION_TYPES } from "./notices";
+export {
+  OWNERSHIP_NOTICE,
+  SESSIONS_CLOSED_NOTICE,
+  TEAM_NOTIFICATION_TYPES,
+} from "./notices";

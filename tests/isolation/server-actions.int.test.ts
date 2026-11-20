@@ -1246,6 +1246,30 @@ const REVIEWED: Record<string, Review> = {
     identity: "sesión propia",
     coveredBy: "tests/platform/mfa-recovery.int.test.ts",
   },
+  // WMS-90 (ADR 0090): transfer of the company.
+  offerOwnershipAction: {
+    input: "a quién, roles que conserva el titular, contraseña y código",
+    identity:
+      "empresa y persona de la sesión; solo el titular (assertOwnerAction), nunca en terminal",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
+  cancelOwnershipAction: {
+    input: "nada",
+    identity: "empresa y persona de la sesión; solo el titular",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
+  acceptOwnershipAction: {
+    input: "id de la oferta, contraseña y código",
+    identity:
+      "empresa y persona de la sesión; solo el destinatario de una oferta vigente de esa empresa",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
+  declineOwnershipAction: {
+    input: "id de la oferta",
+    identity:
+      "empresa y persona de la sesión; solo el destinatario de esa oferta",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
   disableMfaAction: {
     input: "contraseña y código",
     identity: "sesión propia; prohibido si la MFA es obligatoria",

@@ -170,10 +170,9 @@ UPDATE` por llave primaria, el mismo candado de `withTeamChange` y de
   cerrada (`not_found`).
 - **Dos ofertas a la vez:** la segunda cancela la primera; queda una sola
   pendiente.
-- **Desactivar a la persona con oferta pendiente:** `disableMember` cancela
-  en la misma transacción las ofertas pendientes para esa persona (antes la
-  oferta quedaba pendiente pero sin poder aceptarse; ahora el titular la ve
-  cerrada). Desactivar y aceptar a la vez: si gana desactivar, aceptar
+- **Desactivar a la persona con oferta pendiente:** `disableMember` ya
+  cancelaba en la misma transacción las ofertas pendientes para esa persona
+  (no cambia). Desactivar y aceptar a la vez: si gana desactivar, aceptar
   responde «ya no está disponible»; si gana aceptar, la persona ya es
   titular y no se puede desactivar.
 - **Quitar un módulo del que depende un rol elegido:** al aceptar se
@@ -209,7 +208,7 @@ llaves automáticamente al aceptar.
    rechazar no.
 3. Al aceptar se cierra el acceso de soporte abierto; no se cierran
    sesiones ni se revocan llaves de la API.
-4. Desactivar a la persona cancela su oferta pendiente.
+4. Desactivar a la persona cancela su oferta pendiente (ya era así).
 5. El código de recuperación sirve como segundo factor (se gasta).
 6. Rechazar queda como `CANCELLED` con su bitácora propia, sin estado
    nuevo en la tabla.

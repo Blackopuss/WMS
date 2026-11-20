@@ -475,7 +475,12 @@ const NEGATIVE_CASES: Record<string, { tests?: string[]; waitsFor?: string }> =
         "tests/purchasing/module-guard.int.test.ts",
       ],
     },
-    "NEG-26": { tests: ["tests/platform/ownership.int.test.ts"] },
+    "NEG-26": {
+      tests: [
+        "tests/platform/ownership.int.test.ts",
+        "tests/platform/ownership-screen.int.test.ts",
+      ],
+    },
     // WMS-59 (ADR 0062): production and quality roles.
     "NEG-27": {
       tests: [

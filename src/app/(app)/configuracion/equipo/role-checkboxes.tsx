@@ -27,20 +27,21 @@ export function RoleCheckboxes({
   defaultSelected = [],
   error,
   idPrefix,
+  legend = "Roles",
+  note = "Puedes elegir varios: sus permisos se suman y la persona ocupa un solo lugar.",
 }: {
   options: RoleOption[];
   defaultSelected?: string[];
   error?: string;
   idPrefix: string;
+  legend?: string;
+  note?: string;
 }) {
   const errorId = error ? `${idPrefix}-roles-error` : undefined;
   return (
     <fieldset aria-describedby={errorId} className="space-y-2">
-      <legend className="text-sm font-medium">Roles</legend>
-      <p className="text-sm text-muted-foreground">
-        Puedes elegir varios: sus permisos se suman y la persona ocupa un solo
-        lugar.
-      </p>
+      <legend className="text-sm font-medium">{legend}</legend>
+      <p className="text-sm text-muted-foreground">{note}</p>
       <div className="grid gap-2">
         {options.map((option) => (
           <label
