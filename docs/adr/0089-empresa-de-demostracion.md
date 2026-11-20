@@ -223,6 +223,8 @@ cuenta.
 8. **Que la cuenta de una demostración no pueda tener después su empresa
    real** (tiene que usar otra cuenta). Cambiarlo exige permitir dos
    empresas por cuenta o convertir una demostración en empresa real.
+   Confirmada por el fundador el 2026-11-20: se queda así por ahora; él se lo
+   comenta a cada cliente.
 9. Que una cuenta del personal de plataforma no pueda ser titular de una
    demostración.
 
