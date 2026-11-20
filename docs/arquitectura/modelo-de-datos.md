@@ -3840,6 +3840,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `badReason` | `String? · VarChar(300)` |  |  |
 | `unitCode` | `String · VarChar(12)` |  |  |
 | `lotCode` | `String? · VarChar(60)` |  | The code of the lot made (the same for every output by lot), to show. |
+| `costKnown` | `Boolean?` |  | Whether some material of the order had a known cost when reporting (WMS-92): false means what was made entered without cost or at its own average. Null in reports from before WMS-92. Does not change. |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `reversedAt` | `DateTime? · DateTime(3)` |  |  |

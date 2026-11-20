@@ -1094,3 +1094,248 @@ describe("limits of scrap and reversal", () => {
     await balanced(owner.organizationId);
   });
 });
+
+describe("cost of what is made when a material has no cost (WMS-92)", () => {
+  const price = (
+    organizationId: string,
+    productId: string,
+    at: string,
+    onHand: string,
+  ) =>
+    db.productCost.create({
+      data: {
+        id: newId(),
+        organizationId,
+        productId,
+        averageCost: at,
+        stockValue: dec(at).times(onHand).toString(),
+      },
+    });
+  const costOf = async (organizationId: string, productId: string) => {
+    const row = await db.productCost.findFirst({
+      where: { organizationId, productId },
+    });
+    return row
+      ? {
+          average: dec(row.averageCost.toString()).toFixed(2),
+          value: dec(row.stockValue.toString()).toFixed(2),
+        }
+      : null;
+  };
+
+  it("takes the cost of the materials that have one and says which it leaves out", async () => {
+    const { owner, area, crate, board, screw } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    // Boards at 12.50; screws have no cost.
+    await price(owner.organizationId, board, "12.5", "100");
+    const id = await released(owner, crate, area, "2");
+    const done = await report(owner, id, "2");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    // 8 boards × 12.50 = 100 for 2 crates: 50 each.
+    expect(await costOf(owner.organizationId, crate)).toEqual({
+      average: "50.00",
+      value: "100.00",
+    });
+    expect(await costOf(owner.organizationId, screw)).toBeNull();
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.valueText).toBe("100.00");
+    expect(view?.uncostedMaterials).toEqual([expect.stringContaining("Pija")]);
+    // Who does not read costs gets none of it.
+    const floor = await member(owner.organizationId, ["production_operator"]);
+    const plain = await getProductionReport(floor, done.reportId);
+    expect(plain).not.toHaveProperty("valueText");
+    expect(plain).not.toHaveProperty("uncostedMaterials");
+    await balanced(owner.organizationId);
+  });
+
+  it("splits it among the outputs by their share", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const log = await product(owner, "Tronco");
+    const glue = await product(owner, "Cola");
+    const plank = await product(owner, "Tablón");
+    const dust = await product(owner, "Aserrín", { unit: "kg" });
+    await enter(owner, log, shelf, "10");
+    await enter(owner, glue, shelf, "10");
+    await price(owner.organizationId, log, "90", "10");
+    // 1 log + 1 glue (no cost) → 4 planks (75 %) and 2 kg of dust (25 %).
+    const created = await createRecipe(owner, plank, { baseQuantity: "4" });
+    if (!created.ok) throw new Error(JSON.stringify(created));
+    await setRecipeInput(owner, created.versionId, {
+      productId: log,
+      quantity: "1",
+    });
+    await setRecipeInput(owner, created.versionId, {
+      productId: glue,
+      quantity: "1",
+    });
+    await setRecipeOutput(owner, created.versionId, {
+      productId: plank,
+      quantity: "4",
+      costShare: "75",
+    });
+    await setRecipeOutput(owner, created.versionId, {
+      productId: dust,
+      quantity: "2",
+      costShare: "25",
+    });
+    expect(await activateRecipeVersion(owner, created.versionId)).toMatchObject(
+      { ok: true },
+    );
+    const id = await released(owner, plank, area, "4");
+    const done = await report(owner, id, "4");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    // 90 of value: 67.50 to 4 planks (16.875 each), 22.50 to 2 kg of dust.
+    expect(await costOf(owner.organizationId, plank)).toEqual({
+      average: "16.88",
+      value: "67.50",
+    });
+    expect(await costOf(owner.organizationId, dust)).toEqual({
+      average: "11.25",
+      value: "22.50",
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("a later report that only takes materials without cost adds no value", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const costed = await product(owner, "Motor A");
+    const free = await product(owner, "Tornillo B");
+    const kit = await product(owner, "Kit");
+    await enter(owner, costed, shelf, "10");
+    await enter(owner, free, shelf, "100");
+    await price(owner.organizationId, costed, "10", "10");
+    // For 10 kits: 1 A (cost 10) and 10 B (no cost).
+    await recipe(
+      owner,
+      kit,
+      [
+        [costed, "1"],
+        [free, "10"],
+      ],
+      "10",
+    );
+    const id = await released(owner, kit, area, "2");
+    // The first kit takes 1 A (rounded up) and 1 B; the second only 1 B.
+    const first = await report(owner, id, "1");
+    const second = await report(owner, id, "1");
+    if (!first.ok || !second.ok) throw new Error("report failed");
+    expect(await costOf(owner.organizationId, kit)).toEqual({
+      average: "5.00",
+      value: "10.00",
+    });
+    const view = await getProductionReport(owner, second.reportId);
+    expect(view?.valueText).toBe("0.00");
+    expect(view?.uncostedMaterials).toEqual([
+      expect.stringContaining("Tornillo B"),
+    ]);
+    // Reversing the second: the kit leaves at the 0 it came in with.
+    expect(
+      await reverseProductionReport(
+        owner,
+        second.reportId,
+        "Se reportó de más",
+      ),
+    ).toMatchObject({ ok: true });
+    expect(await costOf(owner.organizationId, kit)).toEqual({
+      average: "10.00",
+      value: "10.00",
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("only bad pieces: the screen does not say what the cost of what was made leaves out", async () => {
+    const { owner, area, crate, board } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await price(owner.organizationId, board, "5", "100");
+    const id = await released(owner, crate, area, "2");
+    const done = await report(owner, id, "", {
+      bad: "1",
+      badReason: "Se rompió al armar",
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.outputs).toEqual([]);
+    await balanced(owner.organizationId);
+  });
+
+  it("with no material costed, what is made enters without cost", async () => {
+    const { owner, area, crate } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "1");
+    const done = await report(owner, id, "1");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    expect(await costOf(owner.organizationId, crate)).toBeNull();
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.valueText).toBeNull();
+    await balanced(owner.organizationId);
+  });
+
+  it("with no material costed and what is made already priced, the screen says the cost is unknown", async () => {
+    const { owner, area, crate, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await enter(owner, crate, shelf, "10");
+    await price(owner.organizationId, crate, "30", "10");
+    const id = await released(owner, crate, area, "2");
+    const done = await report(owner, id, "2");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    // It enters at its own average (ADR 0031), as before.
+    expect(await costOf(owner.organizationId, crate)).toEqual({
+      average: "30.00",
+      value: "360.00",
+    });
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.valueText).toBeNull();
+    expect(view?.uncostedMaterials).toEqual([]);
+    expect(view?.outputs[0]?.unitCost).toBe("30");
+    await balanced(owner.organizationId);
+  });
+
+  it("partial reports add up to one report, and a reversal leaves the value as it was", async () => {
+    const one = await workshop();
+    const parts = await workshop();
+    for (const shop of [one, parts]) {
+      await setting(shop.owner, "production.report.photo", "optional");
+      await price(shop.owner.organizationId, shop.board, "7", "100");
+    }
+    const single = await released(one.owner, one.crate, one.area, "3");
+    expect((await report(one.owner, single, "3")).ok).toBe(true);
+    const split = await released(parts.owner, parts.crate, parts.area, "3");
+    const first = await report(parts.owner, split, "1");
+    const second = await report(parts.owner, split, "2");
+    if (!first.ok || !second.ok) throw new Error("report failed");
+    expect(await costOf(parts.owner.organizationId, parts.crate)).toEqual(
+      await costOf(one.owner.organizationId, one.crate),
+    );
+    expect(await costOf(parts.owner.organizationId, parts.crate)).toEqual({
+      average: "28.00",
+      value: "84.00",
+    });
+    // Reverse the second (2 crates): boards come back at 7, crates leave at 28.
+    const undone = await reverseProductionReport(
+      parts.owner,
+      second.reportId,
+      "Se reportó de más",
+    );
+    expect(undone).toMatchObject({ ok: true });
+    expect(await costOf(parts.owner.organizationId, parts.crate)).toEqual({
+      average: "28.00",
+      value: "28.00",
+    });
+    expect(await costOf(parts.owner.organizationId, parts.board)).toEqual({
+      average: "7.00",
+      value: dec(7)
+        .times(100 - 4)
+        .toFixed(2),
+    });
+    // And again: the same value as one report of 2.
+    expect((await report(parts.owner, split, "2")).ok).toBe(true);
+    expect(await costOf(parts.owner.organizationId, parts.crate)).toEqual({
+      average: "28.00",
+      value: "84.00",
+    });
+    await balanced(one.owner.organizationId);
+    await balanced(parts.owner.organizationId);
+  });
+});
