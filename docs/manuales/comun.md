@@ -31,7 +31,7 @@ En una terminal se ve **menos** que en tu cuenta normal: no aparecen costos, exp
 
 ## 2. Cómo se ve el sistema
 
-- **Escritorio:** menú a la izquierda. **Teléfono:** barra de abajo con las primeras 4 secciones que tu rol puede ver y un botón **Más** con el resto.
+- **Escritorio:** menú a la izquierda. **Teléfono:** barra de abajo con las primeras 4 secciones que tu rol puede ver y un botón **Más** con el resto. Arriba, en el teléfono, ves el nombre de la sección y los botones **Buscar** y **Avisos**; el interruptor **Modo oscuro** (claro u oscuro) está en **Más**, y en escritorio, en el menú de la izquierda.
 - Solo ves las secciones que tu rol puede usar. El orden del menú es: Inicio, Tareas, Recepción, Pedidos, Producción, Inventario, Movimientos, Conteos, Incidencias, Compras y Configuración.
 - Si una sección dice **no está activo en tu empresa**, el módulo no está contratado; si dice **solo lectura**, el plan venció o el módulo se quitó: puedes consultar y exportar, pero no registrar nada. **Configuración › Mi plan** solo se consulta: para contratar o renovar, el titular escribe al correo de contacto que aparece ahí y el personal de la plataforma lo activa.
 - Si ves **No tienes acceso a esta sección**, tu rol no la incluye: pídesela al titular o a un administrador.
@@ -92,4 +92,4 @@ Un reporte **no cambia existencias**: avisa a quien supervisa. Si lo que pasa es
 
 Una persona puede tener **varios roles a la vez**: recibe la suma de lo que permite cada uno y ocupa un solo lugar del plan. Un rol de Producción o de Calidad solo se asigna si el módulo está contratado.
 
-Vigente al 2026-11-19 (configuración inicial: WMS-43)
+Vigente al 2026-11-19 (configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86)

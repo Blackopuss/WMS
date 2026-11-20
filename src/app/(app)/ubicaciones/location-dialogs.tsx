@@ -13,9 +13,9 @@ import { toast } from "sonner";
 
 import {
   CustomFieldInputs,
-  FormField,
   type CustomFieldInputView,
-} from "@/components";
+} from "@/components/custom-fields";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

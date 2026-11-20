@@ -14,7 +14,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { UNPLACED_PAGE_SIZE, listUnplacedStock } from "@/modules/inventory";

@@ -7,7 +7,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { newId } from "@/lib";
 import {
   INCIDENT_KINDS,

@@ -8,7 +8,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { getModuleAccess } from "@/platform/billing";
 
 import { OrderForm } from "./order-form";

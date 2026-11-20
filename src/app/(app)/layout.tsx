@@ -1,6 +1,8 @@
 import { LifeBuoy } from "lucide-react";
 
-import { AppShell, visibleNavItems } from "@/components";
+import { AppShell } from "@/components/app-shell/app-shell";
+import { visibleNavItems } from "@/components/app-shell/nav";
+import { Toasts } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { processDocuments, searchSources } from "@/modules/registry";
@@ -74,54 +76,61 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     allowedHrefs.push("/buscar");
   }
   return (
-    <AppShell
-      user={user}
-      organization={{ id: organization.id, name: organization.name }}
-      organizations={organizations}
-      allowedHrefs={allowedHrefs}
-      signOutAction={signOutAction}
-      switchOrganizationAction={switchOrganizationAction}
-      facility={facility ? { id: facility.id, name: facility.name } : null}
-      facilities={facilities.map((each) => ({ id: each.id, name: each.name }))}
-      switchFacilityAction={switchFacilityAction}
-      notifications={{
-        unread,
-        loadAction: loadNotificationsAction,
-        countAction: countNotificationsAction,
-        openAction: openNotificationAction,
-        markAllAction: markAllNotificationsReadAction,
-      }}
-    >
-      {/* PIN session on a shared terminal (WMS-38): who, and the way out. */}
-      {terminal && (
-        <TerminalBar
-          terminalName={terminal.name}
-          personName={user.name}
-          idleSeconds={terminal.idleSeconds}
-          signOutAction={signOutAction}
-          keepAction={keepTerminalSessionAction}
-        />
-      )}
-      {/* Support looking in with the titular's leave (PIL-12): always said. */}
-      {organization.supportUntil && (
-        <div
-          role="status"
-          className="flex flex-wrap items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm sm:px-6"
-        >
-          <LifeBuoy aria-hidden="true" className="size-4 shrink-0" />
-          <span className="flex-1">
-            <span className="font-medium">Modo soporte:</span> solo lectura en{" "}
-            {organization.name} hasta el{" "}
-            {formatDateTime(organization.supportUntil, organization.timeZone)}
-          </span>
-          <form action={leaveSupportAction}>
-            <Button type="submit" variant="outline">
-              Salir
-            </Button>
-          </form>
-        </div>
-      )}
-      {children}
-    </AppShell>
+    <>
+      <AppShell
+        user={user}
+        organization={{ id: organization.id, name: organization.name }}
+        organizations={organizations}
+        allowedHrefs={allowedHrefs}
+        signOutAction={signOutAction}
+        switchOrganizationAction={switchOrganizationAction}
+        facility={facility ? { id: facility.id, name: facility.name } : null}
+        facilities={facilities.map((each) => ({
+          id: each.id,
+          name: each.name,
+        }))}
+        switchFacilityAction={switchFacilityAction}
+        notifications={{
+          unread,
+          loadAction: loadNotificationsAction,
+          countAction: countNotificationsAction,
+          openAction: openNotificationAction,
+          markAllAction: markAllNotificationsReadAction,
+        }}
+      >
+        {/* PIN session on a shared terminal (WMS-38): who, and the way out. */}
+        {terminal && (
+          <TerminalBar
+            terminalName={terminal.name}
+            personName={user.name}
+            idleSeconds={terminal.idleSeconds}
+            signOutAction={signOutAction}
+            keepAction={keepTerminalSessionAction}
+          />
+        )}
+        {/* Support looking in with the titular's leave (PIL-12): always said. */}
+        {organization.supportUntil && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm sm:px-6"
+          >
+            <LifeBuoy aria-hidden="true" className="size-4 shrink-0" />
+            <span className="flex-1">
+              <span className="font-medium">Modo soporte:</span> solo lectura en{" "}
+              {organization.name} hasta el{" "}
+              {formatDateTime(organization.supportUntil, organization.timeZone)}
+            </span>
+            <form action={leaveSupportAction}>
+              <Button type="submit" variant="outline">
+                Salir
+              </Button>
+            </form>
+          </div>
+        )}
+        {children}
+      </AppShell>
+      {/* Outside the main landmark, as with the root layout before. */}
+      <Toasts />
+    </>
   );
 }

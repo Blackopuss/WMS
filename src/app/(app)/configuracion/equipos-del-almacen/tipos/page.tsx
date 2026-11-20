@@ -9,7 +9,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import {
   EQUIPMENT_TYPES_MAX,
   listEquipmentTypes,

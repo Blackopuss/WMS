@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useActionState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

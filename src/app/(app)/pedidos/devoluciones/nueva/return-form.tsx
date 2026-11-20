@@ -4,7 +4,8 @@ import { CircleAlert, Loader2, TriangleAlert } from "lucide-react";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useRef } from "react";
 
-import { FormField, SerialsField } from "@/components";
+import { FormField } from "@/components/form-field";
+import { SerialsField } from "@/components/serials-field";
 import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { PageContainer } from "@/components";
+import { PageContainer } from "@/components/states";
 import { Button } from "@/components/ui/button";
 
 /** What a missing page says; `(app)/not-found.tsx` shows it inside the frame. */

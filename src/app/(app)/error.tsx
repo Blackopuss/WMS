@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { ErrorState, PageContainer } from "@/components";
+import { ErrorState, PageContainer } from "@/components/states";
 import { Button } from "@/components/ui/button";
 
 export default function SectionError({

@@ -5,7 +5,8 @@ import { unstable_rethrow } from "next/navigation";
 import { useActionState, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField, SerialsField } from "@/components";
+import { FormField } from "@/components/form-field";
+import { SerialsField } from "@/components/serials-field";
 import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import {

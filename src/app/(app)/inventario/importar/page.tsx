@@ -8,7 +8,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { formatDateTime } from "@/lib";
 import {
   IMPORT_COLUMNS,

@@ -3,7 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { useActionState, useRef } from "react";
 
-import { LegalConsent } from "@/components";
+import { LegalConsent } from "@/components/legal-consent";
 import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 
