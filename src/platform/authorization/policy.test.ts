@@ -207,6 +207,20 @@ describe("shared terminal (WMS-38)", () => {
     expect(can(titular, "production.recipe.read")).toBe(true);
   });
 
+  it("never reactivates a warehouse from a shared terminal (WMS-85)", () => {
+    const admin = member("administrator");
+    expect(can(admin, "inventory.facility.reactivate")).toBe(true);
+    expect(
+      can({ ...admin, terminal: true }, "inventory.facility.reactivate"),
+    ).toBe(false);
+    expect(
+      can({ ...owner(), terminal: true }, "inventory.facility.reactivate"),
+    ).toBe(false);
+    expect(can(member("warehouse"), "inventory.facility.reactivate")).toBe(
+      false,
+    );
+  });
+
   it("asks for production and decides requests from the floor (WMS-28B)", () => {
     const operario: Subject = {
       ...member("production_operator"),

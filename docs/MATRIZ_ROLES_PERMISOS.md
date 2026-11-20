@@ -118,6 +118,7 @@ Los permisos comerciales del titular autorizan su consentimiento o solicitud, no
 | `inventory.location.create` | Crear zonas, pasillos y estantes de la instalación; INV-14. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
 | `inventory.location.update` | Editar nombres y jerarquía sin ciclos ni relaciones ajenas; INV-14. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
 | `inventory.location.archive` | Archivar ubicación sin stock ni pendientes, conservando referencias; sección 3, INV-14. | Sí | Sí | Sí | No | No | Sí | No | No | No | No | No | No |
+| `inventory.facility.reactivate` | Reactivar un almacén archivado con las ubicaciones que se archivaron con él, dentro del límite del plan; no en una terminal con PIN; WMS-85, ADR 0088. | Sí | Sí | No | No | No | No | No | No | No | No | No | No |
 | `inventory.stock.read` | Consultar existencias totales y por ubicación, con equivalencias; INV-15/26. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
 | `inventory.movement.read` | Ver historial y filtros por fecha, producto, usuario y tipo; INV-27. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | No | Sí | No | No | No |
 | `inventory.minimum.read` | Consultar mínimos y productos con existencias bajas, y las reglas de reposición de las ubicaciones de surtido; INV-30, WMS-23. | Sí | Sí | Sí | Sí | Sí | Sí | Sí | No | Sí | No | Sí | No |
