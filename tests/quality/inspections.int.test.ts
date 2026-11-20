@@ -7,6 +7,12 @@ import {
   receiveCustomerReturn,
 } from "@/modules/inventory";
 import {
+  addOrderLine,
+  createPurchaseOrder,
+  receivePurchaseOrder,
+  submitPurchaseOrder,
+} from "@/modules/purchasing";
+import {
   PRODUCTION_BATCH_PROCESS,
   PRODUCTION_BATCH_VERIFICATION_OPERATION,
   releaseProductionOrder,
@@ -34,7 +40,9 @@ import {
   processDocuments,
 } from "@/modules/registry";
 import { decideApproval, updateApprovalRule } from "@/platform/approvals";
-import { deactivateModule } from "@/platform/billing";
+import { activateModule, deactivateModule } from "@/platform/billing";
+import { createProduct } from "@/platform/catalog";
+import { createSupplier } from "@/platform/contacts";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import {
   completeStage,
@@ -46,9 +54,11 @@ import { db } from "@/server";
 import { TEST_JPEG } from "../setup/images";
 import {
   balanced,
+  enter,
   member,
   order,
   place,
+  product,
   setting,
   workshop,
 } from "../setup/production";
@@ -347,6 +357,20 @@ describe("verifying what was produced (ADR 0091)", () => {
     expect(await start(inspector, at(reports[0]!.lineId))).toMatchObject({
       ok: false,
       formError: expect.stringContaining("Lijado"),
+    });
+    // M2: «Otro» does not skip the stages: what was produced waits for
+    // its own origin.
+    expect(
+      await startInspection(inspector, {
+        productId: shop.crate,
+        locationId: shop.area,
+        origin: "OTHER",
+        quantity: "3",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { quantity: expect.stringContaining("producción") },
     });
     // The second lot is ready although the first is not (P10b).
     const progress = await db.processProgress.findFirstOrThrow({
@@ -923,6 +947,360 @@ describe("Calidad and production.output.verify", () => {
     ).toMatchObject({ ok: true });
     const again = await start(encargado, at);
     expect(again).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("«Otro» only reaches what no origin waits for (M2)", () => {
+  it("not what a report produced, a receipt brought in or a customer returned", async () => {
+    const shop = await workshop([...QUALITY, "purchasing"]);
+    const { owner } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    const other = (productId: string, locationId: string, quantity: string) =>
+      startInspection(owner, {
+        productId,
+        locationId,
+        origin: "OTHER",
+        quantity,
+        idempotencyKey: key(),
+      });
+
+    // Produced output, in inspection in the area.
+    const orderId = await order(owner, shop.crate, shop.area, "5");
+    await releaseProductionOrder(owner, orderId);
+    const made = await reportProduction(owner, orderId, {
+      good: "3",
+      idempotencyKey: key(),
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect(await other(shop.crate, shop.area, "1")).toMatchObject({
+      ok: false,
+    });
+    const start0 = await getInspectionStart(owner, {
+      productId: shop.crate,
+      locationId: shop.area,
+    });
+    expect(
+      start0?.origins.find((each) => each.origin === "OTHER")?.pending,
+    ).toBe("0");
+
+    // A receipt in inspection, plus 2 that got there another way.
+    const valve = await createProduct(owner, {
+      sku: `V-${newId().slice(-6)}`,
+      name: "Válvula",
+      inspectOnReceipt: "yes",
+    });
+    if (!valve.ok) throw new Error(JSON.stringify(valve));
+    const supplier = await createSupplier(owner, { name: "Proveedor M2" });
+    if (!supplier.ok) throw new Error("supplier");
+    const po = await createPurchaseOrder(owner, {
+      supplierId: supplier.supplierId,
+    });
+    if (!po.ok) throw new Error("order");
+    const added = await addOrderLine(owner, po.orderId, {
+      productId: valve.productId,
+      capture: "base",
+      quantity: "6",
+      unitCost: "10",
+    });
+    if (!added.ok) throw new Error(JSON.stringify(added));
+    await submitPurchaseOrder(owner, po.orderId);
+    const orderLine = await db.purchaseOrderLine.findFirstOrThrow({
+      where: { orderId: po.orderId },
+    });
+    const receipt = await receivePurchaseOrder(owner, po.orderId, {
+      idempotencyKey: key(),
+      locationId: shop.shelf,
+      lines: [{ orderLineId: orderLine.id, quantity: "6" }],
+    });
+    if (!receipt.ok) throw new Error(JSON.stringify(receipt));
+    expect(await other(valve.productId, shop.shelf, "1")).toMatchObject({
+      ok: false,
+    });
+    await enter(owner, valve.productId, shop.shelf, "2");
+    const moved = await changeStockStatus(owner, {
+      productId: valve.productId,
+      locationId: shop.shelf,
+      from: "AVAILABLE",
+      to: "INSPECTION",
+      quantity: "2",
+      reason: "Revisar",
+      idempotencyKey: key(),
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    expect(await other(valve.productId, shop.shelf, "3")).toMatchObject({
+      ok: false,
+      fieldErrors: { quantity: expect.stringContaining("2 piezas") },
+    });
+    const loose = await other(valve.productId, shop.shelf, "2");
+    expect(loose).toMatchObject({ ok: true });
+    // The receipt can still be verified whole, with its own origin.
+    const receiptLine = await db.purchaseReceiptLine.findFirstOrThrow({
+      where: { receiptId: receipt.receiptId },
+    });
+    expect(
+      await startInspection(owner, {
+        productId: valve.productId,
+        locationId: shop.shelf,
+        origin: "RECEIPT",
+        lineId: receiptLine.id,
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+
+    // A customer return waits for its decision.
+    const dock = await place(owner, "Andén", { type: "RECEIVING" });
+    const returned = await receiveCustomerReturn(owner, {
+      returnedBy: "Cliente",
+      reason: "No lo quiso",
+      idempotencyKey: key(),
+      locationId: dock,
+      lines: [{ productId: shop.board, quantity: "4" }],
+    });
+    if (!returned.ok) throw new Error(JSON.stringify(returned));
+    expect(await other(shop.board, dock, "1")).toMatchObject({ ok: false });
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("second review (ADR 0091)", () => {
+  it("titular and Administración cancel what Calidad left open (M3)", async () => {
+    for (const who of ["owner", "administrator"] as const) {
+      const at = await produced();
+      const { owner } = at;
+      const inspector = await member(owner.organizationId, [
+        "quality_inspector",
+      ]);
+      const started = await start(inspector, at);
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      await deactivateModule(moduleRegistry, {
+        organizationId: owner.organizationId,
+        moduleId: "quality",
+        actorUserId: null,
+      });
+      invalidateEntitlements(owner.organizationId);
+      const actor =
+        who === "owner"
+          ? owner
+          : await member(owner.organizationId, ["administrator"]);
+      const view = await getInspection(actor, started.inspectionId);
+      expect(view?.canCancel).toBe(true);
+      expect(
+        await cancelInspection(actor, {
+          inspectionId: started.inspectionId,
+          reason: "Ya no hay Calidad",
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        await db.stockHold.count({
+          where: { sourceId: started.inspectionId, state: "ACTIVE" },
+        }),
+      ).toBe(0);
+      // Who could not cancel is not offered it either.
+      const operator = await member(owner.organizationId, [
+        "production_operator",
+      ]);
+      const other = await start(owner, at);
+      if (!other.ok) throw new Error(JSON.stringify(other));
+      expect(
+        (await getInspection(operator, other.inspectionId))?.canCancel ?? false,
+      ).toBe(false);
+      await balanced(owner.organizationId);
+    }
+  });
+
+  it("the same key of an answered loss request is told, not a 500 (m1)", async () => {
+    const at = await produced();
+    const { owner } = at;
+    await updateApprovalRule(owner, approvalTypes, "quality.loss", {
+      enabled: true,
+      roles: ["quality_inspector"],
+      allowSelfApproval: false,
+    });
+    const ana = await member(owner.organizationId, ["quality_inspector"]);
+    const boss = await member(owner.organizationId, ["quality_inspector"]);
+    const started = await start(ana, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const fileId = await photo(ana, started.inspectionId);
+    const decideKey = key();
+    const input = {
+      inspectionId: started.inspectionId,
+      idempotencyKey: decideKey,
+      outcomes: [{ status: "AVAILABLE", quantity: "9" }],
+      missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+      photoIds: [fileId],
+    };
+    const asked = await decideInspection(ana, input);
+    if (asked.ok || !asked.requestId) throw new Error(JSON.stringify(asked));
+    expect(
+      await decideApproval(boss, approvalTypes, asked.requestId, {
+        decision: "reject",
+        reason: "No cuadra",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await decideInspection(ana, input)).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("ya se usó"),
+    });
+    // A new key asks again.
+    expect(
+      await decideInspection(ana, { ...input, idempotencyKey: key() }),
+    ).toMatchObject({ reason: "pending_approval" });
+    await balanced(owner.organizationId);
+  });
+
+  it("only the units the verification holds are decided (m2)", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner } = shop;
+    const meter = await product(owner, "Medidor", { tracking: "SERIAL" });
+    await enter(owner, meter, shop.shelf, "3", { serials: "SA\nSB\nSC" });
+    const moved = await changeStockStatus(owner, {
+      productId: meter,
+      locationId: shop.shelf,
+      from: "AVAILABLE",
+      to: "INSPECTION",
+      quantity: "3",
+      serials: "SA\nSB\nSC",
+      reason: "Revisar",
+      idempotencyKey: key(),
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    const started = await startInspection(owner, {
+      productId: meter,
+      locationId: shop.shelf,
+      origin: "OTHER",
+      quantity: "2",
+      idempotencyKey: key(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [{ status: "AVAILABLE", quantity: "2", serials: "SC\nSB" }],
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { "outcome.0.serials": expect.stringContaining("SC") },
+    });
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [{ status: "AVAILABLE", quantity: "2", serials: "SA\nSB" }],
+      }),
+    ).toMatchObject({ ok: true });
+    const sc = await db.serialUnit.findFirstOrThrow({
+      where: { productId: meter, serial: "SC" },
+    });
+    expect(sc.status).toBe("INSPECTION");
+    await balanced(owner.organizationId);
+  });
+
+  it("a lot with two destinations, each in its lot (optional case)", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner } = shop;
+    const resin = await product(owner, "Resina", { tracking: "LOT" });
+    await enter(owner, resin, shop.shelf, "4", { lotCode: "L-1" });
+    const lot = await db.lot.findFirstOrThrow({ where: { productId: resin } });
+    const moved = await changeStockStatus(owner, {
+      productId: resin,
+      locationId: shop.shelf,
+      lotId: lot.id,
+      from: "AVAILABLE",
+      to: "INSPECTION",
+      quantity: "4",
+      reason: "Revisar",
+      idempotencyKey: key(),
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    const started = await startInspection(owner, {
+      productId: resin,
+      locationId: shop.shelf,
+      lotId: lot.id,
+      origin: "OTHER",
+      quantity: "4",
+      idempotencyKey: key(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const rack = await place(owner, "Rack 2");
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [
+          { status: "AVAILABLE", quantity: "3", toLocationId: rack },
+          { status: "REJECTED", quantity: "1", reason: "Contaminada" },
+        ],
+        photoIds: [await photo(owner, started.inspectionId)],
+      }),
+    ).toMatchObject({ ok: true });
+    const rows = await db.stockBalance.findMany({
+      where: { productId: resin, quantity: { gt: 0 } },
+      orderBy: { status: "asc" },
+      select: { status: true, locationId: true, lotKey: true, quantity: true },
+    });
+    expect(
+      rows.map((row) => [
+        row.status,
+        row.locationId,
+        row.lotKey,
+        row.quantity.toString(),
+      ]),
+    ).toEqual([
+      ["AVAILABLE", rack, lot.id, "3"],
+      ["REJECTED", shop.shelf, lot.id, "1"],
+    ]);
+    await balanced(owner.organizationId);
+  });
+
+  it("a loss request without Calidad expires when Calidad comes in (m5)", async () => {
+    const at = await produced(["inventory", "production"]);
+    const { owner } = at;
+    await updateApprovalRule(
+      owner,
+      approvalTypes,
+      "production.verification_loss",
+      {
+        enabled: true,
+        roles: ["production_supervisor"],
+        allowSelfApproval: false,
+      },
+    );
+    const encargado = await member(owner.organizationId, [
+      "production_supervisor",
+    ]);
+    const boss = await member(owner.organizationId, ["production_supervisor"]);
+    const started = await start(encargado, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const asked = await decideInspection(encargado, {
+      inspectionId: started.inspectionId,
+      idempotencyKey: key(),
+      outcomes: [{ status: "AVAILABLE", quantity: "9" }],
+      missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+      photoIds: [await photo(encargado, started.inspectionId)],
+    });
+    if (asked.ok || !asked.requestId) throw new Error(JSON.stringify(asked));
+    expect(
+      await activateModule(moduleRegistry, {
+        organizationId: owner.organizationId,
+        moduleId: "quality",
+        actorUserId: null,
+      }),
+    ).toMatchObject({ ok: true });
+    invalidateEntitlements(owner.organizationId);
+    expect(
+      await decideApproval(boss, approvalTypes, asked.requestId, {
+        decision: "approve",
+      }),
+    ).toMatchObject({ ok: false });
+    const request = await db.approvalRequest.findFirstOrThrow({
+      where: { id: asked.requestId },
+    });
+    expect(request.status).toBe("EXPIRED");
+    expect(await balanceOf(owner.organizationId, at.crate, "INSPECTION")).toBe(
+      "10",
+    );
     await balanced(owner.organizationId);
   });
 });

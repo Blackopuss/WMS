@@ -13,14 +13,16 @@ inspección o cuarentena.
 | Reintento que duplica una decisión | `decideKey` única; repetida por la misma persona responde `repeated`, en otra verificación `KEY_REUSED`; `findInspectionDecision` para la respuesta perdida (INV-22). |
 | Rodeo para sacar mercancía sin autorización (ADR 0078) | Las pérdidas tienen tipos de aprobación propios (`quality.loss`, `production.verification_loss`), apagados por omisión, con el permiso de decidir; mientras esperan no se escribe nada y la verificación no se decide ni se cancela; al autorizar se rehace todo a nombre de quien pidió (membresía, permiso, alcance; NEG-20). Desechar piezas presentes no es un destino de la verificación: pasa por «Desechar» y su regla. |
 | Verificar lo de una zona que la persona no alcanza | La casilla, cada destino, la verificación y sus fotos existen solo dentro del alcance (`locationsOutOfScope`); fuera, «no existe» (`scope.int.test.ts`). |
-| Saltarse etapas del lote (P10) | `assertStagesDone` al iniciar y al decidir lo producido, y `completeOperationStage` después de escribir. |
+| Saltarse etapas del lote (P10) | `assertStagesDone` al iniciar y al decidir lo producido, y `completeOperationStage` después de escribir. «Otro» solo alcanza lo libre de la casilla menos lo que espera su propio origen (salidas de reportes y líneas de recepción en inspección), calculado bajo los candados (segunda revisión, M2). |
+| Interbloqueo al decidir varios destinos con capacidad | Una sola `checkPlacement` por decisión con todas las llegadas (WMS-22B); carrera del revisor en `lock-order.int.test.ts` (M1). |
+| Decidir una serie que la verificación no retuvo | Las series nombradas deben estar en `stock_hold_unit` de la verificación (m2). |
 | Decidir una devolución por dos caminos | `decideCustomerReturn` rechaza una línea con verificación abierta, leído bajo el candado de la devolución que la verificación también toma. |
 | Aprobar donde no puede haber nada disponible | `checkPlacement` (restricciones) sobre el lugar de la casilla: un área dentro de «Cuarentena» o «Restauración» exige elegir otro lugar. |
 | Fotos reutilizadas o ajenas | Atadas a su verificación (`boundToOwner`, disparador `evidence_photo_owner_rules`), solo de quien las sube y vistas solo por quien alcanza la verificación. |
 | `production.output.verify` verificando con Calidad contratada | `accessFor` usa los permisos de Calidad mientras Calidad esté en uso; prueba con el Encargado y Almacén. |
 | Costos visibles | Ninguna pantalla ni respuesta de la verificación los lleva. |
 | Terminal compartida | Todo se conserva en una sesión de PIN; una sesión de PIN no autoriza pérdidas (motor). |
-| Plan vencido o módulo quitado | Solo lectura; con Calidad quitada y Producción en uso, quien tiene `production.output.verify` suelta las verificaciones abiertas (cancelar no mueve existencias). |
+| Plan vencido o módulo quitado | Solo lectura; con Calidad quitada y Producción en uso, quien tiene `production.output.verify` suelta las verificaciones abiertas (cancelar no mueve existencias); una sola regla (`cancelPermissionOf`) decide la pantalla y el servicio (M3). Una autorización de pérdidas vence si Calidad entró o salió de uso desde la solicitud (m5). |
 
 ## Riesgos residuales
 

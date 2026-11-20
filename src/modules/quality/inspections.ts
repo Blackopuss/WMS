@@ -14,8 +14,10 @@ import {
   heldStock,
   holdStock,
   isTaskNumberClash,
+  parseSerialList,
   postDisposal,
   releaseHold,
+  serialKey,
   writeStatusChange,
   type InventoryActor,
   type PutawayArrival,
@@ -41,6 +43,7 @@ import {
   companyModules,
   isAllowed,
   permissionsOf,
+  type Permission,
 } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
@@ -285,7 +288,7 @@ export type InspectionOriginOption = {
   /** The line it comes from; null for «Otro». */
   lineId: string | null;
   label: string;
-  /** What is left to verify of it, in the product's unit; null for «Otro». */
+  /** What is left to verify of it, in the product's unit (for «Otro», what no origin of its own waits for). */
   pending: string | null;
   pendingLabel: string | null;
   /** An open verification of this origin, if there is one. */
@@ -423,6 +426,79 @@ async function coveredOf(
     (sum, row) => sum.plus(row.expectedQuantity.toString()),
     dec(0),
   );
+}
+
+/**
+ * What of a slot in inspection still waits for its own origin (ADR 0091):
+ * produced output of reports not reversed and receipt lines in inspection,
+ * minus what other verifications not cancelled already cover. Customer
+ * returns are already held by `heldStock`. «Otro» never reaches it, so it
+ * can neither skip the stages of a produced lot nor leave a line pending
+ * forever. Read under the slot's locks.
+ */
+async function attributablePending(
+  client: Client | Tx,
+  slot: SlotRow,
+): Promise<Decimal> {
+  if (slot.status !== "INSPECTION") return dec(0);
+  const lotKey = slot.lot?.id ?? null;
+  const [outputs, receipts] = await Promise.all([
+    client.productionReportLine.findMany({
+      where: {
+        kind: "OUTPUT",
+        productId: slot.product.id,
+        report: { reversedAt: null },
+        movementLine: {
+          locationId: slot.location.id,
+          status: "INSPECTION",
+          lotId: lotKey,
+        },
+      },
+      select: { id: true, quantity: true },
+    }),
+    client.purchaseReceiptLine.findMany({
+      where: {
+        productId: slot.product.id,
+        locationId: slot.location.id,
+        status: "INSPECTION",
+        lotId: lotKey,
+      },
+      select: { id: true, baseQuantity: true },
+    }),
+  ]);
+  if (outputs.length === 0 && receipts.length === 0) return dec(0);
+  const covered = await client.qualityInspection.findMany({
+    where: {
+      state: { not: "CANCELLED" },
+      OR: [
+        { productionReportLineId: { in: outputs.map((line) => line.id) } },
+        { purchaseReceiptLineId: { in: receipts.map((line) => line.id) } },
+      ],
+    },
+    select: {
+      productionReportLineId: true,
+      purchaseReceiptLineId: true,
+      expectedQuantity: true,
+    },
+  });
+  const byLine = new Map<string, Decimal>();
+  for (const row of covered) {
+    const line = row.productionReportLineId ?? row.purchaseReceiptLineId;
+    if (!line) continue;
+    byLine.set(
+      line,
+      (byLine.get(line) ?? dec(0)).plus(row.expectedQuantity.toString()),
+    );
+  }
+  let pending = dec(0);
+  for (const [lineId, quantity] of [
+    ...outputs.map((line) => [line.id, line.quantity.toString()] as const),
+    ...receipts.map((line) => [line.id, line.baseQuantity.toString()] as const),
+  ]) {
+    const left = dec(quantity).minus(byLine.get(lineId) ?? dec(0));
+    if (left.greaterThan(0)) pending = pending.plus(left);
+  }
+  return pending;
 }
 
 type OriginCandidate = InspectionOriginOption & {
@@ -564,6 +640,10 @@ async function originsOf(
       });
     }
   }
+  // M2: «Otro» reaches only what no origin of its own waits for.
+  const { free } = await slotQuantities(client, slot);
+  const loose = free.minus(await attributablePending(client, slot));
+  const otherMax = loose.greaterThan(0) ? loose : dec(0);
   out.push({
     origin: "OTHER",
     lineId: null,
@@ -571,8 +651,8 @@ async function originsOf(
       slot.status === "QUARANTINE"
         ? "Lo que está en cuarentena"
         : "Otro (llegó a inspección por otro camino)",
-    pending: null,
-    pendingLabel: null,
+    pending: otherMax.toString(),
+    pendingLabel: formatStock(otherMax.toString(), unit),
     openId: null,
     openNumber: null,
   });
@@ -780,12 +860,17 @@ export async function startInspection(
           );
           if (!parsed.ok) return stop("invalid", parsed.error, "quantity");
           expected = parsed.quantity;
-          if (expected.greaterThan(free)) {
+          // M2: «Otro» never takes what waits for its own origin.
+          const waiting = await attributablePending(tx, slot);
+          const loose = free.minus(waiting);
+          if (expected.greaterThan(loose)) {
             return stop(
               "invalid",
-              free.greaterThan(0)
-                ? `Aquí solo hay ${formatStock(free.toString(), slot.product.unitCode)} sin retener.`
-                : "Aquí no queda nada sin retener.",
+              loose.greaterThan(0)
+                ? `Aquí solo hay ${formatStock(loose.toString(), slot.product.unitCode)} que no viene de una producción ni de una recepción por verificar.`
+                : waiting.greaterThan(0)
+                  ? "Lo que hay aquí viene de una producción o de una recepción: verifícalo con ese origen."
+                  : "Aquí no queda nada sin retener.",
               "quantity",
             );
           }
@@ -1052,6 +1137,48 @@ export async function reachesQualityInspection(
 
 const QUALITY_OWNERS = { quality_inspection: reachesQualityInspection };
 
+type ModuleStates = { moduleState(key: string): string };
+
+/**
+ * M3: the one rule of who may cancel an open verification, for its screen
+ * and for `cancelInspection` alike. Returns the permission the cancelling
+ * is checked against (its module must be in use), or null.
+ *
+ * - Started with Calidad: with Calidad in use, who decides verifications
+ *   (or who started it); with Calidad taken away and Producción in use,
+ *   who verifies produced output lets it go (it only frees what it holds).
+ * - Started without Calidad: who verifies produced output while Producción
+ *   is in use and, with Calidad in use again, who decides verifications.
+ */
+async function cancelPermissionOf(
+  actor: Actor,
+  row: { byQuality: boolean; createdByUserId: string },
+  entitlements: ModuleStates,
+): Promise<Permission | null> {
+  const quality = entitlements.moduleState("quality") === "active";
+  const production = entitlements.moduleState("production") === "active";
+  const candidates: Permission[] = [];
+  if (row.byQuality) {
+    if (quality) {
+      candidates.push("quality.inspection.decide");
+      if (row.createdByUserId === actor.userId) {
+        candidates.push("quality.inspection.create");
+      }
+    } else if (production) {
+      candidates.push("production.output.verify");
+    }
+  } else {
+    if (production) candidates.push("production.output.verify");
+    if (quality) candidates.push("quality.inspection.decide");
+  }
+  for (const permission of candidates) {
+    if (await isAllowed(actor.organizationId, actor.userId, permission)) {
+      return permission;
+    }
+  }
+  return null;
+}
+
 /** A verification, for its screen; null when it does not exist for the person. */
 export async function getInspection(
   actor: Actor,
@@ -1190,21 +1317,9 @@ export async function getInspection(
       ? entitlements.moduleState("quality") === "active"
       : entitlements.moduleState("quality") !== "active");
   const canDecide = allowedDecide && writable;
-  // Calidad taken away with this verification open: who verifies produced
-  // output lets go of it (ADR 0091).
-  const orphan =
-    row.byQuality &&
-    entitlements.moduleState("quality") !== "active" &&
-    entitlements.moduleState("production") === "active" &&
-    (await isAllowed(
-      actor.organizationId,
-      actor.userId,
-      "production.output.verify",
-    ));
   const canCancel =
     row.state === "OPEN" &&
-    (orphan ||
-      (writable && (row.createdByUserId === actor.userId || allowedDecide)));
+    (await cancelPermissionOf(actor, row, entitlements)) !== null;
 
   const waitingApproval =
     row.state === "OPEN"
@@ -1444,6 +1559,21 @@ export async function decideInspection(
   input: DecideInspectionInput,
 ): Promise<DecideInspectionResult> {
   const mode = await accessFor(actor, "decide");
+  // m4: releasing what is in quarantine is its own permission, at the
+  // start and at the decision alike.
+  const quarantined = await forOrganization(
+    actor.organizationId,
+  ).qualityInspection.findFirst({
+    where: { id: id36(input.inspectionId), stockStatus: "QUARANTINE" },
+    select: { id: true },
+  });
+  if (quarantined) {
+    await assertModulePermission(
+      actor.organizationId,
+      actor.userId,
+      "quality.lot.release",
+    );
+  }
   return decideCore(actor, input, mode, null);
 }
 
@@ -1654,6 +1784,26 @@ async function decideCore(
       select: { id: true },
     });
     if (used) return stop("not_allowed", KEY_REUSED);
+    // m1 (like WMS-83): the same confirmation already asked for an
+    // authorization that was answered, withdrawn or expired.
+    const asked = await tx.approvalRequest.findFirst({
+      where: { idempotencyKey: key },
+      select: {
+        id: true,
+        status: true,
+        sourceId: true,
+        requestedByUserId: true,
+      },
+    });
+    if (asked && asked.id !== authorized?.requestId) {
+      if (asked.sourceId !== row.id || asked.requestedByUserId !== userId) {
+        return stop("not_allowed", KEY_REUSED);
+      }
+      return stop(
+        "not_allowed",
+        "Esa confirmación ya se usó para una solicitud de autorización que ya se respondió, se retiró o venció. Recarga la página para decidir de nuevo.",
+      );
+    }
     if (row.byQuality !== mode.byQuality) {
       return stop(
         "not_allowed",
@@ -1811,6 +1961,43 @@ async function decideCore(
       }
     }
 
+    // m2: the units decided are the ones this verification holds; another
+    // unit of the same place would leave one held unit in inspection
+    // without its hold.
+    if (row.holdId && product.tracking === "SERIAL") {
+      const heldUnits = await tx.stockHoldUnit.findMany({
+        where: { holdId: row.holdId, releasedAt: null },
+        select: { serialUnit: { select: { serial: true } } },
+      });
+      const held = new Set(
+        heldUnits.map((unit) => serialKey(unit.serialUnit.serial)),
+      );
+      const named = [
+        ...outcomes.map((each) => ({
+          field: `outcome.${each.index}.serials`,
+          serials: each.serials,
+        })),
+        ...missing.map((each) => ({
+          field: `missing.${each.index}.serials`,
+          serials: each.serials,
+        })),
+      ];
+      for (const each of named) {
+        const list = parseSerialList(each.serials);
+        if (!list.ok) continue; // the write itself explains it
+        const foreign = list.serials.find(
+          (serial) => !held.has(serialKey(serial)),
+        );
+        if (foreign) {
+          return stop(
+            "invalid",
+            `La serie ${foreign} no es de esta verificación: usa las que se retuvieron al empezarla.`,
+            each.field,
+          );
+        }
+      }
+    }
+
     // Losses (what is missing) wait for their own authorization when the
     // company turns it on (ADR 0091, like `production.scrap`): nothing is
     // written, the verification stays open and held.
@@ -1853,9 +2040,38 @@ async function decideCore(
       };
     }
 
-    // The writes: each destination (in the order of its place, so two
-    // verifications take capacity rows in the same order), then each
-    // cause.
+    // M1 (WMS-22B): every destination is checked in ONE `checkPlacement`,
+    // after the locks and before any balance is written, so the capacity
+    // rows of all the destinations and their ancestors are taken in a
+    // single batch (in id order). Checking them destination by destination
+    // took them in several batches and two verifications with destinations
+    // in different branches deadlocked.
+    if (outcomes.length > 0) {
+      const placed = await checkPlacement(
+        tx,
+        outcomes.map((each) => ({
+          productId: row.productId,
+          quantity: each.quantity,
+          toLocationId: each.toLocationId,
+          fromLocationId: row.locationId,
+          status: each.status,
+        })),
+        { mode: "ask", accepted: input.acceptCapacity === true },
+      );
+      if (!placed.ok) {
+        if (placed.reason === "over_capacity" && !placed.blocked) {
+          throw new CapacityNotice(placed.message);
+        }
+        const at = outcomes[placed.index];
+        return stop(
+          "not_allowed",
+          placed.message,
+          `outcome.${at?.index ?? 0}.toLocationId`,
+        );
+      }
+    }
+
+    // The writes: each destination, then each cause.
     const holdSource = { sourceType: HOLD_SOURCE, sourceId: row.id };
     const results: {
       kind: "OUTCOME" | "MISSING";
@@ -1867,14 +2083,7 @@ async function decideCore(
       movementId: string;
     }[] = [];
     const arrivals: PutawayArrival[] = [];
-    const ordered = [...outcomes].sort((a, b) =>
-      a.toLocationId < b.toLocationId
-        ? -1
-        : a.toLocationId > b.toLocationId
-          ? 1
-          : a.index - b.index,
-    );
-    for (const each of ordered) {
+    for (const each of outcomes) {
       const reason = each.reason ?? "Se verificó y cumple.";
       let movementId: string;
       try {
@@ -1891,6 +2100,7 @@ async function decideCore(
             idempotencyKey: newId(),
             acceptCapacity: input.acceptCapacity === true,
             inspectionId: row.id,
+            placementChecked: true,
           });
           movementId = done.movementId!;
         } else {
@@ -1910,7 +2120,11 @@ async function decideCore(
               idempotencyKey: newId(),
               reference: numberText,
             },
-            { acceptCapacity: input.acceptCapacity === true, holdSource },
+            {
+              acceptCapacity: input.acceptCapacity === true,
+              holdSource,
+              placementChecked: true,
+            },
           );
           movementId = done.movementId;
           if (each.status === "AVAILABLE") {
@@ -2220,12 +2434,12 @@ export async function cancelInspection(
   ) {
     return { ok: false, reason: "not_found", formError: NOT_FOUND };
   }
-  const permission =
-    known.byQuality && mode.byQuality
-      ? "quality.inspection.decide"
-      : "production.output.verify";
-  const decides = await isAllowed(organizationId, userId, permission);
-  if (known.createdByUserId !== userId && !decides) {
+  const permission = await cancelPermissionOf(
+    actor,
+    known,
+    await getEntitlements(organizationId),
+  );
+  if (!permission) {
     return {
       ok: false,
       reason: "not_allowed",
@@ -2234,15 +2448,7 @@ export async function cancelInspection(
     };
   }
   // A write: the module must be in use (not read-only).
-  await assertModulePermission(
-    organizationId,
-    userId,
-    decides
-      ? permission
-      : mode.byQuality
-        ? "quality.inspection.create"
-        : "production.output.verify",
-  );
+  await assertModulePermission(organizationId, userId, permission);
   try {
     return await client.$transaction(async (tx) => {
       await lockRows(tx, "product", [known.productId]);
@@ -2650,16 +2856,35 @@ export async function applyApprovedLoss(
       "Quien pidió autorizar ya no trabaja en la empresa: que la decida alguien que sí.",
     );
   }
+  const states = await readModuleStates(client, actor.organizationId);
+  // m5: who decides depends on whether Calidad is in use; when that
+  // changed since the request, it is not the same decision any more.
+  const qualityInUse = states.modules.has("quality");
+  if (qualityInUse !== byQuality) {
+    throw new ApprovalExpired(
+      byQuality
+        ? "Calidad ya no está en uso: esta verificación ya no la decide Calidad. Que la cancele quien verifica lo producido."
+        : "Calidad se activó después de pedir la autorización: esta verificación se empezó sin Calidad. Cancélala y vuelve a empezarla con Calidad.",
+    );
+  }
   const subject = {
     isOwner: member.organization.ownerUserId === actor.userId,
     roles: member.roles.map((each) => each.role),
-    modules: companyModules(
-      await readModuleStates(client, actor.organizationId),
-    ),
+    modules: companyModules(states),
   };
-  if (!permissionsOf(subject).has(permission)) {
+  const granted = permissionsOf(subject);
+  if (!granted.has(permission)) {
     throw new ApprovalExpired(
       "Quien pidió autorizar ya no puede decidir verificaciones: que la decida alguien que sí.",
+    );
+  }
+  const inQuarantine = await client.qualityInspection.findFirst({
+    where: { id: id36(payload.input.inspectionId), stockStatus: "QUARANTINE" },
+    select: { id: true },
+  });
+  if (inQuarantine && !granted.has("quality.lot.release")) {
+    throw new ApprovalExpired(
+      "Quien pidió autorizar ya no puede liberar lo que está en cuarentena: que la decida alguien que sí.",
     );
   }
   let result: DecideInspectionResult;

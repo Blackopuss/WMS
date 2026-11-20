@@ -31,6 +31,7 @@ import {
   createLocation,
   editLocation,
   reactivateFacility,
+  setLocationLimits,
   switchFacility,
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
@@ -1156,5 +1157,93 @@ describe("locks in one order (WMS-76)", () => {
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
     void cancelInspection;
+  }, 240_000);
+
+  it("two verifications with destinations in different branches with capacity never deadlock (WMS-30B, M1)", async () => {
+    // The reviewer's case: the capacity of the destinations and their
+    // ancestors is taken in one batch per transaction (one
+    // `checkPlacement` with every arrival); destination by destination,
+    // A took Z1 then Z2 and B took Z2 then Z1.
+    const { owner } = await production.workshop([
+      "inventory",
+      "production",
+      "quality",
+    ]);
+    const z1 = await production.place(owner, "Z1");
+    const z2 = await production.place(owner, "Z2");
+    for (const zone of [z2, z1]) {
+      const limited = await setLocationLimits(owner, zone, {
+        maxUnits: "100000",
+      });
+      if (!limited.ok) throw new Error(JSON.stringify(limited));
+    }
+    const s1 = await production.place(owner, "S1", { parentId: z1, level: 2 });
+    const s2 = await production.place(owner, "S2", { parentId: z2, level: 2 });
+    const s4 = await production.place(owner, "S4", { parentId: z2, level: 2 });
+    const s3 = await production.place(owner, "S3", { parentId: z1, level: 2 });
+    const rounds = 15;
+    const lots: { productId: string; dock: string }[] = [];
+    for (const name of ["Uno", "Dos"]) {
+      const productId = await production.product(owner, name);
+      const dock = await production.place(owner, `Muelle ${name}`, {
+        type: "RECEIVING",
+      });
+      await production.enter(owner, productId, dock, String(rounds * 4));
+      const moved = await changeStockStatus(owner, {
+        productId,
+        locationId: dock,
+        from: "AVAILABLE",
+        to: "INSPECTION",
+        quantity: String(rounds * 4),
+        reason: "Revisar",
+        idempotencyKey: newId(),
+      });
+      if (!moved.ok) throw new Error(JSON.stringify(moved));
+      lots.push({ productId, dock });
+    }
+    const errors: string[] = [];
+    for (let round = 0; round < rounds; round++) {
+      const started = [];
+      for (const lot of lots) {
+        const one = await startInspection(owner, {
+          productId: lot.productId,
+          locationId: lot.dock,
+          origin: "OTHER",
+          quantity: "4",
+          idempotencyKey: newId(),
+        });
+        if (!one.ok) throw new Error(JSON.stringify(one));
+        started.push(one.inspectionId);
+      }
+      const decide = (inspectionId: string, good: string, bad: string) =>
+        decideInspection(owner, {
+          inspectionId,
+          idempotencyKey: newId(),
+          outcomes: [
+            { status: "AVAILABLE", quantity: "3", toLocationId: good },
+            {
+              status: "REJECTED",
+              quantity: "1",
+              reason: "No cumple",
+              toLocationId: bad,
+            },
+          ],
+        });
+      const results = await Promise.allSettled([
+        decide(started[0]!, s1, s2),
+        decide(started[1]!, s3, s4),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        } else if (!result.value.ok) {
+          errors.push(`round ${round}: ${JSON.stringify(result.value)}`);
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
   }, 240_000);
 });

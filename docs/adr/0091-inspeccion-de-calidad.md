@@ -71,7 +71,14 @@ aprobado del área de producción, no marca «Se guardó» ni cierra la orden
      devolución (`heldForReturns`). Mientras haya una verificación abierta
      de esa línea, `decideCustomerReturn` la rechaza («Esta devolución se
      está verificando: IN-0004»), así solo la verificación decide.
-   - Otro: lo que la persona escribe, como mucho lo libre de la casilla.
+   - Otro: lo que la persona escribe, como mucho lo libre de la casilla
+     **menos lo que espera su propio origen** en esa casilla: salidas de
+     reportes no revertidos y líneas de recepción en inspección, cada una
+     menos lo que ya cubren sus verificaciones no canceladas (lo devuelto
+     ya está retenido por la devolución). Se calcula bajo los candados de
+     iniciar. Así «Otro» no se salta las etapas de un lote producido (P10)
+     ni deja una salida o una línea de recepción «sin verificar» para
+     siempre; la pantalla muestra cuánto alcanza «Otro».
    Una salida, una línea de recepción o una línea de devolución tiene **una
    sola verificación abierta a la vez** (`openKey` único).
    **Lo producido espera sus etapas** (P10, P10b): el lote (el reporte) es
@@ -256,8 +263,10 @@ tareas → capacidad → progreso → archivos.
 - **Decidir:** el producto → la casilla y todos los destinos (de una vez)
   → (devolución: su fila) → la verificación (`lockRows(tx,
   "qualityInspection", …)`, releída bajo el candado: si ya no está `OPEN`,
-  responde) → capacidad (dentro de cada `writeStatusChange`, destinos en
-  orden de id) → tareas de acomodo → progreso del lote
+  responde) → capacidad (**una sola** `checkPlacement` con todas las
+  llegadas, después de los candados y antes de escribir saldos; los
+  `writeStatusChange` de cada destino reciben `placementChecked` y no
+  vuelven a tomarla) → tareas de acomodo → progreso del lote
   (`assertStagesDone`, `completeOperationStage`) → archivos de las fotos.
 - **Cancelar:** el producto → la verificación.
 - **Pérdidas autorizadas:** la solicitud (la toma `decideApproval` primero,
@@ -302,8 +311,13 @@ tareas → capacidad → progreso → archivos.
 | Ver la bandeja | `inventory.stock.read` (ya existe) | igual |
 | Ver una verificación | `quality.inspection.read` | `production.order.read` |
 | Iniciar | `quality.inspection.create`; desde cuarentena, además `quality.lot.release` | `production.output.verify` |
-| Decidir | `quality.inspection.decide` | `production.output.verify` |
-| Cancelar | quien la inició o `quality.inspection.decide` | quien la inició o `production.output.verify` |
+| Decidir | `quality.inspection.decide`; desde cuarentena, además `quality.lot.release` (también al autorizar sus pérdidas) | `production.output.verify` |
+| Cancelar | quien la inició o `quality.inspection.decide` | `production.output.verify` (o `quality.inspection.decide` si Calidad volvió) |
+
+Quién puede cancelar lo decide **una sola función** (`cancelPermissionOf`)
+que usan la ficha (`canCancel`) y `cancelInspection`, así la pantalla nunca
+ofrece «Cancelar» a quien el servicio rechazaría (con Calidad quitada, el
+titular y Administración cancelan con `production.output.verify`).
 
 - **Alcance (ADR 0038):** una verificación existe solo para quien alcanza su
   ubicación; un destino fuera del alcance se rechaza sin nombrarlo; la
@@ -318,6 +332,14 @@ tareas → capacidad → progreso → archivos.
 - **Quitar Calidad:** las verificaciones abiertas quedan abiertas y lo
   retenido sigue retenido; `qualityOpenWork` lo avisa. Las cancela quien
   tiene `production.output.verify` (arriba) o Calidad al volver.
+- **Series:** una decisión solo nombra unidades que la verificación
+  retuvo (`stock_hold_unit`); otra unidad de la misma casilla se rechaza.
+- **Pérdidas autorizadas:** vencen si quien pidió perdió el permiso, la
+  membresía o el alcance (NEG-20), si la verificación es de cuarentena y
+  ya no tiene `quality.lot.release`, o si Calidad entró o salió de uso
+  desde la solicitud (la decisión ya no sería la misma). Reenviar la misma
+  confirmación de una solicitud ya respondida, retirada o vencida responde
+  «esa confirmación ya se usó» (como WMS-83).
 - **Almacén archivado (ADR 0077):** iniciar bloquea la ubicación de la
   casilla (de ese almacén) antes de crear la verificación y la rechaza si
   está archivada; `archiveFacility` cuenta las verificaciones abiertas.
@@ -373,9 +395,11 @@ verificación (el formulario pide cada serie por renglón).
   lo retenido por una verificación abierta sigue retenido (`heldStock` ya
   lee `stock_hold`) y no hay pantalla para decidirlo: hay que cancelarla al
   volver.
-- Capacidad: cada destino toma su candado de capacidad dentro de su
-  `writeStatusChange`; los destinos van en orden de id para que dos
-  verificaciones no se esperen en círculo.
+- Capacidad: la regla de WMS-22B (una sola `checkPlacement` por
+  transacción, con todas sus llegadas). Ordenar los destinos por id no
+  bastaba: dos verificaciones con destinos en ramas distintas tomaban las
+  filas de capacidad de los ancestros en varias tandas y se interbloqueaban
+  (lo encontró el revisor; la carrera está en `lock-order.int.test.ts`).
 - `customer-returns.ts` (Inventario) lee la tabla `quality_inspection`
   (sin importar el módulo, como `hierarchy.ts` lee las órdenes de
   producción) para no decidir una línea que Calidad está verificando.

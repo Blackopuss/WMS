@@ -1406,6 +1406,8 @@ export async function applyReturnDecision(
     idempotencyKey: string;
     acceptCapacity: boolean;
     inspectionId: string | null;
+    /** WMS-30B: the caller checked every arrival at once. */
+    placementChecked?: boolean;
   },
 ): Promise<
   Extract<CustomerReturnResult, { ok: true }> & { movementId?: string }
@@ -1575,6 +1577,7 @@ export async function applyReturnDecision(
     {
       acceptCapacity: args.acceptCapacity,
       returnLineId: line.id,
+      placementChecked: args.placementChecked === true,
     },
   );
   await tx.customerReturnDecision.create({
