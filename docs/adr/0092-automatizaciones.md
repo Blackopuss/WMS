@@ -347,7 +347,11 @@ sentencias del adaptador de su propio proceso.
   revisar (porque los de antes agotaron las 50 ejecuciones o el tope por
   hora) va primero en la siguiente, y la ficha lo dice: «No se alcanzó a
   revisar en <almacén>: se llegó antes al tope de esta regla. La siguiente
-  revisión empieza por ahí.» Lo que ya estaba abierto por otra ronda a la
+  revisión empieza por ahí.» Entre varios no alcanzados va primero el que
+  lleva más tiempo esperando: su marca (`automation_scan.updatedAt`) no se
+  vuelve a escribir mientras espera, y se ordenan por ella. Así, con N
+  almacenes, cada uno se revisa al menos una vez cada N rondas aunque los
+  demás pasen el tope cada hora. Lo que ya estaba abierto por otra ronda a la
   vez no gasta del cupo de 50.
 - Si llega al final, la siguiente ronda empieza otra vez desde el principio.
   Si no llega (se acabó el presupuesto de páginas o el de 50 ejecuciones, o
@@ -501,7 +505,9 @@ curso**, incluso ya recogida (un traslado manual no aparta nada, así que
 `freeToTake` la contaba libre y la entrega fallaba). Ahora el núcleo, bajo
 sus candados (producto → ubicación), resta lo que llevan las tareas
 `TRANSFER` abiertas (`PENDING`, `ASSIGNED`, `ACCEPTED`, `PICKED_UP`,
-`BLOCKED`) con ese origen y ese lote o sin lote; las que mueven una tarima
+`BLOCKED`) con ese origen y ese lote o sin lote (una tarea sin lote de
+un producto por lote no existe hoy, `createTask` la rechaza; restarla queda
+como defensa); las que mueven una tarima
 entera ya las resta `freeToTake` (lo que está dentro de una tarima de
 almacenamiento no es libre). `lotsWithFreeStock` resta lo mismo con un
 `groupBy` más por página, así escaneo y acción siguen siendo la misma regla.
@@ -528,3 +534,10 @@ bloquean 6 y la tarea se entrega; falla a la mitad con tres ubicaciones y
 falla después de bloquear todo; dos almacenes con 35 sujetos en el primero)
 y en `lock-order.int.test.ts` la carrera de bloquear contra crear, recoger y
 entregar una tarea del mismo lote.
+
+**Comprobación final del revisor («unir» con un menor, corregido):** con
+tres almacenes, si los dos primeros pasaban el tope cada hora, el tercero no
+se revisaba nunca (los no alcanzados se ordenaban por id y el que perdía su
+turno le ganaba). Ahora va primero el que lleva más tiempo esperando; prueba
+«final check» en `automations.int.test.ts` (el tercero se atiende a más
+tardar en la tercera ronda).

@@ -1120,6 +1120,7 @@ export async function runAutomationRound(
             nextPage: true,
             unfinished: true,
             reviewed: true,
+            updatedAt: true,
           },
         })
       ).map((row) => [row.placeKey, row]),
@@ -1130,8 +1131,13 @@ export async function runAutomationRound(
       const cursor = cursors.get(place ?? "");
       return cursor?.unfinished === true && cursor.reviewed === 0;
     };
+    // Among them, the one waiting longest goes first (its mark is not
+    // written again while it waits), so with N warehouses each one is
+    // reviewed at least once every N rounds.
+    const since = (place: string | null) =>
+      cursors.get(place ?? "")?.updatedAt.getTime() ?? 0;
     const ordered = [
-      ...places.filter(unreached),
+      ...places.filter(unreached).sort((a, b) => since(a) - since(b)),
       ...places.filter((place) => !unreached(place)),
     ];
     let left = AUTOMATION_SCAN_LIMIT;
@@ -1147,7 +1153,9 @@ export async function runAutomationRound(
       const cursor = cursors.get(place ?? "");
       if (left <= 0) {
         // Not reached this round: said on the page of the rule, and the
-        // next round starts with it, where it was left.
+        // next round starts with it, where it was left. One already
+        // waiting keeps its mark (and its turn).
+        if (unreached(place)) continue;
         await saveCursor(organizationId, rule.id, place ?? "", cursor ?? null, {
           nextPage: cursor?.nextPage ?? 1,
           unfinished: true,

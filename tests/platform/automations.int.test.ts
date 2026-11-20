@@ -1781,6 +1781,86 @@ describe("third review: what blocking leaves alone and what it says", () => {
   });
 });
 
+describe("final check: every warehouse gets its turn", () => {
+  it("reviews the third of three warehouses within three rounds when the first two take the cap", async () => {
+    const actor = await company();
+    const productId = await product(actor);
+    const shelves: [string, string][] = [
+      [await place(actor, "Origen"), await place(actor, "Destino")],
+    ];
+    for (const name of ["Segundo", "Tercero"]) {
+      const made = await createFacility(actor, {
+        name,
+        code: `${name.slice(0, 1)}${counter}`,
+      });
+      if (!made.ok) throw new Error(JSON.stringify(made));
+      expect((await switchFacility(actor, made.facilityId)).ok).toBe(true);
+      shelves.push([
+        await place(actor, `Origen ${name}`),
+        await place(actor, `Destino ${name}`),
+      ]);
+    }
+    let number = 0;
+    const old = Date.now() - 10 * 3_600_000;
+    const tasks = async (count: number, [from, to]: [string, string]) => {
+      const rows = Array.from({ length: count }, () => ({
+        id: newId(),
+        organizationId: actor.organizationId,
+        number: ++number,
+        kind: "TRANSFER" as const,
+        productId,
+        fromLocationId: from,
+        toLocationId: to,
+        quantity: "1",
+        unitCode: "pieza",
+        createdByUserId: actor.userId,
+        createdAt: new Date(old + number * 1000),
+      }));
+      await db.warehouseTask.createMany({ data: rows });
+      return rows.map((row) => row.id);
+    };
+    const third = await tasks(3, shelves[2]!);
+    const id = await rule(actor, {
+      triggerKey: "inventory.task.unclaimed",
+      conditions: { hours: "2" },
+      actions: [{ key: "platform.notify", options: { roles: ["warehouse"] } }],
+    });
+    const opened = () =>
+      db.automationRun.count({
+        where: {
+          ruleId: id,
+          subjectKey: { in: third.map((each) => `state:task:${each}`) },
+        },
+      });
+    // The first two get 35 new tasks before every round (more than the 30
+    // of the hour); the third has 3 and must not wait for ever.
+    let reachedAt = 0;
+    for (let round = 1; round <= 3; round++) {
+      await tasks(35, shelves[0]!);
+      await tasks(35, shelves[1]!);
+      await runAutomationRound(actor.organizationId, automationCatalog, {
+        now: new Date(Date.now() + round * 2 * 3_600_000),
+      });
+      if ((await opened()) === 3) {
+        reachedAt = round;
+        break;
+      }
+    }
+    expect(reachedAt).toBeGreaterThan(0);
+    expect(reachedAt).toBeLessThanOrEqual(3);
+    await work();
+    await db.warehouseTask.updateMany({
+      where: { organizationId: actor.organizationId },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelReason: "Prueba",
+        closedByUserId: actor.userId,
+      },
+    });
+  }, 120_000);
+});
+
 describe("the modules and the plan", () => {
   it("turns off the rules whose module left, without deleting them", async () => {
     const actor = await company();
