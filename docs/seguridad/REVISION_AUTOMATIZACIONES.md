@@ -75,3 +75,12 @@ nombre de la persona de la regla, recortado a su permiso y alcance, y con
 las mismas reglas de `writeStatusChange`. Un plan que vence a media
 ejecución deja la ejecución «No se hizo» sin bloquear nada ni apagar la
 regla. Detalle en el ADR 0092 («segunda vuelta»).
+
+## Revisión independiente, tercera vuelta (2026-11-20)
+
+«No unir» por un mayor de integridad de inventario: «Bloquear» podía
+bloquear la mercancía de una tarea de traslado en curso (que no aparta
+nada), dejando la tarea sin poder entregarse. Corregido en el núcleo bajo
+sus candados y en la lectura del escaneo, con pruebas y carrera en
+`lock-order.int.test.ts`. Queda anotado en el ADR 0092 el mismo límite en
+«Cambiar estado» a mano, que ya existía y es decisión del fundador.

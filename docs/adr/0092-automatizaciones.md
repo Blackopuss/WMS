@@ -176,7 +176,10 @@ columna «Con un estado» se explica en «Una vez y mientras dure».
   candados del cambio de estado (producto → ubicación), revisa el alcance,
   calcula **ahí mismo** lo libre con `freeToTake` (nunca lo apartado para un
   pedido, una tarea o una orden de producción, ni lo que está en una tarima
-  de almacenamiento) y pasa **todo** eso de `AVAILABLE` a `BLOCKED` con
+  de almacenamiento) **menos lo que llevan las tareas de traslado abiertas**
+  desde esa ubicación y de ese lote (o sin lote), que no apartan nada propio
+  (tercera vuelta; las lee sin bloquearlas: crear, recoger y entregar una
+  tarea toman antes el mismo producto) y pasa **todo** eso de `AVAILABLE` a `BLOCKED` con
   `writeStatusChange` (el mismo núcleo de «Cambiar estado»), con motivo
   «Automatización: <nombre de la regla>», a nombre de la persona de la regla
   con `inventory.status.change` y clave
@@ -225,8 +228,9 @@ columna «Con un estado» se explica en «Una vez y mientras dure».
 - **El dato del escaneo es la misma regla que usa la acción:** «tiene algo
   libre» es `freeToTake` por ubicación (lo libre del producto, de la
   ubicación y del lote ahí, sin lo apartado ni lo que está en tarimas de
-  almacenamiento), calculado para la página entera con seis consultas
-  agrupadas (`lotsWithFreeStock`), nunca una por lote. Es solo una lectura:
+  almacenamiento) menos lo que llevan las tareas de traslado abiertas,
+  calculado para la página entera con siete consultas agrupadas
+  (`lotsWithFreeStock`), nunca una por lote. Es solo una lectura:
   el núcleo vuelve a decidir bajo sus candados.
 - **Sin ruido:** si entre la lectura y la ejecución alguien tomó lo libre,
   la ejecución de repetición que no bloqueó nada **se borra al terminar** y
@@ -339,6 +343,12 @@ sentencias del adaptador de su propio proceso.
   **empezando donde se quedó la anterior** (`automation_scan.nextPage`), y
   abre hasta 50 ejecuciones por regla. Lo ya atendido se reconoce con una
   consulta por página (sujeto y repeticiones), sin abrir nada.
+- Con varios almacenes, un almacén que la ronda anterior **no alcanzó** a
+  revisar (porque los de antes agotaron las 50 ejecuciones o el tope por
+  hora) va primero en la siguiente, y la ficha lo dice: «No se alcanzó a
+  revisar en <almacén>: se llegó antes al tope de esta regla. La siguiente
+  revisión empieza por ahí.» Lo que ya estaba abierto por otra ronda a la
+  vez no gasta del cupo de 50.
 - Si llega al final, la siguiente ronda empieza otra vez desde el principio.
   Si no llega (se acabó el presupuesto de páginas o el de 50 ejecuciones, o
   el tope por hora), guarda la página por la que sigue (la misma página si
@@ -483,3 +493,38 @@ ubicación. (3) Documentación al día.
 muchas reglas (prueba que cuenta sentencias) y el plan que vence a media
 ejecución (la ejecución termina «No se hizo: el plan está vencido…», sin
 apagar la regla, sin contar falla y sin bloquear nada).
+
+## Revisión independiente, tercera vuelta («no unir», 2026-11-20) y cómo quedó
+
+**Mayor. «Bloquear» bloqueaba la mercancía de una tarea de traslado en
+curso**, incluso ya recogida (un traslado manual no aparta nada, así que
+`freeToTake` la contaba libre y la entrega fallaba). Ahora el núcleo, bajo
+sus candados (producto → ubicación), resta lo que llevan las tareas
+`TRANSFER` abiertas (`PENDING`, `ASSIGNED`, `ACCEPTED`, `PICKED_UP`,
+`BLOCKED`) con ese origen y ese lote o sin lote; las que mueven una tarima
+entera ya las resta `freeToTake` (lo que está dentro de una tarima de
+almacenamiento no es libre). `lotsWithFreeStock` resta lo mismo con un
+`groupBy` más por página, así escaneo y acción siguen siendo la misma regla.
+`freeToTake` y «Cambiar estado» no cambiaron.
+
+**Límite conocido de «Cambiar estado» (para el fundador):** una persona con
+`inventory.status.change` puede pasar a bloqueado, cuarentena u otro estado
+la mercancía que lleva una tarea de traslado en curso, y la entrega de la
+tarea falla después («No hay existencias de … »). Pasaba antes de este paso
+y no lo cambia; cerrarlo (que el traslado aparte lo que lleva, o que
+«Cambiar estado» reste las tareas) sería un paso propio.
+
+**Menores.** (1) Si el trabajo falla después de confirmar un bloqueo, la
+acción lee al empezar los movimientos cuya clave es de esa ejecución y esa
+acción (`auto-<ejecución>-<n>-…`) y los dice en la línea; una ejecución con
+algún movimiento suyo termina «hecha» y nunca se borra. (2) La ronda ya no
+deja a un almacén sin revisar detrás de otro que agota el tope (ver
+«Presupuesto del escaneo») y un sujeto que ya estaba abierto por otra ronda
+no gasta del cupo.
+
+Pruebas: «third review» en `automations.int.test.ts` (traslado recogido:
+nada se bloquea y la tarea se entrega; traslado parcial de 4 sobre 10: se
+bloquean 6 y la tarea se entrega; falla a la mitad con tres ubicaciones y
+falla después de bloquear todo; dos almacenes con 35 sujetos en el primero)
+y en `lock-order.int.test.ts` la carrera de bloquear contra crear, recoger y
+entregar una tarea del mismo lote.

@@ -3,7 +3,11 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { newId } from "@/lib";
 import {
+  acceptTask,
   cancelOutboundOrder,
+  createTask,
+  deliverTask,
+  pickUpTask,
   changeStockStatus,
   createOutboundOrder,
   openCount,
@@ -43,8 +47,10 @@ import {
   createFacility,
   createLocation,
   getDefaultLocation,
+  switchFacility,
 } from "@/platform/locations";
 import { createOrganization } from "@/platform/tenancy";
+import { blockFreeOfLotAt } from "@/modules/inventory/automation-block";
 import { db, forOrganization, runDelegated } from "@/server";
 
 /**
@@ -1357,21 +1363,29 @@ describe("second review: the round never gets stuck", () => {
         where: { ruleId: id, summary: { not: "Atendido antes" } },
       });
     // One page of 25 per round: the 5 new ones are on the third page.
-    await runAutomationRound(actor.organizationId, automationCatalog, 1);
+    await runAutomationRound(actor.organizationId, automationCatalog, {
+      pagesPerRound: 1,
+    });
     let detail = await getAutomationRule(actor, id, automationCatalog);
     expect(detail!.unfinished).toHaveLength(1);
     expect(detail!.unfinished[0]).toMatch(
       /^No se terminó de revisar en .+: hay más de 25 por revisar\./,
     );
     expect(await opened()).toBe(0);
-    await runAutomationRound(actor.organizationId, automationCatalog, 1);
+    await runAutomationRound(actor.organizationId, automationCatalog, {
+      pagesPerRound: 1,
+    });
     expect(await opened()).toBe(0);
-    await runAutomationRound(actor.organizationId, automationCatalog, 1);
+    await runAutomationRound(actor.organizationId, automationCatalog, {
+      pagesPerRound: 1,
+    });
     expect(await opened()).toBe(5);
     detail = await getAutomationRule(actor, id, automationCatalog);
     expect(detail!.unfinished).toEqual([]);
     // From the beginning again, with nothing new: nothing opens.
-    await runAutomationRound(actor.organizationId, automationCatalog, 1);
+    await runAutomationRound(actor.organizationId, automationCatalog, {
+      pagesPerRound: 1,
+    });
     expect(await opened()).toBe(5);
     await work();
   }, 120_000);
@@ -1549,6 +1563,221 @@ describe("second review: the round never gets stuck", () => {
     // Fixed cost of a round plus at most 30 statements per rule.
     expect(one).toBeLessThanOrEqual(45);
     expect(twelve).toBeLessThanOrEqual(one + 11 * 30);
+  });
+});
+
+describe("third review: what blocking leaves alone and what it says", () => {
+  async function expiring(quantity: string, places = ["Estante"]) {
+    const actor = await company();
+    const productId = await product(actor, true);
+    const code = `R${counter}`;
+    const shelves: string[] = [];
+    for (const name of places) {
+      const shelf = await place(actor, name);
+      shelves.push(shelf);
+      await enter(actor, productId, shelf, quantity, {
+        code,
+        expiresOn: dayFromToday(4),
+      });
+    }
+    const lotId = (
+      await db.lot.findFirstOrThrow({ where: { productId, code } })
+    ).id;
+    return { actor, productId, lotId, shelves };
+  }
+  const amount = async (locationId: string, status: string) =>
+    (
+      await db.stockBalance.findMany({
+        where: { locationId, status: status as "AVAILABLE" },
+      })
+    ).reduce((sum, row) => sum + Number(row.quantity), 0);
+
+  it("never blocks what a transfer task carries, also once picked up", async () => {
+    const { actor, productId, lotId, shelves } = await expiring("10");
+    const other = await place(actor, "Otro");
+    const made = await createTask(actor, {
+      productId,
+      lotId,
+      fromLocationId: shelves[0]!,
+      toLocationId: other,
+      quantity: "10",
+      priority: "NORMAL",
+      acceptCapacity: true,
+    } as never);
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect((await acceptTask(actor, made.taskId)).ok).toBe(true);
+    expect((await pickUpTask(actor, made.taskId)).ok).toBe(true);
+    const id = await rule(actor, {
+      triggerKey: "inventory.lot.expiring",
+      actions: [{ key: "inventory.stock.block" }],
+    });
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await work();
+    expect(await amount(shelves[0]!, "BLOCKED")).toBe(0);
+    // The scan reads the same rule: not even a run opens.
+    expect(await runsOf(actor.organizationId, id)).toHaveLength(0);
+    expect(
+      await deliverTask(actor, made.taskId, { acceptCapacity: true } as never),
+    ).toMatchObject({ ok: true });
+    expect(await amount(other, "AVAILABLE")).toBe(10);
+  });
+
+  it("blocks only what a partial transfer leaves", async () => {
+    const { actor, productId, lotId, shelves } = await expiring("10");
+    const other = await place(actor, "Otro");
+    const made = await createTask(actor, {
+      productId,
+      lotId,
+      fromLocationId: shelves[0]!,
+      toLocationId: other,
+      quantity: "4",
+      priority: "NORMAL",
+      acceptCapacity: true,
+    } as never);
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect((await acceptTask(actor, made.taskId)).ok).toBe(true);
+    await rule(actor, {
+      triggerKey: "inventory.lot.expiring",
+      actions: [{ key: "inventory.stock.block" }],
+    });
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await work();
+    expect(await amount(shelves[0]!, "BLOCKED")).toBe(6);
+    expect(await amount(shelves[0]!, "AVAILABLE")).toBe(4);
+    expect((await pickUpTask(actor, made.taskId)).ok).toBe(true);
+    expect(
+      await deliverTask(actor, made.taskId, { acceptCapacity: true } as never),
+    ).toMatchObject({ ok: true });
+    expect(await amount(other, "AVAILABLE")).toBe(4);
+  });
+
+  it("says what an earlier try blocked when the job failed halfway (M1)", async () => {
+    const { actor, lotId, productId, shelves } = await expiring("5", [
+      "A",
+      "B",
+      "C",
+    ]);
+    const id = await rule(actor, {
+      triggerKey: "inventory.lot.expiring",
+      actions: [
+        { key: "platform.notify", options: { roles: ["warehouse"] } },
+        { key: "inventory.stock.block" },
+      ],
+    });
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    const [run] = await runsOf(actor.organizationId, id);
+    // An earlier try blocked in A and B before the worker fell.
+    for (const shelf of shelves.slice(0, 2)) {
+      await blockFreeOfLotAt(actor, {
+        productId,
+        locationId: shelf,
+        lotId,
+        reason: "Automatización: prueba",
+        idempotencyKey: `auto-${run!.id}-1-${shelf.replace(/-/g, "").slice(-12)}`,
+      });
+    }
+    await work();
+    const [after] = await runsOf(actor.organizationId, id);
+    expect(after!.status).toBe("DONE");
+    const line = JSON.stringify(after!.results);
+    for (const name of ["en A", "en B", "en C"]) expect(line).toContain(name);
+    for (const shelf of shelves) expect(await amount(shelf, "BLOCKED")).toBe(5);
+  });
+
+  it("keeps a run that blocked everything before the worker fell (M1)", async () => {
+    const { actor, lotId, productId, shelves } = await expiring("10");
+    const id = await rule(actor, {
+      triggerKey: "inventory.lot.expiring",
+      actions: [{ key: "inventory.stock.block" }],
+    });
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    const [run] = await runsOf(actor.organizationId, id);
+    await blockFreeOfLotAt(actor, {
+      productId,
+      locationId: shelves[0]!,
+      lotId,
+      reason: "Automatización: prueba",
+      idempotencyKey: `auto-${run!.id}-0-${shelves[0]!.replace(/-/g, "").slice(-12)}`,
+    });
+    await work();
+    const runs = await runsOf(actor.organizationId, id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe("DONE");
+    expect(JSON.stringify(runs[0]!.results)).toContain("Se bloqueó 10");
+  });
+
+  it("reaches the second warehouse when the first takes the hourly cap (M2)", async () => {
+    const actor = await company();
+    const productId = await product(actor);
+    const from = await place(actor, "Origen");
+    const to = await place(actor, "Destino");
+    const second = await createFacility(actor, {
+      name: "Segundo",
+      code: `G${counter}`,
+    });
+    if (!second.ok) throw new Error(JSON.stringify(second));
+    expect((await switchFacility(actor, second.facilityId)).ok).toBe(true);
+    const farFrom = await place(actor, "Origen 2");
+    const farTo = await place(actor, "Destino 2");
+    const old = Date.now() - 10 * 3_600_000;
+    const task = (n: number, a: string, b: string) => ({
+      id: newId(),
+      organizationId: actor.organizationId,
+      number: n,
+      kind: "TRANSFER" as const,
+      productId,
+      fromLocationId: a,
+      toLocationId: b,
+      quantity: "1",
+      unitCode: "pieza",
+      createdByUserId: actor.userId,
+      createdAt: new Date(old + n * 1000),
+    });
+    const main = Array.from({ length: 35 }, (_, n) => task(n + 1, from, to));
+    const far = Array.from({ length: 3 }, (_, n) =>
+      task(100 + n, farFrom, farTo),
+    );
+    await db.warehouseTask.createMany({ data: [...main, ...far] });
+    const id = await rule(actor, {
+      triggerKey: "inventory.task.unclaimed",
+      conditions: { hours: "2" },
+      actions: [{ key: "platform.notify", options: { roles: ["warehouse"] } }],
+    });
+    const opened = (ids: string[]) =>
+      db.automationRun.count({
+        where: {
+          ruleId: id,
+          subjectKey: { in: ids.map((each) => `state:task:${each}`) },
+        },
+      });
+    // The main warehouse goes first by id and takes the 30 of the hour.
+    const mainId = (
+      await db.facility.findFirstOrThrow({
+        where: { organizationId: actor.organizationId, isDefault: true },
+      })
+    ).id;
+    expect(mainId < second.facilityId).toBe(true);
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    expect(await opened(far.map((each) => each.id))).toBe(0);
+    const detail = await getAutomationRule(actor, id, automationCatalog);
+    expect(detail!.unfinished.join(" ")).toContain(
+      "No se alcanzó a revisar en Segundo",
+    );
+    // The next round (an hour later) starts with the one left out.
+    await runAutomationRound(actor.organizationId, automationCatalog, {
+      now: new Date(Date.now() + 2 * 3_600_000),
+    });
+    expect(await opened(far.map((each) => each.id))).toBe(3);
+    await work();
+    await db.warehouseTask.updateMany({
+      where: { organizationId: actor.organizationId },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelReason: "Prueba",
+        closedByUserId: actor.userId,
+      },
+    });
   });
 });
 

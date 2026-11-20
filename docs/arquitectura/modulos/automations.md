@@ -37,7 +37,9 @@ los junta en `automationCatalog`.
    almacén **desde donde se quedó la ronda anterior** (`automation_scan`) y
    hasta 50 ejecuciones nuevas por regla (lo ya atendido se reconoce con una
    consulta por página). Si no llega al final, la ficha de la regla dice «No
-   se terminó de revisar…» y la siguiente ronda sigue ahí. Un estado lo
+   se terminó de revisar…» y la siguiente ronda sigue ahí; un almacén que
+   no se alcanzó a revisar va primero en la siguiente ronda («No se alcanzó
+   a revisar…»). Un estado lo
    atiende solo una ejecución en espera, en curso o hecha (`subjectKey`); lo
    saltado o fallado se vuelve a abrir en otra ronda (intento = el más
    reciente + 1; a los 50 queda una línea y se deja de intentar).
@@ -108,8 +110,10 @@ La acción `inventory.stock.block` llama al núcleo interno
 `blockFreeOfLotAt` (`src/modules/inventory/automation-block.ts`, fuera del
 `index.ts` de Inventario: ninguna pantalla ni la API lo alcanzan). Con los
 candados del cambio de estado (producto → ubicación) calcula lo libre con
-`freeToTake` y lo pasa todo a «Bloqueado» con `writeStatusChange`; cero
-libre no escribe nada. El dato `free` del escaneo de «Lote por caducar» lo
-calcula `lotsWithFreeStock` con la misma regla, seis consultas agrupadas por
-página. Una acción nueva que mueva existencias sigue el mismo patrón:
+`freeToTake`, menos lo que llevan las tareas de traslado abiertas desde ahí
+(que no apartan nada propio), y lo pasa todo a «Bloqueado» con
+`writeStatusChange`; cero libre no escribe nada. Al empezar, la acción lee
+lo que ya bloqueó un intento anterior de la misma ejecución y lo dice. El dato `free` del escaneo de «Lote por caducar» lo
+calcula `lotsWithFreeStock` con la misma regla, siete consultas agrupadas
+por página. Una acción nueva que mueva existencias sigue el mismo patrón:
 decide bajo los candados de su operación, nunca con lo leído antes.

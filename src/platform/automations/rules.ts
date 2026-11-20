@@ -742,6 +742,9 @@ export async function getAutomationRule(
       const where = scan.placeKey
         ? `en ${labels.facilities.get(scan.placeKey) ?? "un almacén"}`
         : "en la empresa";
+      if (scan.reviewed === 0) {
+        return `No se alcanzó a revisar ${where}: se llegó antes al tope de esta regla. La siguiente revisión empieza por ahí.`;
+      }
       return `No se terminó de revisar ${where}: hay más de ${scan.reviewed.toLocaleString("es-MX")} por revisar. La siguiente revisión sigue donde se quedó.`;
     }),
     runs: runs.map((run) => ({

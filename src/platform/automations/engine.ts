@@ -226,6 +226,8 @@ async function openRun(
      * lasts (ADR 0092, «una vez» and «mientras dure»).
      */
     state?: { subjectKey: string; remembers: boolean; repeat: boolean };
+    /** The hour the caps count from (the round passes its own). */
+    now?: Date;
   },
 ): Promise<"opened" | "skipped" | "limit" | "known"> {
   const client = forOrganization(organizationId);
@@ -298,7 +300,7 @@ async function openRun(
     });
     if (known) return "known";
   }
-  const now = new Date();
+  const now = input.now ?? new Date();
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const [ruleRuns, companyRuns] = await Promise.all([
     client.automationRun.count({
@@ -1032,9 +1034,14 @@ export async function organizationsWithAutomations(): Promise<string[]> {
 export async function runAutomationRound(
   organizationId: string,
   catalog: AutomationCatalog,
-  /** Pages per warehouse in this round (tests use fewer). */
-  pagesPerRound: number = AUTOMATION_SCAN_PAGES,
+  options: {
+    /** Pages per warehouse in this round (tests use fewer). */
+    pagesPerRound?: number;
+    /** The hour the caps count from (tests move it forward). */
+    now?: Date;
+  } = {},
 ): Promise<{ runs: number; paused: number }> {
+  const pagesPerRound = options.pagesPerRound ?? AUTOMATION_SCAN_PAGES;
   const client = forOrganization(organizationId);
   const rules = await client.automationRule.findMany({
     where: { status: "ACTIVE" },
@@ -1112,14 +1119,24 @@ export async function runAutomationRound(
             placeKey: true,
             nextPage: true,
             unfinished: true,
+            reviewed: true,
           },
         })
       ).map((row) => [row.placeKey, row]),
     );
+    // A warehouse the last round did not reach (the caps ran out on the
+    // ones before it) goes first now: none keeps the others waiting.
+    const unreached = (place: string | null) => {
+      const cursor = cursors.get(place ?? "");
+      return cursor?.unfinished === true && cursor.reviewed === 0;
+    };
+    const ordered = [
+      ...places.filter(unreached),
+      ...places.filter((place) => !unreached(place)),
+    ];
     let left = AUTOMATION_SCAN_LIMIT;
     let lost = false;
-    for (const place of places) {
-      if (left <= 0) break;
+    for (const place of ordered) {
       if (place) {
         const facility = await client.facility.findFirst({
           where: { id: place },
@@ -1128,6 +1145,16 @@ export async function runAutomationRound(
         if (!facility || facility.archivedAt) continue;
       }
       const cursor = cursors.get(place ?? "");
+      if (left <= 0) {
+        // Not reached this round: said on the page of the rule, and the
+        // next round starts with it, where it was left.
+        await saveCursor(organizationId, rule.id, place ?? "", cursor ?? null, {
+          nextPage: cursor?.nextPage ?? 1,
+          unfinished: true,
+          reviewed: 0,
+        });
+        continue;
+      }
       const start = cursor?.nextPage ?? 1;
       let page = start;
       let reviewed = 0;
@@ -1213,7 +1240,6 @@ export async function runAutomationRound(
             stoppedAt = true;
             break;
           }
-          left--;
           const outcome = await openRun(organizationId, rule, {
             trigger,
             actions,
@@ -1227,8 +1253,11 @@ export async function runAutomationRound(
               remembers: trigger.repeat === "once",
               repeat,
             },
+            now: options.now,
           });
           if (outcome === "opened") runs++;
+          // What was already there (another round at once) costs nothing.
+          if (outcome !== "known") left--;
           if (outcome === "limit") {
             left = 0;
             stoppedAt = true;

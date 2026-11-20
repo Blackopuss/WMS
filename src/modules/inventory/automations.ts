@@ -570,7 +570,39 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
     };
     const client = forOrganization(context.organizationId);
     const scoped = await locationScopeWhere(client, context.actorUserId);
+    // What an earlier try of this same run already blocked (the job may
+    // have failed after confirming some locations): it is said again, and
+    // it is never «nothing to do».
+    const earlier = await client.stockMovement.findMany({
+      where: {
+        type: "STATUS_CHANGE",
+        idempotencyKey: { startsWith: `${context.idempotencyKey}-` },
+      },
+      orderBy: { id: "asc" },
+      take: BLOCK_LOCATIONS_MAX,
+      select: {
+        lines: {
+          where: { direction: "OUT" },
+          take: 1,
+          select: {
+            locationId: true,
+            baseQuantity: true,
+            unitCode: true,
+            location: { select: { code: true, name: true } },
+          },
+        },
+      },
+    });
     const blocked: string[] = [];
+    const done = new Set<string>();
+    for (const movement of earlier) {
+      const line = movement.lines[0];
+      if (!line || done.has(line.locationId)) continue;
+      done.add(line.locationId);
+      blocked.push(
+        `${formatStock(line.baseQuantity.toString(), line.unitCode)} en ${placeName(line.location)}`,
+      );
+    }
     const refused: string[] = [];
     let after: string | null = null;
     let seen = 0;
@@ -601,6 +633,8 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
         },
       });
       for (const balance of balances) {
+        // Its key already answered in an earlier try (said above).
+        if (done.has(balance.locationId)) continue;
         const answer = await blockFreeOfLotAt(actor, {
           productId: subject.refs.productId!,
           locationId: balance.locationId,
@@ -622,12 +656,12 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
       }
       after = balances.at(-1)!.locationId;
     }
-    const done = blocked.length > 0 ? `Se bloqueó ${blocked.join(", ")}.` : "";
+    const said = blocked.length > 0 ? `Se bloqueó ${blocked.join(", ")}.` : "";
     if (refused.length > 0) {
       // The real cause, from the change of state itself.
       return {
         kind: "refused",
-        line: `${done} No se pudo bloquear en ${refused.join("; ")}`
+        line: `${said} No se pudo bloquear en ${refused.join("; ")}`
           .trim()
           .slice(0, 200),
       };
@@ -641,8 +675,8 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
     return {
       kind: "done",
       line: (more
-        ? `${done} Hay más ubicaciones: la siguiente revisión sigue con ellas.`
-        : done
+        ? `${said} Hay más ubicaciones: la siguiente revisión sigue con ellas.`
+        : said
       ).slice(0, 200),
       href: `/inventario/lotes/${subject.refs.lotId}`,
     };

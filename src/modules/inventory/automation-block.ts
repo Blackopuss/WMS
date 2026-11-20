@@ -13,6 +13,7 @@ import {
 import { formatStock } from "./movements";
 import { CapacityNotice } from "./placement";
 import { PRODUCT_HOLDS, freeToTake } from "./reservations";
+import { OPEN_TASK_STATUSES } from "./task-states";
 import { StatusChangeRejected, writeStatusChange } from "./status-change";
 
 /**
@@ -29,7 +30,7 @@ import { StatusChangeRejected, writeStatusChange } from "./status-change";
  *   free is not an error and writes nothing. There is no «it moved
  *   meanwhile»: nothing is computed outside the locks.
  * - `lotsWithFreeStock` answers, for a page of lots, which have something
- *   free in a warehouse (the fact the hourly round reads), with a fixed
+ *   free in a warehouse (the same rule, transfers included) (the fact the hourly round reads), with a fixed
  *   number of queries per page, never one per lot.
  */
 
@@ -129,7 +130,22 @@ export async function blockFreeOfLotAt(
         }
         // What is free right now, under the locks: nobody takes it before
         // this transaction ends, and nothing reserved is in it.
-        const free = await freeToTake(tx, productId, locationId, input.lotId);
+        // Minus what an open transfer task carries from here: it reserves
+        // nothing of its own, but its goods must not be blocked under it.
+        // Read, not locked: creating, picking up and delivering a task take
+        // this product first, so none changes while this lock is held.
+        const carried = await tx.warehouseTask.aggregate({
+          where: {
+            ...CARRIED_BY_TRANSFERS,
+            productId,
+            fromLocationId: locationId,
+            OR: [{ lotId: input.lotId }, { lotId: null }],
+          },
+          _sum: { quantity: true },
+        });
+        const free = (
+          await freeToTake(tx, productId, locationId, input.lotId)
+        ).minus(dec(carried._sum.quantity?.toString() ?? 0));
         if (!free.greaterThan(0)) return { kind: "nothing" as const };
         const done = await writeStatusChange(
           tx,
@@ -180,15 +196,29 @@ export async function blockFreeOfLotAt(
   }
 }
 
+/**
+ * Transfer tasks still on their way, of goods loose in their origin (a
+ * whole pallet is already subtracted by `freeToTake`): they reserve
+ * nothing of their own (only put-away and replenishment hold with
+ * `TASK_HOLD`; picking and issue reserve with their line), so blocking
+ * subtracts them itself. «Cambiar estado» by hand does not (ADR 0092,
+ * known limit).
+ */
+const CARRIED_BY_TRANSFERS = {
+  kind: "TRANSFER" as const,
+  status: { in: [...OPEN_TASK_STATUSES] },
+  containerId: null,
+};
+
 /** A lot of a page: the product it belongs to and its id. */
 export type LotRef = { productId: string; lotId: string };
 
 /**
  * The lots of a page that have something free to take in some location of
  * the warehouse (inside `locationWhere`, the scope of the person): the
- * same rule as `freeToTake`, read with six grouped queries for the whole
- * page. It is only a reading; `blockFreeOfLotAt` decides again under its
- * locks.
+ * same rule as `blockFreeOfLotAt` (`freeToTake` minus what open transfer
+ * tasks carry), read with seven grouped queries for the whole page. It
+ * is only a reading; `blockFreeOfLotAt` decides again under its locks.
  */
 export async function lotsWithFreeStock(
   client: Client,
@@ -212,7 +242,7 @@ export async function lotsWithFreeStock(
   });
   if (cells.length === 0) return new Set();
   const locationIds = [...new Set(cells.map((cell) => cell.locationId))];
-  const [byProduct, heldByProduct, byPlace, heldHere, inPallets] =
+  const [byProduct, heldByProduct, byPlace, heldHere, inPallets, carried] =
     await Promise.all([
       client.stockBalance.groupBy({
         by: ["productId"],
@@ -256,6 +286,15 @@ export async function lotsWithFreeStock(
         },
         _sum: { quantity: true },
       }),
+      client.warehouseTask.groupBy({
+        by: ["productId", "fromLocationId", "lotId"],
+        where: {
+          ...CARRIED_BY_TRANSFERS,
+          productId: { in: productIds },
+          fromLocationId: { in: locationIds },
+        },
+        _sum: { quantity: true },
+      }),
     ]);
   const sum = (value: { toString(): string } | null | undefined) =>
     dec(value?.toString() ?? 0);
@@ -294,12 +333,21 @@ export async function lotsWithFreeStock(
       );
     }
   }
+  // What open transfers carry from a place: of a lot, or of any lot
+  // (a task without lot takes from all of them, as in the core).
+  const carriedOf = new Map<string, Decimal>();
+  for (const row of carried) {
+    if (!row.productId) continue;
+    const place = at(row.productId, row.fromLocationId);
+    add(carriedOf, `${place}|${row.lotId ?? ""}`, sum(row._sum.quantity));
+  }
   const free = new Set<string>();
   for (const cell of cells) {
     const place = at(cell.productId, cell.locationId);
-    const ofLot = sum(cell._sum.quantity).plus(
-      lotFree.get(`${place}|${cell.lotKey}`) ?? dec(0),
-    );
+    const ofLot = sum(cell._sum.quantity)
+      .plus(lotFree.get(`${place}|${cell.lotKey}`) ?? dec(0))
+      .minus(carriedOf.get(`${place}|${cell.lotKey}`) ?? dec(0))
+      .minus(carriedOf.get(`${place}|`) ?? dec(0));
     if (
       ofLot.greaterThan(0) &&
       (placeFree.get(place) ?? dec(0)).greaterThan(0) &&

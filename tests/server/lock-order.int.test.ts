@@ -1052,6 +1052,43 @@ describe("locks in one order (WMS-76)", () => {
           } as never),
         ]),
       );
+      // Against a transfer task of the same lot, from creating it to
+      // delivering it: what it carries is never blocked under it.
+      await registerEntry(actor, {
+        productId,
+        locationId: place,
+        quantity: "6",
+        lotCode: code,
+        lotExpiresOn: soon.toISOString().slice(0, 10),
+        acceptRepeat: true,
+      });
+      await runAutomationRound(actor.organizationId, automationCatalog);
+      settle(
+        await Promise.allSettled([
+          work(),
+          (async () => {
+            const made = await createTask(actor, {
+              productId,
+              lotId,
+              fromLocationId: place,
+              toLocationId: other,
+              quantity: "2",
+              priority: "NORMAL",
+              acceptCapacity: true,
+            } as never);
+            // Blocked before the task was asked for: nothing to carry.
+            if (!made.ok) return;
+            for (const step of [acceptTask, pickUpTask]) {
+              const done = await step(actor, made.taskId);
+              if (!done.ok) throw new Error(JSON.stringify(done));
+            }
+            const delivered = await deliverTask(actor, made.taskId, {
+              acceptCapacity: true,
+            } as never);
+            if (!delivered.ok) throw new Error(JSON.stringify(delivered));
+          })(),
+        ]),
+      );
     }
     expect(errors).toEqual([]);
     // One more round: what is still free gets blocked, nothing reserved.
