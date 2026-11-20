@@ -113,10 +113,14 @@ dar otra cifra que la de su lista o su pantalla de detalle.**
   Orden: más tareas primero, después nombre e id. Tope de 50 personas
   (`OPEN_WORK_PEOPLE_MAX`), con aviso si hay más.
 - La lista de destino (`listTasks` con `view: "open"` y `person`) usa la
-  misma condición más el alcance. Un `persona` que no es miembro de la
-  empresa se ignora (lista abierta sin filtrar); para quien está limitado a
-  zonas, la lista solo trae tareas de su alcance, así que nunca ve nada de
-  fuera aunque escriba otro id.
+  misma condición más el alcance. **El filtro solo vale para un miembro de
+  la empresa (activo o desactivado) con al menos una tarea abierta a su
+  nombre en el almacén activo y dentro del alcance de quien mira**; si no,
+  se ignora (lista abierta sin filtrar) y no se nombra a nadie. Es la regla
+  de WMS-32 para personas (hallazgo de la revisión: antes bastaba con ser
+  miembro y se nombraba a alguien sin nada dentro del alcance). Una persona
+  desactivada con tareas que siguen a su nombre se puede seguir, porque ese
+  trabajo hay que liberarlo o reasignarlo.
 - Quién tiene tareas abiertas ya se ve en Tareas › Abiertas para quien lee
   tareas; la tarjeta solo agrupa.
 
@@ -153,12 +157,17 @@ ADR 0082 (a los pedidos y a la exactitud no).
   sin pasar del fin de ese mes (el 31 de marzo compara con el 1 al 28 o 29
   de febrero).
 
-El cambio se muestra en texto: en conteos «+12» o «−3» y su porcentaje si
-el anterior no es cero («+12 (25 %)»); en porcentajes, puntos («+5.0
-puntos»); en tiempos, la duración anterior y «más rápido»/«más lento»; sin
-dato en uno de los dos periodos, «—». **No se colorea como bueno o malo**
-(subir las salidas no es bueno ni malo por sí solo); una barra no aporta
-aquí y no se dibuja.
+El cambio se muestra en palabras: en conteos «Subió 12 (25.0 %)» o «Bajó
+3» (el porcentaje solo si el anterior no es cero); en porcentajes, puntos
+(«Subió 5.0 puntos»); en tiempos, «12 min más rápido» o «más lento»; sin
+dato en uno de los dos periodos, «—»; igual, «Sin cambio». Nunca empieza con
+`+` ni `−`: una celda que empieza con un signo llegaría a la hoja de cálculo
+neutralizada como fórmula («'+12»; hallazgo de la revisión). **No se colorea
+como bueno o malo** (subir las salidas no es bueno ni malo por sí solo); una
+barra no aporta aquí y no se dibuja. Las consultas del periodo anterior usan
+**sus propios días** (de su primer día al día siguiente del último): con
+«Este mes» termina antes de que empiece el actual (hallazgo de la revisión:
+se sumaba el mes anterior completo).
 
 ### Por almacén
 
@@ -248,10 +257,10 @@ contador global del servidor):
   **No lo causa este paso:** con los mismos datos y la misma máquina, el
   servicio de WMS-32 sin cambios tarda unos 740 ms y el de este paso con la
   comparación unos 770 ms; la vista por almacén sola, 26 ms. La medición de
-  WMS-32 (362 ms) no se reprodujo aquí. Pendiente fuera de este paso:
-  buscar qué lectura de los indicadores crece con el catálogo (la primera
-  sospecha es «sin movimiento», que agrupa hasta 20,000 productos) y volver
-  a medir en el equipo de referencia.
+  WMS-32 (362 ms) no se reprodujo aquí. **Pendiente de un paso propio** (la revisión
+  coincide): lo que crece con el catálogo es «sin movimiento» (dos `groupBy`
+  por producto) y «mayor movimiento»; corregirlo y volver a medir en el
+  equipo de referencia.
 
 ## Lo que no entra
 
