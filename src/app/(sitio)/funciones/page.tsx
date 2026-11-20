@@ -348,7 +348,8 @@ const GROUPS: {
     id: "calidad",
     name: "Calidad",
     module: "Calidad (con Producción)",
-    intro: "Qué se revisa de cada producto, quién lo verifica y qué pasa con lo que no cumple.",
+    intro:
+      "Qué se revisa de cada producto, quién lo verifica y qué pasa con lo que no cumple.",
     features: [
       {
         icon: ClipboardCheck,
