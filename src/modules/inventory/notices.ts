@@ -111,6 +111,17 @@ export const EQUIPMENT_OUT_OF_SERVICE_NOTICE: NotificationType = {
   visibleWith: ["inventory.task.execute"],
 };
 
+/** WMS-79 (ADR 0094): an order you released stopped waiting for production. */
+export const OUTBOUND_WAIT_DROPPED_NOTICE: NotificationType = {
+  key: "inventory.outbound_wait_dropped",
+  module: "inventory",
+  label: "Un pedido dejó de esperar producción",
+  description:
+    "Cuando alguien decide que un pedido que liberaste ya no espera lo que se produce para él.",
+  defaultEnabled: true,
+  visibleWith: ["inventory.outbound.read"],
+};
+
 export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   TASK_ASSIGNED_NOTICE,
   TASK_BLOCKED_NOTICE,
@@ -123,4 +134,5 @@ export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   DAILY_DIGEST_NOTICE,
   EQUIPMENT_MAINTENANCE_NOTICE_TYPE,
   EQUIPMENT_OUT_OF_SERVICE_NOTICE,
+  OUTBOUND_WAIT_DROPPED_NOTICE,
 ];

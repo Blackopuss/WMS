@@ -27,6 +27,7 @@ import {
   cancelOutboundAction,
   releaseOutboundAction,
   removeOutboundLineAction,
+  reserveWhatThereIsAction,
   startPackingAction,
   stopWaitingAction,
   type LineFormState,
@@ -317,6 +318,33 @@ export function AskProductionAgain({ orderId }: { orderId: string }) {
       >
         {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
         Pedir producción de nuevo
+      </Button>
+      {answer && !answer.ok && (
+        <span role="alert" className="text-sm text-destructive">
+          {answer.error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * WMS-79: «Apartar lo que ya hay» — what the order still lacks, from what
+ * is free now, with its picking tasks.
+ */
+export function ReserveWhatThereIs({ orderId }: { orderId: string }) {
+  const { pending, answer, run } = useStep();
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-11"
+        disabled={pending}
+        onClick={() => run(() => reserveWhatThereIsAction(orderId))}
+      >
+        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+        Apartar lo que ya hay
       </Button>
       {answer && !answer.ok && (
         <span role="alert" className="text-sm text-destructive">

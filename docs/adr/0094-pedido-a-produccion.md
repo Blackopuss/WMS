@@ -79,21 +79,33 @@ tampoco: la línea queda corta como hoy y no falla nada.
 6. La respuesta de liberar lo dice: «Se liberó el pedido PS-0001 … y se
    pidió producir 1 producto (SP-0004).».
 
+**Cuánto pide:** exactamente lo que falta de la línea (lo pedido − lo
+apartado al liberar), que ya cumple la regla de cantidad del producto. **No
+se redondea a la base de la receta**: si la receta es para 10 y faltan 3,
+se piden 3 (una orden puede ser de cualquier múltiplo del paso del
+producto, WMS-28). Quien acepta con permisos de órdenes puede aceptar más;
+quien acepta sin ellos (Almacén, Supervisor) sigue sin poder aceptar más de
+lo pedido (WMS-28B).
+
 **Qué no hace al liberar:** no mira las órdenes abiertas del mismo producto
 que no están ligadas (pueden ser para existencias; quien decide las ve en la
 pantalla de decisión, WMS-28B); no reparte entre pedidos (cada línea tiene
-su propia espera y su propia solicitud); no redondea a la base de la
-receta (una orden puede ser de cualquier múltiplo del paso del producto,
-WMS-28).
+su propia espera y su propia solicitud).
 
 **Liberar dos veces o a la vez:** liberar es una sola vez por pedido (bajo
 su candado; la segunda vez responde `repeated` sin escribir). Una línea
 tiene a lo más **una espera abierta** (`openLineId`, único).
 
-**Olas (WMS-25):** crear una ola **no** pide producción: libera como hoy y
-rechaza un pedido corto («Libéralo con lo que hay desde su pantalla»). Un
-pedido ya liberado desde su pantalla, que espera producción, sí entra a una
-ola (está `RELEASED`).
+**Olas (WMS-25):** crear una ola libera sus borradores con el mismo núcleo
+(`releaseUnderLock`) y, con `makeToOrder`, pide producción igual: bloquea las
+áreas en compartido después de «Preparación» y antes de los pedidos, como
+liberar desde la ficha. Un borrador cuyo todo espera producción no tiene
+nada que surtir todavía y la ola lo rechaza diciéndolo («espera producción:
+libéralo desde su pantalla y déjalo fuera de la ola»). Un pedido ya liberado
+que espera sí entra a una ola.
+
+**Importación y API:** solo crean borradores (WMS-13B y WMS-60): no hay nada
+que pedir ahí; la producción se pide al liberarlos.
 
 ### 2. Decidir la solicitud ligada
 
@@ -124,8 +136,9 @@ El punto donde lo producido queda **disponible** es la verificación
 `production.output.verify`). Al decidir una verificación de un lote cuya
 orden nació de una solicitud ligada a una espera **abierta**:
 
-1. De lo aprobado (`AVAILABLE`) en cada lugar de destino se aparta para la
-   línea, **antes** del acomodo: `min(lo aprobado ahí, lo que espera la
+1. **La liga manda:** de lo aprobado (`AVAILABLE`) en cada lugar de destino
+   se aparta primero para la línea ligada, **antes** del acomodo y aunque
+   otro pedido del mismo producto sea más urgente: `min(lo aprobado ahí, lo que espera la
    espera − lo que ya recibió, lo que le falta a la línea, lo libre ahí)`.
    «Lo que le falta a la línea» es lo pedido − sus reservas activas (la
    misma cifra que usa el cross-docking).
@@ -136,8 +149,17 @@ orden nació de una solicitud ligada a una espera **abierta**:
    producido de una orden ligada es de **una** línea.
 3. La espera suma lo recibido (`received`); cuando llega a lo que espera
    queda `DONE` («Ya llegó lo que faltaba»).
-4. **Lo que sobra** (se produjo o aprobó más de lo que la línea espera)
-   sigue a acomodo con la regla de WMS-31.
+4. **Lo que sobra** (se produjo o aprobó más de lo que la línea espera):
+   con cross-docking encendido (`inventory.crossdock.mode = on`) se reparte
+   a las demás líneas que esperan el producto en ese almacén con la regla
+   del cross-docking (`planCrossDock`: urgentes, día de salida, antigüedad;
+   `sendToWaitingOrders` con `fromProductionArea`, porque el área no es un
+   lugar «de paso»); solo para lotes ligados a un pedido: lo producido sin
+   liga sigue a acomodo como en WMS-31. Lo que aún sobra sigue a acomodo.
+   Las tareas de surtido guardan el cambio de estado de la verificación
+   (`crossDockMovementId`, que ahora también admite `STATUS_CHANGE`), así
+   la ficha del pedido dice «llegaron con IN-0001» y la ficha del lote no lo
+   cuenta como «aprobadas en el área sin tarea».
 5. «Cambiar estado» de inspección a disponible **no** aparta para el pedido:
    el camino de lo producido es la verificación. Lo liberado así queda
    libre y la línea sigue esperando (la ficha del pedido lo dice).
@@ -148,7 +170,17 @@ orden nació de una solicitud ligada a una espera **abierta**:
 
 La etapa «Se guardó» del lote (WMS-31) no cuenta las tareas de surtido: con
 lo aprobado apartado para el pedido, el lote ya salió del flujo de
-producción.
+producción y la etapa termina con la decisión (probado con y sin Calidad).
+
+7. **«Apartar lo que ya hay»** (ficha del pedido, `inventory.outbound.release`,
+   pedido liberado o en surtido, con o sin espera abierta): por cada línea,
+   lo que le falta (lo pedido − sus reservas activas) se aparta de lo libre
+   ahora con `pickSources` y `createPickTasks`, los mismos pasos que liberar
+   (candados productos → almacén → pedido). Lo apartado suma a la espera
+   abierta y la cierra si llega a todo. Cubre lo liberado a mano con
+   «Cambiar estado», una orden cerrada corta seguida de existencias de otra
+   orden o de una compra, y lo que llegue después. Un pedido ya «Surtido»
+   no se completa así (su tabla de estados no regresa a surtido).
 
 ### 4. El embarque no se va sin lo que falta
 
@@ -165,12 +197,17 @@ Se suelta de tres formas, todas explícitas:
 - **Llega lo que faltaba** (punto 3): la espera queda `DONE` y el pedido
   sigue con sus tareas de surtido.
 - **«Dejar de esperar»** en la ficha del pedido (`inventory.outbound.release`,
-  motivo obligatorio de 3 a 300 caracteres): las esperas abiertas del pedido
-  quedan `DROPPED`, las solicitudes ligadas aún por atender se cancelan, y si
-  el pedido estaba «En surtido» sin tareas abiertas pasa a «Surtido» con lo
-  que tiene (se embarca parcial; el faltante queda como hoy). Las órdenes
-  ligadas ya creadas **siguen su curso sin liga**: lo que produzcan va a
-  acomodo.
+  motivo obligatorio de 3 a 300 caracteres, bitácora
+  `inventory.outbound_wait_dropped` y aviso `inventory.outbound_wait_dropped`
+  a quien liberó): las esperas abiertas del pedido quedan `DROPPED`, las
+  solicitudes ligadas aún por atender se cancelan, y si el pedido estaba «En
+  surtido» sin tareas abiertas pasa a «Surtido» (`PICKED`; no existe un
+  estado «surtido parcial») con su faltante a la vista en la ficha
+  («Faltan …», `shortText`). Desde ahí puede empacarse y entrar a un
+  embarque: es la decisión explícita de una persona que pidió el fundador, y
+  la hoja de embarque muestra lo que va (sus líneas de embarque), no lo
+  pedido. Las órdenes ligadas ya creadas **siguen su curso sin liga**: lo
+  que produzcan va a acomodo.
 - **Cancelar el pedido** (solo desde borrador o liberado, como hoy): las
   esperas quedan `CANCELLED` y sus solicitudes por atender se cancelan; las
   órdenes ya creadas siguen sin liga.
@@ -252,8 +289,8 @@ expuesto por `src/modules/registry`):
 - `closed(tx, actor, waitIds, why)`: cancela las solicitudes por atender de
   esas esperas (con Producción no activo no hace nada: aceptar las rechaza).
 
-`releaseOutboundOrder`, `cancelOutboundOrder`, `stopWaitingForProduction` y
-`askProductionAgain` reciben `{ makeToOrder }`. Las Server Actions de la
+`releaseOutboundOrder`, `createWave`, `cancelOutboundOrder`,
+`stopWaitingForProduction` y `askProductionAgain` reciben `{ makeToOrder }`. Las Server Actions de la
 ficha del pedido lo pasan. **Quien llame a esos servicios sin `makeToOrder`
 obtiene el comportamiento de hoy** (sin esperas nuevas; al cancelar, las
 solicitudes por atender quedan y aceptarlas se rechaza). La verificación
@@ -276,7 +313,9 @@ misma transacción toma dos de ellos.
 | Dejar de esperar | pedido → solicitudes (actualización condicionada) → ola |
 | Cancelar el pedido | pedido → solicitudes (actualización condicionada) → ola (como hoy) |
 | Aceptar la solicitud | productos de los materiales → solicitud → almacén (compartido) → orden → progreso (como WMS-28B); lee la espera sin candado después de tomar la solicitud |
-| Decidir la verificación | producto → ubicaciones (inspección y destinos) → **pedido ligado** → (devolución) → verificación → tareas → capacidad → progreso → archivos |
+| Apartar lo que ya hay | productos de las líneas → almacén (exclusivo, solo si se crea «Preparación») → pedido → tareas |
+| Crear una ola | productos → almacén → áreas (compartido) → pedidos → tareas → ola |
+| Decidir la verificación | producto → ubicaciones (inspección y destinos) → **pedido ligado y, con cross-docking, los pedidos que pueden esperar el producto, en una sola llamada** (`lockOrdersForProduced`) → (devolución) → verificación → tareas → capacidad → progreso → archivos |
 | Cross-docking | productos → ubicaciones → (orden de compra) → pedidos → … (como hoy; suma a la espera bajo el candado del pedido) |
 | Despachar | productos → ubicaciones → embarque → pedidos → bultos (como hoy; lee las esperas bajo el candado de los pedidos) |
 
@@ -288,6 +327,20 @@ una tarea de surtido de ese pedido que sale del área (área → pedido). Las
 áreas se leen antes sin candado (`areasFor`) y, bajo el candado, una receta
 que cambió de área responde «La receta cambió mientras se liberaba» sin
 escribir.
+
+**Aceptar contra cerrar la espera a la vez** (dejar de esperar o cancelar el
+pedido): aceptar toma la solicitud (actualización condicionada) antes de
+leer la espera; cerrar la espera, bajo el candado del pedido, cancela las
+solicitudes por atender con otra actualización condicionada. Si acepta
+primero, la orden nace y la espera se cierra después: la orden sigue sin
+liga (lo que produzca va a acomodo). Si se cierra primero, la solicitud ya
+no está por atender y aceptar se rechaza. Nunca queda una solicitud por
+atender de una espera cerrada (comprobado en la carrera de
+`lock-order.int.test.ts`). **Decidir la verificación contra cancelar el
+pedido:** cancelar va pedido → solicitudes y no toma ubicaciones; la
+verificación toma el pedido después de sus ubicaciones; el que llega
+segundo ve el resultado del primero (con el pedido cancelado, lo aprobado va
+a acomodo).
 
 Todas las escrituras de una espera ocurren bajo el candado de su pedido
 (liberar, pedir de nuevo, dejar de esperar, cancelar, verificación,
@@ -320,16 +373,19 @@ el mismo producto» no se crucen (cada orden aparta solo para su línea).
 ## Lo que no entra
 
 Reproceso (WMS-29B), indicadores de producción (WMS-33), automatizaciones
-(WMS-64), pedir producción desde la API o al crear una ola, reparto de una
-orden entre varios pedidos, unir varias líneas en una sola solicitud,
-apartar al liberar con «Cambiar estado», y avisar cuando la espera se
-completa.
+(WMS-64), pedir producción desde la API, unir varias líneas en una sola
+solicitud, apartar solo al liberar con «Cambiar estado» (se cubre con
+«Apartar lo que ya hay»), cross-docking de lo producido sin liga, y avisar
+cuando la espera se completa.
 
 ## Riesgos y migración
 
-Migración `20261120170000_wms79_outbound_line_wait`, de expansión: tabla
-nueva, columna opcional nueva en `production_request` y el disparador de
-transición de la solicitud recreado con la columna nueva. El código anterior
+Migraciones `20261120170000_wms79_outbound_line_wait` y
+`20261120170100_wms79_produced_pick`, de expansión: tabla nueva, columna
+opcional nueva en `production_request`, el disparador de transición de la
+solicitud recreado con la columna nueva, y `warehouse_task_insert_rules`
+recreado para admitir `STATUS_CHANGE` como movimiento de origen de una
+tarea de surtido directa (antes solo recepción o entrada). El código anterior
 ignora las esperas: con él, un pedido que espera podría pasar a «Surtido».
 
 ## Pendientes conocidos
@@ -339,8 +395,7 @@ ignora las esperas: con él, un pedido que espera podría pasar a «Surtido».
 - Un pedido liberado sin nada apartado cuya espera se deja sigue «Liberado»
   sin tareas: se cancela.
 - Si una persona libera a mano lo producido con «Cambiar estado», la línea
-  sigue esperando aunque haya existencias libres: hay que surtirla a mano o
-  dejar de esperar.
+  sigue esperando hasta que alguien pulsa «Apartar lo que ya hay».
 
 ## Decisiones que el fundador puede cambiar
 
@@ -352,15 +407,18 @@ ignora las esperas: con él, un pedido que espera podría pasar a «Surtido».
 4. Liberar no pregunta por las líneas que se van a producir.
 5. Una solicitud por línea; no se juntan líneas ni pedidos.
 6. Solo la verificación aparta lo producido para el pedido; «Cambiar estado»
-   no.
-7. Lo que sobra va a acomodo.
+   no (para eso está «Apartar lo que ya hay», a mano).
+7. La liga manda; lo que sobra de un lote ligado se reparte con
+   cross-docking si está encendido y, si no, va a acomodo.
 8. Rechazar la solicitud, cancelar o cerrar corta la orden **no** cierra la
    espera: el pedido sigue esperando hasta que alguien pide de nuevo o deja
    de esperar (avisado).
 9. Cancelar el pedido o dejar de esperar cancela las solicitudes por
    atender pero no las órdenes ya creadas.
-10. Las olas no piden producción.
+10. Las olas piden producción igual que la ficha, y rechazan un borrador
+    que solo espera producción.
 11. Sin personas asignadas por omisión en la orden de una solicitud ligada.
+12. Se pide exactamente lo que falta, sin redondear a la base de la receta.
 
 ## Consecuencias
 

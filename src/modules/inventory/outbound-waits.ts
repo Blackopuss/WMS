@@ -11,7 +11,10 @@ import {
   type TenantDb,
 } from "@/server";
 
+import { notify } from "@/platform/notifications";
+
 import { formatStock, type InventoryActor } from "./movements";
+import { OUTBOUND_WAIT_DROPPED_NOTICE } from "./notices";
 import { formatOutboundNumber } from "./outbound-states";
 import { createPickTasks, nextTaskNumber, settlePickedOrder } from "./picking";
 import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
@@ -206,31 +209,14 @@ export async function closeOrderWaits(
   return open.map((wait) => wait.id);
 }
 
-/**
- * Locks the outbound order a wait belongs to (the link never changes):
- * for the verification, after its locations and before its own document.
- * Answers the order id, or null.
- */
-export async function lockOrderOfWait(
-  tx: Tx,
-  waitId: string | null,
-): Promise<string | null> {
-  if (!waitId) return null;
-  const wait = await tx.outboundLineWait.findFirst({
-    where: { id: waitId },
-    select: { orderId: true },
-  });
-  if (!wait) return null;
-  await lockRows(tx, "outboundOrder", [wait.orderId]);
-  return wait.orderId;
-}
-
 export type ProducedArrival = {
   productId: string;
   locationId: string;
   lotId: string | null;
   /** In the product's unit, available where it is. */
   quantity: Decimal;
+  /** The movement that made it available (the verification's). */
+  movementId?: string | null;
 };
 
 /**
@@ -339,6 +325,9 @@ export async function sendProducedToWait(
       ],
       stagingId: staging.id,
       nextNumber: next,
+      // What made it available: it tells «llegaron con IN-0001» and keeps
+      // it out of «aprobadas en el área sin tarea» (WMS-31).
+      crossDockMovementId: arrival.movementId ?? null,
     });
     usedAt.set(slot, used.plus(take));
     sent[index] = take;
@@ -576,6 +565,27 @@ export async function stopWaitingForProduction(
       : 0;
     // Nothing left to pick: it is picked with what it has.
     await settlePickedOrder(tx, order.id);
+    // Who released it hears about it (unless it was them).
+    const openers = await tx.outboundLineWait.findMany({
+      where: { id: { in: closed } },
+      select: { openedByUserId: true },
+      distinct: ["openedByUserId"],
+    });
+    await notify(tx, OUTBOUND_WAIT_DROPPED_NOTICE, {
+      organizationId,
+      actorUserId: userId,
+      to: {
+        userIds: openers.map((row) => row.openedByUserId),
+        permissions: ["inventory.outbound.read"],
+        facilityId: order.facilityId,
+      },
+      text: `El pedido ${numberText} ya no espera producción: ${why}`.slice(
+        0,
+        300,
+      ),
+      href: `/pedidos/${order.id}`,
+      key: `outbound_wait_dropped:${order.id}:${closed[0]}`,
+    });
     await recordAuditEvent(tx, {
       organizationId,
       actorUserId: userId,

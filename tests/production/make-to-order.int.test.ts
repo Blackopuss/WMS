@@ -8,8 +8,10 @@ import {
   confirmPick,
   createOutboundOrder,
   deliverTask,
+  createWave,
   getOutboundOrder,
   releaseOutboundOrder,
+  reserveWhatThereIs,
   setOutboundLine,
   stopWaitingForProduction,
 } from "@/modules/inventory";
@@ -17,7 +19,11 @@ import {
   acceptProductionRequest,
   cancelProductionOrder,
   closeProductionOrder,
+  getProductionReport,
   outboundOrderFor,
+  PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_BATCH_STORED_OPERATION,
+  PRODUCTION_BATCH_VERIFICATION_OPERATION,
   productionForOutboundOrder,
   productionOpenWork,
   rejectProductionRequest,
@@ -25,7 +31,8 @@ import {
   type ProductionActor,
 } from "@/modules/production";
 import { decideInspection, startInspection } from "@/modules/quality";
-import { makeToOrder } from "@/modules/registry";
+import { makeToOrder, processDocuments } from "@/modules/registry";
+import { publishProcess, saveProcessDraft } from "@/platform/processes";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { db } from "@/server";
 
@@ -104,6 +111,7 @@ async function produce(
   requestId: string,
   good: string,
   accept: { quantity?: string } = {},
+  verifier: ProductionActor = actor,
 ) {
   const accepted = await acceptProductionRequest(actor, requestId, accept);
   if (!accepted.ok) throw new Error(JSON.stringify(accepted));
@@ -117,7 +125,7 @@ async function produce(
     where: { reportId: reported.reportId, kind: "OUTPUT" },
     include: { movementLine: true },
   });
-  const started = await startInspection(actor, {
+  const started = await startInspection(verifier, {
     productId: line.movementLine.productId,
     locationId: line.movementLine.locationId,
     origin: "PRODUCTION",
@@ -125,7 +133,7 @@ async function produce(
     idempotencyKey: key(),
   });
   if (!started.ok) throw new Error(JSON.stringify(started));
-  const decided = await decideInspection(actor, {
+  const decided = await decideInspection(verifier, {
     inspectionId: started.inspectionId,
     idempotencyKey: key(),
     outcomes: [
@@ -137,7 +145,7 @@ async function produce(
     ],
   });
   if (!decided.ok) throw new Error(JSON.stringify(decided));
-  return { orderId, decided };
+  return { orderId, decided, reportId: reported.reportId };
 }
 
 async function shop(modules?: string[]) {
@@ -481,6 +489,167 @@ describe("Pedido ligado a producción (WMS-79)", () => {
       ok: false,
       formError: "Ya no hace falta para el pedido: recházala.",
     });
+    await balanced(owner.organizationId);
+  });
+
+  it("a wave asks production too when it releases a draft", async () => {
+    const { owner, crate, board, shelf } = await shop();
+    await setting(owner, "inventory.picking.mode", "waves");
+    await enter(owner, board, shelf, "1");
+    const first = await createOutboundOrder(owner, { recipient: "Uno" });
+    if (!first.ok) throw new Error("setup");
+    await setOutboundLine(owner, first.orderId, {
+      productId: crate,
+      quantity: "3",
+    });
+    await setOutboundLine(owner, first.orderId, {
+      productId: board,
+      quantity: "1",
+    });
+    expect(
+      await createWave(owner, { orderIds: [first.orderId] }, { makeToOrder }),
+    ).toMatchObject({ ok: true });
+    const [wait] = await waitsOf(first.orderId);
+    expect(wait).toMatchObject({ status: "OPEN" });
+    expect(await requestsOf(first.orderId)).toHaveLength(1);
+    // A draft that only waits for production has nothing to pick yet.
+    const only = await outbound(owner, crate, "2");
+    expect(
+      await createWave(owner, { orderIds: [only] }, { makeToOrder }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { orderIds: expect.stringMatching(/espera producción/) },
+    });
+  });
+
+  it("«Apartar lo que ya hay» sets aside what is free now and counts toward the wait", async () => {
+    const { owner, crate, shelf } = await shop();
+    const orderId = await outbound(owner, crate, "5");
+    await releaseOutboundOrder(owner, orderId, { makeToOrder });
+    expect(await reserveWhatThereIs(owner, orderId)).toMatchObject({
+      ok: false,
+      formError: expect.stringMatching(/No hay nada libre/),
+    });
+    await enter(owner, crate, shelf, "2");
+    expect(await reserveWhatThereIs(owner, orderId)).toMatchObject({
+      ok: true,
+    });
+    let [wait] = await waitsOf(orderId);
+    expect(wait!.received.toString()).toBe("2");
+    expect(wait!.status).toBe("OPEN");
+    await enter(owner, crate, shelf, "10");
+    await reserveWhatThereIs(owner, orderId);
+    [wait] = await waitsOf(orderId);
+    expect(wait).toMatchObject({ status: "DONE" });
+    expect(await pickAll(owner, orderId)).toBe(2);
+    expect(await statusOf(orderId)).toBe("PICKED");
+    // A picked order is no longer topped up.
+    expect(await reserveWhatThereIs(owner, orderId)).toMatchObject({
+      ok: false,
+      reason: "not_allowed",
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("the link comes first; with cross-docking what is left goes to the other order that waits", async () => {
+    const { owner, crate, area } = await shop();
+    await setting(owner, "inventory.crossdock.mode", "on");
+    const linked = await outbound(owner, crate, "2");
+    await releaseOutboundOrder(owner, linked, { makeToOrder });
+    // Another order, more urgent, that waits for the same product without
+    // a link (released while cross-docking, with nothing free).
+    const made = await createOutboundOrder(owner, {
+      recipient: "Urgente",
+      priority: "URGENT",
+    });
+    if (!made.ok) throw new Error("setup");
+    await setOutboundLine(owner, made.orderId, {
+      productId: crate,
+      quantity: "3",
+    });
+    expect(
+      await releaseOutboundOrder(owner, made.orderId, {
+        takeWhatThereIs: true,
+      }),
+    ).toMatchObject({ ok: true });
+    const [request] = await requestsOf(linked);
+    const { decided } = await produce(owner, request!.id, "6", {
+      quantity: "6",
+    });
+    expect(decided.ok && decided.summary).toMatch(/directo al pedido/);
+    const heldFor = async (orderId: string) =>
+      (
+        await db.stockReservation.findMany({
+          where: {
+            state: "ACTIVE",
+            sourceId: {
+              in: (
+                await db.outboundOrderLine.findMany({ where: { orderId } })
+              ).map((line) => line.id),
+            },
+          },
+        })
+      ).map((row) => [row.locationId, row.remaining.toString()]);
+    expect(await heldFor(linked)).toEqual([[area, "2"]]);
+    expect(await heldFor(made.orderId)).toEqual([[area, "3"]]);
+    // One more is left in the area, free.
+    const balance = await db.stockBalance.findFirstOrThrow({
+      where: { productId: crate, locationId: area, status: "AVAILABLE" },
+    });
+    expect(balance.quantity.toString()).toBe("6");
+    await balanced(owner.organizationId);
+  });
+
+  it("the lot that went to the order ends «Se guardó» and is not left «in the area without task»; with Calidad too", async () => {
+    const { owner, crate } = await shop(["inventory", "production", "quality"]);
+    const saved = await saveProcessDraft(
+      owner,
+      processDocuments,
+      PRODUCTION_BATCH_PROCESS.key,
+      {
+        stages: [
+          {
+            name: "Verificado",
+            kind: "OPERATION",
+            operationKey: PRODUCTION_BATCH_VERIFICATION_OPERATION,
+          },
+          {
+            name: "Guardado",
+            kind: "OPERATION",
+            operationKey: PRODUCTION_BATCH_STORED_OPERATION,
+          },
+        ],
+      },
+    );
+    if (!saved.ok) throw new Error(saved.error);
+    await publishProcess(owner, processDocuments, PRODUCTION_BATCH_PROCESS.key);
+    await setting(owner, "inventory.putaway.mode", "tasks");
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const orderId = await outbound(owner, crate, "3");
+    await releaseOutboundOrder(owner, orderId, { makeToOrder });
+    const [request] = await requestsOf(orderId);
+    const { reportId } = await produce(owner, request!.id, "3", {}, inspector);
+    expect((await waitsOf(orderId))[0]).toMatchObject({ status: "DONE" });
+    // No put-away for what went to the order.
+    expect(
+      await db.warehouseTask.count({ where: { productionReportId: reportId } }),
+    ).toBe(0);
+    const progress = await db.processProgress.findFirstOrThrow({
+      where: {
+        documentKey: PRODUCTION_BATCH_PROCESS.key,
+        documentId: reportId,
+      },
+    });
+    const stored = await db.processStageState.findFirstOrThrow({
+      where: {
+        progressId: progress.id,
+        stage: { operationKey: PRODUCTION_BATCH_STORED_OPERATION },
+      },
+    });
+    expect(stored.status).toBe("DONE");
+    expect((await getProductionReport(owner, reportId))?.leftInArea).toEqual(
+      [],
+    );
     await balanced(owner.organizationId);
   });
 });

@@ -76,9 +76,12 @@ compartido (`lockRows(…, { mode: "share" })`, porque el disparador de
 inserción de `production_request` lee el área) → pedido → solicitudes y
 esperas → tareas. «Pedir producción de nuevo»: productos → áreas
 (compartido) → pedido. «Dejar de esperar» y cancelar el pedido: pedido →
-solicitudes (actualización condicionada). Decidir una verificación de un
-lote ligado: producto → ubicaciones → pedido ligado (`lockOrderOfWait`) →
-verificación → tareas → capacidad → progreso → archivos. Toda escritura de
+solicitudes (actualización condicionada). Crear una ola: productos → almacén → áreas (compartido) → pedidos → ola.
+«Apartar lo que ya hay»: productos → almacén → pedido. Decidir una
+verificación de un lote ligado: producto → ubicaciones → pedido ligado y,
+con cross-docking, los pedidos que pueden esperar el producto, en una sola
+llamada (`lockOrdersForProduced`) → verificación → tareas → capacidad →
+progreso → archivos. Toda escritura de
 una espera ocurre bajo el candado de su pedido. Carrera en
 `tests/server/lock-order.int.test.ts` («an outbound order that waits for
 production never deadlocks…»).

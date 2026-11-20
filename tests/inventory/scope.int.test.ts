@@ -105,6 +105,7 @@ import {
   releaseOutboundOrder,
   stopWaitingForProduction,
   askProductionAgain,
+  reserveWhatThereIs,
   reverseMovement,
   setMinimum,
   setOutboundLine,
@@ -692,6 +693,10 @@ describe("PC-12: limited to warehouse B", () => {
     expect(
       await askProductionAgain(limited, order.orderId, { makeToOrder }),
     ).toMatchObject({ ok: false, reason: "not_found" });
+    expect(await reserveWhatThereIs(limited, order.orderId)).toMatchObject({
+      ok: false,
+      reason: "not_found",
+    });
     expect(
       await setOutboundLine(limited, order.orderId, {
         productId,

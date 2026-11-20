@@ -36,6 +36,7 @@ import {
 import { releaseReservations, type ReservationSource } from "./reservations";
 import {
   closeOrderWaits,
+  creditLineWaits,
   openProductionWaits,
   waitsOfOrder,
   type MakeToOrder,
@@ -839,6 +840,141 @@ async function releaseCore(
         : ` y hay ${nextNumber - firstTask} tareas de surtido.`) +
       askedText,
   };
+}
+
+/**
+ * WMS-79 (ADR 0094): «Apartar lo que ya hay» — what a released order or one
+ * being picked still lacks is set aside from what is free now, with its
+ * picking tasks, through the same steps as releasing it (`pickSources`,
+ * `createPickTasks`). It counts toward a line's wait for production.
+ * Locks: products → warehouse (staging) → order, like releasing.
+ */
+export async function reserveWhatThereIs(
+  actor: InventoryActor,
+  orderId: string,
+): Promise<OutboundResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.outbound.release",
+  );
+  const client = forOrganization(organizationId);
+  const id = String(orderId ?? "").slice(0, 36);
+  const first = await client.outboundOrder.findFirst({
+    where: { id },
+    select: { facilityId: true, lines: { select: { productId: true } } },
+  });
+  if (!first) {
+    return {
+      ok: false,
+      reason: "not_found",
+      formError: "Este pedido no existe.",
+    };
+  }
+  const productIds = [...new Set(first.lines.map((line) => line.productId))];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await inOrder(organizationId, async (tx) => {
+        await lockRows(tx, "product", productIds);
+        if (!(await isFacilityInScope(tx, userId, first.facilityId))) {
+          return stop("not_found", "Este pedido no existe.");
+        }
+        const staging = await ensureStagingLocation(
+          tx,
+          organizationId,
+          first.facilityId,
+        );
+        const order = await lockOrder(tx, id, userId);
+        const numberText = formatOutboundNumber(order.number);
+        if (order.status !== "RELEASED" && order.status !== "PICKING") {
+          return stop(
+            "not_allowed",
+            `Solo se aparta en un pedido liberado o en surtido; ${numberText} está ${OUTBOUND_ORDER_STATUS_LABELS[order.status].toLowerCase()}.`,
+          );
+        }
+        if (order.lines.some((line) => !productIds.includes(line.productId))) {
+          return stop(
+            "not_allowed",
+            "El pedido cambió mientras se apartaba. Inténtalo de nuevo.",
+          );
+        }
+        const held = await tx.stockReservation.groupBy({
+          by: ["sourceId"],
+          where: {
+            sourceType: OUTBOUND_LINE_SOURCE,
+            sourceId: { in: order.lines.map((line) => line.id) },
+            state: "ACTIVE",
+          },
+          _sum: { remaining: true },
+        });
+        const heldOf = new Map(
+          held.map((row) => [
+            row.sourceId,
+            dec((row._sum.remaining ?? 0).toString()),
+          ]),
+        );
+        const firstTask = await nextTaskNumber(tx);
+        let nextNumber = firstTask;
+        const taken = new Map<string, Decimal>();
+        for (const line of order.lines) {
+          const lacking = dec(line.quantity.toString()).minus(
+            heldOf.get(line.id) ?? 0,
+          );
+          if (!lacking.greaterThan(0)) continue;
+          const sources = await pickSources(tx, line.productId, lacking, {
+            stagingId: staging.id,
+            facilityId: order.facilityId,
+          });
+          const take = sources.reduce(
+            (sum, source) => sum.plus(source.quantity),
+            dec(0),
+          );
+          if (!take.greaterThan(0)) continue;
+          nextNumber = await createPickTasks(tx, actor, {
+            order: {
+              number: numberText,
+              recipient: order.recipient,
+              priority: order.priority,
+            },
+            line,
+            sources,
+            stagingId: staging.id,
+            nextNumber,
+          });
+          taken.set(line.id, take);
+        }
+        if (taken.size === 0) {
+          return stop(
+            "not_allowed",
+            `No hay nada libre de lo que le falta al pedido ${numberText}.`,
+          );
+        }
+        await creditLineWaits(tx, taken);
+        await recordAuditEvent(tx, {
+          organizationId,
+          actorUserId: userId,
+          action: "inventory.outbound_topped_up",
+          target: { type: "outbound_order", id: order.id },
+          metadata: {
+            pedido: numberText,
+            tareas: nextNumber - firstTask,
+          },
+        });
+        return {
+          ok: true,
+          orderId: order.id,
+          summary: `Se apartó lo que había para el pedido ${numberText}: ${nextNumber - firstTask === 1 ? "1 tarea de surtido" : `${nextNumber - firstTask} tareas de surtido`}.`,
+        };
+      });
+    } catch (error) {
+      // A task made at once took the same number: again.
+      if ((error as { code?: string }).code === "P2002" && attempt < 4) {
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 export async function cancelOutboundOrder(

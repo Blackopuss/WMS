@@ -1731,7 +1731,11 @@ async function leftInAreaOf(
         locationId: areaLocationId,
         inspection: { productionReportId: reportId, state: "DECIDED" },
       },
-      select: { quantity: true, inspection: { select: { productId: true } } },
+      select: {
+        quantity: true,
+        movementId: true,
+        inspection: { select: { productId: true } },
+      },
     }),
     client.warehouseTask.findMany({
       where: {
@@ -1760,6 +1764,26 @@ async function leftInAreaOf(
   for (const task of tasks) {
     if (task.productId && task.quantity) {
       sum(taskedOf, task.productId, task.quantity.toString());
+    }
+  }
+  // WMS-79 (ADR 0094): what went straight to an outbound order from the
+  // area (its picking tasks keep the verification's movement).
+  const movementIds = approved.flatMap((row) =>
+    row.movementId ? [row.movementId] : [],
+  );
+  if (movementIds.length > 0) {
+    const picks = await client.warehouseTask.findMany({
+      where: {
+        kind: "PICK",
+        crossDockMovementId: { in: movementIds },
+        status: { not: "CANCELLED" },
+      },
+      select: { productId: true, quantity: true },
+    });
+    for (const task of picks) {
+      if (task.productId && task.quantity) {
+        sum(taskedOf, task.productId, task.quantity.toString());
+      }
     }
   }
   const result: ProductionReportView["leftInArea"] = [];

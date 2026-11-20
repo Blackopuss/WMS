@@ -18,8 +18,9 @@ import {
   postDisposal,
   releaseHold,
   serialKey,
-  lockOrderOfWait,
+  lockOrdersForProduced,
   sendProducedToWait,
+  sendToWaitingOrders,
   settleProductionStored,
   writeStatusChange,
   type InventoryActor,
@@ -1739,7 +1740,15 @@ async function decideCore(
     await lockRows(tx, "location", [known.locationId, ...destinations]);
     // WMS-79: the outbound order it was made for, after the locations and
     // before this document (ADR 0094).
-    if (lineWaitId) await lockOrderOfWait(tx, lineWaitId);
+    // With cross-docking, also the orders that may wait for the product,
+    // in the same call (ADR 0094).
+    const crossDock = lineWaitId
+      ? await lockOrdersForProduced(tx, actor, {
+          waitId: lineWaitId,
+          productId: known.productId,
+          locationId: known.locationId,
+        })
+      : null;
     if (returnId) await lockRows(tx, "customerReturn", [returnId]);
     await lockRows(tx, "qualityInspection", [known.id]);
     const row = await lockedOrReadInspection(tx, known.id);
@@ -2117,6 +2126,8 @@ async function decideCore(
       movementId: string;
     }[] = [];
     const arrivals: PutawayArrival[] = [];
+    // WMS-79: the movement that made each arrival available.
+    const arrivalMovements: string[] = [];
     for (const each of outcomes) {
       const reason = each.reason ?? "Se verificó y cumple.";
       let movementId: string;
@@ -2173,6 +2184,7 @@ async function decideCore(
               productionReportId:
                 origin === "PRODUCTION" ? row.productionReportId : null,
             });
+            arrivalMovements.push(movementId);
           }
         }
       } catch (error) {
@@ -2312,21 +2324,56 @@ async function decideCore(
     });
     // WMS-79 (ADR 0094): what an outbound order waits for is set aside for
     // it, with its picking task, before put-away; the rest goes on.
+    // The link comes first; with cross-docking, what is left goes to the
+    // other orders that wait for it, by their urgency.
     let toPutAway = arrivals;
-    let sentNote = "";
+    const sentNotes: string[] = [];
     if (lineWaitId && arrivals.length > 0) {
+      const left = arrivals.map((each) => each.quantity);
       const sent = await sendProducedToWait(tx, actor, {
         waitId: lineWaitId,
-        arrivals,
-      });
-      toPutAway = arrivals
-        .map((each, index) => ({
+        arrivals: arrivals.map((each, index) => ({
           ...each,
-          quantity: each.quantity.minus(sent.sent[index]!),
-        }))
+          movementId: arrivalMovements[index],
+        })),
+      });
+      sent.sent.forEach((quantity, index) => {
+        left[index] = left[index]!.minus(quantity);
+      });
+      sentNotes.push(...sent.notes);
+      if (crossDock) {
+        for (const movementId of new Set(arrivalMovements)) {
+          const indexes = arrivals
+            .map((_, index) => index)
+            .filter(
+              (index) =>
+                arrivalMovements[index] === movementId &&
+                left[index]!.greaterThan(0),
+            );
+          if (indexes.length === 0) continue;
+          const docked = await sendToWaitingOrders(
+            tx,
+            actor,
+            crossDock,
+            indexes.map((index) => ({
+              ...arrivals[index]!,
+              quantity: left[index]!,
+            })),
+            movementId,
+            { fromProductionArea: true },
+          );
+          docked.sent.forEach((quantity, at) => {
+            const index = indexes[at]!;
+            left[index] = left[index]!.minus(quantity);
+          });
+          sentNotes.push(...docked.notes);
+        }
+      }
+      toPutAway = arrivals
+        .map((each, index) => ({ ...each, quantity: left[index]! }))
         .filter((each) => each.quantity.greaterThan(0));
-      sentNote = sent.notes.join(" ");
     }
+    const sentNote = sentNotes.join(" ");
     const putaway = await createPutawayTasks(tx, actor, toPutAway);
 
     // P10, P10b: the stage «Verificación» of the lot, after the writes.

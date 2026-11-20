@@ -19,6 +19,7 @@ import {
   type PackResult,
   releaseOutboundOrder,
   removeOutboundLine,
+  reserveWhatThereIs,
   setOutboundLine,
   stopWaitingForProduction,
   type OutboundField,
@@ -275,6 +276,13 @@ export async function stopWaitingAction(
       makeToOrder,
     }),
   );
+}
+
+/** WMS-79: «Apartar lo que ya hay» for what a released order lacks. */
+export async function reserveWhatThereIsAction(
+  orderId: string,
+): Promise<OutboundStepState> {
+  return step(orderId, (who, id) => reserveWhatThereIs(who, id));
 }
 
 /** WMS-79: «Pedir producción de nuevo» for what the order still waits. */

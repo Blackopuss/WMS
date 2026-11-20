@@ -30,6 +30,7 @@ import {
   CancelOrder,
   ReleaseOrder,
   RemoveLine,
+  ReserveWhatThereIs,
   StartPacking,
   StopWaiting,
 } from "./order-controls";
@@ -150,6 +151,14 @@ export default async function PedidoPage({
     waits.some(
       (line) =>
         line.production?.status === "OPEN" && !production.get(line.id)?.active,
+    );
+  // WMS-79: a line short of a released order can set aside what is free now.
+  const mayTopUp =
+    active &&
+    (order.status === "RELEASED" || order.status === "PICKING") &&
+    access.allows("inventory.outbound.release") &&
+    order.lineItems.some(
+      (line) => line.shortText !== null || line.production?.status === "OPEN",
     );
   const mayPack =
     active &&
@@ -287,11 +296,17 @@ export default async function PedidoPage({
           </ul>
           {mayHandleWait && (
             <div className="flex flex-wrap items-start gap-3 border-t p-4 sm:px-5">
+              {mayTopUp && <ReserveWhatThereIs orderId={order.id} />}
               {mayAskAgain && <AskProductionAgain orderId={order.id} />}
               <StopWaiting orderId={order.id} />
             </div>
           )}
         </section>
+      )}
+      {mayTopUp && !order.waitsForProduction && (
+        <div className="max-w-3xl">
+          <ReserveWhatThereIs orderId={order.id} />
+        </div>
       )}
       {order.shipment && access.can("inventory.shipment.read") && (
         <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">

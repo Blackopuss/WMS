@@ -23,6 +23,7 @@ import {
   releaseUnderLock,
   type LockedOutboundOrder,
 } from "./outbound-orders";
+import type { MakeToOrder } from "./outbound-waits";
 import {
   OUTBOUND_ORDER_STATUS_LABELS,
   formatOutboundNumber,
@@ -225,6 +226,11 @@ export async function listWaveCandidates(
 export async function createWave(
   actor: InventoryActor,
   input: { orderIds: readonly unknown[] },
+  /**
+   * WMS-79 (ADR 0094): releasing a draft in a wave asks production for
+   * what falls short, like releasing it from its screen.
+   */
+  options: { makeToOrder?: MakeToOrder } = {},
 ): Promise<WaveResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -267,10 +273,17 @@ export async function createWave(
     select: { productId: true },
   });
   const productIds = [...new Set(lines.map((line) => line.productId))];
+  const areaIds = options.makeToOrder
+    ? await options.makeToOrder.areasFor(client, facility.id, productIds)
+    : [];
   for (let attempt = 0; ; attempt++) {
     try {
       return await client.$transaction(
-        (tx) => createLocked(tx, actor, ids, productIds, facility.id),
+        (tx) =>
+          createLocked(tx, actor, ids, productIds, facility.id, {
+            makeToOrder: options.makeToOrder,
+            areaIds,
+          }),
         LOCKING_TRANSACTION,
       );
     } catch (error) {
@@ -290,6 +303,7 @@ async function createLocked(
   ids: string[],
   productIds: string[],
   facilityId: string,
+  production: { makeToOrder?: MakeToOrder; areaIds: string[] },
 ): Promise<WaveResult> {
   const { organizationId, userId } = actor;
   await lockRows(tx, "product", productIds);
@@ -298,6 +312,12 @@ async function createLocked(
   }
   // Where picked goods of the warehouse wait (WMS-14); created the first time.
   const staging = await ensureStagingLocation(tx, organizationId, facilityId);
+  // WMS-79: the production areas, shared, before the orders (ADR 0094).
+  const lockedAreaIds = new Set(
+    production.areaIds.length > 0
+      ? await lockRows(tx, "location", production.areaIds, { mode: "share" })
+      : [],
+  );
   await lockRows(tx, "outboundOrder", ids);
   const orders: LockedOutboundOrder[] = [];
   for (const id of ids) {
@@ -345,7 +365,10 @@ async function createLocked(
   let released = 0;
   for (const order of ranked) {
     if (order.status !== "DRAFT") continue;
-    const done = await releaseUnderLock(tx, actor, order, staging.id, locked);
+    const done = await releaseUnderLock(tx, actor, order, staging.id, locked, {
+      makeToOrder: production.makeToOrder,
+      lockedAreaIds,
+    });
     if (!done.ok) {
       const number = formatOutboundNumber(order.number);
       const short = (done.shortages ?? [])
@@ -388,7 +411,11 @@ async function createLocked(
   if (idle) {
     return stop(
       "not_allowed",
-      `${formatOutboundNumber(idle.number)} no tiene nada por surtir: déjalo fuera de la ola.`,
+      (await tx.outboundLineWait.count({
+        where: { orderId: idle.id, status: "OPEN" },
+      })) > 0
+        ? `${formatOutboundNumber(idle.number)} no tiene nada por surtir todavía (espera producción): libéralo desde su pantalla y déjalo fuera de la ola.`
+        : `${formatOutboundNumber(idle.number)} no tiene nada por surtir: déjalo fuera de la ola.`,
       "orderIds",
     );
   }

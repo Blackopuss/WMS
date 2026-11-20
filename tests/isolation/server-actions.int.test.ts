@@ -303,6 +303,13 @@ const REVIEWED: Record<string, Review> = {
     coveredBy:
       "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
   },
+  reserveWhatThereIsAction: {
+    input: "id del pedido",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos y pedido se bloquean solo en esa empresa y dentro del alcance",
+    coveredBy:
+      "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
+  },
   askProductionAgainAction: {
     input: "id del pedido",
     identity:

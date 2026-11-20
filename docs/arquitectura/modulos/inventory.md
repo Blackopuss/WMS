@@ -56,8 +56,13 @@ código»):
   (`createPickTasks`), antes del acomodo; `creditLineWaits` suma a la espera
   lo que manda la verificación o el cross-docking. «Dejar de esperar»
   (`stopWaitingForProduction`) y cancelar el pedido cierran las esperas;
-  `askProductionAgain` pide otra solicitud para lo que falta. Toda escritura
-  de una espera ocurre bajo el candado de su pedido.
+  `askProductionAgain` pide otra solicitud para lo que falta;
+  `reserveWhatThereIs` («Apartar lo que ya hay») aparta lo libre para lo que
+  le falta a un pedido liberado o en surtido y suma a su espera. Las olas
+  (`createWave`) también piden producción. En la verificación, la liga manda
+  y lo que sobra se reparte con cross-docking si está encendido
+  (`lockOrdersForProduced`, `sendToWaitingOrders` con `fromProductionArea`).
+  Toda escritura de una espera ocurre bajo el candado de su pedido.
 - Producto a su lugar (WMS-31, ADR 0093): el área de producción **no** es
   un lugar de paso; solo una llegada con `productionReportId` (lo que una
   verificación aprueba de un lote producido) sale de una ubicación de uso

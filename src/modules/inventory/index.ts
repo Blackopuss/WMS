@@ -366,6 +366,7 @@ export {
   listOutboundOrders,
   releaseOutboundOrder,
   removeOutboundLine,
+  reserveWhatThereIs,
   setOutboundLine,
   updateOutboundOrder,
 } from "./outbound-orders";
@@ -383,7 +384,6 @@ export type {
 } from "./outbound-orders";
 export {
   askProductionAgain,
-  lockOrderOfWait,
   sendProducedToWait,
   stopWaitingForProduction,
   waitingOrderOf,
@@ -785,6 +785,7 @@ export type {
 } from "./count-accuracy";
 export { CROSS_DOCK_MODE, MAKE_TO_ORDER_MODE } from "./settings";
 export { planCrossDock, rankWaitingLines } from "./cross-dock-rules";
+export { lockOrdersForProduced, sendToWaitingOrders } from "./cross-docking";
 export type { CrossDockSent } from "./cross-docking";
 // WMS-41 (ADR 0053): what Inventario may ask to authorize.
 export { INVENTORY_APPROVAL_TYPES } from "./approvals";

@@ -20,6 +20,7 @@ import {
   registerQuickExit,
   registerTransfer,
   releaseOutboundOrder,
+  reserveWhatThereIs,
   setOutboundLine,
   stopWaitingForProduction,
   type InventoryActor,
@@ -1667,6 +1668,10 @@ describe("locks in one order (WMS-76)", () => {
         stopWaitingForProduction(owner, e.id, "Prueba de candados", {
           makeToOrder,
         }),
+        // Accepting against stopping the wait of the same order.
+        acceptProductionRequest(owner, e.requestId),
+        // Setting aside what is free for an order that waits.
+        reserveWhatThereIs(owner, d.id),
         closeProductionOrder(owner, f, "Prueba de candados"),
         deliverTask(owner, pick.id),
       ]);
@@ -1698,6 +1703,15 @@ describe("locks in one order (WMS-76)", () => {
       if (open.some((row) => row._count._all > 1)) {
         errors.push(`round ${round}: two requests for one wait`);
       }
+      // Whoever won between accepting and closing the wait, no request is
+      // left asked for a wait that no longer waits.
+      const orphan = await db.productionRequest.count({
+        where: {
+          status: "SUBMITTED",
+          lineWait: { status: { not: "OPEN" } },
+        },
+      });
+      if (orphan > 0) errors.push(`round ${round}: request left asked`);
     }
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
