@@ -106,7 +106,9 @@ export async function activeRequestWaits(
     },
     select: { lineWaitId: true },
   });
-  return new Set(rows.flatMap((row) => (row.lineWaitId ? [row.lineWaitId] : [])));
+  return new Set(
+    rows.flatMap((row) => (row.lineWaitId ? [row.lineWaitId] : [])),
+  );
 }
 
 async function askLines(
@@ -134,8 +136,7 @@ async function askLines(
     select: { number: true },
   });
   let number = last?.number ?? 0;
-  const made: { waitId: string; requestId: string; numberText: string }[] =
-    [];
+  const made: { waitId: string; requestId: string; numberText: string }[] = [];
   for (const line of lines) {
     number += 1;
     const id = newId();
@@ -303,7 +304,9 @@ export async function lineWaitOfReport(
 ): Promise<string | null> {
   const row = await client.productionReport.findFirst({
     where: { id: reportId },
-    select: { order: { select: { request: { select: { lineWaitId: true } } } } },
+    select: {
+      order: { select: { request: { select: { lineWaitId: true } } } },
+    },
   });
   return row?.order.request?.lineWaitId ?? null;
 }
@@ -415,10 +418,11 @@ export async function productionForOutboundOrder(
     },
   });
   if (requests.length === 0) return out;
-  const active = await activeRequestWaits(
-    client,
-    [...new Set(requests.flatMap((row) => (row.lineWaitId ? [row.lineWaitId] : [])))],
-  );
+  const active = await activeRequestWaits(client, [
+    ...new Set(
+      requests.flatMap((row) => (row.lineWaitId ? [row.lineWaitId] : [])),
+    ),
+  ]);
   const [readsRequests, readsOrders] = await Promise.all([
     isAllowed(actor.organizationId, actor.userId, "production.request.read"),
     isAllowed(actor.organizationId, actor.userId, "production.order.read"),

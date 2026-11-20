@@ -36,7 +36,6 @@ import {
   member,
   place,
   product,
-  recipe,
   setting,
   workshop,
 } from "../setup/production";
@@ -74,8 +73,7 @@ const requestsOf = async (orderId: string) =>
   });
 
 const statusOf = async (orderId: string) =>
-  (await db.outboundOrder.findUniqueOrThrow({ where: { id: orderId } }))
-    .status;
+  (await db.outboundOrder.findUniqueOrThrow({ where: { id: orderId } })).status;
 
 async function pickAll(actor: ProductionActor, orderId: string) {
   const tasks = await db.warehouseTask.findMany({
@@ -90,9 +88,9 @@ async function pickAll(actor: ProductionActor, orderId: string) {
     expect(await acceptTask(actor, task.id)).toMatchObject({ ok: true });
     expect(
       await confirmPick(actor, task.id, {
-        productCode: task.product.sku,
+        productCode: task.product!.sku,
         locationCode: task.fromLocation.name,
-        quantity: task.quantity.toString(),
+        quantity: task.quantity!.toString(),
       }),
     ).toMatchObject({ ok: true });
     expect(await deliverTask(actor, task.id)).toMatchObject({ ok: true });
@@ -250,7 +248,10 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     const [wait] = await waitsOf(orderId);
     expect(wait!.status).toBe("OPEN");
     const told = await db.notification.findMany({
-      where: { recipientUserId: releaser.userId, typeKey: "production.outbound_waiting" },
+      where: {
+        recipientUserId: releaser.userId,
+        typeKey: "production.outbound_waiting",
+      },
     });
     expect(told).toHaveLength(1);
     expect(told[0]!.text).toMatch(/sigue esperando/);
@@ -273,7 +274,11 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     const accepted = await acceptProductionRequest(owner, request!.id);
     expect(accepted).toMatchObject({ ok: true });
     expect(
-      await cancelProductionOrder(owner, accepted.ok ? accepted.orderId! : "", "Se descompuso la línea"),
+      await cancelProductionOrder(
+        owner,
+        accepted.ok ? accepted.orderId! : "",
+        "Se descompuso la línea",
+      ),
     ).toMatchObject({ ok: true });
     expect((await waitsOf(first))[0]!.status).toBe("OPEN");
 
@@ -288,7 +293,10 @@ describe("Pedido ligado a producción (WMS-79)", () => {
     expect(wait!.status).toBe("OPEN");
     expect(wait!.received.toString()).toBe("1");
     const told = await db.notification.findMany({
-      where: { recipientUserId: releaser.userId, typeKey: "production.outbound_waiting" },
+      where: {
+        recipientUserId: releaser.userId,
+        typeKey: "production.outbound_waiting",
+      },
       orderBy: { id: "asc" },
     });
     expect(told.map((row) => row.text)).toEqual([
@@ -312,9 +320,14 @@ describe("Pedido ligado a producción (WMS-79)", () => {
       await stopWaitingForProduction(owner, orderId, "x", { makeToOrder }),
     ).toMatchObject({ ok: false, reason: "invalid" });
     expect(
-      await stopWaitingForProduction(owner, orderId, "El cliente se lo lleva así", {
-        makeToOrder,
-      }),
+      await stopWaitingForProduction(
+        owner,
+        orderId,
+        "El cliente se lo lleva así",
+        {
+          makeToOrder,
+        },
+      ),
     ).toMatchObject({ ok: true });
     expect(await statusOf(orderId)).toBe("PICKED");
     const [wait] = await waitsOf(orderId);
@@ -446,8 +459,9 @@ describe("Pedido ligado a producción (WMS-79)", () => {
       ["supervisor"],
       [{ facilityId, locationId: zone }],
     );
-    expect([...(await productionForOutboundOrder(limited, orderId)).values()][0])
-      .toMatchObject({ request: null, order: null });
+    expect(
+      [...(await productionForOutboundOrder(limited, orderId)).values()][0],
+    ).toMatchObject({ request: null, order: null });
   });
 
   it("what cross-docking sends to a line that waits counts toward its wait", async () => {

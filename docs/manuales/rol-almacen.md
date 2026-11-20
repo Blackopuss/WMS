@@ -27,7 +27,7 @@ Inicio, Tareas, Pedidos, Producción (si está contratada, solo lectura de órde
 **Iniciar un conteo** por ubicación, capturar con **Guardar captura** y **Aplicar conteo** cuando termines (con motivo si hay diferencias). También **Programas de conteo**.
 
 ### Pedidos de salida
-**Nuevo pedido**, agregar líneas, **Liberar al almacén** (aparta lo que hay y crea tareas de surtido), o **Importar pedidos** desde Excel. Después: empaque (**Seguir empacando**), **Armar embarque** y **Confirmar salida**, y **Registrar devolución** de lo que regresa un cliente.
+**Nuevo pedido**, agregar líneas, **Liberar al almacén** (aparta lo que hay y crea tareas de surtido), o **Importar pedidos** desde Excel. Después: empaque (**Seguir empacando**), **Armar embarque** y **Confirmar salida**, y **Registrar devolución** de lo que regresa un cliente. Si la empresa pide a producción lo que falta (Configuración › Operación, «Lo que le falta a un pedido al liberarlo»), al liberar un pedido con un producto que tiene receta nace su **solicitud de producción** y el pedido muestra el bloque **Producción** («Espera producción»): no queda **Surtido** ni sale hasta que llegue lo producido (se aparta solo para ese pedido, con su tarea de surtido) o hasta que eliges **Dejar de esperar** (con motivo; sale con lo que tiene). Si producción rechaza, cancela o cierra corta, recibes el aviso **Un pedido sigue esperando producción** y puedes **Pedir producción de nuevo**.
 
 ### Tareas
 Puedes crear (**Nueva tarea**), asignar, liberar y cancelar tareas, y revisar las **Abiertas** y **Terminadas**. Cómo se hace una tarea, en [Almacenista](rol-almacenista.md).
@@ -44,4 +44,4 @@ Recibir órdenes de compra (Supervisor, Almacenista o Comprador), crear órdenes
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Gestionas las incidencias abiertas: **Atender**, **Resolver** o **Descartar**.
 
-Vigente al 2026-11-20 (sugerencias de reubicación: WMS-65; verificación: WMS-30B)
+Vigente al 2026-11-20 (sugerencias de reubicación: WMS-65; verificación: WMS-30B; pedido ligado a producción: WMS-79)

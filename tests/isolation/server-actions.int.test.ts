@@ -301,14 +301,14 @@ const REVIEWED: Record<string, Review> = {
     identity:
       "sesión y empresa activa (requireOrganizationContext); el pedido se bloquea solo en esa empresa y dentro del alcance",
     coveredBy:
-      "tests/production/make-to-order.int.test.ts y tests/inventory/scope.int.test.ts",
+      "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
   },
   askProductionAgainAction: {
     input: "id del pedido",
     identity:
       "sesión y empresa activa (requireOrganizationContext); productos, áreas y pedido se bloquean solo en esa empresa y dentro del alcance",
     coveredBy:
-      "tests/production/make-to-order.int.test.ts y tests/inventory/scope.int.test.ts",
+      "tests/production/make-to-order.int.test.ts, tests/inventory/scope.int.test.ts",
   },
   startPackingAction: {
     input: "id del pedido",

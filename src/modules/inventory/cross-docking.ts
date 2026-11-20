@@ -362,10 +362,7 @@ export async function sendToWaitingOrders(
       crossDockMovementId: movementId,
     });
     sent[share.arrival] = sent[share.arrival]!.plus(share.quantity);
-    byLine.set(
-      line.id,
-      (byLine.get(line.id) ?? dec(0)).plus(share.quantity),
-    );
+    byLine.set(line.id, (byLine.get(line.id) ?? dec(0)).plus(share.quantity));
     const entry: Sent = byOrder.get(order.id) ?? {
       parts: new Map(),
       tasks: [],

@@ -55,6 +55,7 @@ En **Producción › Solicitudes de producción** (**Solicitudes por atender (N)
 1. Abre la solicitud (**SP-0001**). Ves las existencias del producto, lo que hace falta de cada material y para cuánto alcanza.
 2. **Aceptar:** confirma cuánto, para cuándo y quién la hace; nace una orden a tu nombre y se apartan los materiales. Si el material no alcanza puedes **Aceptar y apartar lo que hay** o **Aceptar como borrador**.
 3. **Rechazar:** escribe el motivo; quien pidió lo recibe en un aviso.
+4. **Solicitudes de un pedido:** si la empresa pide a producción lo que le falta a un pedido, la solicitud nace sola al liberar el pedido y dice «Para el pedido …» (o «Para un pedido de un cliente» si no ves pedidos). Se acepta igual, sin personas asignadas de antemano. Lo que apruebes al verificar se aparta para ese pedido; lo que sobre se acomoda. Si el pedido ya no espera, aceptar te pide rechazarla. Si rechazas, cancelas la orden o la cierras con menos, el almacén recibe un aviso de que el pedido sigue esperando.
 
 ### Procesos
 Si la empresa publicó un proceso para la orden de producción, **Tareas** muestra con la insignia **Etapa** las que te tocan, y puedes asignarlas a otra persona.
@@ -69,4 +70,4 @@ Corregir existencias (Almacén o Supervisor), administrar equipos o ver costos, 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-20 (cierre de la orden: WMS-31)
+Vigente al 2026-11-20 (cierre de la orden: WMS-31; pedido ligado a producción: WMS-79)

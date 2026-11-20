@@ -351,6 +351,11 @@ const GROUPS: {
         title: "Cierre de la orden",
         text: "La orden se cierra con lo hecho, también con faltante y su motivo; se ve lo pedido, lo aprobado, lo que no cumplió y lo que sobró de material.",
       },
+      {
+        icon: Truck,
+        title: "Del pedido a producción",
+        text: "Si a un pedido le falta un producto con receta, se pide a producción ligado al pedido; lo producido se aparta para ese cliente y el pedido no sale incompleto.",
+      },
     ],
   },
   {

@@ -331,7 +331,11 @@ export async function sendProducedToWait(
         unitCode: wait.unitCode,
       },
       sources: [
-        { locationId: arrival.locationId, lotId: arrival.lotId, quantity: take },
+        {
+          locationId: arrival.locationId,
+          lotId: arrival.lotId,
+          quantity: take,
+        },
       ],
       stagingId: staging.id,
       nextNumber: next,
@@ -690,8 +694,7 @@ export async function askProductionAgain(
       throw new WaitRejected({
         ok: false,
         reason: "not_allowed",
-        formError:
-          "La receta cambió mientras se pedía. Inténtalo de nuevo.",
+        formError: "La receta cambió mientras se pedía. Inténtalo de nuevo.",
       });
     }
     const lines = waits.flatMap((wait) => {

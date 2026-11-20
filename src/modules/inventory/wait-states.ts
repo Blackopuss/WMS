@@ -23,13 +23,12 @@ export const OUTBOUND_WAIT_TRANSITIONS: Record<
   CANCELLED: [],
 };
 
-export const OUTBOUND_WAIT_STATUS_LABELS: Record<OutboundWaitStatus, string> =
-  {
-    OPEN: "Espera producción",
-    DONE: "Ya llegó lo que faltaba",
-    DROPPED: "Se dejó de esperar",
-    CANCELLED: "Se canceló el pedido",
-  };
+export const OUTBOUND_WAIT_STATUS_LABELS: Record<OutboundWaitStatus, string> = {
+  OPEN: "Espera producción",
+  DONE: "Ya llegó lo que faltaba",
+  DROPPED: "Se dejó de esperar",
+  CANCELLED: "Se canceló el pedido",
+};
 
 export function canOutboundWaitTransition(
   from: OutboundWaitStatus,

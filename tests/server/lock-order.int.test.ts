@@ -1459,13 +1459,15 @@ describe("locks in one order (WMS-76)", () => {
           where: { id: crate },
         }))!.sku,
         locationCode: from.name,
-        quantity: pick.quantity.toString(),
+        quantity: pick.quantity!.toString(),
       });
       const results = await Promise.allSettled([
         decideInspection(owner, {
           inspectionId: started.inspectionId,
           idempotencyKey: newId(),
-          outcomes: [{ status: "AVAILABLE", quantity: "4", toLocationId: area }],
+          outcomes: [
+            { status: "AVAILABLE", quantity: "4", toLocationId: area },
+          ],
         }),
         cancelOutboundOrder(owner, a.id, "Prueba de candados", { makeToOrder }),
         releaseOutboundOrder(owner, b, {
