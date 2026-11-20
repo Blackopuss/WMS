@@ -65,6 +65,8 @@ import {
   getProductStock,
   getStockByLocation,
   getWarehouseIndicators,
+  getIndicatorsByFacility,
+  listOpenWorkByPerson,
   getStockTotals,
   getTask,
   listCounts,
@@ -1072,6 +1074,16 @@ describe("limited to a zone of a warehouse", () => {
       facilityId: facilityA,
     });
     expect(asked.facility.id).toBe(facilityB);
+  });
+
+  it("the dashboards compare only what the zone reaches (WMS-34)", async () => {
+    const byFacility = await getIndicatorsByFacility(zoned, { preset: "7" });
+    expect(byFacility.rows.map((row) => row.facilityId)).toEqual([facilityB]);
+    expect(byFacility.company).toBeUndefined();
+    const seen = await getWarehouseIndicators(zoned, { preset: "7" });
+    expect(seen.previous).toBeDefined();
+    const openWork = await listOpenWorkByPerson(zoned);
+    expect(JSON.stringify(openWork)).not.toContain(facilityA);
   });
 
   it("moves only inside the zone", async () => {

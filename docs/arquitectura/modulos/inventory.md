@@ -187,6 +187,7 @@ código»):
 | Importar salidas | `exit-import.ts`, `exit-import-apply.ts` | `startExitImport` → `reviewExitImport` → `confirmExitImport` → `applyExitImport` (worker); `getExitCoverage` |
 | Exportaciones | `exports.ts` | `buildExport` y `EXPORT_KINDS`; el catálogo agrega una columna por campo personalizado en uso (WMS-58) |
 | Indicadores (WMS-32) | `indicators.ts`, `indicator-rules.ts`, `zones.ts` | `getWarehouseIndicators` (periodo del calendario de la empresa, almacén, producto y persona; topes `KPI_TOP_PRODUCTS`, `KPI_ORDERS_MAX`, `KPI_TASK_ROWS_MAX`, `KPI_COST_GROUPS_MAX`, `KPI_MAX_DAYS`); reglas puras `resolvePeriod`, `rotationOf`, `daysOfInventory`, `timeFigures`, `durationText`; `zonesOf` (zona de cada ubicación, compartida con las olas); `accuracyFigures` de `count-accuracy.ts` (exactitud de cualquier periodo, la usan Exactitud e Indicadores) |
+| Tableros y exportación de indicadores (WMS-34) | `indicators.ts`, `indicator-headline.ts`, `indicator-export.ts`, `indicator-rules.ts`, `tasks.ts`, `exports.ts` | `periodHeadline` (interna: cifras principales de un periodo, las mismas que los indicadores); `getWarehouseIndicators` trae `previous` (periodo anterior, `compare: false` lo omite) y `tasksDelivered`; `getIndicatorsByFacility` (almacenes del alcance lado a lado, tope `KPI_FACILITIES_MAX`, fila `company` solo sin límite); `headlineFigures`/`headlineTruncated` (texto de cada cifra, para pantalla y archivo); reglas puras `previousPeriod`, `countChange`, `shareChange`, `timeChange`; exportación `indicadores` en `EXPORT_KINDS` (`indicatorSheets`); `assignedOpenWhere`, `listOpenWorkByPerson` (tope `OPEN_WORK_PEOPLE_MAX`) y el filtro `person` de `listTasks` |
 | Inicio y resúmenes | `first-steps.ts`, `setup-rules.ts`, `day-summary.ts`, `unplaced.ts` | `getFirstSteps` (avance de la configuración inicial derivado de lo que existe; almacén y ubicaciones dentro del alcance; la pantalla pasa `seesTeam`, `changesSettings` y, en Inicio, `whileSettingUp`; WMS-43, ADR 0083), `planSetupSteps`/`setupAbilities`/`offeredSteps`/`doneSteps` (puras: qué pasos se ofrecen y cuál sigue; un paso no hecho antes del último hecho cuenta como saltado), `waitsForCatalog`, `SETUP_SETTINGS` (ajustes que pregunta la guía), `getDaySummary`, `listUnplacedStock` (dice qué fila ya tiene tarea de acomodo), `countUnplacedStock` |
 | Reconciliación | `reconciliation.ts` | `reconcileStock`, `reconcileValue`, `reconcileCompany` |
 | Ajustes y trabajos | `settings.ts`, `import-apply.ts`, `exit-import-apply.ts` | `INVENTORY_SETTINGS` y cada ajuste; `inventoryJobHandlers`, `exitImportJobHandlers` |
@@ -208,7 +209,9 @@ Todos los `inventory.*` del catálogo, por grupo:
 - Indicadores (WMS-32): `kpi.read` (titular, Administración, Supervisor de
   almacén y Gerencia) y `worker_performance.read` (los mismos; rendimiento
   por persona, no se conserva en una sesión de PIN). El valor, solo con
-  `cost.read`; la exactitud, solo con `count_accuracy.read`.
+  `cost.read`; la exactitud, solo con `count_accuracy.read`. Tableros
+  (WMS-34): los mismos permisos; la exportación de indicadores pide además
+  `export.create`.
 - Movimientos: `entry.create`, `opening.create`, `exit.create`,
   `transfer.create`, `adjustment.create`, `movement.reverse`.
 - Estados: `status.change`, `status.release`, `damage.report`.
@@ -413,7 +416,7 @@ entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
 (inspección al recibir, desechar y retención genérica), 0071 (procesos en
 embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea), 0078
-(desechar con autorización), 0082 (indicadores de almacén).
+(desechar con autorización), 0082 (indicadores de almacén), 0085 (tableros por rol y exportación de indicadores).
 
 ## Pruebas
 
@@ -425,7 +428,9 @@ unitarias junto al código (`*-states.test.ts`, `average-cost.test.ts`,
 Fotos al entregar una tarea en `task-photos.int.test.ts`. Indicadores de
 almacén (cada indicador contra un escenario calculado a mano, alcance, roles,
 costos y calendario de la empresa) en `indicators.int.test.ts` e
-`indicator-rules.test.ts`. Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
+`indicator-rules.test.ts`; tableros por rol (periodo anterior, por
+almacén, trabajo abierto por persona y archivo) en `dashboards.int.test.ts`.
+Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; procesos en embarques en `shipment-process.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en
 `facility-transfers.int.test.ts`; equipos en `equipment.int.test.ts`;

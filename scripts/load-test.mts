@@ -315,6 +315,8 @@ function screens(company: Company): Record<string, () => string> {
     // WMS-32: warehouse indicators, 30 and 90 days.
     Indicadores: () => "/inventario/indicadores",
     "Indicadores, 90 días": () => "/inventario/indicadores?periodo=90",
+    // WMS-34: the warehouses side by side.
+    "Indicadores por almacén": () => "/inventario/indicadores?vista=almacenes",
     // WMS-66: the global search, by words and by a document number.
     "Búsqueda global": () =>
       `/buscar?q=${encodeURIComponent(`${pick(WORDS)} ${pick(SIZES_TEXT)}`)}`,

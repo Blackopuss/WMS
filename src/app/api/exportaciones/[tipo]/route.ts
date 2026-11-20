@@ -16,7 +16,8 @@ const plain = (status: number, message: string) =>
 
 /**
  * Download of an export (IMP-11): `/api/exportaciones/catalogo`,
- * `/existencias` or `/movimientos`, with `?formato=xlsx` (default) or
+ * `/existencias`, `/movimientos` or `/indicadores` (WMS-34, with the
+ * filters of its screen), with `?formato=xlsx` (default) or
  * `csv` and, for the history, `?desde=` and `?hasta=` (2026-10-09).
  *
  * Person and company come from the session; the service checks the
@@ -39,11 +40,35 @@ export async function GET(
     const value = query.get(name)?.trim() ?? "";
     return value === "" ? undefined : value.slice(0, 10);
   };
+  const text = (name: string) => {
+    const value = query.get(name)?.trim() ?? "";
+    return value === "" ? undefined : value.slice(0, 40);
+  };
   let result;
   try {
     result = await buildExport(
       { organizationId: organization.id, userId: user.id },
-      { kind: tipo, format, from: day("desde"), to: day("hasta") },
+      {
+        kind: tipo,
+        format,
+        from: day("desde"),
+        to: day("hasta"),
+        // WMS-34: the indicators take what their screen had in the address;
+        // the service ignores anything the person may not choose.
+        ...(tipo === "indicadores"
+          ? {
+              indicators: {
+                preset: text("periodo"),
+                from: day("desde"),
+                to: day("hasta"),
+                facilityId: text("almacen"),
+                productId: text("producto"),
+                personId: text("persona"),
+                view: text("vista"),
+              },
+            }
+          : {}),
+      },
     );
   } catch (error) {
     if (isAppError(error) && error.kind === "forbidden") {
