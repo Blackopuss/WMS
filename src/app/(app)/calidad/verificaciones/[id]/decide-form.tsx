@@ -87,6 +87,90 @@ export function DecideForm({
   const value = (name: string) => state.values[name] ?? "";
   const error = (name: string) => state.fieldErrors?.[name];
   const bySerial = view.tracking === "SERIAL";
+  const filled = (prefix: string) =>
+    Object.entries(state.values).some(
+      ([name, typed]) => name.startsWith(prefix) && typed.trim() !== "",
+    ) ||
+    Object.keys(state.fieldErrors ?? {}).some((name) =>
+      name.startsWith(prefix),
+    );
+  const others = view.outcomes.filter(
+    (outcome) => outcome.value !== "AVAILABLE",
+  );
+  const othersOpen = others.some(
+    (outcome) => filled(`q:${outcome.value}`) || filled(`r:${outcome.value}`),
+  );
+  const missingOpen = filled("mq:") || filled("mr:");
+  const defectsOpen = filled("dq:") || Boolean(state.fieldErrors?.defects);
+  const outcomeRow = (outcome: (typeof view.outcomes)[number]) => (
+    <div key={outcome.value} className="space-y-3 rounded-lg border p-3">
+      <FormField
+        id={`q:${outcome.value}`}
+        label={outcome.label}
+        error={error(`q:${outcome.value}`)}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            name={`q:${outcome.value}`}
+            inputMode="decimal"
+            autoComplete="off"
+            defaultValue={value(`q:${outcome.value}`)}
+            className="max-w-48"
+          />
+        )}
+      </FormField>
+      {outcome.value !== "AVAILABLE" && (
+        <FormField
+          id={`r:${outcome.value}`}
+          label="Por qué"
+          error={error(`r:${outcome.value}`)}
+        >
+          {(control) => (
+            <Input
+              {...control}
+              name={`r:${outcome.value}`}
+              maxLength={300}
+              defaultValue={value(`r:${outcome.value}`)}
+            />
+          )}
+        </FormField>
+      )}
+      {places.length > 0 && (
+        <FormField
+          id={`l:${outcome.value}`}
+          label="Dónde quedan"
+          error={error(`l:${outcome.value}`)}
+        >
+          {(control) => (
+            <NativeSelect
+              {...control}
+              name={`l:${outcome.value}`}
+              defaultValue={value(`l:${outcome.value}`)}
+              className="max-w-full"
+            >
+              <option value="">Aquí mismo</option>
+              {places.map((place) => (
+                <option key={place.id} value={place.id}>
+                  {place.path}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+        </FormField>
+      )}
+      {bySerial && (
+        <SerialsField
+          id={`s:${outcome.value}`}
+          name={`s:${outcome.value}`}
+          label="Sus series"
+          error={error(`s:${outcome.value}`)}
+          defaultValue={value(`s:${outcome.value}`)}
+          rows={2}
+        />
+      )}
+    </div>
+  );
   const sampleWithoutSize =
     view.sampling.mode === "sample" && view.sampleSizeLabel === null;
 
@@ -180,135 +264,79 @@ export function DecideForm({
           {error("outcomes") && (
             <p className="text-sm text-destructive">{error("outcomes")}</p>
           )}
-          {view.outcomes.map((outcome) => (
-            <div
-              key={outcome.value}
-              className="space-y-3 rounded-lg border p-3"
-            >
-              <FormField
-                id={`q:${outcome.value}`}
-                label={outcome.label}
-                error={error(`q:${outcome.value}`)}
-              >
-                {(control) => (
-                  <Input
-                    {...control}
-                    name={`q:${outcome.value}`}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    defaultValue={value(`q:${outcome.value}`)}
-                    className="max-w-48"
-                  />
-                )}
-              </FormField>
-              {outcome.value !== "AVAILABLE" && (
-                <FormField
-                  id={`r:${outcome.value}`}
-                  label="Por qué"
-                  error={error(`r:${outcome.value}`)}
-                >
-                  {(control) => (
-                    <Input
-                      {...control}
-                      name={`r:${outcome.value}`}
-                      maxLength={300}
-                      defaultValue={value(`r:${outcome.value}`)}
-                    />
-                  )}
-                </FormField>
-              )}
-              {places.length > 0 && (
-                <FormField
-                  id={`l:${outcome.value}`}
-                  label="Dónde quedan"
-                  error={error(`l:${outcome.value}`)}
-                >
-                  {(control) => (
-                    <NativeSelect
-                      {...control}
-                      name={`l:${outcome.value}`}
-                      defaultValue={value(`l:${outcome.value}`)}
-                      className="max-w-full"
-                    >
-                      <option value="">Aquí mismo</option>
-                      {places.map((place) => (
-                        <option key={place.id} value={place.id}>
-                          {place.path}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  )}
-                </FormField>
-              )}
-              {bySerial && (
-                <SerialsField
-                  id={`s:${outcome.value}`}
-                  name={`s:${outcome.value}`}
-                  label="Sus series"
-                  error={error(`s:${outcome.value}`)}
-                  defaultValue={value(`s:${outcome.value}`)}
-                  rows={2}
-                />
-              )}
-            </div>
-          ))}
+          {view.outcomes
+            .filter((outcome) => outcome.value === "AVAILABLE")
+            .map(outcomeRow)}
+          {others.length > 0 && (
+            <details open={othersOpen} className="rounded-lg border p-3">
+              <summary className="flex min-h-11 cursor-pointer items-center rounded-lg font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+                Rechazadas, dañadas, en cuarentena o a restauración
+              </summary>
+              <div className="mt-3 space-y-4">{others.map(outcomeRow)}</div>
+            </details>
+          )}
         </fieldset>
 
         {view.causes.length > 0 && (
-          <fieldset className="space-y-4">
-            <legend className="font-medium">Lo que no está</legend>
-            <p className="text-sm text-muted-foreground">
-              Si contaste menos de lo esperado, di qué pasó con lo que falta.
-              Pide foto.
-            </p>
-            {view.causes.map((cause) => (
-              <div
-                key={cause.value}
-                className="space-y-3 rounded-lg border p-3"
-              >
-                <FormField
-                  id={`mq:${cause.value}`}
-                  label={cause.label}
-                  error={error(`mq:${cause.value}`)}
+          <details open={missingOpen} className="rounded-lg border p-3">
+            <summary className="flex min-h-11 cursor-pointer items-center rounded-lg font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+              Falta algo de lo esperado
+            </summary>
+            <fieldset className="mt-3 space-y-4">
+              <legend className="sr-only">Lo que no está</legend>
+              <p className="text-sm text-muted-foreground">
+                Si contaste menos de lo esperado, di qué pasó con lo que falta.
+                Pide foto.
+              </p>
+              {view.causes.map((cause) => (
+                <div
+                  key={cause.value}
+                  className="space-y-3 rounded-lg border p-3"
                 >
-                  {(control) => (
-                    <Input
-                      {...control}
-                      name={`mq:${cause.value}`}
-                      inputMode="decimal"
-                      autoComplete="off"
-                      defaultValue={value(`mq:${cause.value}`)}
-                      className="max-w-48"
+                  <FormField
+                    id={`mq:${cause.value}`}
+                    label={cause.label}
+                    error={error(`mq:${cause.value}`)}
+                  >
+                    {(control) => (
+                      <Input
+                        {...control}
+                        name={`mq:${cause.value}`}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        defaultValue={value(`mq:${cause.value}`)}
+                        className="max-w-48"
+                      />
+                    )}
+                  </FormField>
+                  <FormField
+                    id={`mr:${cause.value}`}
+                    label="Qué pasó"
+                    error={error(`mr:${cause.value}`)}
+                  >
+                    {(control) => (
+                      <Input
+                        {...control}
+                        name={`mr:${cause.value}`}
+                        maxLength={300}
+                        defaultValue={value(`mr:${cause.value}`)}
+                      />
+                    )}
+                  </FormField>
+                  {bySerial && (
+                    <SerialsField
+                      id={`ms:${cause.value}`}
+                      name={`ms:${cause.value}`}
+                      label="Sus series"
+                      error={error(`ms:${cause.value}`)}
+                      defaultValue={value(`ms:${cause.value}`)}
+                      rows={2}
                     />
                   )}
-                </FormField>
-                <FormField
-                  id={`mr:${cause.value}`}
-                  label="Qué pasó"
-                  error={error(`mr:${cause.value}`)}
-                >
-                  {(control) => (
-                    <Input
-                      {...control}
-                      name={`mr:${cause.value}`}
-                      maxLength={300}
-                      defaultValue={value(`mr:${cause.value}`)}
-                    />
-                  )}
-                </FormField>
-                {bySerial && (
-                  <SerialsField
-                    id={`ms:${cause.value}`}
-                    name={`ms:${cause.value}`}
-                    label="Sus series"
-                    error={error(`ms:${cause.value}`)}
-                    defaultValue={value(`ms:${cause.value}`)}
-                    rows={2}
-                  />
-                )}
-              </div>
-            ))}
-          </fieldset>
+                </div>
+              ))}
+            </fieldset>
+          </details>
         )}
 
         {sampleWithoutSize && (
@@ -331,41 +359,44 @@ export function DecideForm({
         )}
 
         {view.defects.length > 0 && (
-          <fieldset className="space-y-3">
-            <legend className="font-medium">
-              Defectos encontrados (opcional)
-            </legend>
-            {error("defects") && (
-              <p className="text-sm text-destructive">{error("defects")}</p>
-            )}
-            {[0, 1, 2].map((index) => (
-              <div key={index} className="flex flex-wrap gap-3">
-                <div className="min-w-0 flex-1 basis-56">
-                  <NativeSelect
-                    name={`d:${index}`}
-                    aria-label={`Defecto ${index + 1}`}
-                    defaultValue={value(`d:${index}`)}
-                  >
-                    <option value="">Sin defecto</option>
-                    {view.defects.map((defect) => (
-                      <option key={defect.id} value={defect.id}>
-                        {defect.name}
-                      </option>
-                    ))}
-                  </NativeSelect>
+          <details open={defectsOpen} className="rounded-lg border p-3">
+            <summary className="flex min-h-11 cursor-pointer items-center rounded-lg font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+              Defectos encontrados
+            </summary>
+            <fieldset className="mt-3 space-y-3">
+              <legend className="sr-only">Defectos encontrados</legend>
+              {error("defects") && (
+                <p className="text-sm text-destructive">{error("defects")}</p>
+              )}
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="flex flex-wrap gap-3">
+                  <div className="min-w-0 flex-1 basis-56">
+                    <NativeSelect
+                      name={`d:${index}`}
+                      aria-label={`Defecto ${index + 1}`}
+                      defaultValue={value(`d:${index}`)}
+                    >
+                      <option value="">Sin defecto</option>
+                      {view.defects.map((defect) => (
+                        <option key={defect.id} value={defect.id}>
+                          {defect.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                  <Input
+                    name={`dq:${index}`}
+                    aria-label={`Piezas con el defecto ${index + 1}`}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="Piezas"
+                    defaultValue={value(`dq:${index}`)}
+                    className="w-32"
+                  />
                 </div>
-                <Input
-                  name={`dq:${index}`}
-                  aria-label={`Piezas con el defecto ${index + 1}`}
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="Piezas"
-                  defaultValue={value(`dq:${index}`)}
-                  className="w-32"
-                />
-              </div>
-            ))}
-          </fieldset>
+              ))}
+            </fieldset>
+          </details>
         )}
       </div>
 

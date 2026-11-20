@@ -1914,11 +1914,11 @@ export async function decideInspection(
         const unit = row.unitCode;
         const parts = results.map(
           (each) =>
-            `${formatStock(each.quantity.toString(), unit)} ${
+            `${
               each.kind === "OUTCOME"
-                ? OUTCOME_LABELS[each.status!].toLowerCase()
-                : CAUSE_LABELS[each.cause!].toLowerCase()
-            }`,
+                ? OUTCOME_LABELS[each.status!]
+                : CAUSE_LABELS[each.cause!]
+            }: ${formatStock(each.quantity.toString(), unit)}`,
         );
         const summary = `${numberText}: ${parts.join("; ")}.`;
         if (origin === "PRODUCTION" && row.productionReportId) {
@@ -1933,7 +1933,7 @@ export async function decideInspection(
             await notify(tx, OUTPUT_VERIFIED_NOTICE, {
               organizationId,
               actorUserId: userId,
-              text: `Se verificó ${formatStock(row.expectedQuantity.toString(), unit)} de ${product.name} (${numberText}): ${formatStock(totals.approved.toString(), unit)} aprobadas.`.slice(
+              text: `Se verificó lo que reportaste de ${product.name} (${numberText}): aprobadas ${formatStock(totals.approved.toString(), unit)} de ${formatStock(row.expectedQuantity.toString(), unit)}.`.slice(
                 0,
                 300,
               ),

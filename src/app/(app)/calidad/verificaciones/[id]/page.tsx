@@ -166,7 +166,7 @@ export default async function VerificacionPage({
             {view.decided.results.map((each, index) => (
               <li key={index} className="[overflow-wrap:anywhere]">
                 <span className="font-medium">
-                  {each.quantityLabel} {each.label.toLowerCase()}
+                  {each.label}: {each.quantityLabel}
                 </span>
                 {each.place && ` · a ${each.place}`}
                 {each.reason && ` · ${each.reason}`}
