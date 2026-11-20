@@ -341,8 +341,17 @@ const GROUPS: {
         title: "Reporte de lo producido",
         text: "Se dice cuánto se hizo, con foto; el sistema descuenta la receta, calcula el costo con los materiales y deja lo hecho en un lote propio, esperando revisión.",
       },
+      {
+        icon: Forklift,
+        title: "Producto a su lugar",
+        text: "Lo aprobado sale del área de producción con su tarea de acomodo hacia donde se guarda.",
+      },
+      {
+        icon: Factory,
+        title: "Cierre de la orden",
+        text: "La orden se cierra con lo hecho, también con faltante y su motivo; se ve lo pedido, lo aprobado, lo que no cumplió y lo que sobró de material.",
+      },
     ],
-    soon: "Próximamente: cierre de la orden y producto a su lugar.",
   },
   {
     id: "calidad",

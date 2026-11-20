@@ -52,7 +52,8 @@ const dayText = (day: string) =>
 /**
  * One production order (WMS-28, ADR 0073): what it makes, its materials
  * with what is set aside for each, who makes it, and «Liberar orden» or
- * «Cancelar orden». With a process of the company (WMS-74), its stages.
+ * «Cancelar orden»; in process, «Cerrar orden» (WMS-31). With a process of
+ * the company (WMS-74), its stages.
  */
 export default async function OrdenProduccionPage({
   params,
@@ -116,6 +117,11 @@ export default async function OrdenProduccionPage({
     active && working && access.allows("production.report.create");
   const canScrap =
     active && working && access.allows("production.scrap.create");
+  // WMS-31 (ADR 0093): an order in process closes with what was made.
+  const canClose =
+    active &&
+    order.status === "IN_PROGRESS" &&
+    access.allows("production.order.close");
   const [process, people, progress] = await Promise.all([
     getProcessView(actor, processDocuments, {
       documentKey: PRODUCTION_ORDER_PROCESS.key,
@@ -241,6 +247,30 @@ export default async function OrdenProduccionPage({
               Usar la receta vigente
             </Link>
           )}
+        </p>
+      )}
+
+      {canClose && (
+        <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+          ¿Ya se terminó o ya no se va a terminar? Ciérrala con lo producido.{" "}
+          <Link
+            href={`/produccion/${idPath(order.id)}/cerrar`}
+            className="font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Cerrar orden
+          </Link>
+        </p>
+      )}
+
+      {order.status === "CLOSED" && (
+        <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">
+          Esta orden está cerrada.{" "}
+          <Link
+            href={`/produccion/${idPath(order.id)}/cerrar`}
+            className="font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Ver el cierre
+          </Link>
         </p>
       )}
 

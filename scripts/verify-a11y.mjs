@@ -474,6 +474,8 @@ try {
       // WMS-29: reporting production and the scrap of material of an order.
       ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/reportar"],
       ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/merma"],
+      // WMS-31: the reconciliation and the close of an order.
+      ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/cerrar"],
       // WMS-30B: starting a verification from the tray, and one verification.
       ["/inventario/por-inspeccionar", /^\/calidad\/verificar\?/],
       ["/calidad/verificaciones", /^\/calidad\/verificaciones\/[0-9a-f-]{36}$/],

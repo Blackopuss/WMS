@@ -33,3 +33,20 @@ Producción.
   costo, y si alguno lo tiene el valor es explícito aunque sea 0, así que
   lo producido nunca suma más valor que lo que salió; la ficha lo dice
   solo a quien lee costos.
+
+## Cierre de la orden y producto a su lugar (WMS-31, ADR 0093)
+
+| Amenaza | Control |
+| --- | --- |
+| Cerrar una orden mientras un reporte, una reversa o una merma la cambian | Candados todos los productos de la orden → orden, los mismos que esas operaciones; después del cierre, las tres rechazan bajo el candado de la orden (`close.int.test.ts`, carrera en `lock-order.int.test.ts`). |
+| Cerrar con material en manos de alguien y soltar su apartado | Una tarea `ISSUE` recogida (o con problema después de recogerla) detiene el cierre; las no recogidas se cancelan en la misma transacción. |
+| Cerrar mientras una merma espera autorización (la autorización se aplicaría a una orden cerrada) | Se rechaza el cierre; abrir la solicitud toma productos y orden, así que no se cuela después de la lectura. |
+| Cerrar o ver la conciliación de un área fuera del alcance | La orden «no existe» (`scope.int.test.ts`). |
+| Costos en la conciliación | Solo con `inventory.cost.read`; el campo no existe para los demás. |
+| Dejar disponible en el área lo que espera acomodo | Lo aprobado en el área lleva `TASK_HOLD` con su tarea; el área no es un lugar de paso (no recibe acomodos de entradas, recepciones ni cross-docking) y ningún acomodo se entrega en un área de producción. |
+| Marcar «Se guardó» sin que lo aprobado haya llegado | Solo al entregar la última tarea de acomodo abierta del lote (leída bajo el candado del progreso) o al aprobar directo a un lugar donde se guarda. |
+| Terminal compartida | Cerrar se conserva en una sesión de PIN (como liberar y cancelar, decisión del fundador). |
+
+Riesgo residual: sin acomodo por tareas y con lo aprobado en el área, «Se
+guardó» no se marca solo; la empresa usa una etapa manual o aprueba directo
+al lugar donde se guarda.

@@ -65,6 +65,7 @@ import {
   releaseReservations,
 } from "./reservations";
 import { isWaitingPlace } from "./unplaced";
+import { settleProductionStored } from "./putaway";
 import { PLACE_NOT_FOUND, scannedPlace } from "./scanned-place";
 import { ofSerials, serialsForTake } from "./serials";
 import {
@@ -1616,6 +1617,14 @@ async function putawayPlace(
       "locationCode",
     );
   }
+  // WMS-31 (ADR 0093): an area of production is not where goods are kept.
+  if (place.type === "PRODUCTION") {
+    return stop(
+      "invalid",
+      `«${place.name}» es un área de producción: acomódalo en una ubicación donde se guarde.`,
+      "locationCode",
+    );
+  }
   return place;
 }
 
@@ -1688,6 +1697,15 @@ async function deliverPutaway(
       placedLocationId: place.id,
     },
   });
+  // WMS-31 (ADR 0093): the put-away of a lot produced; with its last one
+  // delivered, «Se guardó» is done by itself (the progress, last lock).
+  const fromLot = await tx.warehouseTask.findFirst({
+    where: { id: task.id },
+    select: { productionReportId: true },
+  });
+  if (fromLot?.productionReportId) {
+    await settleProductionStored(tx, actor, fromLot.productionReportId);
+  }
   return {
     ok: true,
     taskId: task.id,

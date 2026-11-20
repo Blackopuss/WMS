@@ -58,10 +58,22 @@ export const OUTPUT_VERIFIED_NOTICE: NotificationType = {
   visibleWith: ["production.report.create"],
 };
 
+/** WMS-31 (ADR 0093): an order someone asked for or works on was closed. */
+export const ORDER_CLOSED_NOTICE: NotificationType = {
+  key: "production.order_closed",
+  module: "production",
+  label: "Se cerró una orden de producción",
+  description:
+    "Cuando se cierra una orden que pediste o en la que estás asignado: cuánto se hizo.",
+  defaultEnabled: true,
+  visibleWith: ["production.order.read"],
+};
+
 export const PRODUCTION_NOTIFICATION_TYPES: readonly NotificationType[] = [
   REQUEST_TO_DECIDE_NOTICE,
   REQUEST_ANSWERED_NOTICE,
   ORDER_FROM_REQUEST_NOTICE,
   MATERIAL_SHORT_NOTICE,
   OUTPUT_VERIFIED_NOTICE,
+  ORDER_CLOSED_NOTICE,
 ];

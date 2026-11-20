@@ -18,6 +18,7 @@ import {
   postDisposal,
   releaseHold,
   serialKey,
+  settleProductionStored,
   writeStatusChange,
   type InventoryActor,
   type PutawayArrival,
@@ -2155,6 +2156,10 @@ async function decideCore(
               lotId: row.lotId,
               quantity: each.quantity,
               status: "AVAILABLE",
+              // WMS-31 (ADR 0093): approved in the area, it leaves with
+              // its put-away task.
+              productionReportId:
+                origin === "PRODUCTION" ? row.productionReportId : null,
             });
           }
         }
@@ -2311,6 +2316,23 @@ async function decideCore(
         row.productionReportId,
         PRODUCTION_BATCH_VERIFICATION_OPERATION,
       );
+      // WMS-31 (ADR 0093): approved straight to a place where it is kept
+      // (not an area of production, not «de paso»): «Se guardó» by itself
+      // when no put-away of the lot is open.
+      if (arrivals.length > 0) {
+        const kept = await tx.location.findFirst({
+          where: {
+            id: { in: arrivals.map((each) => each.locationId) },
+            isDefault: null,
+            isStaging: null,
+            type: { notIn: ["PRODUCTION", "RECEIVING"] },
+          },
+          select: { id: true },
+        });
+        if (kept) {
+          await settleProductionStored(tx, actor, row.productionReportId);
+        }
+      }
     }
 
     if (photoIds.length > 0) {

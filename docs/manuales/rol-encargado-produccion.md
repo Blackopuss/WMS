@@ -10,9 +10,9 @@ Inicio, Tareas, Producción, Inventario, Incidencias y Configuración.
 
 ## Qué existe hoy y qué todavía no
 
-**Disponible hoy:** recetas, órdenes (crear, cambiar, liberar y cancelar), solicitudes de producción, **reportes de producción** (reportar, ver y revertir) y **merma de material**.
+**Disponible hoy:** recetas, órdenes (crear, cambiar, liberar, cancelar y **cerrar**), solicitudes de producción, **reportes de producción** (reportar, ver y revertir), **merma de material** y el acomodo de lo aprobado.
 
-**Todavía no disponible:** el **cierre de la orden**, acomodar lo aprobado del área y los turnos. Una orden pasa a **En proceso** con su primer reporte y desde ahí ya no se cancela; el cierre llega después. Lo producido queda en inspección hasta que se verifica (abajo).
+**Todavía no disponible:** los turnos. Una orden pasa a **En proceso** con su primer reporte y desde ahí ya no se cancela: se cierra con lo hecho (abajo). Lo producido queda en inspección hasta que se verifica (abajo).
 
 ## Tus tareas del día
 
@@ -40,6 +40,16 @@ Una orden necesita un área: una ubicación con uso **Producción** (la crea en 
 - **Avisar que falta material**: cuando alguien de tu área lo toca, te llega un aviso.
 - El nombre del lote de cada reporte lo decide **Configuración › Lotes de lo producido** (lo cambia el Administrador). Sin configurar, se llama como la orden y el reporte: **OP-0001-01**.
 
+### Cerrar la orden
+- En una orden **En proceso**, **Cerrar orden** abre el resumen: lo pedido, las buenas y malas, lo que falta, cuánto se aprobó, rechazó o quedó sin verificar de lo producido, y por material lo previsto, lo consumido, la merma y lo apartado sin usar.
+- Si faltan piezas, escribe por qué se cierra así (por ejemplo, «faltó material»). Es la forma de terminar una orden que ya no se va a completar.
+- Al cerrar, el material que seguía apartado queda libre donde está y se cancelan las tareas de surtir que nadie recogió. No se puede cerrar con material en camino al área ni con una merma esperando autorización.
+- Las verificaciones abiertas siguen después del cierre; **Ver el cierre** en la orden muestra el resumen al día.
+- Una orden liberada sin reportes no se cierra: se cancela.
+
+### Lo aprobado a su lugar
+Si la empresa acomoda con tareas, lo que se aprueba en el área de producción crea su tarea de acomodo hacia donde se guarda. Al entregarla (o si se aprobó directo a un lugar donde se guarda), la etapa **Se guardó** del lote se marca sola, si la empresa la usa en su proceso.
+
 ### Solicitudes de producción
 En **Producción › Solicitudes de producción** (**Solicitudes por atender (N)**):
 1. Abre la solicitud (**SP-0001**). Ves las existencias del producto, lo que hace falta de cada material y para cuánto alcanza.
@@ -59,4 +69,4 @@ Corregir existencias (Almacén o Supervisor), administrar equipos o ver costos, 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-20 (verificación: WMS-30B)
+Vigente al 2026-11-20 (cierre de la orden: WMS-31)

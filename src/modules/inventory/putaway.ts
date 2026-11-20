@@ -9,6 +9,7 @@ import {
   locationPath,
   locationScopeWhere,
 } from "@/platform/locations";
+import { assertStagesDone, completeOperationStage } from "@/platform/processes";
 import { readSetting } from "@/platform/settings";
 import {
   LOCKING_TRANSACTION,
@@ -19,6 +20,10 @@ import {
 
 import type { InventoryActor } from "./movements";
 import { nextTaskNumber } from "./picking";
+import {
+  PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_BATCH_STORED_OPERATION,
+} from "./production-batch";
 import { checkPlacement, loadPlacementRules } from "./placement";
 import {
   putawayPreferenceOf,
@@ -214,7 +219,28 @@ export type PutawayArrival = {
   /** In the product's unit. */
   quantity: Decimal;
   status: StockStatus;
+  /**
+   * WMS-31 (ADR 0093): the lot produced it comes from, when a verification
+   * approved it. Only then a location of use «Producción» is an origin of
+   * a put-away (the area is not a place «de paso»: it also keeps the
+   * materials set aside for orders).
+   */
+  productionReportId?: string | null;
 };
+
+/**
+ * Whether goods that arrived at this place leave it with a put-away task:
+ * a place «de paso», or the production area for what was approved of a
+ * lot produced (WMS-31).
+ */
+const leavesWithTask = (
+  place: { isDefault: boolean | null; isStaging: boolean | null; type: string },
+  arrival: PutawayArrival,
+) =>
+  isWaitingPlace(place) ||
+  (Boolean(arrival.productionReportId) &&
+    place.type === "PRODUCTION" &&
+    place.isStaging !== true);
 
 export type CreatedPutaway = {
   tasks: { id: string; number: number; recommended: boolean }[];
@@ -273,7 +299,12 @@ export async function createPutawayTasks(
   for (const arrival of wanted) {
     const place = placeOf.get(arrival.locationId);
     const product = productOf.get(arrival.productId);
-    if (!place || place.archivedAt || !product || !isWaitingPlace(place)) {
+    if (
+      !place ||
+      place.archivedAt ||
+      !product ||
+      !leavesWithTask(place, arrival)
+    ) {
       continue;
     }
     if (!hasPlaces.has(place.facilityId)) {
@@ -327,12 +358,54 @@ export async function createPutawayTasks(
         quantity: quantity.toString(),
         unitCode: product.unitCode,
         createdByUserId: actor.userId,
+        productionReportId: arrival.productionReportId ?? null,
       },
     });
     tasks.push({ id, number, recommended: target !== null });
     number += 1;
   }
   return { tasks, note: noteOf(tasks) };
+}
+
+/**
+ * WMS-31 (ADR 0093): «Se guardó» of a lot produced, by itself, when what
+ * was approved reached its place: called after delivering a put-away task
+ * of the lot, or after a verification approved straight to a place where
+ * it is kept (`stored`). Locks the progress of the lot first, then reads
+ * the open put-away tasks of the lot: two deliveries at once of its last
+ * two tasks queue on that lock, so the second sees the first delivered.
+ * Earlier stages still pending never stop the delivery: the stage stays to
+ * do. Without a process nothing happens. Call it last (… → capacity →
+ * progress).
+ */
+export async function settleProductionStored(
+  tx: Tx,
+  actor: InventoryActor,
+  productionReportId: string,
+): Promise<{ applied: boolean }> {
+  const stages = await assertStagesDone(
+    tx,
+    PRODUCTION_BATCH_PROCESS,
+    productionReportId,
+    PRODUCTION_BATCH_STORED_OPERATION,
+  );
+  if (!stages.ok) return { applied: false };
+  const open = await tx.warehouseTask.findFirst({
+    where: {
+      productionReportId,
+      kind: "PUTAWAY",
+      status: { in: [...OPEN_TASK_STATUSES] },
+    },
+    select: { id: true },
+  });
+  if (open) return { applied: false };
+  return completeOperationStage(
+    tx,
+    PRODUCTION_BATCH_PROCESS,
+    actor,
+    productionReportId,
+    PRODUCTION_BATCH_STORED_OPERATION,
+  );
 }
 
 /**

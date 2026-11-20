@@ -68,6 +68,17 @@ escribir): por eso no le aplica la regla de bloquear todos los productos de
 la orden. Carreras en `tests/server/lock-order.int.test.ts` («deciding a
 verification never deadlocks…»).
 
+**Cierre de la orden de producción (WMS-31, ADR 0093):** todos los
+productos de la orden (materiales y salidas, una `lockRows`) → la orden →
+sus tareas `ISSUE` abiertas → progreso del proceso de la orden. No toma el
+almacén ni ubicaciones (cambiar el estado de un documento con `facilityId`
+en un índice nunca va después de una ubicación). La entrega de un acomodo
+de un lote producido agrega al final el progreso del lote («Se guardó»:
+producto → ubicaciones → tarea → capacidad → progreso), que se toma antes
+de leer si quedan otros acomodos abiertos del lote. Carrera en
+`tests/server/lock-order.int.test.ts` («closing an order never
+deadlocks…»).
+
 ## Almacenes
 
 Una sola puerta, en `src/platform/locations/facility-lock.ts`:
