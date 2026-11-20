@@ -76,8 +76,9 @@ Lo que ya existe y se reutiliza:
 
 ### Qué no puede hacer una empresa de demostración
 
-Se comprueba en el servicio, con `isDemoCompany(client, organizationId)`,
-leído dentro de la operación:
+Se comprueba en el servicio, con `isDemoCompany(organizationId)` de
+`@/platform/tenancy` (lee `organization.isDemo`; como la marca no cambia,
+basta leerla antes de la transacción de la operación):
 
 | Operación | En una demostración |
 | --- | --- |
@@ -149,6 +150,11 @@ quedan vacíos.
 2. El worker reclama la preparación (de `PREPARING` sin reclamar a
    reclamada, actualización condicionada) y carga el juego de datos por
    bloques, cada uno con las transacciones de sus servicios.
+   `demo_company` solo es el registro de la preparación (estado, juego de
+   datos, quién la pidió, motivo de una falla): nace `PREPARING` sin
+   reclamar (disparador), solo cambia su estado, de `PREPARING` a un final
+   una vez, se reclama una vez y no se borra. La marca de demostración es
+   `organization.isDemo`, no esta fila.
 3. Al terminar queda `READY`. Si algo falla, el trabajo no se reintenta
    (repetir duplicaría datos que no se borran) y `onFailed` la deja
    `FAILED` con el motivo; también si el worker desaparece. Un trabajo que

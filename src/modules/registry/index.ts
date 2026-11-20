@@ -8,6 +8,7 @@ import { createModuleRegistry } from "@/platform/billing";
 
 export { approvalTypes } from "./approvals";
 export { customFieldReservedLabels } from "./custom-fields";
+export { DEMO_DATASET_KEYS } from "./demo";
 export { evidenceOwners } from "./evidence";
 export { moduleOpenWork } from "./open-work";
 export { notificationTypes } from "./notifications";

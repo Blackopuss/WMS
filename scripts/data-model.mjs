@@ -76,6 +76,7 @@ export const AREAS = [
       "SubscriptionItem",
       "ManualPayment",
       "PlatformStaff",
+      "DemoCompany",
       "CheckoutOrder",
       "PromoCode",
       "PaymentEvent",

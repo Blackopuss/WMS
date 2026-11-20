@@ -140,10 +140,10 @@ export type ProvisionResult =
       openWork?: { module: string; lines: string[] }[];
     };
 
-type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
+export type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 
 /** Writes one entitlement. */
-async function setEntitlement(
+export async function setEntitlement(
   tx: Tx,
   organizationId: string,
   kind: "MODULE" | "LIMIT",
@@ -363,6 +363,8 @@ export type CompanySummary = {
   ownerName: string;
   ownerEmail: string;
   createdAt: Date;
+  /** Demonstration company (WMS-44). */
+  isDemo: boolean;
 };
 
 /** Companies for the console, newest first, filtered by name or titular email. */
@@ -386,6 +388,7 @@ export async function listCompaniesForStaff(
       id: true,
       name: true,
       createdAt: true,
+      isDemo: true,
       owner: { select: { name: true, email: true } },
     },
   });
@@ -395,6 +398,7 @@ export async function listCompaniesForStaff(
     ownerName: row.owner.name,
     ownerEmail: row.owner.email,
     createdAt: row.createdAt,
+    isDemo: row.isDemo,
   }));
 }
 
@@ -426,6 +430,7 @@ export async function getCompanyPlan(
       id: true,
       name: true,
       createdAt: true,
+      isDemo: true,
       owner: { select: { name: true, email: true } },
     },
   });
@@ -465,6 +470,7 @@ export async function getCompanyPlan(
     ownerName: row.owner.name,
     ownerEmail: row.owner.email,
     createdAt: row.createdAt,
+    isDemo: row.isDemo,
     modules: [...entitlements.modules],
     productLimit: entitlements.limit("active_products"),
     productsUsed: products.used + products.reserved,

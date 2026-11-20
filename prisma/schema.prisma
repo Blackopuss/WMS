@@ -127,6 +127,8 @@ model Organization {
   currency                     String                        @default("MXN") @db.Char(3)
   /// Titular: the only account allowed to contract or cancel (USR-03).
   ownerUserId                  String                        @db.Char(36)
+  /// Demonstration company (WMS-44, ADR 0089): set when created, never changes (trigger).
+  isDemo                       Boolean                       @default(false)
   owner                        User                          @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
   createdAt                    DateTime                      @default(now()) @db.DateTime(3)
   updatedAt                    DateTime                      @updatedAt @db.DateTime(3)
@@ -179,6 +181,7 @@ model Organization {
   purchaseReturns              PurchaseReturn[]
   purchaseReturnLines          PurchaseReturnLine[]
   manualPayments               ManualPayment[]
+  demoCompanies                DemoCompany[]
   checkoutOrders               CheckoutOrder[]
   supportAccesses              SupportAccess[]
   warehouseTasks               WarehouseTask[]
@@ -1075,6 +1078,36 @@ enum ManualPaymentKind {
 /// (`validUntilBefore` → `validUntilAfter`). Immutable (triggers): a
 /// mistake is undone by a REVERSAL row pointing to the payment, which
 /// takes the same months back.
+enum DemoCompanyStatus {
+  PREPARING
+  READY
+  FAILED
+}
+
+/// How a demonstration company was prepared (WMS-44, ADR 0089): one row
+/// per demonstration, written by the console and the worker only.
+model DemoCompany {
+  id               String            @id @db.Char(36)
+  organizationId   String            @db.Char(36)
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Data set loaded (`DEMO_DATASETS`); today only "generic".
+  dataset          String            @db.VarChar(40)
+  status           DemoCompanyStatus @default(PREPARING)
+  /// Set once by the worker run that loads the data; a second run finds it and stops.
+  claimedAt        DateTime?         @db.DateTime(3)
+  /// Why it failed, for the console (no stack, one line).
+  failure          String?           @db.VarChar(500)
+  createdByUserId  String            @db.Char(36)
+  createdAt        DateTime          @default(now()) @db.DateTime(3)
+  finishedAt       DateTime?         @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  /// One demonstration per company.
+  @@unique([organizationId])
+  @@index([createdAt])
+  @@map("demo_company")
+}
+
 model ManualPayment {
   id                String            @id @db.Char(36)
   organizationId    String            @db.Char(36)

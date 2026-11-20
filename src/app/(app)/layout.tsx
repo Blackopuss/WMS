@@ -18,6 +18,7 @@ import {
   switchFacilityAction,
   switchOrganizationAction,
 } from "./actions";
+import { DemoNotice } from "./demo-notice";
 import { TerminalBar } from "./terminal-bar";
 import {
   countNotificationsAction,
@@ -102,6 +103,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           keepAction={keepTerminalSessionAction}
         />
       )}
+      {/* Demonstration company (WMS-44): its data is fictitious. */}
+      {organization.isDemo && <DemoNotice />}
       {/* Support looking in with the titular's leave (PIL-12): always said. */}
       {organization.supportUntil && (
         <div

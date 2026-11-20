@@ -58,3 +58,20 @@ export type {
 } from "./payments";
 export { PLAN_TIERS } from "./prices";
 export { CONTACT_EMAIL } from "./contact";
+export {
+  DEMO_DEFAULT_NAME,
+  DEMO_PLAN,
+  DEMO_PREPARE_JOB,
+  claimDemoPreparation,
+  createDemoCompany,
+  demoValidUntil,
+  finishDemoPreparation,
+  getDemoCompany,
+  listDemoCompanies,
+} from "./demo";
+export type {
+  CreateDemoResult,
+  DemoCompanyView,
+  DemoField,
+  DemoInput,
+} from "./demo";

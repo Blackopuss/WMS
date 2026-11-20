@@ -25,10 +25,14 @@ export default async function InternoLayout({
           className="flex min-h-11 items-center gap-2 rounded-lg font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <ShieldCheck aria-hidden="true" className="size-5 text-primary" />
-          <span>Consola interna</span>
+          {/* WMS-44: on a phone the two sections need the room. */}
+          <span className="sr-only sm:not-sr-only">Consola interna</span>
         </Link>
         <nav aria-label="Consola" className="flex items-center gap-1 text-sm">
-          {[{ href: "/interno", label: "Empresas" }].map((item) => (
+          {[
+            { href: "/interno", label: "Empresas" },
+            { href: "/interno/demostraciones", label: "Demostraciones" },
+          ].map((item) => (
             <Link
               key={item.href}
               href={item.href}

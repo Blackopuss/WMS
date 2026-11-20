@@ -9,6 +9,7 @@ import {
   sendEmail,
 } from "@/platform/email";
 import { enqueueJob, type JobHandlers } from "@/platform/jobs";
+import { isDemoCompany } from "@/platform/tenancy";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
 import { composeOrderPdf } from "./order-pdf";
@@ -96,7 +97,12 @@ export type RequestDeliveryResult =
     }
   | {
       ok: false;
-      reason: "not_found" | "invalid_state" | "no_recipient" | "limit";
+      reason:
+        | "not_found"
+        | "invalid_state"
+        | "no_recipient"
+        | "limit"
+        | "not_allowed";
       message: string;
     };
 
@@ -123,6 +129,16 @@ export async function requestOrderDelivery(
 ): Promise<RequestDeliveryResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(organizationId, userId, "purchasing.order.send");
+  // WMS-44 (ADR 0089): no mail to suppliers from a demonstration (the mark
+  // never changes, so it is read before the transaction).
+  if (await isDemoCompany(organizationId)) {
+    return {
+      ok: false,
+      reason: "not_allowed",
+      message:
+        "En una empresa de demostración las órdenes no se mandan por correo. Descarga el PDF.",
+    };
+  }
   try {
     return await forOrganization(organizationId).$transaction(async (tx) => {
       // The lock makes two requests of the same order happen one after

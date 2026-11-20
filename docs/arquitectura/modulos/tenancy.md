@@ -12,10 +12,15 @@ resuelve en cada petición con qué empresa trabaja la persona.
 | --- | --- | --- |
 | Alta | `organizations.ts` | `createOrganization` (empresa + membresía titular; una empresa por cuenta), `hasOrganization`, `MEXICO_TIME_ZONES` |
 | Contexto | `context.ts` | `requireOrganizationContext()` (sesión + empresa activa revalidada; sin empresa manda a `/crear-empresa`), `resolveActiveOrganization`, `switchOrganization`, `listMyOrganizations` |
+| Demostración | `demo.ts` | `isDemoCompany(organizationId)` (lee `organization.isDemo`) y `DEMO_REFUSED_MESSAGE`: lo consultan pagos, envío de órdenes por correo, llaves de la API y webhooks, que se rechazan en una demostración (WMS-44) |
 | Soporte | `support.ts` | `openSupportAccess`, `supportWindowFor`: personal de plataforma dentro de una empresa con ventana abierta por el titular |
 
 Toda pantalla y acción de negocio toma `organization.id` y `user.id` de
 `requireOrganizationContext()`, nunca del formulario.
+
+`ActiveOrganization.isDemo` (WMS-44) viaja en la misma consulta que ya lee la
+empresa; el layout pinta con él el aviso «Empresa de demostración». No abre
+ningún atajo de permisos.
 
 Una sesión creada antes del corte de su membresía (`sessionsRevokedAt`,
 «Cerrar todas sus sesiones» o desactivar, WMS-40) no entra a esa empresa:
@@ -37,7 +42,8 @@ Configuración y [settings](settings.md)).
 
 ## Tablas
 
-`organization`. La empresa activa de una sesión está en
+`organization` (con `isDemo`, que no cambia: disparador
+`organization_demo_keep`). La empresa activa de una sesión está en
 `session.activeOrganizationId` ([auth](auth.md)).
 
 ## Ajustes y trabajos
@@ -46,4 +52,5 @@ Ninguno.
 
 ## ADR
 
-0005 (empresas), 0029 (acceso de soporte), 0010 (ubicación inicial).
+0005 (empresas), 0029 (acceso de soporte), 0010 (ubicación inicial), 0089
+(empresa de demostración).

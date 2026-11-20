@@ -21,6 +21,7 @@ import {
   lockRows,
   type TenantDb,
 } from "@/server";
+import { DEMO_REFUSED_MESSAGE, isDemoCompany } from "@/platform/tenancy";
 
 import {
   decryptSecret,
@@ -166,6 +167,10 @@ export async function createWebhookEndpoint(
 ): Promise<WebhookResult> {
   const { organizationId, userId } = actor;
   if (!(await assertWholeCompany(actor))) return LIMITED;
+  // WMS-44 (ADR 0089): nothing leaves a demonstration (the mark never changes).
+  if (await isDemoCompany(organizationId)) {
+    return { ok: false, reason: "not_allowed", error: DEMO_REFUSED_MESSAGE };
+  }
   const read = readEndpoint(input, types);
   if (!read.ok)
     return { ok: false, reason: "invalid", fieldErrors: read.fieldErrors };

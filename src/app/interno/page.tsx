@@ -102,6 +102,7 @@ export default async function InternoPage({
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{company.name}</span>
                     <span className="block text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                      {company.isDemo && "Demostración · "}
                       {company.ownerName} · {company.ownerEmail} · desde el{" "}
                       {formatDate(company.createdAt)}
                     </span>
