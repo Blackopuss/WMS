@@ -62,6 +62,8 @@ WMS-86, WMS-87 y WMS-88 son números nuevos. El siguiente ADR libre es el 0091 (
 
 **Decisión del fundador (2026-11-20, 06:00 UTC):** «Deja la plantilla de giro como no»: WMS-45 se cierra sin hacer. Pendientes del fundador que quedan: WMS-91 (rendimiento del servidor en Indicadores e Inicio), WMS-64 (automatizaciones: sin abrir, se le preguntó si se abre), si la cuenta de una demostración debe poder tener después su empresa real, y el valor que desaparece cuando un material de la receta no tiene costo. CI de `pruebas` en verde en e263ee5; corrida manual de CI en `main` lanzada a las 05:59 UTC.
 
+**Decisión del fundador (2026-11-20, 06:05 UTC):** «Y lo de material haz que tome el costo de todo lo demás»: cuando un material de la receta no tiene costo, lo producido toma el costo de los que sí lo tienen. Abierto como **WMS-92** (número nuevo) en el chat de WMS-29 (`session_01QMjUPVUzokpmEWUQHrfePF`), sobre su rama `wms-29-reporte-produccion` ya con `pruebas`; sin migración; lleva revisor independiente ligero por tocar costos. No se pisa con WMS-30B (`session_01QMjUPTdWxMcpkDrAJ36ddS`), que sigue en curso. Al cerrarlo se actualiza el párrafo de WMS-29 en `AGENTS.md` y el ADR 0087.
+
 ## Relevo anterior de quien coordina (2026-11-17, 03:32 UTC)
 
 El chat que coordinaba (`session_01QMjUPVEbPAkRHP3gBSqvpY`) pasó con mucho de
