@@ -203,7 +203,13 @@ llaves automáticamente al aceptar.
 
 ## Decisiones que el fundador puede cambiar
 
-1. Se puede transferir con el plan vencido.
+1. Se puede transferir con el plan vencido. Razón: es un cambio de
+   plataforma, no una escritura del negocio (con el plan vencido el
+   negocio queda en solo lectura, no la administración de la empresa), y
+   puede ser justo lo que hace falta para que otra persona renueve; si el
+   titular se va con el plan vencido y no se pudiera transferir, la empresa
+   quedaría sin quien la renueve. La opción contraria (bloquearlo) sería
+   rechazar la oferta y la aceptación cuando el plan no está vigente.
 2. Ofrecer y aceptar piden contraseña y código de dos pasos; cancelar y
    rechazar no.
 3. Al aceptar se cierra el acceso de soporte abierto; no se cierran
