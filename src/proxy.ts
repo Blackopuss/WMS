@@ -20,6 +20,7 @@ const PROTECTED = [
   "/tareas",
   "/pedidos",
   "/produccion",
+  "/calidad",
   "/inventario",
   "/movimientos",
   "/ubicaciones",

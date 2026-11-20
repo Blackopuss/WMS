@@ -163,6 +163,9 @@ const SCREENS = [
   "/inventario/en-restauracion",
   // WMS-87: the list filtered by the state of the stock (folded filter open).
   "/inventario?existencias=DAMAGED",
+  // WMS-30B: the verifications of Calidad.
+  "/calidad/verificaciones",
+  "/calidad/verificaciones?vista=closed",
 ];
 /** Screens before signing in. */
 // WMS-35: the offline page (shown by the service worker) is public too.
@@ -471,6 +474,9 @@ try {
       // WMS-29: reporting production and the scrap of material of an order.
       ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/reportar"],
       ["/produccion", /^\/produccion\/[0-9a-f-]{36}$/, "/merma"],
+      // WMS-30B: starting a verification from the tray, and one verification.
+      ["/inventario/por-inspeccionar", /^\/calidad\/verificar\?/],
+      ["/calidad/verificaciones", /^\/calidad\/verificaciones\/[0-9a-f-]{36}$/],
     ]) {
       await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" });
       const hrefs = await page.$$eval("main a", (links) =>

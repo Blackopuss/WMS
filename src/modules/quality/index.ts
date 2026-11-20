@@ -105,6 +105,7 @@ export {
   getInspectionStart,
   listInspections,
   reachesQualityInspection,
+  reportVerifications,
   startInspection,
   uploadInspectionPhoto,
 } from "./inspections";
@@ -119,6 +120,7 @@ export type {
   InspectionStart,
   InspectionSummary,
   InspectionView,
+  ReportVerification,
   StartInspectionInput,
   StartInspectionResult,
 } from "./inspections";

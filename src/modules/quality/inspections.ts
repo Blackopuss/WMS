@@ -564,15 +564,15 @@ export async function getInspectionStart(
     quantityLabel: formatStock(there.toString(), slot.product.unitCode),
     free: free.toString(),
     freeLabel: formatStock(free.toString(), slot.product.unitCode),
-    origins: (await originsOf(client, slot, mode)).map(
-      ({
-        reportId: _r,
-        reportCreatedBy: _c,
-        areaLocationId: _a,
-        returnId: _t,
-        ...option
-      }) => option,
-    ),
+    origins: (await originsOf(client, slot, mode)).map((each) => ({
+      origin: each.origin,
+      lineId: each.lineId,
+      label: each.label,
+      pending: each.pending,
+      pendingLabel: each.pendingLabel,
+      openId: each.openId,
+      openNumber: each.openNumber,
+    })),
     byQuality: mode.byQuality,
   };
 }
@@ -2262,3 +2262,103 @@ export async function countOpenInspections(actor: Actor): Promise<number> {
 }
 
 export type { StockStatus };
+
+// ── What a production report has to verify ────────────────────────────
+
+export type ReportVerification = {
+  lineId: string;
+  productName: string;
+  quantityLabel: string;
+  /** What is left to verify; null when nothing. */
+  pendingLabel: string | null;
+  /** «Iniciar verificación» with this output chosen. */
+  startHref: string | null;
+  inspections: { id: string; number: string; stateLabel: string }[];
+};
+
+/**
+ * Each output of a report and its verifications, for the screen of the
+ * report: what is left to verify and where to start. Reads only; null
+ * when the person may not read verifications.
+ */
+export async function reportVerifications(
+  actor: Actor,
+  reportId: string,
+): Promise<ReportVerification[] | null> {
+  try {
+    await accessFor(actor, "read");
+  } catch {
+    return null;
+  }
+  const client = forOrganization(actor.organizationId);
+  const lines = await client.productionReportLine.findMany({
+    where: { reportId: id36(reportId), kind: "OUTPUT" },
+    orderBy: { id: "asc" },
+    select: {
+      id: true,
+      quantity: true,
+      productId: true,
+      report: { select: { reversedAt: true } },
+      movementLine: { select: { locationId: true, lotId: true } },
+    },
+  });
+  const products = new Map(
+    (
+      await client.product.findMany({
+        where: {
+          id: { in: [...new Set(lines.map((line) => line.productId))] },
+        },
+        select: { id: true, name: true, unitCode: true },
+      })
+    ).map((row) => [row.id, row]),
+  );
+  const out: ReportVerification[] = [];
+  for (const line of lines) {
+    const product = products.get(line.productId);
+    if (!product) continue;
+    if (
+      (
+        await locationsOutOfScope(client, actor.userId, [
+          line.movementLine.locationId,
+        ])
+      ).length > 0
+    ) {
+      continue;
+    }
+    const inspections = await client.qualityInspection.findMany({
+      where: { productionReportLineId: line.id },
+      orderBy: { id: "asc" },
+      select: { id: true, number: true, state: true, expectedQuantity: true },
+    });
+    const covered = inspections
+      .filter((each) => each.state !== "CANCELLED")
+      .reduce(
+        (sum, each) => sum.plus(each.expectedQuantity.toString()),
+        dec(0),
+      );
+    const pending = dec(line.quantity.toString()).minus(covered);
+    const open = pending.greaterThan(0) && !line.report.reversedAt;
+    const params = new URLSearchParams({
+      producto: line.productId,
+      ubicacion: line.movementLine.locationId,
+      origen: "PRODUCTION",
+      linea: line.id,
+    });
+    if (line.movementLine.lotId) params.set("lote", line.movementLine.lotId);
+    out.push({
+      lineId: line.id,
+      productName: product.name,
+      quantityLabel: formatStock(line.quantity.toString(), product.unitCode),
+      pendingLabel: open
+        ? formatStock(pending.toString(), product.unitCode)
+        : null,
+      startHref: open ? `/calidad/verificar?${params.toString()}` : null,
+      inspections: inspections.map((each) => ({
+        id: each.id,
+        number: formatInspectionNumber(each.number),
+        stateLabel: INSPECTION_STATE_LABELS[each.state],
+      })),
+    });
+  }
+  return out;
+}

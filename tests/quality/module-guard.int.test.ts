@@ -32,6 +32,8 @@ const NOT_SERVICES = new Set([
   "needsPhoto",
   "outcomesFor",
   "reachesQualityInspection",
+  // Answers null instead of refusing: the screen of a report asks it.
+  "reportVerifications",
   "judgeAnswer",
   "resolveSampling",
   "sampleSize",

@@ -43,7 +43,6 @@ import {
   member,
   order,
   place,
-  product,
   setting,
   workshop,
 } from "../setup/production";

@@ -17,6 +17,7 @@ import {
   PRODUCTION_BATCH_PROCESS,
   getProductionReport,
 } from "@/modules/production";
+import { reportVerifications } from "@/modules/quality";
 import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";
 import { getProcessView } from "@/platform/processes";
@@ -93,6 +94,13 @@ export default async function ReporteProduccionPage({
     documentId: report.id,
   });
   const costs = report.valueText !== undefined;
+  // WMS-30B (ADR 0091): its verification, for who reads verifications;
+  // who may start one gets the link.
+  const verifications = await reportVerifications(actor, report.id);
+  const startsVerification =
+    access.moduleState("quality") !== "none"
+      ? access.allows("quality.inspection.create")
+      : access.allows("production.output.verify");
   return (
     <PageContainer>
       <Link
@@ -227,6 +235,51 @@ export default async function ReporteProduccionPage({
           </ul>
         )}
       </section>
+
+      {verifications && verifications.length > 0 && (
+        <section
+          aria-labelledby="verificacion"
+          className="max-w-3xl rounded-xl border bg-card"
+        >
+          <h2 id="verificacion" className="border-b p-4 font-medium sm:px-5">
+            Verificación
+          </h2>
+          <ul className="divide-y">
+            {verifications.map((line) => (
+              <li key={line.lineId} className="space-y-1 p-4 text-sm sm:px-5">
+                <p className="font-medium [overflow-wrap:anywhere]">
+                  {line.quantityLabel} · {line.productName}
+                </p>
+                <p className="[overflow-wrap:anywhere] text-muted-foreground">
+                  {line.pendingLabel
+                    ? `Por verificar: ${line.pendingLabel}`
+                    : "Nada por verificar"}
+                </p>
+                {line.inspections.length > 0 && (
+                  <p className="flex flex-wrap gap-x-3">
+                    {line.inspections.map((each) => (
+                      <Link
+                        key={each.id}
+                        href={`/calidad/verificaciones/${idPath(each.id)}`}
+                        className={inlineLink}
+                      >
+                        {each.number} ({each.stateLabel.toLowerCase()})
+                      </Link>
+                    ))}
+                  </p>
+                )}
+                {line.startHref && startsVerification && (
+                  <p>
+                    <Link href={line.startHref} className={inlineLink}>
+                      Iniciar verificación
+                    </Link>
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {report.photos.length > 0 && (
         <section aria-labelledby="fotos" className="max-w-3xl space-y-2">
