@@ -759,6 +759,12 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa y se archiva solo vacío",
     coveredBy: "tests/platform/facilities.int.test.ts",
   },
+  reactivateFacilityAction: {
+    input: "id del almacén",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); el almacén se busca solo en esa empresa (otra empresa: not_found) y solo lo reactiva quien lo alcanza completo",
+    coveredBy: "tests/platform/archived-facility.int.test.ts",
+  },
   updateSettingAction: {
     input: "clave del ajuste y la opción elegida",
     identity:

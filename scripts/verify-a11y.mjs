@@ -497,6 +497,33 @@ try {
       }
     }
 
+    // WMS-85: an archived warehouse (only if the company has one) and its
+    // «Reactivar almacén» confirmation.
+    await page.goto(`${BASE}/configuracion/almacenes`, {
+      waitUntil: "networkidle",
+    });
+    const archivedHref = await page
+      .locator('section[aria-labelledby="archivados"] a')
+      .first()
+      .getAttribute("href", { timeout: 1000 })
+      .catch(() => null);
+    if (archivedHref) {
+      await page.goto(`${BASE}${archivedHref}`, { waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Reactivar almacén" }).click();
+      await page.getByRole("dialog").waitFor();
+      const violations = await axe(page);
+      check(
+        violations.length === 0,
+        `${viewport.name}: almacén archivado y su confirmación sin fallas graves de accesibilidad`,
+        violations.join("; "),
+      );
+      check(
+        (await overflow(page)) <= 0,
+        `${viewport.name}: confirmación de «Reactivar almacén» sin desbordamiento`,
+      );
+      await page.keyboard.press("Escape");
+    }
+
     // Forms sent empty: the error is said, linked and focused.
     for (const form of FORMS) {
       const target = form.signedOut
