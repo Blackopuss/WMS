@@ -653,7 +653,9 @@ export function completeStage(
       });
       if (!attached.ok) refuse("invalid", attached.error, "photos");
     }
-    await settle(context.tx, context.document, context.graph, actor);
+    await settle(context.tx, context.document, context.graph, actor, {
+      hookErrors: "throw",
+    });
     return `Listo: ${stage.name}.`;
   });
 }
@@ -703,7 +705,9 @@ export function skipStage(
     });
     context.state.status = "SKIPPED";
     await writeStep(context, actor, { action: "SKIPPED", note: reason });
-    await settle(context.tx, context.document, context.graph, actor);
+    await settle(context.tx, context.document, context.graph, actor, {
+      hookErrors: "throw",
+    });
     return `Se saltó «${context.stage.name}».`;
   });
 }
@@ -749,7 +753,9 @@ export function backStage(
     });
     targetState.status = "WAITING";
     await writeStep(context, actor, { action: "BACK", note: reason });
-    await settle(context.tx, context.document, context.graph, actor);
+    await settle(context.tx, context.document, context.graph, actor, {
+      hookErrors: "throw",
+    });
     return `Regresó a «${target!.name}»: le toca otra vez a ${areaText(target!.roles)}.`;
   });
 }

@@ -70,9 +70,15 @@ confirmar»), porque `assertStagesDone` se pregunta antes de escribirla.
 etapa de esa operación queda lista (`READY`), `settle` de `shared.ts` lo
 llama dentro de la misma transacción, bajo el candado del progreso; si
 responde `true` la etapa queda hecha ahí con su paso `OPERATION`. Solo lee;
-si lanza, la acción se deshace con `ProcessOperationFailed` (la pantalla lo
-muestra como «No se pudo revisar si … ya ocurrió»). Lo usa «Se guardó» del
-lote producido.
+si lanza dentro de una acción de una persona (`work.ts`, `hookErrors:
+"throw"`), la acción se deshace con `ProcessOperationFailed` («No se pudo
+revisar si … ya ocurrió»); dentro de una llamada de un módulo (`startProcess`,
+`reachMilestone`, `completeOperationStage`) se registra con `log.error`
+(`process.operation_settle_failed`) y la etapa se queda lista, sin deshacer
+la operación del módulo. Un error de la base de datos se relanza siempre.
+Cada evaluación pregunta por toda etapa de operación lista con gancho, así
+que una que falló se reintenta en la siguiente. Lo usa «Se guardó» del lote
+producido.
 
 ## Quién hace qué
 

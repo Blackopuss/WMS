@@ -1698,6 +1698,11 @@ export type ProductionReportView = {
     productName: string;
     locationId: string;
     quantityText: string;
+    /**
+     * Without a lot the cap counts every available piece of the product in
+     * the area (other reports, entries): «up to N», not «N».
+     */
+    exact: boolean;
   }[];
 };
 
@@ -1776,6 +1781,7 @@ async function leftInAreaOf(
       productName: line.product.name,
       locationId: areaLocationId,
       quantityText: formatStock(shown.toString(), line.unitCode),
+      exact: line.lotId !== null,
     });
   }
   return result;

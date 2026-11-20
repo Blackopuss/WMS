@@ -1,6 +1,6 @@
 import "server-only";
 
-import { newId } from "@/lib";
+import { log, newId } from "@/lib";
 import { terminalUserOfRequest } from "@/platform/auth";
 import {
   activeRoles,
@@ -193,6 +193,14 @@ export async function settle(
   document: ProcessDocument,
   graph: Graph,
   actor: { organizationId: string; userId: string | null },
+  /**
+   * What a failing `settle` of an operation does: inside a module's call
+   * («log», by default) it is logged and its stage stays ready, so it never
+   * undoes an operation that moved stock; in an action of a person
+   * («throw», work.ts) the action is undone with a message. An error of the
+   * database is always thrown as it is: the transaction cannot go on.
+   */
+  options: { hookErrors: "log" | "throw" } = { hookErrors: "log" },
 ): Promise<Map<string, StateStatus>> {
   const derived = settleStates(
     document,
@@ -229,12 +237,18 @@ export async function settle(
       state.assignedByUserId = null;
     }
     if (next === "READY" && stage?.kind === "MANUAL") ready.push(stage);
-    if (next === "READY" && stage?.kind === "OPERATION") {
-      const operation = document.operations.find(
-        (each) => each.key === stage.operationKey,
-      );
-      if (operation?.settle) asked.push({ state, stage, operation });
-    }
+  }
+  // Every operation stage that is ready and may already have happened is
+  // asked, not only the one that just became ready: one whose check failed
+  // before is asked again by any later evaluation of the same progress.
+  for (const state of graph.states) {
+    if (state.status !== "READY") continue;
+    const stage = graph.stages.find((each) => each.id === state.stageId);
+    if (stage?.kind !== "OPERATION") continue;
+    const operation = document.operations.find(
+      (each) => each.key === stage.operationKey,
+    );
+    if (operation?.settle) asked.push({ state, stage, operation });
   }
   // WMS-31 review: an operation that may already have happened says so
   // when its stage becomes ready (under the lock of the progress).
@@ -247,7 +261,15 @@ export async function settle(
         documentId: graph.progress.documentId,
       });
     } catch (error) {
-      console.error("process operation settle failed", operation.key, error);
+      if (isDatabaseError(error)) throw error;
+      if (options.hookErrors === "log") {
+        log.error("process.operation_settle_failed", {
+          documentKey: document.key,
+          operation: operation.key,
+          error: error instanceof Error ? error.name : "unknown",
+        });
+        continue;
+      }
       throw new ProcessOperationFailed(
         `No se pudo revisar si «${operation.label}» ya ocurrió. Inténtalo de nuevo.`,
       );
@@ -270,7 +292,7 @@ export async function settle(
     });
     settledAny = true;
   }
-  if (settledAny) return settle(tx, document, graph, actor);
+  if (settledAny) return settle(tx, document, graph, actor, options);
   if (graph.progress.status === "ACTIVE" && allComplete(derived)) {
     await tx.processProgress.update({
       where: { id: graph.progress.id },
@@ -285,6 +307,16 @@ export async function settle(
   }
   return derived;
 }
+
+/** An error of the database (Prisma): the transaction cannot go on. */
+const isDatabaseError = (error: unknown): boolean => {
+  const name = (error as { name?: string } | null)?.name ?? "";
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    name.startsWith("PrismaClient") ||
+    (typeof code === "string" && /^P\d{4}$/.test(code))
+  );
+};
 
 /**
  * An operation's `settle` failed while a stage became ready: the action

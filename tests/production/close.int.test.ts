@@ -777,6 +777,8 @@ describe("«Se guardó» never stays ready for ever (WMS-31 review)", () => {
         productId: crate,
         locationId: area,
         quantityText: "3 piezas",
+        // Without a lot: «up to».
+        exact: false,
       }),
     ]);
     await balanced(owner.organizationId);
@@ -960,6 +962,38 @@ describe("closing: more cases (WMS-31 review)", () => {
           recipientUserId: worker.userId,
           typeKey: "inventory.task_cancelled",
         },
+      }),
+    ).toBe(1);
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("a failing check of «Se guardó» never undoes a verification (WMS-31 review, n1)", () => {
+  it("decides the verification and leaves «Se guardó» ready", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner, crate, area } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    await lotProcess(owner);
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const id = await released(owner, crate, area, "10");
+    const lot = await made(owner, id, "2");
+    const operation = PRODUCTION_BATCH_PROCESS.operations.find(
+      (each) => each.key === PRODUCTION_BATCH_STORED_OPERATION,
+    ) as { settle?: unknown };
+    const healthy = operation.settle;
+    operation.settle = async () => {
+      throw new Error("falla de prueba");
+    };
+    try {
+      await verify(inspector, { crate, area, lineId: lot.lineId }, [
+        { status: "AVAILABLE", quantity: "2" },
+      ]);
+    } finally {
+      operation.settle = healthy;
+    }
+    expect(
+      await db.qualityInspection.count({
+        where: { productionReportId: lot.reportId, state: "DECIDED" },
       }),
     ).toBe(1);
     await balanced(owner.organizationId);

@@ -111,6 +111,18 @@ responde que la operación ya ocurrió, la etapa queda hecha ahí (con su
 paso en el rastro) y el motor vuelve a acomodar las demás. El gancho solo
 lee (no toma candados ni escribe); si lanza, la acción de la persona se
 deshace con «No se pudo revisar si … ya ocurrió» (`ProcessOperationFailed`).
+**Si el gancho falla:** dentro de una llamada de un módulo (`startProcess`,
+`reachMilestone`, `completeOperationStage`: la verificación, el reporte, el
+acomodo) se registra con `log.error` (evento
+`process.operation_settle_failed`, solo documento y operación) y la etapa se
+queda lista: **una comprobación de seguimiento nunca deshace una operación
+que movió existencias**. Solo en las acciones de personas (`work.ts`) se
+responde con el mensaje y se deshace la acción. Un error de la base de
+datos dentro del gancho se relanza tal cual en los dos casos (la
+transacción ya no puede seguir). El motor pregunta en cada evaluación por
+**toda** etapa de operación lista con gancho, no solo por la que acaba de
+quedar lista: una cuya comprobación falló se reintenta en la siguiente
+evaluación del mismo progreso.
 Los documentos que no lo declaran no cambian. `production.batch` lo declara
 para «Se guardó» con `productionLotSettled`, la misma comprobación de
 `settleProductionStored`.
@@ -335,6 +347,10 @@ API, webhook del cierre.
   aprobado ya estaba apartado en el área para otro documento, la tarea
   lleva menos y «Se guardó» se marca igual; lo que quedó lo dice la ficha
   del lote.
+- «Quedan N aprobadas en el área» de la ficha del lote no puede pasar de lo
+  disponible ahí del producto y lote; **sin lote** ese tope cuenta todo lo
+  disponible del producto en el área (otros reportes, entradas a mano), así
+  que la ficha dice «Puede haber hasta N…»: se distingue con lote.
 - «Apartado sin usar» de la conciliación suma reservas también en
   ubicaciones fuera del alcance de quien mira (como ya hace la ficha de la
   orden); no nombra ubicaciones.

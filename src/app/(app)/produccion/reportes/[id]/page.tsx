@@ -302,8 +302,9 @@ export default async function ReporteProduccionPage({
           </h2>
           {report.leftInArea.map((line) => (
             <p key={line.productId} className="[overflow-wrap:anywhere]">
-              Quedan {line.quantityText} aprobadas de {line.productName} en el
-              área sin tarea de acomodo.{" "}
+              {line.exact
+                ? `Quedan ${line.quantityText} aprobadas de ${line.productName} en el área sin tarea de acomodo.`
+                : `Puede haber hasta ${line.quantityText} aprobadas de ${line.productName} en el área sin tarea de acomodo.`}{" "}
               {access.can("inventory.transfer.create") && (
                 <Link
                   href={`/movimientos/reubicar?producto=${idPath(line.productId)}&origen=${idPath(line.locationId)}`}
