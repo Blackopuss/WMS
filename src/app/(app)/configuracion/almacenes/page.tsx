@@ -7,10 +7,14 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { getModuleAccess } from "@/platform/billing";
-import { getActiveFacility, listFacilities } from "@/platform/locations";
+import {
+  getActiveFacility,
+  listArchivedFacilities,
+  listFacilities,
+} from "@/platform/locations";
 
 import { createFacilityAction } from "./actions";
 import { FacilityForm } from "./facility-form";
@@ -55,11 +59,24 @@ export default async function AlmacenesPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const [facilities, active] = await Promise.all([
+  // WMS-85: archived warehouses only for who may bring them back (and only
+  // those whole in their scope; the service decides).
+  const canReactivate =
+    moduleState === "active" && access.allows("inventory.facility.reactivate");
+  const [facilities, active, archived] = await Promise.all([
     listFacilities(actor),
     getActiveFacility(actor),
+    canReactivate ? listArchivedFacilities(actor) : Promise.resolve([]),
   ]);
-  const { creado, archivado } = await searchParams;
+  const { creado, archivado, reactivado } = await searchParams;
+  const notice =
+    creado === "1"
+      ? "Almacén creado."
+      : archivado === "1"
+        ? "Almacén archivado."
+        : reactivado === "1"
+          ? "Almacén reactivado."
+          : null;
   const canCreate =
     moduleState === "active" && access.allows("inventory.location.create");
 
@@ -67,9 +84,9 @@ export default async function AlmacenesPage({
     <PageContainer>
       {back}
       <PageHeader title="Almacenes" />
-      {(creado === "1" || archivado === "1") && (
+      {notice && (
         <p role="status" className="text-sm text-success">
-          {creado === "1" ? "Almacén creado." : "Almacén archivado."}
+          {notice}
         </p>
       )}
       <section
@@ -124,6 +141,45 @@ export default async function AlmacenesPage({
             initial={{ name: "", code: "", address: "" }}
             submitLabel="Crear almacén"
           />
+        </section>
+      )}
+      {archived.length > 0 && (
+        <section aria-labelledby="archivados" className="max-w-3xl space-y-3">
+          <h2 id="archivados" className="text-lg font-semibold">
+            Archivados
+          </h2>
+          <ul className="divide-y rounded-xl border bg-card">
+            {archived.map((facility) => (
+              <li key={facility.id}>
+                <Link
+                  href={`/configuracion/almacenes/${facility.id}`}
+                  className="flex min-h-16 items-center gap-3 p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <Warehouse
+                    aria-hidden="true"
+                    className="size-5 shrink-0 text-muted-foreground"
+                  />
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium [overflow-wrap:anywhere]">
+                        {facility.name}
+                      </span>
+                      {facility.hasStock && (
+                        <Badge variant="outline">Tiene existencias</Badge>
+                      )}
+                    </span>
+                    <span className="block text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                      {facility.code}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </PageContainer>

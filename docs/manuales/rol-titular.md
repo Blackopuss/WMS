@@ -36,4 +36,4 @@ Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para emp
 ## Si tienes un problema
 **Reportar un problema** (ver [común](comun.md), sección 8). Para ayuda del sistema, da acceso a soporte como se describe arriba.
 
-Vigente al 2026-11-19 (configuración inicial: WMS-43; indicadores: WMS-32)
+Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85)
