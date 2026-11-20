@@ -1348,9 +1348,10 @@ beforeAll(async () => {
         recipeQuantity: "2",
       },
     });
+    const productionOutputId = newId();
     await db.productionOrderOutput.create({
       data: {
-        id: newId(),
+        id: productionOutputId,
         organizationId,
         orderId: productionOrderId,
         lineNumber: 1,
@@ -1390,6 +1391,125 @@ beforeAll(async () => {
         quantity: "2",
         unitCode: "piece",
         createdByUserId: author,
+      },
+    });
+    // A production report with its lines, a scrap of material and the
+    // numbering of lots (WMS-29).
+    const productionMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: productionMovementId,
+        organizationId,
+        type: "PRODUCTION",
+        createdByUserId: author,
+      },
+    });
+    const takenLineId = newId();
+    const madeLineId = newId();
+    await db.stockMovementLine.createMany({
+      data: [
+        {
+          id: takenLineId,
+          organizationId,
+          movementId: productionMovementId,
+          lineNumber: 1,
+          productId,
+          locationId: location.id,
+          direction: "OUT",
+          status: "AVAILABLE",
+          capturedQuantity: "1",
+          factor: "1",
+          baseQuantity: "1",
+          unitCode: "piece",
+        },
+        {
+          id: madeLineId,
+          organizationId,
+          movementId: productionMovementId,
+          lineNumber: 2,
+          productId,
+          locationId: areaId,
+          direction: "IN",
+          status: "INSPECTION",
+          capturedQuantity: "1",
+          factor: "1",
+          baseQuantity: "1",
+          unitCode: "piece",
+        },
+      ],
+    });
+    const productionReportId = newId();
+    await db.productionReport.create({
+      data: {
+        id: productionReportId,
+        organizationId,
+        orderId: productionOrderId,
+        number: 1,
+        movementId: productionMovementId,
+        goodQuantity: "1",
+        badQuantity: "0",
+        unitCode: "piece",
+        createdByUserId: author,
+      },
+    });
+    await db.productionReportLine.createMany({
+      data: [
+        {
+          id: newId(),
+          organizationId,
+          reportId: productionReportId,
+          kind: "INPUT",
+          orderLineId: productionLineId,
+          movementLineId: takenLineId,
+          productId,
+          quantity: "1",
+        },
+        {
+          id: newId(),
+          organizationId,
+          reportId: productionReportId,
+          kind: "OUTPUT",
+          orderOutputId: productionOutputId,
+          movementLineId: madeLineId,
+          productId,
+          quantity: "1",
+        },
+      ],
+    });
+    const scrapMovementId = newId();
+    await db.stockMovement.create({
+      data: {
+        id: scrapMovementId,
+        organizationId,
+        type: "DISPOSAL",
+        reason: "Merma de prueba",
+        createdByUserId: author,
+      },
+    });
+    await db.productionScrap.create({
+      data: {
+        id: newId(),
+        organizationId,
+        orderId: productionOrderId,
+        orderLineId: productionLineId,
+        movementId: scrapMovementId,
+        productId,
+        quantity: "1",
+        unitCode: "piece",
+        reason: "Merma de prueba",
+        createdByUserId: author,
+      },
+    });
+    await db.productionLotNumbering.create({
+      data: { id: newId(), organizationId, updatedByUserId: author },
+    });
+    await db.productionLotSequence.create({
+      data: {
+        id: newId(),
+        organizationId,
+        scopeKey: "",
+        period: "",
+        lastNumber: 1,
       },
     });
     // A notice, a preference, and an incident with its note (WMS-39).

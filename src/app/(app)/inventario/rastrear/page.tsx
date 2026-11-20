@@ -23,6 +23,7 @@ import {
   traceSerial,
   type TraceMatch,
 } from "@/modules/inventory";
+import { findProductionOrderByNumber } from "@/modules/production";
 import { getModuleAccess } from "@/platform/billing";
 
 import { OriginsAndOrders } from "./origins-and-orders";
@@ -149,8 +150,19 @@ export default async function RastrearPage({
 
   const query = typeof q === "string" ? q : "";
   const found = await findTraceMatches(actor, query);
+  // WMS-29: a production order «OP-…», for who reads orders.
+  const production =
+    access.moduleState("production") !== "none" &&
+    access.can("production.order.read")
+      ? await findProductionOrderByNumber(actor, query)
+      : null;
   // One answer: straight to it, like a scanned code (INV-29).
-  if (found.matches.length === 1) redirect(hrefOf(found.matches[0]!));
+  if (found.matches.length === 1 && !production) {
+    redirect(hrefOf(found.matches[0]!));
+  }
+  if (found.matches.length === 0 && production) {
+    redirect(`/produccion/${idPath(production.id)}`);
+  }
 
   return (
     <PageContainer>
@@ -190,7 +202,7 @@ export default async function RastrearPage({
           title="Escanea o escribe qué rastrear"
           description="Un lote o un número de serie muestra de dónde vino, por dónde pasó, dónde está hoy y en qué embarque salió. Un pedido o un embarque muestra qué lotes y series llevó."
         />
-      ) : found.matches.length === 0 ? (
+      ) : found.matches.length === 0 && !production ? (
         <EmptyState
           icon={Search}
           title="No encontramos nada con ese código"
@@ -205,6 +217,27 @@ export default async function RastrearPage({
             Elige cuál
           </h2>
           <ul className="divide-y">
+            {production && (
+              <li>
+                <Link
+                  href={`/produccion/${idPath(production.id)}`}
+                  className="flex min-h-16 items-center gap-3 p-4 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium [overflow-wrap:anywhere]">
+                      Orden de producción {production.numberText}
+                    </span>
+                    <span className="block text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                      {production.productName}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
+                  />
+                </Link>
+              </li>
+            )}
             {found.matches.map((match) => (
               <li key={`${match.kind}:${match.id}`}>
                 <Link

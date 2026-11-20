@@ -127,15 +127,19 @@ import {
   activateRecipeVersion,
   createProductionOrder,
   createRecipe,
+  findProductionOrderByNumber,
   getProductionOrder,
+  getProductionReport,
   getProductionRequest,
   listProductionOrders,
   listProductionRequests,
   rejectProductionRequest,
   releaseProductionOrder,
+  reportProduction,
   setRecipeArea,
   setRecipeInput,
   submitProductionRequest,
+  traceProduction,
 } from "@/modules/production";
 import {
   addOrderLine,
@@ -2234,6 +2238,69 @@ describe("PC-12: production orders (WMS-28)", () => {
       reason: "not_found",
     });
     expect(await getProductionOrder(free, made.orderId)).not.toBeNull();
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: production reports (WMS-29)", () => {
+  it("a report of A does not exist from B, nor its order in the trace, nor its lot", async () => {
+    for (const [key, value] of [
+      ["production.materials.mode", "direct"],
+      ["production.report.photo", "optional"],
+    ]) {
+      await updateOperationSetting(owner, operationSettings, key!, value!);
+    }
+    const area = await createLocation(owner, {
+      level: 1,
+      name: "Línea reporte A",
+      type: "PRODUCTION",
+    });
+    if (!area.ok) throw new Error(JSON.stringify(area));
+    const box = await createProduct(owner, {
+      sku: "ALC-CAJA",
+      name: "Caja reportada",
+      tracking: "LOT",
+    });
+    if (!box.ok) throw new Error(JSON.stringify(box));
+    const recipe = await createRecipe(owner, box.productId, {
+      baseQuantity: "1",
+    });
+    if (!recipe.ok) throw new Error(JSON.stringify(recipe));
+    await setRecipeInput(owner, recipe.versionId, {
+      productId,
+      quantity: "1",
+    });
+    expect(await activateRecipeVersion(owner, recipe.versionId)).toMatchObject({
+      ok: true,
+    });
+    const made = await createProductionOrder(owner, {
+      productId: box.productId,
+      quantity: "1",
+      areaLocationId: area.locationId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    expect(await releaseProductionOrder(owner, made.orderId)).toMatchObject({
+      ok: true,
+    });
+    const done = await reportProduction(owner, made.orderId, {
+      good: "1",
+      idempotencyKey: newId(),
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const view = await getProductionReport(owner, done.reportId);
+    const lotId = view?.outputs[0]?.lotId;
+    expect(lotId).toBeTruthy();
+    expect(await getProductionReport(limited, done.reportId)).toBeNull();
+    expect(
+      await findProductionOrderByNumber(limited, view!.orderNumberText),
+    ).toBeNull();
+    expect(await traceProduction(limited, { lotId: lotId! })).toEqual({
+      madeIn: [],
+      usedIn: [],
+    });
+    expect(
+      (await traceProduction(free, { lotId: lotId! }))?.madeIn.length,
+    ).toBe(1);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });

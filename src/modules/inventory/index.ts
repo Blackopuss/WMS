@@ -644,7 +644,8 @@ export {
   parseSerialList,
   serialsText,
 } from "./serial-rules";
-export { serialsOfLines as serialUnitsOfLines } from "./serials";
+export { serialKey, serialsOfLines as serialUnitsOfLines } from "./serials";
+export { parseCalendarDay } from "./lot-rules";
 export {
   SERIAL_PAGE_SIZE,
   findTraceMatches,
@@ -968,6 +969,16 @@ export {
 
 // WMS-66: what Inventario offers to the global search (ADR 0081).
 export { INVENTORY_SEARCH_SOURCES } from "./search";
+export {
+  planMaterialTakes,
+  postProduction,
+  reachableMaterial,
+  reverseProduction,
+  type MaterialTake,
+  type ProductionOutputInput,
+} from "./production-entry";
+export { dayWindow } from "./calendar-day";
+export { KEY_REUSED } from "./movements";
 export {
   SLOTTING_SCAN_MAX,
   SUGGESTION_CHANGED,

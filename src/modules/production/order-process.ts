@@ -13,6 +13,11 @@ import { PRODUCTION_ORDER_STATUS_LABELS } from "./order-states";
  * the state of the order.
  */
 export const PRODUCTION_ORDER_RELEASED_OPERATION = "production.order.released";
+/**
+ * WMS-29 (ADR 0087): the first report takes the order to «En proceso»; the
+ * company may put stages before it (materials brought, a check).
+ */
+export const PRODUCTION_ORDER_REPORTED_OPERATION = "production.order.reported";
 
 export const PRODUCTION_ORDER_PROCESS: ProcessDocument = {
   key: "production.order",
@@ -39,6 +44,12 @@ export const PRODUCTION_ORDER_PROCESS: ProcessDocument = {
       label: "Orden liberada",
       milestone: "DRAFT",
       leadsTo: "RELEASED",
+    },
+    {
+      key: PRODUCTION_ORDER_REPORTED_OPERATION,
+      label: "Producción reportada",
+      milestone: "RELEASED",
+      leadsTo: "IN_PROGRESS",
     },
   ],
   readPermission: "production.order.read",

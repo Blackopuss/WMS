@@ -8,6 +8,31 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-29** Reporte de producción (ADR 0087, Fase 3): quien produce dice
+  cuánto hizo (y cuántas piezas malas, con motivo) en `/produccion/[id]/reportar`,
+  con foto (obligatoria por omisión, ajuste `production.report.photo`); el
+  sistema descuenta los materiales de la receta (acumulado, sin residuos; lo
+  apartado para la orden primero y después lo libre, sin depender del ajuste
+  vigente de `production.materials.mode`), mete lo producido en `INSPECTION`
+  en el área con un lote por reporte (nomenclatura por empresa en
+  Configuración › «Lotes de lo producido») y escribe un movimiento
+  `PRODUCTION` (no se reversa desde Inventario). Nunca se produce más de lo
+  que pide la orden; si el material no alcanza no guarda nada y avisa para
+  cuánto alcanza («Avisar que falta material»). El costo de lo producido es
+  solo de materiales, al costo promedio; si un material no tiene costo, lo
+  producido entra sin costo. «Revertir reporte» (con motivo, mientras todo lo
+  producido siga intacto en inspección) y «Reportar merma de material»
+  (`postDisposal` con `takesAvailable`; tipo de aprobación propio
+  `production.scrap`, apagado por omisión). La orden pasa a «En proceso» con
+  el primer reporte; documento de proceso nuevo `production.batch`; el rastreo
+  acepta `OP-…`. Sin permisos nuevos. Migración
+  `20261120130000_wms29_production_reports` (valor `PRODUCTION`, tablas de
+  reporte, líneas, merma y nomenclatura, y `evidence_photo.productionReportId`).
+  Revisor independiente en dos vueltas (la primera «no unir» por un
+  interbloqueo entre la merma y la entrega de una tarea «Surtir a producción»
+  y por el cambio del ajuste de materiales con órdenes abiertas; la segunda
+  «unir»). **Decisión abierta al fundador:** un material sin costo deja ese
+  valor fuera del inventario.
 - **WMS-44** Empresa de demostración (ADR 0089, Fase 5): el personal de
   plataforma la crea desde la consola interna (`/interno/demostraciones`,
   en dos pasos: primero muestra el nombre y el correo de la cuenta y solo un

@@ -11,11 +11,13 @@ el personal de plataforma ya puede activarlo; antes estaba anunciado (ADR
 
 Recetas en la ficha del producto (WMS-27), órdenes de producción
 (WMS-28, ADR 0073) y solicitudes de producción desde el piso (WMS-28B,
-ADR 0075); después, reportes de lo producido y cierre (propuesta
-`docs/flujos/PRODUCCION_CALIDAD.md`, pasos WMS-29 y WMS-31). Desde WMS-28 **aparta** existencias (reservas de los
-materiales de una orden liberada) y crea tareas «Surtir a producción»; no
-escribe movimientos ni saldos por sí mismo (las tareas los escribe
-Inventario al entregarse).
+ADR 0075) y reportes de producción con su merma (WMS-29, ADR 0087); el
+cierre llega con WMS-31. Desde WMS-28 **aparta** existencias (reservas de
+los materiales de una orden liberada) y crea tareas «Surtir a producción».
+Desde WMS-29 **consume y produce**: el movimiento `PRODUCTION`, su reversa
+y el `DISPOSAL` de la merma los escribe Inventario (`production-entry.ts`,
+`postDisposal`) con lo que Producción decide; Producción no escribe saldos
+por sí mismo.
 
 ## Servicios públicos (`index.ts`)
 
@@ -92,6 +94,37 @@ materiales → la solicitud (actualización condicionada `status =
 (único, inmutable) liga la orden a su solicitud; quien aprobó es quien
 decidió la solicitud.
 
+**Reportes (WMS-29, ADR 0087).** `reportProduction` (`reports.ts`):
+«Hice N» y piezas malas con motivo sobre una orden liberada o en proceso;
+nunca más de lo que falta (bajo el candado de la orden). Consumo
+automático y acumulado (`report-rules.ts`: `consumeNow`, `produceNow`,
+`cumulativeThatFits`, `goodThatFits`): materiales `ceil_paso(receta × (buenas
++ malas acumuladas) ÷ base)` menos lo ya consumido, salidas `floor_paso`
+con las buenas acumuladas. De dónde: lo apartado de la línea al alcance de
+quien reporta, menos lo que una tarea `ISSUE` abierta todavía tiene que
+llevar (sin depender del ajuste vigente), luego lo libre con `pickSources`
+(en modo `issue`, solo dentro del área; `planMaterialTakes` de Inventario). Si no alcanza, no guarda
+y responde qué falta y para cuánto alcanza. Lo hecho entra en `INSPECTION`
+en el área con un lote nuevo (`lot-numbering.ts`: nomenclatura de la
+empresa o `OP-0001-01`), costeado con los materiales repartidos por la
+parte del costo de las salidas que entran. Con personas asignadas reportan
+ellas y quien crea órdenes. El primer reporte pasa la orden a
+`IN_PROGRESS` (antes de bloquear ubicaciones), espera las etapas de la
+operación «Producción reportada» y empieza el proceso del lote
+(`production.batch`, `report-process.ts`). Foto según
+`production.report.photo` (propósito `production_report_photo`,
+`reachesProductionReport`). `reverseProductionReport`: reversa entera
+mientras lo producido siga intacto en inspección (`reverseProduction` de
+Inventario), re-aparta lo que había salido de lo apartado; exige alcanzar
+todas las ubicaciones que el reporte tocó.
+`reportMaterialScrap` (`scrap.ts`): `DISPOSAL` con `postDisposal(…,
+{ takesAvailable: true })` después de consumir lo apartado; tipo de
+aprobación propio `production.scrap`. `warnMaterialShortage`: aviso
+`production.material_short`. Rastreo: `findProductionOrderByNumber` y
+`traceProduction` (lo que la pantalla de rastreo y la ficha del lote
+agregan a lo de Inventario). Candados del reporte: productos → orden →
+estado → ubicaciones → capacidad → nomenclatura → progreso → archivos.
+
 ## Permisos
 
 `production.recipe.read|manage`, `production.order.read|create|release|cancel|close`,
@@ -101,7 +134,9 @@ decidió la solicitud.
 (sección «Producción») y ADR 0062. WMS-27 usa los de recetas; WMS-28,
 `production.order.read|create|release|cancel` (`close` llega con WMS-31) y
 `production.report.create` solo para saber a quién se puede asignar;
-WMS-28B, `production.request.read|create|decide`.
+WMS-28B, `production.request.read|create|decide`; WMS-29,
+`production.report.create|reverse` y `production.scrap.create`
+(`production.shift.manage` sigue sin uso: no hay turnos todavía).
 
 Roles ligados (`ROLE_MODULE`): `production_operator` (Operario de
 producción) y `production_supervisor` (Encargado de producción). Sin el
@@ -120,6 +155,11 @@ módulo no dan nada.
 | `production_order_line` | Material de la orden: cantidad escalada (hacia arriba al paso del material), su unidad, lo de la receta y la merma esperada |
 | `production_order_output` | Lo que sale: cantidad esperada (hacia abajo) y parte del costo |
 | `production_order_assignee` | Personas asignadas (cambian hasta cerrar o cancelar) |
+| `production_report` | Reporte `R-01` de una orden: movimiento `PRODUCTION` (único), buenas, malas y su motivo, código de lote, quién y cuándo; se marca revertido una vez (con su movimiento de reversa) y nada más cambia |
+| `production_report_line` | Una por línea del movimiento: material (`INPUT`, con cuánto salió de lo apartado) o salida (`OUTPUT`); suma lo ya consumido y producido |
+| `production_scrap` | Merma de material de una orden: su `DISPOSAL`, línea, cantidad y motivo |
+| `production_lot_numbering` | Nomenclatura de lotes de lo producido (una por empresa) |
+| `production_lot_sequence` | Último consecutivo por producto (o empresa) y periodo; solo sube |
 | `production_request` | Solicitud `SP-0001`: almacén, área, producto, cantidad pedida y su unidad, motivo, estado (`SUBMITTED → ACCEPTED | REJECTED | CANCELLED`, disparador `production_request_transition`), quién pidió, decidió (con motivo si rechazó) o canceló. Lo pedido no cambia y no se borra |
 
 Materiales y salidas de una receta solo cambian mientras su versión es
@@ -138,16 +178,22 @@ del menú (WMS-28): `/produccion` (lista), `/produccion/nueva`,
 `/produccion/[id]/editar` (borrador). Solicitudes (WMS-28B): bloque «Queda
 poco» en «Mis tareas» (`/tareas`), `/produccion/solicitudes` (lista),
 `/produccion/solicitudes/nueva` (pedir) y `/produccion/solicitudes/[id]`
-(ficha y pantalla de decisión).
+(ficha y pantalla de decisión). Reportes (WMS-29): avance en la ficha de la
+orden, `/produccion/[id]/reportar`, `/produccion/[id]/merma`,
+`/produccion/reportes/[id]` (reporte, fotos, proceso del lote, revertir) y
+`/configuracion/lotes-de-produccion`.
 
 ## Ajustes y trabajos
 
 Ajustes (Operación › Producción): `production.materials.mode` (`direct` por
 omisión, `issue`) y `production.release.short` (`ask` por omisión,
 `block`), y `production.request.low_margin` (`0`, `10`, `25` por omisión,
-`50` %; WMS-28B). Sin trabajos en segundo plano. Avisos (WMS-28B,
-`notices.ts`): `production.request_to_decide`,
-`production.request_answered`, `production.order_from_request`.
+`50` %; WMS-28B) y `production.report.photo` (`required` por omisión,
+`optional`, `off`; WMS-29). Sin trabajos en segundo plano. Avisos
+(`notices.ts`): `production.request_to_decide`,
+`production.request_answered`, `production.order_from_request` y
+`production.material_short` (WMS-29). Aprobación: `production.scrap`
+(`approvals.ts`, apagada por omisión).
 
 ## Bitácora
 
@@ -156,7 +202,10 @@ omisión, `issue`) y `production.release.short` (`ask` por omisión,
 `production.order_created`, `production.order_changed`,
 `production.order_released`, `production.order_cancelled`,
 `production.request_created`, `production.request_accepted`,
-`production.request_rejected`, `production.request_cancelled`.
+`production.request_rejected`, `production.request_cancelled`,
+`production.reported`, `production.report_reversed`,
+`production.scrap_reported`, `production.lot_numbering_changed`,
+`production.material_short`.
 
 **Almacén archivado (WMS-82, ADR 0077).** `shareFacility` (crear, guardar,
 cambiar personas, aceptar una solicitud) rechaza un almacén archivado con la
@@ -167,7 +216,8 @@ con órdenes abiertas o solicitudes por atender de ese almacén.
 ## ADR
 
 0062 (roles y permisos de producción y calidad), 0066 (recetas), 0073
-(órdenes de producción), 0075 (solicitudes de producción).
+(órdenes de producción), 0075 (solicitudes de producción), 0087
+(reporte de producción).
 
 ## Pruebas
 
@@ -175,7 +225,10 @@ con órdenes abiertas o solicitudes por atender de ese almacén.
 `tests/production/recipes.int.test.ts` (servicio, base, ciclos y
 activaciones simultáneas, roles, solo lectura, entre empresas) y
 `tests/production/module-guard.int.test.ts` (guarda del módulo) y
-`tests/production/orders.int.test.ts` (órdenes: escalar la receta,
+`tests/production/reports.int.test.ts` y `case-5-5.int.test.ts` (WMS-29:
+consumo, no producir de más, faltante, costo, lotes, series, subproductos,
+reversa, merma con y sin autorización, concurrencia, alcance, rastreo,
+proceso, plan vencido, foto), `tests/production/orders.int.test.ts` (órdenes: escalar la receta,
 disparadores, liberar con faltante, PC-2 con liberaciones simultáneas,
 lotes y series, surtir al área de punta a punta, cancelar, receta cambiada,
 proceso, roles, solo lectura, alcance y entre empresas) y

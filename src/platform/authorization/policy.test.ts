@@ -207,6 +207,24 @@ describe("shared terminal (WMS-38)", () => {
     expect(can(titular, "production.recipe.read")).toBe(true);
   });
 
+  it("reports production, scrap and reversals from the floor (WMS-29)", () => {
+    const operario: Subject = {
+      ...member("production_operator"),
+      terminal: true,
+    };
+    expect(can(operario, "production.report.create")).toBe(true);
+    expect(can(operario, "production.scrap.create")).toBe(true);
+    expect(can(operario, "production.report.reverse")).toBe(false);
+    const encargado: Subject = {
+      ...member("production_supervisor"),
+      terminal: true,
+    };
+    expect(can(encargado, "production.report.reverse")).toBe(true);
+    // Nobody of the warehouse reports production.
+    expect(can(member("warehouse"), "production.report.create")).toBe(false);
+    expect(can(member("supervisor"), "production.scrap.create")).toBe(false);
+  });
+
   it("never reactivates a warehouse from a shared terminal (WMS-85)", () => {
     const admin = member("administrator");
     expect(can(admin, "inventory.facility.reactivate")).toBe(true);

@@ -11,9 +11,11 @@ import {
   ReadOnlyNotice,
 } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDateTime, newId } from "@/lib";
 import {
   PRODUCTION_ORDER_PROCESS,
+  getOrderProgress,
   getProductionOrder,
   listProductionPeople,
 } from "@/modules/production";
@@ -24,6 +26,7 @@ import { getProcessView } from "@/platform/processes";
 import { ProcessPanel } from "../../procesos/process-panel";
 
 import { CancelOrder, OrderPeople, ReleaseOrder } from "./order-controls";
+import { WarnShortage } from "./warn-shortage";
 
 export const metadata: Metadata = { title: "Orden de producción" };
 
@@ -108,12 +111,18 @@ export default async function OrdenProduccionPage({
     access.allows("production.order.cancel");
   const canPeople =
     active && open && !draft && access.allows("production.order.create");
-  const [process, people] = await Promise.all([
+  const working = order.status === "RELEASED" || order.status === "IN_PROGRESS";
+  const canReport =
+    active && working && access.allows("production.report.create");
+  const canScrap =
+    active && working && access.allows("production.scrap.create");
+  const [process, people, progress] = await Promise.all([
     getProcessView(actor, processDocuments, {
       documentKey: PRODUCTION_ORDER_PROCESS.key,
       documentId: order.id,
     }),
     canPeople ? listProductionPeople(actor) : [],
+    order.status === "DRAFT" ? null : getOrderProgress(actor, order.id),
   ]);
   const timeZone = access.organization.timeZone;
 
@@ -137,6 +146,87 @@ export default async function OrdenProduccionPage({
           </Link>
         )}
       </div>
+
+      {(canReport || canScrap) && (
+        <div className="flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-2">
+          {canReport && (
+            <Button asChild size="lg" className="min-h-12">
+              <Link href={`/produccion/${idPath(order.id)}/reportar`}>
+                Reportar producción
+              </Link>
+            </Button>
+          )}
+          {canScrap && (
+            <Link
+              href={`/produccion/${idPath(order.id)}/merma`}
+              className={linkClass}
+            >
+              Reportar merma de material
+            </Link>
+          )}
+          {canReport && <WarnShortage orderId={order.id} />}
+        </div>
+      )}
+
+      {progress && (
+        <section
+          aria-labelledby="avance"
+          className="max-w-3xl space-y-3 rounded-xl border bg-card p-4 text-sm sm:p-5"
+        >
+          <h2 id="avance" className="text-base font-medium">
+            Avance
+          </h2>
+          <p>
+            Buenas: {progress.goodText} · Malas: {progress.badText} · Falta:{" "}
+            {progress.leftText}
+          </p>
+          {progress.executedBy.length > 0 && (
+            <p>La ejecutó: {progress.executedBy.join(", ")}</p>
+          )}
+          <p className="text-muted-foreground">
+            Consumido:{" "}
+            {progress.materials
+              .map((line) => `${line.productName} ${line.consumedText}`)
+              .join(" · ")}
+          </p>
+          {progress.reports.length > 0 && (
+            <ul className="divide-y rounded-lg border">
+              {progress.reports.map((row) => (
+                <li key={row.id} className="relative p-3">
+                  <Link
+                    href={`/produccion/reportes/${idPath(row.id)}`}
+                    className="font-medium text-primary underline underline-offset-4 outline-none after:absolute after:inset-0 focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    {row.numberText}
+                  </Link>{" "}
+                  · {row.goodText}
+                  {row.badText ? ` · ${row.badText} malas` : ""}
+                  {row.lotCode ? ` · lote ${row.lotCode}` : ""}
+                  {row.reversed ? " · revertido" : ""}
+                  <span className="block text-muted-foreground">
+                    {row.by} · {formatDateTime(row.at, timeZone)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {progress.scraps.length > 0 && (
+            <div className="space-y-1">
+              <h3 className="font-medium">Merma de material</h3>
+              <ul className="space-y-1">
+                {progress.scraps.map((row) => (
+                  <li key={row.id} className="[overflow-wrap:anywhere]">
+                    {row.quantityText} de {row.productName}: {row.reason}{" "}
+                    <span className="text-muted-foreground">
+                      ({row.by}, {formatDateTime(row.at, timeZone)})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {draft && order.recipe.currentText && (
         <p className="max-w-3xl rounded-xl border bg-card p-4 text-sm">

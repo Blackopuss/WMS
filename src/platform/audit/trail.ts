@@ -89,6 +89,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "production.order_released":
     "Liberó una orden de producción y apartó sus materiales",
   "production.order_cancelled": "Canceló una orden de producción",
+  "production.reported": "Reportó producción",
+  "production.report_reversed": "Revirtió un reporte de producción",
+  "production.scrap_reported": "Reportó merma de material de producción",
+  "production.lot_numbering_changed":
+    "Cambió la nomenclatura de lotes de lo producido",
+  "production.material_short": "Avisó que falta material en una orden",
   "production.request_created": "Pidió producción",
   "production.request_accepted":
     "Aceptó una solicitud de producción y nació su orden",

@@ -25,6 +25,7 @@ import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import {
   archiveFacility,
+  archiveLocation,
   createFacility,
   createLocation,
   editLocation,
@@ -33,7 +34,15 @@ import {
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
+import {
+  releaseProductionOrder,
+  reportMaterialScrap,
+  reportProduction,
+  reverseProductionReport,
+} from "@/modules/production";
 import { db } from "@/server";
+
+import * as production from "../setup/production";
 
 // WMS-76 (ADR 0074): operations that lock the same rows in a different way
 // (by the primary key, or through the unique index (organizationId, id))
@@ -699,4 +708,230 @@ describe("locks in one order (WMS-76)", () => {
     }
     expect(errors).toEqual([]);
   }, 180_000);
+
+  it("reporting production never deadlocks with exits, moves, releases, scrap, reversals and changes of the area (WMS-29)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop();
+    await production.setting(owner, "production.report.photo", "optional");
+    const other = await production.product(owner, "Otro");
+    const moved = await production.product(owner, "Movido");
+    await production.enter(owner, other, shelf, "500");
+    await production.enter(owner, moved, shelf, "500");
+    await production.enter(owner, board, shelf, "900");
+    await production.enter(owner, screw, shelf, "900");
+    const errors: string[] = [];
+    let previous: string | null = null;
+    for (let round = 0; round < 6; round++) {
+      const first = await production.order(owner, crate, area, "4");
+      const second = await production.order(owner, crate, area, "2");
+      const released = await releaseProductionOrder(owner, first);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const line = (await production.linesOf(first))[0]!;
+      const toReverse: string | null = previous;
+      const results: PromiseSettledResult<unknown>[] = await Promise.allSettled(
+        [
+          reportProduction(owner, first, {
+            good: "2",
+            idempotencyKey: newId(),
+          }),
+          registerExit(owner, {
+            productId: other,
+            locationId: shelf,
+            quantity: "1",
+          }),
+          registerTransfer(owner, {
+            productId: moved,
+            locationId: shelf,
+            toLocationId: area,
+            quantity: "1",
+            acceptCapacity: true,
+          }),
+          editLocation(owner, area, { name: `Línea ${++counter}` }),
+          releaseProductionOrder(owner, second),
+          reportMaterialScrap(owner, first, {
+            orderLineId: line.id,
+            quantity: "1",
+            reason: "Se rompió",
+            idempotencyKey: newId(),
+          }),
+          toReverse
+            ? reverseProductionReport(owner, toReverse, "Prueba de candados")
+            : Promise.resolve(null),
+        ],
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+      const reported = results[0] as PromiseSettledResult<
+        Awaited<ReturnType<typeof reportProduction>>
+      >;
+      previous =
+        reported.status === "fulfilled" && reported.value.ok
+          ? reported.value.reportId
+          : null;
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("reporting production never deadlocks with «Surtir a producción» deliveries, exits from the area or archiving a shelf (WMS-29)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop();
+    await production.setting(owner, "production.report.photo", "optional");
+    await production.setting(owner, "production.materials.mode", "issue");
+    const other = await production.product(owner, "En la línea");
+    await production.enter(owner, other, area, "500");
+    await production.enter(owner, board, shelf, "900");
+    await production.enter(owner, screw, shelf, "900");
+    const errors: string[] = [];
+    for (let round = 0; round < 5; round++) {
+      const id = await production.order(owner, crate, area, "2");
+      const released = await releaseProductionOrder(owner, id);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const tasks = await db.warehouseTask.findMany({
+        where: { kind: "ISSUE", productionOrderLine: { orderId: id } },
+        orderBy: { id: "asc" },
+      });
+      // One delivered first, the other at the same time as the report.
+      for (const task of tasks) {
+        await acceptTask(owner, task.id);
+        await pickUpTask(owner, task.id);
+      }
+      await deliverTask(owner, tasks[0]!.id);
+      const empty = await production.place(owner, "Vacío");
+      const results = await Promise.allSettled([
+        deliverTask(owner, tasks[1]!.id),
+        reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+        registerExit(owner, {
+          productId: other,
+          locationId: area,
+          quantity: "1",
+        }),
+        archiveLocation(owner, empty),
+        editLocation(owner, area, { name: `Línea ${++counter}` }),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("scrap of one material never deadlocks with delivering another material of the same order to the line (WMS-29)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop();
+    await production.setting(owner, "production.materials.mode", "issue");
+    await production.enter(owner, board, shelf, "1000");
+    await production.enter(owner, screw, shelf, "1000");
+    const errors: string[] = [];
+    for (let round = 0; round < 12; round++) {
+      const id = await production.order(owner, crate, area, "2");
+      const released = await releaseProductionOrder(owner, id);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const tasks = await db.warehouseTask.findMany({
+        where: { kind: "ISSUE", productionOrderLine: { orderId: id } },
+        orderBy: { id: "asc" },
+      });
+      for (const task of tasks) {
+        await acceptTask(owner, task.id);
+        await pickUpTask(owner, task.id);
+      }
+      const boards = tasks.find((task) => task.productId === board)!;
+      const screws = tasks.find((task) => task.productId === screw)!;
+      await deliverTask(owner, boards.id);
+      const line = (await production.linesOf(id)).find(
+        (each) => each.productId === board,
+      )!;
+      const results = await Promise.allSettled([
+        reportMaterialScrap(owner, id, {
+          orderLineId: line.id,
+          quantity: "1",
+          reason: "Se rompió",
+          idempotencyKey: newId(),
+        }),
+        deliverTask(owner, screws.id),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("reversing a report never deadlocks with delivering a material it consumed none of (WMS-29)", async () => {
+    const { owner, area, shelf, board } = await production.workshop();
+    await production.setting(owner, "production.report.photo", "optional");
+    await production.setting(owner, "production.materials.mode", "issue");
+    const box = await production.product(owner, "Caja");
+    const washer = await production.product(owner, "Arandela");
+    // Half a washer per box: the second box consumes none (rounded up once).
+    await production.recipe(
+      owner,
+      box,
+      [
+        [board, "8"],
+        [washer, "1"],
+      ],
+      "2",
+    );
+    await production.enter(owner, board, shelf, "1000");
+    await production.enter(owner, washer, shelf, "1000");
+    const errors: string[] = [];
+    for (let round = 0; round < 10; round++) {
+      // Released with nothing in the area: a task per material. Then free
+      // stock reaches the area and the reports take it.
+      const id = await production.order(owner, box, area, "4");
+      const released = await releaseProductionOrder(owner, id);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      await production.enter(owner, board, area, "8");
+      await production.enter(owner, washer, area, "1");
+      const first = await reportProduction(owner, id, {
+        good: "1",
+        idempotencyKey: newId(),
+      });
+      const second = await reportProduction(owner, id, {
+        good: "1",
+        idempotencyKey: newId(),
+      });
+      if (!first.ok || !second.ok) {
+        throw new Error(JSON.stringify([first, second]));
+      }
+      const washers = await db.warehouseTask.findFirstOrThrow({
+        where: {
+          kind: "ISSUE",
+          productId: washer,
+          productionOrderLine: { orderId: id },
+        },
+      });
+      await acceptTask(owner, washers.id);
+      await pickUpTask(owner, washers.id);
+      const results = await Promise.allSettled([
+        reverseProductionReport(owner, second.reportId, "Prueba de candados"),
+        deliverTask(owner, washers.id),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
 });

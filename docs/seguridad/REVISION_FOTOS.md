@@ -162,3 +162,21 @@ sin ligar por persona.
 - Ajuste `purchasing.receipt.rejection_photo` (`off`, `optional` por
   omisión, `required`), leído dentro de la transacción; con `off` no se
   suben fotos nuevas.
+
+## Fotos del reporte de producción (WMS-29, ADR 0087, 2026-11-20)
+
+- Propósito `production_report_photo` (escribe `production.report.create`,
+  lee `production.order.read`; hasta 5 por reporte). Dueño: el reporte
+  (`evidence_photo.productionReportId`, con el `CHECK` de un solo dueño y de
+  propósito por dueño ampliados y la regla de `evidence_photo_owner_rules`
+  con un dueño más). No es `boundToOwner`: el reporte nace junto con sus
+  fotos.
+- Se ligan con `attachEvidencePhotos` al final de la transacción del
+  reporte (los archivos son los últimos candados); si una foto no sirve se
+  revierte todo el reporte. Ver: `reachesProductionReport` (la orden existe
+  para la persona: su área en su alcance) en `evidenceOwners`.
+- Ajuste `production.report.photo` (`off`, `optional`, `required` por
+  omisión, D5), leído dentro de la transacción; con `off` no se suben ni se
+  aceptan fotos.
+- Riesgo aceptado: como en incidencias, una foto subida para un reporte
+  puede ligarse a otro reporte de la misma persona (no está atada).

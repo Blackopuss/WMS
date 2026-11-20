@@ -1241,6 +1241,8 @@ try {
       "/produccion/solicitudes",
       "/produccion/solicitudes/nueva",
       "/configuracion/defectos",
+      // WMS-29.
+      "/configuracion/lotes-de-produccion",
     ]) {
       await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
       const state = await page.evaluate(() => ({

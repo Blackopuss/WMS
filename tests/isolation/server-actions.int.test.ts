@@ -162,6 +162,56 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); receta y área se buscan solo en esa empresa y en el alcance de la persona",
     coveredBy: "tests/production/orders.int.test.ts",
   },
+  // WMS-29 (ADR 0087): production reports, scrap and lot numbering.
+  reportProductionAction: {
+    input:
+      "id de la orden y clave de confirmación (fijados por la página), buenas, malas y su motivo, series por línea o salida, caducidad por salida e ids de fotos subidas por la persona",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos y orden se bloquean solo en esa empresa; solo consume de ubicaciones de su alcance; las fotos se ligan solo si las subió la misma persona",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  checkReportAction: {
+    input: "clave de confirmación",
+    identity:
+      "sesión y empresa activa; busca solo reportes de esa persona en esa empresa",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  uploadReportPhotoAction: {
+    input: "archivo de la foto",
+    identity:
+      "sesión y empresa activa; storeFile la guarda en esa empresa a nombre de la persona",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  discardReportPhotoAction: {
+    input: "id del archivo",
+    identity:
+      "sesión y empresa activa; solo borra una foto sin ligar de esa persona en esa empresa",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  reverseReportAction: {
+    input: "id del reporte y motivo",
+    identity:
+      "sesión y empresa activa; el reporte y su orden se bloquean solo en esa empresa y dentro del alcance",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  warnShortageAction: {
+    input: "id de la orden",
+    identity:
+      "sesión y empresa activa; la orden se busca solo en esa empresa y dentro del alcance",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  reportScrapAction: {
+    input:
+      "id de la orden y clave (fijados por la página), id de la línea, cantidad, motivo y series",
+    identity:
+      "sesión y empresa activa; la línea, el producto y la orden se bloquean solo en esa empresa; solo de ubicaciones de su alcance",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
+  saveLotNumberingAction: {
+    input: "prefijo, fecha, dígitos, reinicio y alcance del consecutivo",
+    identity: "sesión y empresa activa; escribe solo la fila de esa empresa",
+    coveredBy: "tests/production/reports.int.test.ts",
+  },
   // WMS-28B (ADR 0075): production requests.
   askProductionAction: {
     input:

@@ -128,7 +128,8 @@
                 "SHIPMENT",
                 "CUSTOMER_RETURN",
                 "FACILITY_TRANSFER",
-                "DISPOSAL"
+                "DISPOSAL",
+                "PRODUCTION"
               ]
             }
           }
@@ -179,7 +180,8 @@
                               "SHIPMENT",
                               "CUSTOMER_RETURN",
                               "FACILITY_TRANSFER",
-                              "DISPOSAL"
+                              "DISPOSAL",
+                              "PRODUCTION"
                             ]
                           },
                           "createdAt": {

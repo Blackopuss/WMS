@@ -86,8 +86,38 @@ export const LOW_MARGIN = {
   defaultValue: "25",
 } as const satisfies SettingDefinition;
 
+/**
+ * WMS-29 (ADR 0087, D5): a photo of what was made with each report.
+ * Required by default (D5); the founder may change it.
+ */
+export const REPORT_PHOTO = {
+  key: "production.report.photo",
+  module: "production",
+  area: "Producción",
+  label: "Foto al reportar producción",
+  options: [
+    {
+      value: "required",
+      label: "Obligatoria",
+      help: "Cada reporte lleva al menos una foto de lo que se hizo.",
+    },
+    {
+      value: "optional",
+      label: "Opcional",
+      help: "Quien reporta puede agregar fotos si quiere.",
+    },
+    {
+      value: "off",
+      label: "Sin fotos",
+      help: "Los reportes no piden ni aceptan fotos.",
+    },
+  ],
+  defaultValue: "required",
+} as const satisfies SettingDefinition;
+
 export const PRODUCTION_SETTINGS: readonly SettingDefinition[] = [
   MATERIALS_MODE,
   RELEASE_SHORT,
   LOW_MARGIN,
+  REPORT_PHOTO,
 ];

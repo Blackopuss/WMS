@@ -336,8 +336,13 @@ const GROUPS: {
         title: "Roles de producción",
         text: "Operario y encargado de producción, con lo justo para su trabajo.",
       },
+      {
+        icon: ClipboardCheck,
+        title: "Reporte de lo producido",
+        text: "Se dice cuánto se hizo, con foto; el sistema descuenta la receta, calcula el costo con los materiales y deja lo hecho en un lote propio, esperando revisión.",
+      },
     ],
-    soon: "Próximamente: reporte de lo producido con su consumo y su costo, y cierre de la orden.",
+    soon: "Próximamente: cierre de la orden y producto a su lugar.",
   },
   {
     id: "calidad",

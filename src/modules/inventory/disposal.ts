@@ -25,6 +25,7 @@ import {
 } from "@/server";
 
 import { DISPOSAL_APPROVAL } from "./approval-keys";
+import { containedAt } from "./contained";
 import { holdProblem, type HoldSource } from "./holds";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import {
@@ -123,6 +124,14 @@ type DisposalCoreInput = {
   reason: string;
   allowedStatuses?: readonly StockStatus[];
   holdSource?: HoldSource | null;
+  /**
+   * WMS-29 (ADR 0087): the scrap of material of a production order takes
+   * AVAILABLE stock. Only for a caller that already settled reservations
+   * under the product's lock (used up its own, asked the rest free):
+   * this core does not look at reservations. With `allowedStatuses:
+   * ["AVAILABLE"]`.
+   */
+  takesAvailable?: boolean;
 };
 
 type CheckedDisposal = Awaited<ReturnType<typeof checkDisposalLines>> & {
@@ -206,7 +215,10 @@ async function checkDisposalLines(
         field,
         error,
       });
-    if (line.status === "AVAILABLE" || !allowed.includes(line.status)) {
+    if (
+      (line.status === "AVAILABLE" && !input.takesAvailable) ||
+      !allowed.includes(line.status)
+    ) {
       return fail("source")(
         "Solo se desecha lo dañado o rechazado. Lo disponible sale con una salida o un ajuste.",
       );
@@ -281,6 +293,26 @@ async function checkDisposalLines(
           ? `No hay ${product.name}${lotText} ${state} en ${place.name}.`
           : `Solo hay ${formatStock(there.toString(), product.unitCode)}${lotText} ${state} en ${place.name}.`,
       };
+    }
+    // WMS-29 (ADR 0087): what is inside a storage container is never
+    // taken loose, also by the scrap of production.
+    if (line.status === "AVAILABLE") {
+      const contained = await containedAt(
+        tx,
+        product.id,
+        place.id,
+        prepared[index]!.lotId,
+        { storageOnly: true },
+      );
+      const loose = there.minus(contained);
+      if (loose.lessThan(quantity)) {
+        return {
+          ok: false as const,
+          line: index,
+          field: "quantity" as const,
+          error: `Parte de ${product.name} en ${place.name} está en una tarima o caja: sácalo de ahí primero.`,
+        };
+      }
     }
     // ADR 0068: what an open document holds is decided only from it.
     const held = await holdProblem(
