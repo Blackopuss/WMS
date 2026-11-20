@@ -17,6 +17,7 @@ Inicio, Tareas (solo lectura), Recepción, Pedidos, Producción (si está contra
 - **Compras:** órdenes, proveedores, **Qué pedir**, solicitudes y **Reportes** (sin importes).
 - **Producción:** órdenes y solicitudes; en la ficha del producto, la **Receta** y el **Plan de inspección** (si están contratados).
 - **Inventario › Rastrear lote, serie o pedido** para seguir un lote o una serie.
+- **Inventario › Sugerencias de reubicación**: lo que conviene mover en tu almacén (acercar a surtido, sacar de surtido o juntar), con una línea de por qué. Solo las ves; las tareas las crea Almacén o Supervisión.
 
 ## Descargar información
 **Descargar en Excel** (inventario, movimientos), **Descargar PDF** (embarques y traslados) y los reportes de Compras.
@@ -27,4 +28,4 @@ Registrar o cambiar cualquier cosa, ver costos, ni cambiar la configuración. Pi
 ## Si ves algo raro
 Avísalo a tu supervisor: **Reportar un problema** no está en tu rol (Consulta lee incidencias).
 
-Vigente al 2026-11-19
+Vigente al 2026-11-19 (sugerencias de reubicación: WMS-65)

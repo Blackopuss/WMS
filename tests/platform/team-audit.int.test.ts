@@ -11,15 +11,18 @@ import {
 } from "@/platform/audit";
 import {
   acceptInvitation,
-  acceptOwnershipTransfer,
   assignRoles,
   cancelInvitation,
   createInvitation,
   disableMember,
-  offerOwnershipTransfer,
   reactivateMember,
   resendInvitation,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import {
+  acceptOwnershipTransfer,
+  offerOwnershipTransfer,
+} from "@/platform/authorization/ownership";
 import { memoryOutboxFor } from "@/platform/email";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";

@@ -18,7 +18,7 @@ asientos del plan, alcance por almacén y zona, y el acceso de soporte.
 | Sesiones del equipo | `team-sessions.ts` | `listMemberSessions`, `revokeMemberSession`, `revokeAllMemberSessions` (WMS-40): solo las sesiones cuya empresa activa es la empresa; las de otra no existen. «Todas» y desactivar escriben el corte `membership.sessionsRevokedAt` y avisan a la persona (`TEAM_NOTIFICATION_TYPES`, `notices.ts`) |
 | Historial de accesos del equipo | `team-access-history.ts` | `listMemberAccessHistory` (WMS-68, ADR 0064): con `platform.session.read`, los eventos de la persona en esta empresa y los de su cuenta solo mientras no pertenezca a otra empresa (y desde que entró); los de otra empresa no existen. Cerrar sesiones desde el equipo y desactivar dejan `session.closed_by_team` en el historial de la persona |
 | Invitaciones | `invitations.ts`, `invitation-accept.ts` | crear, reenviar, cancelar, previsualizar y aceptar (el token solo se guarda como hash) |
-| Titularidad | `ownership.ts` | ofrecer, cancelar y aceptar la transferencia |
+| Titularidad | `ownership.ts` | ofrecer, cancelar, aceptar y rechazar la transferencia; las pantallas usan solo `offerOwnershipWithConfirmation`/`acceptOwnershipWithConfirmation` (contraseña y código otra vez, con `confirmIdentity` de `platform/auth`), `cancelOwnershipFromScreen` y `declineOwnershipFromScreen`; lecturas `getPendingOwnershipTransfer`, `getOwnershipOfferFor`, `listOwnershipCandidates` (WMS-90, ADR 0090) |
 | Asientos | `seats.ts` | `lockOrganization`, `assertSeatAvailable`, `getSeatUsage` |
 | Soporte | `support.ts` | `grantSupportAccess`, `revokeSupportAccess` (titular, 24 h), `enterSupport`, `leaveSupport` |
 
@@ -60,6 +60,10 @@ declaran sus permisos aquí y en la matriz).
 Columna `membership.sessionsRevokedAt` (WMS-40): una sesión creada antes
 no entra a la empresa (la revisa `platform/tenancy`).
 
+Aviso `team.ownership` (WMS-90): oferta, cancelación, rechazo y
+aceptación de la titularidad. Al aceptar se cierra el acceso de soporte
+abierto y se rechaza un rol a conservar cuyo módulo ya no está activo.
+
 ## Ajustes y trabajos
 
 Ninguno.
@@ -67,4 +71,4 @@ Ninguno.
 ## ADR
 
 0005 (empresas y titular), 0009 (personal de plataforma), 0029 (soporte), 0038
-(alcance por almacén y zona), 0059 (sesiones del equipo), 0062 (roles de producción y calidad). Matriz: `docs/MATRIZ_ROLES_PERMISOS.md`.
+(alcance por almacén y zona), 0059 (sesiones del equipo), 0062 (roles de producción y calidad), 0090 (pantalla para transferir la titularidad). Matriz: `docs/MATRIZ_ROLES_PERMISOS.md`.

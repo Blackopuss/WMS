@@ -807,6 +807,61 @@ export const KPI_IDLE_DAYS = {
   defaultValue: "90",
 } as const satisfies SettingDefinition;
 
+/**
+ * Relocation suggestions (WMS-65, ADR 0086): which ABC classes «sale
+ * seguido» and should have a picking place.
+ */
+export const SLOTTING_FAST_CLASSES = {
+  key: "inventory.slotting.fast_classes",
+  module: "inventory",
+  area: "Sugerencias de reubicación",
+  label: "Qué productos se sugiere acercar a surtido",
+  options: [
+    {
+      value: "a",
+      label: "Solo los de clase A",
+      help: "Los que más salen, según la clasificación ABC.",
+    },
+    {
+      value: "ab",
+      label: "Los de clase A y B",
+      help: "También los que salen con frecuencia media.",
+    },
+  ],
+  defaultValue: "a",
+} as const satisfies SettingDefinition;
+
+/** WMS-65: suggest joining the same lot spread over storage places. */
+export const SLOTTING_CONSOLIDATE = {
+  key: "inventory.slotting.consolidate",
+  module: "inventory",
+  area: "Sugerencias de reubicación",
+  label: "Sugerir juntar lo repartido",
+  options: [
+    {
+      value: "on",
+      label: "Sí",
+      help: "El mismo producto y lote en varias ubicaciones de almacenaje se junta en una.",
+    },
+    { value: "off", label: "No", help: "Cada quien acomoda como prefiera." },
+  ],
+  defaultValue: "on",
+} as const satisfies SettingDefinition;
+
+/** WMS-65: how many suggestions are shown at once. */
+export const SLOTTING_LIMIT = {
+  key: "inventory.slotting.limit",
+  module: "inventory",
+  area: "Sugerencias de reubicación",
+  label: "Cuántas sugerencias mostrar a la vez",
+  options: [
+    { value: "10", label: "10", help: "Para un almacén chico." },
+    { value: "20", label: "20", help: "Lo de un turno." },
+    { value: "50", label: "50", help: "Para reorganizar a fondo." },
+  ],
+  defaultValue: "20",
+} as const satisfies SettingDefinition;
+
 export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   PICKING_STRATEGY,
   PICK_EXPIRED,
@@ -835,6 +890,9 @@ export const INVENTORY_SETTINGS: readonly SettingDefinition[] = [
   DIGEST_HOUR,
   DIGEST_DAYS,
   KPI_IDLE_DAYS,
+  SLOTTING_FAST_CLASSES,
+  SLOTTING_CONSOLIDATE,
+  SLOTTING_LIMIT,
   ...EQUIPMENT_SETTINGS,
 ];
 

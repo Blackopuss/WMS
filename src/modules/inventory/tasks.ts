@@ -456,13 +456,37 @@ export type CreateTaskInput = z.input<typeof createSchema>;
  * A new transfer task (WMS-06). The stock is checked now so nobody is sent
  * for what is not there, and again at the delivery (it may have moved).
  */
-export async function createTask(
+export function createTask(
   actor: InventoryActor,
   /**
    * `acceptCapacity`: the destination would go over its capacity and the
    * person wants the task anyway (WMS-22B).
    */
   input: CreateTaskInput & { acceptCapacity?: boolean },
+): Promise<TaskResult | OverCapacity> {
+  return createTaskGuarded(actor, input, null);
+}
+
+/**
+ * A check another service runs inside `createTask`, under its locks
+ * (product → locations) and before anything is written: a result stops the
+ * creation and is answered as it is. WMS-65 (ADR 0086) uses it so a
+ * suggestion accepted twice at once creates one task. Not in `index.ts`.
+ */
+export type CreateTaskGuard = (
+  tx: Tx,
+  task: {
+    productId: string;
+    fromLocationId: string;
+    toLocationId: string;
+  },
+) => Promise<TaskResult | null>;
+
+/** `createTask` with a guard under its locks (WMS-65). */
+export async function createTaskGuarded(
+  actor: InventoryActor,
+  input: CreateTaskInput & { acceptCapacity?: boolean },
+  guard: CreateTaskGuard | null,
 ): Promise<TaskResult | OverCapacity> {
   const { organizationId, userId } = actor;
   await assertModulePermission(organizationId, userId, "inventory.task.create");
@@ -502,6 +526,14 @@ export async function createTask(
           data.fromLocationId,
           data.toLocationId,
         ]);
+        if (guard && productId) {
+          const stopped = await guard(tx, {
+            productId,
+            fromLocationId: data.fromLocationId,
+            toLocationId: data.toLocationId,
+          });
+          if (stopped) return stopped;
+        }
         const product = productId
           ? await tx.product.findFirst({
               where: { id: productId },

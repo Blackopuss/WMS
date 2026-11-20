@@ -61,6 +61,7 @@ const SCREENS = [
   // falls back to the indicators of the active one).
   "/inventario/indicadores?vista=almacenes",
   "/tareas?vista=open&persona=nadie",
+  "/inventario/reubicaciones",
   "/tareas",
   "/tareas/nueva",
   "/recepcion",
@@ -128,6 +129,8 @@ const SCREENS = [
   "/configuracion/procesos",
   "/configuracion/procesos/inventory.shipment",
   "/configuracion/defectos",
+  // WMS-90: transfer of the company (the demo account is its titular).
+  "/configuracion/titularidad",
   "/no-existe-esta-pagina",
   // WMS-78B (operación de almacén): screens of the area not listed above.
   "/tareas?vista=available",
@@ -209,6 +212,8 @@ const FORMS = [
   // send starts an order (the sample data of `db:seed:ejemplo` has two).
   { path: "/compras/ordenes/nueva", submit: "Empezar orden" },
   { path: "/configuracion/defectos", submit: "Agregar" },
+  // WMS-90: needs another active member (`db:seed:ejemplo` adds two).
+  { path: "/configuracion/titularidad", submit: "Ofrecer la empresa" },
 ];
 
 let failures = 0;

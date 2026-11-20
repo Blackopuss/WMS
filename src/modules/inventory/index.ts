@@ -598,6 +598,9 @@ export {
   DIGEST_DAYS,
   DIGEST_HOUR,
   KPI_IDLE_DAYS,
+  SLOTTING_CONSOLIDATE,
+  SLOTTING_FAST_CLASSES,
+  SLOTTING_LIMIT,
 } from "./settings";
 export { checkPlacement, loadPlacementRules } from "./placement";
 export type {
@@ -976,3 +979,17 @@ export {
 } from "./production-entry";
 export { dayWindow } from "./calendar-day";
 export { KEY_REUSED } from "./movements";
+export {
+  SLOTTING_SCAN_MAX,
+  SUGGESTION_CHANGED,
+  acceptSlottingSuggestion,
+  listSlottingSuggestions,
+} from "./slotting";
+export type {
+  SlottingAcceptInput,
+  SlottingAcceptResult,
+  SlottingList,
+  SlottingSuggestion,
+} from "./slotting";
+export { SLOTTING_KINDS, isSlottingKind } from "./slotting-rules";
+export type { SlottingKind } from "./slotting-rules";

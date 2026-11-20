@@ -11,7 +11,8 @@ Todo lo que tengan contratado tu plan y tus módulos: Inicio, Tareas, Recepción
 ## Lo que solo hace el titular
 - **Ver y entender tu plan:** **Configuración › Mi plan** muestra la vigencia, los cupos (**Productos activos**, **Usuarios** y **Archivos**) y los módulos. No hay botón de contratar ni cobro en línea: para contratar o renovar, escribe al correo de contacto que aparece ahí; el personal de la plataforma lo activa cuando se confirma el pago.
 - **Permitir que soporte vea tu empresa:** en **Configuración › Soporte** toca **Permitir acceso** (24 horas, solo lectura, queda en la bitácora) y **Quitar acceso** cuando termines.
-- **Contratar, cancelar y transferir la titularidad:** hoy no hay pantalla en la app para hacerlo (todavía no disponible en la app); se pide por el correo de contacto de **Mi plan**.
+- **Contratar y cancelar:** hoy no hay pantalla en la app para hacerlo (todavía no disponible en la app); se pide por el correo de contacto de **Mi plan**.
+- **Transferir la empresa a otra persona del equipo:** en **Configuración › Titularidad de la empresa** eliges a la persona (debe estar activa en tu equipo), marcas los roles que conservarás tú (viene marcado **Consulta**), escribes tu contraseña y el código de tu app de dos pasos (o un código de recuperación) y tocas **Ofrecer la empresa**. Nada cambia hasta que la persona acepta; la oferta vale 7 días y puedes quitarla con **Cancelar la oferta**. La persona necesita tener activa la verificación en dos pasos para aceptar. Al aceptar, ella pasa a ser titular, tú te quedas solo con los roles que elegiste, se cierra el acceso de soporte si estaba abierto y los dos reciben un correo y un aviso. Si tu equipo no tiene a nadie más, primero invita a la persona desde **Equipo**. No se hace desde una terminal con PIN.
 - Al activarse un aviso de renovación (los últimos 15 días del plan), te aparece en Inicio y en **Mi plan**. Si el plan vence, todo queda en **solo lectura** hasta renovar.
 
 ## Primeros pasos con una empresa nueva
@@ -26,6 +27,9 @@ Mientras tu empresa no registre su primer movimiento, **Inicio** muestra **Confi
 
 Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para empezar a trabajar con la ubicación «General». El avance se calcula con lo que ya existe: un paso que no hiciste y que quedó antes de uno hecho aparece como **(saltado)** y lo puedes hacer después desde la misma pantalla.
 
+## Sugerencias de reubicación
+**Inventario › Sugerencias de reubicación** (pantalla «Sugerencias de reubicación»): lo que conviene mover en tu almacén y en tus zonas, con una línea de por qué: **Acercar a surtido** (lo que sale seguido y no tiene lugar de surtido), **Sacar de surtido** (lo que no se ha movido y ocupa un lugar de surtido) y **Juntar** (el mismo producto y lote repartido en varias ubicaciones de almacenaje). **Crear tarea** hace una tarea de traslado normal con lo que el sistema decide en ese momento; **Ver la tarea** la abre. Lo que ya tiene una tarea en camino no se vuelve a sugerir. Qué se sugiere se ajusta en Configuración › Operación, en «Sugerencias de reubicación».
+
 ## Indicadores del almacén
 **Inventario › Indicadores** (pantalla «Indicadores»; también el enlace **Indicadores** junto a **Lo que se hizo hoy** en Inicio): de un periodo (**7 días**, **30 días**, **90 días**, **Este mes**, **Mes anterior**, o fechas en **Más filtros**), pedidos completos y a tiempo, tiempo de surtido, **De recibir a acomodar**, exactitud, **Productos de mayor movimiento** con su rotación y días de inventario, **Sin movimiento**, **Rendimiento por persona** y **Rendimiento por zona**. Toca un producto o una persona para ver solo lo suyo (**Quitar** lo deshace). Con varios almacenes, eliges cuál en **Más filtros**. Desde una terminal con PIN no ves **Rendimiento por persona**. Con costos ves además el valor de lo que salió y de lo que no se mueve. Arriba, **Comparado con el periodo anterior** pone cada cifra principal junto a la del periodo anterior y su cambio. Si alcanzas más de un almacén, **Comparar almacenes** los pone lado a lado (**Ver un almacén** regresa); quien ve toda la empresa tiene además la fila **Toda la empresa**. Al pie, **Descargar en Excel** o **Descargar en CSV** baja lo que estás viendo (no desde una terminal con PIN). En **Lo que se hizo hoy**, **Trabajo abierto por persona** dice cuántas tareas sin terminar tiene cada quien en tu almacén y cuántas con problema; toca una persona para ver sus tareas en **Tareas › Abiertas** (**Ver todas las abiertas** quita el filtro).
 
@@ -36,4 +40,4 @@ Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para emp
 ## Si tienes un problema
 **Reportar un problema** (ver [común](comun.md), sección 8). Para ayuda del sistema, da acceso a soporte como se describe arriba.
 
-Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85; tableros: WMS-34)
+Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85; tableros: WMS-34; sugerencias de reubicación: WMS-65; titularidad: WMS-90)

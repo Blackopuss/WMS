@@ -67,6 +67,9 @@ import {
   getWarehouseIndicators,
   getIndicatorsByFacility,
   listOpenWorkByPerson,
+  listSlottingSuggestions,
+  acceptSlottingSuggestion,
+  SUGGESTION_CHANGED,
   getStockTotals,
   getTask,
   listCounts,
@@ -1084,6 +1087,44 @@ describe("limited to a zone of a warehouse", () => {
     expect(seen.previous).toBeDefined();
     const openWork = await listOpenWorkByPerson(zoned);
     expect(JSON.stringify(openWork)).not.toContain(facilityA);
+  });
+
+  it("relocation suggestions name only places of the zone (WMS-65)", async () => {
+    const seen = await listSlottingSuggestions(zoned);
+    // Its warehouse only, and nothing of outside the zone named.
+    expect(seen.facilityName).toBe("Bodega B");
+    for (const each of seen.suggestions) {
+      expect([zoneId, inZone]).toContain(each.fromLocationId);
+      expect([zoneId, inZone]).toContain(each.toLocationId);
+    }
+    // Ids of places outside the zone (or of another warehouse) answer as
+    // if nothing were there, and create nothing.
+    const before = await db.warehouseTask.count({
+      where: { organizationId: owner.organizationId },
+    });
+    for (const [from, to] of [
+      [shelfB, inZone],
+      [inZone, shelfB],
+      [shelfA, generalA],
+    ] as const) {
+      expect(
+        await acceptSlottingSuggestion(zoned, {
+          kind: "consolidate",
+          productId,
+          fromLocationId: from,
+          toLocationId: to,
+        }),
+      ).toEqual({
+        ok: false,
+        reason: "changed",
+        formError: SUGGESTION_CHANGED,
+      });
+    }
+    expect(
+      await db.warehouseTask.count({
+        where: { organizationId: owner.organizationId },
+      }),
+    ).toBe(before);
   });
 
   it("moves only inside the zone", async () => {

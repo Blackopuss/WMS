@@ -7,10 +7,11 @@ import {
   assignRoles,
   createInvitation,
   isAllowed,
-  offerOwnershipTransfer,
   type Permission,
   type Role,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import { offerOwnershipTransfer } from "@/platform/authorization/ownership";
 import {
   activateModule,
   assertModulePermission,

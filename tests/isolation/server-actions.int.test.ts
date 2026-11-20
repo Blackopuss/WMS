@@ -919,6 +919,13 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); almacén activo y zonas de esa persona, permiso inventory.task.create en el servicio",
     coveredBy: "tests/inventory/replenishment.int.test.ts",
   },
+  acceptSuggestionAction: {
+    input:
+      "tipo de sugerencia e ids de producto, origen, lote y destino que la pantalla mostró; nunca cantidades (WMS-65)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la sugerencia se vuelve a decidir en el servidor en el almacén activo y las zonas de esa persona, permisos inventory.slotting.read e inventory.task.create en el servicio; la tarea la crea createTask",
+    coveredBy: "tests/inventory/slotting.int.test.ts",
+  },
   setMinimumAction: {
     input: "id de producto y cantidad mínima (vacía = quitarla)",
     identity:
@@ -1301,6 +1308,30 @@ const REVIEWED: Record<string, Review> = {
     input: "contraseña",
     identity: "sesión propia",
     coveredBy: "tests/platform/mfa-recovery.int.test.ts",
+  },
+  // WMS-90 (ADR 0090): transfer of the company.
+  offerOwnershipAction: {
+    input: "a quién, roles que conserva el titular, contraseña y código",
+    identity:
+      "empresa y persona de la sesión; solo el titular (assertOwnerAction), nunca en terminal",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
+  cancelOwnershipAction: {
+    input: "nada",
+    identity: "empresa y persona de la sesión; solo el titular",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
+  acceptOwnershipAction: {
+    input: "id de la oferta, contraseña y código",
+    identity:
+      "empresa y persona de la sesión; solo el destinatario de una oferta vigente de esa empresa",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
+  },
+  declineOwnershipAction: {
+    input: "id de la oferta",
+    identity:
+      "empresa y persona de la sesión; solo el destinatario de esa oferta",
+    coveredBy: "tests/platform/ownership-screen.int.test.ts",
   },
   disableMfaAction: {
     input: "contraseña y código",
