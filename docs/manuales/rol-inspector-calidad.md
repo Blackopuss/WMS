@@ -16,7 +16,7 @@ Inicio, Tareas (para las etapas de proceso), Producción (solo lectura), Inventa
 - Hacer las **etapas de proceso** que te asignen.
 - Reportar incidencias.
 
-**Todavía no disponible:** acomodar lo aprobado del área de producción y el cierre de la orden (llegan con un paso posterior).
+Lo que apruebas en el área de producción sale con su tarea de acomodo si la empresa acomoda con tareas; si lo mandas directo a un lugar donde se guarda, no lleva tarea.
 
 ## Tus tareas del día
 
@@ -58,4 +58,4 @@ Producir, crear órdenes, corregir existencias, cambiar planes o ver costos: [En
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-20
+Vigente al 2026-11-20 (WMS-31)

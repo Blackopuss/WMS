@@ -1,6 +1,6 @@
 import "server-only";
 
-import { newId } from "@/lib";
+import { log, newId } from "@/lib";
 import { terminalUserOfRequest } from "@/platform/auth";
 import {
   activeRoles,
@@ -193,6 +193,14 @@ export async function settle(
   document: ProcessDocument,
   graph: Graph,
   actor: { organizationId: string; userId: string | null },
+  /**
+   * What a failing `settle` of an operation does: inside a module's call
+   * («log», by default) it is logged and its stage stays ready, so it never
+   * undoes an operation that moved stock; in an action of a person
+   * («throw», work.ts) the action is undone with a message. An error of the
+   * database is always thrown as it is: the transaction cannot go on.
+   */
+  options: { hookErrors: "log" | "throw" } = { hookErrors: "log" },
 ): Promise<Map<string, StateStatus>> {
   const derived = settleStates(
     document,
@@ -202,6 +210,11 @@ export async function settle(
   );
   const now = new Date();
   const ready: StageRow[] = [];
+  const asked: {
+    state: (typeof graph.states)[number];
+    stage: StageRow;
+    operation: ProcessDocument["operations"][number];
+  }[] = [];
   for (const state of graph.states) {
     const next = derived.get(state.stageId);
     if (!next || next === state.status) continue;
@@ -225,6 +238,61 @@ export async function settle(
     }
     if (next === "READY" && stage?.kind === "MANUAL") ready.push(stage);
   }
+  // Every operation stage that is ready and may already have happened is
+  // asked, not only the one that just became ready: one whose check failed
+  // before is asked again by any later evaluation of the same progress.
+  for (const state of graph.states) {
+    if (state.status !== "READY") continue;
+    const stage = graph.stages.find((each) => each.id === state.stageId);
+    if (stage?.kind !== "OPERATION") continue;
+    const operation = document.operations.find(
+      (each) => each.key === stage.operationKey,
+    );
+    if (operation?.settle) asked.push({ state, stage, operation });
+  }
+  // WMS-31 review: an operation that may already have happened says so
+  // when its stage becomes ready (under the lock of the progress).
+  let settledAny = false;
+  for (const { state, stage, operation } of asked) {
+    let done: boolean;
+    try {
+      done = await operation.settle!(tx, {
+        organizationId: actor.organizationId,
+        documentId: graph.progress.documentId,
+      });
+    } catch (error) {
+      if (isDatabaseError(error)) throw error;
+      if (options.hookErrors === "log") {
+        log.error("process.operation_settle_failed", {
+          documentKey: document.key,
+          operation: operation.key,
+          error: error instanceof Error ? error.name : "unknown",
+        });
+        continue;
+      }
+      throw new ProcessOperationFailed(
+        `No se pudo revisar si «${operation.label}» ya ocurrió. Inténtalo de nuevo.`,
+      );
+    }
+    if (!done) continue;
+    await tx.processStageState.update({
+      where: { id: state.id },
+      data: { status: "DONE", doneAt: now, doneByUserId: actor.userId },
+    });
+    state.status = "DONE";
+    await tx.processStep.create({
+      data: {
+        id: newId(),
+        organizationId: actor.organizationId,
+        progressId: graph.progress.id,
+        stageId: stage.id,
+        action: "OPERATION",
+        actorUserId: actor.userId,
+      },
+    });
+    settledAny = true;
+  }
+  if (settledAny) return settle(tx, document, graph, actor, options);
   if (graph.progress.status === "ACTIVE" && allComplete(derived)) {
     await tx.processProgress.update({
       where: { id: graph.progress.id },
@@ -238,6 +306,27 @@ export async function settle(
     }
   }
   return derived;
+}
+
+/** An error of the database (Prisma): the transaction cannot go on. */
+const isDatabaseError = (error: unknown): boolean => {
+  const name = (error as { name?: string } | null)?.name ?? "";
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    name.startsWith("PrismaClient") ||
+    (typeof code === "string" && /^P\d{4}$/.test(code))
+  );
+};
+
+/**
+ * An operation's `settle` failed while a stage became ready: the action
+ * that made it ready is undone, with a message for people.
+ */
+export class ProcessOperationFailed extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProcessOperationFailed";
+  }
 }
 
 /** The area of a stage hears it is theirs (permissions, roles, place). */

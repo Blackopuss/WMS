@@ -64,7 +64,8 @@ import {
   freeToMoveFrom,
   releaseReservations,
 } from "./reservations";
-import { isWaitingPlace } from "./unplaced";
+import { IN_PRODUCTION_AREA, isWaitingPlace } from "./unplaced";
+import { settleProductionStored } from "./putaway";
 import { PLACE_NOT_FOUND, scannedPlace } from "./scanned-place";
 import { ofSerials, serialsForTake } from "./serials";
 import {
@@ -78,7 +79,11 @@ import {
 import { containerName, theContainer } from "./container-rules";
 import { compareRoute, inRouteOrder, routeKey } from "./pick-route";
 import { formatWaveNumber } from "./wave-states";
-import { TASK_ASSIGNED_NOTICE, TASK_BLOCKED_NOTICE } from "./notices";
+import {
+  TASK_ASSIGNED_NOTICE,
+  TASK_BLOCKED_NOTICE,
+  TASK_CANCELLED_NOTICE,
+} from "./notices";
 import { settleWaveOf } from "./wave-settle";
 import {
   EQUIPMENT_CODE_NOT_FOUND,
@@ -237,6 +242,8 @@ async function lockTask(tx: Tx, taskId: string, userId: string) {
           },
           toLocation: { select: { name: true } },
           placedLocationId: true,
+          // WMS-31: the lot produced a put-away takes out of the area.
+          productionReportId: true,
           containerId: true,
           container: { select: { code: true, kind: true } },
           // WMS-42: the type of equipment it asks for and the one in use.
@@ -1616,6 +1623,20 @@ async function putawayPlace(
       "locationCode",
     );
   }
+  // WMS-31 (ADR 0093): an area of production (or a shelf inside one) is
+  // not where goods are kept.
+  if (
+    place.type === "PRODUCTION" ||
+    (await tx.location.count({
+      where: { id: place.id, ...IN_PRODUCTION_AREA },
+    })) > 0
+  ) {
+    return stop(
+      "invalid",
+      `«${place.name}» es un área de producción: acomódalo en una ubicación donde se guarde.`,
+      "locationCode",
+    );
+  }
   return place;
 }
 
@@ -1688,6 +1709,15 @@ async function deliverPutaway(
       placedLocationId: place.id,
     },
   });
+  // WMS-31 (ADR 0093): the put-away of a lot produced; with its last one
+  // delivered, «Se guardó» is done by itself (the progress, last lock).
+  const fromLot = await tx.warehouseTask.findFirst({
+    where: { id: task.id },
+    select: { productionReportId: true },
+  });
+  if (fromLot?.productionReportId) {
+    await settleProductionStored(tx, actor, fromLot.productionReportId);
+  }
   return {
     ok: true,
     taskId: task.id,
@@ -2636,6 +2666,66 @@ export function releaseTask(
   });
 }
 
+/**
+ * WMS-31 (ADR 0093): cancels tasks a document closes (its caller already
+ * locked them and decided they may be cancelled), each with its line of
+ * the audit trail and a notice to whoever had it. Lets go of nothing: the
+ * caller frees what its document held.
+ */
+export async function cancelLockedTasks(
+  tx: Tx,
+  actor: InventoryActor,
+  tasks: readonly {
+    id: string;
+    number: number;
+    assignedToUserId: string | null;
+    fromLocationId: string;
+    toLocationId: string;
+  }[],
+  reason: string,
+): Promise<void> {
+  if (tasks.length === 0) return;
+  const now = new Date();
+  for (const task of tasks) {
+    await tx.warehouseTask.update({
+      where: { id: task.id },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: now,
+        cancelReason: reason.slice(0, 300),
+        closedByUserId: actor.userId,
+        pickedQuantity: null,
+        shortReason: null,
+      },
+    });
+    await recordAuditEvent(tx, {
+      organizationId: actor.organizationId,
+      actorUserId: actor.userId,
+      action: "inventory.task_cancelled",
+      target: { type: "warehouse_task", id: task.id },
+      reason: reason.slice(0, 300),
+      metadata: { tarea: formatTaskNumber(task.number) },
+    });
+    if (task.assignedToUserId && task.assignedToUserId !== actor.userId) {
+      await notify(tx, TASK_CANCELLED_NOTICE, {
+        organizationId: actor.organizationId,
+        actorUserId: actor.userId,
+        to: {
+          userIds: [task.assignedToUserId],
+          permissions: ["inventory.task.read"],
+          locationIds: [task.fromLocationId, task.toLocationId],
+        },
+        text: `Se canceló la tarea ${formatTaskNumber(task.number)}: ${reason}`.slice(
+          0,
+          300,
+        ),
+        href: `/tareas/${task.id}`,
+        key: `task:${task.id}:cancelled`,
+      });
+    }
+  }
+}
+
 /** Cancelled with a reason; nothing had moved. */
 export function cancelTask(
   actor: InventoryActor,
@@ -2704,6 +2794,11 @@ export function cancelTask(
     // free again.
     if (task.kind === "PUTAWAY" || task.kind === "REPLENISH") {
       await releaseReservations(tx, { type: TASK_HOLD, id: task.id });
+    }
+    // WMS-31 (ADR 0093): a cancelled put-away of a lot produced counts as
+    // resolved; «Se guardó» is asked again (the progress, last lock).
+    if (task.kind === "PUTAWAY" && task.productionReportId) {
+      await settleProductionStored(tx, actor, task.productionReportId);
     }
     await recordAuditEvent(tx, {
       organizationId: actor.organizationId,

@@ -12,6 +12,7 @@ import {
   pickUpTask,
   receiveCustomerReturn,
   reconcileStock,
+  reconcileValue,
   registerEntry,
   registerExit,
   registerQuickExit,
@@ -48,6 +49,7 @@ import {
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
 import {
+  closeProductionOrder,
   releaseProductionOrder,
   reportMaterialScrap,
   reportProduction,
@@ -1437,4 +1439,125 @@ describe("locks in one order (WMS-76)", () => {
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   }, 240_000);
+  it("closing an order never deadlocks with a report, a reversal, scrap, an ISSUE delivery, a verification of its lot, the put-away of its lot nor a second close (WMS-31)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop(["inventory", "production", "quality"]);
+    await production.setting(owner, "production.report.photo", "optional");
+    await production.setting(owner, "production.materials.mode", "issue");
+    await production.setting(owner, "inventory.putaway.mode", "tasks");
+    await production.enter(owner, board, shelf, "3000");
+    await production.enter(owner, screw, shelf, "3000");
+    const inspector = await production.member(owner.organizationId, [
+      "quality_inspector",
+    ]);
+    const shelfRow = await db.location.findFirstOrThrow({
+      where: { id: shelf },
+    });
+    const errors: string[] = [];
+    for (let round = 0; round < 6; round++) {
+      const id = await production.order(owner, crate, area, "20");
+      const released = await releaseProductionOrder(owner, id);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const issue = await db.warehouseTask.findMany({
+        where: { kind: "ISSUE", productionOrderLine: { orderId: id } },
+        orderBy: { id: "asc" },
+      });
+      const boardTask = issue.find((task) => task.productId === board)!;
+      await acceptTask(owner, boardTask.id);
+      await pickUpTask(owner, boardTask.id);
+      // Free material in the area for the reports.
+      await production.enter(owner, board, area, "40");
+      await production.enter(owner, screw, area, "50");
+      const lots = [];
+      for (let n = 0; n < 3; n++) {
+        const done = await reportProduction(owner, id, {
+          good: "2",
+          idempotencyKey: newId(),
+        });
+        if (!done.ok) throw new Error(JSON.stringify(done));
+        lots.push(
+          await db.productionReportLine.findFirstOrThrow({
+            where: { reportId: done.reportId, kind: "OUTPUT" },
+          }),
+        );
+      }
+      const start = async (lineId: string) => {
+        const started = await startInspection(inspector, {
+          productId: crate,
+          locationId: area,
+          origin: "PRODUCTION",
+          lineId,
+          idempotencyKey: newId(),
+        });
+        if (!started.ok) throw new Error(JSON.stringify(started));
+        return started.inspectionId;
+      };
+      // Lot 0 already approved, with its put-away picked up.
+      const first = await start(lots[0]!.id);
+      const approved = await decideInspection(inspector, {
+        inspectionId: first,
+        idempotencyKey: newId(),
+        outcomes: [{ status: "AVAILABLE", quantity: "2" }],
+      });
+      if (!approved.ok) throw new Error(JSON.stringify(approved));
+      const putaway = await db.warehouseTask.findFirstOrThrow({
+        where: { productionReportId: lots[0]!.reportId },
+      });
+      await acceptTask(owner, putaway.id);
+      await pickUpTask(owner, putaway.id);
+      const second = await start(lots[1]!.id);
+      const material = (await production.linesOf(id))[1]!;
+      const results = await Promise.allSettled([
+        closeProductionOrder(owner, id, "Prueba de candados"),
+        closeProductionOrder(owner, id, "Prueba de candados"),
+        reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+        reverseProductionReport(owner, lots[2]!.reportId, "Prueba"),
+        reportMaterialScrap(owner, id, {
+          orderLineId: material.id,
+          quantity: "1",
+          reason: "Se rompió",
+          idempotencyKey: newId(),
+        }),
+        deliverTask(owner, boardTask.id),
+        decideInspection(inspector, {
+          inspectionId: second,
+          idempotencyKey: newId(),
+          outcomes: [{ status: "AVAILABLE", quantity: "2" }],
+        }),
+        deliverTask(owner, putaway.id, { locationCode: shelfRow.name }),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+      // The ISSUE delivery, the verification and the put-away never wait
+      // for the order: they always happen.
+      for (const at of [5, 6, 7]) {
+        const result = results[at];
+        if (
+          result?.status === "fulfilled" &&
+          !(result.value as { ok: boolean }).ok
+        ) {
+          errors.push(`round ${round}, ${at}: ${JSON.stringify(result.value)}`);
+        }
+      }
+      // Whatever won, the order closes in the end and lets go of everything.
+      const closed = await closeProductionOrder(owner, id, "Al final");
+      if (!closed.ok) errors.push(`round ${round}: ${JSON.stringify(closed)}`);
+      const held = await db.stockReservation.count({
+        where: {
+          sourceType: "production_order_line",
+          sourceId: { in: (await production.linesOf(id)).map((l) => l.id) },
+          state: "ACTIVE",
+        },
+      });
+      if (held > 0) errors.push(`round ${round}: ${held} still set aside`);
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    expect(await reconcileValue(owner.organizationId)).toEqual([]);
+  }, 300_000);
 });

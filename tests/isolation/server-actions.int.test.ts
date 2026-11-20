@@ -150,6 +150,12 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); la orden y sus tareas se bloquean solo en esa empresa",
     coveredBy: "tests/production/orders.int.test.ts",
   },
+  closeProductionOrderAction: {
+    input: "id de la orden (atado por la pantalla) y motivo",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); productos, orden y tareas se bloquean solo en esa empresa y la orden fuera del alcance no existe",
+    coveredBy: "tests/production/close.int.test.ts",
+  },
   setProductionPeopleAction: {
     input: "id de la orden e ids de personas",
     identity:

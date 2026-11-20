@@ -17,7 +17,7 @@ En **Inicio › Para hoy** ve **Mis tareas**, **Tareas disponibles**, **Pedidos 
 1. **Tareas › Disponibles:** toca una tarea y luego **Tomar tarea**. Si te la asignaron, está en **Mis tareas**. Si pide equipo, escanea o escribe el código del equipo cuando te lo pida (**¿Con qué…?**).
 2. **Ya recogí la carga** cuando tengas la mercancía.
 3. **Surtir un pedido:** escanea o escribe el **Producto**, **¿Dónde estás?**, el **Lote** si aplica y la **Cantidad surtida**; toca **Ya lo surtí**. Si surtes menos de lo pedido, explica **¿Por qué surtes menos?**. Nunca más de lo pedido.
-4. **Acomodar:** el sistema recomienda un lugar (**Se recomendó <ruta>**). Escanea su etiqueta y toca **Ya lo acomodé**; si lo dejaste en otro lugar, escanea ese y usa **Lo dejé en otro lugar**.
+4. **Acomodar:** el sistema recomienda un lugar (**Se recomendó <ruta>**). Escanea su etiqueta y toca **Ya lo acomodé**; si lo dejaste en otro lugar, escanea ese y usa **Lo dejé en otro lugar**. Lo aprobado de producción también llega como acomodo desde el área de producción; no se puede dejar en un área de producción ni en un lugar de paso.
 5. **Entregar:** **Ya lo dejé en <ruta>**. Si la empresa pide foto, toma una de dónde lo dejaste antes de entregar (hasta 3). Hasta entregar no se mueve nada en el inventario.
 6. Si no puedes hacerla: **Reportar un problema**, escribe **Qué pasó**. La tarea se detiene y tu supervisor la revisa. Una carga que ya recogiste no se cancela: se entrega o se reporta.
 7. Si hay una **ola**, en **Tareas** abre **Olas abiertas** y sigue el recorrido por pasillo («Toma 30 piezas…»).
@@ -49,4 +49,4 @@ Corregir existencias, reversar un movimiento, aplicar un conteo, cambiar product
 ## Si algo falla
 **Reportar un problema** (en **Inicio**; ver [común](comun.md), sección 8) para lo que no es una tarea.
 
-Vigente al 2026-11-19
+Vigente al 2026-11-20 (WMS-31)

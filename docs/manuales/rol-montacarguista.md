@@ -18,7 +18,8 @@ Cada tarea tiene tres toques: **aceptar, recoger y entregar**.
 4. Ve por la carga y toca **Ya recogí la carga**.
 5. Llévala a su destino y toca **Ya lo dejé en <ruta>** (o **Ya la dejé en …**). Si trae una tarima completa, la tarea mueve la tarima entera.
 6. Si la empresa pide foto, toma una de dónde dejaste la carga antes de entregar (queda como prueba de dónde quedó, con tu nombre). Hasta que entregas, nada cambia en el inventario.
-7. Si hay otra tarea a continuación, la pantalla te la muestra (**Siguiente tarea**).
+7. Un acomodo puede salir del área de producción (lo que Calidad o el Encargado aprobó). Déjalo donde se guarda: el sistema no acepta dejarlo en un área de producción ni en un lugar de paso.
+8. Si hay otra tarea a continuación, la pantalla te la muestra (**Siguiente tarea**).
 
 ### Si no puedes hacerla
 Toca **Reportar un problema**, escribe **Qué pasó** y confirma con **Reportar problema**. La tarea se detiene (queda **Con problema**) y tu supervisor la revisa; no se mueve nada. **Una carga ya recogida no se cancela: se entrega o se reporta.**
@@ -32,4 +33,4 @@ El código de la ubicación y del equipo se pueden escanear con el lector USB o 
 ## Lo que no puedes hacer (y a quién pedirlo)
 Registrar entradas, salidas, cambios de lugar por tu cuenta, conteos, ajustes o ver costos. Pídele a tu [Supervisor](rol-supervisor-almacen.md) que cree la tarea que necesitas.
 
-Vigente al 2026-11-19
+Vigente al 2026-11-20 (WMS-31)

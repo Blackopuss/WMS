@@ -54,6 +54,7 @@ import {
   type ProcessTx,
   type StageRow,
   type StateRow,
+  ProcessOperationFailed,
 } from "./shared";
 
 /**
@@ -252,6 +253,9 @@ async function act(
     }, LOCKING_TRANSACTION);
   } catch (error) {
     if (error instanceof Refused) return error.result;
+    if (error instanceof ProcessOperationFailed) {
+      return { ok: false, reason: "not_allowed", error: error.message };
+    }
     // The key is unique in the company: the same confirmation used at the
     // same moment on another process meets it here (B2).
     if (
@@ -649,7 +653,9 @@ export function completeStage(
       });
       if (!attached.ok) refuse("invalid", attached.error, "photos");
     }
-    await settle(context.tx, context.document, context.graph, actor);
+    await settle(context.tx, context.document, context.graph, actor, {
+      hookErrors: "throw",
+    });
     return `Listo: ${stage.name}.`;
   });
 }
@@ -699,7 +705,9 @@ export function skipStage(
     });
     context.state.status = "SKIPPED";
     await writeStep(context, actor, { action: "SKIPPED", note: reason });
-    await settle(context.tx, context.document, context.graph, actor);
+    await settle(context.tx, context.document, context.graph, actor, {
+      hookErrors: "throw",
+    });
     return `Se saltó «${context.stage.name}».`;
   });
 }
@@ -745,7 +753,9 @@ export function backStage(
     });
     targetState.status = "WAITING";
     await writeStep(context, actor, { action: "BACK", note: reason });
-    await settle(context.tx, context.document, context.graph, actor);
+    await settle(context.tx, context.document, context.graph, actor, {
+      hookErrors: "throw",
+    });
     return `Regresó a «${target!.name}»: le toca otra vez a ${areaText(target!.roles)}.`;
   });
 }

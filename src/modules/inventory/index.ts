@@ -254,6 +254,7 @@ export {
   acceptTask,
   assignTask,
   blockTask,
+  cancelLockedTasks,
   cancelTask,
   confirmPick,
   countMyTasks,
@@ -341,7 +342,13 @@ export {
   createPutawayTasks,
   isTaskNumberClash,
   putawayTarget,
+  settleProductionStored,
 } from "./putaway";
+export {
+  PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_BATCH_STORED_OPERATION,
+  PRODUCTION_BATCH_VERIFICATION_OPERATION,
+} from "./production-batch";
 export type {
   CreatedPutaway,
   PendingPutawayResult,

@@ -1276,6 +1276,26 @@ try {
         `WMS-78C 320px: ${path} fits and has one heading`,
       );
     }
+    // WMS-31: the close of an order (its reconciliation) fits at 320 px.
+    await page.goto(`${BASE}/produccion`, { waitUntil: "networkidle" });
+    const orderHref = (
+      await page.$$eval("main a", (links) =>
+        links.map((a) => a.getAttribute("href") ?? ""),
+      )
+    ).find((href) => /^\/produccion\/[0-9a-f-]{36}$/.test(href));
+    if (orderHref) {
+      await page.goto(`${BASE}${orderHref}/cerrar`, {
+        waitUntil: "networkidle",
+      });
+      const closing = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        h1: document.querySelectorAll("h1").length,
+      }));
+      check(
+        closing.overflow <= 0 && closing.h1 === 1,
+        "WMS-31 320px: the close of an order fits and has one heading",
+      );
+    }
     // «Pedir producción» without a product lists what may be asked (or
     // says there is nothing), never «Ese producto no se puede pedir».
     await page.goto(`${BASE}/produccion/solicitudes/nueva`, {

@@ -13,6 +13,16 @@ export const TASK_ASSIGNED_NOTICE: NotificationType = {
   defaultEnabled: true,
 };
 
+/** WMS-31 (ADR 0093): a task you had was cancelled by its document. */
+export const TASK_CANCELLED_NOTICE: NotificationType = {
+  key: "inventory.task_cancelled",
+  module: "inventory",
+  label: "Se canceló una tarea tuya",
+  description:
+    "Cuando se cancela una tarea que tenías porque se cerró el documento del que venía.",
+  defaultEnabled: true,
+};
+
 export const TASK_BLOCKED_NOTICE: NotificationType = {
   key: "inventory.task_blocked",
   module: "inventory",
@@ -104,6 +114,7 @@ export const EQUIPMENT_OUT_OF_SERVICE_NOTICE: NotificationType = {
 export const INVENTORY_NOTIFICATION_TYPES: readonly NotificationType[] = [
   TASK_ASSIGNED_NOTICE,
   TASK_BLOCKED_NOTICE,
+  TASK_CANCELLED_NOTICE,
   CUSTOMER_RETURN_NOTICE,
   TRANSFER_INCOMING_NOTICE,
   TRANSFER_DIFFERENCES_NOTICE,

@@ -11,7 +11,9 @@ export type {
   ProcessDocument,
   ProcessMilestone,
   ProcessOperation,
+  ProcessSettleTx,
 } from "./definitions";
+export { ProcessOperationFailed } from "./shared";
 export {
   PROCESS_VERSION_STATUSES,
   PROCESS_VERSION_TRANSITIONS,

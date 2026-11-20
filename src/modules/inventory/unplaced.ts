@@ -4,6 +4,7 @@ import { dec } from "@/lib";
 import { assertModulePermission } from "@/platform/billing";
 import {
   LOCATION_PARENTS,
+  MAX_LOCATION_LEVELS,
   activeFacilityOf,
   isLimited,
   locationScopeWhere,
@@ -111,6 +112,22 @@ export const WAITING_PLACE = {
   isStaging: null,
   OR: [{ isDefault: true }, { type: "RECEIVING" as const }],
 };
+
+/**
+ * WMS-31 (ADR 0093): a location of use «Producción» or anything inside
+ * one (its own type or an ancestor's), in one condition of the query: an
+ * area of production keeps what is made and the materials of its orders,
+ * it is never where a put-away leaves goods.
+ */
+export const IN_PRODUCTION_AREA = (() => {
+  const levels: Record<string, unknown>[] = [{ type: "PRODUCTION" }];
+  let nested: Record<string, unknown> = { type: "PRODUCTION" };
+  for (let depth = 1; depth < MAX_LOCATION_LEVELS; depth++) {
+    nested = { parent: { is: nested } };
+    levels.push(nested);
+  }
+  return { OR: levels };
+})();
 
 /** Is this location of a warehouse a place where goods wait? */
 export const isWaitingPlace = (location: {

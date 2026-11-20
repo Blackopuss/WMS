@@ -112,6 +112,7 @@ export {
   reachableQuantity,
 } from "./request-rules";
 export {
+  ORDER_CLOSED_NOTICE,
   ORDER_FROM_REQUEST_NOTICE,
   OUTPUT_VERIFIED_NOTICE,
   PRODUCTION_NOTIFICATION_TYPES,
@@ -144,8 +145,20 @@ export {
 export { PRODUCTION_SEARCH_SOURCES } from "./search";
 // WMS-29 (ADR 0087): production reports, scrap of material, lot numbering.
 export { PRODUCTION_ORDER_REPORTED_OPERATION } from "./order-process";
+// WMS-31 (ADR 0093): closing the order with what was made.
+export { PRODUCTION_ORDER_CLOSED_OPERATION } from "./order-process";
+export {
+  CLOSING_INSPECTIONS_MAX,
+  closeProductionOrder,
+  getProductionOrderClosing,
+  type CloseOrderResult,
+  type ClosingMaterial,
+  type ClosingOutput,
+  type ProductionOrderClosing,
+} from "./close";
 export {
   PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_BATCH_STORED_OPERATION,
   PRODUCTION_BATCH_VERIFICATION_OPERATION,
 } from "./report-process";
 export {

@@ -128,6 +128,32 @@ aprobación propio `production.scrap`. `warnMaterialShortage`: aviso
 agregan a lo de Inventario). Candados del reporte: productos → orden →
 estado → ubicaciones → capacidad → nomenclatura → progreso → archivos.
 
+**Cierre (WMS-31, ADR 0093, `close.ts`):** `closeProductionOrder` (permiso
+`production.order.close`) cierra una orden `IN_PROGRESS` con lo hecho;
+con faltante (buenas < pedido) exige motivo; `CLOSED` repetido responde
+`repeated`; `DRAFT`/`RELEASED` se cancelan, no se cierran. Rechaza con una
+tarea `ISSUE` con la carga en camino o con una merma de material esperando
+autorización; cancela las `ISSUE` sin recoger, libera todo lo apartado de
+las líneas con `releaseReservations` (lo del área queda libre ahí), escribe
+`CLOSED` y completa la operación de proceso «Orden cerrada»
+(`PRODUCTION_ORDER_CLOSED_OPERATION`, `IN_PROGRESS → CLOSED`) antes de
+`reachMilestone(CLOSED)`. Aviso `production.order_closed` a quien pidió la
+solicitud y a los asignados. Candados: todos los productos de la orden →
+orden → tareas `ISSUE` → progreso; sin almacén ni ubicaciones.
+`getProductionOrderClosing` (`production.order.read`): conciliación
+derivada (pedido, buenas, malas, faltante; por salida lo verificado según
+`quality_inspection_result`, en verificación y sin verificar; por material
+previsto, consumido, merma y apartado sin usar; costos solo con
+`inventory.cost.read`). El documento de proceso del lote
+(`PRODUCTION_BATCH_PROCESS`) se declara ahora en Inventario
+(`production-batch.ts`) y Producción lo reexporta: su operación nueva «Se
+guardó» (`PRODUCTION_BATCH_STORED_OPERATION`) la completa Inventario
+cuando todo el lote está decidido y sin acomodos abiertos
+(`settleProductionStored`; también al cancelar un acomodo y, con el gancho
+`settle` del motor, cuando la etapa queda lista tras una etapa manual).
+La ficha del lote dice lo aprobado que quedó en el área sin tarea
+(`leftInArea`, con «Cambiar de lugar»).
+
 ## Permisos
 
 `production.recipe.read|manage`, `production.order.read|create|release|cancel|close`,
@@ -135,7 +161,7 @@ estado → ubicaciones → capacidad → nomenclatura → progreso → archivos.
 `production.scrap.create`, `production.shift.manage`,
 `production.output.verify`. Quién recibe cada uno: `docs/MATRIZ_ROLES_PERMISOS.md`
 (sección «Producción») y ADR 0062. WMS-27 usa los de recetas; WMS-28,
-`production.order.read|create|release|cancel` (`close` llega con WMS-31) y
+`production.order.read|create|release|cancel` (`close` lo usa WMS-31) y
 `production.report.create` solo para saber a quién se puede asignar;
 WMS-28B, `production.request.read|create|decide`; WMS-29,
 `production.report.create|reverse` y `production.scrap.create`
@@ -184,7 +210,9 @@ poco» en «Mis tareas» (`/tareas`), `/produccion/solicitudes` (lista),
 (ficha y pantalla de decisión). Reportes (WMS-29): avance en la ficha de la
 orden, `/produccion/[id]/reportar`, `/produccion/[id]/merma`,
 `/produccion/reportes/[id]` (reporte, fotos, proceso del lote, revertir) y
-`/configuracion/lotes-de-produccion`.
+`/configuracion/lotes-de-produccion`. Cierre (WMS-31):
+`/produccion/[id]/cerrar` (conciliación y «Cerrar orden»; con la orden
+cerrada, el resumen del cierre).
 
 ## Ajustes y trabajos
 
@@ -195,7 +223,7 @@ omisión, `issue`) y `production.release.short` (`ask` por omisión,
 `optional`, `off`; WMS-29). Sin trabajos en segundo plano. Avisos
 (`notices.ts`): `production.request_to_decide`,
 `production.request_answered`, `production.order_from_request` y
-`production.material_short` (WMS-29). Aprobación: `production.scrap`
+`production.material_short` (WMS-29) y `production.order_closed` (WMS-31). Aprobación: `production.scrap`
 (`approvals.ts`, apagada por omisión).
 
 ## Bitácora
@@ -208,7 +236,7 @@ omisión, `issue`) y `production.release.short` (`ask` por omisión,
 `production.request_rejected`, `production.request_cancelled`,
 `production.reported`, `production.report_reversed`,
 `production.scrap_reported`, `production.lot_numbering_changed`,
-`production.material_short`.
+`production.material_short`, `production.order_closed`.
 
 **Almacén archivado (WMS-82, ADR 0077).** `shareFacility` (crear, guardar,
 cambiar personas, aceptar una solicitud) rechaza un almacén archivado con la
@@ -220,14 +248,16 @@ con órdenes abiertas o solicitudes por atender de ese almacén.
 
 0062 (roles y permisos de producción y calidad), 0066 (recetas), 0073
 (órdenes de producción), 0075 (solicitudes de producción), 0087
-(reporte de producción).
+(reporte de producción), 0093 (cierre de la orden y producto a su lugar).
 
 ## Pruebas
 
 `src/modules/production/*.test.ts` (reglas y estados),
 `tests/production/recipes.int.test.ts` (servicio, base, ciclos y
 activaciones simultáneas, roles, solo lectura, entre empresas) y
-`tests/production/module-guard.int.test.ts` (guarda del módulo) y
+`tests/production/module-guard.int.test.ts` (guarda del módulo),
+`tests/production/close.int.test.ts` (cierre, conciliación, acomodo de lo
+aprobado y «Se guardó") y
 `tests/production/reports.int.test.ts` y `case-5-5.int.test.ts` (WMS-29:
 consumo, no producir de más, faltante, costo, lotes, series, subproductos,
 reversa, merma con y sin autorización, concurrencia, alcance, rastreo,
