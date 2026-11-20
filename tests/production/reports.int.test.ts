@@ -1272,6 +1272,26 @@ describe("cost of what is made when a material has no cost (WMS-92)", () => {
     await balanced(owner.organizationId);
   });
 
+  it("with no material costed and what is made already priced, the screen says the cost is unknown", async () => {
+    const { owner, area, crate, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await enter(owner, crate, shelf, "10");
+    await price(owner.organizationId, crate, "30", "10");
+    const id = await released(owner, crate, area, "2");
+    const done = await report(owner, id, "2");
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    // It enters at its own average (ADR 0031), as before.
+    expect(await costOf(owner.organizationId, crate)).toEqual({
+      average: "30.00",
+      value: "360.00",
+    });
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.valueText).toBeNull();
+    expect(view?.uncostedMaterials).toEqual([]);
+    expect(view?.outputs[0]?.unitCost).toBe("30");
+    await balanced(owner.organizationId);
+  });
+
   it("partial reports add up to one report, and a reversal leaves the value as it was", async () => {
     const one = await workshop();
     const parts = await workshop();

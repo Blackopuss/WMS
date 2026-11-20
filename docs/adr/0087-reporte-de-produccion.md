@@ -236,9 +236,16 @@ muestra.
   `inventory.cost.read`, dice qué materiales no están en el costo de lo
   producido porque no tienen costo registrado (derivado de las líneas de
   salida sin costo del movimiento; nada guardado nuevo). Un reporte solo
-  de piezas malas no produce nada y no lleva ese aviso. El valor de la
-  ficha es «sin costo conocido» solo cuando ningún material salió con
-  costo y lo producido entró sin costo.
+  de piezas malas no produce nada y no lleva ese aviso. La ficha dice
+  «sin costo conocido» (y no lleva el aviso) cuando ningún material de la
+  orden tenía costo al reportar. Eso se guarda con el reporte
+  (`production_report.costKnown`, inmutable, migración
+  `20261120140000_wms92_report_cost_known`) porque las líneas no lo
+  distinguen: en ese caso lo producido entra a su propio promedio si ya
+  tenía (ADR 0031), y su línea lleva ese costo. En los reportes de antes
+  de WMS-92 la columna está vacía y la ficha decide como antes: sin costo
+  conocido si ningún material salió con costo. El aviso concuerda en
+  número («no tiene» o «no tienen costo registrado»).
 - **Redondeo:** el costo por unidad de cada salida es su parte ÷ lo que
   entra, redondeado a la escala del libro de costos (`COST_SCALE`). La
   diferencia entre lo que entra y lo que salió es de hasta media unidad de

@@ -891,6 +891,7 @@ export async function reportProduction(
         badReason: bad.greaterThan(0) ? data.badReason : null,
         unitCode: order.unitCode,
         lotCode: lotCode?.slice(0, 60) ?? null,
+        costKnown: posted.value !== null,
         createdByUserId: userId,
       },
     });
@@ -1712,6 +1713,7 @@ export async function getProductionReport(
       badReason: true,
       unitCode: true,
       lotCode: true,
+      costKnown: true,
       reversedAt: true,
       reversedByUserId: true,
       reverseReason: true,
@@ -1786,31 +1788,33 @@ export async function getProductionReport(
     costs ? (value ? value.toString() : null) : undefined;
   const inputs = row.movement.lines.filter((line) => line.direction === "OUT");
   // WMS-92: the value counts only the materials with a known cost; it is
-  // unknown only when none had one and what was made entered without cost
-  // (no material of the order had a cost). Derived from the lines.
+  // unknown when no material of the order had one when reporting (saved
+  // with the report: the lines alone cannot tell it, since what was made
+  // may have entered at its own average). Reports from before WMS-92 have
+  // no mark: unknown when no material left with a cost.
   const costed = inputs.filter((line) => line.unitCost !== null);
-  const madeWithCost = row.movement.lines.some(
-    (line) => line.direction === "IN" && line.unitCost !== null,
-  );
-  const value =
-    inputs.length > 0 && costed.length === 0 && !madeWithCost
-      ? null
-      : costed.reduce(
-          (sum, line) =>
-            sum.plus(
-              dec(line.unitCost!.toString()).times(
-                line.baseQuantity.toString(),
-              ),
-            ),
-          dec(0),
-        );
-  const uncosted = [
-    ...new Set(
-      inputs
-        .filter((line) => line.unitCost === null)
-        .map((line) => line.product.name),
-    ),
-  ];
+  const unknown =
+    row.costKnown === null
+      ? inputs.length > 0 && costed.length === 0
+      : !row.costKnown;
+  const value = unknown
+    ? null
+    : costed.reduce(
+        (sum, line) =>
+          sum.plus(
+            dec(line.unitCost!.toString()).times(line.baseQuantity.toString()),
+          ),
+        dec(0),
+      );
+  const uncosted = unknown
+    ? []
+    : [
+        ...new Set(
+          inputs
+            .filter((line) => line.unitCost === null)
+            .map((line) => line.product.name),
+        ),
+      ];
   return {
     id: row.id,
     numberText: formatReportNumber(row.number),
