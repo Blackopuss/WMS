@@ -1,59 +1,14 @@
 "use client";
 
 import { Smartphone, WifiOff } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
-import { SERVICE_WORKER_PATH } from "@/lib";
-
+import {
+  getInstallOffer,
+  setInstallOffer,
+  subscribeInstall,
+} from "./pwa-setup";
 import { Button } from "./ui/button";
-
-/** The browser's install offer (Chrome, Edge), not in TypeScript's DOM. */
-type InstallPrompt = Event & { prompt(): Promise<unknown> };
-
-// The offer arrives once, on whatever screen is open: kept here until the
-// person asks for it in Configuración (WMS-35).
-let installOffer: InstallPrompt | null = null;
-const installListeners = new Set<() => void>();
-function setInstallOffer(offer: InstallPrompt | null) {
-  installOffer = offer;
-  for (const listener of installListeners) listener();
-}
-function subscribeInstall(listener: () => void) {
-  installListeners.add(listener);
-  return () => {
-    installListeners.delete(listener);
-  };
-}
-
-/**
- * Registers the service worker (WMS-35, ADR 0049) from the app's own
- * bundle — no inline script, so the CSP does not change — and keeps the
- * browser's install offer without letting it insist with its own banner.
- */
-export function PwaSetup() {
-  useEffect(() => {
-    if ("serviceWorker" in navigator && window.isSecureContext) {
-      navigator.serviceWorker
-        .register(SERVICE_WORKER_PATH, { scope: "/", updateViaCache: "none" })
-        .catch(() => {
-          // Without a worker the app works the same; only the offline page
-          // is missing.
-        });
-    }
-    const onOffer = (event: Event) => {
-      event.preventDefault();
-      setInstallOffer(event as InstallPrompt);
-    };
-    const onInstalled = () => setInstallOffer(null);
-    window.addEventListener("beforeinstallprompt", onOffer);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onOffer);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
-  return null;
-}
 
 function subscribeOnline(listener: () => void) {
   window.addEventListener("online", listener);
@@ -113,7 +68,7 @@ function isInstalled() {
 export function InstallAppPanel() {
   const offer = useSyncExternalStore(
     subscribeInstall,
-    () => installOffer,
+    getInstallOffer,
     () => null,
   );
   const installed = useSyncExternalStore(
@@ -123,7 +78,7 @@ export function InstallAppPanel() {
   );
 
   async function install() {
-    const current = installOffer;
+    const current = getInstallOffer();
     if (!current) return;
     try {
       await current.prompt();

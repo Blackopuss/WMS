@@ -3,7 +3,10 @@ import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import Script from "next/script";
 
-import { Providers, THEME_SCRIPT } from "@/components";
+// What the root layout imports goes to every page, the public site
+// included: only the theme and the service worker (ADR 0080).
+import { PwaSetup } from "@/components/pwa-setup";
+import { THEME_SCRIPT } from "@/components/theme-script";
 
 import "./globals.css";
 
@@ -42,7 +45,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         </Script>
       </head>
       <body className="flex min-h-full flex-col">
-        <Providers>{children}</Providers>
+        {children}
+        <PwaSetup />
       </body>
     </html>
   );

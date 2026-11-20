@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { LabelPrintForm } from "@/components/label-print-form";
 import {
-  LabelPrintForm,
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import {
   LABELS_MAX,
   LABEL_CODES_SETTING,

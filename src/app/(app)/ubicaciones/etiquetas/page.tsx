@@ -3,14 +3,14 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
 
+import { LabelPrintForm } from "@/components/label-print-form";
 import {
   ErrorState,
-  LabelPrintForm,
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { Button } from "@/components/ui/button";
 import {
   LABEL_CODES_SETTING,

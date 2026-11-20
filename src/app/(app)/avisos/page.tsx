@@ -2,7 +2,7 @@ import { Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { EmptyState, PageContainer, PageHeader } from "@/components";
+import { EmptyState, PageContainer, PageHeader } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { getAccess } from "@/platform/authorization";

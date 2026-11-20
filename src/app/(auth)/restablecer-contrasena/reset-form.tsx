@@ -4,7 +4,8 @@ import { CircleAlert, CircleCheck, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 
-import { FormField, PasswordInput } from "@/components";
+import { FormField } from "@/components/form-field";
+import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 
 import { resetAction, type ResetFormState } from "./actions";

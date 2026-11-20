@@ -2,15 +2,15 @@ import { ArrowDown, ChevronLeft, ClipboardList } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PhotoGallery } from "@/components/photo-gallery";
 import {
   EmptyState,
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-  PhotoGallery,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib";
 import {

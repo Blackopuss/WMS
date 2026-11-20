@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import type { BellNotice } from "@/components";
+import type { BellNotice } from "@/components/app-shell/app-shell";
 import {
   countUnreadNotifications,
   listRecentNotifications,

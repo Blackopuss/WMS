@@ -8,7 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { listEquipmentTypes } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";

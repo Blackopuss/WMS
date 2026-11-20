@@ -7,7 +7,7 @@ import {
   NoAccessState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, isAppError } from "@/lib";
 import { processDocuments } from "@/modules/registry";

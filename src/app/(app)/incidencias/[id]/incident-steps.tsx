@@ -3,7 +3,8 @@
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField, PhotoCapture, type CapturedPhoto } from "@/components";
+import { FormField } from "@/components/form-field";
+import { PhotoCapture, type CapturedPhoto } from "@/components/photo-capture";
 import { Button } from "@/components/ui/button";
 
 import {

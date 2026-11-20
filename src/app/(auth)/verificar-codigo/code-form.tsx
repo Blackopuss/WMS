@@ -4,7 +4,8 @@ import { CircleAlert, Loader2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 
-import { FormField, WarehouseCard } from "@/components";
+import { FormField } from "@/components/form-field";
+import { WarehouseCard } from "@/components/warehouse-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 

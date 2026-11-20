@@ -1,7 +1,7 @@
 import { MailCheck } from "lucide-react";
 import type { Metadata } from "next";
 
-import { WarehouseCard } from "@/components";
+import { WarehouseCard } from "@/components/warehouse-card";
 import { VERIFICATION_HOURS } from "@/platform/auth";
 
 import { ResendForm } from "./resend-form";

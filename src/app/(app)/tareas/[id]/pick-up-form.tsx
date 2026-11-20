@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect } from "react";
 import { toast } from "sonner";
 
-import { SerialsField } from "@/components";
+import { SerialsField } from "@/components/serials-field";
 import { Button } from "@/components/ui/button";
 
 import { pickUpSerialsAction, type PickUpState } from "../actions";

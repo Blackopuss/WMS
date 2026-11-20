@@ -11,7 +11,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import { PhotoCapture, type CapturedPhoto } from "@/components";
+import { PhotoCapture, type CapturedPhoto } from "@/components/photo-capture";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import {
