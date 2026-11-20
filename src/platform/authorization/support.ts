@@ -1,12 +1,11 @@
 import "server-only";
 
-import { newId } from "@/lib";
+import { ForbiddenError, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { openSupportAccess, supportWindowFor } from "@/platform/tenancy";
 import { LOCKING_TRANSACTION, db, forOrganization } from "@/server";
 
-import { assertOwnerAction } from "./access";
-import { lockOrganization } from "./seats";
+import { OWNER_ONLY_MESSAGE, assertOwnerAction } from "./access";
 
 /**
  * Support access (PIL-12, ADR 0029). The titular opens it for a fixed time
@@ -25,6 +24,23 @@ export type SupportAccessView = {
   /** Open until this moment, or null when there is none. */
   until: Date | null;
 };
+
+type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
+
+/**
+ * Locks the company row (the lock of the ownership transfer and of the
+ * team) and checks, under it, that the actor is still the titular.
+ */
+async function assertStillOwner(tx: Tx, actor: Actor): Promise<void> {
+  const rows = await tx.$queryRaw<
+    { ownerUserId: string }[]
+  >`SELECT ownerUserId FROM organization WHERE id = ${actor.organizationId} FOR UPDATE`;
+  if (rows[0]?.ownerUserId !== actor.userId) {
+    throw new ForbiddenError("owner_only", OWNER_ONLY_MESSAGE, {
+      permission: "platform.support.grant",
+    });
+  }
+}
 
 /** What the titular sees in Configuración. */
 export async function getSupportAccess(
@@ -47,8 +63,10 @@ export async function grantSupportAccess(
     "platform.support.grant",
   );
   return db.$transaction(async (tx) => {
-    // One at a time per company: the company row is the lock.
-    await lockOrganization(tx, actor.organizationId);
+    // One at a time per company: the company row is the lock. The titular
+    // is read again under it: an ownership transfer accepted meanwhile
+    // (WMS-90) must not leave a window granted by the previous titular.
+    await assertStillOwner(tx, actor);
     const open = await tx.supportAccess.findFirst({
       where: {
         organizationId: actor.organizationId,
@@ -89,6 +107,7 @@ export async function revokeSupportAccess(
     "platform.support.grant",
   );
   return db.$transaction(async (tx) => {
+    await assertStillOwner(tx, actor);
     const now = new Date();
     const open = await tx.supportAccess.findMany({
       where: {
@@ -111,7 +130,7 @@ export async function revokeSupportAccess(
       });
     }
     return { closed: open.length > 0 };
-  });
+  }, LOCKING_TRANSACTION);
 }
 
 /** Companies whose titular keeps support access open, for the console. */

@@ -3,15 +3,18 @@ import { afterAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib";
 import { isMfaRequired } from "@/platform/auth";
 import {
-  acceptOwnershipTransfer,
   assertOwnerAction,
   cancelOwnershipTransfer,
   getPendingOwnershipTransfer,
   isAllowed,
   loadSubject,
-  offerOwnershipTransfer,
   type Role,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import {
+  acceptOwnershipTransfer,
+  offerOwnershipTransfer,
+} from "@/platform/authorization/ownership";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 

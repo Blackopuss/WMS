@@ -8,6 +8,39 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-90** Pantalla para transferir la titularidad: Configuración ›
+  «Titularidad de la empresa» (`/configuracion/titularidad`; la ven solo el
+  titular y quien tiene una oferta pendiente). El titular ofrece a una persona
+  activa del equipo eligiendo los roles que conserva (Consulta por omisión),
+  puede cancelar; quien recibe acepta o rechaza. Ofrecer y aceptar piden
+  contraseña y un código de dos pasos (app o recuperación) con el servicio
+  nuevo `confirmIdentity` (`src/platform/auth/step-up.ts`, límite de intentos
+  `stepUp`, cada código sirve una vez, nunca desde una sesión de PIN); cancelar
+  y rechazar no piden nada. Aceptar cierra el acceso de soporte abierto, no
+  cierra sesiones ni revoca llaves de la API. Tipo de aviso `team.ownership`,
+  correos de seguridad sin enlaces, bitácora `ownership.transfer_declined`
+  nueva. Sin permisos ni tablas nuevas. Revisor independiente en dos vueltas
+  (la primera «no unir» por un código de dos pasos reutilizable y una ventana
+  de soporte abierta por el titular anterior, ambos corregidos; la segunda
+  «unir»). Pendiente: ver el ADR. ADR 0090.
+
+- **WMS-65** Sugerencias de reubicación (slotting), solo recomienda: Inventario ›
+  «Sugerencias de reubicación» (`/inventario/reubicaciones`, enlace bajo el
+  título de Inventario, sin aviso en Inicio) lista hasta 20 renglones de tres
+  tipos derivados en cada consulta (acercar a surtido lo de clase A que no
+  tiene lugar de surtido, sacar de surtido lo que no sale, juntar lo repartido
+  en almacenaje) con su motivo en una línea. «Crear tarea»
+  (`acceptSlottingSuggestion`) vuelve a decidir esa sugerencia en el servidor y
+  crea una tarea de traslado normal con `createTask` (guarda bajo candados: no
+  duplica con dos aceptaciones a la vez). Permiso nuevo `inventory.slotting.read`
+  (titular, Administración, Almacén, Supervisor, Consulta y Gerencia); crear la
+  tarea pide además `inventory.task.create`. Ajustes de Operación
+  `inventory.slotting.fast_classes|consolidate|limit`. Sin tablas ni
+  migraciones; costo fijo (unas 50 sentencias por lista). Revisor
+  independiente en dos vueltas (la primera con hallazgos corregidos; la
+  segunda «unir»). Pendiente: aviso en Inicio, ronda automática, ubicaciones
+  sobre su capacidad, mover tarimas, sugerir reglas de reposición. ADR 0086.
+
 - **WMS-34** Tableros por rol y exportación, sin pantalla nueva: Inicio (Supervisión)
   suma la tarjeta «Trabajo abierto por persona» (tareas asignadas sin terminar
   y con problema, cada fila abre Tareas › Abiertas con `?persona=`, misma

@@ -25,6 +25,7 @@ export {
   mfaDisabledEmail,
   noticeEmail,
   operationsAlertEmail,
+  ownershipEmail,
   mfaEnabledEmail,
   passwordChangedEmail,
   passwordResetEmail,

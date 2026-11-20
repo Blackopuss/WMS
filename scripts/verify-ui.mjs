@@ -410,6 +410,32 @@ try {
       );
     }
 
+    // WMS-90: the titular reaches «Titularidad de la empresa»; an empty
+    // offer is refused on the person's field and nothing is offered.
+    await page.goto(`${BASE}/configuracion`, { waitUntil: "networkidle" });
+    await page.getByRole("link", { name: /Titularidad de la empresa/ }).click();
+    await page.waitForURL("**/configuracion/titularidad");
+    await page
+      .getByRole("heading", { name: "Titularidad de la empresa", level: 1 })
+      .waitFor();
+    const offerButton = page.getByRole("button", {
+      name: "Ofrecer la empresa",
+    });
+    if ((await offerButton.count()) > 0) {
+      await offerButton.click();
+      await page.locator('#owner-to[aria-invalid="true"]').waitFor();
+    }
+    const ownershipOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    check(
+      ownershipOverflow <= 0 &&
+        (await page
+          .getByRole("button", { name: "Cancelar la oferta" })
+          .count()) === 0,
+      `${viewport.name}: WMS-90 the titular sees the transfer screen; an empty offer offers nothing`,
+    );
+
     // Audit trail (USR-11): the titular reads who changed what.
     await page.goto(`${BASE}/configuracion`, { waitUntil: "networkidle" });
     await page.getByRole("link", { name: /Bitácora/ }).click();

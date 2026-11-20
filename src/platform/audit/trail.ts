@@ -15,6 +15,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "organization.created": "Creó la empresa",
   "ownership.transfer_offered": "Ofreció transferir la titularidad",
   "ownership.transfer_cancelled": "Canceló la transferencia de titularidad",
+  "ownership.transfer_declined": "Rechazó la titularidad de la empresa",
   "ownership.transferred": "Aceptó la titularidad de la empresa",
   "inventory.adjusted": "Ajustó existencias",
   "inventory.count_applied": "Aplicó un conteo físico",

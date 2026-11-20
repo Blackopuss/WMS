@@ -160,6 +160,19 @@ export async function disableMfa(
     }
     throw error;
   }
+  // An app code works once (WMS-90): Better Auth does not stop a repeat
+  // when there is a session.
+  if (
+    totp &&
+    (await reserveAttempt([throttleKeys.totpUsed(userId, totp)])) > 0
+  ) {
+    await settleFailure([key]);
+    return {
+      ok: false,
+      error:
+        "Ese código ya se usó. Espera a que tu app muestre uno nuevo e inténtalo otra vez.",
+    };
+  }
 
   // Better Auth deletes the secret and codes and rotates the session.
   await auth.api.disableTwoFactor({
