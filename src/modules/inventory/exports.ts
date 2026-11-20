@@ -29,6 +29,11 @@ import {
 import { mayReadInventoryCosts } from "./inventory-value";
 import { lotDayOf } from "./lot-rules";
 import { STOCK_STATUS_LABELS } from "./stock-status";
+import {
+  indicatorSheets,
+  type IndicatorExportQuery,
+  type IndicatorSheet,
+} from "./indicator-export";
 
 /**
  * Exports to a spreadsheet (IMP-11): the catalog, the stock and the
@@ -60,6 +65,13 @@ export const EXPORT_KINDS = {
     file: "movimientos",
     sheet: "Movimientos",
     reads: "inventory.movement.read",
+  },
+  // WMS-34 (ADR 0085): what Indicadores shows, a sheet per block.
+  indicadores: {
+    label: "Indicadores de almacén",
+    file: "indicadores",
+    sheet: "Resumen",
+    reads: "inventory.kpi.read",
   },
 } as const satisfies Record<
   string,
@@ -494,6 +506,8 @@ export async function buildExport(
     /** History only: first and last day (2026-10-09), both included. */
     from?: string;
     to?: string;
+    /** Indicators only: what the screen was showing (WMS-34). */
+    indicators?: IndicatorExportQuery;
   },
 ): Promise<ExportResult> {
   const { organizationId, userId } = actor;
@@ -508,9 +522,23 @@ export async function buildExport(
 
   const client = forOrganization(organizationId);
   let rows: Cell[][];
+  let sheets: IndicatorSheet[] | null = null;
+  let trail: Record<string, string> = {};
   try {
-    rows =
-      input.kind === "catalogo"
+    if (input.kind === "indicadores") {
+      const read = await indicatorSheets(actor, input.indicators ?? {});
+      sheets = read.sheets;
+      trail = read.trail;
+    }
+    rows = sheets
+      ? // A CSV has no sheets: the blocks go one after the other, each
+        // with its title, a blank row between them.
+        sheets.flatMap((sheet, at) => [
+          ...(at > 0 ? [[]] : []),
+          [sheet.name],
+          ...sheet.rows,
+        ])
+      : input.kind === "catalogo"
         ? await catalogRows(client)
         : input.kind === "existencias"
           ? await stockRows(
@@ -531,7 +559,14 @@ export async function buildExport(
   const bytes =
     format === "csv"
       ? buildCsv(rows)
-      : buildXlsx([{ name: kind.sheet, rows, headerRows: 1 }]);
+      : buildXlsx(
+          sheets
+            ? sheets.map((sheet) => ({ name: sheet.name, rows: sheet.rows }))
+            : [{ name: kind.sheet, rows, headerRows: 1 }],
+        );
+  const dataRows = sheets
+    ? sheets.reduce((total, sheet) => total + sheet.rows.length, 0)
+    : rows.length - 1;
   const today = new Date().toISOString().slice(0, 10);
   await recordAuditEvent(client, {
     organizationId,
@@ -541,7 +576,8 @@ export async function buildExport(
     metadata: {
       contenido: kind.label,
       formato: format,
-      filas: rows.length - 1,
+      filas: dataRows,
+      ...trail,
       ...(input.kind === "movimientos" && (input.from || input.to)
         ? { desde: input.from ?? "", hasta: input.to ?? "" }
         : {}),
@@ -555,6 +591,6 @@ export async function buildExport(
         ? "text/csv; charset=utf-8"
         : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     bytes,
-    rows: rows.length - 1,
+    rows: dataRows,
   };
 }
