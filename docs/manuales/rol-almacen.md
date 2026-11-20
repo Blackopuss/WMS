@@ -14,6 +14,7 @@ Inicio, Tareas, Pedidos, Producción (si está contratada, solo lectura de órde
 - **Agregar producto** y **Editar** (ficha, presentaciones, mínimos), **Importar Excel**, **Descargar en Excel**.
 - En la ficha de un producto: **Entrada**, **Salida**, **Cambiar de lugar**, **Corregir existencias**, **Cambiar estado**, **Desechar** (solo lo dañado o rechazado, con motivo; no se reversa) e **Imprimir etiquetas**.
 - **Existencias bajas**, **Sin acomodar**, **Por caducar**, **Por inspeccionar** y **En restauración** son listas de lo que necesita atención.
+- **Inventario › Sugerencias de reubicación** (pantalla «Sugerencias de reubicación»): lo que conviene mover en tu almacén y en tus zonas, con una línea de por qué: **Acercar a surtido** (lo que sale seguido y no tiene lugar de surtido), **Sacar de surtido** (lo que no se ha movido y ocupa un lugar de surtido) y **Juntar** (el mismo producto y lote repartido en varias ubicaciones de almacenaje). **Crear tarea** hace una tarea de traslado normal con lo que el sistema decide en ese momento; **Ver la tarea** la abre. Lo que ya tiene una tarea en camino no se vuelve a sugerir. Qué se sugiere se ajusta en Configuración › Operación, en «Sugerencias de reubicación».
 - **Tarimas y cajas** (si la empresa lo activó) y **Reposición de surtido** (reglas de mínimo y máximo por ubicación de surtido).
 
 ### Movimientos
@@ -40,4 +41,4 @@ Recibir órdenes de compra (Supervisor, Almacenista o Comprador), crear órdenes
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Gestionas las incidencias abiertas: **Atender**, **Resolver** o **Descartar**.
 
-Vigente al 2026-11-19
+Vigente al 2026-11-19 (sugerencias de reubicación: WMS-65)

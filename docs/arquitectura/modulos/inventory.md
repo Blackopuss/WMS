@@ -185,6 +185,7 @@ código»):
 | Importar productos y existencias | `imports.ts`, `import-validation.ts`, `import-classification.ts`, `import-confirmation.ts`, `import-apply.ts`, `import-release.ts`, `import-template.ts` | subir, mapear columnas, validar, clasificar, confirmar (aparta cupo), aplicar en el worker, cancelar o liberar; los campos personalizados de productos (WMS-58) se reconocen por título (`customImportColumns`), se revisan con las reglas del formulario y se aplican con `prepareCustomValues`/`writeCustomValues`; la plantilla trae sus columnas |
 | Importar salidas | `exit-import.ts`, `exit-import-apply.ts` | `startExitImport` → `reviewExitImport` → `confirmExitImport` → `applyExitImport` (worker); `getExitCoverage` |
 | Exportaciones | `exports.ts` | `buildExport` y `EXPORT_KINDS`; el catálogo agrega una columna por campo personalizado en uso (WMS-58) |
+| Sugerencias de reubicación (WMS-65) | `slotting.ts`, `slotting-rules.ts` | `listSlottingSuggestions` (derivadas en cada consulta, almacén activo y alcance; tres tipos: acercar a surtido, sacar de surtido, juntar; tope `SLOTTING_SCAN_MAX`) y `acceptSlottingSuggestion` (vuelve a decidir la sugerencia y crea la tarea de traslado con `createTaskGuarded`, el núcleo de `createTask` con una guarda bajo sus candados) |
 | Indicadores (WMS-32) | `indicators.ts`, `indicator-rules.ts`, `zones.ts` | `getWarehouseIndicators` (periodo del calendario de la empresa, almacén, producto y persona; topes `KPI_TOP_PRODUCTS`, `KPI_ORDERS_MAX`, `KPI_TASK_ROWS_MAX`, `KPI_COST_GROUPS_MAX`, `KPI_MAX_DAYS`); reglas puras `resolvePeriod`, `rotationOf`, `daysOfInventory`, `timeFigures`, `durationText`; `zonesOf` (zona de cada ubicación, compartida con las olas); `accuracyFigures` de `count-accuracy.ts` (exactitud de cualquier periodo, la usan Exactitud e Indicadores) |
 | Tableros y exportación de indicadores (WMS-34) | `indicators.ts`, `indicator-headline.ts`, `indicator-export.ts`, `indicator-rules.ts`, `tasks.ts`, `exports.ts` | `periodHeadline` (interna: cifras principales de un periodo, las mismas que los indicadores); `getWarehouseIndicators` trae `previous` (periodo anterior, `compare: false` lo omite) y `tasksDelivered`; `getIndicatorsByFacility` (almacenes del alcance lado a lado, tope `KPI_FACILITIES_MAX`, fila `company` solo sin límite); `headlineFigures`/`headlineTruncated` (texto de cada cifra, para pantalla y archivo); reglas puras `previousPeriod`, `countChange`, `shareChange`, `timeChange`; exportación `indicadores` en `EXPORT_KINDS` (`indicatorSheets`); `assignedOpenWhere`, `listOpenWorkByPerson` (tope `OPEN_WORK_PEOPLE_MAX`) y el filtro `person` de `listTasks` |
 | Inicio y resúmenes | `first-steps.ts`, `setup-rules.ts`, `day-summary.ts`, `unplaced.ts` | `getFirstSteps` (avance de la configuración inicial derivado de lo que existe; almacén y ubicaciones dentro del alcance; la pantalla pasa `seesTeam`, `changesSettings` y, en Inicio, `whileSettingUp`; WMS-43, ADR 0083), `planSetupSteps`/`setupAbilities`/`offeredSteps`/`doneSteps` (puras: qué pasos se ofrecen y cuál sigue; un paso no hecho antes del último hecho cuenta como saltado), `waitsForCatalog`, `SETUP_SETTINGS` (ajustes que pregunta la guía), `getDaySummary`, `listUnplacedStock` (dice qué fila ya tiene tarea de acomodo), `countUnplacedStock` |
@@ -211,6 +212,9 @@ Todos los `inventory.*` del catálogo, por grupo:
   `cost.read`; la exactitud, solo con `count_accuracy.read`. Tableros
   (WMS-34): los mismos permisos; la exportación de indicadores pide además
   `export.create`.
+- Sugerencias de reubicación (WMS-65): `slotting.read` (titular,
+  Administración, Almacén, Supervisor de almacén, Consulta y Gerencia);
+  convertir una en tarea pide además `task.create`.
 - Movimientos: `entry.create`, `opening.create`, `exit.create`,
   `transfer.create`, `adjustment.create`, `movement.reverse`.
 - Estados: `status.change`, `status.release`, `damage.report`.
@@ -302,6 +306,9 @@ la transacción que decide:
 | `inventory.adjustment.approval_threshold` | **`any`**, `10`, `25`, `50` (% de lo que hay en la ubicación que, con la regla de `inventory.adjustment` encendida, hace esperar una corrección; WMS-41) |
 | `inventory.digest.hour` | `6`, **`7`**, `8`, `9`, `12`, `17` (hora del calendario de la empresa a la que sale el resumen diario por correo; WMS-39B) |
 | `inventory.kpi.idle_days` | `30`, `60`, **`90`**, `180` (días sin ningún movimiento para que un producto con existencias cuente como «sin movimiento» en los indicadores; WMS-32) |
+| `inventory.slotting.fast_classes` | **`a`**, `ab` (qué clases ABC se sugiere acercar a surtido; WMS-65) |
+| `inventory.slotting.consolidate` | **`on`**, `off` (sugerir juntar el mismo lote repartido en almacenaje; WMS-65) |
+| `inventory.slotting.limit` | `10`, **`20`**, `50` (cuántas sugerencias de reubicación a la vez; WMS-65) |
 | `inventory.digest.days` | **`all`**, `weekdays`, `monday_saturday` (días de la semana en que sale el resumen diario, en el calendario de la empresa; WMS-88) |
 
 | `inventory.equipment.maintenance_notice` | `3`, **`7`**, `15`, `30` (días antes del mantenimiento de un equipo en que pide atención; WMS-42) |
@@ -413,7 +420,7 @@ entre almacenes), 0050 (conteos cíclicos), 0051 (reposición de surtido), 0052
 0054 (surtido por olas), 0057 (avisos e incidencias), 0060 (avisos por correo y resumen diario), 0065 (equipos del almacén), 0068
 (inspección al recibir, desechar y retención genérica), 0071 (procesos en
 embarques), 0072 (estado «En restauración»), 0076 (foto al entregar una tarea), 0078
-(desechar con autorización), 0082 (indicadores de almacén), 0085 (tableros por rol y exportación de indicadores).
+(desechar con autorización), 0082 (indicadores de almacén), 0085 (tableros por rol y exportación de indicadores), 0086 (sugerencias de reubicación).
 
 ## Pruebas
 
@@ -427,6 +434,7 @@ almacén (cada indicador contra un escenario calculado a mano, alcance, roles,
 costos y calendario de la empresa) en `indicators.int.test.ts` e
 `indicator-rules.test.ts`; tableros por rol (periodo anterior, por
 almacén, trabajo abierto por persona y archivo) en `dashboards.int.test.ts`.
+Sugerencias de reubicación en `slotting.int.test.ts` y `slotting-rules.test.ts`.
 Acomodo en `putaway.int.test.ts`; etiquetas en `labels.int.test.ts` (leen de
 vuelta los códigos dibujados con `tests/setup/pdf.ts`); empaque en `packing.int.test.ts`; despacho en `shipments.int.test.ts`; procesos en embarques en `shipment-process.int.test.ts`; devoluciones de clientes (PC-5) en
 `customer-returns.int.test.ts`; traslados entre almacenes en

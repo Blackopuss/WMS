@@ -869,6 +869,13 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); almacén activo y zonas de esa persona, permiso inventory.task.create en el servicio",
     coveredBy: "tests/inventory/replenishment.int.test.ts",
   },
+  acceptSuggestionAction: {
+    input:
+      "tipo de sugerencia e ids de producto, origen, lote y destino que la pantalla mostró; nunca cantidades (WMS-65)",
+    identity:
+      "sesión y empresa activa (requireOrganizationContext); la sugerencia se vuelve a decidir en el servidor en el almacén activo y las zonas de esa persona, permisos inventory.slotting.read e inventory.task.create en el servicio; la tarea la crea createTask",
+    coveredBy: "tests/inventory/slotting.int.test.ts",
+  },
   setMinimumAction: {
     input: "id de producto y cantidad mínima (vacía = quitarla)",
     identity:

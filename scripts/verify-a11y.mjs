@@ -61,6 +61,7 @@ const SCREENS = [
   // falls back to the indicators of the active one).
   "/inventario/indicadores?vista=almacenes",
   "/tareas?vista=open&persona=nadie",
+  "/inventario/reubicaciones",
   "/tareas",
   "/tareas/nueva",
   "/recepcion",

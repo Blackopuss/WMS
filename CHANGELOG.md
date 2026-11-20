@@ -8,6 +8,23 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-65** Sugerencias de reubicación (slotting), solo recomienda: Inventario ›
+  «Sugerencias de reubicación» (`/inventario/reubicaciones`, enlace bajo el
+  título de Inventario, sin aviso en Inicio) lista hasta 20 renglones de tres
+  tipos derivados en cada consulta (acercar a surtido lo de clase A que no
+  tiene lugar de surtido, sacar de surtido lo que no sale, juntar lo repartido
+  en almacenaje) con su motivo en una línea. «Crear tarea»
+  (`acceptSlottingSuggestion`) vuelve a decidir esa sugerencia en el servidor y
+  crea una tarea de traslado normal con `createTask` (guarda bajo candados: no
+  duplica con dos aceptaciones a la vez). Permiso nuevo `inventory.slotting.read`
+  (titular, Administración, Almacén, Supervisor, Consulta y Gerencia); crear la
+  tarea pide además `inventory.task.create`. Ajustes de Operación
+  `inventory.slotting.fast_classes|consolidate|limit`. Sin tablas ni
+  migraciones; costo fijo (unas 50 sentencias por lista). Revisor
+  independiente en dos vueltas (la primera con hallazgos corregidos; la
+  segunda «unir»). Pendiente: aviso en Inicio, ronda automática, ubicaciones
+  sobre su capacidad, mover tarimas, sugerir reglas de reposición. ADR 0086.
+
 - **WMS-34** Tableros por rol y exportación, sin pantalla nueva: Inicio (Supervisión)
   suma la tarjeta «Trabajo abierto por persona» (tareas asignadas sin terminar
   y con problema, cada fila abre Tareas › Abiertas con `?persona=`, misma

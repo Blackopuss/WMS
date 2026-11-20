@@ -1,6 +1,7 @@
 import {
   Boxes,
   ChartColumn,
+  MoveRight,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -323,6 +324,7 @@ export default async function InventarioPage({
       {!showArchived &&
         (access.can("inventory.movement.read") ||
           access.can("inventory.kpi.read") ||
+          access.can("inventory.slotting.read") ||
           showContainers ||
           showReplenishment ||
           showRequests) && (
@@ -343,6 +345,15 @@ export default async function InventarioPage({
               >
                 <ChartColumn aria-hidden="true" className="size-4" />
                 Indicadores
+              </Link>
+            )}
+            {access.can("inventory.slotting.read") && (
+              <Link
+                href="/inventario/reubicaciones"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <MoveRight aria-hidden="true" className="size-4" />
+                Sugerencias de reubicación
               </Link>
             )}
             {showContainers && (
