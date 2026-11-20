@@ -80,8 +80,8 @@ import { MATERIALS_MODE, REPORT_PHOTO } from "./settings";
  * (P12), never more than what is left of the order (D11). Corrected only
  * by reversing the whole report while what it made is untouched.
  *
- * Locks: products (materials and outputs) → order → its state → lot
- * numbering → locations → capacity → progress → files.
+ * Locks: products (materials and outputs) → order → its state → locations
+ * → capacity → lot numbering → progress → files.
  */
 
 type Tx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
@@ -749,7 +749,7 @@ export async function reportProduction(
       select: { number: true },
     });
     const number = (last?.number ?? 0) + 1;
-    const codes = await lotCodesFor(tx, actor, order, number, plan.outputs);
+
     const numberText = `${formatProductionNumber(order.number)} · ${formatReportNumber(number)}`;
     const posted = await postProduction(tx, actor, {
       takes: plan.takes,
@@ -757,13 +757,17 @@ export async function reportProduction(
         productId: output.productId,
         quantity: output.quantity,
         costShare: output.costShare,
-        lotCode: codes.get(output.productId) ?? null,
+        lotCode: null,
         lotExpiresOn: outputExpiry[output.orderOutputId] ?? null,
         serials: outputSerials[output.orderOutputId],
       })),
       areaId: order.areaLocationId,
       reference: numberText,
       idempotencyKey: data.idempotencyKey,
+      // The numbering of the company, as late as possible: after the
+      // locations and the capacity (ADR 0087). A report that fails later
+      // rolls back its consecutive: no gap, no repeat.
+      lotCodes: () => lotCodesFor(tx, actor, order, number, plan.outputs),
     });
     if (!posted.ok) {
       const output =

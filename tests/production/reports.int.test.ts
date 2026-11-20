@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { dec, newId } from "@/lib";
-import { changeStockStatus } from "@/modules/inventory";
+import { changeStockStatus, disposeStock } from "@/modules/inventory";
 import { approvalTypes, processDocuments } from "@/modules/registry";
 import {
   createFacility,
@@ -582,6 +582,45 @@ describe("scrap of material", () => {
     // Out of what was set aside: 20 − 2.
     expect((await reservedOf(line.id))[0]?.remaining).toBe("18");
     expect((await getOrderProgress(owner, id))?.scraps.length).toBe(1);
+    await balanced(owner.organizationId);
+  });
+
+  it("only the scrap of production takes available stock: «Desechar» still refuses it", async () => {
+    const { owner, shelf, board } = await workshop();
+    expect(
+      await disposeStock(owner, {
+        productId: board,
+        locationId: shelf,
+        status: "AVAILABLE",
+        quantity: "1",
+        reason: "Probar el rodeo",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid" });
+    expect((await stockAt(owner.organizationId, board))[0]?.quantity).toBe(
+      "100",
+    );
+  });
+
+  it("never takes more than what is set aside for the order plus what is free", async () => {
+    const { owner, area, crate, board } = await workshop();
+    // Another order sets aside 60 of the 100 boards (15 crates).
+    const other = await released(owner, crate, area, "15");
+    const id = await released(owner, crate, area, "5");
+    const line = (await linesOf(id))[0]!;
+    // 20 set aside for this order and 20 free: 41 is too much.
+    expect(
+      await reportMaterialScrap(owner, id, {
+        orderLineId: line.id,
+        quantity: "41",
+        reason: "Demasiado",
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { quantity: expect.stringContaining("Solo hay 40") },
+    });
+    void other;
     await balanced(owner.organizationId);
   });
 

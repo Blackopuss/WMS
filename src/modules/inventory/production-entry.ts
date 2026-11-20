@@ -400,6 +400,11 @@ export async function postProduction(
     areaId: string;
     reference: string;
     idempotencyKey: string;
+    /**
+     * The codes of the lots made, by product, asked after the locations
+     * and the capacity (the caller's numbering lock goes there).
+     */
+    lotCodes?: () => Promise<Map<string, string>>;
   },
 ): Promise<ProductionEntryResult> {
   const { organizationId, userId } = actor;
@@ -476,18 +481,6 @@ export async function postProduction(
         error: `${product.name} está archivado: no entra al almacén.`,
       };
     }
-    const lot = await lotForEntry(tx, actor, product, {
-      lotCode: product.tracking === "LOT" ? output.lotCode : null,
-      lotExpiresOn: product.tracking === "LOT" ? output.lotExpiresOn : null,
-    });
-    if (!lot.ok) {
-      return {
-        ok: false,
-        output: index,
-        field: "lotExpiresOn",
-        error: lot.error,
-      };
-    }
     const units = await serialsForEntry(
       tx,
       product,
@@ -497,29 +490,7 @@ export async function postProduction(
     if (!units.ok) {
       return { ok: false, output: index, field: "serials", error: units.error };
     }
-    outputs[index]!.lotId = lot.lot?.id ?? null;
-    outputs[index]!.lotCode = lot.lot?.code ?? null;
     outputs[index]!.units = units.units ?? [];
-    const balance = await tx.stockBalance.findFirst({
-      where: {
-        productId: product.id,
-        locationId: input.areaId,
-        status: "INSPECTION",
-        lotKey: lot.lot?.id ?? "",
-      },
-      select: { quantity: true },
-    });
-    if (
-      dec(balance?.quantity.toString() ?? 0)
-        .plus(output.quantity)
-        .greaterThan(MAX_BALANCE)
-    ) {
-      return {
-        ok: false,
-        output: index,
-        error: "Con esa cantidad el saldo sería demasiado grande.",
-      };
-    }
   }
 
   // WMS-22B: the area must admit what comes in (restrictions stop); the
@@ -540,6 +511,50 @@ export async function postProduction(
       output: entering[placed.index]?.index,
       error: placed.message,
     };
+  }
+
+  // The codes of the lots, as late as possible (ADR 0087: the caller may
+  // take the lock of the company's numbering here, after the capacity).
+  const codes = input.lotCodes ? await input.lotCodes() : null;
+  for (const { output, index } of entering) {
+    const product = productOf.get(output.productId)!;
+    const lot = await lotForEntry(tx, actor, product, {
+      lotCode:
+        product.tracking === "LOT"
+          ? (codes?.get(output.productId) ?? output.lotCode)
+          : null,
+      lotExpiresOn: product.tracking === "LOT" ? output.lotExpiresOn : null,
+    });
+    if (!lot.ok) {
+      return {
+        ok: false,
+        output: index,
+        field: "lotExpiresOn",
+        error: lot.error,
+      };
+    }
+    outputs[index]!.lotId = lot.lot?.id ?? null;
+    outputs[index]!.lotCode = lot.lot?.code ?? null;
+    const balance = await tx.stockBalance.findFirst({
+      where: {
+        productId: product.id,
+        locationId: input.areaId,
+        status: "INSPECTION",
+        lotKey: lot.lot?.id ?? "",
+      },
+      select: { quantity: true },
+    });
+    if (
+      dec(balance?.quantity.toString() ?? 0)
+        .plus(output.quantity)
+        .greaterThan(MAX_BALANCE)
+    ) {
+      return {
+        ok: false,
+        output: index,
+        error: "Con esa cantidad el saldo sería demasiado grande.",
+      };
+    }
   }
 
   // Cost (ADR 0031, 0087): read before any balance changes.

@@ -25,6 +25,7 @@ import {
 } from "@/server";
 
 import { DISPOSAL_APPROVAL } from "./approval-keys";
+import { containedAt } from "./contained";
 import { holdProblem, type HoldSource } from "./holds";
 import { LOT_RULE_SELECT, lotForTake, ofLot } from "./lot-resolve";
 import {
@@ -292,6 +293,26 @@ async function checkDisposalLines(
           ? `No hay ${product.name}${lotText} ${state} en ${place.name}.`
           : `Solo hay ${formatStock(there.toString(), product.unitCode)}${lotText} ${state} en ${place.name}.`,
       };
+    }
+    // WMS-29 (ADR 0087): what is inside a storage container is never
+    // taken loose, also by the scrap of production.
+    if (line.status === "AVAILABLE") {
+      const contained = await containedAt(
+        tx,
+        product.id,
+        place.id,
+        prepared[index]!.lotId,
+        { storageOnly: true },
+      );
+      const loose = there.minus(contained);
+      if (loose.lessThan(quantity)) {
+        return {
+          ok: false as const,
+          line: index,
+          field: "quantity" as const,
+          error: `Parte de ${product.name} en ${place.name} está en una tarima o caja: sácalo de ahí primero.`,
+        };
+      }
     }
     // ADR 0068: what an open document holds is decided only from it.
     const held = await holdProblem(

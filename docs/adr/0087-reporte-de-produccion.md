@@ -214,8 +214,9 @@ muestra.
   de la nomenclatura de la empresa (después de la orden) y avanza
   `production_lot_sequence` bajo ese candado; si el código ya existe para
   ese producto (un lote dado de alta a mano), salta al siguiente (hasta 50
-  veces). Sin nomenclatura, el número del reporte se toma bajo el candado
-  de la orden. Un número usado no se reutiliza (tampoco al revertir).
+  veces). El candado se toma después de las ubicaciones y la capacidad
+  (ver «Nomenclatura: lo más tarde posible»). Sin nomenclatura, el número
+  del reporte se toma bajo el candado de la orden. Un número usado no se reutiliza (tampoco al revertir).
   Reportes simultáneos de toda la empresa con nomenclatura van en fila en
   ese candado (aceptado: dura lo que la transacción).
 - Las salidas **por serie** llevan las series escaneadas; las salidas sin
@@ -288,10 +289,11 @@ tareas → capacidad → progreso → archivos.
 - **Reporte:** productos (materiales y salidas, de una vez) → la orden →
   **cambio de estado de la orden a «En proceso»** (antes de bloquear
   cualquier ubicación: regla de WMS-28 para documentos con `facilityId` en
-  un índice) → nomenclatura (si hay) → ubicaciones de donde sale y el área
+  un índice) → ubicaciones de donde sale y el área
   (de una vez, ordenadas; leídas después y rechazadas si están archivadas,
   WMS-82) → capacidad del área (`checkPlacement` en modo `report`: las
-  restricciones detienen, la capacidad solo se dice) → progreso de la orden
+  restricciones detienen, la capacidad solo se dice) → **nomenclatura** →
+  progreso de la orden
   (`assertStagesDone`, `reachMilestone`, `completeOperationStage`) y
   `startProcess` del lote → archivos de las fotos. No toma el almacén:
   como liberar, deja que la llave foránea lo revise.
@@ -304,6 +306,51 @@ tareas → capacidad → progreso → archivos.
 - La documentación del orden de candados de la orden (ADR 0073/0074) se
   amplía con estos casos en `docs/arquitectura/candados.md`; las carreras
   nuevas van en `tests/server/lock-order.int.test.ts`.
+
+### Por qué «orden antes que ubicaciones» no se interbloquea
+
+El reporte toma la orden antes que las ubicaciones (al revés que el orden
+global, por la regla de WMS-28). Es seguro porque **toda transacción que
+bloquea esta orden toma antes un producto que el reporte también toma**, y
+**toda transacción que bloquea una ubicación toma antes sus productos**:
+
+| Operación | Qué toma, en orden | Por qué no cierra un ciclo con el reporte |
+| --- | --- | --- |
+| Pasos y entrega de una tarea `ISSUE` de la orden | su material → ubicaciones → la orden → la tarea | Su material es un material de la orden: espera (o hace esperar) al reporte en el producto, antes de tocar la orden o una ubicación. Prueba «Surtir a producción deliveries». |
+| Liberar y cancelar la orden | materiales → la orden | Los mismos productos primero; no toma ubicaciones. Prueba «releases». |
+| Aceptar una solicitud | materiales → la solicitud → almacén compartido → una orden **nueva** | Nunca toma una orden existente ni una ubicación. Usa el núcleo de liberar (cubierto por la prueba de liberaciones). |
+| Otro reporte, la reversa y la merma | productos → la orden → (reporte) → ubicaciones | El mismo orden que el reporte. Prueba con reportes, merma y reversa a la vez. |
+| `changeTree` (editar, mover o archivar ubicaciones o almacenes) | todos los almacenes → ubicaciones | No bloquea órdenes de producción (cuenta las abiertas sin candado) y el cambio de estado de la orden no revisa la llave foránea del almacén (no cambia `facilityId`). Archivar un almacén usa `nowait` y responde «ocupado». Pruebas «changes of the area» y «archiving a shelf». |
+| Salidas, reubicaciones, surtido y recepciones sobre las mismas ubicaciones | sus productos → ubicaciones | No bloquean la orden; si sostienen una ubicación ya sostienen sus productos, que no son del reporte (si lo fueran, habrían esperado al reporte en el producto). Pruebas «exits, moves» y «exits from the area». |
+| La nomenclatura | solo reportes (después de la capacidad) y guardar la configuración (solo su fila) | Nadie la sostiene mientras espera algo que el reporte tenga. |
+
+Todas las carreras corren con los servicios reales a la vez en
+`tests/server/lock-order.int.test.ts`.
+
+### Nomenclatura: lo más tarde posible
+
+El candado de la fila de nomenclatura se toma **después** de las ubicaciones
+y de la revisión de capacidad del área (`postProduction` lo pide con
+`lotCodes`), justo antes de crear el lote; solo quedan después el costo, las
+escrituras, el proceso y las fotos. Garantía: **sin repetidos y sin huecos
+propios** — el consecutivo se escribe en la misma transacción del reporte,
+así que un reporte que falla después lo revierte; solo se saltan números
+cuyo código ya usaba un lote dado de alta a mano.
+
+### `takesAvailable` y la regla de desechos
+
+`takesAvailable` es un argumento interno del núcleo `postDisposal` (no
+viene de ningún formulario): solo lo pasa `reportMaterialScrap`;
+`disposeStock` y su Server Action nunca lo pasan y siguen rechazando lo
+disponible (prueba «only the scrap of production takes available stock»).
+La merma nunca toma más que lo apartado para la orden más lo libre a su
+alcance (prueba «never takes more than…»); `postDisposal` sigue consultando
+`heldStock` y, con `takesAvailable`, rechaza lo que está en una tarima de
+almacenamiento. **Con la regla `inventory.disposal` encendida y
+`production.scrap` apagada, la merma de producción es una salida de
+existencias disponibles sin autorización**: así lo dice la descripción de la
+regla «Merma de material de producción» en pantalla, que pide encenderla
+junto con la de desechos.
 
 ## Idempotencia
 

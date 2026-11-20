@@ -121,7 +121,7 @@ aprobación propio `production.scrap`. `warnMaterialShortage`: aviso
 `production.material_short`. Rastreo: `findProductionOrderByNumber` y
 `traceProduction` (lo que la pantalla de rastreo y la ficha del lote
 agregan a lo de Inventario). Candados del reporte: productos → orden →
-estado → nomenclatura → ubicaciones → capacidad → progreso → archivos.
+estado → ubicaciones → capacidad → nomenclatura → progreso → archivos.
 
 ## Permisos
 

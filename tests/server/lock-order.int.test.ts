@@ -25,6 +25,7 @@ import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import {
   archiveFacility,
+  archiveLocation,
   createFacility,
   createLocation,
   editLocation,
@@ -701,6 +702,54 @@ describe("locks in one order (WMS-76)", () => {
         reported.status === "fulfilled" && reported.value.ok
           ? reported.value.reportId
           : null;
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("reporting production never deadlocks with «Surtir a producción» deliveries, exits from the area or archiving a shelf (WMS-29)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop();
+    await production.setting(owner, "production.report.photo", "optional");
+    await production.setting(owner, "production.materials.mode", "issue");
+    const other = await production.product(owner, "En la línea");
+    await production.enter(owner, other, area, "500");
+    await production.enter(owner, board, shelf, "900");
+    await production.enter(owner, screw, shelf, "900");
+    const errors: string[] = [];
+    for (let round = 0; round < 5; round++) {
+      const id = await production.order(owner, crate, area, "2");
+      const released = await releaseProductionOrder(owner, id);
+      if (!released.ok) throw new Error(JSON.stringify(released));
+      const tasks = await db.warehouseTask.findMany({
+        where: { kind: "ISSUE", productionOrderLine: { orderId: id } },
+        orderBy: { id: "asc" },
+      });
+      // One delivered first, the other at the same time as the report.
+      for (const task of tasks) {
+        await acceptTask(owner, task.id);
+        await pickUpTask(owner, task.id);
+      }
+      await deliverTask(owner, tasks[0]!.id);
+      const empty = await production.place(owner, "Vacío");
+      const results = await Promise.allSettled([
+        deliverTask(owner, tasks[1]!.id),
+        reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+        registerExit(owner, {
+          productId: other,
+          locationId: area,
+          quantity: "1",
+        }),
+        archiveLocation(owner, empty),
+        editLocation(owner, area, { name: `Línea ${++counter}` }),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
     }
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
