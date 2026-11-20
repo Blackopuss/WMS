@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { WarehouseCard } from "@/components";
+import { WarehouseCard } from "@/components/warehouse-card";
 import {
   DEFAULT_AFTER_SIGN_IN,
   isMfaRequired,

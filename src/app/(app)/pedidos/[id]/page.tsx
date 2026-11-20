@@ -2,15 +2,15 @@ import { ChevronLeft, PackageCheck, Truck, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { PrintLabelLink } from "@/components/label-print-form";
 import {
   EmptyState,
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
-  PrintLabelLink,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";

@@ -4,14 +4,14 @@ import Form from "next/form";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { FormField } from "@/components/form-field";
 import {
-  FormField,
   NoAccessState,
   NoModuleState,
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { newId } from "@/lib";

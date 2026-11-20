@@ -2,7 +2,7 @@ import { ChevronLeft, CircleAlert } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { NoAccessState, PageContainer, PageHeader } from "@/components";
+import { NoAccessState, PageContainer, PageHeader } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, formatStorageSize } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";

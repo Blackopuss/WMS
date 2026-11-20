@@ -9,7 +9,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { newId } from "@/lib";
 import {
   DISPOSABLE_STATUSES,

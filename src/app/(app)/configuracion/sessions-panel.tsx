@@ -4,7 +4,12 @@ import { Laptop, Loader2, LogOut, Smartphone } from "lucide-react";
 import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { AnimatePresence, motion, transitions } from "@/components";
+import {
+  AnimatePresence,
+  MotionProvider,
+  motion,
+  transitions,
+} from "@/components/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,57 +105,62 @@ export function SessionsPanel({ sessions }: { sessions: SessionRow[] }) {
         )}
       </div>
 
-      <ul className="divide-y">
-        <AnimatePresence initial={false}>
-          {rows.map((s) => {
-            const Icon = s.mobile ? Smartphone : Laptop;
-            return (
-              <motion.li
-                key={s.id}
-                layout
-                exit={{ opacity: 0, x: 24, transition: transitions.exit }}
-                className="flex items-center gap-3 p-4 sm:px-5"
-              >
-                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
-                  <Icon aria-hidden="true" className="size-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 font-medium">
-                    {s.label}
-                    {s.current && <Badge variant="success">Esta sesión</Badge>}
-                  </p>
-                  <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
-                    <span
-                      // Server and browser may compute "hace X" seconds apart.
-                      suppressHydrationWarning
-                      title={formatDateTime(new Date(s.lastActiveAt))}
+      {/* Its own MotionConfig: not global any more (ADR 0080). */}
+      <MotionProvider>
+        <ul className="divide-y">
+          <AnimatePresence initial={false}>
+            {rows.map((s) => {
+              const Icon = s.mobile ? Smartphone : Laptop;
+              return (
+                <motion.li
+                  key={s.id}
+                  layout
+                  exit={{ opacity: 0, x: 24, transition: transitions.exit }}
+                  className="flex items-center gap-3 p-4 sm:px-5"
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+                    <Icon aria-hidden="true" className="size-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-2 font-medium">
+                      {s.label}
+                      {s.current && (
+                        <Badge variant="success">Esta sesión</Badge>
+                      )}
+                    </p>
+                    <p className="text-sm [overflow-wrap:anywhere] text-muted-foreground">
+                      <span
+                        // Server and browser may compute "hace X" seconds apart.
+                        suppressHydrationWarning
+                        title={formatDateTime(new Date(s.lastActiveAt))}
+                      >
+                        Activa{" "}
+                        {formatRelative(new Date(s.lastActiveAt)).toLowerCase()}
+                      </span>
+                      {s.ipAddress && <> · IP {s.ipAddress}</>}
+                    </p>
+                  </div>
+                  {!s.current && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => revoke(s.id)}
+                      disabled={isPending}
+                      aria-label={`Cerrar sesión en ${s.label}`}
                     >
-                      Activa{" "}
-                      {formatRelative(new Date(s.lastActiveAt)).toLowerCase()}
-                    </span>
-                    {s.ipAddress && <> · IP {s.ipAddress}</>}
-                  </p>
-                </div>
-                {!s.current && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => revoke(s.id)}
-                    disabled={isPending}
-                    aria-label={`Cerrar sesión en ${s.label}`}
-                  >
-                    {pendingId === s.id ? (
-                      <Loader2 aria-hidden="true" className="animate-spin" />
-                    ) : (
-                      <LogOut aria-hidden="true" />
-                    )}
-                    Cerrar
-                  </Button>
-                )}
-              </motion.li>
-            );
-          })}
-        </AnimatePresence>
-      </ul>
+                      {pendingId === s.id ? (
+                        <Loader2 aria-hidden="true" className="animate-spin" />
+                      ) : (
+                        <LogOut aria-hidden="true" />
+                      )}
+                      Cerrar
+                    </Button>
+                  )}
+                </motion.li>
+              );
+            })}
+          </AnimatePresence>
+        </ul>
+      </MotionProvider>
     </div>
   );
 }

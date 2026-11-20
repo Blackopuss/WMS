@@ -4,7 +4,7 @@ import { CircleAlert, Copy, KeyRound, Loader2, Webhook } from "lucide-react";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

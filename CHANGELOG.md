@@ -8,6 +8,16 @@ cerrar cada paso.
 
 ## 2026-11-19
 
+- **WMS-86** Rendimiento en teléfono de la app y del sitio (solo interfaz):
+  se borró el índice `src/components/index.ts` (cada componente se importa por
+  su archivo), el layout raíz ya no monta proveedores de cliente (solo el tema
+  y la PWA; `Toasts` va en los layouts de la app y las cuentas), `motion` solo
+  donde hay animación y la ilustración de las cuentas se dibuja quieta en el
+  servidor. Nada del marco se descarga a pedido. En teléfono el interruptor de
+  tema pasa a «Más» y la barra inferior reparte el ancho. JavaScript inicial de
+  269 a 281 KB bajó a unos 195 a 235 KB; `/inicio` e `/inventario` siguen bajo
+  95 por lo que tarda el servidor. ADR 0080.
+- **WMS-89** Auditoría de dependencias: `effect` fijado a 3.22.1 con `overrides` de npm por el aviso GHSA-7589-6fvf-x4pw (ReDoS en `Schema.TemplateLiteral`, `effect <= 3.22.0`), que llegaba por `prisma → @prisma/config` y ponía en rojo el último paso de CI. Prisma sigue en 7.10.1 (no hay estable más nueva; la 8 es candidata y fija el mismo `effect`). `@prisma/config` solo lo usa la CLI para validar `prisma.config.ts`; la app y el worker no lo cargan. El `overrides` se quita cuando Prisma publique una estable con `effect` corregido (ADR 0002).
 - **WMS-84** Rechazo de recepción con su nota: al recibir una orden de compra
   se puede rechazar todo o parte de lo que llega y no cuadra, con nota
   obligatoria de por qué se regresa, lote y series que traía como evidencia

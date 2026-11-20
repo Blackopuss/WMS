@@ -126,11 +126,29 @@ conexión (`/sin-conexion`) son públicos y salen de `src/lib/pwa.ts`. El
 worker solo guarda su página sin conexión y solo responde cuando una
 navegación `GET` falla por red: nunca guarda pantallas, `/api` ni nada de una
 sesión, y no toca Server Actions ni peticiones de datos de Next. Lo registra
-`PwaSetup` (en `Providers`) desde el paquete de la app, sin script en línea.
+`PwaSetup` (`src/components/pwa-setup.tsx`, montado en el layout raíz) desde
+el paquete de la app, sin script en línea.
 `OfflineNotice` (en `AppShell`) avisa cuando el navegador pierde la red. La
 cámara es `CameraScanButton` (`src/components/camera-scan.tsx`): con
 `BarcodeDetector` teclea lo leído en el campo de siempre, con su Enter, así
 que la pantalla y el servidor no distinguen la cámara de un lector.
+
+**JavaScript compartido (WMS-86, ADR 0080).** Lo que importa el layout raíz
+llega a todas las páginas, también al sitio público: solo monta
+`THEME_SCRIPT` y `PwaSetup` (`pwa-setup.tsx`). Los componentes se importan por
+su archivo (`@/components/states`, `@/components/form-field`…): no hay índice
+`@/components`, porque un componente de servidor que lo importaba metía en su
+página todos los componentes de cliente que exportaba. Los avisos de Sonner
+(`Toasts`, `src/components/providers.tsx`) los montan los layouts de la app,
+de las cuentas y de `/sistema-visual`, fuera del `<main>`. `motion` no tiene proveedor global: cada componente que lo
+usa (`FadeIn`, `WarehouseScene`, sesiones activas) lleva su
+`MotionConfig reducedMotion="user"`; la barra lateral, el interruptor de tema y
+la tarjeta de las cuentas animan con CSS; el servidor dibuja la ilustración
+quieta (`WarehouseSceneStill`, sin `motion`) en el sitio y en las cuentas, donde
+`AccountScene` la cambia por la animada solo en pantallas anchas. Nada de lo
+que el marco necesita para moverse y salir («Más», «Cerrar sesión», cambiar de
+empresa o almacén, avisos) se descarga a pedido: una falla de red no lo deja
+sin abrir.
 
 ## Multiempresa
 

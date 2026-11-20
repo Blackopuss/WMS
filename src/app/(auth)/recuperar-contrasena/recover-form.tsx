@@ -4,7 +4,7 @@ import { CircleCheck, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
