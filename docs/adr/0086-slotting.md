@@ -259,6 +259,17 @@ Medido con la prueba (cuenta solo las sentencias de su propio adaptador):
 unas 50 sentencias fijas más menos de 3 por sugerencia extra; los dos
 escenarios de la revisión quedan en 47 y 37, con tope de 55 en la prueba.
 
+En memoria, «sacar de surtido» ordena los destinos con conjuntos precalculados
+(mismo producto, lote y categoría), así que cada fila cuesta lo mismo que el
+número de destinos abiertos, y ese ordenamiento también gasta el presupuesto
+de 50,000 pares (la segunda revisión midió 1,520 ms con 400 filas antes del
+cambio). Medido después: 200 productos sin movimiento en surtido y 200
+ubicaciones de almacenaje restringidas a otro producto, unos 300 ms por lista
+(con las lecturas de la base), 0 sugerencias y `truncated`.
+
+Si el presupuesto se agota sin ninguna sugerencia, la pantalla no dice «Nada
+que reubicar» sino «No se terminó de revisar».
+
 ## Consecuencias
 
 - Nuevo: `src/modules/inventory/slotting.ts` (servicio) y `slotting-rules.ts`

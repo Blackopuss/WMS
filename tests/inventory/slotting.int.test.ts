@@ -15,6 +15,7 @@ import {
   packStock,
   pickUpTask,
   reconcileStock,
+  reserveStock,
   registerEntry,
   registerExit,
   saveReplenishmentRule,
@@ -34,7 +35,7 @@ import {
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
 import { createOrganization } from "@/platform/tenancy";
-import { db } from "@/server";
+import { db, forOrganization } from "@/server";
 
 // WMS-65 (ADR 0086): relocation suggestions are derived, never stored;
 // accepting one creates a plain transfer task with `createTask`, once.
@@ -399,6 +400,54 @@ describe("relocation suggestions (WMS-65)", () => {
     ).toMatchObject({ ok: true });
     expect(ofProduct(await list(owner), item.id)).toEqual([]);
   });
+
+  it("a reservation with a place and no task: the list proposes what the task accepts", async () => {
+    const owner = await company();
+    const shelf = await place(owner, "Rack", { code: "A-01" });
+    await place(owner, "Surtido", { type: "PICKING", code: "S-01" });
+    const item = await fastProduct(owner, shelf, "10", "1");
+    // Like a production order in direct mode: set aside where it is.
+    const held = await forOrganization(owner.organizationId).$transaction(
+      (tx) =>
+        reserveStock(tx, owner, {
+          productId: item.id,
+          locationId: shelf,
+          quantity: "4",
+          source: { type: "test_document", id: newId() },
+        }),
+    );
+    expect(held).toMatchObject({ ok: true });
+    const rows = ofProduct(await list(owner), item.id);
+    expect(rows).toEqual([expect.objectContaining({ quantity: "5" })]);
+    const done = await accept(owner, rows[0]!);
+    expect(done).toMatchObject({ ok: true });
+    if (!done.ok) return;
+    const task = await db.warehouseTask.findUniqueOrThrow({
+      where: { id: done.taskId },
+    });
+    expect(task.quantity!.toString()).toBe("5");
+  });
+
+  it("a review cut short says so even with nothing to suggest", async () => {
+    const owner = await company();
+    const one = await place(owner, "Rack 1", {
+      code: "A-01",
+      limits: { maxUnits: "1" },
+    });
+    const two = await place(owner, "Rack 2", {
+      code: "A-02",
+      limits: { maxUnits: "1" },
+    });
+    // Every join is checked against a full place: the checks run out.
+    for (let i = 0; i < 25; i++) {
+      const item = await product(owner);
+      await enter(owner, item.id, one, "5");
+      await enter(owner, item.id, two, "5");
+    }
+    const result = await listSlottingSuggestions(owner);
+    expect(result.suggestions).toEqual([]);
+    expect(result.truncated).toBe(true);
+  }, 120_000);
 
   it("with lots, the one that expires first is the one brought closer", async () => {
     const owner = await company();

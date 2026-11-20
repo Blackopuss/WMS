@@ -73,11 +73,19 @@ export default async function ReubicacionesPage() {
       {moduleState === "read_only" && <ReadOnlyNotice module="Inventario" />}
       <PageHeader title="Sugerencias de reubicación" />
       {list.suggestions.length === 0 ? (
-        <EmptyState
-          icon={MoveRight}
-          title="Nada que reubicar por ahora"
-          description={`En ${list.facilityName} lo que sale seguido ya tiene lugar de surtido y no hay nada que juntar o sacar de surtido.`}
-        />
+        list.truncated ? (
+          <EmptyState
+            icon={MoveRight}
+            title="No se terminó de revisar"
+            description={`${list.facilityName} es grande y la revisión se detuvo antes de encontrar algo que reubicar. Vuelve a abrir esta pantalla más tarde o revisa la capacidad de las ubicaciones.`}
+          />
+        ) : (
+          <EmptyState
+            icon={MoveRight}
+            title="Nada que reubicar por ahora"
+            description={`En ${list.facilityName} lo que sale seguido ya tiene lugar de surtido y no hay nada que juntar o sacar de surtido.`}
+          />
+        )
       ) : (
         <section
           aria-labelledby="sugerencias"

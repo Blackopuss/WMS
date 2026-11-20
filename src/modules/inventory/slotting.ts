@@ -755,6 +755,18 @@ async function idleSuggestions(
   const unitsAt = new Map(
     held.map((row) => [row.locationId, (row._sum.quantity ?? 0).toString()]),
   );
+  // In sets, so ranking a row is linear in the open places.
+  const productAt = new Set(
+    same.map((item) => at(item.productId, item.locationId)),
+  );
+  const lotAt = new Set(
+    same.map((item) => `${at(item.productId, item.locationId)}|${item.lotKey}`),
+  );
+  const familyAt = new Map<string, Set<string>>();
+  for (const item of family) {
+    const key = `${item.product.categoryId}|${item.locationId}`;
+    familyAt.set(key, (familyAt.get(key) ?? new Set()).add(item.productId));
+  }
   const preference = putawayPreferenceOf(
     await readSetting(tx, PUTAWAY_PREFERENCE),
   );
@@ -777,30 +789,25 @@ async function idleSuggestions(
     ) {
       continue;
     }
+    // Ranking costs one look per open place: bounded like the rest.
+    context.budget.looks += open.length;
+    if (context.budget.looks > LOOKS_MAX) {
+      context.budget.spent = true;
+      break;
+    }
     const ranked = rankPutawayPlaces(
       open.map((place) => ({
         id: place.id,
         readingOrder: place.readingOrder,
         units: unitsAt.get(place.id) ?? "0",
-        sameProduct: same.some(
-          (item) =>
-            item.productId === row.productId && item.locationId === place.id,
-        ),
+        sameProduct: productAt.has(at(row.productId, place.id)),
         sameLot:
           row.lotId !== null &&
-          same.some(
-            (item) =>
-              item.productId === row.productId &&
-              item.locationId === place.id &&
-              item.lotKey === row.lotId,
-          ),
+          lotAt.has(`${at(row.productId, place.id)}|${row.lotId}`),
         sameCategory:
           card.categoryId !== null &&
-          family.some(
-            (item) =>
-              item.locationId === place.id &&
-              item.productId !== row.productId &&
-              item.product.categoryId === card.categoryId,
+          [...(familyAt.get(`${card.categoryId}|${place.id}`) ?? [])].some(
+            (productId) => productId !== row.productId,
           ),
       })),
       preference,
