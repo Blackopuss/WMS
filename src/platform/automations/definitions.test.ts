@@ -239,5 +239,33 @@ describe("a rule definition", () => {
     expect(() =>
       assertValidAutomationCatalog([{ ...trigger, describe: undefined }], []),
     ).toThrow();
+    // An action that repeats does so only on the states it names.
+    const state: AutomationTrigger = {
+      ...trigger,
+      key: "inventory.thing.lasts",
+      kind: "state",
+      repeat: "once",
+      scan: async () => ({ subjects: [], more: false }),
+    };
+    const repeating = {
+      ...block,
+      repeats: { fact: "free" },
+      onlyTriggers: [state.key],
+    };
+    expect(() =>
+      assertValidAutomationCatalog([trigger, state], [repeating]),
+    ).not.toThrow();
+    expect(() =>
+      assertValidAutomationCatalog(
+        [trigger, state],
+        [{ ...repeating, onlyTriggers: [trigger.key] }],
+      ),
+    ).toThrow();
+    expect(() =>
+      assertValidAutomationCatalog(
+        [trigger, state],
+        [{ ...repeating, onlyTriggers: undefined }],
+      ),
+    ).toThrow();
   });
 });

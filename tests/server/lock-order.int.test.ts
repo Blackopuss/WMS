@@ -11,6 +11,7 @@ import {
   pickUpTask,
   receiveCustomerReturn,
   reconcileStock,
+  reconcileValue,
   registerEntry,
   registerExit,
   registerQuickExit,
@@ -945,7 +946,7 @@ describe("locks in one order (WMS-76)", () => {
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   }, 240_000);
 
-  it("blocking a lot by an automation never deadlocks with releasing an order of that lot, nor takes what it reserved (WMS-64)", async () => {
+  it("blocking a lot by an automation never deadlocks with exits, releasing an order or moving the same lot, nor takes what was reserved (WMS-64)", async () => {
     const actor = await company();
     const made = await createProduct(actor, {
       sku: `CND-${++counter}`,
@@ -956,6 +957,7 @@ describe("locks in one order (WMS-76)", () => {
     if (!made.ok) throw new Error(JSON.stringify(made));
     const productId = made.productId;
     const place = await shelf(actor);
+    const other = await shelf(actor);
     const today = new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/Mexico_City",
     }).format(new Date());
@@ -977,22 +979,7 @@ describe("locks in one order (WMS-76)", () => {
       }
     };
     const errors: string[] = [];
-    for (let round = 0; round < 8; round++) {
-      const entry = await registerEntry(actor, {
-        productId,
-        locationId: place,
-        quantity: "10",
-        lotCode: `L${round}-${counter}`,
-        lotExpiresOn: soon.toISOString().slice(0, 10),
-        acceptRepeat: true,
-      });
-      if (!entry.ok) throw new Error(JSON.stringify(entry));
-      await runAutomationRound(actor.organizationId, automationCatalog);
-      const order = await draftOrder(actor, productId, "6");
-      const results = await Promise.allSettled([
-        work(),
-        releaseOutboundOrder(actor, order, { takeWhatThereIs: true }),
-      ]);
+    const settle = (results: PromiseSettledResult<unknown>[]) => {
       for (const result of results) {
         if (result.status === "rejected") {
           errors.push(
@@ -1000,9 +987,69 @@ describe("locks in one order (WMS-76)", () => {
           );
         }
       }
+    };
+    for (let round = 0; round < 6; round++) {
+      const code = `L${round}-${counter}`;
+      const entry = await registerEntry(actor, {
+        productId,
+        locationId: place,
+        quantity: "20",
+        lotCode: code,
+        lotExpiresOn: soon.toISOString().slice(0, 10),
+        acceptRepeat: true,
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+      const lotId = (
+        await db.lot.findFirstOrThrow({ where: { productId, code } })
+      ).id;
+      // Against exits of the same lot, one after another (the lot that
+      // expires first is the one surtido first).
+      await runAutomationRound(actor.organizationId, automationCatalog);
+      settle(
+        await Promise.allSettled([
+          work(),
+          (async () => {
+            for (let n = 0; n < 4; n++) {
+              await registerExit(actor, {
+                productId,
+                locationId: place,
+                lotId,
+                quantity: "1",
+              } as never);
+            }
+          })(),
+        ]),
+      );
+      // Against moving the same lot and releasing an order.
+      await registerEntry(actor, {
+        productId,
+        locationId: place,
+        quantity: "12",
+        lotCode: code,
+        lotExpiresOn: soon.toISOString().slice(0, 10),
+        acceptRepeat: true,
+      });
+      await runAutomationRound(actor.organizationId, automationCatalog);
+      const order = await draftOrder(actor, productId, "5");
+      settle(
+        await Promise.allSettled([
+          work(),
+          releaseOutboundOrder(actor, order, { takeWhatThereIs: true }),
+          registerTransfer(actor, {
+            productId,
+            locationId: place,
+            toLocationId: other,
+            lotId,
+            quantity: "3",
+            acceptCapacity: true,
+          } as never),
+        ]),
+      );
     }
     expect(errors).toEqual([]);
-    // What an order reserved is never blocked: available covers it.
+    // One more round: what is still free gets blocked, nothing reserved.
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await work();
     const balances = await db.stockBalance.findMany({
       where: { organizationId: actor.organizationId, productId },
     });
@@ -1013,6 +1060,7 @@ describe("locks in one order (WMS-76)", () => {
         state: "ACTIVE",
       },
     });
+    let blocked = 0;
     for (const lot of new Set(balances.map((row) => row.lotId))) {
       const available = balances
         .filter((row) => row.lotId === lot && row.status === "AVAILABLE")
@@ -1020,9 +1068,21 @@ describe("locks in one order (WMS-76)", () => {
       const reserved = reservations
         .filter((row) => row.lotId === lot)
         .reduce((sum, row) => sum + Number(row.remaining), 0);
-      expect(available).toBeGreaterThanOrEqual(reserved);
+      // Only what an order reserved stays available.
+      expect(available).toBe(reserved);
+      blocked += balances
+        .filter((row) => row.lotId === lot && row.status === "BLOCKED")
+        .reduce((sum, row) => sum + Number(row.quantity), 0);
     }
+    expect(blocked).toBeGreaterThan(0);
+    // No run of the rule failed: there is no «it moved meanwhile».
+    expect(
+      await db.automationRun.count({
+        where: { ruleId: rule.id, status: "FAILED" },
+      }),
+    ).toBe(0);
     expect(await reconcileStock(actor.organizationId)).toEqual([]);
+    expect(await reconcileValue(actor.organizationId)).toEqual([]);
     // Jobs this test queued never reach the queue of another file.
     await db.job.deleteMany({
       where: { organizationId: actor.organizationId },

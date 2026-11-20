@@ -52,8 +52,15 @@ export const AUTOMATION_COMPANY_RUNS_PER_HOUR = 300;
 export const AUTOMATION_PAUSE_AFTER = 5;
 /** New subjects a round opens per rule… */
 export const AUTOMATION_SCAN_LIMIT = 50;
-/** …reading at most this many pages per warehouse to find them. */
-export const AUTOMATION_SCAN_PAGES = 10;
+/**
+ * …reading at most this many pages per warehouse in one round (a page of
+ * lots is 25, of tasks and orders 50: 1,000 to 2,000 subjects). What is
+ * left goes on in the next round from where it stopped (`automation_scan`)
+ * and the page of the rule says it was not finished.
+ */
+export const AUTOMATION_SCAN_PAGES = 40;
+/** Tries of a state that ended skipped or failed before it stops trying. */
+export const AUTOMATION_STATE_TRIES = 50;
 export const AUTOMATION_RUN_ATTEMPTS = 3;
 export const AUTOMATION_HISTORY_DAYS = 90;
 /** Rules of one trigger read for one fact (a company has at most 20). */
@@ -213,28 +220,77 @@ async function openRun(
     chain: readonly string[];
     entitlements: Entitlements;
     /**
-     * A state: what it is about, the same in every try, and whether its
-     * attended run is kept after the history is cleaned (fires once).
+     * A state: what it is about, the same in every try; whether its
+     * attended run is kept after the history is cleaned (fires once); and
+     * `repeat` for a run of only the actions that repeat while the state
+     * lasts (ADR 0092, «una vez» and «mientras dure»).
      */
-    state?: { subjectKey: string; remembers: boolean };
+    state?: { subjectKey: string; remembers: boolean; repeat: boolean };
   },
 ): Promise<"opened" | "skipped" | "limit" | "known"> {
   const client = forOrganization(organizationId);
   let eventKey = input.eventKey;
+  let runSubjectKey: string | null = null;
   if (input.state) {
-    // Only a run that was not skipped nor failed attends a state: what
-    // was not done opens again in a later round, with its own try key.
-    const tries = await client.automationRun.findMany({
-      where: { ruleId: rule.id, subjectKey: input.state.subjectKey },
-      select: { status: true },
-      take: 50,
-    });
-    if (tries.some((run) => ATTENDING.includes(run.status))) return "known";
-    if (tries.length >= 50) return "known";
-    eventKey =
-      tries.length === 0
-        ? input.state.subjectKey
-        : `${input.state.subjectKey}#${tries.length + 1}`;
+    const { subjectKey, repeat } = input.state;
+    runSubjectKey = repeat ? repeatKeyOf(subjectKey) : subjectKey;
+    // The whole run attends a state once it did not end skipped nor
+    // failed; a repeat waits while any run of the subject is open.
+    const [busy, latest, tries] = await Promise.all([
+      client.automationRun.findFirst({
+        where: {
+          ruleId: rule.id,
+          OR: [
+            {
+              subjectKey,
+              status: { in: [...(repeat ? OPEN : ATTENDING)] },
+            },
+            { subjectKey: repeatKeyOf(subjectKey), status: { in: [...OPEN] } },
+          ],
+        },
+        select: { id: true },
+      }),
+      client.automationRun.findFirst({
+        where: { ruleId: rule.id, subjectKey: runSubjectKey },
+        orderBy: { id: "desc" },
+        select: { eventKey: true },
+      }),
+      repeat
+        ? Promise.resolve(0)
+        : client.automationRun.count({
+            where: { ruleId: rule.id, subjectKey: runSubjectKey },
+          }),
+    ]);
+    if (busy) return "known";
+    if (tries >= AUTOMATION_STATE_TRIES) {
+      // Said once in the history of the rule, not in silence.
+      try {
+        await client.automationRun.create({
+          data: {
+            id: newId(),
+            organizationId,
+            ruleId: rule.id,
+            ruleVersion: rule.version,
+            triggerKey: rule.triggerKey,
+            eventKey: `${subjectKey}#tope`,
+            subjectKey: runSubjectKey,
+            depth: input.depth,
+            subject: json({ ...input.subject, chain: input.chain }),
+            summary: input.subject.summary.slice(0, 300),
+            status: "SKIPPED",
+            reason: `Se intentó ${AUTOMATION_STATE_TRIES} veces sin poder hacerse; no se vuelve a intentar mientras sigan en el historial.`,
+            finishedAt: new Date(),
+          },
+        });
+      } catch (error) {
+        if ((error as { code?: string }).code !== "P2002") throw error;
+      }
+      return "known";
+    }
+    // The next try: one more than the newest (never the count of rows:
+    // the history is cleaned from the oldest).
+    const next = latest ? tryNumberOf(latest.eventKey) + 1 : 1;
+    eventKey = next === 1 && !repeat ? subjectKey : `${runSubjectKey}#${next}`;
   } else {
     const known = await client.automationRun.findFirst({
       where: { ruleId: rule.id, eventKey },
@@ -265,9 +321,11 @@ async function openRun(
     ruleVersion: rule.version,
     triggerKey: rule.triggerKey,
     depth: input.depth,
-    subject: JSON.parse(
-      JSON.stringify({ ...input.subject, chain: input.chain }),
-    ) as object,
+    subject: json({
+      ...input.subject,
+      chain: input.chain,
+      ...(input.state?.repeat ? { mode: "repeat" } : {}),
+    }),
     summary: input.subject.summary.slice(0, 300),
   };
   if (
@@ -303,8 +361,8 @@ async function openRun(
   }
   const stateColumns = input.state
     ? {
-        subjectKey: input.state.subjectKey,
-        remembers: input.state.remembers,
+        subjectKey: runSubjectKey,
+        remembers: input.state.remembers && !input.state.repeat,
       }
     : {};
   try {
@@ -347,7 +405,20 @@ async function openRun(
 }
 
 /** Runs that attend what they are about (a state does not fire again). */
-const ATTENDING: readonly string[] = ["PENDING", "RUNNING", "DONE"];
+const ATTENDING = ["PENDING", "RUNNING", "DONE"] as const;
+/** Runs still on their way. */
+const OPEN = ["PENDING", "RUNNING"] as const;
+
+/** Where the runs of only the repeating actions of a subject are kept. */
+const repeatKeyOf = (subjectKey: string) => `${subjectKey}~r`;
+
+/** «…#7» is the seventh try; a key without number is the first. */
+function tryNumberOf(eventKey: string): number {
+  const found = /#(\d+)$/.exec(eventKey);
+  return found ? Number(found[1]) : 1;
+}
+
+const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as object;
 
 function catalogOf(
   catalog: AutomationCatalog,
@@ -421,17 +492,28 @@ async function refusalCause(
     : "actor";
 }
 
-/**
- * Whether opening a run makes sense: when every action of the rule needs a
- * fact (blocking needs something available), a subject without it waits
- * (it is not attended, so it may open later).
- */
-function worthOpening(
+/** Whether an action that repeats has something to do for this subject. */
+function repeatDue(
   actions: readonly AutomationAction[],
   subject: AutomationSubject,
 ): boolean {
-  if (!actions.every((action) => action.requiresFact)) return true;
-  return actions.some((action) => subject.facts[action.requiresFact!] === true);
+  return actions.some(
+    (action) => action.repeats && subject.facts[action.repeats.fact] === true,
+  );
+}
+
+/** Whether the rule has actions done once per subject. */
+const hasOnce = (actions: readonly AutomationAction[]) =>
+  actions.some((action) => !action.repeats);
+
+/**
+ * The fact every action of the rule repeats on, if they all do on the
+ * same one: the scan may then bring only subjects that have it.
+ */
+function onlyWithOf(actions: readonly AutomationAction[]): string | undefined {
+  const facts = new Set(actions.map((action) => action.repeats?.fact));
+  const [fact] = [...facts];
+  return facts.size === 1 && fact ? fact : undefined;
 }
 
 /** The handler of `platform.automation_event`: one run per rule that holds. */
@@ -466,7 +548,7 @@ function eventHandler(catalog: AutomationCatalog): JobHandler {
         if (!found) continue;
         if (
           !conditionsHold(trigger, objectOf(rule.conditions), subject.facts) ||
-          !worthOpening(found.actions, subject)
+          (!hasOnce(found.actions) && !repeatDue(found.actions, subject))
         ) {
           continue;
         }
@@ -506,8 +588,6 @@ function resultsOf(value: unknown): ActionResult[] {
     };
   });
 }
-
-const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as object;
 
 async function finishRun(
   organizationId: string,
@@ -621,6 +701,8 @@ async function mainFacilityId(organizationId: string): Promise<string> {
 function subjectOf(value: unknown): {
   subject: AutomationSubject;
   chain: string[];
+  /** Only the actions that repeat while the state lasts. */
+  repeat: boolean;
 } {
   const item = objectOf(value);
   const refs = objectOf(item.refs);
@@ -640,6 +722,7 @@ function subjectOf(value: unknown): {
       facts: facts as AutomationSubject["facts"],
     },
     chain: (Array.isArray(item.chain) ? item.chain : []).map(String),
+    repeat: item.mode === "repeat",
   };
 }
 
@@ -711,7 +794,7 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         await finishRun(organizationId, run.id, "SKIPPED", problem);
         return { skipped: "module" };
       }
-      const { subject, chain } = subjectOf(run.subject);
+      const { subject, chain, repeat } = subjectOf(run.subject);
       if (subject.facilityId) {
         const facility = await client.facility.findFirst({
           where: { id: subject.facilityId },
@@ -750,10 +833,13 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         subject.facilityId ?? (await mainFacilityId(organizationId));
       let refused = false;
       let actorLost = false;
+      let didSomething = false;
       let stopped: "plan" | "facility" | null = null;
       for (let index = 0; index < found.actions.length; index++) {
         if (results[index]?.done) continue;
         const action = found.actions[index]!;
+        // A repeat runs only what repeats (a notice is not given again).
+        if (repeat && !action.repeats) continue;
         const missing = action.needs?.find((need) => !subject.refs[need]);
         let outcome: ActionOutcome;
         if (missing) {
@@ -827,6 +913,7 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
             }
           }
         }
+        if (outcome.kind !== "already") didSomething = true;
         results[index] = {
           key: action.key,
           done: outcome.kind !== "refused",
@@ -862,6 +949,14 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         );
         await pauseRule(organizationId, rule.id, "ACTOR");
         return { skipped: "actor" };
+      }
+      if (repeat && !didSomething) {
+        // A repeat that found nothing to do leaves no line (ADR 0092):
+        // the next round asks again only if the state still says so.
+        await client.automationRun.deleteMany({
+          where: { id: run.id, status: "RUNNING" },
+        });
+        return { skipped: "nothing" };
       }
       await finishRun(
         organizationId,
@@ -937,6 +1032,8 @@ export async function organizationsWithAutomations(): Promise<string[]> {
 export async function runAutomationRound(
   organizationId: string,
   catalog: AutomationCatalog,
+  /** Pages per warehouse in this round (tests use fewer). */
+  pagesPerRound: number = AUTOMATION_SCAN_PAGES,
 ): Promise<{ runs: number; paused: number }> {
   const client = forOrganization(organizationId);
   const rules = await client.automationRule.findMany({
@@ -1003,6 +1100,22 @@ export async function runAutomationRound(
     }
     main ??= await mainFacilityId(organizationId);
     const values = objectOf(rule.conditions);
+    const onlyWith = onlyWithOf(actions);
+    const once = hasOnce(actions);
+    // Where the last round left each warehouse (one read per rule).
+    const cursors = new Map(
+      (
+        await client.automationScan.findMany({
+          where: { ruleId: rule.id },
+          select: {
+            id: true,
+            placeKey: true,
+            nextPage: true,
+            unfinished: true,
+          },
+        })
+      ).map((row) => [row.placeKey, row]),
+    );
     let left = AUTOMATION_SCAN_LIMIT;
     let lost = false;
     for (const place of places) {
@@ -1014,9 +1127,17 @@ export async function runAutomationRound(
         });
         if (!facility || facility.archivedAt) continue;
       }
-      // Page past what was already attended: the first pages never keep
-      // new subjects from being seen (at most AUTOMATION_SCAN_PAGES).
-      for (let page = 1; page <= AUTOMATION_SCAN_PAGES && left > 0; page++) {
+      const cursor = cursors.get(place ?? "");
+      const start = cursor?.nextPage ?? 1;
+      let page = start;
+      let reviewed = 0;
+      // Where the next round starts; null = it reached the end.
+      let resume: number | null = null;
+      for (let read = 0; ; read++) {
+        if (read >= pagesPerRound || left <= 0) {
+          resume = page;
+          break;
+        }
         let scanned: { subjects: AutomationSubject[]; more: boolean };
         try {
           scanned = await runDelegated(
@@ -1031,7 +1152,7 @@ export async function runAutomationRound(
             () =>
               trigger.scan!(
                 { organizationId, userId: rule.actorUserId },
-                { facilityId: place, values, page },
+                { facilityId: place, values, page, onlyWith },
               ),
           );
         } catch (error) {
@@ -1041,35 +1162,57 @@ export async function runAutomationRound(
           }
           throw error;
         }
-        const candidates = scanned.subjects.filter(
-          (subject) =>
-            conditionsHold(trigger, values, subject.facts) &&
-            worthOpening(actions, subject),
+        reviewed += scanned.subjects.length;
+        const candidates = scanned.subjects.filter((subject) =>
+          conditionsHold(trigger, values, subject.facts),
         );
         const keyOf = (subject: AutomationSubject) =>
           (trigger.repeat === "day"
             ? `state:${subject.key}:${day}`
             : `state:${subject.key}`
-          ).slice(0, 180);
-        // What is already attended, read at once for the whole page.
-        const attended = new Set(
+          ).slice(0, 170);
+        // What is already attended or on its way, read at once for the
+        // whole page (the subject and its repeats).
+        const known =
           candidates.length === 0
             ? []
-            : (
-                await client.automationRun.findMany({
-                  where: {
-                    ruleId: rule.id,
-                    subjectKey: { in: candidates.map(keyOf) },
-                    status: { in: ["PENDING", "RUNNING", "DONE"] },
+            : await client.automationRun.findMany({
+                where: {
+                  ruleId: rule.id,
+                  subjectKey: {
+                    in: candidates.flatMap((subject) => [
+                      keyOf(subject),
+                      repeatKeyOf(keyOf(subject)),
+                    ]),
                   },
-                  select: { subjectKey: true },
-                })
-              ).map((run) => run.subjectKey),
+                  status: { in: [...ATTENDING] },
+                },
+                select: { subjectKey: true, status: true },
+              });
+        const attended = new Set(known.map((run) => run.subjectKey));
+        const open = new Set(
+          known
+            .filter((run) => run.status !== "DONE")
+            .map((run) => run.subjectKey),
         );
+        let stoppedAt = false;
         for (const subject of candidates) {
-          if (left <= 0) break;
           const subjectKey = keyOf(subject);
-          if (attended.has(subjectKey)) continue;
+          // Once per subject for what is done once; again, while the state
+          // lasts, only for what repeats (and never while one is open).
+          let repeat: boolean;
+          if (once && !attended.has(subjectKey)) repeat = false;
+          else if (
+            repeatDue(actions, subject) &&
+            !open.has(subjectKey) &&
+            !open.has(repeatKeyOf(subjectKey))
+          ) {
+            repeat = true;
+          } else continue;
+          if (left <= 0) {
+            stoppedAt = true;
+            break;
+          }
           left--;
           const outcome = await openRun(organizationId, rule, {
             trigger,
@@ -1079,18 +1222,68 @@ export async function runAutomationRound(
             depth: 1,
             chain: [],
             entitlements,
-            state: { subjectKey, remembers: trigger.repeat === "once" },
+            state: {
+              subjectKey,
+              remembers: trigger.repeat === "once",
+              repeat,
+            },
           });
           if (outcome === "opened") runs++;
-          if (outcome === "limit") left = 0;
+          if (outcome === "limit") {
+            left = 0;
+            stoppedAt = true;
+            break;
+          }
+        }
+        // Stopped inside the page: the next round reads it again.
+        if (stoppedAt) {
+          resume = page;
+          break;
         }
         if (!scanned.more) break;
+        page++;
       }
       if (lost) break;
+      await saveCursor(organizationId, rule.id, place ?? "", cursor ?? null, {
+        nextPage: resume ?? 1,
+        unfinished: resume !== null,
+        reviewed,
+      });
     }
     if (lost && (await pauseRule(organizationId, rule.id, "ACTOR"))) paused++;
   }
   return { runs, paused };
+}
+
+/**
+ * Keeps where the round left a rule in one warehouse. Nothing is written
+ * when it reached the end as the time before (no hourly writes).
+ */
+async function saveCursor(
+  organizationId: string,
+  ruleId: string,
+  placeKey: string,
+  cursor: { id: string; nextPage: number; unfinished: boolean } | null,
+  next: { nextPage: number; unfinished: boolean; reviewed: number },
+): Promise<void> {
+  const client = forOrganization(organizationId);
+  if (!cursor) {
+    if (!next.unfinished) return;
+    try {
+      await client.automationScan.create({
+        data: { id: newId(), organizationId, ruleId, placeKey, ...next },
+      });
+    } catch (error) {
+      // Written at once by another round: it says the same.
+      if ((error as { code?: string }).code !== "P2002") throw error;
+    }
+    return;
+  }
+  if (!next.unfinished && !cursor.unfinished && cursor.nextPage === 1) return;
+  await client.automationScan.updateMany({
+    where: { id: cursor.id },
+    data: next,
+  });
 }
 
 /** Companies with runs to clean. */

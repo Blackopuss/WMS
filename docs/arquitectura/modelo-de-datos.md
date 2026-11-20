@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-153 tablas en 33 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+154 tablas en 33 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -19,7 +19,7 @@
 | Plataforma › Avisos | 5 | [notifications](modulos/notifications.md) |
 | Plataforma › Terminales compartidas | 3 | [terminals](modulos/terminals.md) |
 | Plataforma › API y webhooks | 5 | [api](modulos/api.md) |
-| Plataforma › Automatizaciones | 2 | [automations](modulos/automations.md) |
+| Plataforma › Automatizaciones | 3 | [automations](modulos/automations.md) |
 | Plataforma › Campos personalizados | 3 | [custom-fields](modulos/custom-fields.md) |
 | Plataforma › Archivos | 3 | [files](modulos/files.md) |
 | Plataforma › Cola de trabajos | 1 | [jobs](modulos/jobs.md) |
@@ -1291,7 +1291,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Plataforma › Automatizaciones
 
-Reglas de cada empresa («cuando pasa algo, si se cumple, hacer esto»), a nombre de quién actúan, y el historial de lo que hizo cada una o por qué no (90 días).
+Reglas de cada empresa («cuando pasa algo, si se cumple, hacer esto»), a nombre de quién actúan, el historial de lo que hizo cada una o por qué no (90 días) y dónde dejó la ronda la revisión de cada estado.
 
 Documento: [modulos/automations.md](modulos/automations.md).
 
@@ -1353,6 +1353,26 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `ruleId`, `eventKey`).
 - Índices: (`organizationId`, `ruleId`, `subjectKey`); (`organizationId`, `ruleId`, `createdAt`); (`organizationId`, `createdAt`).
+- Relaciones: `rule` → `AutomationRule` por (`organizationId`, `ruleId`) (al borrar: Restrict).
+
+### AutomationScan · `automation_scan`
+
+WMS-64 (ADR 0092): where the hourly round left the review of the state of a rule in one warehouse («» = the whole company), so the next round goes on from there and nothing new waits behind what was attended.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `ruleId` | `String · Char(36)` |  |  |
+| `placeKey` | `String · VarChar(36)` |  | The warehouse; empty for a figure of the whole company. |
+| `nextPage` | `Int` | `1` | The page the next round starts from (1 = from the beginning). |
+| `unfinished` | `Boolean` | `false` | The last round stopped before the end of what is in that state. |
+| `reviewed` | `Int` | `0` | What the last round reviewed before stopping. |
+| `updatedAt` | `DateTime · DateTime(3)` | `now()` | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `ruleId`, `placeKey`).
 - Relaciones: `rule` → `AutomationRule` por (`organizationId`, `ruleId`) (al borrar: Restrict).
 
 #### Enumeraciones de Plataforma › Automatizaciones

@@ -125,6 +125,12 @@ export type AutomationTrigger = {
       values: Readonly<Record<string, unknown>>;
       /** 1 for the first page; the engine reads further while `more`. */
       page: number;
+      /**
+       * Every action of the rule repeats on this fact: a scan may leave
+       * out the subjects that do not have it true (and what no longer has
+       * it stops taking room in the pages).
+       */
+      onlyWith?: string;
     },
   ): Promise<{ subjects: AutomationSubject[]; more: boolean }>;
 };
@@ -165,10 +171,14 @@ export type AutomationAction = {
   /** What the subject must carry for it to make sense. */
   needs?: readonly SubjectRef[];
   /**
-   * A fact the subject must have true for this action to be worth doing
-   * (blocking: something available); without it, no run opens.
+   * An action of a state that is done again while the state lasts
+   * (blocking: while the lot has something free), instead of once per
+   * subject like the others. `fact` is what the scan of its trigger says
+   * true when there is something to do; a round opens a run again for a
+   * subject already attended only for these actions, and only when the
+   * fact is true (ADR 0092, «una vez» and «mientras dure»).
    */
-  requiresFact?: string;
+  repeats?: { fact: string };
   /** Only with these triggers (none: any that provides what it needs). */
   onlyTriggers?: readonly string[];
   /** A rule of its options the fields alone cannot say (a message or null). */
@@ -233,6 +243,19 @@ export function assertValidAutomationCatalog(
     if (actionKeys.has(action.key)) throw new Error(`Repeated ${action.key}`);
     actionKeys.add(action.key);
     assertFields(action.key, action.options);
+    if (action.repeats) {
+      // Only on states: a fact happens once.
+      const on = action.onlyTriggers ?? [];
+      if (
+        on.length === 0 ||
+        on.some(
+          (key) =>
+            triggers.find((trigger) => trigger.key === key)?.kind !== "state",
+        )
+      ) {
+        throw new Error(`${action.key} repeats only on states it names`);
+      }
+    }
   }
 }
 

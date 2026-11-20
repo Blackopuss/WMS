@@ -9,6 +9,7 @@ import type {
 import { isLimited, locationScopeWhere } from "@/platform/locations";
 import { forOrganization } from "@/server";
 
+import { blockFreeOfLotAt, lotsWithFreeStock } from "./automation-block";
 import { dayWindow } from "./calendar-day";
 import { openCount } from "./counts";
 import { INCIDENT_KIND_LABELS, type IncidentKind } from "./incident-states";
@@ -16,8 +17,6 @@ import { reportIncident } from "./incidents";
 import { listExpiringLots } from "./lots";
 import { listLowStock } from "./minimums";
 import { formatStock } from "./movements";
-import { freeToTake } from "./reservations";
-import { changeStockStatus } from "./status-change";
 import { STOCK_STATUS_LABELS, STOCK_STATUSES } from "./stock-status";
 import {
   ADJUSTMENT_APPLIED_EVENT,
@@ -229,7 +228,7 @@ export const LOT_EXPIRING_TRIGGER: AutomationTrigger = {
   module: "inventory",
   label: "Cuando un lote está por caducar",
   description:
-    "Se revisa cada hora con el aviso de caducidad de la empresa; una vez por lote y almacén.",
+    "Se revisa cada hora con el aviso de caducidad de la empresa: avisos, incidencias y conteos una vez por lote y almacén; bloquear, mientras le quede algo libre.",
   readPermission: "inventory.stock.read",
   kind: "state",
   repeat: "once",
@@ -242,41 +241,36 @@ export const LOT_EXPIRING_TRIGGER: AutomationTrigger = {
     },
   ],
   provides: ["productId", "lotId"],
-  async scan(actor, { facilityId, page: wanted }) {
+  async scan(actor, { facilityId, page: wanted, onlyWith }) {
     if (!facilityId) return { subjects: [], more: false };
-    const page = await listExpiringLots(actor, { facilityId, page: wanted });
+    // A rule that only blocks reads only lots with something available
+    // there: what is already blocked stops taking room in the pages.
+    const page = await listExpiringLots(actor, {
+      facilityId,
+      page: wanted,
+      availableOnly: onlyWith === "free",
+    });
     if (page.page !== wanted) return { subjects: [], more: false };
-    // What of each lot is still available here (blocking needs it), read
-    // at once for the page and inside the scope of the person.
+    // What of each lot is free to take here (the same rule blocking
+    // uses), read at once for the page and inside the scope of the person.
     const client = forOrganization(actor.organizationId);
     const scoped = await locationScopeWhere(client, actor.userId);
-    const available = new Set(
-      page.items.length === 0
-        ? []
-        : (
-            await client.stockBalance.groupBy({
-              by: ["lotId"],
-              where: {
-                lotId: { in: page.items.map((lot) => lot.lotId) },
-                status: "AVAILABLE",
-                quantity: { gt: 0 },
-                location: {
-                  facilityId,
-                  ...(isLimited(scoped) ? { AND: [scoped] } : {}),
-                },
-              },
-            })
-          ).map((row) => row.lotId),
+    const free = await lotsWithFreeStock(
+      client,
+      page.items.map((lot) => ({ productId: lot.productId, lotId: lot.lotId })),
+      { facilityId, ...(isLimited(scoped) ? { AND: [scoped] } : {}) },
     );
-    const subjects = page.items.map((lot): AutomationSubject => ({
-      key: `lot:${lot.lotId}:${facilityId}`,
-      summary: `${lot.productName}, lote ${lot.code}: ${lot.expiryText} (${lot.quantityLabel} en ${page.facilityName}).`,
-      facilityId,
-      locationIds: [],
-      href: `/inventario/lotes/${lot.lotId}`,
-      refs: { productId: lot.productId, lotId: lot.lotId },
-      facts: { expired: lot.expired, available: available.has(lot.lotId) },
-    }));
+    const subjects = page.items
+      .filter((lot) => onlyWith !== "free" || free.has(lot.lotId))
+      .map((lot): AutomationSubject => ({
+        key: `lot:${lot.lotId}:${facilityId}`,
+        summary: `${lot.productName}, lote ${lot.code}: ${lot.expiryText} (${lot.quantityLabel} en ${page.facilityName}).`,
+        facilityId,
+        locationIds: [],
+        href: `/inventario/lotes/${lot.lotId}`,
+        refs: { productId: lot.productId, lotId: lot.lotId },
+        facts: { expired: lot.expired, free: free.has(lot.lotId) },
+      }));
     return { subjects, more: page.page < page.pageCount };
   },
 };
@@ -546,22 +540,25 @@ export const OPEN_COUNT_ACTION: AutomationAction = {
 };
 
 /**
- * «Bloquear» (coordination, 2026-11-20): only a lot about to expire or
- * expired; what is free of each location of the warehouse passes from
- * Disponible to Bloqueado with «Cambiar estado», never what is reserved
- * for an order, a task or inside a pallet. Nothing free is not a failure.
+ * «Bloquear» (coordination, 2026-11-20; second review): only a lot about
+ * to expire or expired; what is free of each location of the warehouse
+ * passes from Disponible to Bloqueado, never what is reserved for an
+ * order, a task or a production order, nor what is inside a pallet. It
+ * decides with `blockFreeOfLotAt` under the locks of a change of state, so
+ * nothing «moves meanwhile». Nothing free is not a failure. It repeats
+ * while the lot is about to expire and has something free.
  */
 export const BLOCK_LOT_ACTION: AutomationAction = {
   key: "inventory.stock.block",
   module: "inventory",
   label: "Bloquear el lote",
   description:
-    "Pasa a «Bloqueado» lo libre del lote en el almacén; lo apartado para un pedido o una tarea no se toca. Se libera a mano con «Cambiar estado».",
+    "Pasa a «Bloqueado» lo libre del lote en el almacén; lo apartado para un pedido o una tarea no se toca. Se repite mientras el lote siga por caducar y le quede algo libre. Se libera a mano con «Cambiar estado».",
   permissions: ["inventory.status.change", "inventory.stock.read"],
   options: [],
   needs: ["productId", "lotId"],
   onlyTriggers: ["inventory.lot.expiring"],
-  requiresFact: "available",
+  repeats: { fact: "free" },
   async run(context): Promise<ActionOutcome> {
     const { subject } = context;
     if (!subject.facilityId) {
@@ -572,23 +569,15 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
       userId: context.actorUserId,
     };
     const client = forOrganization(context.organizationId);
-    const product = await client.product.findFirst({
-      where: { id: subject.refs.productId! },
-      select: { tracking: true, unitCode: true },
-    });
-    if (!product || product.tracking !== "LOT") {
-      return {
-        kind: "already",
-        line: "No se hizo: solo se bloquean productos controlados por lote.",
-      };
-    }
     const scoped = await locationScopeWhere(client, context.actorUserId);
     const blocked: string[] = [];
-    let incomplete = false;
+    const refused: string[] = [];
     let after: string | null = null;
     let seen = 0;
+    let more = false;
     for (;;) {
-      // Every location of the lot in the warehouse, a page at a time.
+      // Every location of the lot in the warehouse with something
+      // available, a page at a time; what is free is decided under locks.
       const balances: {
         locationId: string;
         location: { code: string | null; name: string };
@@ -612,28 +601,33 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
         },
       });
       for (const balance of balances) {
-        const outcome = await blockFreeHere(context, actor, balance.locationId);
-        if (outcome === "incomplete") incomplete = true;
-        else if (outcome !== "nothing") {
-          blocked.push(
-            `${formatStock(outcome, product.unitCode)} en ${placeName(balance.location)}`,
-          );
+        const answer = await blockFreeOfLotAt(actor, {
+          productId: subject.refs.productId!,
+          locationId: balance.locationId,
+          lotId: subject.refs.lotId!,
+          reason: `Automatización: ${context.rule.name}`.slice(0, 200),
+          idempotencyKey: `${context.idempotencyKey}-${balance.locationId.replace(/-/g, "").slice(-12)}`,
+        });
+        if (answer.kind === "blocked") {
+          blocked.push(`${answer.label} en ${placeName(balance.location)}`);
+        } else if (answer.kind === "refused") {
+          refused.push(`${placeName(balance.location)}: ${answer.message}`);
         }
       }
       seen += balances.length;
       if (balances.length < BLOCK_PAGE) break;
       if (seen >= BLOCK_LOCATIONS_MAX) {
-        incomplete = true;
+        more = true;
         break;
       }
       after = balances.at(-1)!.locationId;
     }
     const done = blocked.length > 0 ? `Se bloqueó ${blocked.join(", ")}.` : "";
-    if (incomplete) {
-      // Not attended: the next round opens it again for what is left.
+    if (refused.length > 0) {
+      // The real cause, from the change of state itself.
       return {
         kind: "refused",
-        line: `${done} No se pudo bloquear todo lo libre (se movió a la vez o hay demasiadas ubicaciones); la siguiente revisión lo intenta otra vez.`
+        line: `${done} No se pudo bloquear en ${refused.join("; ")}`
           .trim()
           .slice(0, 200),
       };
@@ -641,12 +635,15 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
     if (blocked.length === 0) {
       return {
         kind: "already",
-        line: "No se hizo: no había existencias libres de ese lote.",
+        line: "No se hizo: no había nada libre de ese lote (todo apartado o ya bloqueado).",
       };
     }
     return {
       kind: "done",
-      line: done.slice(0, 200),
+      line: (more
+        ? `${done} Hay más ubicaciones: la siguiente revisión sigue con ellas.`
+        : done
+      ).slice(0, 200),
       href: `/inventario/lotes/${subject.refs.lotId}`,
     };
   },
@@ -656,50 +653,6 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
 const BLOCK_PAGE = 50;
 /** …and at most this many in one run (the rest, in the next round). */
 const BLOCK_LOCATIONS_MAX = 500;
-/** Tries to block what is free in one location when it moves meanwhile. */
-const BLOCK_TRIES = 3;
-
-/**
- * Blocks what is free of the lot in one location. What is free is read
- * again and the change tried again when the service refuses it (something
- * moved between reading and its locks): `changeStockStatus` decides under
- * its own locks (product → location), so nothing reserved is ever taken.
- * Answers what was blocked, «nothing» when nothing is free, or
- * «incomplete» when it kept moving.
- */
-async function blockFreeHere(
-  context: Parameters<AutomationAction["run"]>[0],
-  actor: { organizationId: string; userId: string },
-  locationId: string,
-): Promise<string | "nothing" | "incomplete"> {
-  const { subject } = context;
-  const client = forOrganization(context.organizationId);
-  const key = `${context.idempotencyKey}-${locationId.replace(/-/g, "").slice(-12)}`;
-  for (let attempt = 1; attempt <= BLOCK_TRIES; attempt++) {
-    const free = await freeToTake(
-      client,
-      subject.refs.productId!,
-      locationId,
-      subject.refs.lotId!,
-    );
-    if (!free.greaterThan(0)) return "nothing";
-    const result = await changeStockStatus(actor, {
-      productId: subject.refs.productId!,
-      locationId,
-      lotId: subject.refs.lotId!,
-      from: "AVAILABLE",
-      to: "BLOCKED",
-      quantity: free.toString(),
-      reason: `Automatización: ${context.rule.name}`.slice(0, 200),
-      // Each try its own key: a retry of the whole run repeats none.
-      idempotencyKey: attempt === 1 ? key : `${key}-${attempt}`,
-    });
-    if (result.ok && "movementId" in result) {
-      return result.baseQuantity ?? free.toString();
-    }
-  }
-  return "incomplete";
-}
 
 export const INVENTORY_AUTOMATION_TRIGGERS: readonly AutomationTrigger[] = [
   STATUS_CHANGED_TRIGGER,

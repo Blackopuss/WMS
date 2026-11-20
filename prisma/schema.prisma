@@ -271,6 +271,7 @@ model Organization {
   /// Automations of the company (WMS-64, ADR 0092).
   automationRules              AutomationRule[]
   automationRuns               AutomationRun[]
+  automationScans              AutomationScan[]
 
   @@index([ownerUserId])
   @@map("organization")
@@ -5541,6 +5542,7 @@ model AutomationRule {
   updatedAt           DateTime             @updatedAt @db.DateTime(3)
   archivedAt          DateTime?            @db.DateTime(3)
   runs                AutomationRun[]
+  scans               AutomationScan[]
 
   @@unique([organizationId, id])
   @@index([organizationId, status, triggerKey])
@@ -5589,4 +5591,28 @@ model AutomationRun {
   @@index([organizationId, ruleId, createdAt])
   @@index([organizationId, createdAt])
   @@map("automation_run")
+}
+
+/// WMS-64 (ADR 0092): where the hourly round left the review of the state
+/// of a rule in one warehouse («» = the whole company), so the next round
+/// goes on from there and nothing new waits behind what was attended.
+model AutomationScan {
+  id             String         @id @db.Char(36)
+  organizationId String         @db.Char(36)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  ruleId         String         @db.Char(36)
+  rule           AutomationRule @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  /// The warehouse; empty for a figure of the whole company.
+  placeKey       String         @db.VarChar(36)
+  /// The page the next round starts from (1 = from the beginning).
+  nextPage       Int            @default(1)
+  /// The last round stopped before the end of what is in that state.
+  unfinished     Boolean        @default(false)
+  /// What the last round reviewed before stopping.
+  reviewed       Int            @default(0)
+  updatedAt      DateTime       @default(now()) @updatedAt @db.DateTime(3)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, ruleId, placeKey])
+  @@map("automation_scan")
 }

@@ -33,10 +33,23 @@ los junta en `automationCatalog`.
 4. La ronda `platform.automations` (cada hora, solo empresas con reglas
    encendidas) apaga las reglas cuyo módulo ya no está contratado y revisa
    los disparadores de estado con `trigger.scan` por páginas, como la
-   persona de la regla y almacén por almacén, hasta juntar 50 sujetos
-   nuevos (los ya atendidos se saltan con una consulta por página). Un
-   estado lo atiende solo una ejecución en espera, en curso o hecha
-   (`subjectKey`); lo saltado o fallado se vuelve a abrir en otra ronda.
+   persona de la regla y almacén por almacén: hasta 40 páginas por regla y
+   almacén **desde donde se quedó la ronda anterior** (`automation_scan`) y
+   hasta 50 ejecuciones nuevas por regla (lo ya atendido se reconoce con una
+   consulta por página). Si no llega al final, la ficha de la regla dice «No
+   se terminó de revisar…» y la siguiente ronda sigue ahí. Un estado lo
+   atiende solo una ejecución en espera, en curso o hecha (`subjectKey`); lo
+   saltado o fallado se vuelve a abrir en otra ronda (intento = el más
+   reciente + 1; a los 50 queda una línea y se deja de intentar).
+5. **Una vez y mientras dure:** una acción declarada con `repeats`
+   («Bloquear», con el dato `free`) se repite: después de la primera
+   ejecución de un sujeto, una ronda abre otra (`subjectKey` con `~r`) solo
+   si el dato está en verdadero y no hay otra ejecución abierta del sujeto,
+   y en ella corren solo las acciones que se repiten (el aviso, la
+   incidencia y el conteo no). Una repetición que no hizo nada se borra al
+   terminar (sin ruido en el historial). Si todas las acciones de la regla
+   se repiten, el escaneo recibe `onlyWith` y puede traer solo sujetos con
+   el dato.
 
 Una acción que causa otro hecho lleva la cadena en la delegación:
 `queueAutomationEvent` no encola nada a profundidad `AUTOMATION_MAX_DEPTH`
@@ -62,7 +75,8 @@ Una acción que causa otro hecho lleva la cadena en la delegación:
 
 ## Tablas
 
-`automation_rule` y `automation_run` (de empresa, en `TENANT_MODELS`).
+`automation_rule`, `automation_run` y `automation_scan` (dónde dejó la
+ronda cada regla y almacén) (de empresa, en `TENANT_MODELS`).
 Una regla no se borra (se archiva), no cambia de disparador ni de autor y
 su versión solo sube; una ejecución no cambia de regla, llave ni versión y
 una terminada no cambia (disparadores). El historial se borra a los 90 días
@@ -74,7 +88,7 @@ una terminada no cambia (disparadores). El historial se borra a los 90 días
   `emitWebhookEvent` (su evento de webhook); el disparador usa la misma
   clave y su `describe` lee lo que necesita con `forOrganization`, sin
   costos ni nombres de personas.
-- **Disparador de un estado:** `scan({ facilityId, values, page })` devuelve
+- **Disparador de un estado:** `scan({ facilityId, values, page, onlyWith })` devuelve
   `{ subjects, more }` y lee con el servicio de la pantalla
   que deriva ese estado (corre delegado a la persona de la regla, recortado
   a `readPermission` y al almacén), con un `key` estable por sujeto y
@@ -87,3 +101,15 @@ una terminada no cambia (disparadores). El historial se borra a los 90 días
   acción que mueve o cambia existencias pasa además por un revisor
   independiente y agrega su carrera a `tests/server/lock-order.int.test.ts`.
 - Todo caso nuevo va en `tests/platform/automations.int.test.ts`.
+
+## «Bloquear» en Inventario
+
+La acción `inventory.stock.block` llama al núcleo interno
+`blockFreeOfLotAt` (`src/modules/inventory/automation-block.ts`, fuera del
+`index.ts` de Inventario: ninguna pantalla ni la API lo alcanzan). Con los
+candados del cambio de estado (producto → ubicación) calcula lo libre con
+`freeToTake` y lo pasa todo a «Bloqueado» con `writeStatusChange`; cero
+libre no escribe nada. El dato `free` del escaneo de «Lote por caducar» lo
+calcula `lotsWithFreeStock` con la misma regla, seis consultas agrupadas por
+página. Una acción nueva que mueva existencias sigue el mismo patrón:
+decide bajo los candados de su operación, nunca con lo leído antes.

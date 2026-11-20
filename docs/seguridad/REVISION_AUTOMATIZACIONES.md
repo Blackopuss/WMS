@@ -34,7 +34,8 @@ de unir la lee un revisor independiente.
 | Inundar de avisos, incidencias o conteos | 20 reglas por empresa (contadas bajo el candado de la empresa), 3 acciones por regla, 30 ejecuciones por regla y 300 por empresa por hora (lo excedido deja una sola fila «tope» por hora), 50 sujetos por regla en cada ronda, 50 destinatarios por aviso, 5 personas por regla; un aviso, incidencia o conteo por ejecución y acción (claves de idempotencia) | `automations.int.test.ts` («keeps at most the cap…», «stops at the hourly cap…») |
 | Una regla que falla siempre consume el worker | 3 intentos por ejecución; 5 fallas seguidas apagan la regla (`FAILURES`) con aviso | revisión de código (`settleFailures`) |
 | Dos workers ejecutan lo mismo | Ejecución única por regla y `eventKey`; reclamo condicionado; cada acción con su clave de idempotencia; `changeStockStatus` decide bajo su candado | `automations.int.test.ts` (ronda con `Promise.all`, trabajo repetido) |
-| Bloquear lo que un pedido apartó | `freeToTake` antes y el propio `changeStockStatus` bajo el candado del producto; nunca toma lo apartado ni lo que está en una tarima de almacenamiento | `automations.int.test.ts`, `lock-order.int.test.ts` (bloquear contra liberar un pedido a la vez) |
+| Bloquear lo que un pedido apartó | Núcleo interno `blockFreeOfLotAt`: con los candados del cambio de estado (producto → ubicación) calcula lo libre con `freeToTake` y bloquea eso, nada calculado antes; nunca toma lo apartado ni lo que está en una tarima de almacenamiento. No está en el `index.ts` de Inventario: ni una pantalla ni la API lo alcanzan | `automations.int.test.ts`, `lock-order.int.test.ts` (bloquear contra salidas seguidas del mismo lote, contra liberar un pedido y contra reubicar el mismo lote, con `reconcileStock` y `reconcileValue` vacíos) |
+| Una ronda que deja de ver sujetos nuevos en silencio | Cursor por regla y almacén (`automation_scan`), 40 páginas por ronda y aviso «No se terminó de revisar» en la ficha | `automations.int.test.ts` («second review: the round never gets stuck») |
 | Más trabajo en el camino caliente de cada operación | Una sola lectura indexada, sin candados; nada se escribe si ninguna regla escucha | `automations.int.test.ts` («adds one indexed read…») |
 | El historial muestra costos o datos que el lector no ve | Las líneas se arman sin costos ni precios; leer exige ver toda la empresa | revisión de código |
 | Una empresa de demostración sale a terceros | Ninguna acción sale a terceros (avisos y correos a miembros) | — |
@@ -61,3 +62,16 @@ a rule promises it keeps doing»). De los menores, el que toca seguridad: la
 persona de una regla debe seguir viendo toda la empresa en cada ejecución
 (si la limitan a un almacén, la regla se apaga) y un rechazo por plan o por
 almacén archivado ya no se confunde con «la persona ya no puede».
+
+## Revisión independiente, segunda vuelta (2026-11-20)
+
+«No unir» por dos mayores de cumplimiento (no de seguridad): un lote sin
+nada libre al revisarlo quedaba atendido para siempre, y la ronda dejaba de
+ver sujetos nuevos detrás de lo ya atendido. Lo que toca seguridad e
+integridad del inventario: «Bloquear» ya no calcula fuera del candado ni
+reintenta; lo hace un núcleo interno de Inventario que no se exporta
+(ninguna pantalla ni la API pueden bloquear «todo lo libre» de una vez), a
+nombre de la persona de la regla, recortado a su permiso y alcance, y con
+las mismas reglas de `writeStatusChange`. Un plan que vence a media
+ejecución deja la ejecución «No se hizo» sin bloquear nada ni apagar la
+regla. Detalle en el ADR 0092 («segunda vuelta»).

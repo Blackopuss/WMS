@@ -96,7 +96,7 @@ que ya los derivan, como la persona de la regla):
 | Clave | Frase | Condiciones | Se repite |
 | --- | --- | --- | --- |
 | `inventory.stock.low` | Cuando un producto queda en o bajo su mínimo | sin existencias (solo agotados), categoría | una vez al día por producto |
-| `inventory.lot.expiring` | Cuando un lote está por caducar (según el aviso de caducidad de la empresa) | ya caducó | una vez por lote |
+| `inventory.lot.expiring` | Cuando un lote está por caducar (según el aviso de caducidad de la empresa) | ya caducó | una vez por lote y almacén; «Bloquear», mientras le quede algo libre |
 | `inventory.task.unclaimed` | Cuando una tarea sigue sin tomar | desde hace 2, 4, 8 o 24 horas; tipo de tarea | una vez por tarea |
 | `inventory.outbound.late` | Cuando un pedido no salió en su día | — | una vez por pedido |
 
@@ -112,12 +112,15 @@ disparador nuevo de un hecho necesita antes su evento (`emitWebhookEvent`).
 
 ## Acciones (catálogo inicial)
 
-| Clave | Frase | Qué llama | Permiso que necesita la persona de la regla |
-| --- | --- | --- | --- |
-| `platform.notify` | Avisar a… (roles y hasta 5 personas) | `notify` con el tipo propio `automations.rule_fired` | ninguno extra (ver abajo) |
-| `inventory.incident.open` | Abrir una incidencia (tipo) | `reportIncident` | `inventory.incident.create` |
-| `inventory.count.open` | Abrir un conteo de la ubicación | `openCount` | `inventory.count.create` |
-| `inventory.stock.block` | Bloquear el lote | `changeStockStatus` de «Disponible» a «Bloqueado» | `inventory.status.change` (y `inventory.stock.read`) |
+| Clave | Frase | Qué llama | Permiso que necesita la persona de la regla | Con un estado |
+| --- | --- | --- | --- | --- |
+| `platform.notify` | Avisar a… (roles y hasta 5 personas) | `notify` con el tipo propio `automations.rule_fired` | ninguno extra (ver abajo) | una vez por sujeto |
+| `inventory.incident.open` | Abrir una incidencia (tipo) | `reportIncident` | `inventory.incident.create` | una vez por sujeto |
+| `inventory.count.open` | Abrir un conteo de la ubicación | `openCount` | `inventory.count.create` | una vez por sujeto |
+| `inventory.stock.block` | Bloquear el lote | `blockFreeOfLotAt` (núcleo interno de Inventario) de «Disponible» a «Bloqueado» | `inventory.status.change` (y `inventory.stock.read`) | mientras dure: cada ronda en que el lote siga por caducar y tenga algo libre |
+
+Con un hecho (no un estado) toda acción ocurre una vez por hecho. La
+columna «Con un estado» se explica en «Una vez y mientras dure».
 
 - **Avisar:** el aviso dice el nombre de la regla, la línea del hecho y la
   nota. Se dirige con `permissions` = el permiso de lectura del disparador
@@ -158,37 +161,79 @@ disparador nuevo de un hecho necesita antes su evento (`emitWebhookEvent`).
   texto, en el correo pasa por el HTML escapado de los avisos (ADR 0084) y
   en la incidencia es parte de la descripción.
 
-### Bloquear (decidido por quien coordina el 2026-11-20 y programado)
+### Bloquear (decidido por quien coordina el 2026-11-20; diseño de la segunda revisión)
 
 - **Solo** con «Cuando un lote está por caducar» (`onlyTriggers`): la casilla
   es producto + lote dentro del almacén del hecho, y solo productos
   controlados por lote (un producto por serie no se bloquea así).
 - Por cada ubicación del almacén, dentro del alcance de la persona de la
-  regla, con existencias disponibles de ese lote (hasta 20 ubicaciones),
-  calcula **lo libre** con `freeToTake` (nunca lo apartado para un pedido o
-  una tarea ni lo que está en una tarima de almacenamiento) y llama
-  `changeStockStatus` de `AVAILABLE` a `BLOCKED` por esa cantidad, con motivo
+  regla, con existencias disponibles de ese lote (por páginas de 50, hasta
+  500 ubicaciones por ejecución; si hay más, el historial lo dice y la
+  siguiente ronda sigue), llama al **núcleo interno**
+  `blockFreeOfLotAt` (`src/modules/inventory/automation-block.ts`; no está
+  en el `index.ts` de Inventario, así que ninguna pantalla ni la API lo
+  alcanzan). El núcleo, en una transacción `LOCKING_TRANSACTION`, toma los
+  candados del cambio de estado (producto → ubicación), revisa el alcance,
+  calcula **ahí mismo** lo libre con `freeToTake` (nunca lo apartado para un
+  pedido, una tarea o una orden de producción, ni lo que está en una tarima
+  de almacenamiento) y pasa **todo** eso de `AVAILABLE` a `BLOCKED` con
+  `writeStatusChange` (el mismo núcleo de «Cambiar estado»), con motivo
   «Automatización: <nombre de la regla>», a nombre de la persona de la regla
-  con `inventory.status.change`, clave
-  `auto-<ejecución>-<n>-<12 caracteres de la ubicación>` (un reintento no
-  bloquea dos veces aunque lea las ubicaciones en otro orden); cada una en
-  su propia transacción con los candados de siempre (producto → ubicación).
-  Si otra operación apartó entre la lectura y el candado, `changeStockStatus`
-  lo rechaza bajo su candado y esa ubicación se salta.
+  con `inventory.status.change` y clave
+  `auto-<ejecución>-<n>-<12 caracteres de la ubicación>` (una repetición de
+  la misma clave responde lo que se bloqueó entonces). Cero libre no escribe
+  nada y no es error. **Nada se calcula fuera del candado y no hay
+  reintentos**: un rechazo por cantidad ya no puede pasar, aunque el lote
+  tenga salidas constantes (es justo el que caduca antes y se surte
+  primero).
 - **Sin autorización** del motor de aprobaciones: no saca existencias ni
   cambia el valor, se revierte a mano («Cambiar estado» a disponible con
   `inventory.status.release`) y un cambio de estado manual tampoco la pide.
 - **En una empresa de demostración sí** se ejecuta (nada sale a terceros).
-- Sin nada libre: «No se hizo: no había existencias libres de ese lote», y
-  **no cuenta como falla**.
+- Sin nada libre: «No se hizo: no había nada libre de ese lote», y **no
+  cuenta como falla**. Si una regla de cambio de estado lo rechaza (por
+  ejemplo, la ubicación ya no está en el alcance), la línea dice esa causa
+  con el nombre de la ubicación y cuenta como falla.
 - Queda dicho dónde y cuánto en el historial («Se bloqueó 10 piezas en
   A-01-2»), la bitácora del cambio de estado lleva `automatizacion: <id>` y
   la regla puede sumar «Avisar» a quien puede liberar.
-- **«Una vez por lote»:** la regla se activa una vez por lote y almacén. Si
-  después entran más existencias de ese mismo lote, **no se bloquean
-  solas**: quien recibe un lote por caducar lo ve en «Por caducar» y lo
-  bloquea a mano, o se archiva y se crea otra regla. Bloquear cada entrada
-  posterior exigiría escuchar las entradas, que hoy no publican un hecho.
+- **Se repite mientras dure:** si después entran más del mismo lote, o se
+  cancela el pedido que lo tenía apartado, la siguiente ronda lo bloquea
+  (ver «Una vez y mientras dure»).
+
+### Una vez y mientras dure (segunda revisión)
+
+- La memoria de «una vez» es **por acción**, no por regla. «Avisar», «Abrir
+  una incidencia» y «Abrir un conteo» se hacen una vez por sujeto (o una vez
+  al día, con existencias bajas). «Bloquear» es una acción de estado
+  (`repeats: { fact: "free" }` en su declaración): se repite mientras el
+  lote siga por caducar o caducado y tenga algo libre.
+- **La primera ejecución** de un sujeto corre todas las acciones de la regla
+  y, si la regla tiene alguna de «una vez», deja el sujeto atendido para
+  ellas (`subjectKey = state:<sujeto>`; se conserva con la limpieza de 90
+  días, `remembers`).
+- **Después**, una ronda abre una ejecución nueva para un sujeto ya atendido
+  **solo si** una acción que se repite tiene su dato en verdadero (el lote
+  tiene algo libre) y no hay otra ejecución de ese sujeto en espera o en
+  curso. Esa ejecución (`subjectKey = state:<sujeto>~r`, llave
+  `…~r#<n>`) corre **solo** las acciones que se repiten: el aviso no se da
+  otra vez. Los topes por hora y la pausa tras 5 fallas siguen valiendo.
+- Una regla con **solo** acciones que se repiten no tiene «primera vez»:
+  cada ronda en que el lote tenga algo libre abre una ejecución de repetición.
+  Un lote sin nada libre (todo apartado, dañado o ya bloqueado) no abre nada
+  y no queda atendido: cuando algo se libera, la siguiente ronda lo bloquea.
+- **El dato del escaneo es la misma regla que usa la acción:** «tiene algo
+  libre» es `freeToTake` por ubicación (lo libre del producto, de la
+  ubicación y del lote ahí, sin lo apartado ni lo que está en tarimas de
+  almacenamiento), calculado para la página entera con seis consultas
+  agrupadas (`lotsWithFreeStock`), nunca una por lote. Es solo una lectura:
+  el núcleo vuelve a decidir bajo sus candados.
+- **Sin ruido:** si entre la lectura y la ejecución alguien tomó lo libre,
+  la ejecución de repetición que no bloqueó nada **se borra al terminar** y
+  no deja línea en el historial ni cuenta como falla (se eligió esto en vez
+  de no abrirla porque la ronda no toma candados). La primera ejecución de
+  una regla que también avisa sí deja su línea («no había nada libre»): es
+  la vez en que se avisó.
 
 ## A nombre de quién actúa
 
@@ -220,7 +265,7 @@ alcance. La bitácora del servicio la escribe a nombre de esa persona y agrega
 - **Topes:** `AUTOMATION_RUNS_PER_HOUR` (30) ejecuciones por regla por hora y
   `AUTOMATION_COMPANY_RUNS_PER_HOUR` (300) por empresa; lo que pasa del tope
   no se ejecuta y queda una sola ejecución «Se alcanzó el tope por hora» por
-  regla y hora. Una ronda revisa como mucho 50 sujetos por regla.
+  regla y hora. Una ronda abre como mucho 50 ejecuciones por regla.
 - **Falla siempre:** una ejecución que falla (error inesperado tras 3
   intentos, o un servicio que responde que no) cuenta una falla seguida; con
   `AUTOMATION_PAUSE_AFTER` (5) seguidas la regla se apaga sola
@@ -242,10 +287,18 @@ alcance. La bitácora del servicio la escribe a nombre de esa persona y agrega
   `PENDING | RUNNING | DONE | SKIPPED | FAILED`, motivo, resultado por acción,
   intentos, fechas. Disparador: regla, `eventKey`, empresa y versión no
   cambian, y una ejecución terminada no cambia. Se borra a los 90 días
-  (ronda `platform.automations_cleanup`).
+  (ronda `platform.automations_cleanup`), salvo la primera ejecución hecha
+  de un estado de «una vez» (`remembers`). La única que se borra antes es
+  una repetición que no hizo nada (ver «Una vez y mientras dure»).
+- `automation_scan` (de empresa): dónde dejó la ronda la revisión de una
+  regla en un almacén (`placeKey`, vacío para toda la empresa): página por
+  la que sigue, si quedó sin terminar y cuántos sujetos revisó. Solo se
+  escribe cuando una ronda no llega al final o cuando llega después de no
+  haber llegado (sin escrituras cada hora en el caso normal).
 
-Sin cambios a tablas existentes. Migración de expansión
-`20261120150000_wms64_automations`.
+Sin cambios a tablas existentes. Migraciones de expansión
+`20261120150000_wms64_automations`, `20261120150100_wms64_run_subject` y
+`20261120150200_wms64_scan_cursor`.
 
 ## Costo en la transacción del hecho
 
@@ -277,7 +330,30 @@ sentencias del adaptador de su propio proceso.
   encendidas): apaga las reglas cuyo módulo ya no está contratado
   (`pauseReason = MODULE`; no se borran y no vuelven solas), y revisa los
   disparadores de estado, almacén por almacén, creando ejecuciones con su
-  llave de repetición.
+  llave de repetición (ver «Presupuesto del escaneo»).
+
+## Presupuesto del escaneo (segunda revisión)
+
+- Por regla y almacén, una ronda lee hasta `AUTOMATION_SCAN_PAGES` (40)
+  páginas (de 25 lotes o de 50 tareas o pedidos: 1,000 a 2,000 sujetos)
+  **empezando donde se quedó la anterior** (`automation_scan.nextPage`), y
+  abre hasta 50 ejecuciones por regla. Lo ya atendido se reconoce con una
+  consulta por página (sujeto y repeticiones), sin abrir nada.
+- Si llega al final, la siguiente ronda empieza otra vez desde el principio.
+  Si no llega (se acabó el presupuesto de páginas o el de 50 ejecuciones, o
+  el tope por hora), guarda la página por la que sigue (la misma página si
+  se detuvo a la mitad de ella) y **la ficha de la regla lo dice**: «No se
+  terminó de revisar en <almacén>: hay más de N por revisar. La siguiente
+  revisión sigue donde se quedó.» Así un sujeto nuevo se atiende a más
+  tardar en ⌈total ÷ 1,000⌉ + 1 rondas, sin importar cuánto haya ya
+  atendido delante.
+- Una regla cuyas acciones son **todas** de «mientras dure» le pide al
+  escaneo solo sujetos con el dato (`onlyWith`): «Lote por caducar» trae
+  entonces solo lotes con algo disponible en el almacén, así que lo ya
+  bloqueado deja de ocupar lugar en las páginas.
+- Costo medido (sentencias del adaptador de la prueba, sin nada nuevo que
+  abrir): 41 sentencias una ronda con una regla y 247 con doce (unas 19 por
+  regla); la prueba fija como máximo 45 más 30 por regla.
 
 ## Casos borde
 
@@ -323,7 +399,9 @@ sentencias del adaptador de su propio proceso.
 6. Que con el plan vencido tampoco se avise.
 7. Bloquear sin autorización del motor de aprobaciones, también en
    demostraciones, y solo con lotes por caducar.
-8. Que «una vez por lote» no bloquee lo que entra después del mismo lote.
+8. Que «Bloquear» se repita cada ronda mientras el lote siga por caducar y
+   tenga algo libre (avisos, incidencias y conteos, una vez); y que una
+   repetición que no bloqueó nada no deje línea.
 9. Que leer las reglas exija ver toda la empresa (Gerencia limitada a un
    almacén no las ve).
 
@@ -375,7 +453,33 @@ workers que escriben a la vez la marca del tope por hora responden «tope» y
 la ronda se detiene. (4) Ver M1. (5) «Abrir un conteo» no abre en tránsito,
 «Preparación» ni en una ubicación archivada.
 
-**Ya no aplica lo dicho arriba** sobre «una vez por lote»: un lote al que ya
-se bloqueó lo que había no vuelve a activarse aunque entre más del mismo
-lote; un lote **sin nada disponible** cuando se revisa no cuenta como
-atendido y se bloquea cuando llegue algo.
+Lo de M1 (reintentos) y M3 (`requiresFact`) quedó reemplazado por la
+segunda vuelta.
+
+## Revisión independiente, segunda vuelta («no unir», 2026-11-20) y cómo quedó
+
+**M1. Un lote sin nada libre al revisarlo quedaba atendido para siempre**
+(todo apartado por un pedido que después se cancela; o «Avisar + Bloquear»
+con el lote dañado y llegan disponibles). Se adoptó el diseño de quien
+coordina: memoria de «una vez» por acción, «Bloquear» que se repite
+mientras dure, el dato del escaneo con la misma regla que la acción y el
+núcleo interno bajo candado (secciones «Bloquear» y «Una vez y mientras
+dure»). Se quitó `requiresFact` y los reintentos; el dato `available` pasó
+a ser `free`.
+
+**M2. La ronda dejaba de ver sujetos nuevos detrás de lo ya atendido.** Se
+agregó el cursor por regla y almacén y el aviso «No se terminó de
+revisar» (sección «Presupuesto del escaneo»). Pruebas: 300 lotes atendidos
+con existencias más 8 nuevos (los 8 se atienden en una ronda), 600 tareas
+atendidas más 5 nuevas, y el cursor con una página por ronda.
+
+**Menores.** (1) El número de intento es el del más reciente más uno (nunca
+la cuenta de filas, que baja con la limpieza); al llegar a 50 intentos queda
+una línea «Se intentó 50 veces…» en el historial, una sola vez. (2) La
+línea de una falla de «Bloquear» dice la causa del cambio de estado y en qué
+ubicación. (3) Documentación al día.
+
+**Lo que no alcanzó el revisor, ya cubierto:** el costo de una ronda con
+muchas reglas (prueba que cuenta sentencias) y el plan que vence a media
+ejecución (la ejecución termina «No se hizo: el plan está vencido…», sin
+apagar la regla, sin contar falla y sin bloquear nada).

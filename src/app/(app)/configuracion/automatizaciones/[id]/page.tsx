@@ -87,6 +87,14 @@ export default async function AutomatizacionPage({
         <h2 id="historial" className="text-lg font-semibold">
           Historial
         </h2>
+        {rule.unfinished.map((line) => (
+          <p
+            key={line}
+            className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm"
+          >
+            {line}
+          </p>
+        ))}
         {rule.runs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Todavía no se ha activado.

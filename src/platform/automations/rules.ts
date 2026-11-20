@@ -645,6 +645,11 @@ export type AutomationRuleDetail = AutomationRuleSummary & {
   actions: { key: string; options: Record<string, unknown> }[];
   createdAt: Date;
   runs: AutomationRunView[];
+  /**
+   * «No se terminó de revisar…»: warehouses where the last round stopped
+   * before the end of what is in that state (it goes on in the next).
+   */
+  unfinished: string[];
   mayManage: boolean;
 };
 
@@ -674,8 +679,20 @@ export async function getAutomationRule(
     },
   });
   if (!row) return null;
+  const scans = await client.automationScan.findMany({
+    where: { ruleId: row.id, unfinished: true },
+    orderBy: { placeKey: "asc" },
+    take: 50,
+    select: { placeKey: true, reviewed: true },
+  });
+  const places = [
+    ...new Set([
+      ...(row.facilityId ? [row.facilityId] : []),
+      ...scans.flatMap((scan) => (scan.placeKey ? [scan.placeKey] : [])),
+    ]),
+  ];
   const [labels, person, runs, manage] = await Promise.all([
-    labelsFor(actor.organizationId, row.facilityId ? [row.facilityId] : []),
+    labelsFor(actor.organizationId, places),
     client.membership.findFirst({
       where: { userId: row.actorUserId },
       select: { user: { select: { name: true } } },
@@ -721,6 +738,12 @@ export async function getAutomationRule(
     actions,
     createdAt: row.createdAt,
     mayManage: manage,
+    unfinished: scans.map((scan) => {
+      const where = scan.placeKey
+        ? `en ${labels.facilities.get(scan.placeKey) ?? "un almacén"}`
+        : "en la empresa";
+      return `No se terminó de revisar ${where}: hay más de ${scan.reviewed.toLocaleString("es-MX")} por revisar. La siguiente revisión sigue donde se quedó.`;
+    }),
     runs: runs.map((run) => ({
       id: run.id,
       createdAt: run.createdAt,
@@ -728,18 +751,21 @@ export async function getAutomationRule(
       status: run.status,
       statusLabel: RUN_STATUS_LABELS[run.status],
       reason: run.reason,
-      results: (Array.isArray(run.results) ? run.results : []).map((entry) => {
-        const item = objectOf(entry);
-        const href = typeof item.href === "string" ? item.href : undefined;
-        return {
-          label: actionLabel(String(item.key ?? "")),
-          line: String(item.line ?? ""),
-          done: item.done === true,
-          ...(href && href.startsWith("/") && !href.startsWith("//")
-            ? { href }
-            : {}),
-        };
-      }),
+      results: (Array.isArray(run.results) ? run.results : [])
+        // A repeat leaves empty the actions it does not run again.
+        .filter((entry) => objectOf(entry).key)
+        .map((entry) => {
+          const item = objectOf(entry);
+          const href = typeof item.href === "string" ? item.href : undefined;
+          return {
+            label: actionLabel(String(item.key ?? "")),
+            line: String(item.line ?? ""),
+            done: item.done === true,
+            ...(href && href.startsWith("/") && !href.startsWith("//")
+              ? { href }
+              : {}),
+          };
+        }),
     })),
   };
 }

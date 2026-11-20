@@ -21,7 +21,7 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 
 ## Automatizaciones
 
-En **Configuración › Automatizaciones** ves las reglas de la empresa («Cuando pasa algo…, entonces…») y el historial de cada una: qué pasó y qué hizo, o por qué no. No las creas ni las cambias; eso lo hacen el titular y Administración. Si estás limitado a almacenes o zonas, no las ves.
+En **Configuración › Automatizaciones** ves las reglas de la empresa («Cuando pasa algo…, entonces…») y el historial de cada una: qué pasó y qué hizo, o por qué no (si hay muchísimo por revisar, dice «No se terminó de revisar» y la siguiente revisión sigue donde se quedó). No las creas ni las cambias; eso lo hacen el titular y Administración. Si estás limitado a almacenes o zonas, no las ves.
 
 ## Descargar información
 Donde hay un enlace **Descargar en Excel** o **Descargar PDF** (inventario, movimientos, embarques, traslados, órdenes de compra y reportes de compras), lo puedes usar.

@@ -1542,6 +1542,14 @@ beforeAll(async () => {
         subject: {},
       },
     });
+    await db.automationScan.create({
+      data: {
+        id: newId(),
+        organizationId,
+        ruleId: automationRuleId,
+        placeKey: "",
+      },
+    });
     await db.notification.create({
       data: {
         id: newId(),

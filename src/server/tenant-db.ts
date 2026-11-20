@@ -123,6 +123,7 @@ export const TENANT_MODELS = [
   "ProductionLotSequence",
   "AutomationRule",
   "AutomationRun",
+  "AutomationScan",
   "ProductionRequest",
   "RecipeLock",
   "Notification",

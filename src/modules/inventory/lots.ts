@@ -482,7 +482,15 @@ async function expiringFacility(
 /** Lots with stock that expired or are about to, what expires first on top. */
 export async function listExpiringLots(
   actor: InventoryActor,
-  options: { page?: number; facilityId?: string } = {},
+  options: {
+    page?: number;
+    facilityId?: string;
+    /**
+     * Only lots with something available there (an automation that blocks,
+     * WMS-64): what is already blocked or damaged leaves the list.
+     */
+    availableOnly?: boolean;
+  } = {},
 ): Promise<ExpiringPage> {
   await assertModulePermission(
     actor.organizationId,
@@ -505,11 +513,19 @@ export async function listExpiringLots(
       facilityName: "",
     };
   }
-  const { facility, day, noticeDays, where, inPlace } = await expiringWhere(
-    client,
-    actor.userId,
-    chosen,
-  );
+  const expiring = await expiringWhere(client, actor.userId, chosen);
+  const { facility, day, noticeDays, inPlace } = expiring;
+  const where = options.availableOnly
+    ? {
+        ...expiring.where,
+        balances: {
+          some: {
+            ...expiring.where.balances.some,
+            status: "AVAILABLE" as const,
+          },
+        },
+      }
+    : expiring.where;
   const total = await client.lot.count({ where });
   const pageCount = Math.max(1, Math.ceil(total / EXPIRING_PAGE_SIZE));
   const requested = Number.isSafeInteger(options.page)
