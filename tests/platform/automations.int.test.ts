@@ -226,6 +226,8 @@ afterAll(async () => {
   for (const organizationId of companies) {
     expect(await reconcileStock(organizationId)).toEqual([]);
   }
+  // Jobs this file queued never reach the queue of another file.
+  await db.job.deleteMany({ where: { organizationId: { in: companies } } });
   await db.$disconnect();
 });
 

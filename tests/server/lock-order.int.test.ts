@@ -1023,5 +1023,7 @@ describe("locks in one order (WMS-76)", () => {
       expect(available).toBeGreaterThanOrEqual(reserved);
     }
     expect(await reconcileStock(actor.organizationId)).toEqual([]);
+    // Jobs this test queued never reach the queue of another file.
+    await db.job.deleteMany({ where: { organizationId: actor.organizationId } });
   }, 240_000);
 });
