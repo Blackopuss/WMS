@@ -16,7 +16,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LOW_STOCK_PAGE_SIZE, listLowStock } from "@/modules/inventory";

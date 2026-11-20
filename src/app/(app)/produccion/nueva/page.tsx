@@ -15,7 +15,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

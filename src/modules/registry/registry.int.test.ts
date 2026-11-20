@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NAV_ITEMS } from "@/components";
+import { NAV_ITEMS } from "@/components/app-shell/nav";
 import { PERMISSIONS } from "@/platform/authorization";
 
 import { moduleRegistry } from "./index";

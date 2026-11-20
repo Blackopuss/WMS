@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import { motion, transitions } from "../motion";
 import { OfflineNotice } from "../pwa";
 import { ThemeToggle } from "../theme-toggle";
 import {
@@ -134,7 +133,10 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur-md md:hidden print:hidden">
-          <Warehouse aria-hidden="true" className="size-5 text-primary" />
+          <Warehouse
+            aria-hidden="true"
+            className="size-5 shrink-0 text-primary"
+          />
           <span className="min-w-0 truncate font-semibold">
             {current?.label ?? titleOf(pathname)}
           </span>
@@ -146,7 +148,8 @@ export function AppShell({
             compact
             className={canSearch ? undefined : "ml-auto"}
           />
-          <ThemeToggle />
+          {/* The theme switch lives in «Más» on the phone (WMS-86): with
+              «Buscar» and «Avisos» it left no room for the section's name. */}
         </header>
         <OfflineNotice />
 
@@ -165,13 +168,15 @@ export function AppShell({
         aria-label="Principal"
         className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden print:hidden"
       >
-        <ul className="grid grid-cols-5">
+        {/* As many columns as buttons (ADR 0080): with three sections and
+            «Más» they spread across the bar instead of leaning left. */}
+        <ul className="flex">
           {primary.map((item) => (
-            <li key={item.href}>
+            <li key={item.href} className="min-w-0 flex-1">
               <BottomLink item={item} active={isActive(pathname, item)} />
             </li>
           ))}
-          <li>
+          <li className="min-w-0 flex-1">
             <MoreMenu
               switcher={switcher}
               user={user}
@@ -218,22 +223,16 @@ function Brand() {
 
 function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
   const Icon = item.icon;
+  // The active section is a CSS state (ADR 0080): the sidebar is on every
+  // screen and no longer loads motion for it.
   return (
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      className="relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:text-accent-foreground"
+      className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground motion-reduce:transition-none"
     >
-      {active && (
-        <motion.span
-          layoutId="sidebar-active"
-          transition={transitions.spring}
-          className="absolute inset-0 rounded-lg bg-accent"
-          aria-hidden="true"
-        />
-      )}
-      <Icon aria-hidden="true" className="relative size-4.5" />
-      <span className="relative">{item.label}</span>
+      <Icon aria-hidden="true" className="size-4.5" />
+      <span>{item.label}</span>
     </Link>
   );
 }
@@ -309,6 +308,9 @@ function MoreMenu({
           </ul>
         </nav>
         <div className="mx-4 space-y-1 border-t pt-3">
+          <div className="px-1">
+            <ThemeToggle showLabel />
+          </div>
           {switcher}
           <UserBlock user={user} signOutAction={signOutAction} />
         </div>

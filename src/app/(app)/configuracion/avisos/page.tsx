@@ -2,7 +2,7 @@ import { ChevronLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PageContainer, PageHeader } from "@/components";
+import { PageContainer, PageHeader } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { notificationTypes } from "@/modules/registry";

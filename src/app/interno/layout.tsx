@@ -2,7 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ThemeToggle } from "@/components";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { requirePlatformStaff } from "@/platform/billing";
 
 // No title here: a 404 for someone who is not staff would carry it and tell

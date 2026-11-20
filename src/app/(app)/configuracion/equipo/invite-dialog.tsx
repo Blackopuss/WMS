@@ -4,7 +4,7 @@ import { CircleAlert, Loader2, UserPlus } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

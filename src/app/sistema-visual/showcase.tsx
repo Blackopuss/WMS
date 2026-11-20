@@ -4,7 +4,8 @@ import { Package, PackagePlus, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { EmptyState, ErrorState, FadeIn, LoadingState } from "@/components";
+import { FadeIn } from "@/components/motion";
+import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

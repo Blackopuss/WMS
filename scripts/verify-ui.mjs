@@ -441,10 +441,18 @@ try {
     );
 
     // Dark mode: the switch toggles the theme, persists and is reversible.
-    const toggle = page
-      .getByRole("switch", { name: "Modo oscuro" })
-      .filter({ visible: true })
-      .first();
+    // On the phone it lives in «Más» (WMS-86).
+    const openThemeSwitch = async () => {
+      if (mobile) {
+        await page.getByRole("button", { name: "Más" }).click();
+        await page.getByRole("dialog", { name: "Más opciones" }).waitFor();
+      }
+      return page
+        .getByRole("switch", { name: "Modo oscuro" })
+        .filter({ visible: true })
+        .first();
+    };
+    const toggle = await openThemeSwitch();
     await toggle.focus();
     await page.keyboard.press("Space");
     await page.waitForTimeout(300);
@@ -461,12 +469,9 @@ try {
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
     await page.screenshot({ path: `${OUT}/shell-dark-${viewport.name}.png` });
-    await page
-      .getByRole("switch", { name: "Modo oscuro" })
-      .filter({ visible: true })
-      .first()
-      .click();
+    await (await openThemeSwitch()).click();
     await page.waitForTimeout(300);
+    if (mobile) await page.keyboard.press("Escape");
     const backToLight = await page.evaluate(
       () => !document.documentElement.classList.contains("dark"),
     );
@@ -567,9 +572,26 @@ try {
       new URL(page.url()).pathname === "/inicio",
       "signed in: /ingresar goes straight to the app",
     );
-    await page.getByRole("button", { name: "Más" }).click();
-    await page.getByRole("button", { name: "Cerrar sesión" }).click();
-    await page.waitForURL("**/ingresar", { timeout: 20000 });
+    // WMS-86 (ADR 0080): with the screen loaded and no more JavaScript
+    // reachable (a flaky warehouse network), «Más» still opens and the person
+    // can sign out: nothing essential of the frame is downloaded on demand.
+    await context.route("**/_next/static/**", (route) => route.abort());
+    try {
+      await page.getByRole("button", { name: "Más" }).click();
+      const more = page.getByRole("dialog", { name: "Más opciones" });
+      check(
+        await more
+          .waitFor({ timeout: 5000 })
+          .then(() => true)
+          .catch(() => false),
+        "WMS-86: «Más» opens with the app's files blocked",
+      );
+      await page.getByRole("button", { name: "Cerrar sesión" }).click();
+      await page.waitForURL("**/ingresar", { timeout: 20000 });
+      check(true, "WMS-86: signing out works with the app's files blocked");
+    } finally {
+      await context.unroute("**/_next/static/**");
+    }
     await page.goto(`${BASE}/inventario`, { waitUntil: "networkidle" });
     check(
       new URL(page.url()).pathname === "/ingresar",

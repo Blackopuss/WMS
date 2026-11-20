@@ -2,7 +2,7 @@ import { ChevronLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { NoAccessState, PageContainer, PageHeader } from "@/components";
+import { NoAccessState, PageContainer, PageHeader } from "@/components/states";
 import { approvalTypes, operationSettings } from "@/modules/registry";
 import { getApprovalRules } from "@/platform/approvals";
 import { getModuleAccess } from "@/platform/billing";

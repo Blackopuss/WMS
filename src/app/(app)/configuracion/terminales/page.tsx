@@ -7,7 +7,7 @@ import {
   NoAccessState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { formatDateTime } from "@/lib";
 import { operationSettings } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";

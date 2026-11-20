@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { WarehouseScene } from "@/components/warehouse-scene";
-
 /**
- * Hero visual. The 2D warehouse illustration is painted with the page (it
+ * Hero visual. The 2D warehouse illustration (`children`, drawn by the
+ * server so it is not part of this script; ADR 0080) is painted with the page (it
  * shows without JavaScript and keeps the space, so nothing shifts); the 3D
  * warehouse takes its place once the page is idle, and only where WebGL runs
  * on real graphics hardware: with software rendering (no GPU, blocked
@@ -13,7 +12,7 @@ import { WarehouseScene } from "@/components/warehouse-scene";
  * stays. three.js is never downloaded in that case. Decorative, hidden from
  * screen readers.
  */
-export function HeroScene() {
+export function HeroScene({ children }: { children: React.ReactNode }) {
   const stage = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
 
@@ -62,7 +61,7 @@ export function HeroScene() {
         className="absolute inset-0 grid place-items-center transition-opacity duration-700 data-[ready=true]:opacity-0 motion-reduce:transition-none"
         data-ready={ready}
       >
-        <WarehouseScene className="aspect-[48/34] w-full" still />
+        {children}
       </div>
       <div
         ref={stage}
