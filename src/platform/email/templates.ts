@@ -206,6 +206,8 @@ export function demoCompanyEmail(input: {
   name: string;
   organizationName: string;
   days: number;
+  /** Where to write if the person did not ask for it (CONTACT_EMAIL). */
+  contactEmail: string;
 }): EmailMessage {
   const company = oneLine(input.organizationName, 100);
   return {
@@ -220,7 +222,7 @@ export function demoCompanyEmail(input: {
       "",
       "Esta cuenta queda ligada a la demostración: si después contratas WMS, tu empresa real se crea con otra cuenta (otro correo).",
       "",
-      "Si no pediste una demostración, ignora este mensaje.",
+      `Si no pediste una demostración, escríbenos a ${input.contactEmail}.`,
     ].join("\n"),
   };
 }

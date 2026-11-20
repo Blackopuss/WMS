@@ -19,6 +19,7 @@ import {
   type TenantDb,
 } from "@/server";
 
+import { CONTACT_EMAIL } from "./contact";
 import { isPlatformStaff, setEntitlement } from "./provisioning";
 import type { ModuleRegistry } from "./registry";
 
@@ -256,6 +257,7 @@ export async function createDemoCompany(
           name: ownerName,
           organizationName: name,
           days: DEMO_PLAN.days,
+          contactEmail: CONTACT_EMAIL,
         }),
       );
     } catch (error) {

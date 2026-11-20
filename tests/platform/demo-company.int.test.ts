@@ -24,6 +24,7 @@ import {
   getDemoCompany,
   listCompaniesForStaff,
   listDemoCompanies,
+  CONTACT_EMAIL,
   previewDemoAccount,
   recordManualPayment,
 } from "@/platform/billing";
@@ -207,6 +208,8 @@ describe("creating a demonstration", () => {
     expect(mail).toHaveLength(1);
     expect(mail[0]!.subject).toContain("empresa de demostración");
     expect(mail[0]!.text).toContain("otra cuenta");
+    expect(mail[0]!.text).toContain(CONTACT_EMAIL);
+    expect(mail[0]!.text).not.toContain("ignora");
     expect(mail[0]!.text).not.toMatch(/https?:\/\//);
     // That account cannot create its real company afterwards.
     expect(
