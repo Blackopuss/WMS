@@ -113,6 +113,7 @@ export {
 } from "./request-rules";
 export {
   ORDER_FROM_REQUEST_NOTICE,
+  OUTPUT_VERIFIED_NOTICE,
   PRODUCTION_NOTIFICATION_TYPES,
   REQUEST_ANSWERED_NOTICE,
   REQUEST_TO_DECIDE_NOTICE,
@@ -143,7 +144,10 @@ export {
 export { PRODUCTION_SEARCH_SOURCES } from "./search";
 // WMS-29 (ADR 0087): production reports, scrap of material, lot numbering.
 export { PRODUCTION_ORDER_REPORTED_OPERATION } from "./order-process";
-export { PRODUCTION_BATCH_PROCESS } from "./report-process";
+export {
+  PRODUCTION_BATCH_PROCESS,
+  PRODUCTION_BATCH_VERIFICATION_OPERATION,
+} from "./report-process";
 export {
   consumeNow,
   cumulativeThatFits,

@@ -247,6 +247,7 @@ export async function evidencePhotoLinksOf(
       warehouseTaskId: true,
       purchaseReceiptId: true,
       productionReportId: true,
+      qualityInspectionId: true,
       incidentNoteId: true,
       createdByUserId: true,
       createdAt: true,

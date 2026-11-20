@@ -252,7 +252,7 @@ Permisos del módulo Producción; ninguno da nada sin el módulo contratado (MOD
 | `production.report.reverse` | Corregir un reporte con su reversa; WMS-29. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
 | `production.scrap.create` | Reportar merma extra de material, fuera del costo del producto; WMS-29. | Sí | Sí | No | No | No | No | No | No | No | Sí | Sí | No |
 | `production.shift.manage` | Configurar los turnos de producción por almacén; WMS-29. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
-| `production.output.verify` | Verificar lo producido cuando la empresa no tiene Calidad (P5); con Calidad lo hace el Inspector; WMS-30B. | Sí | Sí | No | No | No | No | No | No | No | No | Sí | No |
+| `production.output.verify` | Verificar lo producido cuando la empresa no tiene Calidad (P5): el Encargado de producción y el jefe de almacén (Administración, Almacén y Supervisor de almacén, P3); con Calidad lo hace el Inspector; WMS-30B (ADR 0091). | Sí | Sí | Sí | No | No | Sí | No | No | No | No | Sí | No |
 
 Almacén y Supervisor de almacén **deciden** solicitudes de producción (P7c) y leen recetas y órdenes para hacerlo, pero no reciben ningún permiso que cambie órdenes: aceptar crea la orden por el servicio de WMS-28B, que guarda quién aprobó y quién ejecutó (P7d); cancelar y cerrar siguen siendo del Encargado de producción y de Administración. Sin Calidad, verifican lo producido con `inventory.status.release` (P3, P5).
 

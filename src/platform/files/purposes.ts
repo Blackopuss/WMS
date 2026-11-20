@@ -29,6 +29,7 @@ export const EVIDENCE_OWNER_KINDS = {
   warehouse_task: "warehouseTaskId",
   purchase_receipt: "purchaseReceiptId",
   production_report: "productionReportId",
+  quality_inspection: "qualityInspectionId",
 } as const;
 
 export type EvidenceOwnerKind = keyof typeof EVIDENCE_OWNER_KINDS;
@@ -168,6 +169,40 @@ export const FILE_PURPOSES = {
     extensions: PHOTO_EXTENSIONS,
     evidence: { owner: "production_report", perRecord: 5, perOwner: 5 },
   },
+  /**
+   * WMS-30B (ADR 0091): photos of a verification of Calidad (what was
+   * missing, rejected or in quarantine). The verification exists before
+   * the photo: bound to it. Who reaches its place sees them
+   * (`EvidenceOwners`).
+   */
+  quality_inspection_photo: {
+    write: "quality.inspection.decide",
+    read: "quality.inspection.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: {
+      owner: "quality_inspection",
+      perRecord: 10,
+      perOwner: 10,
+      boundToOwner: true,
+    },
+  },
+  /**
+   * WMS-30B: the same verification made without Calidad (P5): who
+   * verifies produced output takes the photos.
+   */
+  production_verification_photo: {
+    write: "production.output.verify",
+    read: "production.order.read",
+    maxBytes: 5 * MB,
+    extensions: PHOTO_EXTENSIONS,
+    evidence: {
+      owner: "quality_inspection",
+      perRecord: 10,
+      perOwner: 10,
+      boundToOwner: true,
+    },
+  },
 } as const satisfies Record<string, Purpose>;
 
 export type FilePurpose = keyof typeof FILE_PURPOSES;
@@ -196,6 +231,8 @@ export function ownerWhere(owner: EvidenceOwner) {
       return { purchaseReceiptId: String(owner.id).slice(0, 36) };
     case "production_report":
       return { productionReportId: String(owner.id).slice(0, 36) };
+    case "quality_inspection":
+      return { qualityInspectionId: String(owner.id).slice(0, 36) };
   }
 }
 
@@ -206,6 +243,7 @@ export function ownerOfLink(link: {
   warehouseTaskId?: string | null;
   purchaseReceiptId?: string | null;
   productionReportId?: string | null;
+  qualityInspectionId?: string | null;
 }): EvidenceOwner | null {
   if (link.incidentId) return { kind: "incident", id: link.incidentId };
   if (link.processStepId) {
@@ -219,6 +257,9 @@ export function ownerOfLink(link: {
   }
   if (link.productionReportId) {
     return { kind: "production_report", id: link.productionReportId };
+  }
+  if (link.qualityInspectionId) {
+    return { kind: "quality_inspection", id: link.qualityInspectionId };
   }
   return null;
 }
