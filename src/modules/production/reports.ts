@@ -1766,8 +1766,7 @@ async function leftInAreaOf(
     const there = balances
       .filter(
         (row) =>
-          row.productId === line.productId &&
-          row.lotKey === (line.lotId ?? ""),
+          row.productId === line.productId && row.lotKey === (line.lotId ?? ""),
       )
       .reduce((total, row) => total.plus(row.quantity.toString()), dec(0));
     const shown = there.lessThan(left) ? there : left;
