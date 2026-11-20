@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   KPI_MAX_DAYS,
+  countChange,
+  previousPeriod,
+  shareChange,
+  timeChange,
   daysOfInventory,
   durationText,
   percentile,
@@ -133,5 +137,59 @@ describe("on time", () => {
     expect(shippedOnTime(null, "2026-11-12", "America/Mexico_City")).toBe(
       false,
     );
+  });
+});
+
+// WMS-34 (ADR 0085): the period compared and how a change is told.
+describe("previousPeriod", () => {
+  it("days and written days: the same days right before", () => {
+    expect(
+      previousPeriod(resolvePeriod("2026-11-19", { preset: "7" })),
+    ).toMatchObject({ from: "2026-11-06", to: "2026-11-12", days: 7 });
+    expect(
+      previousPeriod(
+        resolvePeriod("2026-11-19", { from: "2026-11-01", to: "2026-11-10" }),
+      ),
+    ).toMatchObject({ from: "2026-10-22", to: "2026-10-31", days: 10 });
+  });
+
+  it("last month: the whole month before it", () => {
+    expect(
+      previousPeriod(resolvePeriod("2026-03-15", { preset: "anterior" })),
+    ).toMatchObject({ from: "2026-01-01", to: "2026-01-31", days: 31 });
+  });
+
+  it("this month on its first day: the first day of the month before", () => {
+    expect(
+      previousPeriod(resolvePeriod("2026-12-01", { preset: "mes" })),
+    ).toMatchObject({ from: "2026-11-01", to: "2026-11-01", days: 1 });
+  });
+
+  it("this month: the same days of the month before, never past its end", () => {
+    expect(
+      previousPeriod(resolvePeriod("2026-11-19", { preset: "mes" })),
+    ).toMatchObject({ from: "2026-10-01", to: "2026-10-19", days: 19 });
+    expect(
+      previousPeriod(resolvePeriod("2026-03-31", { preset: "mes" })),
+    ).toMatchObject({ from: "2026-02-01", to: "2026-02-28", days: 28 });
+  });
+});
+
+describe("changes", () => {
+  it("counts with their share when the one before is not zero", () => {
+    expect(countChange(15, 12)).toBe("Subió 3 (25.0 %)");
+    expect(countChange(9, 12)).toBe("Bajó 3 (25.0 %)");
+    expect(countChange(4, 0)).toBe("Subió 4");
+    expect(countChange(7, 7)).toBe("Sin cambio");
+  });
+
+  it("shares in points, times faster or slower", () => {
+    expect(shareChange("80.0", "75.0")).toBe("Subió 5.0 puntos");
+    expect(shareChange("70.0", "75.5")).toBe("Bajó 5.5 puntos");
+    expect(shareChange(null, "75.0")).toBe("—");
+    expect(timeChange(30 * 60_000, 45 * 60_000)).toBe("15 min más rápido");
+    expect(timeChange(2 * 3_600_000, 3_600_000)).toBe("1 h más lento");
+    expect(timeChange(null, 1)).toBe("—");
+    expect(timeChange(60_000, 90_000)).toBe("Sin cambio");
   });
 });

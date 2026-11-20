@@ -1328,6 +1328,54 @@ try {
     await page.close();
   }
 
+  // WMS-34: dashboards. The comparison with the period before is a table
+  // that fits a phone; the downloads and the open work are 44px links with
+  // words. Read-only.
+  {
+    const page = await signedInPage(
+      browser,
+      { width: 320, height: 720 },
+      { isMobile: true, hasTouch: true },
+    );
+    await page.goto(`${BASE}/inventario/indicadores`, {
+      waitUntil: "networkidle",
+    });
+    const state = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      compared: document.querySelectorAll("#kpi-comparado").length,
+    }));
+    check(
+      state.overflow <= 0 && state.compared === 1,
+      "WMS-34 320px: Indicadores fits and compares with the period before",
+    );
+    const downloads = await page
+      .locator("a[href^='/api/exportaciones/indicadores']")
+      .evaluateAll((items) =>
+        items.map((item) => ({
+          height: item.getBoundingClientRect().height,
+          text: (item.textContent ?? "").trim(),
+        })),
+      );
+    check(
+      downloads.length === 2 &&
+        downloads.every(
+          (d) => d.height >= 44 && d.text.startsWith("Descargar"),
+        ),
+      "WMS-34: the two downloads are 44px links with words",
+    );
+    await page.goto(`${BASE}/inicio`, { waitUntil: "networkidle" });
+    const rows = await page
+      .locator("a[href^='/tareas?vista=open&persona=']")
+      .evaluateAll((items) =>
+        items.map((item) => item.getBoundingClientRect().height),
+      );
+    check(
+      rows.every((height) => height >= 44),
+      "WMS-34: each person of the open work is a 44px target",
+    );
+    await page.close();
+  }
+
   // WMS-88: the page to stop notices by mail. Opening it changes nothing;
   // the button answers, and the focus goes to what it says. A link that
   // works and an expired one come from `npx tsx

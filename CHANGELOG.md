@@ -8,6 +8,22 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-34** Tableros por rol y exportación, sin pantalla nueva: Inicio (Supervisión)
+  suma la tarjeta «Trabajo abierto por persona» (tareas asignadas sin terminar
+  y con problema, cada fila abre Tareas › Abiertas con `?persona=`, misma
+  condición `assignedOpenWhere`); Inventario › «Indicadores» (Gerencia) suma
+  «Comparado con el periodo anterior» (`previousPeriod`; con «Este mes», los
+  mismos días del mes anterior), la vista «Por almacén» (`?vista=almacenes`,
+  `getIndicatorsByFacility`, fila «Toda la empresa» solo sin límite) y
+  «Descargar» en Excel o CSV (tipo `indicadores` de `buildExport`, ruta
+  `/api/exportaciones/indicadores`, valor solo con `inventory.cost.read`,
+  hoja «Por persona» solo con su permiso, cambio en palabras para no
+  neutralizarlo como fórmula). Sin permisos, tablas ni migraciones nuevas.
+  Revisor independiente en dos vueltas (la primera «no unir» por el periodo
+  anterior de «Este mes» y tres menores; la segunda «unir»). Pendiente:
+  rendimiento con 10,000 productos (lo causan «sin movimiento» y «mayor
+  movimiento» de WMS-32). ADR 0085.
+
 - **WMS-85** Reactivar un almacén archivado: servicio `reactivateFacility`
   (`src/platform/locations/facilities.ts`), permiso nuevo
   `inventory.facility.reactivate` (titular y Administración; no se conserva en

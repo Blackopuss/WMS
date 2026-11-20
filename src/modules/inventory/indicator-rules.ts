@@ -210,3 +210,71 @@ export function shippedOnTime(
 ): boolean {
   return shippedAt !== null && calendarDay(shippedAt, timeZone) <= dueOn;
 }
+
+/** Last day of the month a day is in: «2026-02-10» → «2026-02-28». */
+function monthEnd(day: string): string {
+  return shiftDay(monthStart(day, 1), -1);
+}
+
+/**
+ * The period a period is compared with (WMS-34, ADR 0085): the same days
+ * right before it; for «Mes anterior», the whole month before; for «Este
+ * mes» (the 1st to today), the same days of the month before, never past
+ * its end.
+ */
+export function previousPeriod(period: KpiPeriod): KpiPeriod {
+  let from: string;
+  let to: string;
+  if (period.preset === "anterior") {
+    from = monthStart(period.from, -1);
+    to = monthEnd(from);
+  } else if (period.preset === "mes") {
+    from = monthStart(period.from, -1);
+    const sameDays = shiftDay(from, period.days - 1);
+    const end = monthEnd(from);
+    to = sameDays < end ? sameDays : end;
+  } else {
+    to = shiftDay(period.from, -1);
+    from = shiftDay(to, 1 - period.days);
+  }
+  return {
+    from,
+    to,
+    next: shiftDay(to, 1),
+    days: daysBetween(from, to) + 1,
+    preset: null,
+    clipped: false,
+  };
+}
+
+/**
+ * Change of a count against the previous period: «Subió 12 (25.0 %)»,
+ * «Bajó 3», «Sin cambio». The share only when the previous is not zero.
+ * Words, not «+»/«−»: a cell starting with a sign would reach a
+ * spreadsheet as a neutralized formula («'+12»).
+ */
+export function countChange(now: number, before: number): string {
+  const diff = now - before;
+  if (diff === 0) return "Sin cambio";
+  const verb = diff > 0 ? "Subió" : "Bajó";
+  const text = `${verb} ${Math.abs(diff).toLocaleString("es-MX")}`;
+  if (before === 0) return text;
+  const share = dec(Math.abs(diff)).times(100).dividedBy(before).toFixed(1);
+  return `${text} (${share} %)`;
+}
+
+/** Change of a share in points: «Subió 5.0 puntos»; «—» without one. */
+export function shareChange(now: string | null, before: string | null) {
+  if (now === null || before === null) return "—";
+  const diff = dec(now).minus(before);
+  if (diff.isZero()) return "Sin cambio";
+  return `${diff.greaterThan(0) ? "Subió" : "Bajó"} ${diff.abs().toFixed(1)} puntos`;
+}
+
+/** Change of a time: «12 min más rápido», «1 h más lento»; «—» without one. */
+export function timeChange(now: number | null, before: number | null) {
+  if (now === null || before === null) return "—";
+  const diff = now - before;
+  if (Math.abs(diff) < 60_000) return "Sin cambio";
+  return `${durationText(Math.abs(diff))} ${diff < 0 ? "más rápido" : "más lento"}`;
+}

@@ -263,6 +263,10 @@ export {
   getTask,
   listTaskPeople,
   listTasks,
+  listOpenWorkByPerson,
+  assignedOpenWhere,
+  OPEN_WORK_PEOPLE_MAX,
+  type OpenWorkRow,
   pickUpTask,
   reachesTask,
   releaseTask,
@@ -925,8 +929,13 @@ export {
   KPI_IDLE_SCAN_MAX,
   KPI_ORDERS_MAX,
   KPI_TASK_ROWS_MAX,
+  KPI_FACILITIES_MAX,
   KPI_TOP_PRODUCTS,
+  getIndicatorsByFacility,
   getWarehouseIndicators,
+  type IndicatorsByFacility,
+  type KpiFacilityRow,
+  type KpiHeadline,
   type KpiIdleRow,
   type KpiPersonRow,
   type KpiProductRow,
@@ -939,10 +948,20 @@ export {
   KPI_DEFAULT_PRESET,
   KPI_MAX_DAYS,
   KPI_PRESETS,
+  countChange,
   durationText,
+  previousPeriod,
+  shareChange,
+  timeChange,
   type KpiPeriod,
   type KpiPreset,
 } from "./indicator-rules";
+
+export {
+  headlineFigures,
+  headlineTruncated,
+  type HeadlineFigure,
+} from "./indicator-headline";
 
 // WMS-66: what Inventario offers to the global search (ADR 0081).
 export { INVENTORY_SEARCH_SOURCES } from "./search";
