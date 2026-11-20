@@ -28,7 +28,7 @@ bloquean solo su almacén, después de los productos. Detalle en
 | Grupo | Archivo | Qué ofrece |
 | --- | --- | --- |
 | Alta de empresa | `bootstrap.ts` | `ensureDefaultLocation`, `createDefaultLevels` (en la transacción que crea la empresa o el almacén; los scripts importan `@/platform/locations/bootstrap`) |
-| Almacenes | `facilities.ts` | `createFacility` (dentro del límite `facilities`), `updateFacility`, `archiveFacility` (solo vacío y sin nada abierto; archiva también sus ubicaciones, WMS-82), `listFacilities`, `switchFacility`, `activeFacilityOf`, `getActiveFacility` |
+| Almacenes | `facilities.ts` | `createFacility` (dentro del límite `facilities`), `updateFacility`, `archiveFacility` (solo vacío y sin nada abierto; archiva también sus ubicaciones, WMS-82), `reactivateFacility` y `listArchivedFacilities` (WMS-85), `listFacilities`, `switchFacility`, `activeFacilityOf`, `getActiveFacility` |
 | Árbol | `hierarchy.ts` | `createLocation`, `editLocation`, `renameLocation`, `moveLocation`, `archiveLocation`, `restoreLocation`, `listLocations`, `saveLocationLevels`, `setStagingLocation`, `setLocationLimits` |
 | Reglas puras | `levels.ts`, `limits.ts` | `canContain`, `fitProblem`, rutas (`locationPath`, `LOCATION_PARENTS`), `normalizeLocationCode`, usos `LOCATION_TYPES`; capacidad (`parseCapacity`, `describeCapacity`…) |
 | Lugares fijos | `locations.ts`, `staging.ts`, `transit.ts` | `getDefaultLocation` (General del almacén activo), `ensureStagingLocation`, `ensureTransitLocation` (la de tránsito de un almacén, la crea el primer traslado hacia él) y `NOT_TRANSIT` |
@@ -52,11 +52,17 @@ esperarlos (WMS-82, ADR 0077): un almacén archivado no recibe existencias ni
 documentos, y la base lo repite para existencias y ubicaciones
 (`stock_balance_archived_location_*`, `location_archived_facility_*`); los
 documentos los sostienen sus servicios con `holdOpenFacility`. Una ubicación
-de un almacén archivado no se reactiva.
+de un almacén archivado no se reactiva por su cuenta: `reactivateFacility`
+(WMS-85, ADR 0088) devuelve el almacén y las ubicaciones con su misma marca
+`archivedAt` (más «General» y tránsito), dentro del límite `facilities`, con
+los almacenes en exclusivo y sus ubicaciones sin esperar, como archivar.
+`listArchivedFacilities` lista, solo para quien puede reactivar, los
+archivados que alcanza completos y si tienen existencias heredadas.
 
 ## Permisos
 
-`inventory.location.read|create|update|archive` (son del módulo Inventario) y
+`inventory.location.read|create|update|archive` e `inventory.facility.reactivate`
+(titular y Administración; no en una terminal con PIN) (son del módulo Inventario) y
 `platform.organization.update` para elegir la ubicación de preparación.
 
 ## Tablas
@@ -75,4 +81,5 @@ de [inventory](inventory.md), que es quien mete existencias.
 0056 (campos personalizados), 0010 (ubicación inicial), 0011 (jerarquía), 0035 (varios almacenes), 0036
 (niveles), 0038 (alcance), 0039 (capacidad y restricciones), 0048
 (traslados entre almacenes), 0072 (uso «Restauración» y cambio de uso con
-existencias disponibles), 0074 (orden de candados), 0077 (almacén archivado).
+existencias disponibles), 0074 (orden de candados), 0077 (almacén archivado),
+0088 (reactivar un almacén).

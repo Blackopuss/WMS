@@ -28,7 +28,7 @@ Chats abiertos el 2026-11-19, cada uno en su rama creada desde `pruebas`; report
 | WMS-65 Slotting: sugerencias de reubicación por rotación (solo recomienda; crea tareas con `createTask`; revisor) | `session_01QMjUPVq6Xuy8QV3GQkuTzg` | `wms-65-slotting` | Opus, medio | 0086 (`20261119190000`) | abierto el 2026-11-19, al unirse WMS-32 |
 | WMS-29 Reporte de producción con foto: consumo automático de la receta, movimiento `PRODUCTION`, lote en inspección, costo, merma, reversa, rastreo (corazón; revisor independiente) | `session_01QMjUPVUzokpmEWUQHrfePF` | `wms-29-reporte-produccion` | Opus, medio | 0087 (`20261120100000`) | abierto el 2026-11-19, al unirse WMS-84 |
 | WMS-89 Auditoría de dependencias: `effect` 3.22.1 por `overrides` (aviso GHSA-7589-6fvf-x4pw vía `prisma → @prisma/config`; CI fallaba solo en `npm audit`) | `session_01QMjUPVRnaEXyTub59B6RoH` | `wms-89-auditoria-effect` | Opus, medio | ADR 0002 (sección nueva) | Cerrado y unido el 2026-11-19 |
-| WMS-85 Reactivar un almacén archivado (corazón: almacenes y ubicaciones; revisor independiente) | `session_01QMjUPYFyouekqF4KGVHmYU` | `wms-85-reactivar-almacen` | Opus, medio | 0088 (`20261120110000`) | abierto el 2026-11-19 |
+| WMS-85 Reactivar un almacén archivado (corazón: almacenes y ubicaciones; revisor independiente) | `session_01QMjUPYFyouekqF4KGVHmYU` | `wms-85-reactivar-almacen` | Opus, medio | 0088 (sin migración) | **Cerrado y unido el 2026-11-20** (commit de la rama `4ab0096`; revisor «unir») |
 | WMS-44 Empresa de demostración con datos genéricos (alta de empresas y módulos; revisor) | `session_01QMjUPY7ZYdHYm3Js2XYfPR` | `wms-44-empresa-demostracion` | Opus, medio | 0089 (`20261120120000`) | abierto el 2026-11-19 |
 | WMS-90 Pantalla para transferir la titularidad (seguridad y permisos; revisor) | `session_01QMjUPULSLQRiCFTwrbHRjy` | `wms-90-transferir-titularidad` | Opus, medio | 0090 (`20261120130000`) | abierto el 2026-11-19 |
 
@@ -45,6 +45,8 @@ WMS-86, WMS-87 y WMS-88 son números nuevos. El siguiente ADR libre es el 0091 (
 **Sin abrir, con su razón:** producción WMS-29 → WMS-31 → WMS-30B → WMS-79 (después de WMS-84, uno tras otro); WMS-85 (corazón; sin decisión del fundador); WMS-33 (depende de producción); WMS-34 y WMS-65 (dependen de WMS-32); WMS-64 automatizaciones (crea tareas y bloquea: corazón, y falta definir su flujo); WMS-44 y WMS-45 (después de WMS-43); WMS-62, WMS-69, WMS-47, WMS-48 y WMS-70 (esperan al fundador: integraciones, precios, servidor).
 
 **Relevo de los chats que implementan: 500,000 tokens** (fundador, 2026-11-19; reemplaza los 400,000). Al **cerrar cada paso, `main` queda igual que `pruebas`.** Entorno de quien coordina levantado el 2026-11-19; la corrida de CI del commit `6e23dd9` estaba en curso al abrir.
+
+**Estado a las 03:50 UTC del 2026-11-20:** WMS-85 unido (ADR 0088, 3,180 pruebas en local); `pruebas` y `main` iguales; CI de `e13d925` en verde. El límite de uso detuvo a todos los chats y revisores de 00:50 a 03:40 UTC y ya se reanudaron. WMS-29 (commit `00adf30`) con el revisor corriendo y el chat trayendo `pruebas`. WMS-90 con «no unir» del revisor (dos medios: el código de dos pasos es reutilizable en `confirmIdentity` y el acceso de soporte abierto en carrera con aceptar) y el chat corrigiendo. WMS-65 con «unir», falta su commit final. WMS-34 corrigiendo el hallazgo mayor para una segunda vuelta. WMS-44 programando. Sin respuesta del fundador sobre WMS-45 y WMS-91.
 
 ## Relevo anterior de quien coordina (2026-11-17, 03:32 UTC)
 
