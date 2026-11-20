@@ -254,6 +254,7 @@ export {
   acceptTask,
   assignTask,
   blockTask,
+  cancelLockedTasks,
   cancelTask,
   confirmPick,
   countMyTasks,

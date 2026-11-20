@@ -49,7 +49,10 @@ código»):
   verificación aprueba de un lote producido) sale de una ubicación de uso
   «Producción» con su acomodo, y la tarea guarda el lote
   (`warehouse_task.productionReportId`, inmutable, solo `PUTAWAY`). Ningún
-  acomodo se entrega en un área de producción. `settleProductionStored`
+  acomodo se recomienda ni se entrega en un área de producción ni dentro de
+  una (`IN_PRODUCTION_AREA`). Cancelar un acomodo de un lote también revisa
+  «Se guardó». `cancelLockedTasks` cancela tareas ya bloqueadas por su
+  documento con bitácora y aviso `inventory.task_cancelled`. `settleProductionStored`
   completa la operación «Se guardó» del lote (`production-batch.ts`, el
   documento de proceso del lote, declarado aquí porque Inventario no
   importa Producción) cuando todo el lote está decidido y no queda ningún

@@ -23,6 +23,7 @@ import { nextTaskNumber } from "./picking";
 import {
   PRODUCTION_BATCH_PROCESS,
   PRODUCTION_BATCH_STORED_OPERATION,
+  productionLotSettled,
 } from "./production-batch";
 import { checkPlacement, loadPlacementRules } from "./placement";
 import {
@@ -36,6 +37,7 @@ import { AVAILABLE_ANY_LOT, type StockStatus } from "./stock-status";
 import { OPEN_TASK_STATUSES, formatTaskNumber } from "./task-states";
 import { theContainer } from "./container-rules";
 import {
+  IN_PRODUCTION_AREA,
   STORE_PLACE,
   facilityHasPlaces,
   isWaitingPlace,
@@ -117,6 +119,8 @@ export async function putawayTarget(
       id: { not: input.fromLocationId },
       // A leaf: goods go on the shelf, not on the aisle that holds it.
       children: { none: { archivedAt: null } },
+      // WMS-31: never inside an area of production.
+      NOT: IN_PRODUCTION_AREA,
       ...(isLimited(scoped) ? { AND: [scoped] } : {}),
     },
     take: MAX_CANDIDATES,
@@ -392,47 +396,9 @@ export async function settleProductionStored(
     PRODUCTION_BATCH_STORED_OPERATION,
   );
   if (!stages.ok) return { applied: false };
-  const [open, outputs, inspections] = await Promise.all([
-    tx.warehouseTask.findFirst({
-      where: {
-        productionReportId,
-        kind: "PUTAWAY",
-        status: { in: [...OPEN_TASK_STATUSES] },
-      },
-      select: { id: true },
-    }),
-    tx.productionReportLine.findMany({
-      where: { reportId: productionReportId, kind: "OUTPUT" },
-      select: { id: true, quantity: true },
-    }),
-    tx.qualityInspection.findMany({
-      where: {
-        productionReportId,
-        state: { in: ["OPEN", "DECIDED"] },
-      },
-      select: {
-        state: true,
-        productionReportLineId: true,
-        expectedQuantity: true,
-      },
-    }),
-  ]);
-  if (open) return { applied: false };
-  if (inspections.some((row) => row.state === "OPEN")) {
+  if (!(await productionLotSettled(tx, productionReportId))) {
     return { applied: false };
   }
-  const decided = new Map<string, Decimal>();
-  for (const row of inspections) {
-    const line = row.productionReportLineId ?? "";
-    decided.set(
-      line,
-      (decided.get(line) ?? dec(0)).plus(row.expectedQuantity.toString()),
-    );
-  }
-  const pending = outputs.some((line) =>
-    (decided.get(line.id) ?? dec(0)).lessThan(line.quantity.toString()),
-  );
-  if (pending) return { applied: false };
   return completeOperationStage(
     tx,
     PRODUCTION_BATCH_PROCESS,

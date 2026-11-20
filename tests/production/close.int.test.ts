@@ -3,6 +3,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { newId } from "@/lib";
 import {
   acceptTask,
+  cancelTask,
   deliverTask,
   pickUpTask,
   registerEntry,
@@ -13,8 +14,13 @@ import {
   PRODUCTION_BATCH_VERIFICATION_OPERATION,
   PRODUCTION_ORDER_CLOSED_OPERATION,
   PRODUCTION_ORDER_PROCESS,
+  activateRecipeVersion,
   closeProductionOrder,
+  createRecipe,
   getProductionOrder,
+  getProductionReport,
+  setRecipeInput,
+  setRecipeOutput,
   getProductionOrderClosing,
   releaseProductionOrder,
   reportMaterialScrap,
@@ -22,7 +28,11 @@ import {
   reverseProductionReport,
   type ProductionActor,
 } from "@/modules/production";
-import { decideInspection, startInspection } from "@/modules/quality";
+import {
+  cancelInspection,
+  decideInspection,
+  startInspection,
+} from "@/modules/quality";
 import { approvalTypes, processDocuments } from "@/modules/registry";
 import { updateApprovalRule } from "@/platform/approvals";
 import { invalidateEntitlements } from "@/platform/entitlements";
@@ -40,6 +50,8 @@ import {
   member,
   order,
   place,
+  product,
+  recipe,
   reservedOf,
   setting,
   workshop,
@@ -584,5 +596,372 @@ describe("what was approved goes to its place (ADR 0093)", () => {
         })
       ).quantity.toString(),
     ).toBe("2");
+  });
+});
+
+describe("«Se guardó» never stays ready for ever (WMS-31 review)", () => {
+  async function lotWithManualStage(owner: ProductionActor) {
+    const saved = await saveProcessDraft(
+      owner,
+      processDocuments,
+      PRODUCTION_BATCH_PROCESS.key,
+      {
+        stages: [
+          {
+            name: "Verificado",
+            kind: "OPERATION",
+            operationKey: PRODUCTION_BATCH_VERIFICATION_OPERATION,
+          },
+          {
+            name: "Lijado",
+            kind: "MANUAL",
+            milestone: "REPORTED",
+            roles: ["production_supervisor"],
+          },
+          {
+            name: "Guardado",
+            kind: "OPERATION",
+            operationKey: PRODUCTION_BATCH_STORED_OPERATION,
+          },
+        ],
+      },
+    );
+    if (!saved.ok) throw new Error(saved.error);
+    const published = await publishProcess(
+      owner,
+      processDocuments,
+      PRODUCTION_BATCH_PROCESS.key,
+    );
+    if (!published.ok) throw new Error(JSON.stringify(published));
+  }
+
+  const stageId = async (reportId: string, name: string) => {
+    const progress = await db.processProgress.findFirstOrThrow({
+      where: {
+        documentKey: PRODUCTION_BATCH_PROCESS.key,
+        documentId: reportId,
+      },
+    });
+    return (
+      await db.processStageState.findFirstOrThrow({
+        where: { progressId: progress.id, stage: { name } },
+      })
+    ).id;
+  };
+
+  async function approvedInArea(withTasks = true) {
+    const shop = await workshop(QUALITY);
+    const { owner, crate, area } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    if (withTasks) await setting(owner, "inventory.putaway.mode", "tasks");
+    await lotWithManualStage(owner);
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const id = await released(owner, crate, area, "10");
+    const lot = await made(owner, id, "3");
+    return { ...shop, inspector, id, lot };
+  }
+
+  const stored = (reportId: string) =>
+    stateOf(
+      PRODUCTION_BATCH_PROCESS.key,
+      reportId,
+      PRODUCTION_BATCH_STORED_OPERATION,
+    );
+
+  it("a manual stage between the verification and «Se guardó», done after the put-away, ends it", async () => {
+    const at = await approvedInArea();
+    const { owner, crate, area, shelf, inspector, lot } = at;
+    await verify(inspector, { crate, area, lineId: lot.lineId }, [
+      { status: "AVAILABLE", quantity: "3" },
+    ]);
+    const task = await db.warehouseTask.findFirstOrThrow({
+      where: { productionReportId: lot.reportId },
+    });
+    await acceptTask(owner, task.id);
+    await pickUpTask(owner, task.id);
+    const shelfRow = await db.location.findFirstOrThrow({
+      where: { id: shelf },
+    });
+    expect(
+      await deliverTask(owner, task.id, { locationCode: shelfRow.name }),
+    ).toMatchObject({ ok: true });
+    expect(await stored(lot.reportId)).toMatchObject({ stage: "WAITING" });
+    expect(
+      await completeStage(owner, processDocuments, {
+        stateId: await stageId(lot.reportId, "Lijado"),
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await stored(lot.reportId)).toMatchObject({ stage: "DONE" });
+    await balanced(owner.organizationId);
+  });
+
+  it("finishing the manual stage at the same time as the last put-away, or after the last decision, always ends it", async () => {
+    // Against the delivery of the last put-away.
+    const a = await approvedInArea();
+    await verify(
+      a.inspector,
+      { crate: a.crate, area: a.area, lineId: a.lot.lineId },
+      [{ status: "AVAILABLE", quantity: "3" }],
+    );
+    const task = await db.warehouseTask.findFirstOrThrow({
+      where: { productionReportId: a.lot.reportId },
+    });
+    await acceptTask(a.owner, task.id);
+    await pickUpTask(a.owner, task.id);
+    const shelfRow = await db.location.findFirstOrThrow({
+      where: { id: a.shelf },
+    });
+    const [done, delivered] = await Promise.all([
+      completeStage(a.owner, processDocuments, {
+        stateId: await stageId(a.lot.reportId, "Lijado"),
+        idempotencyKey: key(),
+      }),
+      deliverTask(a.owner, task.id, { locationCode: shelfRow.name }),
+    ]);
+    expect([done.ok, delivered.ok]).toEqual([true, true]);
+    expect(await stored(a.lot.reportId)).toMatchObject({ stage: "DONE" });
+
+    // Against the last decision (put-away by hand).
+    const b = await approvedInArea(false);
+    const started = await startInspection(b.inspector, {
+      productId: b.crate,
+      locationId: b.area,
+      origin: "PRODUCTION",
+      lineId: b.lot.lineId,
+      idempotencyKey: key(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    // «Lijado» goes after the verification: it cannot be done before the
+    // decision, so here the decision comes first and the stage after it.
+    const decided = await decideInspection(b.inspector, {
+      inspectionId: started.inspectionId,
+      idempotencyKey: key(),
+      outcomes: [{ status: "AVAILABLE", quantity: "3" }],
+    });
+    expect(decided).toMatchObject({ ok: true });
+    expect(
+      await completeStage(b.owner, processDocuments, {
+        stateId: await stageId(b.lot.reportId, "Lijado"),
+        idempotencyKey: key(),
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await stored(b.lot.reportId)).toMatchObject({ stage: "DONE" });
+    await balanced(a.owner.organizationId);
+    await balanced(b.owner.organizationId);
+  });
+
+  it("a cancelled put-away counts as resolved, and the lot says what was left in the area", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner, crate, area } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    await setting(owner, "inventory.putaway.mode", "tasks");
+    await lotProcess(owner);
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const id = await released(owner, crate, area, "10");
+    const lot = await made(owner, id, "3");
+    await verify(inspector, { crate, area, lineId: lot.lineId }, [
+      { status: "AVAILABLE", quantity: "3" },
+    ]);
+    const task = await db.warehouseTask.findFirstOrThrow({
+      where: { productionReportId: lot.reportId },
+    });
+    expect(await stored(lot.reportId)).toMatchObject({ stage: "READY" });
+    expect(await cancelTask(owner, task.id, "Se queda aquí")).toMatchObject({
+      ok: true,
+    });
+    expect(await stored(lot.reportId)).toMatchObject({ stage: "DONE" });
+    const view = await getProductionReport(owner, lot.reportId);
+    expect(view?.leftInArea).toEqual([
+      expect.objectContaining({
+        productId: crate,
+        locationId: area,
+        quantityText: "3 piezas",
+      }),
+    ]);
+    await balanced(owner.organizationId);
+  });
+
+  it("two outputs: waits for both, and a cancelled verification started again still counts once", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner, area, shelf } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    await lotProcess(owner);
+    const log = await product(owner, "Tronco");
+    const plank = await product(owner, "Tablón");
+    const dust = await product(owner, "Aserrín");
+    await enter(owner, log, shelf, "10");
+    const created = await createRecipe(owner, plank, { baseQuantity: "4" });
+    if (!created.ok) throw new Error(JSON.stringify(created));
+    await setRecipeInput(owner, created.versionId, {
+      productId: log,
+      quantity: "1",
+    });
+    await setRecipeOutput(owner, created.versionId, {
+      productId: plank,
+      quantity: "4",
+      costShare: "80",
+    });
+    await setRecipeOutput(owner, created.versionId, {
+      productId: dust,
+      quantity: "2",
+      costShare: "20",
+    });
+    expect(await activateRecipeVersion(owner, created.versionId)).toMatchObject(
+      { ok: true },
+    );
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const id = await released(owner, plank, area, "4");
+    const done = await reportProduction(owner, id, {
+      good: "4",
+      idempotencyKey: key(),
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const outputs = await db.productionReportLine.findMany({
+      where: { reportId: done.reportId, kind: "OUTPUT" },
+    });
+    const planks = outputs.find((line) => line.productId === plank)!;
+    const dusts = outputs.find((line) => line.productId === dust)!;
+    // The plank: started, cancelled, started again and decided.
+    const first = await startInspection(inspector, {
+      productId: plank,
+      locationId: area,
+      origin: "PRODUCTION",
+      lineId: planks.id,
+      idempotencyKey: key(),
+    });
+    if (!first.ok) throw new Error(JSON.stringify(first));
+    expect(
+      await cancelInspection(inspector, {
+        inspectionId: first.inspectionId,
+        reason: "Otra vez",
+      }),
+    ).toMatchObject({ ok: true });
+    await verify(inspector, { crate: plank, area, lineId: planks.id }, [
+      { status: "AVAILABLE", quantity: "4" },
+    ]);
+    expect(await stored(done.reportId)).toMatchObject({ stage: "READY" });
+    await verify(inspector, { crate: dust, area, lineId: dusts.id }, [
+      { status: "AVAILABLE", quantity: "2" },
+    ]);
+    expect(await stored(done.reportId)).toMatchObject({ stage: "DONE" });
+    await balanced(owner.organizationId);
+  });
+
+  it("never recommends nor accepts a shelf inside the production area", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner, crate, area } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    await setting(owner, "inventory.putaway.mode", "tasks");
+    const inside = await place(owner, "Estante del área", {
+      parentId: area,
+      level: 2,
+    });
+    const insideRow = await db.location.findFirstOrThrow({
+      where: { id: inside },
+    });
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const id = await released(owner, crate, area, "10");
+    const lot = await made(owner, id, "2");
+    await verify(inspector, { crate, area, lineId: lot.lineId }, [
+      { status: "AVAILABLE", quantity: "2" },
+    ]);
+    const task = await db.warehouseTask.findFirstOrThrow({
+      where: { productionReportId: lot.reportId },
+    });
+    expect(task.toLocationId).not.toBe(inside);
+    await acceptTask(owner, task.id);
+    await pickUpTask(owner, task.id);
+    expect(
+      await deliverTask(owner, task.id, { locationCode: insideRow.name }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { locationCode: expect.stringContaining("producción") },
+    });
+  });
+});
+
+describe("closing: more cases (WMS-31 review)", () => {
+  it("with Producción read only (plan expired) nothing is closed, and the reconciliation is read", async () => {
+    const { owner, crate, area } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const id = await released(owner, crate, area, "4");
+    await made(owner, id, "1");
+    await db.entitlement.updateMany({
+      where: { organizationId: owner.organizationId },
+      data: {
+        validFrom: new Date(Date.now() - 2 * 86_400_000),
+        validUntil: new Date(Date.now() - 86_400_000),
+      },
+    });
+    invalidateEntitlements(owner.organizationId);
+    await expect(
+      closeProductionOrder(owner, id, "Ya no va"),
+    ).rejects.toMatchObject({ code: "module_read_only" });
+    expect((await getProductionOrderClosing(owner, id))?.status).toBe(
+      "IN_PROGRESS",
+    );
+  });
+
+  it("cancels the ISSUE tasks of materials by lot and by serial, with their trail and a notice to who had them", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await setting(owner, "production.materials.mode", "issue");
+    const glue = await product(owner, "Pegamento", {
+      tracking: "LOT",
+      lotExpiry: "NONE",
+    });
+    const motor = await product(owner, "Motor", { tracking: "SERIAL" });
+    const kit = await product(owner, "Kit");
+    await enter(owner, glue, shelf, "10", { lotCode: "PG-1" });
+    await enter(owner, motor, shelf, "2", { serials: "M-1\nM-2" });
+    await recipe(owner, kit, [
+      [glue, "1"],
+      [motor, "1"],
+    ]);
+    const worker = await member(owner.organizationId, ["operator"]);
+    const id = await released(owner, kit, area, "2");
+    const tasks = await db.warehouseTask.findMany({
+      where: { kind: "ISSUE", productionOrderLine: { orderId: id } },
+    });
+    expect(tasks).toHaveLength(2);
+    await acceptTask(worker, tasks[0]!.id);
+    // Free material in the area for one kit.
+    await enter(owner, glue, area, "1", { lotCode: "PG-2" });
+    await enter(owner, motor, area, "1", { serials: "M-3" });
+    const motorLine = (await linesOf(id)).find(
+      (line) => line.productId === motor,
+    )!;
+    const done = await reportProduction(owner, id, {
+      good: "1",
+      idempotencyKey: key(),
+      materialSerials: { [motorLine.id]: "M-3" },
+    });
+    expect(done).toMatchObject({ ok: true });
+    expect(await closeProductionOrder(owner, id, "Solo uno")).toMatchObject({
+      ok: true,
+    });
+    const after = await db.warehouseTask.findMany({
+      where: { id: { in: tasks.map((task) => task.id) } },
+    });
+    expect(after.every((task) => task.status === "CANCELLED")).toBe(true);
+    expect(
+      await db.auditEvent.count({
+        where: {
+          organizationId: owner.organizationId,
+          action: "inventory.task_cancelled",
+          targetId: { in: tasks.map((task) => task.id) },
+        },
+      }),
+    ).toBe(2);
+    expect(
+      await db.notification.count({
+        where: {
+          recipientUserId: worker.userId,
+          typeKey: "inventory.task_cancelled",
+        },
+      }),
+    ).toBe(1);
+    await balanced(owner.organizationId);
   });
 });

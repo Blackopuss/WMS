@@ -43,8 +43,10 @@ cancela: queda abierta para siempre, con su material apartado.
    solo la verificación de lo producido lo pasa.
 5. Entregar el acomodo es como cualquier acomodo (pide el código del lugar,
    capacidad, foto según el ajuste). **Una tarea de acomodo nunca se entrega
-   en un área de producción** (vale para todas: el área no es un lugar donde
-   se guarde).
+   ni se recomienda en un área de producción ni en nada que esté dentro de
+   una** (`IN_PRODUCTION_AREA`: el tipo de la ubicación o de cualquiera de
+   sus ancestros, en una sola condición de la consulta; vale para todos los
+   acomodos).
 6. Un área dentro de «Cuarentena» o «Restauración» no puede dejar disponibles
    ahí: WMS-30B ya exige otro lugar al aprobar (sin cambio).
 
@@ -77,8 +79,9 @@ de «Verificación»). Se completa sola cuando **el lote quedó resuelto**:
   no cuentan), **y**
 - no queda ninguna tarea de acomodo abierta del lote.
 
-Se revisa al decidir cada verificación de lo producido y al entregar cada
-acomodo del lote. Así:
+Se revisa al decidir cada verificación de lo producido, al entregar o
+**cancelar** cada acomodo del lote y cuando la etapa queda lista porque se
+terminó una etapa anterior (gancho del motor, abajo). Así:
 
 - con acomodo por tareas y lo aprobado en el área, termina al entregar el
   último acomodo;
@@ -90,7 +93,32 @@ acomodo del lote. Así:
 - un lote **sin nada aprobado** (todo rechazado, dañado o perdido) también
   termina con su última decisión: no espera para siempre;
 - un lote con varias salidas (subproductos) espera a que **todas** estén
-  decididas (una verificación por salida).
+  decididas (una verificación por salida); una verificación cancelada no
+  cuenta y la que se vuelve a iniciar sí;
+- un **acomodo cancelado** cuenta como resuelto, igual que con acomodo a
+  mano: lo aprobado queda libre en el área y la ficha del lote lo dice
+  («Quedan N aprobadas … en el área sin tarea de acomodo», con «Cambiar de
+  lugar» para quien puede reubicar);
+- si hay una **etapa manual entre «Verificación» y «Se guardó»** y se
+  termina después del acomodo, «Se guardó» queda lista en ese momento y el
+  motor la completa ahí mismo.
+
+**Gancho del motor (`ProcessOperation.settle`, genérico y opcional).**
+Cuando `settleStates` deja lista (`READY`) una etapa de operación cuyo
+documento declara `settle` para esa operación, el motor la llama dentro de
+la misma transacción y bajo el candado del progreso que ya tiene; si
+responde que la operación ya ocurrió, la etapa queda hecha ahí (con su
+paso en el rastro) y el motor vuelve a acomodar las demás. El gancho solo
+lee (no toma candados ni escribe); si lanza, la acción de la persona se
+deshace con «No se pudo revisar si … ya ocurrió» (`ProcessOperationFailed`).
+Los documentos que no lo declaran no cambian. `production.batch` lo declara
+para «Se guardó» con `productionLotSettled`, la misma comprobación de
+`settleProductionStored`.
+
+**Otros caminos revisados:** liberar una tarea con problema, reportar un
+problema o reasignar un acomodo lo dejan abierto (no resuelve nada, no hace
+falta revisar); un lote creado antes de publicar el proceso no tiene
+progreso; revertir el reporte cierra el proceso del lote.
 
 La completa `settleProductionStored(tx, actor, reportId)` de Inventario (que
 no importa Producción: el documento de proceso del lote vive ahora en
@@ -158,7 +186,9 @@ Costos (solo con inventory.cost.read): valor de los materiales consumidos,
 **Qué hace el cierre** (una transacción):
 
 1. Cancela las tareas «Surtir a producción» sin recoger (motivo «Se cerró
-   la orden OP-0001»).
+   la orden OP-0001») con `cancelLockedTasks` de Inventario: cada una con
+   su línea de bitácora `inventory.task_cancelled` y el aviso nuevo
+   `inventory.task_cancelled` a quien la tenía asignada o aceptada.
 2. **Libera todo lo apartado de las líneas de la orden** con
    `releaseReservations` (fuente `PRODUCTION_ORDER_LINE_SOURCE`). No mueve
    existencias: lo que ya estaba en el área (o se entregó ahí) **queda libre
@@ -231,6 +261,8 @@ tareas → capacidad → progreso del proceso → archivos.
 | Cerrar la orden | **todos los productos de la orden** (materiales y salidas, una `lockRows`) → la orden → tareas `ISSUE` abiertas → progreso del proceso de la orden. No toma almacén ni ubicaciones (cambiar el estado de un documento con `facilityId` en un índice nunca va después de una ubicación). |
 | Decidir una verificación (WMS-30B) | sin cambio; crear el acomodo no toma candados nuevos (filas nuevas); `settleProductionStored` toma el progreso del lote al final (ya lo tenía la etapa «Verificación»). |
 | Entregar un acomodo de un lote | producto → ubicaciones → tarea → capacidad → **progreso del lote** (nuevo, al final). |
+| Cancelar un acomodo de un lote | tarea → **progreso del lote** (después de soltar su `TASK_HOLD`). |
+| Terminar una etapa del lote (persona) | progreso del lote; el gancho `settle` solo lee bajo ese candado. |
 
 Carreras en `tests/server/lock-order.int.test.ts`: cerrar contra un reporte
 nuevo, la reversa de un reporte, una merma, la entrega de una tarea `ISSUE`,
@@ -297,13 +329,27 @@ API, webhook del cierre.
   que todo lo producido siga en `INSPECTION` y sin salidas, así que nunca
   hay acomodo de un lote revertido.
 
+## Pendientes conocidos
+
+- El acomodo del área aparta solo lo libre (`freeToTake`): si parte de lo
+  aprobado ya estaba apartado en el área para otro documento, la tarea
+  lleva menos y «Se guardó» se marca igual; lo que quedó lo dice la ficha
+  del lote.
+- «Apartado sin usar» de la conciliación suma reservas también en
+  ubicaciones fuera del alcance de quien mira (como ya hace la ficha de la
+  orden); no nombra ubicaciones.
+- La rama de `applyApprovedScrap` que vence porque la orden ya no está
+  abierta no se alcanza desde el cierre: el cierre se rechaza mientras haya
+  una merma esperando autorización.
+
 ## Decisiones que el fundador puede cambiar
 
 1. El área de producción no es un lugar de paso: solo lo aprobado de un lote
    sale con tarea de acomodo (lo demás del área se queda como hoy).
 2. «Se guardó» se marca sola cuando todo el lote está decidido y sin
-   acomodos abiertos; con acomodo a mano o sin nada aprobado, termina con la
-   última decisión (no confirma que alguien movió lo aprobado del área).
+   acomodos abiertos; con acomodo a mano, sin nada aprobado o con el acomodo
+   cancelado, termina igual (no confirma que alguien movió lo aprobado del
+   área; la ficha del lote dice lo que quedó ahí).
 3. Si hay etapas previas pendientes, entregar el acomodo no se detiene y «Se
    guardó» queda por hacer.
 4. Se cierra con verificaciones abiertas y lotes sin verificar.

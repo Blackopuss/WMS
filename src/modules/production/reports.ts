@@ -1688,7 +1688,99 @@ export type ProductionReportView = {
   }[];
   photos: EvidencePhotoLink[];
   mayReverse: boolean;
+  /**
+   * WMS-31 (ADR 0093): what was approved in the area and has no put-away
+   * task (by hand, cancelled, or less set aside than approved): it waits
+   * there; the screen offers «Cambiar de lugar».
+   */
+  leftInArea: {
+    productId: string;
+    productName: string;
+    locationId: string;
+    quantityText: string;
+  }[];
 };
+
+/**
+ * WMS-31 (ADR 0093): of what verifications approved of this lot right in
+ * the area, what no put-away task (open or delivered) took, capped by what
+ * is available there of that product and lot today. Derived; nothing kept.
+ */
+async function leftInAreaOf(
+  client: Client,
+  reportId: string,
+  areaLocationId: string,
+  outputs: {
+    productId: string;
+    lotId: string | null;
+    unitCode: string;
+    product: { name: string };
+  }[],
+): Promise<ProductionReportView["leftInArea"]> {
+  if (outputs.length === 0) return [];
+  const [approved, tasks, balances] = await Promise.all([
+    client.qualityInspectionResult.findMany({
+      where: {
+        kind: "OUTCOME",
+        status: "AVAILABLE",
+        locationId: areaLocationId,
+        inspection: { productionReportId: reportId, state: "DECIDED" },
+      },
+      select: { quantity: true, inspection: { select: { productId: true } } },
+    }),
+    client.warehouseTask.findMany({
+      where: {
+        productionReportId: reportId,
+        kind: "PUTAWAY",
+        status: { not: "CANCELLED" },
+      },
+      select: { productId: true, quantity: true },
+    }),
+    client.stockBalance.findMany({
+      where: {
+        locationId: areaLocationId,
+        status: "AVAILABLE",
+        productId: { in: outputs.map((line) => line.productId) },
+      },
+      select: { productId: true, lotKey: true, quantity: true },
+    }),
+  ]);
+  const sum = (map: Map<string, Decimal>, key: string, value: string) =>
+    map.set(key, (map.get(key) ?? dec(0)).plus(value));
+  const approvedOf = new Map<string, Decimal>();
+  for (const row of approved) {
+    sum(approvedOf, row.inspection.productId, row.quantity.toString());
+  }
+  const taskedOf = new Map<string, Decimal>();
+  for (const task of tasks) {
+    if (task.productId && task.quantity) {
+      sum(taskedOf, task.productId, task.quantity.toString());
+    }
+  }
+  const result: ProductionReportView["leftInArea"] = [];
+  for (const line of outputs) {
+    const left = (approvedOf.get(line.productId) ?? dec(0)).minus(
+      taskedOf.get(line.productId) ?? dec(0),
+    );
+    if (!left.greaterThan(0)) continue;
+    const there = balances
+      .filter(
+        (row) =>
+          row.productId === line.productId &&
+          row.lotKey === (line.lotId ?? ""),
+      )
+      .reduce((total, row) => total.plus(row.quantity.toString()), dec(0));
+    const shown = there.lessThan(left) ? there : left;
+    if (!shown.greaterThan(0)) continue;
+    result.push({
+      productId: line.productId,
+      productName: line.product.name,
+      locationId: areaLocationId,
+      quantityText: formatStock(shown.toString(), line.unitCode),
+    });
+  }
+  return result;
+}
 
 /** One report, or null when its order does not exist for the person. */
 export async function getProductionReport(
@@ -1863,6 +1955,12 @@ export async function getProductionReport(
         ...(costs ? { unitCost: costOf(line.unitCost) } : {}),
       })),
     photos: photos.get(row.id) ?? [],
+    leftInArea: await leftInAreaOf(
+      client,
+      row.id,
+      row.order.areaLocationId,
+      row.movement.lines.filter((line) => line.direction === "IN"),
+    ),
     mayReverse:
       reverse &&
       !row.reversedAt &&

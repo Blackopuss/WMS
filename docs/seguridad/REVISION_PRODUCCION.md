@@ -45,7 +45,9 @@ Producción.
 | Costos en la conciliación | Solo con `inventory.cost.read`; el campo no existe para los demás. |
 | Dejar disponible en el área lo que espera acomodo | Lo aprobado en el área lleva `TASK_HOLD` con su tarea; el área no es un lugar de paso (no recibe acomodos de entradas, recepciones ni cross-docking) y ningún acomodo se entrega en un área de producción. |
 | Marcar «Se guardó» antes de tiempo | Solo cuando todo el lote está decidido y no queda ningún acomodo abierto del lote, leído bajo el candado del progreso. |
-| Terminal compartida | Cerrar se conserva en una sesión de PIN (como liberar y cancelar, decisión del fundador). |
+| Terminal compartida | Cerrar se conserva en una sesión de PIN (como liberar y cancelar, decisión del fundador); el Operario no cierra y soporte solo lee (`policy.test.ts`). |
+| «Se guardó» que queda lista y nadie la completa | Se revisa al decidir, al entregar o cancelar un acomodo del lote y, con el gancho `settle` del motor, cuando una etapa anterior se termina; el gancho solo lee bajo el candado del progreso. |
+| Acomodo hacia un estante dentro del área | `IN_PRODUCTION_AREA` (tipo propio o de un ancestro) lo excluye de la recomendación y de la entrega. |
 
 Riesgos residuales: con acomodo a mano, «Se guardó» termina con la última
 decisión aunque lo aprobado siga en el área (la empresa puede agregar una

@@ -149,7 +149,10 @@ previsto, consumido, merma y apartado sin usar; costos solo con
 (`production-batch.ts`) y Producción lo reexporta: su operación nueva «Se
 guardó» (`PRODUCTION_BATCH_STORED_OPERATION`) la completa Inventario
 cuando todo el lote está decidido y sin acomodos abiertos
-(`settleProductionStored`).
+(`settleProductionStored`; también al cancelar un acomodo y, con el gancho
+`settle` del motor, cuando la etapa queda lista tras una etapa manual).
+La ficha del lote dice lo aprobado que quedó en el área sin tarea
+(`leftInArea`, con «Cambiar de lugar»).
 
 ## Permisos
 

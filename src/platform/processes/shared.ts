@@ -202,6 +202,11 @@ export async function settle(
   );
   const now = new Date();
   const ready: StageRow[] = [];
+  const asked: {
+    state: (typeof graph.states)[number];
+    stage: StageRow;
+    operation: ProcessDocument["operations"][number];
+  }[] = [];
   for (const state of graph.states) {
     const next = derived.get(state.stageId);
     if (!next || next === state.status) continue;
@@ -224,7 +229,48 @@ export async function settle(
       state.assignedByUserId = null;
     }
     if (next === "READY" && stage?.kind === "MANUAL") ready.push(stage);
+    if (next === "READY" && stage?.kind === "OPERATION") {
+      const operation = document.operations.find(
+        (each) => each.key === stage.operationKey,
+      );
+      if (operation?.settle) asked.push({ state, stage, operation });
+    }
   }
+  // WMS-31 review: an operation that may already have happened says so
+  // when its stage becomes ready (under the lock of the progress).
+  let settledAny = false;
+  for (const { state, stage, operation } of asked) {
+    let done: boolean;
+    try {
+      done = await operation.settle!(tx, {
+        organizationId: actor.organizationId,
+        documentId: graph.progress.documentId,
+      });
+    } catch (error) {
+      console.error("process operation settle failed", operation.key, error);
+      throw new ProcessOperationFailed(
+        `No se pudo revisar si «${operation.label}» ya ocurrió. Inténtalo de nuevo.`,
+      );
+    }
+    if (!done) continue;
+    await tx.processStageState.update({
+      where: { id: state.id },
+      data: { status: "DONE", doneAt: now, doneByUserId: actor.userId },
+    });
+    state.status = "DONE";
+    await tx.processStep.create({
+      data: {
+        id: newId(),
+        organizationId: actor.organizationId,
+        progressId: graph.progress.id,
+        stageId: stage.id,
+        action: "OPERATION",
+        actorUserId: actor.userId,
+      },
+    });
+    settledAny = true;
+  }
+  if (settledAny) return settle(tx, document, graph, actor);
   if (graph.progress.status === "ACTIVE" && allComplete(derived)) {
     await tx.processProgress.update({
       where: { id: graph.progress.id },
@@ -238,6 +284,17 @@ export async function settle(
     }
   }
   return derived;
+}
+
+/**
+ * An operation's `settle` failed while a stage became ready: the action
+ * that made it ready is undone, with a message for people.
+ */
+export class ProcessOperationFailed extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProcessOperationFailed";
+  }
 }
 
 /** The area of a stage hears it is theirs (permissions, roles, place). */

@@ -65,6 +65,15 @@ confirmar»), porque `assertStagesDone` se pregunta antes de escribirla.
 | --- | --- | --- | --- | --- |
 | `inventory.shipment` «Embarque» | Inventario | `DRAFT`, `SHIPPED`, `CANCELLED` (cierra) | `inventory.shipment.dispatched` «Salida confirmada» (en `DRAFT`, `leadsTo` `SHIPPED`) | 0071 |
 
+**Gancho opcional de una operación (WMS-31, ADR 0093):**
+`ProcessOperation.settle(tx, { organizationId, documentId })`. Cuando una
+etapa de esa operación queda lista (`READY`), `settle` de `shared.ts` lo
+llama dentro de la misma transacción, bajo el candado del progreso; si
+responde `true` la etapa queda hecha ahí con su paso `OPERATION`. Solo lee;
+si lanza, la acción se deshace con `ProcessOperationFailed` (la pantalla lo
+muestra como «No se pudo revisar si … ya ocurrió»). Lo usa «Se guardó» del
+lote producido.
+
 ## Quién hace qué
 
 - Configurar: `platform.organization.update`, ver toda la empresa

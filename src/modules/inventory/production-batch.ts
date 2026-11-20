@@ -1,4 +1,7 @@
-import type { ProcessDocument } from "@/platform/processes";
+import { dec, type Decimal } from "@/lib";
+import type { ProcessDocument, ProcessSettleTx } from "@/platform/processes";
+
+import { OPEN_TASK_STATUSES } from "./task-states";
 
 /**
  * The lot a production report made, as a document with a process (WMS-29,
@@ -17,6 +20,54 @@ import type { ProcessDocument } from "@/platform/processes";
 export const PRODUCTION_BATCH_VERIFICATION_OPERATION = "verification";
 /** «Se guardó»: what was approved reached a place where it is kept. */
 export const PRODUCTION_BATCH_STORED_OPERATION = "stored";
+
+/**
+ * WMS-31 (ADR 0093): whether a lot produced is settled — every output of
+ * its report decided by a verification (none open, the ones decided cover
+ * what was made; cancelled ones do not count; also those made without
+ * Calidad) and no put-away task of the lot open. Only reads; the caller
+ * holds the lock of the lot's progress.
+ */
+export async function productionLotSettled(
+  tx: ProcessSettleTx,
+  productionReportId: string,
+): Promise<boolean> {
+  const [open, outputs, inspections] = await Promise.all([
+    tx.warehouseTask.findFirst({
+      where: {
+        productionReportId,
+        kind: "PUTAWAY",
+        status: { in: [...OPEN_TASK_STATUSES] },
+      },
+      select: { id: true },
+    }),
+    tx.productionReportLine.findMany({
+      where: { reportId: productionReportId, kind: "OUTPUT" },
+      select: { id: true, quantity: true },
+    }),
+    tx.qualityInspection.findMany({
+      where: { productionReportId, state: { in: ["OPEN", "DECIDED"] } },
+      select: {
+        state: true,
+        productionReportLineId: true,
+        expectedQuantity: true,
+      },
+    }),
+  ]);
+  if (open) return false;
+  if (inspections.some((row) => row.state === "OPEN")) return false;
+  const decided = new Map<string, Decimal>();
+  for (const row of inspections) {
+    const line = row.productionReportLineId ?? "";
+    decided.set(
+      line,
+      (decided.get(line) ?? dec(0)).plus(row.expectedQuantity.toString()),
+    );
+  }
+  return !outputs.some((line) =>
+    (decided.get(line.id) ?? dec(0)).lessThan(line.quantity.toString()),
+  );
+}
 
 export const PRODUCTION_BATCH_PROCESS: ProcessDocument = {
   key: "production.batch",
@@ -38,6 +89,10 @@ export const PRODUCTION_BATCH_PROCESS: ProcessDocument = {
       label: "Se guardó",
       milestone: "REPORTED",
       leadsTo: null,
+      // When an earlier stage of the lot gets done after the lot was
+      // already settled (a manual stage between the verification and
+      // this one), the engine asks and the stage ends there.
+      settle: (tx, { documentId }) => productionLotSettled(tx, documentId),
     },
   ],
   readPermission: "production.order.read",

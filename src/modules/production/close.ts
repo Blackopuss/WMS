@@ -3,6 +3,7 @@ import "server-only";
 import { dec, type Decimal } from "@/lib";
 import {
   PRODUCTION_ORDER_LINE_SOURCE,
+  cancelLockedTasks,
   formatStock,
   releaseReservations,
 } from "@/modules/inventory";
@@ -214,7 +215,15 @@ export async function closeProductionOrder(
       );
       const tasks = await tx.warehouseTask.findMany({
         where: { id: { in: locked } },
-        select: { id: true, number: true, status: true, pickedUpAt: true },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          pickedUpAt: true,
+          assignedToUserId: true,
+          fromLocationId: true,
+          toLocationId: true,
+        },
       });
       const carried = tasks.find(
         (row) =>
@@ -244,17 +253,14 @@ export async function closeProductionOrder(
       }
 
       const cancelled = tasks.filter((row) => row.status !== "DELIVERED");
-      if (cancelled.length > 0) {
-        await tx.warehouseTask.updateMany({
-          where: { id: { in: cancelled.map((row) => row.id) } },
-          data: {
-            status: "CANCELLED",
-            cancelledAt: new Date(),
-            cancelReason: `Se cerró la orden ${numberText}.`,
-            closedByUserId: userId,
-          },
-        });
-      }
+      // Each one with its line of the audit trail and a notice to whoever
+      // had it (the tasks are already locked).
+      await cancelLockedTasks(
+        tx,
+        actor,
+        cancelled,
+        `Se cerró la orden ${numberText}.`,
+      );
       let released = 0;
       for (const line of order.lines) {
         released += await releaseReservations(tx, {

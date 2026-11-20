@@ -54,6 +54,7 @@ import {
   type ProcessTx,
   type StageRow,
   type StateRow,
+  ProcessOperationFailed,
 } from "./shared";
 
 /**
@@ -252,6 +253,9 @@ async function act(
     }, LOCKING_TRANSACTION);
   } catch (error) {
     if (error instanceof Refused) return error.result;
+    if (error instanceof ProcessOperationFailed) {
+      return { ok: false, reason: "not_allowed", error: error.message };
+    }
     // The key is unique in the company: the same confirmation used at the
     // same moment on another process meets it here (B2).
     if (

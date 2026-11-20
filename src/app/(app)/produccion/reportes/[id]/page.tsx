@@ -292,6 +292,31 @@ export default async function ReporteProduccionPage({
         </section>
       )}
 
+      {report.leftInArea.length > 0 && (
+        <section
+          aria-labelledby="en-el-area"
+          className="max-w-3xl space-y-2 rounded-xl border bg-card p-4 text-sm sm:p-5"
+        >
+          <h2 id="en-el-area" className="text-base font-medium">
+            En el área
+          </h2>
+          {report.leftInArea.map((line) => (
+            <p key={line.productId} className="[overflow-wrap:anywhere]">
+              Quedan {line.quantityText} aprobadas de {line.productName} en
+              el área sin tarea de acomodo.{" "}
+              {access.can("inventory.transfer.create") && (
+                <Link
+                  href={`/movimientos/reubicar?producto=${idPath(line.productId)}&origen=${idPath(line.locationId)}`}
+                  className={inlineLink}
+                >
+                  Cambiar de lugar
+                </Link>
+              )}
+            </p>
+          ))}
+        </section>
+      )}
+
       {report.photos.length > 0 && (
         <section aria-labelledby="fotos" className="max-w-3xl space-y-2">
           <h2 id="fotos" className="font-medium">
