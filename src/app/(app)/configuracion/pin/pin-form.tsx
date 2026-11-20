@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 
-import { FormField, PasswordInput } from "@/components";
+import { FormField } from "@/components/form-field";
+import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 

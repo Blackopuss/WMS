@@ -11,7 +11,8 @@ import Link from "next/link";
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 
-import { FormField, SerialsField } from "@/components";
+import { FormField } from "@/components/form-field";
+import { SerialsField } from "@/components/serials-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";

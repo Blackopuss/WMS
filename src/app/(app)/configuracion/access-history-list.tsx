@@ -1,7 +1,7 @@
 import { History } from "lucide-react";
 import Link from "next/link";
 
-import { EmptyState } from "@/components";
+import { EmptyState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";

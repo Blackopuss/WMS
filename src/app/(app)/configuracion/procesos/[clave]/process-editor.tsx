@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";

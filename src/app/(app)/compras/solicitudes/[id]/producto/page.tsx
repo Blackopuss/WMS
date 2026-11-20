@@ -9,7 +9,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { getPurchaseRequest } from "@/modules/purchasing";
 import { getModuleAccess } from "@/platform/billing";
 import {

@@ -3,7 +3,7 @@
 import { CalendarClock, Loader2 } from "lucide-react";
 import { useActionState, useRef, useState } from "react";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { useFocusFirstError } from "@/components/focus-first-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

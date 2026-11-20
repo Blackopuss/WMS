@@ -13,7 +13,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { formatDateTime } from "@/lib";
 import {
   EXIT_IMPORT_STATUS_LABELS,

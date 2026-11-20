@@ -4,13 +4,9 @@ import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import {
-  FormField,
-  PhotoCapture,
-  PhotoGallery,
-  type CapturedPhoto,
-  type GalleryPhoto,
-} from "@/components";
+import { FormField } from "@/components/form-field";
+import { PhotoCapture, type CapturedPhoto } from "@/components/photo-capture";
+import { PhotoGallery, type GalleryPhoto } from "@/components/photo-gallery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -8,7 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { PACKAGE_KIND_SUGGESTIONS, getPackingView } from "@/modules/inventory";
 import { getModuleAccess } from "@/platform/billing";
 

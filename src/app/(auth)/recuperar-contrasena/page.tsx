@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { WarehouseCard } from "@/components";
+import { WarehouseCard } from "@/components/warehouse-card";
 import { RESET_PASSWORD_MINUTES } from "@/platform/auth";
 
 import { RecoverForm } from "./recover-form";

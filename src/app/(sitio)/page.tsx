@@ -18,6 +18,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { WarehouseSceneStill } from "@/components/warehouse-scene-art";
 
 import { formatMoney, TIER_PRICES } from "./content";
 import {
@@ -156,7 +157,9 @@ export default function LandingPage() {
             </ul>
           </div>
           <div className="motion-safe:animate-in motion-safe:duration-1000 motion-safe:zoom-in-95 motion-safe:fade-in">
-            <HeroScene />
+            <HeroScene>
+              <WarehouseSceneStill className="aspect-[48/34] w-full" />
+            </HeroScene>
           </div>
         </div>
       </section>

@@ -8,7 +8,7 @@ import {
   PageContainer,
   PageHeader,
   ReadOnlyNotice,
-} from "@/components";
+} from "@/components/states";
 import { isAppError } from "@/lib";
 import { processDocuments } from "@/modules/registry";
 import { getModuleAccess } from "@/platform/billing";

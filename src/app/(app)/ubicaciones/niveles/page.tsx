@@ -8,7 +8,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { getModuleAccess } from "@/platform/billing";
 import { MAX_LOCATION_LEVELS, listLocations } from "@/platform/locations";
 
