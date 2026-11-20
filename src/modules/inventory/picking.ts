@@ -348,7 +348,7 @@ export async function deliverPick(
 
 /**
  * After a PICK task closes: the order is picked when none of its picking
- * tasks is left open. Its first accepted task already made it PICKING.
+ * tasks is left open and nothing of it waits for production (WMS-79). Its first accepted task already made it PICKING.
  * The caller locked the order and the task (the wave comes last).
  */
 export async function settlePickedOrder(
@@ -372,7 +372,15 @@ export async function settlePickedOrder(
         status: { notIn: ["DELIVERED", "CANCELLED"] },
       },
     });
-    if (open === 0) {
+    // WMS-79 (ADR 0094): an order that waits for production is not
+    // picked yet — so it is neither packed nor shipped incomplete.
+    const waiting =
+      open === 0
+        ? await tx.outboundLineWait.count({
+            where: { orderId, status: "OPEN" },
+          })
+        : 0;
+    if (open === 0 && waiting === 0) {
       await tx.outboundOrder.update({
         where: { id: orderId },
         data: { status: "PICKED" },

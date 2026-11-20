@@ -25,6 +25,7 @@ import { getProcessView } from "@/platform/processes";
 import { ProcessPanel } from "../../../procesos/process-panel";
 
 import { ReverseReport } from "./reverse-report";
+import { OutboundLinkNote } from "../../outbound-link";
 
 export const metadata: Metadata = { title: "Reporte de producción" };
 
@@ -112,6 +113,7 @@ export default async function ReporteProduccionPage({
       </Link>
       {moduleState === "read_only" && <ReadOnlyNotice module="Producción" />}
       <PageHeader title={`${report.orderNumberText} · ${report.numberText}`} />
+      <OutboundLinkNote actor={actor} of={{ reportId: report.id }} />
       <div className="-mt-2 flex flex-wrap gap-2">
         {report.reversed ? (
           <Badge variant="secondary">Revertido</Badge>

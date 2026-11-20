@@ -23,10 +23,12 @@ import { Label } from "@/components/ui/label";
 
 import {
   addOutboundLineAction,
+  askProductionAgainAction,
   cancelOutboundAction,
   releaseOutboundAction,
   removeOutboundLineAction,
   startPackingAction,
+  stopWaitingAction,
   type LineFormState,
   type OutboundStepState,
 } from "../actions";
@@ -290,6 +292,106 @@ export function CancelOrder({ orderId }: { orderId: string }) {
                 <Loader2 aria-hidden="true" className="animate-spin" />
               )}
               Cancelar pedido
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * WMS-79 (ADR 0094): «Pedir producción de nuevo» for what the order still
+ * waits for and nothing is being made.
+ */
+export function AskProductionAgain({ orderId }: { orderId: string }) {
+  const { pending, answer, run } = useStep();
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-11"
+        disabled={pending}
+        onClick={() => run(() => askProductionAgainAction(orderId))}
+      >
+        {pending && <Loader2 aria-hidden="true" className="animate-spin" />}
+        Pedir producción de nuevo
+      </Button>
+      {answer && !answer.ok && (
+        <span role="alert" className="text-sm text-destructive">
+          {answer.error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** WMS-79: «Dejar de esperar», with its reason. */
+export function StopWaiting({ orderId }: { orderId: string }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const { pending, answer, run } = useStep();
+  const error = answer && !answer.ok ? answer.error : null;
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" className="min-h-11">
+          Dejar de esperar
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>¿Dejar de esperar a producción?</DialogTitle>
+          <DialogDescription>
+            El pedido sigue con lo que tiene y puede salir incompleto. Lo que
+            aún no se acepta en producción se cancela; las órdenes ya creadas
+            siguen y lo que hagan se acomoda.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          noValidate
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            run(
+              () => stopWaitingAction(orderId, reason),
+              () => setOpen(false),
+            );
+          }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="stop-waiting-reason">Por qué ya no se espera</Label>
+            <Input
+              id="stop-waiting-reason"
+              value={reason}
+              maxLength={300}
+              onChange={(event) => setReason(event.target.value)}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "stop-waiting-error" : undefined}
+              autoComplete="off"
+            />
+            {error && (
+              <p
+                id="stop-waiting-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
+                {error}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Volver
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending}>
+              {pending && (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              )}
+              Dejar de esperar
             </Button>
           </DialogFooter>
         </form>

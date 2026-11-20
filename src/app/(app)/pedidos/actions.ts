@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { isAppError } from "@/lib";
 import {
+  askProductionAgain,
   cancelOutboundOrder,
   createOutboundOrder,
   finishPacking,
@@ -19,10 +20,12 @@ import {
   releaseOutboundOrder,
   removeOutboundLine,
   setOutboundLine,
+  stopWaitingForProduction,
   type OutboundField,
   type OutboundResult,
   type OutboundShortage,
 } from "@/modules/inventory";
+import { makeToOrder } from "@/modules/registry";
 import { listProducts } from "@/platform/catalog";
 import { requireOrganizationContext } from "@/platform/tenancy";
 
@@ -196,7 +199,15 @@ async function step(
   work: (
     who: { organizationId: string; userId: string },
     id: string,
-  ) => Promise<OutboundResult>,
+  ) => Promise<
+    | OutboundResult
+    | {
+        ok: false;
+        fieldErrors?: Partial<Record<string, string>>;
+        formError?: string;
+        shortages?: undefined;
+      }
+  >,
 ): Promise<OutboundStepState> {
   const who = await actor();
   const id = idOf(orderId);
@@ -236,6 +247,9 @@ export async function releaseOutboundAction(
   return step(orderId, (who, id) =>
     releaseOutboundOrder(who, id, {
       takeWhatThereIs: takeWhatThereIs === true,
+      // WMS-79 (ADR 0094): what production can make is asked to it when
+      // the company turned it on.
+      makeToOrder,
     }),
   );
 }
@@ -245,7 +259,30 @@ export async function cancelOutboundAction(
   reason: string,
 ): Promise<OutboundStepState> {
   return step(orderId, (who, id) =>
-    cancelOutboundOrder(who, id, String(reason ?? "").slice(0, 400)),
+    cancelOutboundOrder(who, id, String(reason ?? "").slice(0, 400), {
+      makeToOrder,
+    }),
+  );
+}
+
+/** WMS-79: «Dejar de esperar» — the order stops waiting for production. */
+export async function stopWaitingAction(
+  orderId: string,
+  reason: string,
+): Promise<OutboundStepState> {
+  return step(orderId, (who, id) =>
+    stopWaitingForProduction(who, id, String(reason ?? "").slice(0, 400), {
+      makeToOrder,
+    }),
+  );
+}
+
+/** WMS-79: «Pedir producción de nuevo» for what the order still waits. */
+export async function askProductionAgainAction(
+  orderId: string,
+): Promise<OutboundStepState> {
+  return step(orderId, (who, id) =>
+    askProductionAgain(who, id, { makeToOrder }),
   );
 }
 

@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-155 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+156 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -28,7 +28,7 @@
 | Inventario › Existencias y movimientos | 8 | [inventory](modulos/inventory.md) |
 | Inventario › Tarimas y contenedores | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Conteos | 4 | [inventory](modulos/inventory.md) |
-| Inventario › Tareas, reservas y pedidos de salida | 11 | [inventory](modulos/inventory.md) |
+| Inventario › Tareas, reservas y pedidos de salida | 12 | [inventory](modulos/inventory.md) |
 | Inventario › Embarques | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Devoluciones de clientes | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Traslados entre almacenes | 4 | [inventory](modulos/inventory.md) |
@@ -2353,6 +2353,35 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - Índices: (`organizationId`, `productId`).
 - Relaciones: `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
 
+### OutboundLineWait · `outbound_line_wait`
+
+WMS-79 (ADR 0094): what an outbound line waits from production.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `orderId` | `String · Char(36)` |  |  |
+| `lineId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  | What it waits for, in the product's unit (fixed when it opens). |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `received` | `Decimal · Decimal(12, 3)` | `0` | What was set aside for the line since it opened; only grows. |
+| `status` | `OutboundLineWaitStatus` | `OPEN` |  |
+| `openLineId` | `String? · Char(36)` |  | The line while open, null once closed: one open wait per line. |
+| `openedByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `closedAt` | `DateTime? · DateTime(3)` |  |  |
+| `closedByUserId` | `String? · Char(36)` |  |  |
+| `closeReason` | `String? · VarChar(300)` |  |  |
+| `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `openLineId`).
+- Índices: (`organizationId`, `orderId`, `status`); (`organizationId`, `lineId`).
+- Relaciones: `order` → `OutboundOrder` por (`organizationId`, `orderId`) (al borrar: Restrict); `line` → `OutboundOrderLine` por (`organizationId`, `lineId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+
 ### OutboundPackShortage · `outbound_pack_shortage`
 
 What was missing of an outbound order when packing it (WMS-15, ADR 0044): of one line and lot, how much (in the product's unit), which units by serial and why. Writing it released that much of the order's reservation in the staging place: the stock stays there, loose, for an adjustment or a count. Never changes nor is deleted (triggers).
@@ -2453,6 +2482,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `StockReservationState`: `ACTIVE`, `CLOSED`.
 - `OutboundOrderStatus`: `DRAFT`, `RELEASED`, `PICKING`, `PICKED`, `PACKING`, `PACKED`, `SHIPPED`, `CANCELLED`.
 - `PickWaveStatus`: `OPEN`, `DONE`, `CANCELLED`.
+- `OutboundLineWaitStatus`: `OPEN`, `DONE`, `DROPPED`, `CANCELLED`.
 
 ## Inventario › Embarques
 
@@ -3965,10 +3995,11 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
 | `cancelledByUserId` | `String? · Char(36)` |  |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
+| `lineWaitId` | `String? · Char(36)` |  | WMS-79 (ADR 0094): the wait of an outbound line this request makes for; null when a person of the area asked. Never changes. |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `number`).
-- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `status`, `number`); (`organizationId`, `productId`, `status`); (`organizationId`, `requestedByUserId`, `status`); (`organizationId`, `areaLocationId`).
-- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `facilityId`, `status`, `number`); (`organizationId`, `status`, `number`); (`organizationId`, `productId`, `status`); (`organizationId`, `requestedByUserId`, `status`); (`organizationId`, `areaLocationId`); (`organizationId`, `lineWaitId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `area` → `Location` por (`organizationId`, `areaLocationId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `lineWait` → `OutboundLineWait` por (`organizationId`, `lineWaitId`) (al borrar: Restrict).
 
 #### Enumeraciones de Producción
 

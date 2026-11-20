@@ -18,6 +18,8 @@ import {
   postDisposal,
   releaseHold,
   serialKey,
+  lockOrderOfWait,
+  sendProducedToWait,
   settleProductionStored,
   writeStatusChange,
   type InventoryActor,
@@ -30,6 +32,7 @@ import {
   PRODUCTION_BATCH_VERIFICATION_OPERATION,
   formatProductionNumber,
   formatReportNumber,
+  lineWaitOfReport,
   reachesProductionReport,
 } from "@/modules/production";
 import {
@@ -1611,6 +1614,12 @@ async function decideCore(
     select: SLOT_PRODUCT,
   });
   if (!product) return { ok: false, reason: "not_found", formError: NOT_FOUND };
+  // WMS-79 (ADR 0094): the outbound line the lot was made for, if any (the
+  // link never changes, so it is read before the locks).
+  const lineWaitId =
+    known.origin === "PRODUCTION" && known.productionReportId
+      ? await lineWaitOfReport(client, known.productionReportId)
+      : null;
   const rule = {
     unitCode: product.unitCode,
     quantityStep: product.quantityStep.toString(),
@@ -1728,6 +1737,9 @@ async function decideCore(
   const run = async (tx: Tx): Promise<DecideInspectionResult> => {
     await lockRows(tx, "product", [known.productId]);
     await lockRows(tx, "location", [known.locationId, ...destinations]);
+    // WMS-79: the outbound order it was made for, after the locations and
+    // before this document (ADR 0094).
+    if (lineWaitId) await lockOrderOfWait(tx, lineWaitId);
     if (returnId) await lockRows(tx, "customerReturn", [returnId]);
     await lockRows(tx, "qualityInspection", [known.id]);
     const row = await lockedOrReadInspection(tx, known.id);
@@ -2298,7 +2310,24 @@ async function decideCore(
         planVersionId: plan?.versionId ?? null,
       },
     });
-    const putaway = await createPutawayTasks(tx, actor, arrivals);
+    // WMS-79 (ADR 0094): what an outbound order waits for is set aside for
+    // it, with its picking task, before put-away; the rest goes on.
+    let toPutAway = arrivals;
+    let sentNote = "";
+    if (lineWaitId && arrivals.length > 0) {
+      const sent = await sendProducedToWait(tx, actor, {
+        waitId: lineWaitId,
+        arrivals,
+      });
+      toPutAway = arrivals
+        .map((each, index) => ({
+          ...each,
+          quantity: each.quantity.minus(sent.sent[index]!),
+        }))
+        .filter((each) => each.quantity.greaterThan(0));
+      sentNote = sent.notes.join(" ");
+    }
+    const putaway = await createPutawayTasks(tx, actor, toPutAway);
 
     // P10, P10b: the stage «Verificación» of the lot, after the writes.
     if (origin === "PRODUCTION" && row.productionReportId) {
@@ -2387,7 +2416,9 @@ async function decideCore(
     return {
       ok: true as const,
       inspectionId: row.id,
-      summary: putaway.note ? `${summary} ${putaway.note}` : summary,
+      summary: [summary, sentNote, putaway.note ?? ""]
+        .filter(Boolean)
+        .join(" "),
     };
   };
 

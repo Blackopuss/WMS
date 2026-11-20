@@ -34,7 +34,14 @@ import {
   type PickSource,
 } from "./picking";
 import { releaseReservations, type ReservationSource } from "./reservations";
-import { CROSS_DOCK_MODE } from "./settings";
+import {
+  closeOrderWaits,
+  openProductionWaits,
+  waitsOfOrder,
+  type MakeToOrder,
+  type OutboundWaitView,
+} from "./outbound-waits";
+import { CROSS_DOCK_MODE, MAKE_TO_ORDER_MODE } from "./settings";
 import { settleWaveOf } from "./wave-settle";
 import { TO_SHIP, readyStatuses, shippedOnWhere } from "./shipment-ready";
 import {
@@ -474,7 +481,7 @@ export async function removeOutboundLine(
 export async function releaseOutboundOrder(
   actor: InventoryActor,
   orderId: string,
-  options: { takeWhatThereIs?: boolean } = {},
+  options: ReleaseOptions = {},
 ): Promise<OutboundResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -499,9 +506,26 @@ export async function releaseOutboundOrder(
         select: { facilityId: true },
       })
     )?.facilityId ?? null;
+  // WMS-79 (ADR 0094): the production areas these products would use,
+  // to lock them (shared) before the order.
+  const areaIds =
+    options.makeToOrder && facilityId
+      ? await options.makeToOrder.areasFor(
+          forOrganization(organizationId),
+          facilityId,
+          [...new Set(draft.map((line) => line.productId))],
+        )
+      : [];
   for (let attempt = 0; ; attempt++) {
     try {
-      return await releaseLocked(actor, orderId, draft, options, facilityId);
+      return await releaseLocked(
+        actor,
+        orderId,
+        draft,
+        options,
+        facilityId,
+        areaIds,
+      );
     } catch (error) {
       // A task created by hand took the same number at once: again.
       if ((error as { code?: string }).code === "P2002" && attempt < 4) {
@@ -516,8 +540,9 @@ function releaseLocked(
   actor: InventoryActor,
   orderId: string,
   draft: { productId: string }[],
-  options: { takeWhatThereIs?: boolean },
+  options: ReleaseOptions,
   facilityId: string | null,
+  areaIds: string[],
 ): Promise<OutboundResult> {
   const { organizationId, userId } = actor;
   return inOrder(organizationId, async (tx) => {
@@ -534,6 +559,13 @@ function releaseLocked(
     }
     // Where picked goods of its warehouse wait (WMS-14/18).
     const staging = await ensureStagingLocation(tx, organizationId, facilityId);
+    // WMS-79: the production areas, shared, before the order (a linked
+    // request reads its area when it is inserted).
+    const lockedAreaIds = new Set(
+      areaIds.length > 0
+        ? await lockRows(tx, "location", areaIds, { mode: "share" })
+        : [],
+    );
     const order = await lockOrder(tx, orderId, userId);
     if (order.facilityId !== facilityId) {
       return stop(
@@ -555,12 +587,23 @@ function releaseLocked(
       order,
       staging.id,
       new Set(draft.map((line) => line.productId)),
-      options,
+      { ...options, lockedAreaIds },
     );
     if (!done.ok) throw new Rejected(done);
     return done;
   });
 }
+
+export type ReleaseOptions = {
+  /** Reserves what is free and releases with the rest pending. */
+  takeWhatThereIs?: boolean;
+  /**
+   * WMS-79 (ADR 0094): with `inventory.outbound.make_to_order = on`, what
+   * falls short of a line production can make is asked to production
+   * instead of stopping the release. Without it, as before.
+   */
+  makeToOrder?: MakeToOrder;
+};
 
 /** An outbound order read under its lock (`lockOrder`). */
 export type LockedOutboundOrder = Awaited<ReturnType<typeof lockOrder>>;
@@ -598,7 +641,7 @@ export async function releaseUnderLock(
   stagingId: string,
   /** The products the caller locked: a line of another one is refused. */
   lockedIds: ReadonlySet<string>,
-  options: { takeWhatThereIs?: boolean } = {},
+  options: ReleaseOptions & { lockedAreaIds?: ReadonlySet<string> } = {},
 ): Promise<OutboundResult> {
   try {
     return await releaseCore(tx, actor, order, stagingId, lockedIds, options);
@@ -614,7 +657,7 @@ async function releaseCore(
   order: LockedOutboundOrder,
   stagingId: string,
   lockedIds: ReadonlySet<string>,
-  options: { takeWhatThereIs?: boolean },
+  options: ReleaseOptions & { lockedAreaIds?: ReadonlySet<string> },
 ): Promise<OutboundResult> {
   const { userId } = actor;
   const facilityId = order.facilityId;
@@ -669,21 +712,55 @@ async function releaseCore(
     }
     plan.push({ line, sources, take });
   }
-  if (shortages.length > 0 && !options.takeWhatThereIs) {
+  // WMS-79 (ADR 0094): what falls short of a line production can make is
+  // asked to production; it does not stop the release.
+  const toMake = new Map<string, string>();
+  if (
+    shortages.length > 0 &&
+    options.makeToOrder &&
+    (await readSetting(tx, MAKE_TO_ORDER_MODE)) === "on"
+  ) {
+    const shortIds = new Set(shortages.map((row) => row.lineId));
+    const made = await options.makeToOrder.makeable(tx, {
+      organizationId: actor.organizationId,
+      facilityId,
+      productIds: plan
+        .filter((step) => shortIds.has(step.line.id))
+        .map((step) => step.line.productId),
+      lockedAreaIds: options.lockedAreaIds ?? new Set(),
+    });
+    if (made.changed) {
+      return stop(
+        "not_allowed",
+        "La receta cambió mientras se liberaba. Inténtalo de nuevo.",
+      );
+    }
+    for (const step of plan) {
+      const area = made.areas.get(step.line.productId);
+      if (shortIds.has(step.line.id) && area) toMake.set(step.line.id, area);
+    }
+  }
+  const blocking = shortages.filter((row) => !toMake.has(row.lineId));
+  if (blocking.length > 0 && !options.takeWhatThereIs) {
     throw new Rejected({
       ok: false,
       reason: "short",
       formError:
-        shortages.length === 1
+        blocking.length === 1
           ? "Un producto no alcanza."
-          : `${shortages.length} productos no alcanzan.`,
-      shortages,
+          : `${blocking.length} productos no alcanzan.`,
+      shortages: blocking,
     });
   }
   // WMS-54 (ADR 0052): with cross-docking, an order may wait for what
-  // arrives with nothing set aside yet; without it, nothing to release.
+  // arrives with nothing set aside yet; without it, nothing to release
+  // unless something of it waits for production (WMS-79).
   const waitsForAll = plan.every((step) => step.take.isZero());
-  if (waitsForAll && (await readSetting(tx, CROSS_DOCK_MODE)) !== "on") {
+  if (
+    waitsForAll &&
+    toMake.size === 0 &&
+    (await readSetting(tx, CROSS_DOCK_MODE)) !== "on"
+  ) {
     return stop(
       "not_allowed",
       "No hay nada disponible de este pedido: no se apartó nada.",
@@ -714,23 +791,53 @@ async function releaseCore(
       nextNumber,
     });
   }
+  // WMS-79: a wait and a linked request for each line production makes.
+  let askedText = "";
+  if (toMake.size > 0 && options.makeToOrder) {
+    const lines = plan
+      .filter((step) => toMake.has(step.line.id))
+      .map((step) => ({
+        lineId: step.line.id,
+        productId: step.line.productId,
+        quantity: dec(step.line.quantity.toString()).minus(step.take),
+        unitCode: step.line.unitCode,
+      }));
+    const waits = await openProductionWaits(tx, actor, {
+      orderId: order.id,
+      lines,
+    });
+    const asked = await options.makeToOrder.ask(tx, actor, {
+      facilityId,
+      lines: lines.map((line) => ({
+        ...line,
+        waitId: waits.get(line.lineId)!,
+        areaLocationId: toMake.get(line.lineId)!,
+      })),
+    });
+    askedText = ` Se pidió producir ${asked.length === 1 ? "1 producto" : `${asked.length} productos`} (${asked.map((row) => row.numberText).join(", ")}); el pedido no sale hasta que llegue.`;
+  }
   if (waitsForAll) {
     return {
       ok: true,
       orderId: order.id,
-      summary: `Se liberó el pedido ${formatOutboundNumber(order.number)} sin nada apartado: lo que llegue para él irá directo a preparación.`,
+      summary:
+        toMake.size > 0
+          ? `Se liberó el pedido ${formatOutboundNumber(order.number)} sin nada apartado.${askedText}`
+          : `Se liberó el pedido ${formatOutboundNumber(order.number)} sin nada apartado: lo que llegue para él irá directo a preparación.`,
     };
   }
+  const incomplete = shortages.length - toMake.size;
   return {
     ok: true,
     orderId: order.id,
     summary:
-      (shortages.length === 0
-        ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: todo quedó apartado`
-        : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay (${shortages.length === 1 ? "1 producto quedó incompleto" : `${shortages.length} productos quedaron incompletos`})`) +
+      (incomplete === 0
+        ? `Se liberó el pedido ${formatOutboundNumber(order.number)}: ${toMake.size > 0 ? "se apartó lo que hay" : "todo quedó apartado"}`
+        : `Se liberó el pedido ${formatOutboundNumber(order.number)} con lo que hay (${incomplete === 1 ? "1 producto quedó incompleto" : `${incomplete} productos quedaron incompletos`})`) +
       (nextNumber - firstTask === 1
         ? " y hay 1 tarea de surtido."
-        : ` y hay ${nextNumber - firstTask} tareas de surtido.`),
+        : ` y hay ${nextNumber - firstTask} tareas de surtido.`) +
+      askedText,
   };
 }
 
@@ -738,6 +845,8 @@ export async function cancelOutboundOrder(
   actor: InventoryActor,
   orderId: string,
   reason: string,
+  /** WMS-79: cancels what was still asked to production for it. */
+  options: { makeToOrder?: MakeToOrder } = {},
 ): Promise<OutboundResult> {
   const { organizationId, userId } = actor;
   await assertModulePermission(
@@ -799,6 +908,23 @@ export async function cancelOutboundOrder(
         cancelReason: why,
       },
     });
+    // WMS-79 (ADR 0094): it no longer waits for production; what was still
+    // asked is cancelled, the orders already made go on without the link.
+    const waits = await closeOrderWaits(
+      tx,
+      actor,
+      order.id,
+      "CANCELLED",
+      `Se canceló el pedido: ${why}`,
+    );
+    if (waits.length > 0 && options.makeToOrder) {
+      await options.makeToOrder.closed(
+        tx,
+        actor,
+        waits,
+        `Se canceló el pedido ${formatOutboundNumber(order.number)}: ${why}`,
+      );
+    }
     // WMS-25: its wave ends when this was the last of its open work.
     await settleWaveOf(tx, order.id);
     await recordAuditEvent(tx, {
@@ -834,6 +960,8 @@ export type OutboundSummary = {
   dueOn: string | null;
   lines: number;
   createdAt: Date;
+  /** WMS-79: something of it waits for production. */
+  waitsForProduction: boolean;
 };
 
 export type OutboundPage = {
@@ -955,7 +1083,12 @@ export async function listOutboundOrders(
       reference: true,
       dueOn: true,
       createdAt: true,
-      _count: { select: { lines: true } },
+      _count: {
+        select: {
+          lines: true,
+          productionWaits: { where: { status: "OPEN" } },
+        },
+      },
     },
   });
   return {
@@ -970,6 +1103,7 @@ export async function listOutboundOrders(
       dueOn: ymd(row.dueOn),
       lines: row._count.lines,
       createdAt: row.createdAt,
+      waitsForProduction: row._count.productionWaits > 0,
     })),
     total,
     page,
@@ -1011,6 +1145,11 @@ export type OutboundView = OutboundSummary & {
      * «8 piezas llegaron con OC-0007»; null when nothing did.
      */
     crossDockText: string | null;
+    /**
+     * WMS-79 (ADR 0094): the latest wait of the line for production; null
+     * when it never waited.
+     */
+    production: OutboundWaitView | null;
   }[];
   /** The shipment it is in or left with (WMS-16); null when none. */
   shipment: {
@@ -1192,6 +1331,11 @@ export async function getOutboundOrder(
     entry.refs.add(arrivedWith(task.crossDockMovement.reference));
     arrivedOf.set(task.outboundLineId, entry);
   }
+  // WMS-79: the latest wait of each line (most recent first).
+  const waitOf = new Map<string, OutboundWaitView>();
+  for (const wait of await waitsOfOrder(client, row.id)) {
+    if (!waitOf.has(wait.lineId)) waitOf.set(wait.lineId, wait);
+  }
   const pickedOf = new Map<string, Decimal>();
   for (const task of tasks) {
     if (task.status !== "DELIVERED" || !task.outboundLineId) continue;
@@ -1212,6 +1356,9 @@ export async function getOutboundOrder(
     recipient: row.recipient,
     reference: row.reference,
     address: row.address,
+    waitsForProduction: [...waitOf.values()].some(
+      (wait) => wait.status === "OPEN",
+    ),
     note: row.note,
     dueOn: ymd(row.dueOn),
     lines: row.lines.length,
@@ -1258,6 +1405,7 @@ export async function getOutboundOrder(
         crossDockText: arrivedOf.has(line.id)
           ? `${formatStock(arrivedOf.get(line.id)!.quantity.toString(), line.unitCode)} ${arrivedOf.get(line.id)!.quantity.equals(1) ? "llegó" : "llegaron"} ${[...arrivedOf.get(line.id)!.refs].join(" y ")}`
           : null,
+        production: waitOf.get(line.id) ?? null,
       };
     }),
     shipment: inShipment

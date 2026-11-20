@@ -11,6 +11,7 @@ import { isExpired, lotDayOf } from "./lot-rules";
 import { formatStock, type InventoryActor } from "./movements";
 import { formatOutboundNumber } from "./outbound-states";
 import { createPickTasks, nextTaskNumber } from "./picking";
+import { creditLineWaits } from "./outbound-waits";
 import { OUTBOUND_LINE_SOURCE } from "./reservation-sources";
 import { freeToTake } from "./reservations";
 import { CROSS_DOCK_MODE, PICK_EXPIRED } from "./settings";
@@ -327,6 +328,7 @@ export async function sendToWaitingOrders(
   const nameOf = new Map(names.map((row) => [row.id, row.name]));
 
   let next = await nextTaskNumber(tx);
+  const byLine = new Map<string, Decimal>();
   type Sent = {
     parts: Map<string, { quantity: Decimal; unitCode: string }>;
     tasks: number[];
@@ -360,6 +362,10 @@ export async function sendToWaitingOrders(
       crossDockMovementId: movementId,
     });
     sent[share.arrival] = sent[share.arrival]!.plus(share.quantity);
+    byLine.set(
+      line.id,
+      (byLine.get(line.id) ?? dec(0)).plus(share.quantity),
+    );
     const entry: Sent = byOrder.get(order.id) ?? {
       parts: new Map(),
       tasks: [],
@@ -373,6 +379,10 @@ export async function sendToWaitingOrders(
     for (let number = first; number < next; number++) entry.tasks.push(number);
     byOrder.set(order.id, entry);
   }
+
+  // WMS-79 (ADR 0094): what went to a line that waits for production
+  // counts toward its wait (the orders are locked).
+  await creditLineWaits(tx, byLine);
 
   const sentOrders: CrossDockSent[] = [];
   const notes: string[] = [];

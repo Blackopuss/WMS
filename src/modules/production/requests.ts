@@ -8,6 +8,7 @@ import {
   formatStock,
   pickSources,
   productsNearMinimum,
+  waitingOrderOf,
 } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
 import { isAllowed } from "@/platform/authorization";
@@ -39,6 +40,7 @@ import {
   REQUEST_ANSWERED_NOTICE,
   REQUEST_TO_DECIDE_NOTICE,
 } from "./notices";
+import { noticeOrderStillWaits } from "./make-to-order";
 import { scaleInput } from "./order-rules";
 import {
   OPEN_PRODUCTION_STATUSES,
@@ -523,6 +525,8 @@ export async function submitProductionRequest(
         requestedByUserId: userId,
         productId: product.id,
         status: "SUBMITTED",
+        // WMS-79: what an outbound order asked in their name is not theirs.
+        lineWaitId: null,
       },
       select: { number: true },
     });
@@ -628,6 +632,8 @@ type RequestRow = {
   note: string | null;
   requestedByUserId: string;
   decidedByUserId: string | null;
+  /** WMS-79: the wait of an outbound line it makes for. */
+  lineWaitId: string | null;
   product: { name: string };
 };
 
@@ -643,6 +649,7 @@ const REQUEST_SELECT = {
   note: true,
   requestedByUserId: true,
   decidedByUserId: true,
+  lineWaitId: true,
   product: { select: { name: true } },
 } as const;
 
@@ -809,6 +816,7 @@ export async function acceptProductionRequest(
       quantity: true,
       requestedByUserId: true,
       areaLocationId: true,
+      lineWaitId: true,
     },
   });
   // Out of reach it does not exist: before saying anything about the input.
@@ -831,7 +839,9 @@ export async function acceptProductionRequest(
     areaLocationId: "-",
     dueOn: input.dueOn,
     priority: input.priority,
-    assigneeIds: input.assigneeIds ?? [first.requestedByUserId],
+    // WMS-79: who released an outbound order rarely reports production.
+    assigneeIds:
+      input.assigneeIds ?? (first.lineWaitId ? [] : [first.requestedByUserId]),
   });
   if (!header.ok) {
     return {
@@ -866,6 +876,17 @@ export async function acceptProductionRequest(
     const claimed = await claim(tx, actor, row, "ACCEPTED");
     if (!claimed.done) return claimed.result;
     const numberText = formatProductionRequestNumber(row.number);
+    // WMS-79 (ADR 0094): read after taking the request, so a cancelled
+    // outbound order that got there first is seen.
+    if (row.lineWaitId) {
+      const wait = await waitingOrderOf(tx, row.lineWaitId);
+      if (!wait || wait.status !== "OPEN") {
+        return stop(
+          "not_allowed",
+          "Ya no hace falta para el pedido: recházala.",
+        );
+      }
+    }
     if (capped) {
       // With the rule of the product today, the same one the order uses:
       // what does not parse is refused here, never skipped.
@@ -1069,6 +1090,13 @@ export async function rejectProductionRequest(
       href: `/produccion/solicitudes/${row.id}`,
       key: `production_request:${row.id}:answered`,
     });
+    // WMS-79: the outbound order it was for still waits.
+    await noticeOrderStillWaits(
+      tx,
+      actor,
+      row.lineWaitId,
+      `Se rechazó la solicitud ${numberText}: ${why}.`,
+    );
     return {
       ok: true,
       requestId: row.id,

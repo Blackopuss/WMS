@@ -26,6 +26,7 @@ import {
   type TenantDb,
 } from "@/server";
 
+import { noticeOrderStillWaits } from "./make-to-order";
 import { SCRAP_APPROVAL } from "./approval-keys";
 import { ORDER_CLOSED_NOTICE } from "./notices";
 import {
@@ -37,7 +38,13 @@ import {
   productionTransitionProblem,
   type ProductionOrderStatus,
 } from "./order-states";
-import { Rejected, idOf, insideArea, lockProductionOrder } from "./orders";
+import {
+  Rejected,
+  idOf,
+  insideArea,
+  lineWaitOfOrder,
+  lockProductionOrder,
+} from "./orders";
 import type { ProductionActor } from "./recipes";
 
 /**
@@ -314,6 +321,14 @@ export async function closeProductionOrder(
           tareasCanceladas: cancelled.length,
         },
       });
+      // WMS-79 (ADR 0094): the outbound order it was made for still waits
+      // for what was not set aside for it yet.
+      await noticeOrderStillWaits(
+        tx,
+        actor,
+        await lineWaitOfOrder(tx, order.id),
+        `Se cerró la orden ${numberText} con ${goodText}.`,
+      );
       const people = await tx.productionOrder.findFirst({
         where: { id: order.id },
         select: {

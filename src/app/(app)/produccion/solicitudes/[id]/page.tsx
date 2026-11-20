@@ -21,6 +21,7 @@ import {
   CancelRequest,
   RejectRequest,
 } from "./request-controls";
+import { OutboundLinkNote } from "../../outbound-link";
 
 export const metadata: Metadata = { title: "Solicitud de producción" };
 
@@ -101,6 +102,7 @@ export default async function SolicitudProduccionPage({
       {back}
       {moduleState === "read_only" && <ReadOnlyNotice module="Producción" />}
       <PageHeader title={`Solicitud ${request.numberText}`} />
+      <OutboundLinkNote actor={actor} of={{ requestId: request.id }} />
       <div className="-mt-2 flex flex-wrap items-center gap-2">
         <Badge
           variant={request.status === "SUBMITTED" ? "default" : "secondary"}

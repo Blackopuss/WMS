@@ -222,3 +222,10 @@ export {
   type ProductionTrace,
   type ProductionTraceMatch,
 } from "./traceability";
+export {
+  lineWaitOfReport,
+  makeToOrder,
+  outboundOrderFor,
+  productionForOutboundOrder,
+} from "./make-to-order";
+export type { LineProduction, OutboundLink } from "./make-to-order";
