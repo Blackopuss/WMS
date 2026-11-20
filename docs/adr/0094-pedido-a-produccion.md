@@ -417,7 +417,12 @@ ignora las esperas: con él, un pedido que espera podría pasar a «Surtido».
 - Las pantallas no se revisaron en navegador; `verify:ui`/`verify:a11y`
   llevan la ficha del pedido.
 - Un pedido liberado sin nada apartado cuya espera se deja sigue «Liberado»
-  sin tareas: se cancela.
+  sin tareas: cuando llegue mercancía se completa con «Apartar lo que ya
+  hay», o se cancela.
+- Un pedido que dejó de esperar y ya quedó «Surtido» (sin tareas abiertas)
+  no se completa con «Apartar lo que ya hay»: la tabla de estados del pedido
+  no regresa a surtido; sale con su faltante a la vista o se arma otro
+  pedido por lo que falta.
 - Si una persona libera a mano lo producido con «Cambiar estado», la línea
   sigue esperando hasta que alguien pulsa «Apartar lo que ya hay».
 
