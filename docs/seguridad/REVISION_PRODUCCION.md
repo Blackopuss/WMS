@@ -44,9 +44,10 @@ Producción.
 | Cerrar o ver la conciliación de un área fuera del alcance | La orden «no existe» (`scope.int.test.ts`). |
 | Costos en la conciliación | Solo con `inventory.cost.read`; el campo no existe para los demás. |
 | Dejar disponible en el área lo que espera acomodo | Lo aprobado en el área lleva `TASK_HOLD` con su tarea; el área no es un lugar de paso (no recibe acomodos de entradas, recepciones ni cross-docking) y ningún acomodo se entrega en un área de producción. |
-| Marcar «Se guardó» sin que lo aprobado haya llegado | Solo al entregar la última tarea de acomodo abierta del lote (leída bajo el candado del progreso) o al aprobar directo a un lugar donde se guarda. |
+| Marcar «Se guardó» antes de tiempo | Solo cuando todo el lote está decidido y no queda ningún acomodo abierto del lote, leído bajo el candado del progreso. |
 | Terminal compartida | Cerrar se conserva en una sesión de PIN (como liberar y cancelar, decisión del fundador). |
 
-Riesgo residual: sin acomodo por tareas y con lo aprobado en el área, «Se
-guardó» no se marca solo; la empresa usa una etapa manual o aprueba directo
-al lugar donde se guarda.
+Riesgos residuales: con acomodo a mano, «Se guardó» termina con la última
+decisión aunque lo aprobado siga en el área (la empresa puede agregar una
+etapa manual); el material que queda libre en el área al cerrar no aparece
+en «Sin acomodar».

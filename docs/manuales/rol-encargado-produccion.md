@@ -48,7 +48,7 @@ Una orden necesita un área: una ubicación con uso **Producción** (la crea en 
 - Una orden liberada sin reportes no se cierra: se cancela.
 
 ### Lo aprobado a su lugar
-Si la empresa acomoda con tareas, lo que se aprueba en el área de producción crea su tarea de acomodo hacia donde se guarda. Al entregarla (o si se aprobó directo a un lugar donde se guarda), la etapa **Se guardó** del lote se marca sola, si la empresa la usa en su proceso.
+Si la empresa acomoda con tareas, lo que se aprueba en el área de producción crea su tarea de acomodo hacia donde se guarda. Cuando todo el lote está decidido y su acomodo entregado (o, sin tareas de acomodo, con la última decisión), la etapa **Se guardó** del lote se marca sola, si la empresa la usa en su proceso.
 
 ### Solicitudes de producción
 En **Producción › Solicitudes de producción** (**Solicitudes por atender (N)**):

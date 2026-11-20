@@ -2316,23 +2316,10 @@ async function decideCore(
         row.productionReportId,
         PRODUCTION_BATCH_VERIFICATION_OPERATION,
       );
-      // WMS-31 (ADR 0093): approved straight to a place where it is kept
-      // (not an area of production, not «de paso»): «Se guardó» by itself
-      // when no put-away of the lot is open.
-      if (arrivals.length > 0) {
-        const kept = await tx.location.findFirst({
-          where: {
-            id: { in: arrivals.map((each) => each.locationId) },
-            isDefault: null,
-            isStaging: null,
-            type: { notIn: ["PRODUCTION", "RECEIVING"] },
-          },
-          select: { id: true },
-        });
-        if (kept) {
-          await settleProductionStored(tx, actor, row.productionReportId);
-        }
-      }
+      // WMS-31 (ADR 0093): «Se guardó» by itself once the whole lot is
+      // decided and no put-away of it is open (also with nothing approved,
+      // or with put-away by hand).
+      await settleProductionStored(tx, actor, row.productionReportId);
     }
 
     if (photoIds.length > 0) {

@@ -36,7 +36,7 @@ import {
   productionTransitionProblem,
   type ProductionOrderStatus,
 } from "./order-states";
-import { Rejected, idOf, lockProductionOrder } from "./orders";
+import { Rejected, idOf, insideArea, lockProductionOrder } from "./orders";
 import type { ProductionActor } from "./recipes";
 
 /**
@@ -391,6 +391,8 @@ export type ClosingOutput = {
   unverifiedText: string;
   /** Any of them above zero, for a short screen. */
   verifiedAny: boolean;
+  /** Something still without a decision (unverified or in verification). */
+  toVerify: boolean;
 };
 
 export type ClosingMaterial = {
@@ -401,6 +403,12 @@ export type ClosingMaterial = {
   scrappedText: string;
   setAsideText: string;
   setAside: boolean;
+  /**
+   * Of what is set aside, what waits inside the production area: closing
+   * leaves it free there (it is not «Sin acomodar», ADR 0093).
+   */
+  inAreaText: string;
+  inArea: boolean;
 };
 
 export type ProductionOrderClosing = {
@@ -461,6 +469,7 @@ export async function getProductionOrderClosing(
       number: true,
       status: true,
       areaLocationId: true,
+      facilityId: true,
       quantity: true,
       unitCode: true,
       closedAt: true,
@@ -511,7 +520,7 @@ export async function getProductionOrderClosing(
       _sum: { quantity: true },
     }),
     client.stockReservation.groupBy({
-      by: ["sourceId"],
+      by: ["sourceId", "locationId"],
       where: {
         sourceType: PRODUCTION_ORDER_LINE_SOURCE,
         sourceId: { in: lineIds },
@@ -616,12 +625,26 @@ export async function getProductionOrderClosing(
       dec((row._sum.quantity ?? 0).toString()),
     ]),
   );
-  const asideOf = new Map(
-    setAside.map((row) => [
-      row.sourceId,
-      dec((row._sum.remaining ?? 0).toString()),
-    ]),
+  const area = await insideArea(
+    client as unknown as Parameters<typeof insideArea>[0],
+    order.facilityId,
+    order.areaLocationId,
   );
+  const asideOf = new Map<string, Decimal>();
+  const inAreaOf = new Map<string, Decimal>();
+  for (const row of setAside) {
+    const value = dec((row._sum.remaining ?? 0).toString());
+    asideOf.set(
+      row.sourceId,
+      (asideOf.get(row.sourceId) ?? dec(0)).plus(value),
+    );
+    if (row.locationId && area.has(row.locationId)) {
+      inAreaOf.set(
+        row.sourceId,
+        (inAreaOf.get(row.sourceId) ?? dec(0)).plus(value),
+      );
+    }
+  }
   const ordered = dec(order.quantity.toString());
   const missing = ordered.minus(done.good);
 
@@ -704,6 +727,7 @@ export async function getProductionOrderClosing(
         unverifiedText: text(unverified.greaterThan(0) ? unverified : dec(0)),
         verifiedAny:
           bucket.DECIDED.greaterThan(0) || bucket.OPEN.greaterThan(0),
+        toVerify: unverified.greaterThan(0) || bucket.OPEN.greaterThan(0),
       };
     }),
     materials: order.lines.map((line) => {
@@ -718,6 +742,8 @@ export async function getProductionOrderClosing(
         scrappedText: text(scrapOf.get(line.id) ?? dec(0)),
         setAsideText: text(aside),
         setAside: aside.greaterThan(0),
+        inAreaText: text(inAreaOf.get(line.id) ?? dec(0)),
+        inArea: (inAreaOf.get(line.id) ?? dec(0)).greaterThan(0),
       };
     }),
     pending: {

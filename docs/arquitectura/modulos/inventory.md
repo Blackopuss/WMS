@@ -52,8 +52,9 @@ código»):
   acomodo se entrega en un área de producción. `settleProductionStored`
   completa la operación «Se guardó» del lote (`production-batch.ts`, el
   documento de proceso del lote, declarado aquí porque Inventario no
-  importa Producción) al entregar su último acomodo abierto, tomando antes
-  el progreso del lote.
+  importa Producción) cuando todo el lote está decidido y no queda ningún
+  acomodo abierto del lote (al decidir cada verificación y al entregar
+  cada acomodo), tomando antes el progreso del lote.
 - Tarimas y contenedores (WMS-53, ADR 0043): un contenedor agrupa parte del
   saldo de su ubicación (`container_item`) sin entrar en la llave del saldo.
   Lo que está dentro no se toma suelto: `freeToTake`/`freeToMoveFrom` lo

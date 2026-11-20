@@ -147,8 +147,9 @@ previsto, consumido, merma y apartado sin usar; costos solo con
 `inventory.cost.read`). El documento de proceso del lote
 (`PRODUCTION_BATCH_PROCESS`) se declara ahora en Inventario
 (`production-batch.ts`) y Producción lo reexporta: su operación nueva «Se
-guardó» (`PRODUCTION_BATCH_STORED_OPERATION`) la completa Inventario al
-entregar el último acomodo del lote (`settleProductionStored`).
+guardó» (`PRODUCTION_BATCH_STORED_OPERATION`) la completa Inventario
+cuando todo el lote está decidido y sin acomodos abiertos
+(`settleProductionStored`).
 
 ## Permisos
 

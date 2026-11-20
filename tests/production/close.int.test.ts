@@ -522,6 +522,29 @@ describe("what was approved goes to its place (ADR 0093)", () => {
     ).toMatchObject({ stage: "DONE" });
   });
 
+  it("«Se guardó» waits for the verification; by hand or with nothing approved it ends with the last decision", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner, crate, area } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    await lotProcess(owner);
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const id = await released(owner, crate, area, "10");
+    const lot = await made(owner, id, "4");
+    const stored = () =>
+      stateOf(
+        PRODUCTION_BATCH_PROCESS.key,
+        lot.reportId,
+        PRODUCTION_BATCH_STORED_OPERATION,
+      );
+    expect(await stored()).toMatchObject({ stage: "WAITING" });
+    // All rejected, with put-away by hand: the lot is settled.
+    await verify(inspector, { crate, area, lineId: lot.lineId }, [
+      { status: "REJECTED", quantity: "4", reason: "No cumple" },
+    ]);
+    expect(await stored()).toMatchObject({ stage: "DONE" });
+    await balanced(owner.organizationId);
+  });
+
   it("the area is not a place «de paso»: what enters it by hand gets no put-away", async () => {
     const { owner, area, board } = await workshop();
     await setting(owner, "inventory.putaway.mode", "tasks");

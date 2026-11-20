@@ -368,15 +368,17 @@ export async function createPutawayTasks(
 }
 
 /**
- * WMS-31 (ADR 0093): «Se guardó» of a lot produced, by itself, when what
- * was approved reached its place: called after delivering a put-away task
- * of the lot, or after a verification approved straight to a place where
- * it is kept (`stored`). Locks the progress of the lot first, then reads
- * the open put-away tasks of the lot: two deliveries at once of its last
- * two tasks queue on that lock, so the second sees the first delivered.
- * Earlier stages still pending never stop the delivery: the stage stays to
- * do. Without a process nothing happens. Call it last (… → capacity →
- * progress).
+ * WMS-31 (ADR 0093): «Se guardó» of a lot produced, by itself, when the
+ * whole lot is settled: every output of the report is decided by a
+ * verification (none open, nothing left without one) and no put-away task
+ * of the lot is open. Called after a verification of the lot is decided
+ * and after a put-away of the lot is delivered. With put-away by hand,
+ * a lot with nothing approved, or one approved straight to where it is
+ * kept, it ends with its last decision. Locks the progress of the lot
+ * first, then reads: two decisions or deliveries at once queue on that
+ * lock, so the second sees the first. Earlier stages still pending never
+ * stop the delivery: the stage stays to do. Without a process nothing
+ * happens. Call it last (… → capacity → progress).
  */
 export async function settleProductionStored(
   tx: Tx,
@@ -390,15 +392,47 @@ export async function settleProductionStored(
     PRODUCTION_BATCH_STORED_OPERATION,
   );
   if (!stages.ok) return { applied: false };
-  const open = await tx.warehouseTask.findFirst({
-    where: {
-      productionReportId,
-      kind: "PUTAWAY",
-      status: { in: [...OPEN_TASK_STATUSES] },
-    },
-    select: { id: true },
-  });
+  const [open, outputs, inspections] = await Promise.all([
+    tx.warehouseTask.findFirst({
+      where: {
+        productionReportId,
+        kind: "PUTAWAY",
+        status: { in: [...OPEN_TASK_STATUSES] },
+      },
+      select: { id: true },
+    }),
+    tx.productionReportLine.findMany({
+      where: { reportId: productionReportId, kind: "OUTPUT" },
+      select: { id: true, quantity: true },
+    }),
+    tx.qualityInspection.findMany({
+      where: {
+        productionReportId,
+        state: { in: ["OPEN", "DECIDED"] },
+      },
+      select: {
+        state: true,
+        productionReportLineId: true,
+        expectedQuantity: true,
+      },
+    }),
+  ]);
   if (open) return { applied: false };
+  if (inspections.some((row) => row.state === "OPEN")) {
+    return { applied: false };
+  }
+  const decided = new Map<string, Decimal>();
+  for (const row of inspections) {
+    const line = row.productionReportLineId ?? "";
+    decided.set(
+      line,
+      (decided.get(line) ?? dec(0)).plus(row.expectedQuantity.toString()),
+    );
+  }
+  const pending = outputs.some((line) =>
+    (decided.get(line.id) ?? dec(0)).lessThan(line.quantity.toString()),
+  );
+  if (pending) return { applied: false };
   return completeOperationStage(
     tx,
     PRODUCTION_BATCH_PROCESS,

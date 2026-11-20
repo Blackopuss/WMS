@@ -231,9 +231,27 @@ export default async function CerrarOrdenPage({
             {pending.openTasks > 0 && (
               <p>Se cancelan las tareas de surtir que nadie ha recogido.</p>
             )}
-            {pending.openVerifications > 0 && (
-              <p>Las verificaciones abiertas siguen después del cierre.</p>
-            )}
+            {closing.outputs
+              .filter((output) => output.toVerify)
+              .map((output) => (
+                <p
+                  key={output.outputId}
+                  className="font-medium text-foreground"
+                >
+                  Quedan sin decidir de {output.productName}:{" "}
+                  {output.unverifiedText} sin verificar y{" "}
+                  {output.inVerificationText} en verificación. Se pueden
+                  verificar después del cierre.
+                </p>
+              ))}
+            {closing.materials
+              .filter((line) => line.inArea)
+              .map((line) => (
+                <p key={line.lineId}>
+                  Quedará libre en el área: {line.inAreaText} de{" "}
+                  {line.productName}.
+                </p>
+              ))}
           </div>
           <CloseForm
             orderId={closing.orderId}

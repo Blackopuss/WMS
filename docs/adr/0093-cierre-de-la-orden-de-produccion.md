@@ -70,27 +70,39 @@ producido** sale del área con tarea. Lo demás del área sigue como hoy.
 
 El documento de proceso del lote (`production.batch`) gana la operación
 **«Se guardó»** (`stored`, hito `REPORTED`, `leadsTo: null`, declarada después
-de «Verificación»). Se completa sola cuando **lo aprobado del lote llegó a
-su lugar** y no queda ninguna tarea de acomodo abierta del lote:
+de «Verificación»). Se completa sola cuando **el lote quedó resuelto**:
 
-- al entregar la **última** tarea de acomodo abierta del lote; o
-- al decidir una verificación que aprueba **directo a un lugar donde se
-  guarda** (ni de uso «Producción», ni de paso, ni preparación) sin crear
-  tareas de acomodo del lote.
+- todo lo que salió del reporte está decidido por una verificación (ninguna
+  abierta; lo verificado de cada salida cubre lo producido; las canceladas
+  no cuentan), **y**
+- no queda ninguna tarea de acomodo abierta del lote.
+
+Se revisa al decidir cada verificación de lo producido y al entregar cada
+acomodo del lote. Así:
+
+- con acomodo por tareas y lo aprobado en el área, termina al entregar el
+  último acomodo;
+- aprobado directo a un lugar donde se guarda, o con **acomodo a mano**
+  (`inventory.putaway.mode = manual`, el valor por omisión), termina con la
+  última decisión: nadie va a entregar una tarea, y lo aprobado ya quedó
+  donde se decidió (si la empresa quiere confirmar a mano que se movió,
+  pone una etapa manual después de «Se guardó»);
+- un lote **sin nada aprobado** (todo rechazado, dañado o perdido) también
+  termina con su última decisión: no espera para siempre;
+- un lote con varias salidas (subproductos) espera a que **todas** estén
+  decididas (una verificación por salida).
 
 La completa `settleProductionStored(tx, actor, reportId)` de Inventario (que
 no importa Producción: el documento de proceso del lote vive ahora en
 `src/modules/inventory/production-batch.ts`, sin dependencias, y Producción
-lo vuelve a exportar). Primero toma el progreso con `assertStagesDone` (así
-dos entregas a la vez de las dos últimas tareas se forman: la segunda ya ve
-la primera entregada); si hay etapas previas pendientes **no detiene la
-entrega ni la decisión**: no la marca y la etapa se queda por hacer (el
-montacarguista no tiene por qué esperar a otra área). Sin proceso publicado
-nada cambia.
-
-Sin acomodo por tareas y con lo aprobado en el área, «Se guardó» no se marca
-sola (nada dice cuándo llegó a su lugar): la empresa usa una etapa manual o
-aprueba directo al lugar donde se guarda.
+lo vuelve a exportar). Primero toma el progreso con `assertStagesDone` y
+después lee (dos decisiones o entregas a la vez se forman en ese candado:
+la segunda ya ve la primera); si hay etapas previas pendientes **no detiene
+la entrega ni la decisión**: la etapa se queda por hacer (el montacarguista
+no tiene por qué esperar a otra área). Lee `quality_inspection` y
+`production_report_line` directo (tablas compartidas; cuenta igual las
+verificaciones hechas sin Calidad con `production.output.verify`). Sin
+proceso publicado nada cambia.
 
 ### 3. Cierre de la orden
 
@@ -164,6 +176,13 @@ Costos (solo con inventory.cost.read): valor de los materiales consumidos,
 6. Aviso `production.order_closed` a quien pidió la solicitud de la que nació
    (WMS-28B) y a las personas asignadas, por `production.order.read` con el
    área como lugar; nunca a quien cerró, sin cifras de costo.
+
+**Lo que pasa después del cierre** no escribe la orden: decidir una
+verificación de sus lotes (y `applyApprovedLoss`), entregar un acomodo de
+sus lotes y «Se guardó» leen el reporte y su lote, nunca la orden. La
+pantalla de cierre dice antes de confirmar cuánto queda **sin verificar o en
+verificación** de cada salida y cuánto material **quedará libre en el
+área**.
 
 **Una orden cerrada** no admite reportes, mermas ni reversas (los tres ya
 exigen `RELEASED`/`IN_PROGRESS` bajo el candado de la orden), ni tareas
@@ -258,7 +277,10 @@ ese lote, y dos cierres a la vez.
 
 ## Lo que no entra
 
-WMS-79 (ligar pedidos), WMS-29B (reproceso), regla de autorización para
+WMS-79 (ligar pedidos), WMS-29B (reproceso), regresar al almacén el
+material que quedó libre en el área al cerrar (pendiente conocido: no
+aparece en «Sin acomodar»; se regresa con una reubicación a mano o una
+tarea de traslado), regla de autorización para
 cerrar con faltante (`production.close_short`, propuesta del flujo: no se
 hace, ver decisiones), tareas de regreso del material sobrante, «Sin
 acomodar» para lo aprobado que quedó en el área sin tareas, cerrar desde la
@@ -279,9 +301,9 @@ API, webhook del cierre.
 
 1. El área de producción no es un lugar de paso: solo lo aprobado de un lote
    sale con tarea de acomodo (lo demás del área se queda como hoy).
-2. «Se guardó» se marca sola al entregar la última tarea de acomodo del lote
-   o al aprobar directo a un lugar donde se guarda; sin acomodo por tareas y
-   con lo aprobado en el área, no se marca sola.
+2. «Se guardó» se marca sola cuando todo el lote está decidido y sin
+   acomodos abiertos; con acomodo a mano o sin nada aprobado, termina con la
+   última decisión (no confirma que alguien movió lo aprobado del área).
 3. Si hay etapas previas pendientes, entregar el acomodo no se detiene y «Se
    guardó» queda por hacer.
 4. Se cierra con verificaciones abiertas y lotes sin verificar.
