@@ -68,8 +68,10 @@ en «Sin acomodar».
 | Pedir producción con Producción quitado o en solo lectura | `makeable` no ofrece nada y `closed` no escribe; liberar sigue como antes. |
 | Costos | Ninguna pantalla ni aviso del paso los muestra. |
 
+| Apartar para un pedido lo que otro ya tiene apartado | «Apartar lo que ya hay» y el reparto de lo que sobra usan `pickSources`/`freeToTake` bajo los candados de productos y pedidos; la liga manda sobre el cross-docking. |
+
 Riesgos residuales: si se libera a mano lo producido con «Cambiar estado»,
-la línea sigue esperando aunque haya existencias libres; quien llame a los
+la línea sigue esperando hasta que alguien pulsa «Apartar lo que ya hay»; quien llame a los
 servicios del pedido sin `makeToOrder` obtiene el comportamiento anterior
 (al cancelar, la solicitud queda por atender y aceptarla se rechaza).
 
