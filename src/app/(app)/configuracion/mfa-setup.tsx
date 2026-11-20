@@ -4,12 +4,10 @@ import { Copy, Loader2, Smartphone } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import {
-  BackupCodesList,
-  FormField,
-  PasswordInput,
-  QrCode,
-} from "@/components";
+import { BackupCodesList } from "@/components/backup-codes-list";
+import { FormField } from "@/components/form-field";
+import { PasswordInput } from "@/components/password-input";
+import { QrCode } from "@/components/qr-code";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 

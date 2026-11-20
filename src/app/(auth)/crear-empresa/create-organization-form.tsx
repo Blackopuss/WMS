@@ -3,7 +3,8 @@
 import { CircleAlert, Loader2, Store } from "lucide-react";
 import { useActionState, useEffect, useRef } from "react";
 
-import { FormField, WarehouseCard } from "@/components";
+import { FormField } from "@/components/form-field";
+import { WarehouseCard } from "@/components/warehouse-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";

@@ -2,7 +2,7 @@ import { ChevronRight, Search } from "lucide-react";
 import Form from "next/form";
 import Link from "next/link";
 
-import { EmptyState } from "@/components";
+import { EmptyState } from "@/components/states";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -7,7 +7,7 @@ import {
   NoAccessState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { listAuditTrail, type AuditTrailEntry } from "@/platform/audit";

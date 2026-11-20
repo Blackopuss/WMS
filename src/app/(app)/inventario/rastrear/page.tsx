@@ -10,7 +10,7 @@ import {
   NoModuleState,
   PageContainer,
   PageHeader,
-} from "@/components";
+} from "@/components/states";
 import { CameraScanButton } from "@/components/camera-scan";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

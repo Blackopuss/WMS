@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { EmptyState, PageContainer, PageHeader } from "@/components";
+import { EmptyState, PageContainer, PageHeader } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";

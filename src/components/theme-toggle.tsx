@@ -1,7 +1,6 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
 
 import { cn } from "cn";
 
@@ -50,54 +49,47 @@ export function ThemeToggle({
           dark ? "bg-secondary" : "bg-accent",
         )}
       >
-        <AnimatePresence>
-          {dark &&
-            STARS.map((star, i) => (
-              <motion.span
-                key={i}
-                className="absolute rounded-full bg-muted-foreground"
-                style={{
-                  top: star.top,
-                  left: star.left,
-                  width: star.size,
-                  height: star.size,
-                }}
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{
-                  opacity: 0.9,
-                  scale: 1,
-                  transition: { delay: 0.08 * i + 0.1 },
-                }}
-                exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              />
-            ))}
-        </AnimatePresence>
-        <motion.span
+        {/* CSS transitions, not motion (ADR 0080): the switch is on every
+            screen and its animation does not justify a library there. */}
+        {STARS.map((star, i) => (
+          <span
+            key={i}
+            className={cn(
+              "absolute rounded-full bg-muted-foreground transition-[opacity,scale] duration-200 motion-reduce:transition-none",
+              dark ? "scale-100 opacity-90" : "scale-0 opacity-0 duration-100",
+            )}
+            style={{
+              top: star.top,
+              left: star.left,
+              width: star.size,
+              height: star.size,
+              transitionDelay: dark ? `${80 * i + 100}ms` : "0ms",
+            }}
+          />
+        ))}
+        <span
           className={cn(
-            "relative z-10 grid size-6 place-items-center rounded-full shadow-md",
-            dark ? "bg-foreground text-background" : "bg-card text-warning",
+            "relative z-10 grid size-6 place-items-center rounded-full shadow-md transition-[translate,background-color,color] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)] motion-reduce:transition-none",
+            dark
+              ? "translate-x-6 bg-foreground text-background"
+              : "translate-x-0 bg-card text-warning",
           )}
-          initial={false}
-          animate={{ x: dark ? 24 : 0 }}
-          transition={{ type: "spring", stiffness: 500, damping: 32 }}
         >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span
-              key={dark ? "moon" : "sun"}
-              initial={{ rotate: -90, scale: 0.4, opacity: 0 }}
-              animate={{ rotate: 0, scale: 1, opacity: 1 }}
-              exit={{ rotate: 90, scale: 0.4, opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="grid place-items-center"
-            >
-              {dark ? (
-                <Moon className="size-3.5" strokeWidth={2.5} />
-              ) : (
-                <Sun className="size-3.5" strokeWidth={2.5} />
-              )}
-            </motion.span>
-          </AnimatePresence>
-        </motion.span>
+          <Sun
+            className={cn(
+              "absolute size-3.5 transition-[rotate,scale,opacity] duration-200 motion-reduce:transition-none",
+              dark ? "scale-40 rotate-90 opacity-0" : "scale-100 rotate-0",
+            )}
+            strokeWidth={2.5}
+          />
+          <Moon
+            className={cn(
+              "absolute size-3.5 transition-[rotate,scale,opacity] duration-200 motion-reduce:transition-none",
+              dark ? "scale-100 rotate-0" : "scale-40 -rotate-90 opacity-0",
+            )}
+            strokeWidth={2.5}
+          />
+        </span>
       </span>
       {showLabel && (
         <span className="transition-colors group-hover:text-foreground">

@@ -3,7 +3,7 @@
 import { CircleAlert, Loader2 } from "lucide-react";
 import { useActionState } from "react";
 
-import { FormField } from "@/components";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 

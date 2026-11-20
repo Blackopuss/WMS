@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { NAV_ITEMS, visibleNavItems } from "@/components";
+import { NAV_ITEMS, visibleNavItems } from "@/components/app-shell/nav";
 import {
   ROLES,
   can,
