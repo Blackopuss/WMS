@@ -448,6 +448,7 @@ const FILE_SELECT = {
       warehouseTaskId: true,
       purchaseReceiptId: true,
       productionReportId: true,
+      qualityInspectionId: true,
     },
   },
 } as const;
@@ -467,6 +468,7 @@ type FileRow = {
     warehouseTaskId: string | null;
     purchaseReceiptId: string | null;
     productionReportId: string | null;
+    qualityInspectionId: string | null;
   } | null;
 };
 

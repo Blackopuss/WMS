@@ -576,6 +576,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "production.order.read",
     "production.request.read",
     "production.request.decide",
+    "production.output.verify",
   ],
   buyer: [
     "platform.organization.read",
@@ -745,6 +746,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "production.order.read",
     "production.request.read",
     "production.request.decide",
+    "production.output.verify",
   ],
   operator: [
     "platform.organization.read",

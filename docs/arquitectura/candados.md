@@ -53,6 +53,21 @@ material de la misma orden (que sostiene el área y espera la orden).
 Carreras en `tests/server/lock-order.int.test.ts` («reporting production
 never deadlocks…», «scrap of one material…», «reversing a report…»).
 
+**Verificación de Calidad (WMS-30B, ADR 0091):** iniciar: el producto →
+la ubicación de la casilla → (la fila de la devolución, si viene de una) →
+la verificación nueva → progreso del lote. Decidir: el producto → la
+casilla y todos los destinos (de una vez) → (la devolución) → la
+verificación (releída bajo su candado) → capacidad (una sola
+`checkPlacement` con todos los destinos, antes de escribir; los cambios de
+estado reciben `placementChecked`) → tareas de acomodo → progreso del
+lote → archivos. Cancelar: el producto → la verificación. Pérdidas
+autorizadas: la solicitud → los mismos candados. **No bloquea la orden ni
+sus tareas** (lee el reporte, que no cambia salvo su marca de reversa, bajo
+el candado del producto de la salida, que la reversa también toma antes de
+escribir): por eso no le aplica la regla de bloquear todos los productos de
+la orden. Carreras en `tests/server/lock-order.int.test.ts` («deciding a
+verification never deadlocks…»).
+
 ## Almacenes
 
 Una sola puerta, en `src/platform/locations/facility-lock.ts`:

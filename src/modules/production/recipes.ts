@@ -1662,6 +1662,19 @@ export async function productionOpenWork(
             : `; ${withStock} tienen materiales apartados, que seguirán apartados.`),
     );
   }
+  // WMS-30B (ADR 0091): open verifications of produced output keep what
+  // they hold; with Producción and Calidad both gone nobody can let it go
+  // until a module comes back.
+  const verifications = await client.qualityInspection.count({
+    where: { state: "OPEN", origin: "PRODUCTION" },
+  });
+  if (verifications > 0) {
+    work.push(
+      verifications === 1
+        ? "1 verificación de lo producido está abierta: lo que retiene seguirá retenido; si tampoco queda Calidad, nadie podrá cancelarla hasta que vuelva un módulo."
+        : `${verifications} verificaciones de lo producido están abiertas: lo que retienen seguirá retenido; si tampoco queda Calidad, nadie podrá cancelarlas hasta que vuelva un módulo.`,
+    );
+  }
   // WMS-28B (ADR 0075): requests from the floor nobody answered yet.
   const requests = await client.productionRequest.count({
     where: { status: "SUBMITTED" },

@@ -1,7 +1,14 @@
 // Public API of the quality module: its contract (WMS-59), inspection
-// plans and defects (WMS-30A, ADR 0067); inspections arrive with WMS-30B.
+// plans and defects (WMS-30A, ADR 0067) and verifications (WMS-30B, ADR
+// 0091).
 // Other modules and app/ may import only from this file.
 export { qualityModule } from "./contract";
+export {
+  OUTPUT_LOSS_APPROVAL,
+  QUALITY_LOSS_APPROVAL,
+  lossOpenKey,
+} from "./approval-keys";
+export { QUALITY_APPROVAL_TYPES } from "./approvals";
 export { qualityOpenWork } from "./deactivation";
 export {
   ARCHIVED_DEFECTS_PAGE_SIZE,
@@ -65,3 +72,62 @@ export type {
   ProductInspection,
 } from "./plans";
 export { EVIDENCE_PHOTO, QUALITY_SETTINGS, SAMPLING_DEFAULT } from "./settings";
+export {
+  CAUSE_LABELS,
+  INSPECTED_STATUSES,
+  INSPECTION_ORIGIN_KINDS,
+  INSPECTION_OUTCOMES,
+  MISSING_CAUSES,
+  ORIGIN_KIND_LABELS,
+  OUTCOME_LABELS,
+  causesFor,
+  decisionTotals,
+  formatInspectionNumber,
+  inspectionNumberOf,
+  needsPhoto,
+  outcomesFor,
+} from "./inspection-rules";
+export type {
+  InspectedStatus,
+  InspectionOriginKind,
+  InspectionOutcome,
+  MissingCause,
+} from "./inspection-rules";
+export {
+  INSPECTION_STATES,
+  INSPECTION_STATE_LABELS,
+  INSPECTION_TRANSITIONS,
+  canInspectionMove,
+} from "./inspection-states";
+export type { InspectionState } from "./inspection-states";
+export {
+  INSPECTION_PAGE_SIZE,
+  applyApprovedLoss,
+  cancelInspection,
+  countOpenInspections,
+  decideInspection,
+  discardInspectionPhoto,
+  findInspectionDecision,
+  getInspection,
+  getInspectionStart,
+  listInspections,
+  reachesQualityInspection,
+  reportVerifications,
+  startInspection,
+  uploadInspectionPhoto,
+} from "./inspections";
+export type {
+  CancelInspectionResult,
+  DecideInspectionInput,
+  DecideInspectionResult,
+  InspectionFailure,
+  InspectionOriginOption,
+  InspectionPage,
+  InspectionPhotoResult,
+  InspectionStart,
+  InspectionSummary,
+  InspectionView,
+  ReportVerification,
+  StartInspectionInput,
+  StartInspectionResult,
+} from "./inspections";

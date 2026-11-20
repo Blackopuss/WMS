@@ -5,6 +5,7 @@ import {
   acceptTask,
   changeStockStatus,
   confirmPick,
+  disposeStock,
   createOutboundOrder,
   createTask,
   deliverTask,
@@ -30,6 +31,7 @@ import {
   createLocation,
   editLocation,
   reactivateFacility,
+  setLocationLimits,
   switchFacility,
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
@@ -40,6 +42,11 @@ import {
   reportProduction,
   reverseProductionReport,
 } from "@/modules/production";
+import {
+  cancelInspection,
+  decideInspection,
+  startInspection,
+} from "@/modules/quality";
 import { db } from "@/server";
 
 import * as production from "../setup/production";
@@ -928,6 +935,311 @@ describe("locks in one order (WMS-76)", () => {
           errors.push(
             String((result.reason as Error)?.message ?? result.reason),
           );
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("deciding a verification never deadlocks with reports, reversals, status changes, exits and changes of the area (WMS-30B)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop(["inventory", "production", "quality"]);
+    await production.setting(owner, "production.report.photo", "optional");
+    const other = await production.product(owner, "Otro en la línea");
+    await production.enter(owner, other, area, "500");
+    await production.enter(owner, board, shelf, "2000");
+    await production.enter(owner, screw, shelf, "2000");
+    const quarantine = await production.place(owner, "Cuarentena", {
+      type: "QUARANTINE",
+    });
+    const errors: string[] = [];
+    const id = await production.order(owner, crate, area, "200");
+    const released = await releaseProductionOrder(owner, id);
+    if (!released.ok) throw new Error(JSON.stringify(released));
+    const reportLine = async (reportId: string) =>
+      (
+        await db.productionReportLine.findFirstOrThrow({
+          where: { reportId, kind: "OUTPUT" },
+        })
+      ).id;
+    let spare: string | null = null;
+    for (let round = 0; round < 6; round++) {
+      const lot = await reportProduction(owner, id, {
+        good: "4",
+        idempotencyKey: newId(),
+      });
+      if (!lot.ok) throw new Error(JSON.stringify(lot));
+      const started = await startInspection(owner, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId: await reportLine(lot.reportId),
+        idempotencyKey: newId(),
+      });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      const toReverse: string | null = spare;
+      const results: PromiseSettledResult<unknown>[] = await Promise.allSettled(
+        [
+          decideInspection(owner, {
+            inspectionId: started.inspectionId,
+            idempotencyKey: newId(),
+            outcomes: [
+              { status: "AVAILABLE", quantity: "2", toLocationId: shelf },
+              {
+                status: "QUARANTINE",
+                quantity: "1",
+                reason: "Revisar",
+                toLocationId: quarantine,
+              },
+              { status: "REJECTED", quantity: "1", reason: "No cumple" },
+            ],
+          }),
+          reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+          toReverse
+            ? reverseProductionReport(owner, toReverse, "Prueba de candados")
+            : Promise.resolve(null),
+          changeStockStatus(owner, {
+            productId: other,
+            locationId: area,
+            from: "AVAILABLE",
+            to: "DAMAGED",
+            quantity: "1",
+            reason: "Golpe",
+            idempotencyKey: newId(),
+          }),
+          registerExit(owner, {
+            productId: other,
+            locationId: area,
+            quantity: "1",
+          }),
+          registerTransfer(owner, {
+            productId: board,
+            locationId: shelf,
+            toLocationId: quarantine,
+            quantity: "1",
+            acceptCapacity: true,
+          }),
+          editLocation(owner, area, { name: `Línea ${++counter}` }),
+        ],
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+      const reported = results[1] as PromiseSettledResult<
+        Awaited<ReturnType<typeof reportProduction>>
+      >;
+      spare =
+        reported.status === "fulfilled" && reported.value.ok
+          ? reported.value.reportId
+          : null;
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    void cancelInspection;
+  }, 240_000);
+
+  it("deciding a verification never deadlocks with the reversal of its report, a new report, scrap, status changes and disposals of the same slot, nor with a second inspector (WMS-30B)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop(["inventory", "production", "quality"]);
+    await production.setting(owner, "production.report.photo", "optional");
+    await production.enter(owner, board, shelf, "3000");
+    await production.enter(owner, screw, shelf, "3000");
+    const inspectorA = await production.member(owner.organizationId, [
+      "quality_inspector",
+    ]);
+    const inspectorB = await production.member(owner.organizationId, [
+      "quality_inspector",
+    ]);
+    const id = await production.order(owner, crate, area, "400");
+    const released = await releaseProductionOrder(owner, id);
+    if (!released.ok) throw new Error(JSON.stringify(released));
+    const material = (await production.linesOf(id))[0]!;
+    const errors: string[] = [];
+    for (let round = 0; round < 6; round++) {
+      // A lot to verify, another left loose in the same slot (part of it
+      // damaged), and a third lot whose report is reversed meanwhile.
+      const lot = await reportProduction(owner, id, {
+        good: "4",
+        idempotencyKey: newId(),
+      });
+      const loose = await reportProduction(owner, id, {
+        good: "3",
+        idempotencyKey: newId(),
+      });
+      if (!lot.ok || !loose.ok) throw new Error(JSON.stringify([lot, loose]));
+      const damaged = await changeStockStatus(owner, {
+        productId: crate,
+        locationId: area,
+        from: "INSPECTION",
+        to: "DAMAGED",
+        quantity: "1",
+        reason: "Golpe",
+        idempotencyKey: newId(),
+      });
+      if (!damaged.ok) throw new Error(JSON.stringify(damaged));
+      const output = await db.productionReportLine.findFirstOrThrow({
+        where: { reportId: lot.reportId, kind: "OUTPUT" },
+      });
+      const started = await startInspection(inspectorA, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId: output.id,
+        idempotencyKey: newId(),
+      });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      const decide = (actor: typeof owner) =>
+        decideInspection(actor, {
+          inspectionId: started.inspectionId,
+          idempotencyKey: newId(),
+          outcomes: [
+            { status: "AVAILABLE", quantity: "3", toLocationId: shelf },
+            { status: "REJECTED", quantity: "1", reason: "No cumple" },
+          ],
+        });
+      const results = await Promise.allSettled([
+        decide(inspectorA),
+        decide(inspectorB),
+        reverseProductionReport(owner, lot.reportId, "Prueba de candados"),
+        reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+        reportMaterialScrap(owner, id, {
+          orderLineId: material.id,
+          quantity: "1",
+          reason: "Se rompió",
+          idempotencyKey: newId(),
+        }),
+        changeStockStatus(owner, {
+          productId: crate,
+          locationId: area,
+          from: "INSPECTION",
+          to: "REJECTED",
+          quantity: "1",
+          reason: "No cumple",
+          idempotencyKey: newId(),
+        }),
+        disposeStock(owner, {
+          productId: crate,
+          locationId: area,
+          status: "DAMAGED",
+          quantity: "1",
+          reason: "Se tira",
+          idempotencyKey: newId(),
+        }),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+      // Exactly one inspector decides; the reversal never takes what is held.
+      const decided = results
+        .slice(0, 2)
+        .filter(
+          (each) =>
+            each.status === "fulfilled" && (each.value as { ok: boolean }).ok,
+        ).length;
+      if (decided !== 1) errors.push(`round ${round}: ${decided} decisions`);
+      const reversed = results[2];
+      if (
+        reversed?.status === "fulfilled" &&
+        (reversed.value as { ok: boolean }).ok
+      ) {
+        errors.push(`round ${round}: a held lot was reversed`);
+      }
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    void cancelInspection;
+  }, 240_000);
+
+  it("two verifications with destinations in different branches with capacity never deadlock (WMS-30B, M1)", async () => {
+    // The reviewer's case: the capacity of the destinations and their
+    // ancestors is taken in one batch per transaction (one
+    // `checkPlacement` with every arrival); destination by destination,
+    // A took Z1 then Z2 and B took Z2 then Z1.
+    const { owner } = await production.workshop([
+      "inventory",
+      "production",
+      "quality",
+    ]);
+    const z1 = await production.place(owner, "Z1");
+    const z2 = await production.place(owner, "Z2");
+    for (const zone of [z2, z1]) {
+      const limited = await setLocationLimits(owner, zone, {
+        maxUnits: "100000",
+      });
+      if (!limited.ok) throw new Error(JSON.stringify(limited));
+    }
+    const s1 = await production.place(owner, "S1", { parentId: z1, level: 2 });
+    const s2 = await production.place(owner, "S2", { parentId: z2, level: 2 });
+    const s4 = await production.place(owner, "S4", { parentId: z2, level: 2 });
+    const s3 = await production.place(owner, "S3", { parentId: z1, level: 2 });
+    const rounds = 15;
+    const lots: { productId: string; dock: string }[] = [];
+    for (const name of ["Uno", "Dos"]) {
+      const productId = await production.product(owner, name);
+      const dock = await production.place(owner, `Muelle ${name}`, {
+        type: "RECEIVING",
+      });
+      await production.enter(owner, productId, dock, String(rounds * 4));
+      const moved = await changeStockStatus(owner, {
+        productId,
+        locationId: dock,
+        from: "AVAILABLE",
+        to: "INSPECTION",
+        quantity: String(rounds * 4),
+        reason: "Revisar",
+        idempotencyKey: newId(),
+      });
+      if (!moved.ok) throw new Error(JSON.stringify(moved));
+      lots.push({ productId, dock });
+    }
+    const errors: string[] = [];
+    for (let round = 0; round < rounds; round++) {
+      const started = [];
+      for (const lot of lots) {
+        const one = await startInspection(owner, {
+          productId: lot.productId,
+          locationId: lot.dock,
+          origin: "OTHER",
+          quantity: "4",
+          idempotencyKey: newId(),
+        });
+        if (!one.ok) throw new Error(JSON.stringify(one));
+        started.push(one.inspectionId);
+      }
+      const decide = (inspectionId: string, good: string, bad: string) =>
+        decideInspection(owner, {
+          inspectionId,
+          idempotencyKey: newId(),
+          outcomes: [
+            { status: "AVAILABLE", quantity: "3", toLocationId: good },
+            {
+              status: "REJECTED",
+              quantity: "1",
+              reason: "No cumple",
+              toLocationId: bad,
+            },
+          ],
+        });
+      const results = await Promise.allSettled([
+        decide(started[0]!, s1, s2),
+        decide(started[1]!, s3, s4),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        } else if (!result.value.ok) {
+          errors.push(`round ${round}: ${JSON.stringify(result.value)}`);
         }
       }
     }

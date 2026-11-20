@@ -348,7 +348,8 @@ const GROUPS: {
     id: "calidad",
     name: "Calidad",
     module: "Calidad (con Producción)",
-    intro: "Qué se revisa de cada producto y qué cuenta como defecto.",
+    intro:
+      "Qué se revisa de cada producto, quién lo verifica y qué pasa con lo que no cumple.",
     features: [
       {
         icon: ClipboardCheck,
@@ -361,12 +362,16 @@ const GROUPS: {
         text: "Los defectos de tu empresa con su gravedad: menor, mayor o crítica.",
       },
       {
+        icon: ClipboardCheck,
+        title: "Verificación",
+        text: "Se cuenta lo producido, recibido o devuelto, se contesta el plan y se decide: aprobado, rechazado, dañado, en cuarentena o a restauración; lo que falta queda con su causa y su foto.",
+      },
+      {
         icon: Users,
         title: "Inspector de calidad",
         text: "Un rol propio para quien revisa, también en terminales con PIN.",
       },
     ],
-    soon: "Próximamente: registrar la inspección y liberar o rechazar lo producido o recibido.",
   },
   {
     id: "seguridad",

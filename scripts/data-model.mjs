@@ -375,7 +375,7 @@ export const AREAS = [
     title: "Calidad",
     doc: "quality",
     summary:
-      "Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A).",
+      "Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A); las verificaciones con sus resultados, respuestas y defectos (WMS-30B).",
     models: [
       "QualityPlan",
       "QualityPlanVersion",
@@ -383,6 +383,10 @@ export const AREAS = [
       "QualityPlanPointOption",
       "QualityDefect",
       "QualityDefectCatalog",
+      "QualityInspection",
+      "QualityInspectionResult",
+      "QualityInspectionAnswer",
+      "QualityInspectionDefect",
     ],
   },
   {
