@@ -68,6 +68,8 @@ WMS-86, WMS-87 y WMS-88 son números nuevos. El siguiente ADR libre es el 0091 (
 
 **Decisión del fundador (2026-11-20, 06:15 UTC):** la cuenta de una demostración se queda como está («solo se puede una empresa por correo»; él se lo comenta al cliente). Ya no hay preguntas abiertas de esta tanda: quedan las de siempre (servidor y dominio, nombre comercial, precios, razón social y revisión legal). Total del plan: 103 pasos (90 unidos; en curso WMS-30B, WMS-92 y WMS-64; por empezar WMS-31, 79, 29B, 33, 91, 69, 70, 62, 47 y 48).
 
+**Estado a las 09:50 UTC del 2026-11-20:** WMS-92 quedó cerrado y unido (chat `session_01QMjUPVUzokpmEWUQHrfePF`, ya sin trabajo pendiente; actualiza lo dicho arriba de que estaba abierto o en curso). WMS-30B (`session_01QMjUPTdWxMcpkDrAJ36ddS`, rama `wms-30b-inspeccion-de-calidad`, commit f18c125, ADR 0091, migración `20261120140000_wms30b_quality_inspections`) entregó su reporte final y está en revisión independiente. WMS-64 (`session_01QMjUPV3BXZ7iw8kgXyy9qt`, rama `wms-64-automatizaciones`, ADR 0092, migración `20261120150000_wms64_…`) sigue programando. La corrida manual de CI en `main` sobre d5d9b2d terminó en verde. Siguiente ADR libre: 0093. Al unir WMS-30B se abre WMS-31. WMS-91 no se abre hasta que el fundador lo diga.
+
 ## Relevo anterior de quien coordina (2026-11-17, 03:32 UTC)
 
 El chat que coordinaba (`session_01QMjUPVEbPAkRHP3gBSqvpY`) pasó con mucho de
