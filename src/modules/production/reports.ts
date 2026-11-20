@@ -1659,8 +1659,13 @@ export type ProductionReportView = {
     at: Date;
     reason: string;
   } | null;
-  /** Only for who reads costs: the value of the materials. */
+  /** Only for who reads costs: the value of the materials with a cost. */
   valueText?: string | null;
+  /**
+   * Only for who reads costs: materials that left with no known cost, so
+   * the cost of what was made does not include them (WMS-92).
+   */
+  uncostedMaterials?: string[];
   inputs: {
     productName: string;
     quantityText: string;
@@ -1779,15 +1784,28 @@ export async function getProductionReport(
   const costOf = (value: { toString(): string } | null) =>
     costs ? (value ? value.toString() : null) : undefined;
   const inputs = row.movement.lines.filter((line) => line.direction === "OUT");
-  const value = inputs.some((line) => line.unitCost === null)
-    ? null
-    : inputs.reduce(
-        (sum, line) =>
-          sum.plus(
-            dec(line.unitCost!.toString()).times(line.baseQuantity.toString()),
-          ),
-        dec(0),
-      );
+  // WMS-92: the value counts only the materials with a known cost; it is
+  // unknown only when none had one (derived from the lines, nothing saved).
+  const costed = inputs.filter((line) => line.unitCost !== null);
+  const value =
+    inputs.length > 0 && costed.length === 0
+      ? null
+      : costed.reduce(
+          (sum, line) =>
+            sum.plus(
+              dec(line.unitCost!.toString()).times(
+                line.baseQuantity.toString(),
+              ),
+            ),
+          dec(0),
+        );
+  const uncosted = [
+    ...new Set(
+      inputs
+        .filter((line) => line.unitCost === null)
+        .map((line) => line.product.name),
+    ),
+  ];
   return {
     id: row.id,
     numberText: formatReportNumber(row.number),
@@ -1810,7 +1828,12 @@ export async function getProductionReport(
           reason: row.reverseReason ?? "",
         }
       : null,
-    ...(costs ? { valueText: value ? value.toFixed(2) : null } : {}),
+    ...(costs
+      ? {
+          valueText: value ? value.toFixed(2) : null,
+          uncostedMaterials: uncosted,
+        }
+      : {}),
     inputs: inputs.map((line) => ({
       productName: line.product.name,
       quantityText: formatStock(line.baseQuantity.toString(), line.unitCode),

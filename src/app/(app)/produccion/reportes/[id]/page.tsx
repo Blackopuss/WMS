@@ -146,6 +146,13 @@ export default async function ReporteProduccionPage({
             {report.valueText ? `$${report.valueText}` : "sin costo conocido"}
           </p>
         )}
+        {costs && report.valueText && report.uncostedMaterials?.length ? (
+          <p className="[overflow-wrap:anywhere] text-muted-foreground">
+            El costo de lo producido no incluye{" "}
+            {report.uncostedMaterials.join(", ")} porque no tiene costo
+            registrado.
+          </p>
+        ) : null}
       </section>
 
       <section

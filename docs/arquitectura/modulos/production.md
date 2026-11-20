@@ -106,8 +106,10 @@ llevar (sin depender del ajuste vigente), luego lo libre con `pickSources`
 (en modo `issue`, solo dentro del área; `planMaterialTakes` de Inventario). Si no alcanza, no guarda
 y responde qué falta y para cuánto alcanza. Lo hecho entra en `INSPECTION`
 en el área con un lote nuevo (`lot-numbering.ts`: nomenclatura de la
-empresa o `OP-0001-01`), costeado con los materiales repartidos por la
-parte del costo de las salidas que entran. Con personas asignadas reportan
+empresa o `OP-0001-01`), costeado con los materiales que tienen costo
+repartidos por la parte del costo de las salidas que entran (un material
+sin costo aporta cero y la ficha lo nombra a quien lee costos; solo sin
+ningún material costeado entra sin costo, WMS-92). Con personas asignadas reportan
 ellas y quien crea órdenes. El primer reporte pasa la orden a
 `IN_PROGRESS` (antes de bloquear ubicaciones), espera las etapas de la
 operación «Producción reportada» y empieza el proceso del lote

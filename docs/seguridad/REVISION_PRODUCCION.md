@@ -27,5 +27,6 @@ Producción.
   movimientos en el mismo milisegundo podrían no ordenarse; para que eso
   pase tendría que tocarse lo producido antes de confirmar el reporte, lo
   que el candado del producto impide.
-- Un material sin costo conocido deja lo producido sin costo (decisión
-  conservadora del ADR).
+- Un material sin costo conocido sale sin costo y lo producido toma el
+  costo de los demás materiales (WMS-92, decisión del fundador del
+  2026-11-20); la ficha lo dice solo a quien lee costos.

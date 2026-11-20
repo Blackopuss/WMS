@@ -205,16 +205,34 @@ muestra.
 
 - Cada material sale al costo promedio (`openCostBook`, `exit`), antes de
   cambiar saldos, con los productos bloqueados.
-- Valor del reporte = Σ cantidad × costo de cada material (buenas y malas:
-  el material de las malas queda en el costo de las buenas).
+- Valor del reporte = Σ cantidad × costo de cada material **que tiene
+  costo** (buenas y malas: el material de las malas queda en el costo de
+  las buenas).
 - Se reparte entre las salidas que **entran en este reporte**, en
   proporción a su parte del costo de la receta (normalizada entre las que
   entran; si todas las que entran tienen 0 %, todo va a la primera). Costo
   por unidad = su parte ÷ lo que entra. Una salida con 0 % entra con costo
   explícito 0.
-- **Si un material no tiene costo conocido**, lo producido entra sin costo
-  (al promedio vigente si ya tenía, o sin costo): no se inventa un valor
-  parcial. (El fundador puede cambiarlo.)
+- **Si un material no tiene costo conocido** (WMS-92, decidido por el
+  fundador el 2026-11-20: «Y lo de material haz que tome el costo de todo
+  lo demás»): sale sin costo y aporta cero; lo producido toma el valor de
+  los demás materiales, repartido igual que siempre. **Solo si ningún
+  material tiene costo** lo producido entra sin costo (al promedio vigente
+  si ya tenía, o sin costo). Un reporte sin ningún material (lo cubrieron
+  los anteriores) vale cero, como antes. Antes de este cambio, un solo
+  material sin costo dejaba todo lo producido sin costo y el valor de los
+  que sí lo tenían salía del inventario.
+- **Que se sepa:** la ficha del reporte, solo para quien tiene
+  `inventory.cost.read`, dice qué materiales no están en el costo de lo
+  producido porque no tienen costo registrado (derivado de las líneas de
+  salida sin costo del movimiento; nada guardado nuevo).
+- **Redondeo:** el costo por unidad de cada salida es su parte ÷ lo que
+  entra, redondeado a la escala del libro de costos (`COST_SCALE`). La suma
+  de lo que entra puede diferir de lo que salió por menos de una unidad de
+  esa escala por unidad; no se reparte el residuo. `reconcileValue` compara
+  cada producto con sus propias existencias × su promedio, así que queda
+  vacío (pruebas «splits it among the outputs by their share» y «partial
+  reports add up to one report»).
 - La merma extra sale al promedio como pérdida y **no** entra al costo de
   lo producido.
 - `reconcileValue` queda vacío: todo pasa por el libro de costos.
@@ -508,15 +526,18 @@ junto con la de desechos.
 - El candado de la nomenclatura pone en fila los reportes de toda la
   empresa cuando hay nomenclatura configurada.
 
+## Decisiones del fundador
+
+- **2026-11-20 (WMS-92):** «Y lo de material haz que tome el costo de todo
+  lo demás»: un material sin costo no deja lo producido sin costo; lo
+  producido toma el costo de los materiales que sí lo tienen (sección
+  «Costo»). Era la decisión 4 de la lista siguiente.
+
 ## Decisiones que el fundador puede cambiar
 
 1. Con personas asignadas, solo ellas (y quien crea órdenes) reportan.
 2. Foto del reporte obligatoria por omisión.
 3. Solo se consume de ubicaciones al alcance de quien reporta.
-4. Un material sin costo deja lo producido sin costo: los materiales que sí
-   tienen costo salen a su promedio y ese valor no pasa a lo producido
-   (desaparece del valor del inventario). Alternativa: costear con los que
-   sí tienen y avisar.
 5. Las piezas malas no producen subproductos.
 6. La merma tiene su propia regla de autorización, separada de la de
    desechos.

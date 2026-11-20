@@ -443,7 +443,7 @@ export type ProductionEntryResult =
         units: SerialPick[];
         unitCost: Decimal | null;
       }[];
-      /** Value of the materials (null when one had no known cost). */
+      /** Value of the materials with a known cost (null when none had one). */
       value: Decimal | null;
       notes: string[];
     }
@@ -630,13 +630,21 @@ export async function postProduction(
 
   // Cost (ADR 0031, 0087): read before any balance changes.
   const costs = await openCostBook(tx, organizationId, productIds);
-  let value: Decimal | null = dec(0);
+  // WMS-92 (fundador, 2026-11-20): the value is what the materials WITH a
+  // known cost take out; one without cost leaves without cost and adds
+  // nothing. Only when no material has a cost does what is made enter
+  // without one (a report with no material at all values it at zero).
+  let known = dec(0);
+  let anyKnown = input.takes.length === 0;
   const takeCosts = input.takes.map((take) => {
     const cost = costs.exit(take.productId, take.quantity);
-    if (cost === null) value = null;
-    else if (value !== null) value = value.plus(cost.times(take.quantity));
+    if (cost !== null) {
+      anyKnown = true;
+      known = known.plus(cost.times(take.quantity));
+    }
     return cost;
   });
+  const value: Decimal | null = anyKnown ? known : null;
   const shareTotal = entering.reduce(
     (sum, { output }) => sum.plus(dec(output.costShare)),
     dec(0),
@@ -648,7 +656,7 @@ export async function postProduction(
         ? position === 0
           ? value
           : dec(0)
-        : (value as Decimal).times(dec(output.costShare)).dividedBy(shareTotal);
+        : value.times(dec(output.costShare)).dividedBy(shareTotal);
       unitCost = part.dividedBy(output.quantity);
     }
     outputs[index]!.unitCost = costs.entry(
