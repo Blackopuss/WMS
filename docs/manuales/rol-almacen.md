@@ -35,10 +35,13 @@ Puedes crear (**Nueva tarea**), asignar, liberar y cancelar tareas, y revisar la
 ### Ubicaciones, equipos y producción
 **Configuración › Ubicaciones** (agregar, mover, archivar, etiquetas) y **Configuración › Equipos del almacén** (**Registrar equipo**, **Registrar mantenimiento**, **Tipos de equipo**). En Producción puedes ver órdenes y recetas y decidir las **solicitudes de producción** (ver [Encargado de producción](rol-encargado-produccion.md)).
 
+### Verificar lo producido (WMS-30B)
+Si la empresa tiene Producción **sin Calidad**, también verificas lo producido: desde **Inventario › Por inspeccionar**, toca el renglón e **Iniciar verificación**; cuenta, reparte lo contado (**Aprobadas**, rechazadas, dañadas, en cuarentena o a restauración) y di qué pasó con lo que falta (con foto). **Con Calidad**, lo hace el Inspector y lo que está en una verificación abierta no se puede cambiar con **Cambiar estado**; lo demás lo sigues liberando como siempre.
+
 ## Lo que no puedes hacer (y a quién pedirlo)
 Recibir órdenes de compra (Supervisor, Almacenista o Comprador), crear órdenes de compra (Comprador), ver costos, invitar personas o cambiar la configuración de la empresa (Administrador).
 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8). Gestionas las incidencias abiertas: **Atender**, **Resolver** o **Descartar**.
 
-Vigente al 2026-11-19 (sugerencias de reubicación: WMS-65)
+Vigente al 2026-11-20 (sugerencias de reubicación: WMS-65; verificación: WMS-30B)

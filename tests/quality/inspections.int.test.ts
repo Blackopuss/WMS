@@ -439,6 +439,7 @@ describe("verifying what was produced (ADR 0091)", () => {
 });
 
 describe("without Calidad (P5)", () => {
+  // NEG-27: the Operario does not verify what was produced.
   it("the Encargado and the jefe de almacén verify what was produced; nobody else", async () => {
     const at = await produced(["inventory", "production"]);
     const { owner } = at;

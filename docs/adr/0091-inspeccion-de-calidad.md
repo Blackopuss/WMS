@@ -98,6 +98,11 @@ aprobado del área de producción, no marca «Se guardó» ni cierra la orden
    - **No cumplió** no es una causa de faltante: las piezas están y se
      decide «Rechazadas» (o «A restauración», WMS-75); «Otra» con piezas
      presentes es uno de los destinos con su motivo.
+   - **Aprobar donde no cabe nada disponible** (el lugar es o está dentro
+     de una ubicación de uso «Cuarentena» o «Restauración», ADR 0072; por
+     ejemplo un área de producción ahí, como anotó WMS-29) exige elegir
+     dónde quedan las aprobadas: la decisión se rechaza sin escribir nada,
+     con el error en «Dónde quedan». Vale para cualquier origen.
    - Contar **más** de lo esperado no se puede: «Se esperaban 100: si hay
      más, avísale al encargado; desde aquí no se crean existencias».
    - **Foto** obligatoria si falta algo de lo esperado (una diferencia de
@@ -131,14 +136,34 @@ pieza se decide «Dañadas» con su motivo y después se desecha.
 `quality.inspection.decide`; sin Calidad, `production.output.verify`. No
 se pide además el permiso de Inventario del cambio (el flujo lo proponía):
 el Inspector no tiene `inventory.status.*` a propósito (WMS-59) y la
-retención impide cualquier otro camino. Las pérdidas (`DISPOSAL`) **no
-piden autorización** en este paso: quedan con foto obligatoria, motivo,
-causa, persona y referencia. **Desechar piezas que sí están no es un
-destino de la verificación**: se rechazan o se marcan dañadas y después se
-desechan con «Desechar», que respeta la regla `inventory.disposal` (ADR
-0078); así la verificación no abre un rodeo a esa regla. Pedir autorización
-para las pérdidas (un tipo propio, `quality.loss`) queda como decisión del
-fundador.
+retención impide cualquier otro camino. **Desechar piezas que sí están no
+es un destino de la verificación**: se rechazan o se marcan dañadas y
+después se desechan con «Desechar», que respeta la regla
+`inventory.disposal` (ADR 0078).
+
+**Las pérdidas piden su propia autorización** (decisión del fundador del
+2026-11-16: desechar pide autorización con el porqué; como WMS-29 con
+`production.scrap`). Dos tipos del motor de aprobaciones, declarados en
+Calidad (`QUALITY_APPROVAL_TYPES`, registrados en `approvalTypes`),
+apagados por omisión y sin umbral: `quality.loss` (módulo Calidad;
+`requestPermissions` y `decidePermissions` = `quality.inspection.decide`)
+y `production.verification_loss` (módulo Producción, para la verificación
+sin Calidad; los dos = `production.output.verify`). Autorizar nunca da más
+poder que decidir. Con la regla encendida, una decisión que incluya algo
+de «Lo que no está» se valida completa bajo sus candados, **no escribe
+nada**, abre la solicitud (`openKey` = `quality_inspection:<id>:loss`, una
+por verificación; la clave de la decisión se guarda en la solicitud) y
+responde `pending_approval`; la pantalla lleva a la solicitud. Mientras
+espera, la verificación sigue abierta y retenida y no admite otra decisión
+ni cancelarse (la misma clave de la misma persona responde la misma
+solicitud). Al autorizarse, el efecto `applyApprovedLoss` rehace **la
+decisión entera** a nombre de quien la pidió, con los mismos candados,
+revisiones y fotos, dentro de la transacción de la autorización; vence con
+`ApprovalExpired` si la verificación ya no está abierta, si algo de lo que
+decidía ya no aplica, o si quien pidió perdió membresía, permiso o alcance
+(NEG-20). Una sesión de PIN puede pedir pero no autoriza (lo impide el
+motor). Una decisión sin pérdidas nunca espera. La descripción de la regla
+lo dice: quien autoriza desechos debe encender también esta.
 
 ## Sin Calidad (P5)
 
@@ -151,8 +176,16 @@ almacén** (el «jefe de almacén», P3; matriz y catálogo cambian juntos, con
 su prueba). Era el pendiente que dejó WMS-59. Lo recibido, lo devuelto, lo
 de «Otro» y la cuarentena siguen, sin Calidad, con «Cambiar estado»
 (WMS-30-0), como hoy. **Con Calidad activa, `production.output.verify` no
-verifica** (lo hace Calidad, sección 2.3 del flujo); el jefe de almacén
-sigue liberando a mano con «Cambiar estado» lo que no está retenido (D7).
+verifica para nadie**, tampoco el Encargado (lo hace Calidad, sección 2.3
+del flujo; con prueba); el jefe de almacén sigue liberando a mano con
+«Cambiar estado» lo que no está retenido (D7).
+
+**Calidad quitada o vencida.** Con Calidad en solo lectura, lo que verificó
+se sigue leyendo con `quality.inspection.read`. Si Producción sigue en uso,
+la empresa vuelve a verificar lo producido sin Calidad (P5) y **quien
+tiene `production.output.verify` cancela las verificaciones que Calidad
+dejó abiertas** (cancelar solo suelta lo retenido, no mueve nada); así no
+queda nada atrapado. Con el plan vencido todo queda en solo lectura.
 
 Por eso los servicios de verificación viven en el módulo Calidad pero
 funcionan, solo para lo producido, en una empresa con Producción sin
@@ -227,6 +260,9 @@ tareas → capacidad → progreso → archivos.
   orden de id) → tareas de acomodo → progreso del lote
   (`assertStagesDone`, `completeOperationStage`) → archivos de las fotos.
 - **Cancelar:** el producto → la verificación.
+- **Pérdidas autorizadas:** la solicitud (la toma `decideApproval` primero,
+  como toda autorización) → los mismos candados de decidir, en el mismo
+  orden y con el mismo código (`decideCore`).
 - **Por qué no se bloquean todos los productos de la orden.** La regla de
   WMS-29 vale para operaciones que **bloquean la orden** y después
   ubicaciones. La verificación **nunca bloquea la orden ni sus tareas**: lee
@@ -238,10 +274,13 @@ tareas → capacidad → progreso → archivos.
 - La devolución: `decideCustomerReturn` y la verificación toman
   producto → ubicaciones → la fila de la devolución, en ese orden; la
   verificación lee «¿hay una abierta para esta línea?» bajo ese candado.
-- Las carreras nuevas (dos inspectores, iniciar contra «Cambiar estado»,
-  decidir contra la reversa del reporte, decidir contra la devolución
-  directa) van en `tests/server/lock-order.int.test.ts` y en
-  `tests/quality/inspections.int.test.ts`.
+- Las carreras van en `tests/server/lock-order.int.test.ts` (decidir
+  contra la reversa de su propio reporte, un reporte nuevo de la misma
+  orden, la merma de un material, «Cambiar estado» y «Desechar» de la misma
+  casilla, salidas y cambios del área y un segundo inspector, con
+  `Promise.allSettled`: sin interbloqueos, una sola decisión, la reversa
+  nunca toma lo retenido) y en `tests/quality/inspections.int.test.ts`
+  (dos inspectores, dos inicios a la vez).
 
 ## Idempotencia y reintentos
 
@@ -277,8 +316,8 @@ tareas → capacidad → progreso → archivos.
 - **Plan vencido o módulo en solo lectura:** se ven las verificaciones; no
   se inicia, decide ni cancela (el guardián del módulo).
 - **Quitar Calidad:** las verificaciones abiertas quedan abiertas y lo
-  retenido sigue retenido (como las órdenes de producción, WMS-28);
-  `qualityOpenWork` lo avisa. Se cancelan con el módulo de vuelta.
+  retenido sigue retenido; `qualityOpenWork` lo avisa. Las cancela quien
+  tiene `production.output.verify` (arriba) o Calidad al volver.
 - **Almacén archivado (ADR 0077):** iniciar bloquea la ubicación de la
   casilla (de ese almacén) antes de crear la verificación y la rechaza si
   está archivada; `archiveFacility` cuenta las verificaciones abiertas.
@@ -321,8 +360,7 @@ motor de procesos (ADR 0069) cuando la empresa lo configura.
 
 ## Lo que no entra
 
-Autorización de pérdidas (`quality.loss`) y de liberar cuarentena
-(`quality.release`); orden de reproceso (WMS-29B); acomodo de lo aprobado
+Autorización de liberar cuarentena (`quality.release`); orden de reproceso (WMS-29B); acomodo de lo aprobado
 del área y cierre (WMS-31); verificar una tarima entera; buscar `IN-…` en
 la búsqueda global y en el rastreo; webhook de la verificación; verificar
 desde la API; productos por serie con miles de unidades en una sola
@@ -344,8 +382,10 @@ verificación (el formulario pide cada serie por renglón).
 
 ## Decisiones que el fundador puede cambiar
 
-- Las pérdidas de una verificación (merma, reporte de más, otra) no piden
-  autorización; desechar piezas presentes se hace después con «Desechar».
+- Desechar piezas presentes se hace después con «Desechar», no desde la
+  verificación.
+- Las pérdidas esperan autorización con la decisión entera (no se aplican
+  los destinos mientras tanto).
 - Decidir no pide además el permiso de Inventario del cambio.
 - El jefe de almacén (Almacén, Supervisor) recibe `production.output.verify`
   y verifica lo producido sin Calidad; con Calidad no verifica (libera a

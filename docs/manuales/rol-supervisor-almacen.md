@@ -27,10 +27,13 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 7. **Pedidos y embarques:** libera, cancela, arma embarque y confirma salida.
 8. **Solicitudes de producción:** si el módulo está contratado, las puedes decidir (ver [Encargado](rol-encargado-produccion.md)); aceptas como mucho lo que se pidió.
 
+### Verificar lo producido (WMS-30B)
+Si la empresa tiene Producción **sin Calidad**, también verificas lo producido: desde **Inventario › Por inspeccionar**, toca el renglón e **Iniciar verificación**; cuenta, reparte lo contado (**Aprobadas**, rechazadas, dañadas, en cuarentena o a restauración) y di qué pasó con lo que falta (con foto). **Con Calidad**, lo hace el Inspector y lo que está en una verificación abierta no se puede cambiar con **Cambiar estado**; lo demás lo sigues liberando como siempre.
+
 ## Lo que no puedes hacer
 Crear órdenes de compra ni ver costos (Comprador); cambiar la configuración o el equipo (Administrador).
 
 ## Si algo falla
 **Reportar un problema** ([común](comun.md), sección 8).
 
-Vigente al 2026-11-20 (indicadores: WMS-32; tableros: WMS-34; sugerencias de reubicación: WMS-65)
+Vigente al 2026-11-20 (indicadores: WMS-32; tableros: WMS-34; sugerencias de reubicación: WMS-65; verificación: WMS-30B)
