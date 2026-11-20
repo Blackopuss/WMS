@@ -28,6 +28,7 @@ import {
   createFacility,
   createLocation,
   editLocation,
+  reactivateFacility,
   switchFacility,
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
@@ -392,6 +393,76 @@ describe("locks in one order (WMS-76)", () => {
     }
     expect(errors).toEqual([]);
   }, 180_000);
+  it("reactivating a warehouse never deadlocks with switching, creating, archiving or the location tree (WMS-85)", async () => {
+    // Reactivating takes every warehouse (the one door) and then its
+    // locations without waiting, as archiving does: nothing may close a
+    // circle with it, and an entry into one of its shelves either waits it
+    // out or is refused.
+    const owner = await company();
+    const item = await product(owner);
+    const errors: string[] = [];
+    for (let round = 0; round < 10; round++) {
+      const target = await createFacility(owner, {
+        name: `Vuelve ${++counter}`,
+        code: `V${counter}`,
+      });
+      const spare = await createFacility(owner, {
+        name: `Sobra ${++counter}`,
+        code: `S${counter}`,
+      });
+      if (!target.ok || !spare.ok) throw new Error("facility setup failed");
+      const moved = await switchFacility(owner, target.facilityId);
+      if (!moved.ok) throw new Error("switch failed");
+      const inTarget = await shelf(owner);
+      const main = await db.facility.findFirstOrThrow({
+        where: { organizationId: owner.organizationId, isDefault: true },
+        select: { id: true },
+      });
+      await switchFacility(owner, main.id);
+      const inMain = await shelf(owner);
+      const archived = await archiveFacility(owner, target.facilityId);
+      if (!archived.ok) throw new Error(JSON.stringify(archived));
+      errors.push(
+        ...(await together([
+          () => reactivateFacility(owner, target.facilityId),
+          () => archiveFacility(owner, spare.facilityId),
+          () =>
+            createFacility(owner, {
+              name: `Nuevo ${++counter}`,
+              code: `N${counter}`,
+            }),
+          () => switchFacility(owner, target.facilityId),
+          () =>
+            registerEntry(owner, {
+              productId: item,
+              locationId: inTarget,
+              quantity: "1",
+              acceptRepeat: true,
+              acceptCapacity: true,
+            }),
+          () =>
+            registerEntry(owner, {
+              productId: item,
+              locationId: inMain,
+              quantity: "1",
+              acceptRepeat: true,
+              acceptCapacity: true,
+            }),
+          () => editLocation(owner, inMain, { name: `Editado ${++counter}` }),
+        ])),
+      );
+      const stockedArchived = await db.stockBalance.count({
+        where: {
+          organizationId: owner.organizationId,
+          quantity: { gt: 0 },
+          location: { archivedAt: { not: null } },
+        },
+      });
+      expect(stockedArchived).toBe(0);
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 300_000);
   it("archiving a warehouse never deadlocks with an entry that then locks the shelf of its putaway task (WMS-82)", async () => {
     // The entry locks «General» of the warehouse and, at the end, the shelf
     // its putaway task recommends: two locations one after the other.

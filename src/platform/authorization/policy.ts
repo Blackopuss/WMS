@@ -239,6 +239,8 @@ export const TERMINAL_DESK_ONLY: readonly Permission[] = [
   "quality.plan.manage",
   // WMS-32 (ADR 0082): how each person worked is not for a shared device.
   "inventory.worker_performance.read",
+  // WMS-85 (ADR 0088): bringing a warehouse back takes a place of the plan.
+  "inventory.facility.reactivate",
 ];
 
 /** True when a PIN session keeps this permission of its roles. */

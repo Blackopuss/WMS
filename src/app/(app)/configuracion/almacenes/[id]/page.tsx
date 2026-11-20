@@ -4,11 +4,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components/states";
+import { Badge } from "@/components/ui/badge";
 import { getModuleAccess } from "@/platform/billing";
-import { listFacilities } from "@/platform/locations";
+import { listArchivedFacilities, listFacilities } from "@/platform/locations";
 
-import { archiveFacilityAction, updateFacilityAction } from "../actions";
+import {
+  archiveFacilityAction,
+  reactivateFacilityAction,
+  updateFacilityAction,
+} from "../actions";
 import { ArchiveFacility, FacilityForm } from "../facility-form";
+import { ReactivateFacility } from "../reactivate-facility";
 
 export const metadata: Metadata = { title: "Almacén" };
 
@@ -38,13 +44,48 @@ export default async function AlmacenPage({
     );
   }
   const { id } = await params;
-  const facilities = await listFacilities({
+  const actor = {
     organizationId: access.organization.id,
     userId: access.user.id,
-  });
-  const facility = facilities.find((each) => each.id === id);
-  if (!facility) notFound();
+  };
   const active = access.moduleState("inventory") === "active";
+  const facilities = await listFacilities(actor);
+  const facility = facilities.find((each) => each.id === id);
+  if (!facility) {
+    // WMS-85: an archived one exists here only for who may bring it back.
+    const archived =
+      active && access.allows("inventory.facility.reactivate")
+        ? (await listArchivedFacilities(actor)).find((each) => each.id === id)
+        : undefined;
+    if (!archived) notFound();
+    return (
+      <PageContainer>
+        {back}
+        <PageHeader title={archived.name} />
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <Badge variant="secondary">Archivado</Badge>
+          {archived.hasStock && (
+            <Badge variant="outline">Tiene existencias</Badge>
+          )}
+          <span className="[overflow-wrap:anywhere]">
+            {archived.code}
+            {archived.address ? ` · ${archived.address}` : ""}
+          </span>
+        </div>
+        <section className="max-w-3xl space-y-3">
+          <p className="text-sm">
+            {archived.hasStock
+              ? "Quedaron existencias dentro. Reactívalo para sacarlas o trasladarlas, y después vuelve a archivarlo."
+              : "Al reactivarlo vuelve con las ubicaciones que tenía al archivarse."}
+          </p>
+          <ReactivateFacility
+            name={archived.name}
+            action={reactivateFacilityAction.bind(null, archived.id)}
+          />
+        </section>
+      </PageContainer>
+    );
+  }
   const canEdit = active && access.allows("inventory.location.update");
   const canArchive =
     active &&

@@ -68,7 +68,16 @@ existencias y rechaza una archivada, así que nada entra a un almacén
 archivado sin agregar un candado al camino de los movimientos. No esperar es
 lo que evita el círculo con una operación que bloquea dos ubicaciones en
 llamadas separadas (una entrada y, al final, el estante de su tarea de
-acomodo). Nadie más usa `nowait`.
+acomodo). Nadie más usa `nowait`, salvo reactivar.
+
+## Reactivar un almacén (WMS-85, ADR 0088)
+
+`reactivateFacility` sigue el mismo camino: todos los almacenes en exclusivo
+(`inFacilities`), después las ubicaciones que va a reactivar por la llave
+primaria y **sin esperar** (si alguna está tomada responde «intenta de
+nuevo»), y escribe almacén → ubicaciones → bitácora. No toma productos. El
+límite del plan se cuenta bajo los candados de almacén, así que reactivar,
+crear y archivar van en fila.
 
 ## Un disparador que lee otra tabla es un candado
 

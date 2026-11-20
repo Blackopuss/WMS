@@ -49,3 +49,22 @@ Fecha: 2026-10-05. Complementa `REVISION_PLT.md`, `REVISION_USR.md` y `REVISION_
 ## Siguiente revisión
 
 Al cerrar la etapa IMP (archivos subidos por el cliente, trabajos en segundo plano y exportaciones).
+
+## Adenda WMS-85: reactivar un almacén archivado (2026-11-20, ADR 0088)
+
+Revisión de quien implementó; la lee un revisor independiente antes de unir.
+
+| Amenaza | Control | Prueba |
+| --- | --- | --- |
+| Reactivar un almacén de otra empresa mandando su id | Se busca con el cliente de empresa; un id ajeno responde «no existe» | `archived-facility.int.test.ts` («brings back the warehouse…») |
+| Reactivar sin el rol, desde una terminal con PIN o con el plan vencido | Permiso propio `inventory.facility.reactivate` (titular y Administración) con `assertModulePermission` (solo lectura lo bloquea); está en `TERMINAL_DESK_ONLY`; soporte solo tiene lecturas | `archived-facility.int.test.ts`, `policy.test.ts` |
+| Quien está limitado a almacenes reactiva uno que no alcanza, o se entera de cuáles hay o de si tienen existencias | Solo quien alcanza el almacén completo (como archivar); `listArchivedFacilities` solo lista esos y devuelve vacío sin el permiso; el rechazo no nombra el almacén | `scope.int.test.ts` (WMS-85) |
+| Pasar el límite `facilities` con reactivaciones y altas simultáneas | Se cuenta bajo todos los almacenes bloqueados en exclusivo | `archived-facility.int.test.ts` («races») |
+| Dejar existencias en una ubicación archivada o interbloquearse con un movimiento | Las ubicaciones se toman sin esperar (como archivar) y el almacén se escribe antes que sus ubicaciones; el disparador del saldo sigue rechazando una ubicación archivada | `archived-facility.int.test.ts`, `lock-order.int.test.ts` (WMS-85) |
+| Ganar alcance al reactivar | `membership_scope` no se toca: vuelve exactamente el que había; nadie vuelve a «trabajar ahí» solo | `scope.int.test.ts` (WMS-85) |
+
+Hallazgo aceptado (baja): una ubicación archivada por su cuenta en el mismo
+milisegundo en que, después, se archivó su almacén volvería con él (no se
+puede provocar desde la pantalla; devolvería una ubicación vacía). Una
+invitación pendiente cuyo alcance era el almacén vuelve a servir al
+reactivarlo (dejaba de servir solo por estar archivado).

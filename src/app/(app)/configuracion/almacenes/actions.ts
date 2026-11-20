@@ -7,6 +7,7 @@ import { isAppError } from "@/lib";
 import {
   archiveFacility,
   createFacility,
+  reactivateFacility,
   updateFacility,
   type FacilityField,
 } from "@/platform/locations";
@@ -104,4 +105,28 @@ export async function archiveFacilityAction(
   }
   revalidatePath("/", "layout");
   redirect("/configuracion/almacenes?archivado=1");
+}
+
+/**
+ * Brings an archived warehouse back (WMS-85, ADR 0088); looked for only in
+ * the company, person and company from the session.
+ */
+export async function reactivateFacilityAction(
+  facilityId: string,
+): Promise<FacilityFormState> {
+  const { user, organization } = await requireOrganizationContext();
+  try {
+    const result = await reactivateFacility(
+      { organizationId: organization.id, userId: user.id },
+      String(facilityId ?? "").slice(0, 36),
+    );
+    if (!result.ok) return { error: result.formError };
+  } catch (error) {
+    if (isAppError(error) && error.kind === "forbidden") {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  revalidatePath("/", "layout");
+  redirect("/configuracion/almacenes?reactivado=1");
 }

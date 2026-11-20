@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { ForbiddenError, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
-import { loadScope } from "@/platform/authorization";
+import { isAllowed, loadScope } from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { readLimit } from "@/platform/entitlements";
 import {
@@ -634,6 +634,159 @@ export async function archiveFacility(
       ok: true,
       facilityId: facility.id,
       summary: `Se archivó el almacén ${facility.name}.`,
+    };
+  });
+}
+
+const REACTIVATE = "inventory.facility.reactivate" as const;
+
+export type ArchivedFacility = FacilitySummary & {
+  archivedAt: Date;
+  /** Some location of it still has stock (left there before WMS-82). */
+  hasStock: boolean;
+};
+
+/**
+ * Archived warehouses the person may bring back (WMS-85, ADR 0088): only
+ * with `inventory.facility.reactivate` and only those whole in their scope,
+ * so whether one still has stock never tells anything outside it. Empty
+ * for everyone else.
+ */
+export async function listArchivedFacilities(
+  actor: LocationActor,
+): Promise<ArchivedFacility[]> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(
+    organizationId,
+    userId,
+    "inventory.location.read",
+  );
+  if (!(await isAllowed(organizationId, userId, REACTIVATE))) return [];
+  const client = forOrganization(organizationId);
+  const scope = await loadScope(client, userId);
+  const rows = await client.facility.findMany({
+    where: { archivedAt: { not: null } },
+    select: SUMMARY,
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    take: 500,
+  });
+  const whole = rows.filter(
+    (row) => scope === null || scope.facilities.get(row.id) === null,
+  );
+  if (whole.length === 0) return [];
+  const stocked = await client.stockBalance.findMany({
+    where: {
+      quantity: { gt: 0 },
+      location: { facilityId: { in: whole.map((row) => row.id) } },
+    },
+    select: { location: { select: { facilityId: true } } },
+    distinct: ["locationId"],
+    take: 5000,
+  });
+  const withStock = new Set(stocked.map((row) => row.location.facilityId));
+  return whole.map((row) => ({
+    ...summaryOf(row),
+    archivedAt: row.archivedAt as Date,
+    hasStock: withStock.has(row.id),
+  }));
+}
+
+/**
+ * Brings an archived warehouse back (WMS-85, ADR 0088) with the locations
+ * archived together with it: those with the very same `archivedAt` (that is
+ * how `archiveFacility` writes them), plus General and the transit location
+ * always (they are archived only with it). A location archived on its own
+ * before stays archived, so the tree comes back as it was. Within the
+ * `facilities` limit of the plan, counted under every warehouse locked; only
+ * for someone who reaches the whole warehouse. Nobody goes back to working
+ * there by itself, and what was removed (terminals, equipment, API keys)
+ * does not come back.
+ */
+export async function reactivateFacility(
+  actor: LocationActor,
+  facilityId: string,
+): Promise<FacilityResult> {
+  const { organizationId, userId } = actor;
+  await assertModulePermission(organizationId, userId, REACTIVATE);
+  return inFacilities(organizationId, async (tx) => {
+    const facility = await tx.facility.findFirst({
+      where: { id: String(facilityId ?? "") },
+      select: SUMMARY,
+    });
+    if (!facility) return stop("not_found", "Ese almacén ya no existe.");
+    await checkScope(tx, userId, facility.id);
+    const archivedAt = facility.archivedAt;
+    if (!archivedAt) {
+      return {
+        ok: true,
+        facilityId: facility.id,
+        repeated: true,
+        summary: "El almacén ya estaba activo.",
+      };
+    }
+    const limit =
+      (await readLimit(tx, organizationId, FACILITIES_LIMIT_KEY)) ?? 1;
+    const active = await tx.facility.count({ where: { archivedAt: null } });
+    if (active >= limit) {
+      stop(
+        "limit",
+        limit === 1
+          ? "Tu plan incluye 1 almacén. Para reactivar este, archiva el otro o cambia de plan."
+          : `Tu plan incluye ${limit} almacenes y ya están en uso. Archiva uno o cambia de plan.`,
+      );
+    }
+    // The code is unique among archived ones too (the base says so); read
+    // again under the lock all the same.
+    await checkFreeCode(tx, facility.code, facility.id);
+    const places = await tx.location.findMany({
+      where: {
+        facilityId: facility.id,
+        OR: [{ archivedAt }, { isDefault: true }, { isTransit: true }],
+        NOT: { archivedAt: null },
+      },
+      select: { id: true },
+    });
+    const ids = places.map((place) => place.id);
+    // Same as archiving (ADR 0077): by the primary key and without waiting.
+    // Whoever holds a location of an archived warehouse is about to be
+    // refused for that very reason; never waiting keeps us out of a circle.
+    try {
+      await lockRows(tx, "location", ids, { nowait: true });
+    } catch (error) {
+      if (!isLockBusy(error)) throw error;
+      stop(
+        "busy",
+        "Hay movimientos en curso en este almacén. Intenta de nuevo en un momento.",
+      );
+    }
+    // The warehouse first: a location of an archived warehouse stays
+    // archived (the base checks it).
+    await tx.facility.update({
+      where: { id: facility.id },
+      data: { archivedAt: null },
+    });
+    if (ids.length > 0) {
+      await tx.location.updateMany({
+        where: { id: { in: ids } },
+        data: { archivedAt: null },
+      });
+    }
+    await recordAuditEvent(tx, {
+      organizationId,
+      actorUserId: userId,
+      action: "facility.reactivated",
+      target: { type: "facility", id: facility.id },
+      metadata: {
+        almacen: facility.name,
+        codigo: facility.code,
+        ubicaciones: ids.length,
+        archivadoEl: archivedAt.toISOString(),
+      },
+    });
+    return {
+      ok: true,
+      facilityId: facility.id,
+      summary: `Se reactivó el almacén ${facility.name}.`,
     };
   });
 }

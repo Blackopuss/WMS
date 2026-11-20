@@ -164,12 +164,15 @@ import { archiveProduct, createProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
 import { createFileLink, readSpreadsheet } from "@/platform/files";
 import {
+  archiveFacility,
   createFacility,
   createLocation,
   getActiveFacility,
   getDefaultLocation,
+  listArchivedFacilities,
   listFacilities,
   listLocations,
+  reactivateFacility,
   switchFacility,
 } from "@/platform/locations";
 import { updateOperationSetting } from "@/platform/settings";
@@ -1963,6 +1966,31 @@ describe("PC-12: archiving a product (WMS-57B)", () => {
     });
     await stillActive(product);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+
+  it("an archived warehouse outside the scope is neither listed nor reactivated from B (WMS-85)", async () => {
+    const third = await createFacility(owner, { name: "Bodega C", code: "C" });
+    if (!third.ok) throw new Error(JSON.stringify(third));
+    expect(await archiveFacility(owner, third.facilityId)).toMatchObject({
+      ok: true,
+    });
+    expect(await listArchivedFacilities(limited)).toEqual([]);
+    const fromB = await reactivateFacility(limited, third.facilityId);
+    expect(fromB).toMatchObject({ ok: false, reason: "not_allowed" });
+    expect(JSON.stringify(fromB)).not.toContain("Bodega C");
+    expect(
+      (await listArchivedFacilities(free)).map((each) => each.id),
+    ).toContain(third.facilityId);
+    expect(await reactivateFacility(free, third.facilityId)).toMatchObject({
+      ok: true,
+    });
+    // Nobody gains scope by it: B is still all the limited person has.
+    expect((await listFacilities(limited)).map((each) => each.id)).toEqual([
+      facilityB,
+    ]);
+    expect(await archiveFacility(owner, third.facilityId)).toMatchObject({
+      ok: true,
+    });
   });
 });
 
