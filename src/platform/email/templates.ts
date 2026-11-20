@@ -567,3 +567,61 @@ export function accessAlertEmail(input: {
     ].join("\n"),
   };
 }
+
+/**
+ * Transfer of the company (WMS-90, ADR 0090). Security mail with no link at
+ * all: the person goes to WMS by themselves. Names are written by people,
+ * so they go on one line and bounded.
+ */
+export function ownershipEmail(input: {
+  to: string;
+  name: string;
+  kind: "offered_by_you" | "offered_to_you" | "you_gave" | "you_took";
+  otherName: string;
+  organizationName: string;
+}): EmailMessage {
+  const name = oneLine(input.name, 80);
+  const other = oneLine(input.otherName, 80);
+  const company = oneLine(input.organizationName, 80);
+  const body: Record<typeof input.kind, { subject: string; lines: string[] }> =
+    {
+      offered_by_you: {
+        subject: `Ofreciste la titularidad de ${company}`,
+        lines: [
+          `Ofreciste la titularidad de ${company} a ${other}. Nada cambia hasta que acepte.`,
+          "",
+          "Si no fuiste tú, entra a WMS, cancela la oferta en Configuración › Titularidad de la empresa y cambia tu contraseña de inmediato.",
+        ],
+      },
+      offered_to_you: {
+        subject: `${other} te ofrece la titularidad de ${company}`,
+        lines: [
+          `${other} te ofrece la titularidad de ${company} en WMS.`,
+          "",
+          "Para aceptarla o rechazarla, entra a WMS y ve a Configuración › Titularidad de la empresa. Este correo no trae enlaces a propósito.",
+        ],
+      },
+      you_gave: {
+        subject: `Ya no eres titular de ${company}`,
+        lines: [
+          `${other} aceptó la titularidad de ${company}. Desde ahora es la persona titular y tú conservas solo los roles que elegiste.`,
+          "",
+          "Si no lo esperabas, comunícate con esa persona y cambia tu contraseña.",
+        ],
+      },
+      you_took: {
+        subject: `Ahora eres titular de ${company}`,
+        lines: [
+          `Aceptaste la titularidad de ${company}, que te ofreció ${other}.`,
+          "",
+          "Si no fuiste tú, cambia tu contraseña de inmediato y comunícate con el equipo de WMS.",
+        ],
+      },
+    };
+  const chosen = body[input.kind];
+  return {
+    to: input.to,
+    subject: chosen.subject,
+    text: [`Hola, ${name}:`, "", ...chosen.lines].join("\n"),
+  };
+}

@@ -5,7 +5,6 @@ import { moduleRegistry } from "@/modules/registry";
 import { describeAuditFacts, listAuditTrail } from "@/platform/audit";
 import {
   acceptInvitation,
-  acceptOwnershipTransfer,
   can,
   createInvitation,
   listPendingInvitations,
@@ -14,10 +13,14 @@ import {
   listTeamMembers,
   loadScope,
   loadSubject,
-  offerOwnershipTransfer,
   setMemberScope,
   type Role,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import {
+  acceptOwnershipTransfer,
+  offerOwnershipTransfer,
+} from "@/platform/authorization/ownership";
 import { provisionCompany } from "@/platform/billing";
 import { memoryOutboxFor } from "@/platform/email";
 import {

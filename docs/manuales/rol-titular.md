@@ -11,7 +11,8 @@ Todo lo que tengan contratado tu plan y tus módulos: Inicio, Tareas, Recepción
 ## Lo que solo hace el titular
 - **Ver y entender tu plan:** **Configuración › Mi plan** muestra la vigencia, los cupos (**Productos activos**, **Usuarios** y **Archivos**) y los módulos. No hay botón de contratar ni cobro en línea: para contratar o renovar, escribe al correo de contacto que aparece ahí; el personal de la plataforma lo activa cuando se confirma el pago.
 - **Permitir que soporte vea tu empresa:** en **Configuración › Soporte** toca **Permitir acceso** (24 horas, solo lectura, queda en la bitácora) y **Quitar acceso** cuando termines.
-- **Contratar, cancelar y transferir la titularidad:** hoy no hay pantalla en la app para hacerlo (todavía no disponible en la app); se pide por el correo de contacto de **Mi plan**.
+- **Contratar y cancelar:** hoy no hay pantalla en la app para hacerlo (todavía no disponible en la app); se pide por el correo de contacto de **Mi plan**.
+- **Transferir la empresa a otra persona del equipo:** en **Configuración › Titularidad de la empresa** eliges a la persona (debe estar activa en tu equipo), marcas los roles que conservarás tú (viene marcado **Consulta**), escribes tu contraseña y el código de tu app de dos pasos (o un código de recuperación) y tocas **Ofrecer la empresa**. Nada cambia hasta que la persona acepta; la oferta vale 7 días y puedes quitarla con **Cancelar la oferta**. La persona necesita tener activa la verificación en dos pasos para aceptar. Al aceptar, ella pasa a ser titular, tú te quedas solo con los roles que elegiste, se cierra el acceso de soporte si estaba abierto y los dos reciben un correo y un aviso. Si tu equipo no tiene a nadie más, primero invita a la persona desde **Equipo**. No se hace desde una terminal con PIN.
 - Al activarse un aviso de renovación (los últimos 15 días del plan), te aparece en Inicio y en **Mi plan**. Si el plan vence, todo queda en **solo lectura** hasta renovar.
 
 ## Primeros pasos con una empresa nueva
@@ -39,4 +40,4 @@ Cada paso se puede saltar con **Saltar este paso**; nada es obligatorio para emp
 ## Si tienes un problema
 **Reportar un problema** (ver [común](comun.md), sección 8). Para ayuda del sistema, da acceso a soporte como se describe arriba.
 
-Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85; tableros: WMS-34; sugerencias de reubicación: WMS-65)
+Vigente al 2026-11-20 (configuración inicial: WMS-43; indicadores: WMS-32; reactivar un almacén: WMS-85; tableros: WMS-34; sugerencias de reubicación: WMS-65; titularidad: WMS-90)

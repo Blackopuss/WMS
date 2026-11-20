@@ -13,6 +13,7 @@ import {
   MonitorSmartphone,
   ShieldCheck,
   SlidersHorizontal,
+  UserRoundCheck,
   Users,
   Warehouse,
   Wrench,
@@ -26,7 +27,10 @@ import { PageContainer, PageHeader } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib";
 import { getMfaStatus, listActiveSessions } from "@/platform/auth";
-import { getSupportAccess } from "@/platform/authorization";
+import {
+  getOwnershipOfferFor,
+  getSupportAccess,
+} from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { offeredSteps, setupAbilities } from "@/modules/inventory";
 import { processDocuments } from "@/modules/registry";
@@ -64,25 +68,45 @@ export default async function ConfiguracionPage() {
   const canGrantSupport = access.can("platform.support.grant");
   // A PIN session of a shared terminal (WMS-38) sees nothing of account
   // security: the services refuse it, so it is not even asked.
-  const [sessions, mfa, support, pin, processes] = await Promise.all([
-    terminal ? [] : listActiveSessions(user.id, sessionId),
-    terminal ? null : getMfaStatus(user.id),
-    canGrantSupport ? getSupportAccess(access.organization.id) : null,
-    terminal
-      ? null
-      : getMyPinStatus({
-          organizationId: access.organization.id,
-          userId: user.id,
-        }),
-    // WMS-74: only when an active module declares documents with processes.
-    access.can("platform.organization.update")
-      ? hasProcessDocuments(access.organization.id, processDocuments)
-      : false,
-  ]);
+  // WMS-90: the titular offers the company; a person with a valid offer
+  // sees where to answer it.
+  const canTransfer = access.can("platform.ownership.transfer");
+  const [sessions, mfa, support, pin, processes, ownershipOffer] =
+    await Promise.all([
+      terminal ? [] : listActiveSessions(user.id, sessionId),
+      terminal ? null : getMfaStatus(user.id),
+      canGrantSupport ? getSupportAccess(access.organization.id) : null,
+      terminal
+        ? null
+        : getMyPinStatus({
+            organizationId: access.organization.id,
+            userId: user.id,
+          }),
+      // WMS-74: only when an active module declares documents with processes.
+      access.can("platform.organization.update")
+        ? hasProcessDocuments(access.organization.id, processDocuments)
+        : false,
+      terminal || canTransfer
+        ? null
+        : getOwnershipOfferFor(access.organization.id, user.id),
+    ]);
 
   return (
     <PageContainer>
       <PageHeader title="Configuración" />
+      {ownershipOffer && (
+        <section aria-labelledby="oferta-titularidad" className="space-y-3">
+          <h2 id="oferta-titularidad" className="text-lg font-semibold">
+            Te ofrecen la empresa
+          </h2>
+          <SettingsLink
+            href="/configuracion/titularidad"
+            icon={UserRoundCheck}
+            title="Titularidad de la empresa"
+            description={`${ownershipOffer.fromName} te ofrece la titularidad. Acéptala o recházala.`}
+          />
+        </section>
+      )}
       {(showSetup ||
         showLocations ||
         showDefects ||
@@ -92,6 +116,7 @@ export default async function ConfiguracionPage() {
         access.can("platform.plan.read") ||
         access.can("platform.audit.read") ||
         access.can("platform.api.manage") ||
+        canTransfer ||
         access.can("platform.organization.update")) && (
         <section aria-labelledby="empresa" className="space-y-3">
           <h2 id="empresa" className="text-lg font-semibold">
@@ -183,6 +208,14 @@ export default async function ConfiguracionPage() {
               icon={Gauge}
               title="Mi plan"
               description="Cupos, módulos y vigencia."
+            />
+          )}
+          {canTransfer && (
+            <SettingsLink
+              href="/configuracion/titularidad"
+              icon={UserRoundCheck}
+              title="Titularidad de la empresa"
+              description="Pasarle la empresa a otra persona del equipo."
             />
           )}
           {access.can("platform.api.manage") && (
@@ -359,6 +392,7 @@ function SettingsLink({
     | "/configuracion/api"
     | "/configuracion/bitacora"
     | "/configuracion/accesos"
+    | "/configuracion/titularidad"
     | "/aprobaciones"
     | "/configuracion/aprobaciones";
   icon: LucideIcon;

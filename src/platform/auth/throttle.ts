@@ -32,6 +32,9 @@ export const RULES = {
   resetIp: { max: 10, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   // Wrong passwords or codes while setting up MFA, per signed-in user.
   mfaSetup: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  // Password and code asked again before a delicate action (WMS-90), per
+  // signed-in user; its own budget, apart from signing in.
+  stepUp: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   // Wrong sign-in codes per IP (Better Auth also limits each challenge to 5
   // tries and locks the account after 10 failures in a row).
   mfaChallengeIp: { max: 20, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
@@ -120,6 +123,10 @@ export const throttleKeys = {
   mfaSetup: (userId: string): ThrottleKey => ({
     key: `mfa:setup:${userId}`,
     rule: RULES.mfaSetup,
+  }),
+  stepUp: (userId: string): ThrottleKey => ({
+    key: `stepup:${userId}`,
+    rule: RULES.stepUp,
   }),
   mfaChallengeIp: (ip: string): ThrottleKey => ({
     key: `mfa:challenge:ip:${ip}`,

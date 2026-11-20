@@ -22,6 +22,8 @@ export type {
   StartTotpResult,
 } from "./mfa";
 export { disableMfa, regenerateBackupCodes } from "./mfa-recovery";
+export { STEP_UP_MESSAGES, confirmIdentity } from "./step-up";
+export type { StepUpField, StepUpResult } from "./step-up";
 export {
   ACCESS_ACTIONS,
   ACCESS_ACTION_LABELS,

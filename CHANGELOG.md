@@ -8,6 +8,22 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-90** Pantalla para transferir la titularidad: Configuración ›
+  «Titularidad de la empresa» (`/configuracion/titularidad`; la ven solo el
+  titular y quien tiene una oferta pendiente). El titular ofrece a una persona
+  activa del equipo eligiendo los roles que conserva (Consulta por omisión),
+  puede cancelar; quien recibe acepta o rechaza. Ofrecer y aceptar piden
+  contraseña y un código de dos pasos (app o recuperación) con el servicio
+  nuevo `confirmIdentity` (`src/platform/auth/step-up.ts`, límite de intentos
+  `stepUp`, cada código sirve una vez, nunca desde una sesión de PIN); cancelar
+  y rechazar no piden nada. Aceptar cierra el acceso de soporte abierto, no
+  cierra sesiones ni revoca llaves de la API. Tipo de aviso `team.ownership`,
+  correos de seguridad sin enlaces, bitácora `ownership.transfer_declined`
+  nueva. Sin permisos ni tablas nuevas. Revisor independiente en dos vueltas
+  (la primera «no unir» por un código de dos pasos reutilizable y una ventana
+  de soporte abierta por el titular anterior, ambos corregidos; la segunda
+  «unir»). Pendiente: ver el ADR. ADR 0090.
+
 - **WMS-65** Sugerencias de reubicación (slotting), solo recomienda: Inventario ›
   «Sugerencias de reubicación» (`/inventario/reubicaciones`, enlace bajo el
   título de Inventario, sin aviso en Inicio) lista hasta 20 renglones de tres
