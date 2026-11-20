@@ -14,11 +14,12 @@ import {
   createInvitation,
   disableMember,
   isAllowed,
-  offerOwnershipTransfer,
   resendInvitation,
   type Permission,
   type Role,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import { offerOwnershipTransfer } from "@/platform/authorization/ownership";
 import { createOrganization } from "@/platform/tenancy";
 import { db } from "@/server";
 

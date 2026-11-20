@@ -201,6 +201,28 @@ compartida, transferir a una cuenta que no es miembro, reemplazar una oferta
 pendiente en un solo paso desde la pantalla, y cerrar sesiones o revocar
 llaves automáticamente al aceptar.
 
+## Correcciones de la revisión independiente
+
+- **El código de la app sirve una vez** (`confirmIdentity` y también
+  `disableMfa`): después de un TOTP válido se aparta
+  `throttleKeys.totpUsed(persona, código)`; si ya estaba usado (por ejemplo,
+  el mismo con que se acaba de iniciar sesión) se rechaza y cuenta como
+  fallo. Better Auth no impide la repetición cuando hay sesión.
+- **Soporte no queda abierto por el titular anterior:** `grantSupportAccess`
+  y `revokeSupportAccess` vuelven a leer `ownerUserId` bajo el candado de la
+  empresa (antes se revisaba fuera de la transacción). Son las únicas
+  acciones reservadas al titular en el código además de la titularidad, que
+  ya decidía bajo el candado; contratar, cancelar y el método de pago no
+  tienen pantalla ni servicio (ADR 0037).
+- Los módulos de los roles a conservar se leen con `readModuleStates(tx)`
+  bajo el candado de la empresa, que también toma quitar un módulo.
+- `offerOwnershipTransfer` y `acceptOwnershipTransfer` (sin confirmación)
+  ya no salen en `index.ts`; las pruebas los importan por su ruta.
+- Una oferta reemplazada por otra avisa a su destinatario que se canceló.
+- Dos peticiones que gastan a la vez el mismo código de recuperación: la
+  segunda responde «El código no es válido» en vez de una pantalla de error.
+- Los correos de seguridad salen solo a cuentas con el correo confirmado.
+
 ## Decisiones que el fundador puede cambiar
 
 1. Se puede transferir con el plan vencido. Razón: es un cambio de
@@ -225,8 +247,11 @@ llaves automáticamente al aceptar.
 con sesión real (contraseña y código), cancelar y rechazar, contraseña o
 código equivocados (con el límite de intentos), sesión de PIN, soporte,
 dos empresas, oferta vencida, destinatario sin dos pasos, módulo quitado,
-plan vencido, cierre de soporte y carreras con `Promise.all` (aceptar y
-cancelar, aceptar y desactivar, dos ofertas, aceptar y rechazar). Las
+plan vencido, cierre de soporte, código de la app repetido, `confirmIdentity`
+en una sesión de PIN, oferta reemplazada y carreras con `Promise.all` o con
+el candado de la empresa retenido (aceptar y cancelar, aceptar y desactivar,
+dos ofertas, aceptar y rechazar, aceptar y abrir soporte, aceptar y quitar
+un módulo). Las
 Server Actions nuevas van en `REVIEWED` de
 `tests/isolation/server-actions.int.test.ts` y el archivo se agrega a
 NEG-26 en `NEGATIVE_CASES`.

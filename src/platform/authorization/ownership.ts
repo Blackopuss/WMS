@@ -8,10 +8,12 @@ import {
   type StepUpField,
 } from "@/platform/auth";
 import { ownershipEmail, sendEmail } from "@/platform/email";
+import { readModuleStates } from "@/platform/entitlements";
 import { notify, type NotifyTx } from "@/platform/notifications";
 import { LOCKING_TRANSACTION, db, forOrganization } from "@/server";
 
-import { assertOwnerAction, modulesOf } from "./access";
+import { assertOwnerAction } from "./access";
+import { companyModules, type CompanyModuleState } from "./policy";
 import { ROLE_MODULE, isRole, type Role } from "./catalog";
 import { OWNERSHIP_NOTICE } from "./notices";
 import { TEAM_RULE_MESSAGES } from "./team-rules";
@@ -73,13 +75,26 @@ type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 
 const OWNERSHIP_HREF = "/configuracion/titularidad";
 
-/** Name and mail of people, to word notices and security mail. */
+/** The company's modules, read with the transaction (MOD-08). */
+async function modulesUnderLock(tx: Tx, organizationId: string) {
+  return companyModules(await readModuleStates(tx, organizationId));
+}
+
+/**
+ * Name of people, to word notices, and their mail only when the account
+ * confirmed it (security mail never goes to an unconfirmed address).
+ */
 async function peopleOf(tx: Tx, ids: string[]) {
   const rows = await tx.user.findMany({
     where: { id: { in: ids } },
-    select: { id: true, name: true, email: true },
+    select: { id: true, name: true, email: true, emailVerified: true },
   });
-  return new Map(rows.map((row) => [row.id, row]));
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { name: row.name, email: row.emailVerified ? row.email : null },
+    ]),
+  );
 }
 
 const nameOf = (person: { name: string } | undefined) =>
@@ -145,13 +160,13 @@ export async function offerOwnershipTransfer(
   const roles = parseRoles(input.previousOwnerRoles);
   if (!roles) return fail("invalid_roles");
   const toUserId = String(input.toUserId);
-  // WMS-59: a role tied to a module is kept only with that module in full
-  // use, unless the titular already has it (same rule as the team).
-  const modules = await modulesOf(organizationId);
-
   const done = await db.$transaction(async (tx) => {
     const owner = await lockOwner(tx, organizationId);
     if (owner === null || owner !== actorUserId) return fail("not_owner");
+    // WMS-59: a role tied to a module is kept only with that module in full
+    // use, unless the titular already has it (same rule as the team). Read
+    // under the company lock, which removing a module also takes (WMS-90).
+    const modules = await modulesUnderLock(tx, organizationId);
     const ownMembership = await tx.membership.findFirst({
       where: { organizationId, userId: actorUserId, status: "ACTIVE" },
       select: { id: true, roles: { select: { role: true } } },
@@ -170,6 +185,11 @@ export async function offerOwnershipTransfer(
     if (!recipient) return fail("invalid_recipient");
 
     const now = new Date();
+    // A new offer replaces the pending one; its recipient is told (WMS-90).
+    const replaced = await tx.ownershipTransfer.findMany({
+      where: { organizationId, status: "PENDING" },
+      select: { id: true, toMembership: { select: { userId: true } } },
+    });
     await tx.ownershipTransfer.updateMany({
       where: { organizationId, status: "PENDING" },
       data: { status: "CANCELLED", resolvedAt: now },
@@ -201,6 +221,16 @@ export async function offerOwnershipTransfer(
     ]);
     const from = people.get(actorUserId);
     const to = people.get(toUserId);
+    for (const old of replaced) {
+      await tell(tx, {
+        organizationId,
+        actorUserId,
+        toUserId: old.toMembership.userId,
+        text: `${nameOf(from)} canceló la oferta de la titularidad de ${company}.`,
+        href: "/configuracion",
+        key: `ownership:${old.id}:cancelled`,
+      });
+    }
     await tell(tx, {
       organizationId,
       actorUserId,
@@ -210,7 +240,7 @@ export async function offerOwnershipTransfer(
       key: `ownership:${transferId}:offered`,
     });
     const mails: Mail[] = [];
-    if (from) {
+    if (from?.email) {
       mails.push({
         to: from.email,
         name: from.name,
@@ -219,7 +249,7 @@ export async function offerOwnershipTransfer(
         organizationName: company,
       });
     }
-    if (to) {
+    if (to?.email) {
       mails.push({
         to: to.email,
         name: to.name,
@@ -239,7 +269,7 @@ export async function offerOwnershipTransfer(
 function missesModule(
   roles: readonly Role[],
   held: ReadonlySet<string>,
-  modules: Awaited<ReturnType<typeof modulesOf>>,
+  modules: ReadonlyMap<string, CompanyModuleState>,
 ): boolean {
   return roles.some((role) => {
     const needs = ROLE_MODULE[role];
@@ -345,12 +375,13 @@ export async function acceptOwnershipTransfer(
   userId: string,
   transferId: string,
 ): Promise<OwnershipActionResult> {
-  // WMS-59 again at the end: a module removed since the offer does not hand
-  // out a role the previous titular did not have (WMS-90).
-  const modules = await modulesOf(organizationId);
   const done = await db.$transaction(async (tx) => {
     const owner = await lockOwner(tx, organizationId);
     if (owner === null) return fail("not_found");
+    // WMS-59 again at the end, under the company lock that removing a
+    // module also takes: a module removed since the offer does not hand out
+    // a role the previous titular did not have (WMS-90).
+    const modules = await modulesUnderLock(tx, organizationId);
 
     const transfer = await offerFor(
       tx,
@@ -452,7 +483,7 @@ export async function acceptOwnershipTransfer(
       key: `ownership:${transfer.id}:accepted`,
     });
     const mails: Mail[] = [];
-    if (before) {
+    if (before?.email) {
       mails.push({
         to: before.email,
         name: before.name,
@@ -461,7 +492,7 @@ export async function acceptOwnershipTransfer(
         organizationName: company,
       });
     }
-    if (after) {
+    if (after?.email) {
       mails.push({
         to: after.email,
         name: after.name,

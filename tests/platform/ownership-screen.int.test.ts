@@ -6,11 +6,11 @@ import { ForbiddenError, newId } from "@/lib";
 import { moduleRegistry } from "@/modules/registry";
 import {
   auth,
+  confirmIdentity,
   confirmTotpEnrollment,
   startTotpEnrollment,
 } from "@/platform/auth";
 import {
-  acceptOwnershipTransfer,
   acceptOwnershipWithConfirmation,
   cancelOwnershipFromScreen,
   cancelOwnershipTransfer,
@@ -21,11 +21,16 @@ import {
   getPendingOwnershipTransfer,
   grantSupportAccess,
   isAllowed,
+  revokeSupportAccess,
   listOwnershipCandidates,
-  offerOwnershipTransfer,
   offerOwnershipWithConfirmation,
   type Role,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import {
+  acceptOwnershipTransfer,
+  offerOwnershipTransfer,
+} from "@/platform/authorization/ownership";
 import { activateModule, deactivateModule } from "@/platform/billing";
 import { memoryOutboxFor } from "@/platform/email";
 import { invalidateEntitlements } from "@/platform/entitlements";
@@ -40,10 +45,15 @@ import { grantSeats } from "../setup/plan";
 // an open support access and refuses a kept role whose module is gone.
 // Races go through the real services with Promise.all. NEG-26.
 
-/** Who the request comes from at a shared terminal (WMS-38), if anybody. */
+/**
+ * Who the request comes from at a shared terminal (WMS-38), if anybody.
+ * Mocked in the module itself, so every importer (the policy through the
+ * index and `confirmIdentity` through its relative import) sees it.
+ */
 let terminalUser: string | null = null;
-vi.mock("@/platform/auth", async (original) => {
-  const real = await original<typeof import("@/platform/auth")>();
+vi.mock("@/platform/auth/terminal-session", async (original) => {
+  const real =
+    await original<typeof import("@/platform/auth/terminal-session")>();
   return {
     ...real,
     terminalUserOfRequest: async () => terminalUser,
@@ -662,5 +672,166 @@ describe("races (NEG-26)", () => {
     ]);
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(await auditOf(s.org, "ownership.transferred")).toBe(1);
+  });
+});
+
+describe("second-round fixes of the review", () => {
+  it("an app code works once: the same code is refused the second time", async () => {
+    const owner = await account("titular");
+    const code = totp(owner.secret!);
+    expect(
+      await confirmIdentity(owner.userId, { password, code }, owner.headers),
+    ).toEqual({ ok: true });
+    expect(
+      await confirmIdentity(owner.userId, { password, code }, owner.headers),
+    ).toMatchObject({ ok: false, field: "code" });
+  }, 60_000);
+
+  it("confirmIdentity itself refuses a PIN session", async () => {
+    const owner = await rowUser("titular");
+    terminalUser = owner;
+    await expect(
+      confirmIdentity(owner, { password, code: "123456" }, new Headers()),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
+  it("the company is transferred with the plan ended", async () => {
+    const owner = await rowUser("titular");
+    const heir = await rowUser("sucesor");
+    const org = await company(owner);
+    await grantSeats(org);
+    await addMember(org, heir);
+    await activateModule(moduleRegistry, {
+      organizationId: org,
+      moduleId: "inventory",
+      actorUserId: null,
+    });
+    await db.entitlement.updateMany({
+      where: { organizationId: org },
+      data: {
+        validFrom: new Date(Date.now() - 2 * 86_400_000),
+        validUntil: new Date(Date.now() - 86_400_000),
+      },
+    });
+    invalidateEntitlements(org);
+    expect(await isAllowed(org, owner, "platform.ownership.transfer")).toBe(
+      true,
+    );
+    const transfer = await offerOwnershipTransfer(org, owner, {
+      toUserId: heir,
+    });
+    if (!transfer.ok) throw new Error(transfer.reason);
+    expect(
+      await acceptOwnershipTransfer(org, heir, transfer.transferId),
+    ).toEqual({ ok: true });
+    expect(await ownerOf(org)).toBe(heir);
+  });
+
+  it("a replaced offer tells its recipient that it was cancelled", async () => {
+    const owner = await rowUser("titular");
+    const first = await rowUser("primero");
+    const second = await rowUser("segundo");
+    const org = await company(owner);
+    await grantSeats(org);
+    await addMember(org, first);
+    await addMember(org, second);
+    await offerOwnershipTransfer(org, owner, { toUserId: first });
+    await offerOwnershipTransfer(org, owner, { toUserId: second });
+    const texts = (await noticesOf(org, first)).map((n) => n.text);
+    expect(texts).toHaveLength(2);
+    expect(texts.some((t) => t.includes("canceló"))).toBe(true);
+  });
+
+  it("support granted while the company changes hands never stays open by the previous titular", async () => {
+    const owner = await rowUser("titular");
+    const heir = await rowUser("sucesor");
+    const org = await company(owner);
+    await grantSeats(org);
+    await addMember(org, heir);
+    const transfer = await offerOwnershipTransfer(org, owner, {
+      toUserId: heir,
+    });
+    if (!transfer.ok) throw new Error(transfer.reason);
+
+    // Hold the company row so both wait on it, then let them race.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    const holder = db.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM organization WHERE id = ${org} FOR UPDATE`;
+        locked();
+        await held;
+      },
+      { timeout: 30_000 },
+    );
+    await isLocked;
+    const racing = Promise.allSettled([
+      acceptOwnershipTransfer(org, heir, transfer.transferId),
+      grantSupportAccess({ organizationId: org, userId: owner }),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release();
+    await holder;
+    const [accepted, granted] = await racing;
+    expect(accepted.status).toBe("fulfilled");
+    expect(await ownerOf(org)).toBe(heir);
+    const open = await db.supportAccess.count({
+      where: {
+        organizationId: org,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+    expect(open).toBe(0);
+    if (granted.status === "rejected") {
+      expect(granted.reason).toBeInstanceOf(ForbiddenError);
+    }
+    // And the previous titular can no longer close nor open it.
+    await expect(
+      revokeSupportAccess({ organizationId: org, userId: owner }),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
+  it("accepting while a module is removed never hands out a role without it", async () => {
+    const owner = await rowUser("titular");
+    const heir = await rowUser("sucesor");
+    const org = await company(owner);
+    await grantSeats(org);
+    await addMember(org, heir);
+    for (const moduleId of ["inventory", "production"]) {
+      await activateModule(moduleRegistry, {
+        organizationId: org,
+        moduleId,
+        actorUserId: null,
+      });
+    }
+    invalidateEntitlements();
+    const transfer = await offerOwnershipTransfer(org, owner, {
+      toUserId: heir,
+      previousOwnerRoles: ["production_supervisor"],
+    });
+    if (!transfer.ok) throw new Error(transfer.reason);
+    const [accepted, removed] = await Promise.all([
+      acceptOwnershipTransfer(org, heir, transfer.transferId),
+      deactivateModule(moduleRegistry, {
+        organizationId: org,
+        moduleId: "production",
+        actorUserId: null,
+      }),
+    ]);
+    expect(removed.ok).toBe(true);
+    const kept = await db.membershipRole.findMany({
+      where: { organizationId: org, membership: { userId: owner } },
+      select: { role: true },
+    });
+    if (accepted.ok) {
+      // Accepted first, with the module still there: the role is kept.
+      expect(kept.map((r) => r.role)).toEqual(["production_supervisor"]);
+    } else {
+      expect(accepted).toMatchObject({ reason: "module_missing" });
+      expect(await ownerOf(org)).toBe(owner);
+    }
   });
 });

@@ -5,16 +5,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib";
 import { listAuditEvents } from "@/platform/audit";
 import {
-  acceptOwnershipTransfer,
   assignRoles,
   countSeatsInUse,
   disableMember,
   isAllowed,
   listTeamMembers,
-  offerOwnershipTransfer,
   reactivateMember,
   type Role,
 } from "@/platform/authorization";
+// Without the confirmation of the screen (WMS-90): not in index.ts.
+import {
+  acceptOwnershipTransfer,
+  offerOwnershipTransfer,
+} from "@/platform/authorization/ownership";
 import {
   createOrganization,
   resolveActiveOrganization,

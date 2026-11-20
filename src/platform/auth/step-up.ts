@@ -40,6 +40,8 @@ export const STEP_UP_MESSAGES = {
   code: "Escribe el código de 6 números de tu app o uno de tus códigos de recuperación.",
   wrongPassword: "La contraseña no es correcta.",
   wrongCode: "El código no es válido.",
+  usedCode:
+    "Ese código ya se usó. Espera a que tu app muestre uno nuevo e inténtalo otra vez.",
   noMfa:
     "Activa la verificación en dos pasos en Configuración › Seguridad para continuar.",
 } as const;
@@ -95,12 +97,27 @@ export async function confirmIdentity(
     else await auth.api.verifyBackupCode({ body: { code: backup! }, headers });
   } catch (error) {
     const code = isAPIError(error) ? String(error.body?.code ?? "") : "";
-    if (code === "INVALID_CODE" || code === "INVALID_BACKUP_CODE") {
+    // CONFLICT: two requests spent the same backup code at once; the
+    // other one used it, so for this one it is not valid any more.
+    if (
+      code === "INVALID_CODE" ||
+      code === "INVALID_BACKUP_CODE" ||
+      (isAPIError(error) && error.status === "CONFLICT")
+    ) {
       await settleFailure([key]);
       return { ok: false, error: STEP_UP_MESSAGES.wrongCode, field: "code" };
     }
     await refundAttempt([key]);
     throw error;
+  }
+  // An app code works once (as when signing in): Better Auth does not stop
+  // a repeat when there is a session, so it is claimed here in one step.
+  if (
+    totp &&
+    (await reserveAttempt([throttleKeys.totpUsed(userId, totp)])) > 0
+  ) {
+    await settleFailure([key]);
+    return { ok: false, error: STEP_UP_MESSAGES.usedCode, field: "code" };
   }
 
   await refundAttempt([key]);

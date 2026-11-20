@@ -67,7 +67,6 @@ export type {
 export {
   OWNERSHIP_MESSAGES,
   OWNERSHIP_OFFER_DAYS,
-  acceptOwnershipTransfer,
   acceptOwnershipWithConfirmation,
   cancelOwnershipFromScreen,
   cancelOwnershipTransfer,
@@ -76,7 +75,6 @@ export {
   getOwnershipOfferFor,
   listOwnershipCandidates,
   getPendingOwnershipTransfer,
-  offerOwnershipTransfer,
   offerOwnershipWithConfirmation,
 } from "./ownership";
 export type {
