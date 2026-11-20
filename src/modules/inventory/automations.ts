@@ -54,6 +54,9 @@ async function productOf(client: Client, productId: string) {
   });
 }
 
+/** Rows a round reads per page of tasks or orders. */
+const SCAN_PAGE = 50;
+
 const placeName = (place: { code: string | null; name: string }) =>
   place.code ?? place.name;
 
@@ -190,10 +193,13 @@ export const LOW_STOCK_TRIGGER: AutomationTrigger = {
     CATEGORY_CONDITION,
   ],
   provides: ["productId"],
-  async scan(actor, { limit }) {
-    const page = await listLowStock(actor, { page: 1 });
-    if (page.limited) return [];
-    const items = page.items.slice(0, limit);
+  async scan(actor, { page: wanted }) {
+    const page = await listLowStock(actor, { page: wanted });
+    // A page past the last one answers the last again: nothing more.
+    if (page.limited || page.page !== wanted) {
+      return { subjects: [], more: false };
+    }
+    const items = page.items;
     const categories = new Map(
       (
         await forOrganization(actor.organizationId).product.findMany({
@@ -202,7 +208,7 @@ export const LOW_STOCK_TRIGGER: AutomationTrigger = {
         })
       ).map((row) => [row.id, row.categoryId]),
     );
-    return items.map((item): AutomationSubject => ({
+    const subjects = items.map((item): AutomationSubject => ({
       key: `product:${item.productId}`,
       summary: `${item.name}: hay ${item.stockLabel} y su mínimo es ${item.minimumLabel}.`,
       facilityId: null,
@@ -214,6 +220,7 @@ export const LOW_STOCK_TRIGGER: AutomationTrigger = {
         categoryId: categories.get(item.productId) ?? null,
       },
     }));
+    return { subjects, more: page.page < page.pageCount };
   },
 };
 
@@ -235,18 +242,42 @@ export const LOT_EXPIRING_TRIGGER: AutomationTrigger = {
     },
   ],
   provides: ["productId", "lotId"],
-  async scan(actor, { facilityId, limit }) {
-    if (!facilityId) return [];
-    const page = await listExpiringLots(actor, { facilityId });
-    return page.items.slice(0, limit).map((lot): AutomationSubject => ({
+  async scan(actor, { facilityId, page: wanted }) {
+    if (!facilityId) return { subjects: [], more: false };
+    const page = await listExpiringLots(actor, { facilityId, page: wanted });
+    if (page.page !== wanted) return { subjects: [], more: false };
+    // What of each lot is still available here (blocking needs it), read
+    // at once for the page and inside the scope of the person.
+    const client = forOrganization(actor.organizationId);
+    const scoped = await locationScopeWhere(client, actor.userId);
+    const available = new Set(
+      page.items.length === 0
+        ? []
+        : (
+            await client.stockBalance.groupBy({
+              by: ["lotId"],
+              where: {
+                lotId: { in: page.items.map((lot) => lot.lotId) },
+                status: "AVAILABLE",
+                quantity: { gt: 0 },
+                location: {
+                  facilityId,
+                  ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+                },
+              },
+            })
+          ).map((row) => row.lotId),
+    );
+    const subjects = page.items.map((lot): AutomationSubject => ({
       key: `lot:${lot.lotId}:${facilityId}`,
       summary: `${lot.productName}, lote ${lot.code}: ${lot.expiryText} (${lot.quantityLabel} en ${page.facilityName}).`,
       facilityId,
       locationIds: [],
       href: `/inventario/lotes/${lot.lotId}`,
       refs: { productId: lot.productId, lotId: lot.lotId },
-      facts: { expired: lot.expired },
+      facts: { expired: lot.expired, available: available.has(lot.lotId) },
     }));
+    return { subjects, more: page.page < page.pageCount };
   },
 };
 
@@ -291,8 +322,8 @@ export const TASK_UNCLAIMED_TRIGGER: AutomationTrigger = {
     },
   ],
   provides: ["taskId", "locationId", "productId"],
-  async scan(actor, { facilityId, values, limit }) {
-    if (!facilityId) return [];
+  async scan(actor, { facilityId, values, page }) {
+    if (!facilityId) return { subjects: [], more: false };
     const hours = Number(values.hours) || 4;
     const client = forOrganization(actor.organizationId);
     const scoped = await locationScopeWhere(client, actor.userId);
@@ -306,7 +337,8 @@ export const TASK_UNCLAIMED_TRIGGER: AutomationTrigger = {
         },
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      take: limit,
+      skip: (page - 1) * SCAN_PAGE,
+      take: SCAN_PAGE + 1,
       select: {
         id: true,
         number: true,
@@ -317,19 +349,22 @@ export const TASK_UNCLAIMED_TRIGGER: AutomationTrigger = {
         fromLocation: { select: { code: true, name: true } },
       },
     });
-    return tasks.map((task): AutomationSubject => ({
-      key: `task:${task.id}`,
-      summary: `La tarea T-${String(task.number).padStart(4, "0")} (${TASK_KINDS.find((k) => k.value === task.kind)?.label ?? "tarea"} desde ${placeName(task.fromLocation)}) sigue sin tomar desde hace más de ${hours} horas.`,
-      facilityId,
-      locationIds: [task.fromLocationId, task.toLocationId],
-      href: `/tareas/${task.id}`,
-      refs: {
-        taskId: task.id,
-        locationId: task.fromLocationId,
-        productId: task.productId,
-      },
-      facts: { kind: task.kind },
-    }));
+    const subjects = tasks
+      .slice(0, SCAN_PAGE)
+      .map((task): AutomationSubject => ({
+        key: `task:${task.id}`,
+        summary: `La tarea T-${String(task.number).padStart(4, "0")} (${TASK_KINDS.find((k) => k.value === task.kind)?.label ?? "tarea"} desde ${placeName(task.fromLocation)}) sigue sin tomar desde hace más de ${hours} horas.`,
+        facilityId,
+        locationIds: [task.fromLocationId, task.toLocationId],
+        href: `/tareas/${task.id}`,
+        refs: {
+          taskId: task.id,
+          locationId: task.fromLocationId,
+          productId: task.productId,
+        },
+        facts: { kind: task.kind },
+      }));
+    return { subjects, more: tasks.length > SCAN_PAGE };
   },
 };
 
@@ -344,11 +379,11 @@ export const OUTBOUND_LATE_TRIGGER: AutomationTrigger = {
   repeat: "once",
   conditions: [],
   provides: ["outboundOrderId"],
-  async scan(actor, { facilityId, limit }) {
-    if (!facilityId) return [];
+  async scan(actor, { facilityId, page }) {
+    if (!facilityId) return { subjects: [], more: false };
     const client = forOrganization(actor.organizationId);
     const today = await dayWindow(client, new Date());
-    if (!today) return [];
+    if (!today) return { subjects: [], more: false };
     const orders = await client.outboundOrder.findMany({
       where: {
         facilityId,
@@ -358,18 +393,22 @@ export const OUTBOUND_LATE_TRIGGER: AutomationTrigger = {
         dueOn: { lt: new Date(`${today.day}T00:00:00Z`) },
       },
       orderBy: [{ dueOn: "asc" }, { id: "asc" }],
-      take: limit,
+      skip: (page - 1) * SCAN_PAGE,
+      take: SCAN_PAGE + 1,
       select: { id: true, number: true, recipient: true, dueOn: true },
     });
-    return orders.map((order): AutomationSubject => ({
-      key: `order:${order.id}`,
-      summary: `El pedido PS-${String(order.number).padStart(4, "0")} para ${order.recipient} debía salir el ${order.dueOn!.toISOString().slice(0, 10).split("-").reverse().join("/")} y no ha salido.`,
-      facilityId,
-      locationIds: [],
-      href: `/pedidos/${order.id}`,
-      refs: { outboundOrderId: order.id },
-      facts: {},
-    }));
+    const subjects = orders
+      .slice(0, SCAN_PAGE)
+      .map((order): AutomationSubject => ({
+        key: `order:${order.id}`,
+        summary: `El pedido PS-${String(order.number).padStart(4, "0")} para ${order.recipient} debía salir el ${order.dueOn!.toISOString().slice(0, 10).split("-").reverse().join("/")} y no ha salido.`,
+        facilityId,
+        locationIds: [],
+        href: `/pedidos/${order.id}`,
+        refs: { outboundOrderId: order.id },
+        facts: {},
+      }));
+    return { subjects, more: orders.length > SCAN_PAGE };
   },
 };
 
@@ -467,6 +506,19 @@ export const OPEN_COUNT_ACTION: AutomationAction = {
   options: [],
   needs: ["locationId"],
   async run(context): Promise<ActionOutcome> {
+    // Never the transit of a transfer nor «Preparación» (the system's).
+    const place = await forOrganization(
+      context.organizationId,
+    ).location.findFirst({
+      where: { id: context.subject.refs.locationId! },
+      select: { isTransit: true, isStaging: true, archivedAt: true },
+    });
+    if (!place || place.isTransit || place.isStaging || place.archivedAt) {
+      return {
+        kind: "already",
+        line: "No se hizo: esa ubicación no se cuenta (tránsito, preparación o archivada).",
+      };
+    }
     const result = await openCount(
       { organizationId: context.organizationId, userId: context.actorUserId },
       {
@@ -509,6 +561,7 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
   options: [],
   needs: ["productId", "lotId"],
   onlyTriggers: ["inventory.lot.expiring"],
+  requiresFact: "available",
   async run(context): Promise<ActionOutcome> {
     const { subject } = context;
     if (!subject.facilityId) {
@@ -530,49 +583,60 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
       };
     }
     const scoped = await locationScopeWhere(client, context.actorUserId);
-    const balances = await client.stockBalance.findMany({
-      where: {
-        productId: subject.refs.productId!,
-        lotId: subject.refs.lotId!,
-        status: "AVAILABLE",
-        quantity: { gt: 0 },
-        location: {
-          facilityId: subject.facilityId,
-          ...(isLimited(scoped) ? { AND: [scoped] } : {}),
-        },
-      },
-      orderBy: { locationId: "asc" },
-      take: 20,
-      select: {
-        locationId: true,
-        location: { select: { code: true, name: true } },
-      },
-    });
     const blocked: string[] = [];
-    for (const balance of balances) {
-      const free = await freeToTake(
-        client,
-        subject.refs.productId!,
-        balance.locationId,
-        subject.refs.lotId!,
-      );
-      if (!free.greaterThan(0)) continue;
-      const result = await changeStockStatus(actor, {
-        productId: subject.refs.productId!,
-        locationId: balance.locationId,
-        lotId: subject.refs.lotId!,
-        from: "AVAILABLE",
-        to: "BLOCKED",
-        quantity: free.toString(),
-        reason: `Automatización: ${context.rule.name}`.slice(0, 200),
-        // One per location, whatever order a retry reads them in.
-        idempotencyKey: `${context.idempotencyKey}-${balance.locationId.replace(/-/g, "").slice(-12)}`,
+    let incomplete = false;
+    let after: string | null = null;
+    let seen = 0;
+    for (;;) {
+      // Every location of the lot in the warehouse, a page at a time.
+      const balances: {
+        locationId: string;
+        location: { code: string | null; name: string };
+      }[] = await client.stockBalance.findMany({
+        where: {
+          productId: subject.refs.productId!,
+          lotId: subject.refs.lotId!,
+          status: "AVAILABLE",
+          quantity: { gt: 0 },
+          ...(after ? { locationId: { gt: after } } : {}),
+          location: {
+            facilityId: subject.facilityId,
+            ...(isLimited(scoped) ? { AND: [scoped] } : {}),
+          },
+        },
+        orderBy: { locationId: "asc" },
+        take: BLOCK_PAGE,
+        select: {
+          locationId: true,
+          location: { select: { code: true, name: true } },
+        },
       });
-      // Taken meanwhile (an order reserved it first): left as it is.
-      if (!result.ok || !("movementId" in result)) continue;
-      blocked.push(
-        `${formatStock(result.baseQuantity ?? free.toString(), product.unitCode)} en ${placeName(balance.location)}`,
-      );
+      for (const balance of balances) {
+        const outcome = await blockFreeHere(context, actor, balance.locationId);
+        if (outcome === "incomplete") incomplete = true;
+        else if (outcome !== "nothing") {
+          blocked.push(
+            `${formatStock(outcome, product.unitCode)} en ${placeName(balance.location)}`,
+          );
+        }
+      }
+      seen += balances.length;
+      if (balances.length < BLOCK_PAGE) break;
+      if (seen >= BLOCK_LOCATIONS_MAX) {
+        incomplete = true;
+        break;
+      }
+      after = balances.at(-1)!.locationId;
+    }
+    const done = blocked.length > 0 ? `Se bloqueó ${blocked.join(", ")}.` : "";
+    if (incomplete) {
+      // Not attended: the next round opens it again for what is left.
+      return {
+        kind: "refused",
+        line: `${done} No se pudo bloquear todo lo libre (se movió a la vez o hay demasiadas ubicaciones); la siguiente revisión lo intenta otra vez.`
+          .trim()
+          .slice(0, 200),
+      };
     }
     if (blocked.length === 0) {
       return {
@@ -582,11 +646,60 @@ export const BLOCK_LOT_ACTION: AutomationAction = {
     }
     return {
       kind: "done",
-      line: `Se bloqueó ${blocked.join(", ")}.`.slice(0, 200),
+      line: done.slice(0, 200),
       href: `/inventario/lotes/${subject.refs.lotId}`,
     };
   },
 };
+
+/** Locations of a lot read per page when blocking it… */
+const BLOCK_PAGE = 50;
+/** …and at most this many in one run (the rest, in the next round). */
+const BLOCK_LOCATIONS_MAX = 500;
+/** Tries to block what is free in one location when it moves meanwhile. */
+const BLOCK_TRIES = 3;
+
+/**
+ * Blocks what is free of the lot in one location. What is free is read
+ * again and the change tried again when the service refuses it (something
+ * moved between reading and its locks): `changeStockStatus` decides under
+ * its own locks (product → location), so nothing reserved is ever taken.
+ * Answers what was blocked, «nothing» when nothing is free, or
+ * «incomplete» when it kept moving.
+ */
+async function blockFreeHere(
+  context: Parameters<AutomationAction["run"]>[0],
+  actor: { organizationId: string; userId: string },
+  locationId: string,
+): Promise<string | "nothing" | "incomplete"> {
+  const { subject } = context;
+  const client = forOrganization(context.organizationId);
+  const key = `${context.idempotencyKey}-${locationId.replace(/-/g, "").slice(-12)}`;
+  for (let attempt = 1; attempt <= BLOCK_TRIES; attempt++) {
+    const free = await freeToTake(
+      client,
+      subject.refs.productId!,
+      locationId,
+      subject.refs.lotId!,
+    );
+    if (!free.greaterThan(0)) return "nothing";
+    const result = await changeStockStatus(actor, {
+      productId: subject.refs.productId!,
+      locationId,
+      lotId: subject.refs.lotId!,
+      from: "AVAILABLE",
+      to: "BLOCKED",
+      quantity: free.toString(),
+      reason: `Automatización: ${context.rule.name}`.slice(0, 200),
+      // Each try its own key: a retry of the whole run repeats none.
+      idempotencyKey: attempt === 1 ? key : `${key}-${attempt}`,
+    });
+    if (result.ok && "movementId" in result) {
+      return result.baseQuantity ?? free.toString();
+    }
+  }
+  return "incomplete";
+}
 
 export const INVENTORY_AUTOMATION_TRIGGERS: readonly AutomationTrigger[] = [
   STATUS_CHANGED_TRIGGER,

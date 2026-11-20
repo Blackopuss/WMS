@@ -32,8 +32,11 @@ los junta en `automationCatalog`.
    reintenta (3 intentos) y salta las acciones ya hechas.
 4. La ronda `platform.automations` (cada hora, solo empresas con reglas
    encendidas) apaga las reglas cuyo módulo ya no está contratado y revisa
-   los disparadores de estado con `trigger.scan`, como la persona de la
-   regla y almacén por almacén.
+   los disparadores de estado con `trigger.scan` por páginas, como la
+   persona de la regla y almacén por almacén, hasta juntar 50 sujetos
+   nuevos (los ya atendidos se saltan con una consulta por página). Un
+   estado lo atiende solo una ejecución en espera, en curso o hecha
+   (`subjectKey`); lo saltado o fallado se vuelve a abrir en otra ronda.
 
 Una acción que causa otro hecho lleva la cadena en la delegación:
 `queueAutomationEvent` no encola nada a profundidad `AUTOMATION_MAX_DEPTH`
@@ -71,7 +74,8 @@ una terminada no cambia (disparadores). El historial se borra a los 90 días
   `emitWebhookEvent` (su evento de webhook); el disparador usa la misma
   clave y su `describe` lee lo que necesita con `forOrganization`, sin
   costos ni nombres de personas.
-- **Disparador de un estado:** `scan` lee con el servicio de la pantalla
+- **Disparador de un estado:** `scan({ facilityId, values, page })` devuelve
+  `{ subjects, more }` y lee con el servicio de la pantalla
   que deriva ese estado (corre delegado a la persona de la regla, recortado
   a `readPermission` y al almacén), con un `key` estable por sujeto y
   `repeat` (`once` o `day`).

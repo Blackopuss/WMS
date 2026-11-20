@@ -117,16 +117,16 @@ export type AutomationTrigger = {
   /**
    * State: what is in that state now, read as the person of the rule (the
    * call runs delegated to them, cut to `readPermission` and the warehouse).
-   * At most `limit` subjects.
    */
   scan?(
     actor: AutomationActor,
     input: {
       facilityId: string | null;
       values: Readonly<Record<string, unknown>>;
-      limit: number;
+      /** 1 for the first page; the engine reads further while `more`. */
+      page: number;
     },
-  ): Promise<AutomationSubject[]>;
+  ): Promise<{ subjects: AutomationSubject[]; more: boolean }>;
 };
 
 /** What an action answers; it never throws for an expected refusal. */
@@ -164,6 +164,11 @@ export type AutomationAction = {
   options: readonly AutomationField[];
   /** What the subject must carry for it to make sense. */
   needs?: readonly SubjectRef[];
+  /**
+   * A fact the subject must have true for this action to be worth doing
+   * (blocking: something available); without it, no run opens.
+   */
+  requiresFact?: string;
   /** Only with these triggers (none: any that provides what it needs). */
   onlyTriggers?: readonly string[];
   /** A rule of its options the fields alone cannot say (a message or null). */

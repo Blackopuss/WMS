@@ -326,3 +326,56 @@ sentencias del adaptador de su propio proceso.
 8. Que «una vez por lote» no bloquee lo que entra después del mismo lote.
 9. Que leer las reglas exija ver toda la empresa (Gerencia limitada a un
    almacén no las ve).
+
+## Revisión independiente, primera vuelta («no unir», 2026-11-20) y cómo quedó
+
+**M1. Un movimiento a la vez dejaba el lote sin bloquear para siempre.**
+«Bloquear» leía lo libre fuera de los candados; si algo se movía en medio,
+`changeStockStatus` rechazaba y la ejecución terminaba «no había existencias
+libres». Ahora, por ubicación, vuelve a leer lo libre y lo intenta otra vez
+(hasta 3 veces, cada intento con su propia clave: un intento rechazado no
+escribió nada); `changeStockStatus` sigue decidiendo bajo sus candados
+(producto → ubicación), así que nunca toma lo apartado. Si después de los
+intentos algo sigue moviéndose, la ejecución termina **fallida** (no
+«hecha») y la siguiente ronda la vuelve a abrir. Recorre **todas** las
+ubicaciones del lote por páginas de 50 (hasta 500 por ejecución; lo que pasa
+de ahí queda para la siguiente ronda y el historial lo dice).
+
+**M2. Un estado que no se atendió quedaba perdido.** La llave de un estado
+ya no se «gasta» con una ejecución saltada o fallida: cada ejecución de un
+estado guarda su sujeto (`automation_run.subjectKey`, migración
+`20261120150100_wms64_run_subject`) y **solo una ejecución en espera, en
+curso o hecha lo atiende**. Lo saltado (la regla cambió, se apagó, plan
+vencido, almacén archivado) o fallado se vuelve a abrir en una ronda
+posterior con su propia llave de intento (`state:<sujeto>#<n>`, hasta 50
+intentos), sin duplicar lo hecho y dentro de los topes y de las 5 fallas.
+**Memoria de «una vez»:** la ejecución hecha de un estado que se activa una
+vez (`remembers`) **no se borra** con la limpieza de 90 días, así que el
+sujeto no vuelve a activarse; lo demás del historial sí se borra a los 90
+días.
+
+**M3. La ronda solo veía la primera página.** `scan` ahora es por páginas
+(`page`, `more`) y el motor lee páginas hasta juntar 50 sujetos **nuevos**
+por regla (sin contar los ya atendidos, que se leen de una vez por página)
+o hasta 10 páginas por almacén (`AUTOMATION_SCAN_PAGES`). «Lote por
+caducar» marca qué lotes tienen algo disponible en el almacén (una consulta
+por página) y una acción puede pedir un dato (`requiresFact`): si **todas**
+las acciones de la regla lo piden («Bloquear» pide `available`), un lote sin
+nada disponible no abre ejecución y no queda atendido, así que si después
+llega algo se bloquea.
+
+**Menores.** (1) La persona de la regla debe seguir viendo toda la empresa
+(lo mismo que configurar) en cada ejecución y en cada ronda; si no, la regla
+se apaga (`ACTOR`). (2) Un rechazo por permiso se clasifica: plan vencido o
+módulo en solo lectura (`module_*`) y almacén archivado a media ejecución
+terminan «No se hizo» **sin** apagar la regla; solo si la persona ya no
+tiene el permiso de la acción, el de lectura del disparador o toda la
+empresa se apaga con `ACTOR`; otro rechazo cuenta como falla. (3) Dos
+workers que escriben a la vez la marca del tope por hora responden «tope» y
+la ronda se detiene. (4) Ver M1. (5) «Abrir un conteo» no abre en tránsito,
+«Preparación» ni en una ubicación archivada.
+
+**Ya no aplica lo dicho arriba** sobre «una vez por lote»: un lote al que ya
+se bloqueó lo que había no vuelve a activarse aunque entre más del mismo
+lote; un lote **sin nada disponible** cuando se revisa no cuenta como
+atendido y se bloquea cuando llegue algo.

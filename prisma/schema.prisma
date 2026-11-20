@@ -5555,8 +5555,14 @@ model AutomationRun {
   rule           AutomationRule      @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   ruleVersion    Int
   triggerKey     String              @db.VarChar(80)
-  /// «evt:<job>», «state:<subject>[:<day>]» or «limit:<hour>».
+  /// «evt:<job>», «state:<subject>[:<day>][#<try>]» or «limit:<hour>».
   eventKey       String              @db.VarChar(191)
+  /// A state: what it is about («state:<subject>[:<day>]»), the same for
+  /// every try; only a run that did not end skipped or failed attends it.
+  subjectKey     String?             @db.VarChar(191)
+  /// A state that fires once: its attended run is kept after 90 days, so
+  /// the subject does not fire again.
+  remembers      Boolean             @default(false)
   /// 1 for a fact caused by a person; more inside a chain of automations.
   depth          Int                 @default(1)
   /// One line of what happened, without costs.
@@ -5575,6 +5581,7 @@ model AutomationRun {
 
   @@unique([organizationId, id])
   @@unique([organizationId, ruleId, eventKey])
+  @@index([organizationId, ruleId, subjectKey])
   @@index([organizationId, ruleId, createdAt])
   @@index([organizationId, createdAt])
   @@map("automation_run")

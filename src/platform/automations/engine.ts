@@ -2,8 +2,16 @@ import "server-only";
 
 import { ForbiddenError, log, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
-import { isAllowed } from "@/platform/authorization";
-import { getEntitlements, type Entitlements } from "@/platform/entitlements";
+import {
+  isAllowed,
+  seesWholeCompany,
+  type Permission,
+} from "@/platform/authorization";
+import {
+  getEntitlements,
+  getFreshEntitlements,
+  type Entitlements,
+} from "@/platform/entitlements";
 import { enqueueJob, type JobHandler, type JobHandlers } from "@/platform/jobs";
 import { notify } from "@/platform/notifications";
 import {
@@ -42,8 +50,10 @@ export const AUTOMATION_RUNS_PER_HOUR = 30;
 export const AUTOMATION_COMPANY_RUNS_PER_HOUR = 300;
 /** Failures in a row that turn a rule off by itself. */
 export const AUTOMATION_PAUSE_AFTER = 5;
-/** Subjects a round looks at per rule. */
+/** New subjects a round opens per rule… */
 export const AUTOMATION_SCAN_LIMIT = 50;
+/** …reading at most this many pages per warehouse to find them. */
+export const AUTOMATION_SCAN_PAGES = 10;
 export const AUTOMATION_RUN_ATTEMPTS = 3;
 export const AUTOMATION_HISTORY_DAYS = 90;
 /** Rules of one trigger read for one fact (a company has at most 20). */
@@ -202,14 +212,36 @@ async function openRun(
     depth: number;
     chain: readonly string[];
     entitlements: Entitlements;
+    /**
+     * A state: what it is about, the same in every try, and whether its
+     * attended run is kept after the history is cleaned (fires once).
+     */
+    state?: { subjectKey: string; remembers: boolean };
   },
 ): Promise<"opened" | "skipped" | "limit" | "known"> {
   const client = forOrganization(organizationId);
-  const known = await client.automationRun.findFirst({
-    where: { ruleId: rule.id, eventKey: input.eventKey },
-    select: { id: true },
-  });
-  if (known) return "known";
+  let eventKey = input.eventKey;
+  if (input.state) {
+    // Only a run that was not skipped nor failed attends a state: what
+    // was not done opens again in a later round, with its own try key.
+    const tries = await client.automationRun.findMany({
+      where: { ruleId: rule.id, subjectKey: input.state.subjectKey },
+      select: { status: true },
+      take: 50,
+    });
+    if (tries.some((run) => ATTENDING.includes(run.status))) return "known";
+    if (tries.length >= 50) return "known";
+    eventKey =
+      tries.length === 0
+        ? input.state.subjectKey
+        : `${input.state.subjectKey}#${tries.length + 1}`;
+  } else {
+    const known = await client.automationRun.findFirst({
+      where: { ruleId: rule.id, eventKey },
+      select: { id: true },
+    });
+    if (known) return "known";
+  }
   const now = new Date();
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const [ruleRuns, companyRuns] = await Promise.all([
@@ -236,15 +268,16 @@ async function openRun(
     subject: JSON.parse(
       JSON.stringify({ ...input.subject, chain: input.chain }),
     ) as object,
+    summary: input.subject.summary.slice(0, 300),
   };
-  try {
-    if (
-      ruleRuns >= AUTOMATION_RUNS_PER_HOUR ||
-      companyRuns >= AUTOMATION_COMPANY_RUNS_PER_HOUR
-    ) {
-      const eventKey = `limit:${hourKey(now)}`;
+  if (
+    ruleRuns >= AUTOMATION_RUNS_PER_HOUR ||
+    companyRuns >= AUTOMATION_COMPANY_RUNS_PER_HOUR
+  ) {
+    const limitKey = `limit:${hourKey(now)}`;
+    try {
       const marked = await client.automationRun.findFirst({
-        where: { ruleId: rule.id, eventKey },
+        where: { ruleId: rule.id, eventKey: limitKey },
         select: { id: true },
       });
       if (!marked) {
@@ -252,8 +285,7 @@ async function openRun(
           data: {
             ...base,
             id: newId(),
-            eventKey,
-            summary: input.subject.summary.slice(0, 300),
+            eventKey: limitKey,
             status: "SKIPPED",
             reason:
               ruleRuns >= AUTOMATION_RUNS_PER_HOUR
@@ -263,8 +295,19 @@ async function openRun(
           },
         });
       }
-      return "limit";
+    } catch (error) {
+      // The mark written at the same time by another worker: still the cap.
+      if ((error as { code?: string }).code !== "P2002") throw error;
     }
+    return "limit";
+  }
+  const stateColumns = input.state
+    ? {
+        subjectKey: input.state.subjectKey,
+        remembers: input.state.remembers,
+      }
+    : {};
+  try {
     const problem = modulesProblem(
       input.entitlements,
       input.trigger,
@@ -274,9 +317,9 @@ async function openRun(
       await client.automationRun.create({
         data: {
           ...base,
+          ...stateColumns,
           id: newId(),
-          eventKey: input.eventKey,
-          summary: input.subject.summary.slice(0, 300),
+          eventKey,
           status: "SKIPPED",
           reason: problem,
           finishedAt: now,
@@ -287,12 +330,7 @@ async function openRun(
     await client.$transaction(async (tx) => {
       const runId = newId();
       await tx.automationRun.create({
-        data: {
-          ...base,
-          id: runId,
-          eventKey: input.eventKey,
-          summary: input.subject.summary.slice(0, 300),
-        },
+        data: { ...base, ...stateColumns, id: runId, eventKey },
       });
       await enqueueJob(tx, organizationId, {
         type: AUTOMATION_RUN_JOB,
@@ -308,6 +346,9 @@ async function openRun(
   }
 }
 
+/** Runs that attend what they are about (a state does not fire again). */
+const ATTENDING: readonly string[] = ["PENDING", "RUNNING", "DONE"];
+
 function catalogOf(
   catalog: AutomationCatalog,
   rule: Pick<RuleRow, "triggerKey" | "actions">,
@@ -321,6 +362,76 @@ function catalogOf(
     actions.push(action);
   }
   return actions.length > 0 ? { trigger, actions } : null;
+}
+
+/**
+ * The person of a rule may still act: an active member who holds these
+ * permissions and sees the whole company (what configuring asks for).
+ */
+async function actorStillMay(
+  organizationId: string,
+  userId: string,
+  permissions: readonly Permission[],
+): Promise<boolean> {
+  for (const permission of permissions) {
+    if (!(await isAllowed(organizationId, userId, permission))) return false;
+  }
+  return seesWholeCompany(forOrganization(organizationId), userId);
+}
+
+/** Why a service refused an action of a rule with a ForbiddenError. */
+async function refusalCause(
+  organizationId: string,
+  input: {
+    code: string;
+    facilityId: string | null;
+    actorUserId: string;
+    permissions: readonly Permission[];
+    modules: readonly (string | null)[];
+  },
+): Promise<"plan" | "facility" | "actor" | "other"> {
+  if (
+    input.code === "module_read_only" ||
+    input.code === "module_not_contracted"
+  ) {
+    return "plan";
+  }
+  const entitlements = await getFreshEntitlements(organizationId);
+  if (
+    input.modules.some(
+      (moduleId) =>
+        moduleId !== null && entitlements.moduleState(moduleId) !== "active",
+    )
+  ) {
+    return "plan";
+  }
+  if (input.facilityId) {
+    const facility = await forOrganization(organizationId).facility.findFirst({
+      where: { id: input.facilityId },
+      select: { archivedAt: true },
+    });
+    if (!facility || facility.archivedAt) return "facility";
+  }
+  return (await actorStillMay(
+    organizationId,
+    input.actorUserId,
+    input.permissions,
+  ))
+    ? "other"
+    : "actor";
+}
+
+/**
+ * Whether opening a run makes sense: when every action of the rule needs a
+ * fact (blocking needs something available), a subject without it waits
+ * (it is not attended, so it may open later).
+ */
+function worthOpening(
+  actions: readonly AutomationAction[],
+  subject: AutomationSubject,
+): boolean {
+  if (!actions.every((action) => action.requiresFact)) return true;
+  return actions.some((action) => subject.facts[action.requiresFact!] === true);
 }
 
 /** The handler of `platform.automation_event`: one run per rule that holds. */
@@ -354,7 +465,8 @@ function eventHandler(catalog: AutomationCatalog): JobHandler {
         const found = catalogOf(catalog, rule);
         if (!found) continue;
         if (
-          !conditionsHold(trigger, objectOf(rule.conditions), subject.facts)
+          !conditionsHold(trigger, objectOf(rule.conditions), subject.facts) ||
+          !worthOpening(found.actions, subject)
         ) {
           continue;
         }
@@ -615,13 +727,12 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
           return { skipped: "facility" };
         }
       }
-      // The person of the rule must still read what it is about.
+      // The person of the rule must still read what it is about and see
+      // the whole company (what configuring the rule asks for).
       if (
-        !(await isAllowed(
-          organizationId,
-          rule.actorUserId,
+        !(await actorStillMay(organizationId, rule.actorUserId, [
           found.trigger.readPermission,
-        ))
+        ]))
       ) {
         await finishRun(
           organizationId,
@@ -639,6 +750,7 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         subject.facilityId ?? (await mainFacilityId(organizationId));
       let refused = false;
       let actorLost = false;
+      let stopped: "plan" | "facility" | null = null;
       for (let index = 0; index < found.actions.length; index++) {
         if (results[index]?.done) continue;
         const action = found.actions[index]!;
@@ -678,11 +790,33 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
             );
           } catch (error) {
             if (error instanceof ForbiddenError) {
-              actorLost = true;
-              outcome = {
-                kind: "refused",
-                line: "No se hizo: la persona de la regla ya no puede hacer esto.",
-              };
+              // Why: the plan or the module, the warehouse archived on the
+              // way, or the person of the rule. Only the last turns it off.
+              const cause = await refusalCause(organizationId, {
+                code: error.code,
+                facilityId: subject.facilityId,
+                actorUserId: rule.actorUserId,
+                permissions: [
+                  found.trigger.readPermission,
+                  ...action.permissions,
+                ],
+                modules: [found.trigger.module, action.module],
+              });
+              if (cause === "actor") {
+                actorLost = true;
+                outcome = {
+                  kind: "refused",
+                  line: "No se hizo: la persona de la regla ya no puede hacer esto.",
+                };
+              } else if (cause !== "other") {
+                stopped = cause;
+                break;
+              } else {
+                outcome = {
+                  kind: "refused",
+                  line: "No se hizo: no se tuvo permiso para hacerlo.",
+                };
+              }
             } else {
               // Unexpected: keep what is done and let the queue retry.
               await client.automationRun.updateMany({
@@ -705,6 +839,18 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         });
         if (actorLost) break;
         if (outcome.kind === "refused") refused = true;
+      }
+      if (stopped) {
+        await finishRun(
+          organizationId,
+          run.id,
+          "SKIPPED",
+          stopped === "plan"
+            ? "No se hizo: el plan está vencido o el módulo ya no está en uso."
+            : "No se hizo: el almacén se archivó.",
+          results,
+        );
+        return { skipped: stopped };
       }
       if (actorLost) {
         await finishRun(
@@ -836,11 +982,9 @@ export async function runAutomationRound(
     // With the plan ended nothing is checked (and nothing is written hourly).
     if (modulesProblem(entitlements, trigger, actions)) continue;
     if (
-      !(await isAllowed(
-        organizationId,
-        rule.actorUserId,
+      !(await actorStillMay(organizationId, rule.actorUserId, [
         trigger.readPermission,
-      ))
+      ]))
     ) {
       if (await pauseRule(organizationId, rule.id, "ACTOR")) paused++;
       continue;
@@ -858,6 +1002,7 @@ export async function runAutomationRound(
       places = facilities.map((facility) => facility.id);
     }
     main ??= await mainFacilityId(organizationId);
+    const values = objectOf(rule.conditions);
     let left = AUTOMATION_SCAN_LIMIT;
     let lost = false;
     for (const place of places) {
@@ -869,57 +1014,79 @@ export async function runAutomationRound(
         });
         if (!facility || facility.archivedAt) continue;
       }
-      let subjects: AutomationSubject[];
-      try {
-        subjects = await runDelegated(
-          {
-            organizationId,
-            userId: rule.actorUserId,
-            permissions: [trigger.readPermission],
-            facilityId: place ?? main,
-            facilityOnly: place !== null,
-            automation: { ruleId: rule.id, depth: 1, chain: [rule.id] },
-          },
-          () =>
-            trigger.scan!(
-              { organizationId, userId: rule.actorUserId },
-              {
-                facilityId: place,
-                values: objectOf(rule.conditions),
-                limit: left,
-              },
-            ),
+      // Page past what was already attended: the first pages never keep
+      // new subjects from being seen (at most AUTOMATION_SCAN_PAGES).
+      for (let page = 1; page <= AUTOMATION_SCAN_PAGES && left > 0; page++) {
+        let scanned: { subjects: AutomationSubject[]; more: boolean };
+        try {
+          scanned = await runDelegated(
+            {
+              organizationId,
+              userId: rule.actorUserId,
+              permissions: [trigger.readPermission],
+              facilityId: place ?? main,
+              facilityOnly: place !== null,
+              automation: { ruleId: rule.id, depth: 1, chain: [rule.id] },
+            },
+            () =>
+              trigger.scan!(
+                { organizationId, userId: rule.actorUserId },
+                { facilityId: place, values, page },
+              ),
+          );
+        } catch (error) {
+          if (error instanceof ForbiddenError) {
+            lost = true;
+            break;
+          }
+          throw error;
+        }
+        const candidates = scanned.subjects.filter(
+          (subject) =>
+            conditionsHold(trigger, values, subject.facts) &&
+            worthOpening(actions, subject),
         );
-      } catch (error) {
-        if (error instanceof ForbiddenError) {
-          lost = true;
-          break;
-        }
-        throw error;
-      }
-      for (const subject of subjects.slice(0, left)) {
-        left--;
-        if (
-          !conditionsHold(trigger, objectOf(rule.conditions), subject.facts)
-        ) {
-          continue;
-        }
-        const eventKey =
-          trigger.repeat === "day"
+        const keyOf = (subject: AutomationSubject) =>
+          (trigger.repeat === "day"
             ? `state:${subject.key}:${day}`
-            : `state:${subject.key}`;
-        const outcome = await openRun(organizationId, rule, {
-          trigger,
-          actions,
-          eventKey: eventKey.slice(0, 191),
-          subject,
-          depth: 1,
-          chain: [],
-          entitlements,
-        });
-        if (outcome === "opened") runs++;
-        if (outcome === "limit") left = 0;
+            : `state:${subject.key}`
+          ).slice(0, 180);
+        // What is already attended, read at once for the whole page.
+        const attended = new Set(
+          candidates.length === 0
+            ? []
+            : (
+                await client.automationRun.findMany({
+                  where: {
+                    ruleId: rule.id,
+                    subjectKey: { in: candidates.map(keyOf) },
+                    status: { in: ["PENDING", "RUNNING", "DONE"] },
+                  },
+                  select: { subjectKey: true },
+                })
+              ).map((run) => run.subjectKey),
+        );
+        for (const subject of candidates) {
+          if (left <= 0) break;
+          const subjectKey = keyOf(subject);
+          if (attended.has(subjectKey)) continue;
+          left--;
+          const outcome = await openRun(organizationId, rule, {
+            trigger,
+            actions,
+            eventKey: subjectKey,
+            subject,
+            depth: 1,
+            chain: [],
+            entitlements,
+            state: { subjectKey, remembers: trigger.repeat === "once" },
+          });
+          if (outcome === "opened") runs++;
+          if (outcome === "limit") left = 0;
+        }
+        if (!scanned.more) break;
       }
+      if (lost) break;
     }
     if (lost && (await pauseRule(organizationId, rule.id, "ACTOR"))) paused++;
   }
@@ -933,6 +1100,7 @@ export async function organizationsWithAutomationRuns(): Promise<string[]> {
       createdAt: {
         lt: new Date(Date.now() - AUTOMATION_HISTORY_DAYS * 86_400_000),
       },
+      NOT: { status: "DONE", remembers: true },
     },
     distinct: ["organizationId"],
     select: { organizationId: true },
@@ -941,7 +1109,10 @@ export async function organizationsWithAutomationRuns(): Promise<string[]> {
   return rows.map((row) => row.organizationId);
 }
 
-/** Removes runs older than AUTOMATION_HISTORY_DAYS (finished ones only). */
+/**
+ * Removes runs older than AUTOMATION_HISTORY_DAYS (finished ones only),
+ * except the attended run of a state that fires once.
+ */
 export async function purgeAutomationRuns(
   organizationId: string,
 ): Promise<number> {
@@ -953,6 +1124,9 @@ export async function purgeAutomationRuns(
       where: {
         createdAt: { lt: before },
         status: { in: ["DONE", "SKIPPED", "FAILED"] },
+        // The attended run of a state that fires once is its memory: it
+        // stays, so the subject never fires again (ADR 0092).
+        NOT: { status: "DONE", remembers: true },
       },
       orderBy: { createdAt: "asc" },
       take: 1000,

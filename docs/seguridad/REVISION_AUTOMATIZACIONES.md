@@ -49,3 +49,15 @@ de unir la lee un revisor independiente.
   cambió (misma llave: no se repite).
 - La persona de la regla puede ver en la campana avisos que su regla
   mandó (es miembro como cualquiera); no es más de lo que ya puede leer.
+
+## Revisión independiente, primera vuelta (2026-11-20)
+
+«No unir» por tres mayores, sin escalada de privilegios ni fuga entre
+empresas: un bloqueo que fallaba en silencio ante un movimiento simultáneo,
+estados saltados que no se volvían a abrir y una ronda que solo veía la
+primera página. Corregidos como dice el ADR 0092 («Revisión independiente,
+primera vuelta»), con sus pruebas en `automations.int.test.ts` («review: what
+a rule promises it keeps doing»). De los menores, el que toca seguridad: la
+persona de una regla debe seguir viendo toda la empresa en cada ejecución
+(si la limitan a un almacén, la regla se apaga) y un rechazo por plan o por
+almacén archivado ya no se confunde con «la persona ya no puede».

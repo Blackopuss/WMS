@@ -9,6 +9,7 @@ import {
   reconcileStock,
   registerAdjustment,
   registerEntry,
+  registerExit,
   releaseOutboundOrder,
   setOutboundLine,
   type InventoryActor,
@@ -32,6 +33,11 @@ import { deactivateModule, provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import { runNextJob, settleFailedJobs } from "@/platform/jobs";
+import {
+  automationJobHandlers,
+  NOTIFY_ACTION,
+  type AutomationAction,
+} from "@/platform/automations";
 import {
   createFacility,
   createLocation,
@@ -883,6 +889,207 @@ describe("a lot about to expire", () => {
       (await db.automationRule.findUniqueOrThrow({ where: { id } }))
         .actorUserId,
     ).toBe(actor.userId);
+  });
+});
+
+describe("review: what a rule promises it keeps doing", () => {
+  async function expiringLot(quantity = "10") {
+    const actor = await company();
+    const productId = await product(actor, true);
+    const shelf = await place(actor, "Estante");
+    const code = `L${counter}`;
+    await enter(actor, productId, shelf, quantity, {
+      code,
+      expiresOn: dayFromToday(5),
+    });
+    const lotId = (
+      await db.lot.findFirstOrThrow({ where: { productId, code } })
+    ).id;
+    return { actor, productId, shelf, lotId };
+  }
+  const count = async (productId: string, status: string) =>
+    (
+      await db.stockBalance.findMany({
+        where: { productId, status: status as "AVAILABLE" },
+      })
+    ).reduce((sum, row) => sum + Number(row.quantity), 0);
+
+  it("blocks what is free even when something moves at the same time (M1)", async () => {
+    for (let round = 0; round < 4; round++) {
+      const { actor, productId, shelf, lotId } = await expiringLot();
+      await rule(actor, {
+        triggerKey: "inventory.lot.expiring",
+        actions: [{ key: "inventory.stock.block" }],
+      });
+      await runAutomationRound(actor.organizationId, automationCatalog);
+      await Promise.all([
+        work(),
+        registerExit(actor, {
+          productId,
+          locationId: shelf,
+          quantity: "1",
+          lotId,
+          idempotencyKey: newId(),
+        } as never),
+      ]);
+      await runAutomationRound(actor.organizationId, automationCatalog);
+      await work();
+      expect(await count(productId, "AVAILABLE")).toBe(0);
+      expect(await count(productId, "BLOCKED")).toBe(9);
+    }
+  });
+
+  it("opens again in a later round what was skipped, never twice what was done (M2)", async () => {
+    const { actor, productId } = await expiringLot();
+    const id = await rule(actor, {
+      name: "Bloquear",
+      triggerKey: "inventory.lot.expiring",
+      actions: [{ key: "inventory.stock.block" }],
+    });
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    // The rule changes before its run: that run does nothing…
+    expect(
+      await updateAutomationRule(
+        actor,
+        id,
+        {
+          name: "Bloquear lo que caduca",
+          triggerKey: "inventory.lot.expiring",
+          actions: [{ key: "inventory.stock.block" }],
+        },
+        automationCatalog,
+      ),
+    ).toMatchObject({ ok: true });
+    await work();
+    expect(await count(productId, "BLOCKED")).toBe(0);
+    // …and the next round opens it again, once.
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await work();
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await work();
+    expect(await count(productId, "BLOCKED")).toBe(10);
+    const runs = await runsOf(actor.organizationId, id);
+    expect(runs.map((run) => run.status).sort()).toEqual(["DONE", "SKIPPED"]);
+    expect(runs.every((run) => run.subjectKey === runs[0]!.subjectKey)).toBe(
+      true,
+    );
+    // The attended run of a «once» state is kept when the history is cleaned.
+    expect(runs.find((run) => run.status === "DONE")!.remembers).toBe(true);
+  });
+
+  it("reads past the first page of what was already attended (M3)", async () => {
+    const actor = await company();
+    const productId = await product(actor, true);
+    const shelf = await place(actor, "Estante");
+    for (let n = 1; n <= 28; n++) {
+      await enter(actor, productId, shelf, "1", {
+        code: `P${n}-${counter}`,
+        expiresOn: dayFromToday(n),
+      });
+    }
+    const id = await rule(actor, {
+      triggerKey: "inventory.lot.expiring",
+      actions: [{ key: "platform.notify", options: { roles: ["warehouse"] } }],
+    });
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    await work();
+    expect(await runsOf(actor.organizationId, id)).toHaveLength(28);
+  });
+
+  it("turns off when its person is limited to a warehouse afterwards", async () => {
+    const actor = await company();
+    const admin = await member(actor.organizationId, "administrator");
+    const id = await rule(admin, {
+      triggerKey: "inventory.task.unclaimed",
+      conditions: { hours: "2" },
+      actions: [{ key: "platform.notify", options: { roles: ["warehouse"] } }],
+    });
+    const other = await createFacility(actor, {
+      name: "Sur",
+      code: `S${counter}`,
+    });
+    if (!other.ok) throw new Error(JSON.stringify(other));
+    const set = await setMemberScope(actor.organizationId, actor.userId, {
+      userId: admin.userId,
+      facilities: [{ facilityId: other.facilityId }],
+    });
+    expect(set.ok).toBe(true);
+    await runAutomationRound(actor.organizationId, automationCatalog);
+    expect(
+      await db.automationRule.findUniqueOrThrow({ where: { id } }),
+    ).toMatchObject({ status: "PAUSED", pauseReason: "ACTOR" });
+  });
+
+  it("a retry after a failure halfway does not repeat what was already done", async () => {
+    const actor = await company();
+    let calls = 0;
+    const flaky: AutomationAction = {
+      key: "inventory.test.flaky",
+      module: "inventory",
+      label: "Acción de prueba",
+      description: "Falla la primera vez.",
+      permissions: [],
+      options: [],
+      async run() {
+        calls++;
+        if (calls === 1) throw new Error("se cayó a la mitad");
+        return { kind: "done", line: "Hecha." };
+      },
+    };
+    const catalog = {
+      triggers: automationCatalog.triggers,
+      actions: [NOTIFY_ACTION, flaky],
+    };
+    const warehouse = await member(actor.organizationId, "warehouse");
+    const created = await createAutomationRule(
+      actor,
+      {
+        name: "Con falla",
+        triggerKey: "inventory.stock_status.changed",
+        actions: [
+          { key: "platform.notify", options: { roles: ["warehouse"] } },
+          { key: "inventory.test.flaky", options: {} },
+        ],
+      },
+      catalog,
+    );
+    if (!created.ok) throw new Error(JSON.stringify(created));
+    const productId = await product(actor);
+    const shelf = await place(actor, "Estante");
+    await enter(actor, productId, shelf, "3");
+    await changeStockStatus(actor, {
+      productId,
+      locationId: shelf,
+      from: "AVAILABLE",
+      to: "DAMAGED",
+      quantity: "1",
+      reason: "Prueba de reintento",
+      idempotencyKey: newId(),
+    });
+    const handlers = { ...jobHandlers, ...automationJobHandlers(catalog) };
+    // Each pass an hour later: the retry of the failed attempt is due.
+    for (let pass = 1; pass <= 3; pass++) {
+      for (let n = 0; n < 50; n++) {
+        const outcome = await runNextJob(handlers, {
+          now: () => new Date(Date.now() + pass * 3_600_000),
+        });
+        if (outcome.kind === "idle") break;
+      }
+    }
+    const [run] = await runsOf(actor.organizationId, created.id);
+    expect(run!.status).toBe("DONE");
+    expect(run!.attempts).toBe(2);
+    expect(calls).toBe(2);
+    expect(
+      await db.notification.count({
+        where: {
+          organizationId: actor.organizationId,
+          recipientUserId: warehouse.userId,
+          typeKey: "automations.rule_fired",
+        },
+      }),
+    ).toBe(1);
   });
 });
 
