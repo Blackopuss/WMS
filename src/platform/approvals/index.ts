@@ -25,6 +25,7 @@ export {
   cancelApproval,
   countPendingApprovals,
   decideApproval,
+  expireApprovalRequest,
   findApprovalByKey,
   findOpenApproval,
   getApprovalRequest,

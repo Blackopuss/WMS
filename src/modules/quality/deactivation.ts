@@ -34,8 +34,8 @@ export async function qualityOpenWork(
   if (open > 0) {
     notes.push(
       open === 1
-        ? "1 verificación está abierta: seguirá abierta y lo que retiene seguirá retenido hasta que Calidad vuelva y la decida o la cancele."
-        : `${open} verificaciones están abiertas: seguirán abiertas y lo que retienen seguirá retenido hasta que Calidad vuelva y las decida o las cancele.`,
+        ? "1 verificación está abierta: lo que retiene seguirá retenido hasta que Calidad vuelva y la decida, o hasta que la cancele quien verifica lo producido (con Producción en uso)."
+        : `${open} verificaciones están abiertas: lo que retienen seguirá retenido hasta que Calidad vuelva y las decida, o hasta que las cancele quien verifica lo producido (con Producción en uso).`,
     );
   }
   return notes;

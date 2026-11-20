@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { isAppError } from "@/lib";
+import { fingerprint, isAppError } from "@/lib";
 import {
   INSPECTION_OUTCOMES,
   MISSING_CAUSES,
@@ -102,6 +102,8 @@ export type DecideInspectionState = {
   error?: string;
   fieldErrors?: Partial<Record<string, string>>;
   overCapacity?: boolean;
+  /** What the capacity warning was about: accepting sends it back. */
+  capacityStamp?: string;
   /** The losses wait for an authorization: its request. */
   pendingRequestId?: string;
   values: Record<string, string>;
@@ -157,6 +159,15 @@ export async function decideInspectionAction(
     .map((value) => idOf(value))
     .filter(Boolean)
     .slice(0, 10);
+  // The acceptance of a capacity warning holds only for the same
+  // destinations and quantities it was given for.
+  const stamp = fingerprint(
+    outcomes.flatMap((each) => [
+      each.status,
+      each.quantity.trim(),
+      each.toLocationId,
+    ]),
+  );
   try {
     const result = await decideInspection(who, {
       inspectionId: idOf(fixed.inspectionId),
@@ -170,7 +181,7 @@ export async function decideInspectionAction(
       answers,
       defects,
       photoIds,
-      acceptCapacity: formData.get("acceptCapacity") === "1",
+      acceptCapacity: formData.get("acceptCapacity") === stamp,
     });
     if (
       !result.ok &&
@@ -213,6 +224,7 @@ export async function decideInspectionAction(
         error: result.formError,
         fieldErrors,
         overCapacity: result.reason === "over_capacity",
+        capacityStamp: result.reason === "over_capacity" ? stamp : undefined,
         answers: previous.answers + 1,
       };
     }

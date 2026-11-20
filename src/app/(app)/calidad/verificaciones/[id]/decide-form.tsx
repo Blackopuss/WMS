@@ -428,7 +428,7 @@ export function DecideForm({
             <Button
               type="submit"
               name="acceptCapacity"
-              value="1"
+              value={state.capacityStamp ?? ""}
               variant="outline"
               className="min-h-11"
             >

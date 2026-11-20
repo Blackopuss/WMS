@@ -268,7 +268,10 @@ tareas → capacidad → progreso → archivos.
   `writeStatusChange` de cada destino reciben `placementChecked` y no
   vuelven a tomarla) → tareas de acomodo → progreso del lote
   (`assertStagesDone`, `completeOperationStage`) → archivos de las fotos.
-- **Cancelar:** el producto → la verificación.
+- **Cancelar:** el producto → la verificación. En el camino huérfano
+  (Calidad ya no está en uso) con una solicitud de pérdidas pendiente:
+  **la solicitud primero** (`expireApprovalRequest` del motor, que toma su
+  candado, como `decideApproval`) → el producto → la verificación.
 - **Pérdidas autorizadas:** la solicitud (la toma `decideApproval` primero,
   como toda autorización) → los mismos candados de decidir, en el mismo
   orden y con el mismo código (`decideCore`).
@@ -334,6 +337,18 @@ titular y Administración cancelan con `production.output.verify`).
   tiene `production.output.verify` (arriba) o Calidad al volver.
 - **Series:** una decisión solo nombra unidades que la verificación
   retuvo (`stock_hold_unit`); otra unidad de la misma casilla se rechaza.
+- **Capacidad y pérdidas:** la revisión única de capacidad corre antes de
+  pedir la autorización: quien decide recibe el aviso de capacidad y lo
+  acepta (la aceptación va con su huella de destinos y cantidades y viaja
+  en la solicitud); con la empresa en `block` se rechaza antes de pedir. Al
+  autorizar se vuelve a revisar con lo aceptado; si la ocupación cambió y
+  ya no cabe ni así, vence con su motivo.
+- **Solicitud de pérdidas con Calidad quitada:** nadie puede decidirla (su
+  tipo es de un módulo que ya no está). Quien cancela por el camino
+  huérfano la vence en la misma transacción («Se canceló la verificación:
+  Calidad ya no está en uso.») y suelta la retención, aunque quien la pidió
+  ya no esté en la empresa. Con Calidad en uso la solicitud pendiente sigue
+  impidiendo cancelar.
 - **Pérdidas autorizadas:** vencen si quien pidió perdió el permiso, la
   membresía o el alcance (NEG-20), si la verificación es de cuarentena y
   ya no tiene `quality.lot.release`, o si Calidad entró o salió de uso
@@ -404,6 +419,25 @@ verificación (el formulario pide cada serie por renglón).
   (sin importar el módulo, como `hierarchy.ts` lee las órdenes de
   producción) para no decidir una línea que Calidad está verificando.
 
+- **Calidad y Producción quitadas a la vez (riesgo aceptado):** nadie
+  puede cancelar las verificaciones abiertas y lo retenido queda atrapado
+  hasta reactivar uno de los dos módulos (con Producción de vuelta, quien
+  verifica lo producido las cancela; con Calidad, se deciden). Al quitar
+  cualquiera de los dos, el aviso de trabajo abierto lo dice
+  (`qualityOpenWork` y `productionOpenWork` cuentan las verificaciones
+  abiertas).
+- **Liberar a mano lo que espera etapas (límite conocido, D7):** «Cambiar
+  estado» con `inventory.status.release` sigue pudiendo liberar lo
+  producido que no está retenido aunque su lote espere etapas; ya era así
+  antes de este paso.
+- **Piezas sin lote son intercambiables:** iniciar por la salida de un
+  reporte listo puede tomar piezas iguales a las de otro reporte que
+  espera etapas, y después de una liberación manual «Otro» puede quedar
+  corto hasta que se verifique el origen. Quien necesita distinguirlas
+  controla el producto por lote.
+- **Series:** una serie nombrada dos veces en la misma decisión se rechaza
+  con «La serie X está repetida.».
+
 ## Decisiones que el fundador puede cambiar
 
 - Desechar piezas presentes se hace después con «Desechar», no desde la
@@ -411,6 +445,9 @@ verificación (el formulario pide cada serie por renglón).
 - Las pérdidas esperan autorización con la decisión entera (no se aplican
   los destinos mientras tanto).
 - Decidir no pide además el permiso de Inventario del cambio.
+- «Cambiar estado» puede liberar a mano lo producido no retenido aunque su
+  lote espere etapas (D7); cerrarlo exigiría que «Cambiar estado» consulte
+  las etapas del lote.
 - El jefe de almacén (Almacén, Supervisor) recibe `production.output.verify`
   y verifica lo producido sin Calidad; con Calidad no verifica (libera a
   mano lo no retenido).

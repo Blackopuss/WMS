@@ -34,6 +34,7 @@ import {
 import {
   ApprovalExpired,
   approvalRequired,
+  expireApprovalRequest,
   openApprovalRequest,
   type ApprovalContext,
   type ApprovalTx,
@@ -1964,14 +1965,17 @@ async function decideCore(
     // m2: the units decided are the ones this verification holds; another
     // unit of the same place would leave one held unit in inspection
     // without its hold.
-    if (row.holdId && product.tracking === "SERIAL") {
-      const heldUnits = await tx.stockHoldUnit.findMany({
-        where: { holdId: row.holdId, releasedAt: null },
-        select: { serialUnit: { select: { serial: true } } },
-      });
-      const held = new Set(
-        heldUnits.map((unit) => serialKey(unit.serialUnit.serial)),
-      );
+    if (product.tracking === "SERIAL") {
+      const heldUnits = row.holdId
+        ? await tx.stockHoldUnit.findMany({
+            where: { holdId: row.holdId, releasedAt: null },
+            select: { serialUnit: { select: { serial: true } } },
+          })
+        : null;
+      const held = heldUnits
+        ? new Set(heldUnits.map((unit) => serialKey(unit.serialUnit.serial)))
+        : null;
+      const seen = new Set<string>();
       const named = [
         ...outcomes.map((each) => ({
           field: `outcome.${each.index}.serials`,
@@ -1985,6 +1989,20 @@ async function decideCore(
       for (const each of named) {
         const list = parseSerialList(each.serials);
         if (!list.ok) continue; // the write itself explains it
+        const repeated = list.serials.find((serial) => {
+          const folded = serialKey(serial);
+          if (seen.has(folded)) return true;
+          seen.add(folded);
+          return false;
+        });
+        if (repeated) {
+          return stop(
+            "invalid",
+            `La serie ${repeated} está repetida.`,
+            each.field,
+          );
+        }
+        if (!held) continue;
         const foreign = list.serials.find(
           (serial) => !held.has(serialKey(serial)),
         );
@@ -1995,6 +2013,40 @@ async function decideCore(
             each.field,
           );
         }
+      }
+    }
+
+    // M1 (WMS-22B): every destination is checked in ONE `checkPlacement`,
+    // before asking for an authorization too (n1: who decides sees the
+    // capacity warning and accepts it; the acceptance travels in the
+    // request and is checked again when authorized),
+    // after the locks and before any balance is written, so the capacity
+    // rows of all the destinations and their ancestors are taken in a
+    // single batch (in id order). Checking them destination by destination
+    // took them in several batches and two verifications with destinations
+    // in different branches deadlocked.
+    if (outcomes.length > 0) {
+      const placed = await checkPlacement(
+        tx,
+        outcomes.map((each) => ({
+          productId: row.productId,
+          quantity: each.quantity,
+          toLocationId: each.toLocationId,
+          fromLocationId: row.locationId,
+          status: each.status,
+        })),
+        { mode: "ask", accepted: input.acceptCapacity === true },
+      );
+      if (!placed.ok) {
+        if (placed.reason === "over_capacity" && !placed.blocked) {
+          throw new CapacityNotice(placed.message);
+        }
+        const at = outcomes[placed.index];
+        return stop(
+          "not_allowed",
+          placed.message,
+          `outcome.${at?.index ?? 0}.toLocationId`,
+        );
       }
     }
 
@@ -2038,37 +2090,6 @@ async function decideCore(
         requestId: asked.requestId,
         formError: `Quedó pendiente de autorización: ${summary}`.slice(0, 500),
       };
-    }
-
-    // M1 (WMS-22B): every destination is checked in ONE `checkPlacement`,
-    // after the locks and before any balance is written, so the capacity
-    // rows of all the destinations and their ancestors are taken in a
-    // single batch (in id order). Checking them destination by destination
-    // took them in several batches and two verifications with destinations
-    // in different branches deadlocked.
-    if (outcomes.length > 0) {
-      const placed = await checkPlacement(
-        tx,
-        outcomes.map((each) => ({
-          productId: row.productId,
-          quantity: each.quantity,
-          toLocationId: each.toLocationId,
-          fromLocationId: row.locationId,
-          status: each.status,
-        })),
-        { mode: "ask", accepted: input.acceptCapacity === true },
-      );
-      if (!placed.ok) {
-        if (placed.reason === "over_capacity" && !placed.blocked) {
-          throw new CapacityNotice(placed.message);
-        }
-        const at = outcomes[placed.index];
-        return stop(
-          "not_allowed",
-          placed.message,
-          `outcome.${at?.index ?? 0}.toLocationId`,
-        );
-      }
     }
 
     // The writes: each destination, then each cause.
@@ -2434,11 +2455,8 @@ export async function cancelInspection(
   ) {
     return { ok: false, reason: "not_found", formError: NOT_FOUND };
   }
-  const permission = await cancelPermissionOf(
-    actor,
-    known,
-    await getEntitlements(organizationId),
-  );
+  const entitlements = await getEntitlements(organizationId);
+  const permission = await cancelPermissionOf(actor, known, entitlements);
   if (!permission) {
     return {
       ok: false,
@@ -2449,8 +2467,31 @@ export async function cancelInspection(
   }
   // A write: the module must be in use (not read-only).
   await assertModulePermission(organizationId, userId, permission);
+  // n2: a verification Calidad left open (Calidad no longer in use) is let
+  // go of with the loss request that waits on it: nobody can decide that
+  // request any more, and who asked may not be in the company. With
+  // Calidad in use the pending request still stops the cancel.
+  const orphan =
+    known.byQuality && entitlements.moduleState("quality") !== "active";
+  const pendingLoss = orphan
+    ? await client.approvalRequest.findFirst({
+        where: { openKey: lossOpenKey(known.id), status: "PENDING" },
+        select: { id: true },
+      })
+    : null;
   try {
     return await client.$transaction(async (tx) => {
+      // Order: the request first (as `decideApproval`), then product →
+      // verification.
+      if (pendingLoss) {
+        await expireApprovalRequest(
+          tx,
+          actor,
+          [QUALITY_LOSS_APPROVAL, OUTPUT_LOSS_APPROVAL],
+          pendingLoss.id,
+          "Se canceló la verificación: Calidad ya no está en uso.",
+        );
+      }
       await lockRows(tx, "product", [known.productId]);
       await lockRows(tx, "qualityInspection", [known.id]);
       const row = await lockedOrReadInspection(tx, known.id);
@@ -2480,7 +2521,9 @@ export async function cancelInspection(
       if (waiting > 0) {
         return stop(
           "not_allowed",
-          `La verificación ${numberText} espera que alguien autorice sus pérdidas: retira esa solicitud para cancelarla.`,
+          orphan
+            ? `Alguien acaba de pedir autorizar las pérdidas de ${numberText}. Intenta de nuevo.`
+            : `La verificación ${numberText} espera que alguien autorice sus pérdidas: retira esa solicitud para cancelarla.`,
         );
       }
       if (row.holdId) await releaseHold(tx, row.holdId);

@@ -15,6 +15,7 @@ import {
 import {
   PRODUCTION_BATCH_PROCESS,
   PRODUCTION_BATCH_VERIFICATION_OPERATION,
+  productionOpenWork,
   releaseProductionOrder,
   reportProduction,
   reverseProductionReport,
@@ -43,6 +44,7 @@ import { decideApproval, updateApprovalRule } from "@/platform/approvals";
 import { activateModule, deactivateModule } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
 import { createSupplier } from "@/platform/contacts";
+import { setLocationLimits } from "@/platform/locations";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import {
   completeStage,
@@ -1302,5 +1304,182 @@ describe("second review (ADR 0091)", () => {
       "10",
     );
     await balanced(owner.organizationId);
+  });
+});
+
+describe("third review (ADR 0091)", () => {
+  it("losses with a destination over its capacity: warned, accepted, authorized (n1)", async () => {
+    const at = await produced();
+    const { owner } = at;
+    await updateApprovalRule(owner, approvalTypes, "quality.loss", {
+      enabled: true,
+      roles: [],
+      allowSelfApproval: true,
+    });
+    const small = await place(owner, "Estante chico");
+    const limited = await setLocationLimits(owner, small, { maxUnits: "1" });
+    if (!limited.ok) throw new Error(JSON.stringify(limited));
+    const started = await start(owner, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const fileId = await photo(owner, started.inspectionId);
+    const input = {
+      inspectionId: started.inspectionId,
+      outcomes: [
+        { status: "AVAILABLE", quantity: "7" },
+        {
+          status: "REJECTED",
+          quantity: "2",
+          reason: "No cumple",
+          toLocationId: small,
+        },
+      ],
+      missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+      photoIds: [fileId],
+    };
+    // Warned before asking: nothing asked, nothing written.
+    expect(
+      await decideInspection(owner, { ...input, idempotencyKey: key() }),
+    ).toMatchObject({ ok: false, reason: "over_capacity" });
+    expect(
+      await db.approvalRequest.count({
+        where: { sourceId: started.inspectionId },
+      }),
+    ).toBe(0);
+    const asked = await decideInspection(owner, {
+      ...input,
+      idempotencyKey: key(),
+      acceptCapacity: true,
+    });
+    expect(asked).toMatchObject({ ok: false, reason: "pending_approval" });
+    if (asked.ok || !asked.requestId) return;
+    expect(
+      await decideApproval(owner, approvalTypes, asked.requestId, {
+        decision: "approve",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      (
+        await db.qualityInspection.findFirstOrThrow({
+          where: { id: started.inspectionId },
+        })
+      ).state,
+    ).toBe("DECIDED");
+    expect(await balanceOf(owner.organizationId, at.crate, "REJECTED")).toBe(
+      "2",
+    );
+    await balanced(owner.organizationId);
+  });
+
+  it("with Calidad gone, cancelling expires the pending loss request, also when who asked left (n2)", async () => {
+    const at = await produced();
+    const { owner } = at;
+    await updateApprovalRule(owner, approvalTypes, "quality.loss", {
+      enabled: true,
+      roles: ["quality_inspector"],
+      allowSelfApproval: false,
+    });
+    const ana = await member(owner.organizationId, ["quality_inspector"]);
+    const started = await start(ana, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const asked = await decideInspection(ana, {
+      inspectionId: started.inspectionId,
+      idempotencyKey: key(),
+      outcomes: [{ status: "AVAILABLE", quantity: "9" }],
+      missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+      photoIds: [await photo(ana, started.inspectionId)],
+    });
+    if (asked.ok || !asked.requestId) throw new Error(JSON.stringify(asked));
+    // With Calidad in use the pending request still stops the cancel.
+    expect(
+      await cancelInspection(owner, {
+        inspectionId: started.inspectionId,
+        reason: "No era esto",
+      }),
+    ).toMatchObject({ ok: false });
+    await deactivateModule(moduleRegistry, {
+      organizationId: owner.organizationId,
+      moduleId: "quality",
+      actorUserId: null,
+    });
+    invalidateEntitlements(owner.organizationId);
+    await db.membership.updateMany({
+      where: { organizationId: owner.organizationId, userId: ana.userId },
+      data: { status: "DISABLED" },
+    });
+    const encargado = await member(owner.organizationId, [
+      "production_supervisor",
+    ]);
+    expect(
+      await cancelInspection(encargado, {
+        inspectionId: started.inspectionId,
+        reason: "Ya no hay Calidad",
+      }),
+    ).toMatchObject({ ok: true });
+    const request = await db.approvalRequest.findFirstOrThrow({
+      where: { id: asked.requestId },
+    });
+    expect(request).toMatchObject({ status: "EXPIRED", openKey: null });
+    expect(
+      await db.stockHold.count({
+        where: { sourceId: started.inspectionId, state: "ACTIVE" },
+      }),
+    ).toBe(0);
+    await balanced(owner.organizationId);
+  });
+
+  it("removing Producción warns of open verifications of produced output (n3)", async () => {
+    const at = await produced();
+    const { owner } = at;
+    const started = await start(owner, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(await productionOpenWork(owner.organizationId)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("1 verificación de lo producido"),
+      ]),
+    );
+  });
+
+  it("a serial named in two destinations is told as repeated (c)", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner } = shop;
+    const meter = await product(owner, "Medidor", { tracking: "SERIAL" });
+    await enter(owner, meter, shop.shelf, "2", { serials: "SA\nSB" });
+    const moved = await changeStockStatus(owner, {
+      productId: meter,
+      locationId: shop.shelf,
+      from: "AVAILABLE",
+      to: "INSPECTION",
+      quantity: "2",
+      serials: "SA\nSB",
+      reason: "Revisar",
+      idempotencyKey: key(),
+    });
+    if (!moved.ok) throw new Error(JSON.stringify(moved));
+    const started = await startInspection(owner, {
+      productId: meter,
+      locationId: shop.shelf,
+      origin: "OTHER",
+      quantity: "2",
+      idempotencyKey: key(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [
+          { status: "AVAILABLE", quantity: "1", serials: "SA" },
+          {
+            status: "REJECTED",
+            quantity: "1",
+            reason: "No sirve",
+            serials: "SA",
+          },
+        ],
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { "outcome.1.serials": "La serie SA está repetida." },
+    });
   });
 });
