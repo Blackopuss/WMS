@@ -855,6 +855,7 @@ export async function reportProduction(
       areaId: order.areaLocationId,
       reference: numberText,
       idempotencyKey: data.idempotencyKey,
+      orderMaterialIds: order.lines.map((line) => line.productId),
       // The numbering of the company, as late as possible: after the
       // locations and the capacity (ADR 0087). A report that fails later
       // rolls back its consecutive: no gap, no repeat.
@@ -1785,10 +1786,14 @@ export async function getProductionReport(
     costs ? (value ? value.toString() : null) : undefined;
   const inputs = row.movement.lines.filter((line) => line.direction === "OUT");
   // WMS-92: the value counts only the materials with a known cost; it is
-  // unknown only when none had one (derived from the lines, nothing saved).
+  // unknown only when none had one and what was made entered without cost
+  // (no material of the order had a cost). Derived from the lines.
   const costed = inputs.filter((line) => line.unitCost !== null);
+  const madeWithCost = row.movement.lines.some(
+    (line) => line.direction === "IN" && line.unitCost !== null,
+  );
   const value =
-    inputs.length > 0 && costed.length === 0
+    inputs.length > 0 && costed.length === 0 && !madeWithCost
       ? null
       : costed.reduce(
           (sum, line) =>

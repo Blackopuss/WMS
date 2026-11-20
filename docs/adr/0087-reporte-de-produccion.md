@@ -216,23 +216,44 @@ muestra.
 - **Si un material no tiene costo conocido** (WMS-92, decidido por el
   fundador el 2026-11-20: «Y lo de material haz que tome el costo de todo
   lo demás»): sale sin costo y aporta cero; lo producido toma el valor de
-  los demás materiales, repartido igual que siempre. **Solo si ningún
-  material tiene costo** lo producido entra sin costo (al promedio vigente
-  si ya tenía, o sin costo). Un reporte sin ningún material (lo cubrieron
-  los anteriores) vale cero, como antes. Antes de este cambio, un solo
+  los demás materiales, repartido igual que siempre. **Lo producido entra
+  sin costo solo si ningún material de la orden** (no solo los que toma
+  este reporte) **tiene costo conocido** al reportar, leído con los
+  candados de productos que el reporte ya toma (sin candados nuevos); en
+  ese caso entra al promedio vigente si ya tenía, o sin costo. **Si alguno
+  lo tiene, el valor es siempre explícito**: la suma de lo que salió con
+  costo en **ese** reporte, aunque sea 0 (un reporte posterior que solo
+  toma materiales sin costo, o ninguno porque lo cubrieron los anteriores,
+  hace entrar lo producido a 0 y no al promedio vigente). Así la suma del
+  valor de lo producido nunca pasa de lo que salió de los materiales (prueba
+  «a later report that only takes materials without cost adds no value»:
+  base 10 con 1 A de costo 10 y 10 B sin costo, orden de 2 reportada
+  pieza por pieza: lo producido vale 10 en total, el segundo reporte entra
+  a 0 y su reversa saca lo producido a 0). Antes de este cambio, un solo
   material sin costo dejaba todo lo producido sin costo y el valor de los
   que sí lo tenían salía del inventario.
 - **Que se sepa:** la ficha del reporte, solo para quien tiene
   `inventory.cost.read`, dice qué materiales no están en el costo de lo
   producido porque no tienen costo registrado (derivado de las líneas de
-  salida sin costo del movimiento; nada guardado nuevo).
+  salida sin costo del movimiento; nada guardado nuevo). Un reporte solo
+  de piezas malas no produce nada y no lleva ese aviso. El valor de la
+  ficha es «sin costo conocido» solo cuando ningún material salió con
+  costo y lo producido entró sin costo.
 - **Redondeo:** el costo por unidad de cada salida es su parte ÷ lo que
-  entra, redondeado a la escala del libro de costos (`COST_SCALE`). La suma
-  de lo que entra puede diferir de lo que salió por menos de una unidad de
-  esa escala por unidad; no se reparte el residuo. `reconcileValue` compara
-  cada producto con sus propias existencias × su promedio, así que queda
-  vacío (pruebas «splits it among the outputs by their share» y «partial
-  reports add up to one report»).
+  entra, redondeado a la escala del libro de costos (`COST_SCALE`). La
+  diferencia entre lo que entra y lo que salió es de hasta media unidad de
+  `COST_SCALE` **por unidad producida**; con cantidades muy grandes el
+  total puede llegar a unidades enteras de moneda (medido por el revisor:
+  −1.34 sobre 222,222 con 2 millones de kg). No se reparte el residuo: es
+  el comportamiento que ya tenía `valueEntry` en cualquier entrada.
+  `reconcileValue` compara cada producto con sus propias existencias × su
+  promedio, así que queda vacío (pruebas «splits it among the outputs by
+  their share» y «partial reports add up to one report»).
+- **Salidas que no entran por el redondeo:** una salida cuya cantidad
+  acumulada redondeada al paso todavía no llega a una unidad más no entra
+  en ese reporte, y su parte del valor se queda en las salidas que sí
+  entran (el reparto se normaliza entre ellas). Cuando entre en un reporte
+  posterior, entra con su parte del valor de ese reporte.
 - La merma extra sale al promedio como pérdida y **no** entra al costo de
   lo producido.
 - `reconcileValue` queda vacío: todo pasa por el libro de costos.

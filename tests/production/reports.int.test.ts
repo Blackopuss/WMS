@@ -1197,6 +1197,69 @@ describe("cost of what is made when a material has no cost (WMS-92)", () => {
     await balanced(owner.organizationId);
   });
 
+  it("a later report that only takes materials without cost adds no value", async () => {
+    const { owner, area, shelf } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    const costed = await product(owner, "Motor A");
+    const free = await product(owner, "Tornillo B");
+    const kit = await product(owner, "Kit");
+    await enter(owner, costed, shelf, "10");
+    await enter(owner, free, shelf, "100");
+    await price(owner.organizationId, costed, "10", "10");
+    // For 10 kits: 1 A (cost 10) and 10 B (no cost).
+    await recipe(
+      owner,
+      kit,
+      [
+        [costed, "1"],
+        [free, "10"],
+      ],
+      "10",
+    );
+    const id = await released(owner, kit, area, "2");
+    // The first kit takes 1 A (rounded up) and 1 B; the second only 1 B.
+    const first = await report(owner, id, "1");
+    const second = await report(owner, id, "1");
+    if (!first.ok || !second.ok) throw new Error("report failed");
+    expect(await costOf(owner.organizationId, kit)).toEqual({
+      average: "5.00",
+      value: "10.00",
+    });
+    const view = await getProductionReport(owner, second.reportId);
+    expect(view?.valueText).toBe("0.00");
+    expect(view?.uncostedMaterials).toEqual([
+      expect.stringContaining("Tornillo B"),
+    ]);
+    // Reversing the second: the kit leaves at the 0 it came in with.
+    expect(
+      await reverseProductionReport(
+        owner,
+        second.reportId,
+        "Se reportó de más",
+      ),
+    ).toMatchObject({ ok: true });
+    expect(await costOf(owner.organizationId, kit)).toEqual({
+      average: "10.00",
+      value: "10.00",
+    });
+    await balanced(owner.organizationId);
+  });
+
+  it("only bad pieces: the screen does not say what the cost of what was made leaves out", async () => {
+    const { owner, area, crate, board } = await workshop();
+    await setting(owner, "production.report.photo", "optional");
+    await price(owner.organizationId, board, "5", "100");
+    const id = await released(owner, crate, area, "2");
+    const done = await report(owner, id, "", {
+      bad: "1",
+      badReason: "Se rompió al armar",
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const view = await getProductionReport(owner, done.reportId);
+    expect(view?.outputs).toEqual([]);
+    await balanced(owner.organizationId);
+  });
+
   it("with no material costed, what is made enters without cost", async () => {
     const { owner, area, crate } = await workshop();
     await setting(owner, "production.report.photo", "optional");
