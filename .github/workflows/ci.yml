@@ -1,12 +1,20 @@
 # BAS-08: types, lint, boundaries, format, unit + integration tests (MySQL)
-# and production build on every push and pull request.
+# and production build.
+#
+# Runs on every push to `pruebas` that touches more than documentation, and
+# on pull requests. `main` always holds a commit that `pruebas` already
+# checked, so it is not checked again on every push: it runs by hand
+# (workflow_dispatch) once a batch of steps has reached `main`
+# (founder, 2026-11-19).
 name: CI
 
 on:
   push:
-    branches: [pruebas, main]
+    branches: [pruebas]
+    paths-ignore: ["**/*.md"]
   pull_request:
     branches: [pruebas, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
