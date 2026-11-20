@@ -19,7 +19,8 @@ línea (ADR 0037).
 | Activar módulos | `modules.ts` | `activateModule`, `deactivateModule` (bloquean la empresa y respetan dependencias) |
 | Plan de una empresa | `provisioning.ts` | `provisionCompany` (límites, módulos, vigencia; avisa el trabajo a medias de lo que se quita), `getCompanyPlan`, `isPlatformStaff`, `requirePlatformStaff` |
 | Vista del plan | `overview.ts`, `validity.ts` | `getPlanOverview`, aviso de vencimiento (`renewalDaysLeft`, `renewalText`) |
-| Pagos | `payments.ts` | `recordManualPayment`, `reverseManualPayment`, `listManualPayments` |
+| Pagos | `payments.ts` | `recordManualPayment` (rechaza una empresa de demostración), `reverseManualPayment`, `listManualPayments` |
+| Demostraciones | `demo.ts` | `createDemoCompany` (personal de plataforma: empresa marcada `isDemo` para una cuenta existente sin empresa, con plan fijo `DEMO_PLAN` y el trabajo `platform.demo_prepare` en la misma transacción), `previewDemoAccount` (muestra a quién irá antes de crear; nunca a personal de plataforma), `claimDemoPreparation`/`finishDemoPreparation` (el worker), `listDemoCompanies`, `getDemoCompany` (WMS-44) |
 | Sitio | `prices.ts`, `contact.ts` | `PLAN_TIERS` (referencia, nada se cobra desde aquí), `CONTACT_EMAIL` |
 
 ## Permisos
@@ -35,16 +36,21 @@ cancelar y cambiar plan son solo del titular (`OWNER_ONLY_PERMISSIONS`).
 `plan_version`, `plan_offer`, `plan_module_price` (precios versionados, no se
 modifican), `subscription`, `subscription_item`, `manual_payment`
 (inmutable), `platform_staff`. Historial que nada escribe: `checkout_order`,
-`promo_code`, `payment_event`. Lo que una empresa puede usar hoy está en
+`promo_code`, `payment_event`. `demo_company`: cómo se preparó cada empresa
+de demostración (estado `PREPARING`/`READY`/`FAILED`, juego de datos, quién la
+pidió; solo cambia su estado, no se borra). La marca es `organization.isDemo`
+(no cambia, disparador). Lo que una empresa puede usar hoy está en
 `entitlement` ([entitlements](entitlements.md)).
 
 ## Ajustes y trabajos
 
-Ninguno. Recibe del registro de módulos `moduleOpenWork` para avisar al quitar
-un módulo.
+Recibe del registro de módulos `moduleOpenWork` para avisar al quitar un
+módulo. Trabajo `platform.demo_prepare` (un solo intento): su manejador vive
+en el registro de módulos (`src/modules/registry/demo.ts`), que carga el juego
+de datos por los servicios reales.
 
 ## ADR
 
 0007 (contrato y registro), 0008 (modelo comercial), 0009 (consola interna),
 0027 (pagos manuales), 0028 (compra en línea, historial), 0037 (sin cobro en
-línea).
+línea), 0089 (empresa de demostración).

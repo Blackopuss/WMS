@@ -18,6 +18,7 @@ import {
 import { getEntitlements } from "@/platform/entitlements";
 import { activeFacilityOf } from "@/platform/locations";
 import { db, forOrganization } from "@/server";
+import { DEMO_REFUSED_MESSAGE, isDemoCompany } from "@/platform/tenancy";
 
 import {
   API_CAPABILITIES,
@@ -153,6 +154,10 @@ export async function createApiKey(
 ): Promise<CreateApiKeyResult> {
   const { organizationId, userId } = actor;
   await assertAllowed(organizationId, userId, MANAGE);
+  // WMS-44 (ADR 0089): a demonstration has no API (the mark never changes).
+  if (await isDemoCompany(organizationId)) {
+    return { ok: false, reason: "not_allowed", error: DEMO_REFUSED_MESSAGE };
+  }
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return {

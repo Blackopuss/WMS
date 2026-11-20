@@ -70,7 +70,9 @@ export default async function ConfiguracionPage() {
   // security: the services refuse it, so it is not even asked.
   // WMS-90: the titular offers the company; a person with a valid offer
   // sees where to answer it.
-  const canTransfer = access.can("platform.ownership.transfer");
+  // WMS-44: a demonstration is not transferred (the service refuses too).
+  const canTransfer =
+    access.can("platform.ownership.transfer") && !access.organization.isDemo;
   const [sessions, mfa, support, pin, processes, ownershipOffer] =
     await Promise.all([
       terminal ? [] : listActiveSessions(user.id, sessionId),

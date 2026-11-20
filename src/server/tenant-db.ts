@@ -33,6 +33,7 @@ export const TENANT_MODELS = [
   "ContainerEvent",
   "ContainerItem",
   "CountProgram",
+  "DemoCompany",
   "Entitlement",
   "ExitImport",
   "ExitImportRow",

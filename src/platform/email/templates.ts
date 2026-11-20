@@ -197,6 +197,37 @@ const oneLine = (text: string, max: number) =>
     .slice(0, max);
 
 /**
+ * A demonstration company was prepared for this account (WMS-44, ADR
+ * 0089). No link: the person signs in as always. It says that the account
+ * stays tied to the demonstration, so the real company needs another one.
+ */
+export function demoCompanyEmail(input: {
+  to: string;
+  name: string;
+  organizationName: string;
+  days: number;
+  /** Where to write if the person did not ask for it (CONTACT_EMAIL). */
+  contactEmail: string;
+}): EmailMessage {
+  const company = oneLine(input.organizationName, 100);
+  return {
+    to: input.to,
+    subject: "Te preparamos una empresa de demostración en WMS",
+    text: [
+      `Hola, ${oneLine(input.name, 100)}:`,
+      "",
+      `Te preparamos «${company}», una empresa de demostración de WMS con datos ficticios para que conozcas el sistema. Entra como siempre con tu correo y tu contraseña.`,
+      "",
+      `Está disponible ${input.days} días; después queda en solo lectura. En ella no se registran pagos, las órdenes de compra no se mandan por correo y no hay API ni webhooks.`,
+      "",
+      "Esta cuenta queda ligada a la demostración: si después contratas WMS, tu empresa real se crea con otra cuenta (otro correo).",
+      "",
+      `Si no pediste una demostración, escríbenos a ${input.contactEmail}.`,
+    ].join("\n"),
+  };
+}
+
+/**
  * A purchase order for a supplier, with its PDF (CMP-06B). The supplier
  * is not a user of the system: the message says who sends it and answers
  * go to that person, never to the system.

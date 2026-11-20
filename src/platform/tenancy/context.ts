@@ -35,6 +35,11 @@ export type ActiveOrganization = {
    * (PIL-12): read-only, until this moment. Null for its members.
    */
   supportUntil: Date | null;
+  /**
+   * Demonstration company (WMS-44, ADR 0089): fictitious data. Read in the
+   * same query as the company; it opens no shortcut of permissions.
+   */
+  isDemo: boolean;
 };
 
 export type OrganizationContext = {
@@ -153,6 +158,7 @@ async function organizationOf(
         timeZone: true,
         currency: true,
         ownerUserId: true,
+        isDemo: true,
       },
     },
   } as const;
@@ -186,7 +192,13 @@ async function organizationOf(
     if (window) {
       const company = await db.organization.findUnique({
         where: { id: session.activeOrganizationId },
-        select: { id: true, name: true, timeZone: true, currency: true },
+        select: {
+          id: true,
+          name: true,
+          timeZone: true,
+          currency: true,
+          isDemo: true,
+        },
       });
       if (company) {
         return { ...company, isOwner: false, supportUntil: window.until };

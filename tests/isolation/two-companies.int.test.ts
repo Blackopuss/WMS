@@ -1822,6 +1822,16 @@ beforeAll(async () => {
         recordedByUserId: organizationId === orgA ? ids.ana : ids.beto,
       },
     });
+    // WMS-44: the preparation record of a demonstration (the fixture's
+    // companies are not demonstrations; only the row matters here).
+    await db.demoCompany.create({
+      data: {
+        id: newId(),
+        organizationId,
+        dataset: "generic",
+        createdByUserId: organizationId === orgA ? ids.ana : ids.beto,
+      },
+    });
     await db.checkoutOrder.create({
       data: {
         id: newId(),

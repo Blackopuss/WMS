@@ -13,6 +13,7 @@ import {
 import type { JobHandlers } from "@/platform/jobs";
 import { noticeEmailJobHandlers } from "@/platform/notifications";
 
+import { demoJobHandlers } from "./demo";
 import { notificationTypes } from "./notifications";
 
 /**
@@ -32,4 +33,6 @@ export const jobHandlers: JobHandlers = {
   // transaction of the fact), and the signed delivery, with retries.
   [WEBHOOK_FANOUT_JOB]: webhookFanoutHandler(),
   [WEBHOOK_DELIVERY_JOB]: webhookDeliveryHandler(),
+  // WMS-44 (ADR 0089): load the data of a demonstration company.
+  ...demoJobHandlers,
 };

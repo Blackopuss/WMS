@@ -17,6 +17,7 @@ se lo pasa a la plataforma como datos (la plataforma nunca importa módulos).
 | `evidence.ts` | `evidenceOwners` (quién alcanza el registro de una foto de evidencia; hoy `incident: reachesIncident` y `process_step: processStepReach(processDocuments)`; WMS-37, WMS-74) | `/api/archivos` (abrir una foto) |
 | `processes.ts` | `processDocuments` (documentos de cada módulo que pueden seguir un proceso, validados al cargar; hoy vacío hasta WMS-28/29; WMS-74) | Configuración › Procesos, `/procesos/[id]`, `/tareas` |
 | `search.ts` | `searchSources` (lo que cada módulo ofrece a la búsqueda global, en el orden de los resultados, validado al cargar; WMS-66) | `/buscar` y el enlace «Buscar» del layout |
+| `demo.ts` | `DEMO_DATASETS` (juegos de datos de una empresa de demostración; hoy solo `generic`, de ningún giro), `DEMO_DATASET_KEYS` (sale por `index.ts`) y `demoJobHandlers` (`platform.demo_prepare`: reclama la preparación, carga el juego a nombre del titular por los servicios reales y la deja lista o fallida; WMS-44) | la consola interna y el worker (por `jobs.ts`) |
 | `webhooks.ts` | `webhookEventTypes` (eventos que cada módulo manda por webhook, validados al cargar; WMS-60) | Configuración › API y webhooks, servicios de destinos |
 
 `jobs.ts` y `rounds.ts` no salen por `index.ts`: los importa directamente
@@ -30,4 +31,4 @@ negocio con un solo dueño y cada sección del menú con un módulo registrado.
 ## ADR
 
 0007 (contrato y registro de módulos), 0053 (tipos de aprobación), 0057
-(tipos de aviso).
+(tipos de aviso), 0089 (empresa de demostración).

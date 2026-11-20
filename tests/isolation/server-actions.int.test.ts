@@ -1043,6 +1043,13 @@ const REVIEWED: Record<string, Review> = {
       "sesión y empresa activa (requireOrganizationContext); el servicio comprueba rol, módulo y cupo",
     coveredBy: "tests/platform/products.int.test.ts",
   },
+  createDemoAction: {
+    input:
+      "correo de una cuenta existente, nombre de la empresa y juego de datos (solo de la lista conocida)",
+    identity:
+      "sesión con MFA + fila activa en platform_staff (requirePlatformStaff); el servicio lo vuelve a comprobar y crea una empresa nueva para esa cuenta, sin tocar otra",
+    coveredBy: "tests/platform/demo-company.int.test.ts",
+  },
   provisionAction: {
     input:
       "id de empresa (cualquiera: es personal de plataforma), cupos, módulos, vigencia y motivo",

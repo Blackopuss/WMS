@@ -8,6 +8,29 @@ cerrar cada paso.
 
 ## 2026-11-20
 
+- **WMS-44** Empresa de demostración (ADR 0089, Fase 5): el personal de
+  plataforma la crea desde la consola interna (`/interno/demostraciones`,
+  en dos pasos: primero muestra el nombre y el correo de la cuenta y solo un
+  segundo envío crea) para una cuenta existente con el correo confirmado y sin
+  empresa, que nunca es del personal; la cuenta recibe un correo sin enlaces
+  que explica la demostración. En una transacción (`createDemoCompany`, bajo el
+  candado de la cuenta) crea la empresa marcada `organization.isDemo`
+  (inmutable por disparador), su titular, el plan fijo (todos los módulos, 100
+  productos, 3 usuarios, 1 almacén, 1 GB, 14 días) y la fila `demo_company`, y
+  encola `platform.demo_prepare` (un solo intento, `onFailed`), que carga a
+  nombre del titular, por los servicios reales, el juego `generic` de datos
+  ficticios de ningún giro (ubicaciones, productos por lote y por serie,
+  existencias en varios estados, una orden de compra, pedidos, tareas, un
+  conteo, una incidencia, una receta con su orden y un plan de inspección).
+  Una demostración rechaza pagos manuales, envío de órdenes de compra por
+  correo, llaves de la API, webhooks y transferir la titularidad
+  (`isDemoCompany`); la app muestra el aviso «Empresa de demostración». La
+  marca no abre atajos de permisos y nada se borra. Migración
+  `20261120120000_wms44_demo_company`. **Decisión abierta al fundador:** la
+  cuenta que recibe una demostración no puede tener después su empresa real
+  (se crea con otra cuenta). Revisor independiente en una vuelta («unir»,
+  sin críticos ni mayores). 3,271 pruebas en local, `check` y `build` en
+  verde. Seguridad: `docs/seguridad/REVISION_DEMOSTRACION.md`.
 - **WMS-90** Pantalla para transferir la titularidad: Configuración ›
   «Titularidad de la empresa» (`/configuracion/titularidad`; la ven solo el
   titular y quien tiene una oferta pendiente). El titular ofrece a una persona

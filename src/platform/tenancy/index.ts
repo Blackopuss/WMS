@@ -26,3 +26,4 @@ export type {
 } from "./context";
 export { openSupportAccess, supportWindowFor } from "./support";
 export type { SupportWindow } from "./support";
+export { DEMO_REFUSED_MESSAGE, isDemoCompany } from "./demo";

@@ -47,7 +47,8 @@ export type OwnershipReason =
   | "module_missing"
   | "not_found"
   | "expired"
-  | "mfa_required";
+  | "mfa_required"
+  | "demo_company";
 
 export const OWNERSHIP_MESSAGES: Record<OwnershipReason, string> = {
   not_owner: "Solo el titular de la empresa puede hacer esto.",
@@ -59,6 +60,8 @@ export const OWNERSHIP_MESSAGES: Record<OwnershipReason, string> = {
   expired: "Esta transferencia venció. Pide al titular que la envíe de nuevo.",
   mfa_required:
     "Activa la verificación en dos pasos antes de aceptar la empresa.",
+  demo_company:
+    "Una empresa de demostración no se transfiere: la empresa real se crea con otra cuenta.",
 };
 
 export type OfferOwnershipResult =
@@ -145,6 +148,15 @@ async function lockOwner(tx: Tx, organizationId: string) {
   return rows[0]?.ownerUserId ?? null;
 }
 
+/** Whether the company is a demonstration (the mark never changes). */
+async function isDemoUnderLock(tx: Tx, organizationId: string) {
+  const company = await tx.organization.findUnique({
+    where: { id: organizationId },
+    select: { isDemo: true },
+  });
+  return company?.isDemo === true;
+}
+
 function parseRoles(input: readonly string[] | undefined): Role[] | null {
   if (input === undefined) return DEFAULT_PREVIOUS_OWNER_ROLES;
   if (input.length === 0 || !input.every(isRole)) return null;
@@ -163,6 +175,8 @@ export async function offerOwnershipTransfer(
   const done = await db.$transaction(async (tx) => {
     const owner = await lockOwner(tx, organizationId);
     if (owner === null || owner !== actorUserId) return fail("not_owner");
+    // WMS-44 (ADR 0089): a demonstration is not handed to someone else.
+    if (await isDemoUnderLock(tx, organizationId)) return fail("demo_company");
     // WMS-59: a role tied to a module is kept only with that module in full
     // use, unless the titular already has it (same rule as the team). Read
     // under the company lock, which removing a module also takes (WMS-90).
@@ -295,6 +309,8 @@ export async function cancelOwnershipTransfer(
   return db.$transaction(async (tx) => {
     const owner = await lockOwner(tx, organizationId);
     if (owner === null || owner !== actorUserId) return fail("not_owner");
+    // WMS-44 (ADR 0089): a demonstration is not handed to someone else.
+    if (await isDemoUnderLock(tx, organizationId)) return fail("demo_company");
     const pending = await tx.ownershipTransfer.findMany({
       where: { organizationId, status: "PENDING" },
       select: { id: true, toMembership: { select: { userId: true } } },
@@ -378,6 +394,9 @@ export async function acceptOwnershipTransfer(
   const done = await db.$transaction(async (tx) => {
     const owner = await lockOwner(tx, organizationId);
     if (owner === null) return fail("not_found");
+    // WMS-44 (ADR 0089): nor accepted (an offer made before cannot exist,
+    // but the rule is checked where it decides).
+    if (await isDemoUnderLock(tx, organizationId)) return fail("demo_company");
     // WMS-59 again at the end, under the company lock that removing a
     // module also takes: a module removed since the offer does not hand out
     // a role the previous titular did not have (WMS-90).

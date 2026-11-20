@@ -119,6 +119,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
     "Cambió la capacidad o las restricciones de una ubicación",
   "location.levels_changed": "Cambió los niveles de ubicación de un almacén",
   "plan.provisioned": "Se asignó el plan de la empresa",
+  "demo.created": "Se creó la empresa de demostración",
   "payment.recorded": "Se registró un pago",
   "plan.purchased": "Compró el plan en línea",
   "payment.reversed": "Se anuló un pago",

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { dec, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import { invalidateEntitlements } from "@/platform/entitlements";
+import { isDemoCompany } from "@/platform/tenancy";
 import { LOCKING_TRANSACTION, db, forOrganization } from "@/server";
 
 import { isPlatformStaff } from "./provisioning";
@@ -213,6 +214,16 @@ export async function recordManualPayment(
   if (!(await isPlatformStaff(staffUserId))) {
     return { ok: false, fieldErrors: {}, formError: NOT_STAFF };
   }
+  // WMS-44 (ADR 0089): a demonstration is never charged. The mark never
+  // changes (trigger), so reading it before the transaction is enough.
+  if (await isDemoCompany(organizationId)) {
+    return {
+      ok: false,
+      fieldErrors: {},
+      formError: "Una empresa de demostración no recibe pagos.",
+    };
+  }
+
   const parsed = paymentSchema.safeParse({
     ...input,
     amount: String(input.amount ?? ""),
@@ -228,7 +239,6 @@ export async function recordManualPayment(
     return { ok: false, fieldErrors };
   }
   const payment = parsed.data;
-
   return inTransaction(organizationId, async (tx) => {
     const before = await lockPlanEnd(tx, organizationId);
     const repeated = await tx.manualPayment.findFirst({

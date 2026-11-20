@@ -37,6 +37,7 @@ En una terminal se ve **menos** que en tu cuenta normal: no aparecen costos, exp
 - Si ves **No tienes acceso a esta sección**, tu rol no la incluye: pídesela al titular o a un administrador.
 - **Inicio** (`Hola, <tu nombre>`) muestra solo lo que tu rol puede hacer hoy: los botones **Registrar entrada** y **Registrar salida** (si los tienes), **Reportar un problema**, los pendientes del almacén y el bloque **Para hoy** con mosaicos numerados (por ejemplo **Mis tareas**, **Tareas disponibles**, **Órdenes por recibir**). Cada mosaico abre la lista correspondiente. En una empresa que aún no registra su primer movimiento, arriba aparece **Configura tu empresa** con el paso que te toca (solo los pasos que tu rol puede hacer; con el catálogo vacío, los de existencias y movimientos dicen que primero hacen falta productos).
 - Si necesitas algo que no ves, no hay otra puerta: pídelo a quien administra (ver el manual de [Administrador](rol-administrador.md)).
+- Si arriba de cada pantalla dice **Empresa de demostración: los datos son ficticios.**, estás en una empresa que el personal de la plataforma preparó para enseñar el sistema: todo se puede explorar, pero ahí no se registran pagos, las órdenes de compra no se mandan por correo y no hay API ni webhooks. Vence a las dos semanas y queda en solo lectura.
 
 ## 3. Avisos
 
@@ -92,4 +93,4 @@ Un reporte **no cambia existencias**: avisa a quien supervisa. Si lo que pasa es
 
 Una persona puede tener **varios roles a la vez**: recibe la suma de lo que permite cada uno y ocupa un solo lugar del plan. Un rol de Producción o de Calidad solo se asigna si el módulo está contratado.
 
-Vigente al 2026-11-19 (configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86)
+Vigente al 2026-11-20 (configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86; empresa de demostración: WMS-44)

@@ -2,14 +2,14 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-145 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+146 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
 | Plataforma › Cuentas y sesiones | 7 | [auth](modulos/auth.md) |
 | Plataforma › Empresas | 1 | [tenancy](modulos/tenancy.md) |
 | Plataforma › Equipo, permisos y alcance | 6 | [authorization](modulos/authorization.md) |
-| Plataforma › Plan, módulos y pagos | 10 | [billing](modulos/billing.md) |
+| Plataforma › Plan, módulos y pagos | 11 | [billing](modulos/billing.md) |
 | Plataforma › Derechos y cupos | 2 | [entitlements](modulos/entitlements.md) |
 | Plataforma › Bitácora | 3 | [audit](modulos/audit.md) |
 | Plataforma › Aceptación de documentos | 1 | [legal](modulos/legal.md) |
@@ -184,6 +184,7 @@ No es de una empresa (sin `organizationId`).
 | `timeZone` | `String · VarChar(64)` | `"America/Mexico_City"` |  |
 | `currency` | `String · Char(3)` | `"MXN"` |  |
 | `ownerUserId` | `String · Char(36)` |  | Titular: the only account allowed to contract or cancel (USR-03). |
+| `isDemo` | `Boolean` | `false` | Demonstration company (WMS-44, ADR 0089): set when created, never changes (trigger). |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 | `updatedAt` | `DateTime · DateTime(3)` |  | Prisma la actualiza en cada cambio |
 
@@ -462,6 +463,27 @@ No es de una empresa (sin `organizationId`).
 
 - Relaciones: `user` → `User` por `userId` (al borrar: Cascade).
 
+### DemoCompany · `demo_company`
+
+How a demonstration company was prepared (WMS-44, ADR 0089): one row per demonstration, written by the console and the worker only.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `dataset` | `String · VarChar(40)` |  | Data set loaded (`DEMO_DATASETS`); today only "generic". |
+| `status` | `DemoCompanyStatus` | `PREPARING` |  |
+| `claimedAt` | `DateTime? · DateTime(3)` |  | Set once by the worker run that loads the data; a second run finds it and stops. |
+| `failure` | `String? · VarChar(500)` |  | Why it failed, for the console (no stack, one line). |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `finishedAt` | `DateTime? · DateTime(3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); `organizationId`.
+- Índices: `createdAt`.
+
 ### CheckoutOrder · `checkout_order`
 
 A plan bought online by the owner of a company. Every amount is fixed by the server when the order is created (src/platform/billing/prices); the provider only confirms that exactly that was paid. The plan is applied once, when the order becomes PAID.
@@ -545,6 +567,7 @@ No es de una empresa (sin `organizationId`).
 - `CheckoutProvider`: `STRIPE`, `PAYPAL`, `MERCADOPAGO`, `CODE`.
 - `CheckoutStatus`: `PENDING`, `PAID`, `FAILED`, `EXPIRED`.
 - `ManualPaymentKind`: `PAYMENT`, `REVERSAL`.
+- `DemoCompanyStatus`: `PREPARING`, `READY`, `FAILED`.
 
 ## Plataforma › Derechos y cupos
 

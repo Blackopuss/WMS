@@ -396,6 +396,19 @@ try {
       process.env.DEMO_IS_STAFF === "1" || consoleResponse?.status() === 404,
       `${viewport.name}: the internal console does not exist for a customer account`,
     );
+    // WMS-44: neither do its demonstration screens.
+    for (const path of [
+      "/interno/demostraciones",
+      "/interno/demostraciones/nueva",
+    ]) {
+      const response = await page.goto(`${BASE}${path}`, {
+        waitUntil: "networkidle",
+      });
+      check(
+        process.env.DEMO_IS_STAFF === "1" || response?.status() === 404,
+        `${viewport.name}: ${path} does not exist for a customer account`,
+      );
+    }
 
     // WMS-90: the titular reaches «Titularidad de la empresa»; an empty
     // offer is refused on the person's field and nothing is offered.
