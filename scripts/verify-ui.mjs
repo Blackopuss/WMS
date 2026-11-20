@@ -982,6 +982,26 @@ try {
     await page.close();
   }
 
+  // WMS-64: a new automation sent empty is refused with its reasons and
+  // nothing is saved; on a phone the form fits without side scroll.
+  {
+    const page = await signedInPage(browser, { width: 375, height: 812 });
+    await page.goto(`${BASE}/configuracion/automatizaciones/nueva`, {
+      waitUntil: "networkidle",
+    });
+    await page.getByRole("button", { name: "Crear automatización" }).click();
+    await page.waitForSelector("[role=alert]", { timeout: 10_000 });
+    check(
+      (await page.locator("[role=alert]").count()) > 0,
+      "WMS-64: an empty automation is refused and says why",
+    );
+    const wide = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+    );
+    check(!wide, "WMS-64: the automation form fits a phone");
+    await page.context().close();
+  }
+
   // WMS-78A: access and Configuración. Read-only: nothing is saved.
   {
     // Links inside a sentence are underlined (in dark mode the primary

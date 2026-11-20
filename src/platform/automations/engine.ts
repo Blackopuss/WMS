@@ -330,9 +330,7 @@ function eventHandler(catalog: AutomationCatalog): JobHandler {
       const input = objectOf(payload);
       const triggerKey = String(input.triggerKey ?? "");
       const depth = Math.max(1, Number(input.depth) || 1);
-      const chain = (Array.isArray(input.chain) ? input.chain : []).map(
-        String,
-      );
+      const chain = (Array.isArray(input.chain) ? input.chain : []).map(String);
       const trigger = catalog.triggers.find(
         (each) => each.key === triggerKey && each.kind === "event",
       );
@@ -355,7 +353,9 @@ function eventHandler(catalog: AutomationCatalog): JobHandler {
         if (rule.facilityId && rule.facilityId !== subject.facilityId) continue;
         const found = catalogOf(catalog, rule);
         if (!found) continue;
-        if (!conditionsHold(trigger, objectOf(rule.conditions), subject.facts)) {
+        if (
+          !conditionsHold(trigger, objectOf(rule.conditions), subject.facts)
+        ) {
           continue;
         }
         const outcome = await openRun(organizationId, rule, {
@@ -404,17 +404,17 @@ async function finishRun(
   reason: string | null,
   results?: ActionResult[],
 ): Promise<boolean> {
-  const changed = await forOrganization(organizationId).automationRun.updateMany(
-    {
-      where: { id: runId, status: { in: ["PENDING", "RUNNING"] } },
-      data: {
-        status,
-        reason: reason?.slice(0, 300) ?? null,
-        finishedAt: new Date(),
-        ...(results ? { results: json(results) } : {}),
-      },
+  const changed = await forOrganization(
+    organizationId,
+  ).automationRun.updateMany({
+    where: { id: runId, status: { in: ["PENDING", "RUNNING"] } },
+    data: {
+      status,
+      reason: reason?.slice(0, 300) ?? null,
+      finishedAt: new Date(),
+      ...(results ? { results: json(results) } : {}),
     },
-  );
+  });
   return changed.count > 0;
 }
 
@@ -563,16 +563,31 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         select: { ...RULE_SELECT, status: true },
       });
       if (!rule || rule.status !== "ACTIVE") {
-        await finishRun(organizationId, run.id, "SKIPPED", "No se hizo: la regla se apagó antes.");
+        await finishRun(
+          organizationId,
+          run.id,
+          "SKIPPED",
+          "No se hizo: la regla se apagó antes.",
+        );
         return { skipped: "off" };
       }
       if (rule.version !== run.ruleVersion) {
-        await finishRun(organizationId, run.id, "SKIPPED", "No se hizo: la regla cambió antes de ejecutarse.");
+        await finishRun(
+          organizationId,
+          run.id,
+          "SKIPPED",
+          "No se hizo: la regla cambió antes de ejecutarse.",
+        );
         return { skipped: "changed" };
       }
       const found = catalogOf(catalog, rule);
       if (!found) {
-        await finishRun(organizationId, run.id, "SKIPPED", "No se hizo: lo que pide la regla ya no se ofrece.");
+        await finishRun(
+          organizationId,
+          run.id,
+          "SKIPPED",
+          "No se hizo: lo que pide la regla ya no se ofrece.",
+        );
         return { skipped: "catalog" };
       }
       const problem = modulesProblem(
@@ -591,7 +606,12 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
           select: { archivedAt: true },
         });
         if (!facility || facility.archivedAt) {
-          await finishRun(organizationId, run.id, "SKIPPED", "No se hizo: el almacén está archivado.");
+          await finishRun(
+            organizationId,
+            run.id,
+            "SKIPPED",
+            "No se hizo: el almacén está archivado.",
+          );
           return { skipped: "facility" };
         }
       }
@@ -603,14 +623,20 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
           found.trigger.readPermission,
         ))
       ) {
-        await finishRun(organizationId, run.id, "SKIPPED", "No se hizo: la persona de la regla ya no puede ver esto.");
+        await finishRun(
+          organizationId,
+          run.id,
+          "SKIPPED",
+          "No se hizo: la persona de la regla ya no puede ver esto.",
+        );
         await pauseRule(organizationId, rule.id, "ACTOR");
         return { skipped: "actor" };
       }
 
       const results = resultsOf(run.results);
       const stored = storedActions(rule.actions);
-      const facilityId = subject.facilityId ?? (await mainFacilityId(organizationId));
+      const facilityId =
+        subject.facilityId ?? (await mainFacilityId(organizationId));
       let refused = false;
       let actorLost = false;
       for (let index = 0; index < found.actions.length; index++) {
@@ -681,7 +707,13 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
         if (outcome.kind === "refused") refused = true;
       }
       if (actorLost) {
-        await finishRun(organizationId, run.id, "SKIPPED", "No se hizo: la persona de la regla ya no puede hacer esto.", results);
+        await finishRun(
+          organizationId,
+          run.id,
+          "SKIPPED",
+          "No se hizo: la persona de la regla ya no puede hacer esto.",
+          results,
+        );
         await pauseRule(organizationId, rule.id, "ACTOR");
         return { skipped: "actor" };
       }
@@ -697,10 +729,12 @@ function runHandler(catalog: AutomationCatalog): JobHandler {
     },
     async onFailed({ organizationId, payload }) {
       const runId = String(objectOf(payload).runId ?? "").slice(0, 36);
-      const run = await forOrganization(organizationId).automationRun.findFirst({
-        where: { id: runId },
-        select: { ruleId: true },
-      });
+      const run = await forOrganization(organizationId).automationRun.findFirst(
+        {
+          where: { id: runId },
+          select: { ruleId: true },
+        },
+      );
       if (!run) return;
       const closed = await finishRun(
         organizationId,
@@ -767,7 +801,7 @@ export async function runAutomationRound(
   });
   if (rules.length === 0) return { runs: 0, paused: 0 };
   const entitlements = await getEntitlements(organizationId);
-  const organization = await client.organization.findFirst({
+  const organization = await db.organization.findUnique({
     where: { id: organizationId },
     select: { timeZone: true },
   });
@@ -781,9 +815,18 @@ export async function runAutomationRound(
     const modules = found
       ? [found.trigger.module, ...found.actions.map((a) => a.module)]
       : [];
+    // A module that left while the plan goes on (some module still in
+    // full use); an ended plan leaves every module read only and the
+    // rule waits as it is.
+    const planInForce = entitlements.modules.size > 0;
     if (
       !found ||
-      modules.some((m) => m !== null && entitlements.moduleState(m) === "none")
+      modules.some(
+        (m) =>
+          m !== null &&
+          (entitlements.moduleState(m) === "none" ||
+            (planInForce && entitlements.moduleState(m) !== "active")),
+      )
     ) {
       if (await pauseRule(organizationId, rule.id, "MODULE")) paused++;
       continue;
@@ -792,7 +835,13 @@ export async function runAutomationRound(
     if (trigger.kind !== "state" || !trigger.scan) continue;
     // With the plan ended nothing is checked (and nothing is written hourly).
     if (modulesProblem(entitlements, trigger, actions)) continue;
-    if (!(await isAllowed(organizationId, rule.actorUserId, trigger.readPermission))) {
+    if (
+      !(await isAllowed(
+        organizationId,
+        rule.actorUserId,
+        trigger.readPermission,
+      ))
+    ) {
       if (await pauseRule(organizationId, rule.id, "ACTOR")) paused++;
       continue;
     }
@@ -834,7 +883,11 @@ export async function runAutomationRound(
           () =>
             trigger.scan!(
               { organizationId, userId: rule.actorUserId },
-              { facilityId: place, values: objectOf(rule.conditions), limit: left },
+              {
+                facilityId: place,
+                values: objectOf(rule.conditions),
+                limit: left,
+              },
             ),
         );
       } catch (error) {
@@ -846,7 +899,9 @@ export async function runAutomationRound(
       }
       for (const subject of subjects.slice(0, left)) {
         left--;
-        if (!conditionsHold(trigger, objectOf(rule.conditions), subject.facts)) {
+        if (
+          !conditionsHold(trigger, objectOf(rule.conditions), subject.facts)
+        ) {
           continue;
         }
         const eventKey =

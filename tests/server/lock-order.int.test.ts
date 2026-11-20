@@ -19,7 +19,17 @@ import {
   setOutboundLine,
   type InventoryActor,
 } from "@/modules/inventory";
-import { moduleRegistry, operationSettings } from "@/modules/registry";
+import {
+  automationCatalog,
+  moduleRegistry,
+  operationSettings,
+} from "@/modules/registry";
+import { jobHandlers } from "@/modules/registry/jobs";
+import {
+  createAutomationRule,
+  runAutomationRound,
+} from "@/platform/automations";
+import { runNextJob } from "@/platform/jobs";
 import { setMemberScope } from "@/platform/authorization";
 import { provisionCompany } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
@@ -933,5 +943,85 @@ describe("locks in one order (WMS-76)", () => {
     }
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("blocking a lot by an automation never deadlocks with releasing an order of that lot, nor takes what it reserved (WMS-64)", async () => {
+    const actor = await company();
+    const made = await createProduct(actor, {
+      sku: `CND-${++counter}`,
+      name: `Producto ${counter}`,
+      tracking: "LOT",
+      lotExpiry: "OPTIONAL",
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    const productId = made.productId;
+    const place = await shelf(actor);
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Mexico_City",
+    }).format(new Date());
+    const soon = new Date(`${today}T00:00:00Z`);
+    soon.setUTCDate(soon.getUTCDate() + 5);
+    const rule = await createAutomationRule(
+      actor,
+      {
+        name: "Bloquear lo que caduca",
+        triggerKey: "inventory.lot.expiring",
+        actions: [{ key: "inventory.stock.block", options: {} }],
+      },
+      automationCatalog,
+    );
+    if (!rule.ok) throw new Error(JSON.stringify(rule));
+    const work = async () => {
+      for (let ran = 0; ran < 50; ran++) {
+        if ((await runNextJob(jobHandlers)).kind === "idle") break;
+      }
+    };
+    const errors: string[] = [];
+    for (let round = 0; round < 8; round++) {
+      const entry = await registerEntry(actor, {
+        productId,
+        locationId: place,
+        quantity: "10",
+        lotCode: `L${round}-${counter}`,
+        lotExpiresOn: soon.toISOString().slice(0, 10),
+        acceptRepeat: true,
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+      await runAutomationRound(actor.organizationId, automationCatalog);
+      const order = await draftOrder(actor, productId, "6");
+      const results = await Promise.allSettled([
+        work(),
+        releaseOutboundOrder(actor, order, { takeWhatThereIs: true }),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+    // What an order reserved is never blocked: available covers it.
+    const balances = await db.stockBalance.findMany({
+      where: { organizationId: actor.organizationId, productId },
+    });
+    const reservations = await db.stockReservation.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        productId,
+        state: "ACTIVE",
+      },
+    });
+    for (const lot of new Set(balances.map((row) => row.lotId))) {
+      const available = balances
+        .filter((row) => row.lotId === lot && row.status === "AVAILABLE")
+        .reduce((sum, row) => sum + Number(row.quantity), 0);
+      const reserved = reservations
+        .filter((row) => row.lotId === lot)
+        .reduce((sum, row) => sum + Number(row.remaining), 0);
+      expect(available).toBeGreaterThanOrEqual(reserved);
+    }
+    expect(await reconcileStock(actor.organizationId)).toEqual([]);
   }, 240_000);
 });

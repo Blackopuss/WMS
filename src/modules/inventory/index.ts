@@ -820,6 +820,11 @@ export type {
   DigestSection,
 } from "./daily-digest";
 export { INVENTORY_WEBHOOK_EVENTS } from "./webhooks";
+// WMS-64 (ADR 0092): what Inventario offers to automations.
+export {
+  INVENTORY_AUTOMATION_ACTIONS,
+  INVENTORY_AUTOMATION_TRIGGERS,
+} from "./automations";
 export {
   INCIDENT_PAGE_SIZE,
   addIncidentNote,

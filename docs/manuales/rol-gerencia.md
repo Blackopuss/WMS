@@ -19,6 +19,10 @@ Inicio, Tareas, Recepción, Pedidos, Producción (si está contratada), Inventar
 8. **Planes de inspección y defectos** (si Calidad está contratada): el bloque **Inspección** de la ficha del producto y **Configuración › Defectos**.
 9. **Configuración:** puedes leer **Equipo** (personas y sus sesiones), **Terminales compartidas**, **Bitácora** y **Mi plan** (vigencia y cupos).
 
+## Automatizaciones
+
+En **Configuración › Automatizaciones** ves las reglas de la empresa («Cuando pasa algo…, entonces…») y el historial de cada una: qué pasó y qué hizo, o por qué no. No las creas ni las cambias; eso lo hacen el titular y Administración. Si estás limitado a almacenes o zonas, no las ves.
+
 ## Descargar información
 Donde hay un enlace **Descargar en Excel** o **Descargar PDF** (inventario, movimientos, embarques, traslados, órdenes de compra y reportes de compras), lo puedes usar.
 
@@ -31,4 +35,4 @@ Donde hay un enlace **Descargar en Excel** o **Descargar PDF** (inventario, movi
 ## Si ves algo raro
 **Reportar un problema** ([común](comun.md), sección 8) no está en tu rol; avisa a quien administra o a supervisión. (Gerencia lee incidencias.)
 
-Vigente al 2026-11-20 (indicadores: WMS-32; tableros: WMS-34; sugerencias de reubicación: WMS-65)
+Vigente al 2026-11-20 (indicadores: WMS-32; tableros: WMS-34; sugerencias de reubicación: WMS-65; automatizaciones: WMS-64)

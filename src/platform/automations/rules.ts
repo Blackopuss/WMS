@@ -63,7 +63,9 @@ async function mayManage(actor: Actor): Promise<boolean> {
   return seesWholeCompany(forOrganization(actor.organizationId), actor.userId);
 }
 
-async function assertManage(actor: Actor): Promise<AutomationRuleResult | null> {
+async function assertManage(
+  actor: Actor,
+): Promise<AutomationRuleResult | null> {
   await assertAllowed(actor.organizationId, actor.userId, MANAGE);
   if (
     !(await seesWholeCompany(
@@ -260,7 +262,8 @@ export async function createAutomationRule(
   const denied = await assertManage(actor);
   if (denied) return denied;
   const parsed = await parse(actor, input, catalog);
-  if (!parsed.ok) return { ok: false, reason: "invalid", errors: parsed.errors };
+  if (!parsed.ok)
+    return { ok: false, reason: "invalid", errors: parsed.errors };
   const { rule } = parsed;
   const { organizationId } = actor;
   const ruleId = newId();
@@ -360,7 +363,8 @@ export async function updateAutomationRule(
   const denied = await assertManage(actor);
   if (denied) return denied;
   const parsed = await parse(actor, input, catalog);
-  if (!parsed.ok) return { ok: false, reason: "invalid", errors: parsed.errors };
+  if (!parsed.ok)
+    return { ok: false, reason: "invalid", errors: parsed.errors };
   const { rule } = parsed;
   return inRule(actor, ruleId, async (tx, current) => {
     if (current.triggerKey !== rule.triggerKey) {
@@ -368,8 +372,7 @@ export async function updateAutomationRule(
         ok: false as const,
         reason: "invalid" as const,
         errors: {
-          trigger:
-            "Lo que activa una regla no cambia: archívala y crea otra.",
+          trigger: "Lo que activa una regla no cambia: archívala y crea otra.",
         },
       };
     }
@@ -539,9 +542,20 @@ export async function listAutomationRules(
   archived: AutomationRuleSummary[];
   mayManage: boolean;
   max: number;
+  /** Limited to warehouses or zones: rules act on the whole company. */
+  limited: boolean;
 }> {
   await assertAllowed(actor.organizationId, actor.userId, READ);
   const client = forOrganization(actor.organizationId);
+  if (!(await seesWholeCompany(client, actor.userId))) {
+    return {
+      rules: [],
+      archived: [],
+      mayManage: false,
+      max: AUTOMATION_RULES_MAX,
+      limited: true,
+    };
+  }
   const rows = await client.automationRule.findMany({
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: 200,
@@ -560,7 +574,9 @@ export async function listAutomationRules(
   const ids = rows.map((row) => row.id);
   const [labels, people, lastRuns, manage] = await Promise.all([
     labelsFor(actor.organizationId, [
-      ...new Set(rows.flatMap((row) => (row.facilityId ? [row.facilityId] : []))),
+      ...new Set(
+        rows.flatMap((row) => (row.facilityId ? [row.facilityId] : [])),
+      ),
     ]),
     client.membership.findMany({
       where: { userId: { in: [...new Set(rows.map((r) => r.actorUserId))] } },
@@ -577,31 +593,30 @@ export async function listAutomationRules(
   ]);
   const names = new Map(people.map((row) => [row.userId, row.user.name]));
   const last = new Map(lastRuns.map((row) => [row.ruleId, row._max.createdAt]));
-  const summaries = rows.map(
-    (row): AutomationRuleSummary => ({
-      id: row.id,
-      name: row.name,
-      sentence: ruleSentence(
-        {
-          triggerKey: row.triggerKey,
-          conditions: objectOf(row.conditions),
-          actions: storedActions(row.actions),
-        },
-        catalog,
-        row.facilityId ? (labels.facilities.get(row.facilityId) ?? null) : null,
-        labels,
-      ),
-      status: row.status,
-      statusLabel: statusLabel(row.status, row.pauseReason),
-      actorName: names.get(row.actorUserId) ?? null,
-      lastRunAt: last.get(row.id) ?? null,
-    }),
-  );
+  const summaries = rows.map((row): AutomationRuleSummary => ({
+    id: row.id,
+    name: row.name,
+    sentence: ruleSentence(
+      {
+        triggerKey: row.triggerKey,
+        conditions: objectOf(row.conditions),
+        actions: storedActions(row.actions),
+      },
+      catalog,
+      row.facilityId ? (labels.facilities.get(row.facilityId) ?? null) : null,
+      labels,
+    ),
+    status: row.status,
+    statusLabel: statusLabel(row.status, row.pauseReason),
+    actorName: names.get(row.actorUserId) ?? null,
+    lastRunAt: last.get(row.id) ?? null,
+  }));
   return {
     rules: summaries.filter((rule) => rule.status !== "ARCHIVED"),
     archived: summaries.filter((rule) => rule.status === "ARCHIVED"),
     mayManage: manage,
     max: AUTOMATION_RULES_MAX,
+    limited: false,
   };
 }
 
@@ -641,6 +656,8 @@ export async function getAutomationRule(
 ): Promise<AutomationRuleDetail | null> {
   await assertAllowed(actor.organizationId, actor.userId, READ);
   const client = forOrganization(actor.organizationId);
+  // The history names places of every warehouse: whole company only.
+  if (!(await seesWholeCompany(client, actor.userId))) return null;
   const row = await client.automationRule.findFirst({
     where: { id: String(ruleId ?? "").slice(0, 36) },
     select: {
@@ -685,7 +702,11 @@ export async function getAutomationRule(
     id: row.id,
     name: row.name,
     sentence: ruleSentence(
-      { triggerKey: row.triggerKey, conditions: objectOf(row.conditions), actions },
+      {
+        triggerKey: row.triggerKey,
+        conditions: objectOf(row.conditions),
+        actions,
+      },
       catalog,
       row.facilityId ? (labels.facilities.get(row.facilityId) ?? null) : null,
       labels,

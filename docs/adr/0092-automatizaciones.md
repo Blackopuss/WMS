@@ -1,7 +1,7 @@
 # ADR 0092 — Automatizaciones configurables por empresa
 
-Fecha: 2026-11-20 · Estado: aceptada (la acción «Bloquear» queda diseñada y
-sin programar hasta la respuesta de quien coordina) · Paso: WMS-64 · Se apoya
+Fecha: 2026-11-20 · Estado: aceptada (la acción «Bloquear» se programó tras
+la respuesta de quien coordina, el mismo día) · Paso: WMS-64 · Se apoya
 en WMS-56 (aprobaciones, ADR 0053), WMS-39/39B/88 (avisos, ADR 0057, 0060 y
 0084), WMS-60 (API y webhooks, ADR 0058), WMS-49 (ajustes de operación,
 ADR 0034), IMP-01 (cola de trabajos y rondas, ADR 0013), WMS-20 (alcance por
@@ -115,9 +115,9 @@ disparador nuevo de un hecho necesita antes su evento (`emitWebhookEvent`).
 | Clave | Frase | Qué llama | Permiso que necesita la persona de la regla |
 | --- | --- | --- | --- |
 | `platform.notify` | Avisar a… (roles y hasta 5 personas) | `notify` con el tipo propio `automations.rule_fired` | ninguno extra (ver abajo) |
-| `inventory.incident.open` | Abrir una incidencia (tipo) | `reportIncidentIn` (mismo núcleo que `reportIncident`) | `inventory.incident.create` |
+| `inventory.incident.open` | Abrir una incidencia (tipo) | `reportIncident` | `inventory.incident.create` |
 | `inventory.count.open` | Abrir un conteo de la ubicación | `openCount` | `inventory.count.create` |
-| `inventory.stock.block` | Bloquear las existencias | `changeStockStatus` a «Bloqueado» | `inventory.status.change` — **diseñada, sin programar** |
+| `inventory.stock.block` | Bloquear el lote | `changeStockStatus` de «Disponible» a «Bloqueado» | `inventory.status.change` (y `inventory.stock.read`) |
 
 - **Avisar:** el aviso dice el nombre de la regla, la línea del hecho y la
   nota. Se dirige con `permissions` = el permiso de lectura del disparador
@@ -134,29 +134,61 @@ disparador nuevo de un hecho necesita antes su evento (`emitWebhookEvent`).
   (ajuste grande, recepción con daño). Se descartó crear traslados (no hay de
   dónde sacar un destino sin inventarlo) y solicitudes de compra (las
   sugerencias de compra ya existen y una solicitud pide revisar cantidades).
-  Ninguna acción mueve existencias. Una incidencia necesita un almacén: la
-  del hecho; `reportIncidentIn` es el núcleo de `reportIncident` con el almacén
-  dado en vez del activo, dentro del alcance de la persona (la pantalla sigue
-  usando el activo).
+  Ninguna acción mueve existencias de lugar. Una incidencia necesita un
+  almacén: la del hecho. No hizo falta tocar `reportIncident`: dentro de la
+  delegación (`facilityOnly`) su «almacén activo» es el del hecho, y la
+  ubicación y el producto se le pasan como los teclearía una persona (código
+  de la ubicación, clave del producto), dentro del alcance de la persona de
+  la regla. Una incidencia de algo de toda la empresa (existencias bajas) no
+  se abre: «No se hizo: una incidencia necesita un almacén».
+- **Abrir un conteo** de una ubicación que ya tiene uno abierto (a mano o de
+  un programa de conteo cíclico, que entonces no genera el del día, como
+  siempre) termina «No se hizo: la ubicación ya tenía un conteo abierto» y
+  **no cuenta como falla**. Un producto por serie no detiene el conteo: el
+  conteo es de la ubicación y los productos por serie se rechazan al
+  capturarlos, como en cualquier conteo.
 - **Idempotencia:** la incidencia lleva `idempotencyKey` derivada de la
-  ejecución y la acción; un conteo es uno por ubicación (si ya hay uno
-  abierto, la acción queda «ya estaba abierto»); el aviso, `key` por
-  ejecución.
+  ejecución y la acción (`auto-<ejecución>-<n>`; las claves de confirmación
+  solo admiten letras, números, `-` y `_`); un conteo es uno por ubicación;
+  el aviso, `key` por ejecución y acción.
+- **Avisos:** respetan el tope de 50 destinatarios de `notify`, las
+  preferencias y el correo opcional; el tipo `automations.rule_fired` se
+  apaga por persona en «Avisos que recibo» como cualquier otro. La nota es
+  una línea sin caracteres de control y viaja como texto: en la campana es
+  texto, en el correo pasa por el HTML escapado de los avisos (ADR 0084) y
+  en la incidencia es parte de la descripción.
 
-### Bloquear (diseño; no se programa hasta respuesta)
+### Bloquear (decidido por quien coordina el 2026-11-20 y programado)
 
-- Solo para disparadores cuyo sujeto es una casilla exacta de existencias
-  disponibles (producto, ubicación, lote): «lote por caducar» y, más adelante,
-  hechos de calidad. Nunca con «existencias bajas», tareas ni pedidos.
-- Llama `changeStockStatus` de `AVAILABLE` a `BLOCKED` por **lo libre** de
-  cada casilla (`freeToTake`: nunca toma lo apartado para un pedido, una
-  tarea o una tarima), con motivo «Automatización: <nombre de la regla>», a
-  nombre de la persona de la regla y con su permiso `inventory.status.change`,
-  clave `auto:<ejecución>:<n>` para no repetirse; sus candados son los de
-  siempre (producto → ubicación) en su propia transacción.
-- Lo bloqueado se libera a mano con «Cambiar estado» (`inventory.status.release`).
-- Abierto para decidir: si bloquear exige además la autorización del motor
-  de aprobaciones, y si en una empresa de demostración se permite.
+- **Solo** con «Cuando un lote está por caducar» (`onlyTriggers`): la casilla
+  es producto + lote dentro del almacén del hecho, y solo productos
+  controlados por lote (un producto por serie no se bloquea así).
+- Por cada ubicación del almacén, dentro del alcance de la persona de la
+  regla, con existencias disponibles de ese lote (hasta 20 ubicaciones),
+  calcula **lo libre** con `freeToTake` (nunca lo apartado para un pedido o
+  una tarea ni lo que está en una tarima de almacenamiento) y llama
+  `changeStockStatus` de `AVAILABLE` a `BLOCKED` por esa cantidad, con motivo
+  «Automatización: <nombre de la regla>», a nombre de la persona de la regla
+  con `inventory.status.change`, clave
+  `auto-<ejecución>-<n>-<12 caracteres de la ubicación>` (un reintento no
+  bloquea dos veces aunque lea las ubicaciones en otro orden); cada una en
+  su propia transacción con los candados de siempre (producto → ubicación).
+  Si otra operación apartó entre la lectura y el candado, `changeStockStatus`
+  lo rechaza bajo su candado y esa ubicación se salta.
+- **Sin autorización** del motor de aprobaciones: no saca existencias ni
+  cambia el valor, se revierte a mano («Cambiar estado» a disponible con
+  `inventory.status.release`) y un cambio de estado manual tampoco la pide.
+- **En una empresa de demostración sí** se ejecuta (nada sale a terceros).
+- Sin nada libre: «No se hizo: no había existencias libres de ese lote», y
+  **no cuenta como falla**.
+- Queda dicho dónde y cuánto en el historial («Se bloqueó 10 piezas en
+  A-01-2»), la bitácora del cambio de estado lleva `automatizacion: <id>` y
+  la regla puede sumar «Avisar» a quien puede liberar.
+- **«Una vez por lote»:** la regla se activa una vez por lote y almacén. Si
+  después entran más existencias de ese mismo lote, **no se bloquean
+  solas**: quien recibe un lote por caducar lo ve en «Por caducar» y lo
+  bloquea a mano, o se archiva y se crea otra regla. Bloquear cada entrada
+  posterior exigiría escuchar las entradas, que hoy no publican un hecho.
 
 ## A nombre de quién actúa
 
@@ -215,6 +247,21 @@ alcance. La bitácora del servicio la escribe a nombre de esa persona y agrega
 Sin cambios a tablas existentes. Migración de expansión
 `20261120150000_wms64_automations`.
 
+## Costo en la transacción del hecho
+
+`emitWebhookEvent` ya leía los destinos de webhooks dentro de la
+transacción del hecho; el motor agrega **una sola lectura** por el índice
+`(organizationId, status, triggerKey)` de `automation_rule`, sin candados
+(`queueAutomationEvent`, llamada al principio de `emitWebhookEvent`). Sin
+ninguna regla encendida que escuche ese hecho no escribe nada: una
+operación común (una recepción, un cambio de estado) cuesta **una sentencia
+más**. Con una regla que escucha, además el `INSERT` del trabajo (dos
+sentencias del cliente). Se descartó colgarse del trabajo de reparto de
+webhooks: solo existe cuando hay un destino que escucha, así que habría que
+encolarlo siempre y eso sí agregaría escrituras al camino de todas las
+operaciones. Medido en `tests/platform/automations.int.test.ts` contando las
+sentencias del adaptador de su propio proceso.
+
 ## Trabajos y rondas
 
 - `platform.automation_event`: lo encola `emitWebhookEvent` (mismo lugar,
@@ -240,9 +287,17 @@ Sin cambios a tablas existentes. Migración de expansión
   editar no.
 - **Módulo quitado:** sus disparadores y acciones dejan de ofrecerse y sus
   reglas se apagan solas en la siguiente ronda, sin borrarse.
-- **Alcance:** configurar exige ver toda la empresa, así que una regla puede
-  ser de cualquier almacén activo; un almacén archivado detiene sus reglas
-  (la ejecución queda «No se hizo»).
+- **Alcance:** configurar **y leer** (reglas e historial) exige ver toda la
+  empresa: el historial nombra productos, ubicaciones y documentos de
+  cualquier almacén, así que para quien está limitado a almacenes o zonas la
+  pantalla dice por qué no los ve y la ficha de una regla «no existe». Una
+  regla puede ser de cualquier almacén activo; un almacén archivado detiene
+  sus reglas (la ejecución queda «No se hizo»).
+- **Módulo quitado contra plan vencido:** las dos cosas dejan el módulo en
+  solo lectura. La ronda distingue: si algún módulo sigue en uso pleno, el
+  plan sigue vigente y el módulo se quitó → la regla se apaga
+  (`MODULE`); si ninguno sigue en uso, el plan terminó → la regla se queda
+  encendida y no hace nada hasta que vuelva.
 - **Sesión de PIN:** no configura (`platform.*` se recorta en una terminal) ni
   lee (no está en `TERMINAL_PLATFORM_KEEP`).
 - **Soporte:** solo lee (`platform.automation.read` termina en `.read`).
@@ -266,4 +321,8 @@ Sin cambios a tablas existentes. Migración de expansión
    empresa, profundidad 2, pausa tras 5 fallas, 90 días de historial.
 5. Que Gerencia lea las reglas y su historial.
 6. Que con el plan vencido tampoco se avise.
-7. Bloquear: con o sin autorización, y en demostraciones.
+7. Bloquear sin autorización del motor de aprobaciones, también en
+   demostraciones, y solo con lotes por caducar.
+8. Que «una vez por lote» no bloquee lo que entra después del mismo lote.
+9. Que leer las reglas exija ver toda la empresa (Gerencia limitada a un
+   almacén no las ve).

@@ -164,6 +164,8 @@ export type AutomationAction = {
   options: readonly AutomationField[];
   /** What the subject must carry for it to make sense. */
   needs?: readonly SubjectRef[];
+  /** Only with these triggers (none: any that provides what it needs). */
+  onlyTriggers?: readonly string[];
   /** A rule of its options the fields alone cannot say (a message or null). */
   check?(options: Readonly<Record<string, unknown>>): string | null;
   run(context: ActionContext): Promise<ActionOutcome>;
@@ -174,7 +176,7 @@ const KEY = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){1,2}$/;
 function assertFields(owner: string, fields: readonly AutomationField[]) {
   const keys = new Set<string>();
   for (const field of fields) {
-    if (!/^[a-z][a-z0-9_]*$/.test(field.key)) {
+    if (!/^[a-z][A-Za-z0-9_]*$/.test(field.key)) {
       throw new Error(`Bad field ${field.key} of ${owner}`);
     }
     if (keys.has(field.key)) throw new Error(`Repeated field of ${owner}`);
@@ -390,7 +392,8 @@ function readFields(
   fields: readonly AutomationField[],
   raw: unknown,
   known: KnownValues,
-): { ok: true; values: Record<string, unknown> } | { ok: false; error: string } {
+):
+  { ok: true; values: Record<string, unknown> } | { ok: false; error: string } {
   const source =
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
@@ -419,7 +422,8 @@ export function parseRuleDefinition(
     facilityIds: ReadonlySet<string>;
     known: KnownValues;
   },
-): { ok: true; rule: RuleDefinition } | { ok: false; errors: DefinitionErrors } {
+):
+  { ok: true; rule: RuleDefinition } | { ok: false; errors: DefinitionErrors } {
   const errors: DefinitionErrors = {};
   const name = plainLine(input.name, AUTOMATION_NAME_MAX + 1);
   if (name.length < 3) errors.name = "Escribe un nombre de al menos 3 letras.";
@@ -444,7 +448,11 @@ export function parseRuleDefinition(
 
   let conditions: Record<string, unknown> = {};
   if (trigger) {
-    const read = readFields(trigger.conditions, input.conditions, catalog.known);
+    const read = readFields(
+      trigger.conditions,
+      input.conditions,
+      catalog.known,
+    );
     if (read.ok) conditions = read.values;
     else errors.conditions = read.error;
   }
@@ -475,7 +483,8 @@ export function parseRuleDefinition(
       used.add(action.key);
       if (
         trigger &&
-        action.needs?.some((need) => !trigger.provides.includes(need))
+        (action.needs?.some((need) => !trigger.provides.includes(need)) ||
+          (action.onlyTriggers && !action.onlyTriggers.includes(trigger.key)))
       ) {
         errors.actions = `«${action.label}» no aplica a «${trigger.label}».`;
         break;
@@ -550,7 +559,9 @@ export function ruleSentence(
   labels: { categories: ReadonlyMap<string, string> },
 ): string {
   const trigger = catalog.triggers.find((each) => each.key === rule.triggerKey);
-  const when = trigger ? trigger.label : "Cuando ocurre algo que ya no se ofrece";
+  const when = trigger
+    ? trigger.label
+    : "Cuando ocurre algo que ya no se ofrece";
   const where = facilityName ? `, en ${facilityName}` : "";
   const ifs: string[] = [];
   for (const field of trigger?.conditions ?? []) {
@@ -558,7 +569,9 @@ export function ruleSentence(
     if (value === undefined) continue;
     if (field.kind === "flag") ifs.push(field.label.toLowerCase());
     else if (field.kind === "number") {
-      ifs.push(`${field.label.toLowerCase()} ${value}${field.unit ? ` ${field.unit}` : ""}`);
+      ifs.push(
+        `${field.label.toLowerCase()} ${value}${field.unit ? ` ${field.unit}` : ""}`,
+      );
     } else {
       const list = (Array.isArray(value) ? value : [value]).map((item) =>
         field.source

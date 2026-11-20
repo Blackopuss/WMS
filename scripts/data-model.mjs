@@ -175,6 +175,14 @@ export const AREAS = [
     ],
   },
   {
+    id: "automations",
+    title: "Plataforma › Automatizaciones",
+    doc: "automations",
+    summary:
+      "Reglas de cada empresa («cuando pasa algo, si se cumple, hacer esto»), a nombre de quién actúan, y el historial de lo que hizo cada una o por qué no (90 días).",
+    models: ["AutomationRule", "AutomationRun"],
+  },
+  {
     id: "custom-fields",
     title: "Plataforma › Campos personalizados",
     doc: "custom-fields",
