@@ -49,6 +49,21 @@ Lo que ya existe y se reutiliza:
   titular sigue necesitando sus dos pasos para entrar. Quien quiera explorar
   se registra primero en el sitio (sin crear empresa) y después el personal
   le prepara la demostración.
+- **Esa cuenta queda ligada a la demostración**: como una cuenta tiene una
+  sola empresa, la marca no cambia y nada se borra, la cuenta ya no puede
+  crear después su empresa real; la empresa real se crea con otra cuenta.
+  Por eso la consola **confirma en dos pasos**: el primer envío solo busca
+  la cuenta y muestra su nombre y correo («Crear demostración para
+  <nombre>»), y solo un segundo envío con el mismo correo crea la empresa
+  (el servidor vuelve a revisar todo bajo el candado de la cuenta). Al
+  crearla, **un correo a la cuenta** («Te preparamos una empresa de
+  demostración…», sin enlaces) dice qué es, cuánto dura, qué no hace y que
+  la empresa real se crea con otra cuenta; se manda después de confirmar la
+  transacción y, si falla, la creación no se deshace (queda en el registro
+  del servidor).
+- **Nunca para una cuenta del personal de plataforma**: la consola y una
+  empresa de cliente quedan separadas; el personal usa otra cuenta para ver
+  una demostración.
 - **No se crean cuentas**: ni titulares sin dueño, ni personas de ejemplo,
   ni contraseñas fijas, ni cuentas compartidas. Si la demostración necesita
   más personas, la titular las invita como en cualquier empresa (cuentan en
@@ -92,7 +107,11 @@ basta leerla antes de la transacción de la operación):
   uno real, la orden no se manda.
 - Siguen permitidos (son de la propia titular o de su equipo): invitar
   personas (dentro del cupo), los avisos por correo que cada persona elige,
-  los correos de cuenta (confirmar, recuperar, alertas de acceso).
+  los correos de cuenta (confirmar, recuperar, alertas de acceso),
+  exportaciones e importaciones, archivos y fotos (dentro de 1 GB),
+  terminales compartidas con PIN y el acceso de soporte que abre la
+  titular. La ficha de la empresa en la consola la marca «Demostración» y
+  no ofrece registrar pagos (el servicio también lo rechaza).
 
 ### Qué plan trae
 
@@ -200,6 +219,22 @@ cuenta.
    crea su empresa real con otra cuenta).
 6. Que no haya personas de ejemplo.
 7. Que al fallar no se reintente y no se pueda repetir con la misma cuenta.
+8. **Que la cuenta de una demostración no pueda tener después su empresa
+   real** (tiene que usar otra cuenta). Cambiarlo exige permitir dos
+   empresas por cuenta o convertir una demostración en empresa real.
+9. Que una cuenta del personal de plataforma no pueda ser titular de una
+   demostración.
+
+## Riesgos aceptados y notas
+
+- La titular puede entrar antes de que el worker termine de cargar y crear
+  algo con una clave que el juego usa (por ejemplo `PRD-A`): esa carga
+  termina «No se pudo preparar» con el motivo y lo cargado se queda.
+- La base no impide una fila `demo_company` en una empresa que no es
+  demostración (se quitó ese disparador porque leía otra tabla): solo
+  `createDemoCompany` la escribe, y la marca que deciden las operaciones es
+  `organization.isDemo`, no esa fila.
+- La lista de la consola muestra las 50 más recientes y lo dice.
 
 ## Lo que no entra
 

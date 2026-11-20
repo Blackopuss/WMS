@@ -73,6 +73,28 @@ export function DemoForm({
           />
         )}
       </FormField>
+      {state.confirm && (
+        <>
+          <input type="hidden" name="confirm" value="1" />
+          <input
+            type="hidden"
+            name="confirmedEmail"
+            value={state.confirm.email}
+          />
+          <p
+            role="status"
+            className="rounded-lg border bg-muted/50 p-3 text-sm"
+          >
+            La demostración será para{" "}
+            <span className="font-medium">{state.confirm.name}</span> (
+            <span className="[overflow-wrap:anywhere]">
+              {state.confirm.email}
+            </span>
+            ). Esa cuenta quedará ligada a la demostración: su empresa real
+            tendrá que crearse con otra cuenta.
+          </p>
+        </>
+      )}
       <Button type="submit" disabled={pending}>
         {pending && (
           <Loader2
@@ -81,7 +103,9 @@ export function DemoForm({
             className="animate-spin motion-reduce:animate-none"
           />
         )}
-        Crear empresa de demostración
+        {state.confirm
+          ? `Crear demostración para ${state.confirm.name}`
+          : "Revisar la cuenta"}
       </Button>
     </form>
   );

@@ -20,7 +20,7 @@ línea (ADR 0037).
 | Plan de una empresa | `provisioning.ts` | `provisionCompany` (límites, módulos, vigencia; avisa el trabajo a medias de lo que se quita), `getCompanyPlan`, `isPlatformStaff`, `requirePlatformStaff` |
 | Vista del plan | `overview.ts`, `validity.ts` | `getPlanOverview`, aviso de vencimiento (`renewalDaysLeft`, `renewalText`) |
 | Pagos | `payments.ts` | `recordManualPayment` (rechaza una empresa de demostración), `reverseManualPayment`, `listManualPayments` |
-| Demostraciones | `demo.ts` | `createDemoCompany` (personal de plataforma: empresa marcada `isDemo` para una cuenta existente sin empresa, con plan fijo `DEMO_PLAN` y el trabajo `platform.demo_prepare` en la misma transacción), `claimDemoPreparation`/`finishDemoPreparation` (el worker), `listDemoCompanies`, `getDemoCompany` (WMS-44) |
+| Demostraciones | `demo.ts` | `createDemoCompany` (personal de plataforma: empresa marcada `isDemo` para una cuenta existente sin empresa, con plan fijo `DEMO_PLAN` y el trabajo `platform.demo_prepare` en la misma transacción), `previewDemoAccount` (muestra a quién irá antes de crear; nunca a personal de plataforma), `claimDemoPreparation`/`finishDemoPreparation` (el worker), `listDemoCompanies`, `getDemoCompany` (WMS-44) |
 | Sitio | `prices.ts`, `contact.ts` | `PLAN_TIERS` (referencia, nada se cobra desde aquí), `CONTACT_EMAIL` |
 
 ## Permisos

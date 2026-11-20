@@ -2,13 +2,14 @@ import "server-only";
 
 import { z } from "zod";
 
-import { DEFAULT_TIME_ZONE, newId } from "@/lib";
+import { DEFAULT_TIME_ZONE, log, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
 import {
   FILE_STORAGE_LIMIT_KEY,
   ensureQuotaRows,
   invalidateEntitlements,
 } from "@/platform/entitlements";
+import { demoCompanyEmail, sendEmail } from "@/platform/email";
 import { enqueueJob } from "@/platform/jobs";
 import { ensureDefaultLocation } from "@/platform/locations";
 import {
@@ -140,37 +141,23 @@ export async function createDemoCompany(
     .map((contract) => contract.id);
 
   const organizationId = newId();
+  let ownerOf: { name: string; email: string } | null = null;
   try {
     await db.$transaction(async (tx) => {
       // Lock the account first, before any other read, so two requests
       // cannot both pass the check below (READ COMMITTED: what is read
       // after the lock is what is committed now).
       const [owner] = await tx.$queryRaw<
-        { id: string; emailVerified: number | boolean }[]
-      >`SELECT id, emailVerified FROM user WHERE email = ${email} FOR UPDATE`;
-      if (!owner) {
+        { id: string; name: string; emailVerified: number | boolean }[]
+      >`SELECT id, name, emailVerified FROM user WHERE email = ${email} FOR UPDATE`;
+      const problem = await accountProblem(tx, owner);
+      if (problem || !owner) {
         throw new Refused({
           ok: false,
-          fieldErrors: { email: "No hay una cuenta con ese correo." },
+          fieldErrors: { email: problem ?? NO_ACCOUNT },
         });
       }
-      if (!owner.emailVerified) {
-        throw new Refused({
-          ok: false,
-          fieldErrors: {
-            email: "Esa cuenta todavía no confirma su correo.",
-          },
-        });
-      }
-      const memberships = await tx.membership.count({
-        where: { userId: owner.id, status: "ACTIVE" },
-      });
-      if (memberships > 0) {
-        throw new Refused({
-          ok: false,
-          fieldErrors: { email: "Esa cuenta ya pertenece a una empresa." },
-        });
-      }
+      ownerOf = { name: owner.name, email };
       const now = new Date();
       const validUntil = demoValidUntil(now);
       await tx.organization.create({
@@ -258,7 +245,87 @@ export async function createDemoCompany(
     throw error;
   }
   invalidateEntitlements(organizationId);
+  // After the commit, and never undoing it: the person learns that this
+  // account is now the titular of a demonstration (and what that means).
+  if (ownerOf) {
+    const { name: ownerName, email: to } = ownerOf;
+    try {
+      await sendEmail(
+        demoCompanyEmail({
+          to,
+          name: ownerName,
+          organizationName: name,
+          days: DEMO_PLAN.days,
+        }),
+      );
+    } catch (error) {
+      log.warn("demo_company_email_failed", {
+        organizationId,
+        error: error instanceof Error ? error.name : "unknown",
+      });
+    }
+  }
   return { ok: true, organizationId };
+}
+
+const NO_ACCOUNT = "No hay una cuenta con ese correo.";
+
+/**
+ * Why an account cannot receive a demonstration, or null. The same rules
+ * for the preview (no lock) and for creating it (under the account lock).
+ */
+async function accountProblem(
+  client: Pick<typeof db, "membership" | "platformStaff">,
+  owner: { id: string; emailVerified: number | boolean } | undefined,
+): Promise<string | null> {
+  if (!owner) return NO_ACCOUNT;
+  if (!owner.emailVerified) return "Esa cuenta todavía no confirma su correo.";
+  const [memberships, staff] = await Promise.all([
+    client.membership.count({ where: { userId: owner.id, status: "ACTIVE" } }),
+    client.platformStaff.count({ where: { userId: owner.id } }),
+  ]);
+  // The console and a customer company stay apart: platform staff use a
+  // separate account to look at a demonstration.
+  if (staff > 0) {
+    return "Esa cuenta es del personal de plataforma: usa otra cuenta para la demostración.";
+  }
+  if (memberships > 0) return "Esa cuenta ya pertenece a una empresa.";
+  return null;
+}
+
+export type DemoPreviewResult =
+  | { ok: true; name: string; email: string }
+  | { ok: false; fieldErrors: Partial<Record<DemoField, string>> };
+
+/**
+ * The account a demonstration would go to, before creating it (platform
+ * staff only): the console shows its name and asks to confirm, so a typo
+ * in the email does not tie someone else's account to a demonstration.
+ * Writes nothing; creating checks everything again under the lock.
+ */
+export async function previewDemoAccount(
+  staffUserId: string,
+  input: { email: string },
+): Promise<DemoPreviewResult> {
+  if (!(await isPlatformStaff(staffUserId))) {
+    return { ok: false, fieldErrors: { email: NO_ACCOUNT } };
+  }
+  const parsed = demoSchema.shape.email.safeParse(String(input.email ?? ""));
+  if (!parsed.success) {
+    return {
+      ok: false,
+      fieldErrors: { email: parsed.error.issues[0]?.message ?? NO_ACCOUNT },
+    };
+  }
+  const owner = await db.user.findUnique({
+    where: { email: parsed.data },
+    select: { id: true, name: true, email: true, emailVerified: true },
+  });
+  const problem = await accountProblem(db, owner ?? undefined);
+  if (problem || !owner) {
+    return { ok: false, fieldErrors: { email: problem ?? NO_ACCOUNT } };
+  }
+  return { ok: true, name: owner.name, email: owner.email };
 }
 
 // ── Preparation, by the worker ──────────────────────────────────────────

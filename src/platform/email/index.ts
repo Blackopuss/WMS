@@ -19,6 +19,7 @@ export {
   backupCodeUsedEmail,
   backupCodesRegeneratedEmail,
   dailyDigestEmail,
+  demoCompanyEmail,
   existingAccountEmail,
   invitationEmail,
   mfaDisabledEmail,

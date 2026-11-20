@@ -8,10 +8,12 @@ import { listDemoCompanies, requirePlatformStaff } from "@/platform/billing";
 
 import { demoStatusText } from "./status";
 
+const DEMO_LIST_LIMIT = 50;
+
 /** Demonstration companies (WMS-44, ADR 0089), newest first. */
 export default async function DemostracionesPage() {
   const staff = await requirePlatformStaff();
-  const demos = await listDemoCompanies(staff.userId);
+  const demos = await listDemoCompanies(staff.userId, DEMO_LIST_LIMIT);
   const now = new Date();
 
   return (
@@ -62,6 +64,11 @@ export default async function DemostracionesPage() {
             ))}
           </ul>
         </section>
+      )}
+      {demos.length >= DEMO_LIST_LIMIT && (
+        <p className="text-sm text-muted-foreground">
+          Se muestran las {DEMO_LIST_LIMIT} más recientes.
+        </p>
       )}
     </PageContainer>
   );

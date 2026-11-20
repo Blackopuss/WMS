@@ -76,7 +76,7 @@ export default async function EmpresaInternaPage({
       </Link>
       <PageHeader
         title={company.name}
-        description={`Empresa creada el ${formatDate(company.createdAt)}.`}
+        description={`${company.isDemo ? "Demostración · " : ""}Empresa creada el ${formatDate(company.createdAt)}.`}
       />
 
       <section
@@ -96,7 +96,20 @@ export default async function EmpresaInternaPage({
         </dl>
       </section>
 
-      <PaymentForm action={recordPaymentAction.bind(null, company.id)} />
+      {/* WMS-44: a demonstration is never charged (the service refuses too). */}
+      {company.isDemo ? (
+        <p className="text-sm text-muted-foreground">
+          Es una empresa de demostración: no recibe pagos.{" "}
+          <Link
+            href={`/interno/demostraciones/${company.id}`}
+            className="inline-flex min-h-11 items-center font-medium text-primary underline underline-offset-4 sm:min-h-0"
+          >
+            Ver la demostración
+          </Link>
+        </p>
+      ) : (
+        <PaymentForm action={recordPaymentAction.bind(null, company.id)} />
+      )}
 
       <section
         aria-labelledby="pagos"

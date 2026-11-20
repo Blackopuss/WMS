@@ -424,6 +424,8 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ### ManualPayment · `manual_payment`
 
+A bank transfer (SPEI) registered by platform staff while billing is assisted (PIL-11, ADR 0027). Registering it moves the end of the plan (`validUntilBefore` → `validUntilAfter`). Immutable (triggers): a mistake is undone by a REVERSAL row pointing to the payment, which takes the same months back.
+
 De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 | Columna | Tipo | Por omisión | Nota |

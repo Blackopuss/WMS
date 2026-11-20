@@ -24,9 +24,11 @@ import {
   getDemoCompany,
   listCompaniesForStaff,
   listDemoCompanies,
+  previewDemoAccount,
   recordManualPayment,
 } from "@/platform/billing";
 import { createProduct } from "@/platform/catalog";
+import { memoryOutboxFor } from "@/platform/email";
 import { getEntitlements } from "@/platform/entitlements";
 import { createOrganization } from "@/platform/tenancy";
 import { db, forOrganization } from "@/server";
@@ -165,6 +167,54 @@ describe("creating a demonstration", () => {
       ok: false,
       fieldErrors: { dataset: expect.any(String) },
     });
+  });
+
+  it("shows whose account it is before creating anything", async () => {
+    const owner = await newUser("Ana Prueba");
+    expect(await previewDemoAccount(staff, { email: owner.email })).toEqual({
+      ok: true,
+      name: "Ana Prueba",
+      email: owner.email,
+    });
+    expect(await db.membership.count({ where: { userId: owner.id } })).toBe(0);
+    const someone = await newUser();
+    expect(
+      await previewDemoAccount(someone.id, { email: owner.email }),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("is never for an account of platform staff", async () => {
+    const other = await newUser("Otra persona del personal");
+    await db.platformStaff.create({ data: { userId: other.id } });
+    const message = expect.stringContaining("personal de plataforma");
+    expect(
+      await previewDemoAccount(staff, { email: other.email }),
+    ).toMatchObject({ ok: false, fieldErrors: { email: message } });
+    expect(
+      await createDemoCompany(
+        moduleRegistry,
+        staff,
+        input(other.email),
+        options,
+      ),
+    ).toMatchObject({ ok: false, fieldErrors: { email: message } });
+    expect(await db.membership.count({ where: { userId: other.id } })).toBe(0);
+  });
+
+  it("tells the account, which stays tied to the demonstration", async () => {
+    const { owner } = await newDemo();
+    const mail = memoryOutboxFor(owner.email);
+    expect(mail).toHaveLength(1);
+    expect(mail[0]!.subject).toContain("empresa de demostración");
+    expect(mail[0]!.text).toContain("otra cuenta");
+    expect(mail[0]!.text).not.toMatch(/https?:\/\//);
+    // That account cannot create its real company afterwards.
+    expect(
+      await createOrganization(owner.id, {
+        name: "Empresa real",
+        timeZone: "",
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   it("creates the company, its plan and one job in one go", async () => {

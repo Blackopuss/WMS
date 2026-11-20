@@ -68,10 +68,12 @@ export {
   finishDemoPreparation,
   getDemoCompany,
   listDemoCompanies,
+  previewDemoAccount,
 } from "./demo";
 export type {
   CreateDemoResult,
   DemoCompanyView,
   DemoField,
   DemoInput,
+  DemoPreviewResult,
 } from "./demo";
