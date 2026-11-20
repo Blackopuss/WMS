@@ -28,7 +28,13 @@ import {
   updatePlanDraft,
   uploadInspectionPhoto,
 } from "@/modules/quality";
-import { processDocuments } from "@/modules/registry";
+import {
+  approvalTypes,
+  moduleRegistry,
+  processDocuments,
+} from "@/modules/registry";
+import { decideApproval, updateApprovalRule } from "@/platform/approvals";
+import { deactivateModule } from "@/platform/billing";
 import { invalidateEntitlements } from "@/platform/entitlements";
 import {
   completeStage,
@@ -685,6 +691,237 @@ describe("scope, plan and photos", () => {
         photoIds: [fileId],
       }),
     ).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("authorized losses and places that take nothing available (ADR 0091)", () => {
+  it("losses wait for quality.loss: nothing written, held, and applied as who asked", async () => {
+    const at = await produced();
+    const { owner } = at;
+    expect(
+      await updateApprovalRule(owner, approvalTypes, "quality.loss", {
+        enabled: true,
+        roles: ["quality_inspector"],
+        allowSelfApproval: false,
+      }),
+    ).toMatchObject({ ok: true });
+    const ana = await member(owner.organizationId, ["quality_inspector"]);
+    const boss = await member(owner.organizationId, ["quality_inspector"]);
+    const started = await start(ana, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const fileId = await photo(ana, started.inspectionId);
+    const decideKey = key();
+    const asked = await decideInspection(ana, {
+      inspectionId: started.inspectionId,
+      idempotencyKey: decideKey,
+      outcomes: [{ status: "AVAILABLE", quantity: "9" }],
+      missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+      photoIds: [fileId],
+    });
+    expect(asked).toMatchObject({ ok: false, reason: "pending_approval" });
+    if (asked.ok || !asked.requestId) return;
+    expect(await balanceOf(owner.organizationId, at.crate, "INSPECTION")).toBe(
+      "10",
+    );
+    // The same key again is the same request; anything else waits.
+    expect(
+      await decideInspection(ana, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: decideKey,
+        outcomes: [{ status: "AVAILABLE", quantity: "9" }],
+        missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+        photoIds: [fileId],
+      }),
+    ).toMatchObject({ reason: "pending_approval", repeated: true });
+    expect(
+      await decideInspection(boss, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [{ status: "AVAILABLE", quantity: "10" }],
+      }),
+    ).toMatchObject({
+      ok: false,
+      formError: expect.stringContaining("espera"),
+    });
+    expect(
+      await cancelInspection(ana, {
+        inspectionId: started.inspectionId,
+        reason: "Me equivoqué",
+      }),
+    ).toMatchObject({ ok: false });
+    // Who asked does not authorize their own losses.
+    expect(
+      await decideApproval(ana, approvalTypes, asked.requestId, {
+        decision: "approve",
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await decideApproval(boss, approvalTypes, asked.requestId, {
+        decision: "approve",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await balanceOf(owner.organizationId, at.crate, "AVAILABLE")).toBe(
+      "9",
+    );
+    const decided = await db.qualityInspection.findFirstOrThrow({
+      where: { id: started.inspectionId },
+    });
+    expect(decided).toMatchObject({
+      state: "DECIDED",
+      decidedByUserId: ana.userId,
+    });
+    expect(
+      await db.evidencePhoto.count({
+        where: { qualityInspectionId: started.inspectionId },
+      }),
+    ).toBe(1);
+    // A decision without losses never waits.
+    const again = await produced();
+    await updateApprovalRule(again.owner, approvalTypes, "quality.loss", {
+      enabled: true,
+      roles: ["quality_inspector"],
+      allowSelfApproval: false,
+    });
+    const direct = await start(again.owner, again);
+    if (!direct.ok) throw new Error(JSON.stringify(direct));
+    expect(
+      await decideInspection(again.owner, {
+        inspectionId: direct.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [{ status: "AVAILABLE", quantity: "10" }],
+      }),
+    ).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+    await balanced(again.owner.organizationId);
+  });
+
+  it("expires when who asked lost the permission (NEG-20)", async () => {
+    const at = await produced();
+    const { owner } = at;
+    await updateApprovalRule(owner, approvalTypes, "quality.loss", {
+      enabled: true,
+      roles: ["quality_inspector"],
+      allowSelfApproval: false,
+    });
+    const ana = await member(owner.organizationId, ["quality_inspector"]);
+    const boss = await member(owner.organizationId, ["quality_inspector"]);
+    const started = await start(ana, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    const asked = await decideInspection(ana, {
+      inspectionId: started.inspectionId,
+      idempotencyKey: key(),
+      outcomes: [{ status: "AVAILABLE", quantity: "9" }],
+      missing: [{ cause: "MERMA", quantity: "1", reason: "Se rompió" }],
+      photoIds: [await photo(ana, started.inspectionId)],
+    });
+    if (asked.ok || !asked.requestId) throw new Error(JSON.stringify(asked));
+    await db.membership.updateMany({
+      where: { organizationId: owner.organizationId, userId: ana.userId },
+      data: { status: "DISABLED" },
+    });
+    expect(
+      await decideApproval(boss, approvalTypes, asked.requestId, {
+        decision: "approve",
+      }),
+    ).toMatchObject({ ok: false });
+    expect(await balanceOf(owner.organizationId, at.crate, "INSPECTION")).toBe(
+      "10",
+    );
+    const request = await db.approvalRequest.findFirstOrThrow({
+      where: { id: asked.requestId },
+    });
+    expect(request.status).toBe("EXPIRED");
+    await balanced(owner.organizationId);
+  });
+
+  it("approving inside a quarantine asks for another place", async () => {
+    const shop = await workshop(QUALITY);
+    const { owner } = shop;
+    await setting(owner, "production.report.photo", "optional");
+    const quarantine = await place(owner, "Cuarentena", { type: "QUARANTINE" });
+    const area = await place(owner, "Línea en cuarentena", {
+      type: "PRODUCTION",
+      parentId: quarantine,
+      level: 2,
+    });
+    const orderId = await order(owner, shop.crate, area, "5");
+    await releaseProductionOrder(owner, orderId);
+    const done = await reportProduction(owner, orderId, {
+      good: "2",
+      idempotencyKey: key(),
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const line = await db.productionReportLine.findFirstOrThrow({
+      where: { reportId: done.reportId, kind: "OUTPUT" },
+    });
+    const at = { crate: shop.crate, area, lineId: line.id };
+    const started = await start(owner, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [{ status: "AVAILABLE", quantity: "2" }],
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { "outcome.0.toLocationId": expect.any(String) },
+    });
+    expect(
+      await decideInspection(owner, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [
+          { status: "AVAILABLE", quantity: "2", toLocationId: shop.shelf },
+        ],
+      }),
+    ).toMatchObject({ ok: true });
+    await balanced(owner.organizationId);
+  });
+});
+
+describe("Calidad and production.output.verify", () => {
+  it("with Calidad, production.output.verify verifies for nobody; without it, open ones can be let go", async () => {
+    const at = await produced();
+    const { owner } = at;
+    const encargado = await member(owner.organizationId, [
+      "production_supervisor",
+    ]);
+    const boss = await member(owner.organizationId, ["warehouse"]);
+    for (const actor of [encargado, boss]) {
+      await expect(start(actor, at)).rejects.toMatchObject({
+        kind: "forbidden",
+      });
+    }
+    const inspector = await member(owner.organizationId, ["quality_inspector"]);
+    const started = await start(inspector, at);
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    // Calidad goes away: the verification stays, held; who verifies
+    // produced output lets go of it.
+    await deactivateModule(moduleRegistry, {
+      organizationId: owner.organizationId,
+      moduleId: "quality",
+      actorUserId: null,
+    });
+    invalidateEntitlements(owner.organizationId);
+    const view = await getInspection(encargado, started.inspectionId);
+    expect(view?.canCancel).toBe(true);
+    expect(
+      await decideInspection(encargado, {
+        inspectionId: started.inspectionId,
+        idempotencyKey: key(),
+        outcomes: [{ status: "AVAILABLE", quantity: "10" }],
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await cancelInspection(encargado, {
+        inspectionId: started.inspectionId,
+        reason: "Ya no hay Calidad",
+      }),
+    ).toMatchObject({ ok: true });
+    const again = await start(encargado, at);
+    expect(again).toMatchObject({ ok: true });
     await balanced(owner.organizationId);
   });
 });

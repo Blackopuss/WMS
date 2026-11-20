@@ -24,6 +24,8 @@ import { company, member } from "./company";
  * permission, and what the platform console asks before removing it.
  */
 const NOT_SERVICES = new Set([
+  "applyApprovedLoss",
+  "lossOpenKey",
   "canInspectionMove",
   "causesFor",
   "decisionTotals",

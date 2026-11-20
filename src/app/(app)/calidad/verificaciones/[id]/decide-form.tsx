@@ -78,6 +78,10 @@ export function DecideForm({
   );
   useFocusFirstError(formRef, state);
   useEffect(() => {
+    if (state.pendingRequestId) {
+      router.push(`/aprobaciones/${state.pendingRequestId}?pedida=1`);
+      return;
+    }
     if (state.ok) {
       toast.success(state.summary ?? "Se decidió la verificación.");
       router.refresh();

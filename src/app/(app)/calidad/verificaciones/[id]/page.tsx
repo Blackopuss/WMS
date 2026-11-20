@@ -143,6 +143,21 @@ export default async function VerificacionPage({
         </p>
       )}
 
+      {view.waitingApproval && (
+        <p
+          role="status"
+          className="max-w-3xl rounded-xl border bg-card p-4 text-sm"
+        >
+          Sus pérdidas esperan autorización.{" "}
+          <Link
+            href={`/aprobaciones/${view.waitingApproval}`}
+            className={inlineLink}
+          >
+            Ver la solicitud
+          </Link>
+        </p>
+      )}
+
       {view.state === "OPEN" && view.canDecide && !view.waitsFor && (
         <DecideForm view={view} places={places} idempotencyKey={newId()} />
       )}

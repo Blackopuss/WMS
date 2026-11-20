@@ -3,6 +3,12 @@
 // 0091).
 // Other modules and app/ may import only from this file.
 export { qualityModule } from "./contract";
+export {
+  OUTPUT_LOSS_APPROVAL,
+  QUALITY_LOSS_APPROVAL,
+  lossOpenKey,
+} from "./approval-keys";
+export { QUALITY_APPROVAL_TYPES } from "./approvals";
 export { qualityOpenWork } from "./deactivation";
 export {
   ARCHIVED_DEFECTS_PAGE_SIZE,
@@ -96,6 +102,7 @@ export {
 export type { InspectionState } from "./inspection-states";
 export {
   INSPECTION_PAGE_SIZE,
+  applyApprovedLoss,
   cancelInspection,
   countOpenInspections,
   decideInspection,

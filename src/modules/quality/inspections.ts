@@ -7,6 +7,7 @@ import {
   STOCK_STATUS_LABELS,
   StatusChangeRejected,
   applyReturnDecision,
+  checkPlacement,
   createPutawayTasks,
   formatCustomerReturnNumber,
   formatStock,
@@ -28,11 +29,22 @@ import {
   formatReportNumber,
   reachesProductionReport,
 } from "@/modules/production";
+import {
+  ApprovalExpired,
+  approvalRequired,
+  openApprovalRequest,
+  type ApprovalContext,
+  type ApprovalTx,
+} from "@/platform/approvals";
 import { recordAuditEvent } from "@/platform/audit";
-import { isAllowed } from "@/platform/authorization";
+import {
+  companyModules,
+  isAllowed,
+  permissionsOf,
+} from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { parseQuantity } from "@/platform/catalog";
-import { getEntitlements } from "@/platform/entitlements";
+import { getEntitlements, readModuleStates } from "@/platform/entitlements";
 import {
   attachEvidencePhotos,
   deleteFile,
@@ -64,6 +76,11 @@ import {
   type TenantDb,
 } from "@/server";
 
+import {
+  OUTPUT_LOSS_APPROVAL,
+  QUALITY_LOSS_APPROVAL,
+  lossOpenKey,
+} from "./approval-keys";
 import {
   CAUSE_LABELS,
   INSPECTED_STATUSES,
@@ -149,9 +166,17 @@ export type InspectionField =
 
 export type InspectionFailure = {
   ok: false;
-  reason: "invalid" | "not_found" | "not_allowed" | "over_capacity";
+  reason:
+    | "invalid"
+    | "not_found"
+    | "not_allowed"
+    | "over_capacity"
+    | "pending_approval";
   fieldErrors?: Partial<Record<string, string>>;
   formError?: string;
+  /** pending_approval: the request that waits. */
+  requestId?: string;
+  repeated?: true;
 };
 
 class Rejected extends Error {
@@ -201,20 +226,44 @@ const QUALITY_PERMISSION = {
  */
 async function accessFor(actor: Actor, action: Action): Promise<Mode> {
   const entitlements = await getEntitlements(actor.organizationId);
-  if (entitlements.moduleState("quality") !== "none") {
+  const quality = entitlements.moduleState("quality");
+  const production = entitlements.moduleState("production");
+  const asQuality = async () => {
     await assertModulePermission(
       actor.organizationId,
       actor.userId,
       QUALITY_PERMISSION[action],
     );
     return { byQuality: true };
+  };
+  const asProduction = async () => {
+    await assertModulePermission(
+      actor.organizationId,
+      actor.userId,
+      action === "read" ? "production.order.read" : "production.output.verify",
+    );
+    return { byQuality: false };
+  };
+  if (quality === "active") return asQuality();
+  if (quality === "read_only") {
+    // Calidad was taken away (or the plan expired): what it verified is
+    // still read; while Producción is in use, produced output is verified
+    // without Calidad again (P5) and its open verifications can be let go.
+    if (action === "read") {
+      if (
+        await isAllowed(
+          actor.organizationId,
+          actor.userId,
+          "quality.inspection.read",
+        )
+      ) {
+        return asQuality();
+      }
+      return asProduction();
+    }
+    return production === "active" ? asProduction() : asQuality();
   }
-  await assertModulePermission(
-    actor.organizationId,
-    actor.userId,
-    action === "read" ? "production.order.read" : "production.output.verify",
-  );
-  return { byQuality: false };
+  return asProduction();
 }
 
 const photoPurpose = (byQuality: boolean): FilePurpose =>
@@ -910,6 +959,8 @@ export type InspectionView = {
   defects: { id: string; name: string; severity: string }[];
   /** «Esperando: Lijado (Producción)»; null when it does not wait. */
   waitsFor: string | null;
+  /** Its losses wait for an authorization: the request. */
+  waitingApproval: string | null;
   canDecide: boolean;
   canCancel: boolean;
   photoRequiredForReject: boolean;
@@ -1010,7 +1061,9 @@ export async function getInspection(
   const client = forOrganization(actor.organizationId);
   const row = await lockedOrReadInspection(client, id36(inspectionId));
   if (!row) return null;
-  if (!mode.byQuality && row.origin !== "PRODUCTION") return null;
+  if (!mode.byQuality && row.origin !== "PRODUCTION" && !row.byQuality) {
+    return null;
+  }
   if (
     (await locationsOutOfScope(client, actor.userId, [row.locationId])).length >
     0
@@ -1132,13 +1185,36 @@ export async function getInspection(
   const entitlements = await getEntitlements(actor.organizationId);
   const writable =
     entitlements.moduleState(row.byQuality ? "quality" : "production") ===
-      "active" && row.byQuality === mode.byQuality;
+      "active" &&
+    (row.byQuality
+      ? entitlements.moduleState("quality") === "active"
+      : entitlements.moduleState("quality") !== "active");
   const canDecide = allowedDecide && writable;
+  // Calidad taken away with this verification open: who verifies produced
+  // output lets go of it (ADR 0091).
+  const orphan =
+    row.byQuality &&
+    entitlements.moduleState("quality") !== "active" &&
+    entitlements.moduleState("production") === "active" &&
+    (await isAllowed(
+      actor.organizationId,
+      actor.userId,
+      "production.output.verify",
+    ));
   const canCancel =
     row.state === "OPEN" &&
-    writable &&
-    (row.createdByUserId === actor.userId || allowedDecide);
+    (orphan ||
+      (writable && (row.createdByUserId === actor.userId || allowedDecide)));
 
+  const waitingApproval =
+    row.state === "OPEN"
+      ? ((
+          await client.approvalRequest.findFirst({
+            where: { openKey: lossOpenKey(row.id), status: "PENDING" },
+            select: { id: true },
+          })
+        )?.id ?? null)
+      : null;
   const waitsFor =
     row.state === "OPEN" && origin === "PRODUCTION" && row.productionReportId
       ? await operationWaits(
@@ -1295,8 +1371,9 @@ export async function getInspection(
     })),
     defects,
     waitsFor,
-    canDecide,
-    canCancel,
+    waitingApproval,
+    canDecide: canDecide && !waitingApproval,
+    canCancel: canCancel && !waitingApproval,
     photoRequiredForReject:
       row.byQuality &&
       (await readSetting(client, EVIDENCE_PHOTO)) === "required",
@@ -1366,12 +1443,33 @@ export async function decideInspection(
   actor: Actor,
   input: DecideInspectionInput,
 ): Promise<DecideInspectionResult> {
-  const { organizationId, userId } = actor;
   const mode = await accessFor(actor, "decide");
+  return decideCore(actor, input, mode, null);
+}
+
+/** A decision authorized by someone else (`quality.loss`), inside its transaction. */
+type Authorized = {
+  tx: Tx;
+  requestId: string;
+  authorizedByName: string | null;
+};
+
+/**
+ * The decision itself: `decideInspection` opens its own transaction; the
+ * effect of an authorization (`applyApprovedLoss`) runs it inside the
+ * transaction of the approval, as who asked, and never asks again.
+ */
+async function decideCore(
+  actor: Actor,
+  input: DecideInspectionInput,
+  mode: Mode,
+  authorized: Authorized | null,
+): Promise<DecideInspectionResult> {
+  const { organizationId, userId } = actor;
   const key = String(input.idempotencyKey ?? "").trim();
   if (!KEY.test(key))
     return { ok: false, reason: "invalid", formError: BAD_KEY };
-  const client = forOrganization(organizationId);
+  const client: Client | Tx = authorized?.tx ?? forOrganization(organizationId);
   const known = await lockedOrReadInspection(client, id36(input.inspectionId));
   if (!known || (!mode.byQuality && known.origin !== "PRODUCTION")) {
     return { ok: false, reason: "not_found", formError: NOT_FOUND };
@@ -1495,482 +1593,572 @@ export async function decideInspection(
     String(id ?? "").slice(0, 36),
   );
 
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await client.$transaction(async (tx) => {
-        await lockRows(tx, "product", [known.productId]);
-        await lockRows(tx, "location", [known.locationId, ...destinations]);
-        if (returnId) await lockRows(tx, "customerReturn", [returnId]);
-        await lockRows(tx, "qualityInspection", [known.id]);
-        const row = await lockedOrReadInspection(tx, known.id);
-        if (!row) return stop("not_found", NOT_FOUND);
-        if (
-          (await locationsOutOfScope(tx, userId, [row.locationId])).length > 0
-        ) {
-          return stop("not_found", NOT_FOUND);
-        }
-        const numberText = formatInspectionNumber(row.number);
-        if (row.state !== "OPEN") {
-          if (
-            row.state === "DECIDED" &&
-            row.decideKey === key &&
-            row.decidedByUserId === userId
-          ) {
-            return {
-              ok: true as const,
-              inspectionId: row.id,
-              repeated: true as const,
-              summary: `La verificación ${numberText} ya estaba decidida. No se registró de nuevo.`,
-            };
-          }
-          return stop(
-            "not_allowed",
-            row.state === "DECIDED"
-              ? `La verificación ${numberText} ya se decidió.`
-              : `La verificación ${numberText} se canceló.`,
-          );
-        }
-        const used = await tx.qualityInspection.findFirst({
-          where: { decideKey: key },
-          select: { id: true },
-        });
-        if (used) return stop("not_allowed", KEY_REUSED);
-        if (row.byQuality !== mode.byQuality) {
-          return stop(
-            "not_allowed",
-            row.byQuality
-              ? "Esta verificación se empezó con Calidad: la decide Calidad."
-              : "Esta verificación se empezó sin Calidad: cancélala y vuelve a empezarla.",
-          );
-        }
-        const outside = await locationsOutOfScope(tx, userId, destinations);
-        if (outside.length > 0) {
-          return stop(
-            "not_allowed",
-            "Esa ubicación no está en tus zonas.",
-            "outcomes",
-          );
-        }
-
-        // Plan, answers, sampling and defects (only with Calidad).
-        const planOrigin = PLAN_ORIGIN[origin];
-        const plan =
-          row.byQuality && planOrigin
-            ? await inspectionPlanFor(
-                tx,
-                organizationId,
-                row.productId,
-                planOrigin,
-              )
-            : null;
-        const sampling: Sampling = row.byQuality
-          ? (plan?.sampling ?? (await samplingWithoutPlan(tx, organizationId)))
-          : { mode: "full" };
-        const answers: {
-          pointId: string;
-          answer: string | null;
-          result: string;
-        }[] = [];
-        let pointAsksPhoto = false;
-        const answerErrors: Record<string, string> = {};
-        for (const point of plan?.points ?? []) {
-          const typed = String(input.answers?.[point.id] ?? "");
-          const judged = judgeAnswer(point, typed);
-          if (!judged.ok) {
-            answerErrors[`answer.${point.id}`] = judged.error;
-            continue;
-          }
-          if (point.photo && judged.result !== "skipped") pointAsksPhoto = true;
-          answers.push({
-            pointId: point.id,
-            answer:
-              judged.result === "skipped"
-                ? null
-                : cleanText(typed).slice(0, 500),
-            result: judged.result,
-          });
-        }
-        if (Object.keys(answerErrors).length > 0) {
-          throw new Rejected({
-            ok: false,
-            reason: "invalid",
-            fieldErrors: answerErrors,
-          });
-        }
-        let checked: Decimal | null = null;
-        if (row.byQuality) {
-          if (sampling.mode === "full") checked = totals.counted;
-          else if (sampling.rule) {
-            checked = sampleSize(
-              sampling.rule,
-              totals.counted,
-              product.quantityStep.toString(),
-            );
-          } else if (totals.counted.greaterThan(0)) {
-            const parsed = parseQuantity(rule, String(input.checked ?? ""));
-            if (!parsed.ok) return stop("invalid", parsed.error, "checked");
-            if (parsed.quantity.greaterThan(totals.counted)) {
-              return stop(
-                "invalid",
-                "No puedes revisar más de lo que contaste.",
-                "checked",
-              );
-            }
-            checked = parsed.quantity;
-          } else checked = dec(0);
-        }
-        const defects: { defectId: string; quantity: Decimal }[] = [];
-        if (row.byQuality && (input.defects ?? []).length > 0) {
-          const wanted = (input.defects ?? []).slice(0, 20);
-          const ids = [...new Set(wanted.map((each) => id36(each.defectId)))];
-          const found = await tx.qualityDefect.findMany({
-            where: { id: { in: ids.filter(Boolean) }, archivedAt: null },
-            select: { id: true },
-          });
-          const known = new Set(found.map((each) => each.id));
-          for (const each of wanted) {
-            const defectId = id36(each.defectId);
-            if (!known.has(defectId))
-              return stop(
-                "invalid",
-                "Elige un defecto de la lista.",
-                "defects",
-              );
-            const parsed = parseQuantity(rule, String(each.quantity ?? ""));
-            if (!parsed.ok) return stop("invalid", parsed.error, "defects");
-            if (parsed.quantity.greaterThan(totals.counted)) {
-              return stop(
-                "invalid",
-                "Un defecto no puede estar en más piezas de las que contaste.",
-                "defects",
-              );
-            }
-            if (defects.some((d) => d.defectId === defectId)) {
-              return stop(
-                "invalid",
-                "Cada defecto va una sola vez.",
-                "defects",
-              );
-            }
-            defects.push({ defectId, quantity: parsed.quantity });
-          }
-        }
-        const evidenceSetting = row.byQuality
-          ? await readSetting(tx, EVIDENCE_PHOTO)
-          : "optional";
-        if (
-          photoIds.length === 0 &&
-          needsPhoto({
-            missing: totals.missing,
-            pointAsksPhoto,
-            rejectsOrQuarantines: outcomes.some(
-              (each) =>
-                each.status === "REJECTED" || each.status === "QUARANTINE",
-            ),
-            evidenceSetting,
-          })
-        ) {
-          return stop(
-            "invalid",
-            totals.missing.greaterThan(0)
-              ? "Agrega una foto de lo que se contó: falta algo de lo esperado."
-              : "Agrega al menos una foto.",
-            "photos",
-          );
-        }
-
-        // The writes: each destination (in the order of its place, so two
-        // verifications take capacity rows in the same order), then each
-        // cause.
-        const holdSource = { sourceType: HOLD_SOURCE, sourceId: row.id };
-        const results: {
-          kind: "OUTCOME" | "MISSING";
-          status: InspectionOutcome | null;
-          cause: MissingCause | null;
-          quantity: Decimal;
-          reason: string | null;
-          locationId: string | null;
-          movementId: string;
-        }[] = [];
-        const arrivals: PutawayArrival[] = [];
-        const ordered = [...outcomes].sort((a, b) =>
-          a.toLocationId < b.toLocationId
-            ? -1
-            : a.toLocationId > b.toLocationId
-              ? 1
-              : a.index - b.index,
-        );
-        for (const each of ordered) {
-          const reason = each.reason ?? "Se verificó y cumple.";
-          let movementId: string;
-          try {
-            if (origin === "CUSTOMER_RETURN") {
-              const done = await applyReturnDecision(tx, actor, {
-                returnId,
-                lineId: row.customerReturnLineId!,
-                outcome: each.status as
-                  "AVAILABLE" | "DAMAGED" | "REJECTED" | "REPAIR",
-                quantity: each.quantity.toString(),
-                reason: `${numberText} · ${reason}`.slice(0, 300),
-                toLocationId: each.toLocationId,
-                serials: each.serials,
-                idempotencyKey: newId(),
-                acceptCapacity: input.acceptCapacity === true,
-                inspectionId: row.id,
-              });
-              movementId = done.movementId!;
-            } else {
-              const done = await writeStatusChange(
-                tx,
-                actor,
-                {
-                  productId: row.productId,
-                  locationId: row.locationId,
-                  from: status,
-                  to: each.status,
-                  toLocationId: each.toLocationId,
-                  lotId: row.lotId,
-                  quantity: each.quantity.toString(),
-                  serials: each.serials,
-                  reason: `${numberText} · ${reason}`.slice(0, 500),
-                  idempotencyKey: newId(),
-                  reference: numberText,
-                },
-                { acceptCapacity: input.acceptCapacity === true, holdSource },
-              );
-              movementId = done.movementId;
-              if (each.status === "AVAILABLE") {
-                arrivals.push({
-                  productId: row.productId,
-                  locationId: each.toLocationId,
-                  lotId: row.lotId,
-                  quantity: each.quantity,
-                  status: "AVAILABLE",
-                });
-              }
-            }
-          } catch (error) {
-            if (error instanceof StatusChangeRejected) {
-              const message =
-                Object.values(error.result.fieldErrors).find(Boolean) ??
-                error.result.formError ??
-                "No se pudo registrar.";
-              return stop(
-                error.result.reason,
-                message,
-                `outcome.${each.index}.quantity`,
-              );
-            }
-            if (error instanceof CustomerReturnRejected) {
-              const message =
-                error.result.formError ??
-                Object.values(error.result.fieldErrors ?? {}).find(Boolean) ??
-                "No se pudo registrar.";
-              return stop(
-                "not_allowed",
-                message,
-                `outcome.${each.index}.quantity`,
-              );
-            }
-            throw error;
-          }
-          results.push({
-            kind: "OUTCOME",
-            status: each.status,
-            cause: null,
-            quantity: each.quantity,
-            reason: each.reason,
-            locationId: each.toLocationId,
-            movementId,
-          });
-        }
-        for (const each of missing) {
-          const done = await postDisposal(tx, actor, {
-            lines: [
-              {
-                productId: row.productId,
-                locationId: row.locationId,
-                status,
-                lotId: row.lotId,
-                quantity: each.quantity,
-                serials: each.serials,
-              },
-            ],
-            reason:
-              `${numberText} · ${CAUSE_LABELS[each.cause]}: ${each.reason}`.slice(
-                0,
-                500,
-              ),
-            reference: numberText,
-            idempotencyKey: null,
-            allowedStatuses: [status],
-            holdSource,
-          });
-          if (!done.ok) {
-            return stop(
-              "invalid",
-              done.error,
-              done.field === "serials"
-                ? `missing.${each.index}.serials`
-                : `missing.${each.index}.quantity`,
-            );
-          }
-          results.push({
-            kind: "MISSING",
-            status: null,
-            cause: each.cause,
-            quantity: each.quantity,
-            reason: each.reason,
-            locationId: null,
-            movementId: done.movementId,
-          });
-        }
-        await tx.qualityInspectionResult.createMany({
-          data: results.map((each, position) => ({
-            id: newId(),
-            organizationId,
-            inspectionId: row.id,
-            position,
-            kind: each.kind,
-            status: each.status,
-            cause: each.cause,
-            quantity: each.quantity.toString(),
-            reason: each.reason,
-            locationId: each.locationId,
-            movementId: each.movementId,
-          })),
-        });
-        if (answers.length > 0) {
-          await tx.qualityInspectionAnswer.createMany({
-            data: answers.map((each) => ({
-              id: newId(),
-              organizationId,
-              inspectionId: row.id,
-              pointId: each.pointId,
-              answer: each.answer,
-              result: each.result,
-            })),
-          });
-        }
-        if (defects.length > 0) {
-          await tx.qualityInspectionDefect.createMany({
-            data: defects.map((each) => ({
-              id: newId(),
-              organizationId,
-              inspectionId: row.id,
-              defectId: each.defectId,
-              quantity: each.quantity.toString(),
-            })),
-          });
-        }
-        if (row.holdId) await releaseHold(tx, row.holdId);
-        await tx.qualityInspection.update({
-          where: { id: row.id },
-          data: {
-            state: "DECIDED",
-            openKey: null,
-            decideKey: key,
-            decidedByUserId: userId,
-            decidedAt: new Date(),
-            countedQuantity: totals.counted.toString(),
-            checkedQuantity: checked?.toString() ?? null,
-            sampling: row.byQuality
-              ? sampling.mode === "full"
-                ? "FULL"
-                : "SAMPLE"
-              : null,
-            planVersionId: plan?.versionId ?? null,
-          },
-        });
-        const putaway = await createPutawayTasks(tx, actor, arrivals);
-
-        // P10, P10b: the stage «Verificación» of the lot, after the writes.
-        if (origin === "PRODUCTION" && row.productionReportId) {
-          const stages = await assertStagesDone(
-            tx,
-            PRODUCTION_BATCH_PROCESS,
-            row.productionReportId,
-            PRODUCTION_BATCH_VERIFICATION_OPERATION,
-          );
-          if (!stages.ok) return stop("not_allowed", stages.message);
-          await completeOperationStage(
-            tx,
-            PRODUCTION_BATCH_PROCESS,
-            actor,
-            row.productionReportId,
-            PRODUCTION_BATCH_VERIFICATION_OPERATION,
-          );
-        }
-
-        if (photoIds.length > 0) {
-          const attached = await attachEvidencePhotos(tx, actor, {
-            purpose: photoPurpose(row.byQuality),
-            owner: { kind: "quality_inspection", id: row.id },
-            fileIds: photoIds,
-          });
-          if (!attached.ok) return stop("invalid", attached.error, "photos");
-        }
-
-        const unit = row.unitCode;
-        const parts = results.map(
-          (each) =>
-            `${
-              each.kind === "OUTCOME"
-                ? OUTCOME_LABELS[each.status!]
-                : CAUSE_LABELS[each.cause!]
-            }: ${formatStock(each.quantity.toString(), unit)}`,
-        );
-        const summary = `${numberText}: ${parts.join("; ")}.`;
-        if (origin === "PRODUCTION" && row.productionReportId) {
-          const report = await tx.productionReport.findFirst({
-            where: { id: row.productionReportId },
-            select: {
-              createdByUserId: true,
-              order: { select: { areaLocationId: true } },
-            },
-          });
-          if (report) {
-            await notify(tx, OUTPUT_VERIFIED_NOTICE, {
-              organizationId,
-              actorUserId: userId,
-              text: `Se verificó lo que reportaste de ${product.name} (${numberText}): aprobadas ${formatStock(totals.approved.toString(), unit)} de ${formatStock(row.expectedQuantity.toString(), unit)}.`.slice(
-                0,
-                300,
-              ),
-              href: `/calidad/verificaciones/${row.id}`,
-              key: `quality_inspection:${row.id}:decided`,
-              to: {
-                userIds: [report.createdByUserId],
-                permissions: ["production.order.read"],
-                locationId: report.order.areaLocationId,
-              },
-            });
-          }
-        }
-        await recordAuditEvent(tx, {
-          organizationId,
-          actorUserId: userId,
-          action: "quality.inspection_decided",
-          target: { type: "quality_inspection", id: row.id },
-          metadata: {
-            verificacion: numberText,
-            producto: product.name,
-            resultado: parts.join("; ").slice(0, 400),
-          },
-        });
+  const run = async (tx: Tx): Promise<DecideInspectionResult> => {
+    await lockRows(tx, "product", [known.productId]);
+    await lockRows(tx, "location", [known.locationId, ...destinations]);
+    if (returnId) await lockRows(tx, "customerReturn", [returnId]);
+    await lockRows(tx, "qualityInspection", [known.id]);
+    const row = await lockedOrReadInspection(tx, known.id);
+    if (!row) return stop("not_found", NOT_FOUND);
+    if ((await locationsOutOfScope(tx, userId, [row.locationId])).length > 0) {
+      return stop("not_found", NOT_FOUND);
+    }
+    const numberText = formatInspectionNumber(row.number);
+    if (row.state !== "OPEN") {
+      if (
+        row.state === "DECIDED" &&
+        row.decideKey === key &&
+        row.decidedByUserId === userId
+      ) {
         return {
           ok: true as const,
           inspectionId: row.id,
-          summary: putaway.note ? `${summary} ${putaway.note}` : summary,
+          repeated: true as const,
+          summary: `La verificación ${numberText} ya estaba decidida. No se registró de nuevo.`,
         };
-      }, LOCKING_TRANSACTION);
+      }
+      return stop(
+        "not_allowed",
+        row.state === "DECIDED"
+          ? `La verificación ${numberText} ya se decidió.`
+          : `La verificación ${numberText} se canceló.`,
+      );
+    }
+    // WMS-30B (ADR 0091): a decision with losses that waits for its
+    // authorization keeps the verification as it is; the same key again is
+    // the same request.
+    const waiting = await tx.approvalRequest.findFirst({
+      where: { openKey: lossOpenKey(row.id), status: "PENDING" },
+      select: { id: true, idempotencyKey: true, requestedByUserId: true },
+    });
+    if (waiting && waiting.id !== authorized?.requestId) {
+      if (
+        waiting.idempotencyKey === key &&
+        waiting.requestedByUserId === userId
+      ) {
+        return {
+          ok: false,
+          reason: "pending_approval",
+          requestId: waiting.id,
+          repeated: true,
+          formError: "Esta decisión ya espera autorización.",
+        };
+      }
+      return stop(
+        "not_allowed",
+        `La verificación ${numberText} espera que alguien autorice sus pérdidas: no se decide ni se cancela mientras tanto.`,
+      );
+    }
+    const used = await tx.qualityInspection.findFirst({
+      where: { decideKey: key },
+      select: { id: true },
+    });
+    if (used) return stop("not_allowed", KEY_REUSED);
+    if (row.byQuality !== mode.byQuality) {
+      return stop(
+        "not_allowed",
+        row.byQuality
+          ? "Esta verificación se empezó con Calidad: la decide Calidad."
+          : "Esta verificación se empezó sin Calidad: cancélala y vuelve a empezarla.",
+      );
+    }
+    const outside = await locationsOutOfScope(tx, userId, destinations);
+    if (outside.length > 0) {
+      return stop(
+        "not_allowed",
+        "Esa ubicación no está en tus zonas.",
+        "outcomes",
+      );
+    }
+
+    // Plan, answers, sampling and defects (only with Calidad).
+    const planOrigin = PLAN_ORIGIN[origin];
+    const plan =
+      row.byQuality && planOrigin
+        ? await inspectionPlanFor(tx, organizationId, row.productId, planOrigin)
+        : null;
+    const sampling: Sampling = row.byQuality
+      ? (plan?.sampling ?? (await samplingWithoutPlan(tx, organizationId)))
+      : { mode: "full" };
+    const answers: {
+      pointId: string;
+      answer: string | null;
+      result: string;
+    }[] = [];
+    let pointAsksPhoto = false;
+    const answerErrors: Record<string, string> = {};
+    for (const point of plan?.points ?? []) {
+      const typed = String(input.answers?.[point.id] ?? "");
+      const judged = judgeAnswer(point, typed);
+      if (!judged.ok) {
+        answerErrors[`answer.${point.id}`] = judged.error;
+        continue;
+      }
+      if (point.photo && judged.result !== "skipped") pointAsksPhoto = true;
+      answers.push({
+        pointId: point.id,
+        answer:
+          judged.result === "skipped" ? null : cleanText(typed).slice(0, 500),
+        result: judged.result,
+      });
+    }
+    if (Object.keys(answerErrors).length > 0) {
+      throw new Rejected({
+        ok: false,
+        reason: "invalid",
+        fieldErrors: answerErrors,
+      });
+    }
+    let checked: Decimal | null = null;
+    if (row.byQuality) {
+      if (sampling.mode === "full") checked = totals.counted;
+      else if (sampling.rule) {
+        checked = sampleSize(
+          sampling.rule,
+          totals.counted,
+          product.quantityStep.toString(),
+        );
+      } else if (totals.counted.greaterThan(0)) {
+        const parsed = parseQuantity(rule, String(input.checked ?? ""));
+        if (!parsed.ok) return stop("invalid", parsed.error, "checked");
+        if (parsed.quantity.greaterThan(totals.counted)) {
+          return stop(
+            "invalid",
+            "No puedes revisar más de lo que contaste.",
+            "checked",
+          );
+        }
+        checked = parsed.quantity;
+      } else checked = dec(0);
+    }
+    const defects: { defectId: string; quantity: Decimal }[] = [];
+    if (row.byQuality && (input.defects ?? []).length > 0) {
+      const wanted = (input.defects ?? []).slice(0, 20);
+      const ids = [...new Set(wanted.map((each) => id36(each.defectId)))];
+      const found = await tx.qualityDefect.findMany({
+        where: { id: { in: ids.filter(Boolean) }, archivedAt: null },
+        select: { id: true },
+      });
+      const known = new Set(found.map((each) => each.id));
+      for (const each of wanted) {
+        const defectId = id36(each.defectId);
+        if (!known.has(defectId))
+          return stop("invalid", "Elige un defecto de la lista.", "defects");
+        const parsed = parseQuantity(rule, String(each.quantity ?? ""));
+        if (!parsed.ok) return stop("invalid", parsed.error, "defects");
+        if (parsed.quantity.greaterThan(totals.counted)) {
+          return stop(
+            "invalid",
+            "Un defecto no puede estar en más piezas de las que contaste.",
+            "defects",
+          );
+        }
+        if (defects.some((d) => d.defectId === defectId)) {
+          return stop("invalid", "Cada defecto va una sola vez.", "defects");
+        }
+        defects.push({ defectId, quantity: parsed.quantity });
+      }
+    }
+    const evidenceSetting = row.byQuality
+      ? await readSetting(tx, EVIDENCE_PHOTO)
+      : "optional";
+    if (
+      photoIds.length === 0 &&
+      needsPhoto({
+        missing: totals.missing,
+        pointAsksPhoto,
+        rejectsOrQuarantines: outcomes.some(
+          (each) => each.status === "REJECTED" || each.status === "QUARANTINE",
+        ),
+        evidenceSetting,
+      })
+    ) {
+      return stop(
+        "invalid",
+        totals.missing.greaterThan(0)
+          ? "Agrega una foto de lo que se contó: falta algo de lo esperado."
+          : "Agrega al menos una foto.",
+        "photos",
+      );
+    }
+
+    // Approving where nothing available is admitted (an area inside a
+    // «Cuarentena» or «Restauración», ADR 0072) asks for another place.
+    const stays = outcomes.filter(
+      (each) =>
+        each.status === "AVAILABLE" && each.toLocationId === row.locationId,
+    );
+    if (stays.length > 0) {
+      const placed = await checkPlacement(
+        tx,
+        [
+          {
+            productId: row.productId,
+            quantity: stays[0]!.quantity,
+            toLocationId: row.locationId,
+            fromLocationId: row.locationId,
+            status: "AVAILABLE",
+          },
+        ],
+        { mode: "skip" },
+      );
+      if (!placed.ok) {
+        return stop(
+          "invalid",
+          "Aquí no puede quedar nada disponible (es o está dentro de una cuarentena o una restauración): elige dónde quedan las aprobadas.",
+          `outcome.${stays[0]!.index}.toLocationId`,
+        );
+      }
+    }
+
+    // Losses (what is missing) wait for their own authorization when the
+    // company turns it on (ADR 0091, like `production.scrap`): nothing is
+    // written, the verification stays open and held.
+    const lossType = row.byQuality
+      ? QUALITY_LOSS_APPROVAL
+      : OUTPUT_LOSS_APPROVAL;
+    if (
+      !authorized &&
+      missing.length > 0 &&
+      (await approvalRequired(tx, lossType.key))
+    ) {
+      const lost = missing
+        .map(
+          (each) =>
+            `${formatStock(each.quantity.toString(), row.unitCode)} ${CAUSE_LABELS[each.cause].toLowerCase()} (${each.reason})`,
+        )
+        .join("; ");
+      const summary = `Pérdidas en ${numberText} de ${product.name}: ${lost}.`;
+      const asked = await openApprovalRequest(tx, lossType, actor, {
+        sourceType: "quality_inspection",
+        sourceId: row.id,
+        openKey: lossOpenKey(row.id),
+        idempotencyKey: key,
+        facilityId: row.facilityId,
+        locationId: row.locationId,
+        summary,
+        payload: { v: 1, inspectionId: row.id, input: lossPayloadOf(input) },
+      });
+      if (!asked.ok) {
+        return stop(
+          "not_allowed",
+          `La verificación ${numberText} ya espera autorización.`,
+        );
+      }
+      return {
+        ok: false,
+        reason: "pending_approval",
+        requestId: asked.requestId,
+        formError: `Quedó pendiente de autorización: ${summary}`.slice(0, 500),
+      };
+    }
+
+    // The writes: each destination (in the order of its place, so two
+    // verifications take capacity rows in the same order), then each
+    // cause.
+    const holdSource = { sourceType: HOLD_SOURCE, sourceId: row.id };
+    const results: {
+      kind: "OUTCOME" | "MISSING";
+      status: InspectionOutcome | null;
+      cause: MissingCause | null;
+      quantity: Decimal;
+      reason: string | null;
+      locationId: string | null;
+      movementId: string;
+    }[] = [];
+    const arrivals: PutawayArrival[] = [];
+    const ordered = [...outcomes].sort((a, b) =>
+      a.toLocationId < b.toLocationId
+        ? -1
+        : a.toLocationId > b.toLocationId
+          ? 1
+          : a.index - b.index,
+    );
+    for (const each of ordered) {
+      const reason = each.reason ?? "Se verificó y cumple.";
+      let movementId: string;
+      try {
+        if (origin === "CUSTOMER_RETURN") {
+          const done = await applyReturnDecision(tx, actor, {
+            returnId,
+            lineId: row.customerReturnLineId!,
+            outcome: each.status as
+              "AVAILABLE" | "DAMAGED" | "REJECTED" | "REPAIR",
+            quantity: each.quantity.toString(),
+            reason: `${numberText} · ${reason}`.slice(0, 300),
+            toLocationId: each.toLocationId,
+            serials: each.serials,
+            idempotencyKey: newId(),
+            acceptCapacity: input.acceptCapacity === true,
+            inspectionId: row.id,
+          });
+          movementId = done.movementId!;
+        } else {
+          const done = await writeStatusChange(
+            tx,
+            actor,
+            {
+              productId: row.productId,
+              locationId: row.locationId,
+              from: status,
+              to: each.status,
+              toLocationId: each.toLocationId,
+              lotId: row.lotId,
+              quantity: each.quantity.toString(),
+              serials: each.serials,
+              reason: `${numberText} · ${reason}`.slice(0, 500),
+              idempotencyKey: newId(),
+              reference: numberText,
+            },
+            { acceptCapacity: input.acceptCapacity === true, holdSource },
+          );
+          movementId = done.movementId;
+          if (each.status === "AVAILABLE") {
+            arrivals.push({
+              productId: row.productId,
+              locationId: each.toLocationId,
+              lotId: row.lotId,
+              quantity: each.quantity,
+              status: "AVAILABLE",
+            });
+          }
+        }
+      } catch (error) {
+        if (error instanceof StatusChangeRejected) {
+          const message =
+            Object.values(error.result.fieldErrors).find(Boolean) ??
+            error.result.formError ??
+            "No se pudo registrar.";
+          return stop(
+            error.result.reason,
+            message,
+            `outcome.${each.index}.quantity`,
+          );
+        }
+        if (error instanceof CustomerReturnRejected) {
+          const message =
+            error.result.formError ??
+            Object.values(error.result.fieldErrors ?? {}).find(Boolean) ??
+            "No se pudo registrar.";
+          return stop("not_allowed", message, `outcome.${each.index}.quantity`);
+        }
+        throw error;
+      }
+      results.push({
+        kind: "OUTCOME",
+        status: each.status,
+        cause: null,
+        quantity: each.quantity,
+        reason: each.reason,
+        locationId: each.toLocationId,
+        movementId,
+      });
+    }
+    for (const each of missing) {
+      const done = await postDisposal(tx, actor, {
+        lines: [
+          {
+            productId: row.productId,
+            locationId: row.locationId,
+            status,
+            lotId: row.lotId,
+            quantity: each.quantity,
+            serials: each.serials,
+          },
+        ],
+        reason:
+          `${numberText} · ${CAUSE_LABELS[each.cause]}: ${each.reason}`.slice(
+            0,
+            500,
+          ),
+        reference: numberText,
+        idempotencyKey: null,
+        allowedStatuses: [status],
+        holdSource,
+        authorizedBy: authorized
+          ? {
+              name: authorized.authorizedByName,
+              requestId: authorized.requestId,
+            }
+          : null,
+      });
+      if (!done.ok) {
+        return stop(
+          "invalid",
+          done.error,
+          done.field === "serials"
+            ? `missing.${each.index}.serials`
+            : `missing.${each.index}.quantity`,
+        );
+      }
+      results.push({
+        kind: "MISSING",
+        status: null,
+        cause: each.cause,
+        quantity: each.quantity,
+        reason: each.reason,
+        locationId: null,
+        movementId: done.movementId,
+      });
+    }
+    await tx.qualityInspectionResult.createMany({
+      data: results.map((each, position) => ({
+        id: newId(),
+        organizationId,
+        inspectionId: row.id,
+        position,
+        kind: each.kind,
+        status: each.status,
+        cause: each.cause,
+        quantity: each.quantity.toString(),
+        reason: each.reason,
+        locationId: each.locationId,
+        movementId: each.movementId,
+      })),
+    });
+    if (answers.length > 0) {
+      await tx.qualityInspectionAnswer.createMany({
+        data: answers.map((each) => ({
+          id: newId(),
+          organizationId,
+          inspectionId: row.id,
+          pointId: each.pointId,
+          answer: each.answer,
+          result: each.result,
+        })),
+      });
+    }
+    if (defects.length > 0) {
+      await tx.qualityInspectionDefect.createMany({
+        data: defects.map((each) => ({
+          id: newId(),
+          organizationId,
+          inspectionId: row.id,
+          defectId: each.defectId,
+          quantity: each.quantity.toString(),
+        })),
+      });
+    }
+    if (row.holdId) await releaseHold(tx, row.holdId);
+    await tx.qualityInspection.update({
+      where: { id: row.id },
+      data: {
+        state: "DECIDED",
+        openKey: null,
+        decideKey: key,
+        decidedByUserId: userId,
+        decidedAt: new Date(),
+        countedQuantity: totals.counted.toString(),
+        checkedQuantity: checked?.toString() ?? null,
+        sampling: row.byQuality
+          ? sampling.mode === "full"
+            ? "FULL"
+            : "SAMPLE"
+          : null,
+        planVersionId: plan?.versionId ?? null,
+      },
+    });
+    const putaway = await createPutawayTasks(tx, actor, arrivals);
+
+    // P10, P10b: the stage «Verificación» of the lot, after the writes.
+    if (origin === "PRODUCTION" && row.productionReportId) {
+      const stages = await assertStagesDone(
+        tx,
+        PRODUCTION_BATCH_PROCESS,
+        row.productionReportId,
+        PRODUCTION_BATCH_VERIFICATION_OPERATION,
+      );
+      if (!stages.ok) return stop("not_allowed", stages.message);
+      await completeOperationStage(
+        tx,
+        PRODUCTION_BATCH_PROCESS,
+        actor,
+        row.productionReportId,
+        PRODUCTION_BATCH_VERIFICATION_OPERATION,
+      );
+    }
+
+    if (photoIds.length > 0) {
+      const attached = await attachEvidencePhotos(tx, actor, {
+        purpose: photoPurpose(row.byQuality),
+        owner: { kind: "quality_inspection", id: row.id },
+        fileIds: photoIds,
+      });
+      if (!attached.ok) return stop("invalid", attached.error, "photos");
+    }
+
+    const unit = row.unitCode;
+    const parts = results.map(
+      (each) =>
+        `${
+          each.kind === "OUTCOME"
+            ? OUTCOME_LABELS[each.status!]
+            : CAUSE_LABELS[each.cause!]
+        }: ${formatStock(each.quantity.toString(), unit)}`,
+    );
+    const summary = `${numberText}: ${parts.join("; ")}.`;
+    if (origin === "PRODUCTION" && row.productionReportId) {
+      const report = await tx.productionReport.findFirst({
+        where: { id: row.productionReportId },
+        select: {
+          createdByUserId: true,
+          order: { select: { areaLocationId: true } },
+        },
+      });
+      if (report) {
+        await notify(tx, OUTPUT_VERIFIED_NOTICE, {
+          organizationId,
+          actorUserId: userId,
+          text: `Se verificó lo que reportaste de ${product.name} (${numberText}): aprobadas ${formatStock(totals.approved.toString(), unit)} de ${formatStock(row.expectedQuantity.toString(), unit)}.`.slice(
+            0,
+            300,
+          ),
+          href: `/calidad/verificaciones/${row.id}`,
+          key: `quality_inspection:${row.id}:decided`,
+          to: {
+            userIds: [report.createdByUserId],
+            permissions: ["production.order.read"],
+            locationId: report.order.areaLocationId,
+          },
+        });
+      }
+    }
+    await recordAuditEvent(tx, {
+      organizationId,
+      actorUserId: userId,
+      action: "quality.inspection_decided",
+      target: { type: "quality_inspection", id: row.id },
+      metadata: {
+        verificacion: numberText,
+        producto: product.name,
+        resultado: parts.join("; ").slice(0, 400),
+        ...(authorized
+          ? {
+              autorizadoPor: authorized.authorizedByName ?? "otra persona",
+              solicitud: authorized.requestId,
+            }
+          : {}),
+      },
+    });
+    return {
+      ok: true as const,
+      inspectionId: row.id,
+      summary: putaway.note ? `${summary} ${putaway.note}` : summary,
+    };
+  };
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return authorized
+        ? await run(authorized.tx)
+        : await (client as Client).$transaction(run, LOCKING_TRANSACTION);
     } catch (error) {
       if (error instanceof Rejected) return error.result;
       if (error instanceof CapacityNotice) return error.result;
       if (error instanceof ProcessStagesPending) {
         return { ok: false, reason: "not_allowed", formError: error.message };
       }
-      if (isTaskNumberClash(error) && attempt < 4) continue;
+      if (!authorized && isTaskNumberClash(error) && attempt < 4) continue;
       if (isClash(error, "decideKey")) {
         return { ok: false, reason: "not_allowed", formError: KEY_REUSED };
       }
@@ -2023,14 +2211,20 @@ export async function cancelInspection(
   }
   const client = forOrganization(organizationId);
   const known = await lockedOrReadInspection(client, id36(input.inspectionId));
-  if (!known || (!mode.byQuality && known.origin !== "PRODUCTION")) {
+  // Without Calidad (never hired, or taken away with verifications still
+  // open), who verifies produced output cancels any of them: cancelling
+  // only lets go of what it holds, it moves nothing (ADR 0091).
+  if (
+    !known ||
+    (!mode.byQuality && known.origin !== "PRODUCTION" && !known.byQuality)
+  ) {
     return { ok: false, reason: "not_found", formError: NOT_FOUND };
   }
-  const decides = await isAllowed(
-    organizationId,
-    userId,
-    known.byQuality ? "quality.inspection.decide" : "production.output.verify",
-  );
+  const permission =
+    known.byQuality && mode.byQuality
+      ? "quality.inspection.decide"
+      : "production.output.verify";
+  const decides = await isAllowed(organizationId, userId, permission);
   if (known.createdByUserId !== userId && !decides) {
     return {
       ok: false,
@@ -2043,11 +2237,11 @@ export async function cancelInspection(
   await assertModulePermission(
     organizationId,
     userId,
-    known.byQuality
-      ? decides
-        ? "quality.inspection.decide"
-        : "quality.inspection.create"
-      : "production.output.verify",
+    decides
+      ? permission
+      : mode.byQuality
+        ? "quality.inspection.create"
+        : "production.output.verify",
   );
   try {
     return await client.$transaction(async (tx) => {
@@ -2072,6 +2266,15 @@ export async function cancelInspection(
         return stop(
           "not_allowed",
           `La verificación ${numberText} ya se decidió.`,
+        );
+      }
+      const waiting = await tx.approvalRequest.count({
+        where: { openKey: lossOpenKey(row.id), status: "PENDING" },
+      });
+      if (waiting > 0) {
+        return stop(
+          "not_allowed",
+          `La verificación ${numberText} espera que alguien autorice sus pérdidas: retira esa solicitud para cancelarla.`,
         );
       }
       if (row.holdId) await releaseHold(tx, row.holdId);
@@ -2146,7 +2349,9 @@ export async function listInspections(
     ...(options.view === "closed"
       ? { state: { in: ["DECIDED" as const, "CANCELLED" as const] } }
       : { state: "OPEN" as const }),
-    ...(mode.byQuality ? {} : { origin: "PRODUCTION" as const }),
+    ...(mode.byQuality
+      ? {}
+      : { OR: [{ origin: "PRODUCTION" as const }, { byQuality: true }] }),
     ...(options.reportId ? { productionReportId: id36(options.reportId) } : {}),
     ...(isLimited(scoped) ? { location: scoped } : {}),
   };
@@ -2361,4 +2566,127 @@ export async function reportVerifications(
     });
   }
   return out;
+}
+
+// ── Authorized losses (quality.loss, production.verification_loss) ────
+
+/** What a request keeps of the decision: what the form sent, nothing else. */
+function lossPayloadOf(input: DecideInspectionInput) {
+  return {
+    inspectionId: id36(input.inspectionId),
+    idempotencyKey: String(input.idempotencyKey ?? "").slice(0, 64),
+    outcomes: (input.outcomes ?? []).slice(0, MAX_LINES).map((each) => ({
+      status: String(each.status ?? "").slice(0, 20),
+      quantity: String(each.quantity ?? "").slice(0, 20),
+      reason: each.reason ? String(each.reason).slice(0, REASON_MAX) : null,
+      toLocationId: each.toLocationId ? id36(each.toLocationId) : null,
+      serials:
+        typeof each.serials === "string" ? each.serials.slice(0, 2000) : null,
+    })),
+    missing: (input.missing ?? []).slice(0, MAX_LINES).map((each) => ({
+      cause: String(each.cause ?? "").slice(0, 20),
+      quantity: String(each.quantity ?? "").slice(0, 20),
+      reason: each.reason ? String(each.reason).slice(0, REASON_MAX) : null,
+      serials:
+        typeof each.serials === "string" ? each.serials.slice(0, 2000) : null,
+    })),
+    checked: input.checked ? String(input.checked).slice(0, 20) : null,
+    answers: Object.fromEntries(
+      Object.entries(input.answers ?? {})
+        .slice(0, 40)
+        .map(([pointId, answer]) => [
+          id36(pointId),
+          String(answer ?? "").slice(0, 500),
+        ]),
+    ),
+    defects: (input.defects ?? []).slice(0, 20).map((each) => ({
+      defectId: id36(each.defectId),
+      quantity: String(each.quantity ?? "").slice(0, 20),
+    })),
+    photoIds: (input.photoIds ?? []).slice(0, 10).map((id) => id36(id)),
+    acceptCapacity: input.acceptCapacity === true,
+  };
+}
+
+type LossPayload = ReturnType<typeof lossPayloadOf>;
+
+const LOSS_GONE =
+  "La verificación ya no está como cuando se pidió: que la decida otra vez quien la verifica.";
+
+/**
+ * The effect of authorizing the losses of a verification: redoes the
+ * whole decision as who asked, under the same locks and checks, in the
+ * transaction of the authorization. Expires when the verification is no
+ * longer open, when anything it decided no longer applies, or when who
+ * asked lost the membership, the permission or the scope (NEG-20).
+ */
+export async function applyApprovedLoss(
+  tx: ApprovalTx,
+  context: ApprovalContext,
+): Promise<{ outcome: string }> {
+  const payload = context.request.payload as {
+    v?: number;
+    input?: LossPayload;
+  };
+  if (payload?.v !== 1 || !payload.input) throw new ApprovalExpired(LOSS_GONE);
+  const client = tx as unknown as Tx;
+  const actor = {
+    organizationId: context.organizationId,
+    userId: context.request.requestedByUserId,
+  };
+  const byQuality = context.request.typeKey === QUALITY_LOSS_APPROVAL.key;
+  const permission = byQuality
+    ? "quality.inspection.decide"
+    : "production.output.verify";
+  const member = await client.membership.findFirst({
+    where: { userId: actor.userId, status: "ACTIVE" },
+    select: {
+      roles: { select: { role: true } },
+      organization: { select: { ownerUserId: true } },
+    },
+  });
+  if (!member) {
+    throw new ApprovalExpired(
+      "Quien pidió autorizar ya no trabaja en la empresa: que la decida alguien que sí.",
+    );
+  }
+  const subject = {
+    isOwner: member.organization.ownerUserId === actor.userId,
+    roles: member.roles.map((each) => each.role),
+    modules: companyModules(
+      await readModuleStates(client, actor.organizationId),
+    ),
+  };
+  if (!permissionsOf(subject).has(permission)) {
+    throw new ApprovalExpired(
+      "Quien pidió autorizar ya no puede decidir verificaciones: que la decida alguien que sí.",
+    );
+  }
+  let result: DecideInspectionResult;
+  try {
+    result = await decideCore(
+      actor,
+      payload.input as DecideInspectionInput,
+      { byQuality },
+      {
+        tx: client,
+        requestId: context.request.id,
+        authorizedByName: context.decidedByName,
+      },
+    );
+  } catch (error) {
+    if (error instanceof Rejected) result = error.result;
+    else if (error instanceof CapacityNotice) result = error.result;
+    else throw error;
+  }
+  if (!result.ok) {
+    throw new ApprovalExpired(
+      result.reason === "not_found"
+        ? "Quien pidió autorizar ya no alcanza esa ubicación, o la verificación ya no existe."
+        : (result.formError ??
+            Object.values(result.fieldErrors ?? {}).find(Boolean) ??
+            LOSS_GONE),
+    );
+  }
+  return { outcome: result.summary };
 }

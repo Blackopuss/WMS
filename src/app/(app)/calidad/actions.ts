@@ -102,6 +102,8 @@ export type DecideInspectionState = {
   error?: string;
   fieldErrors?: Partial<Record<string, string>>;
   overCapacity?: boolean;
+  /** The losses wait for an authorization: its request. */
+  pendingRequestId?: string;
   values: Record<string, string>;
   answers: number;
 };
@@ -170,6 +172,18 @@ export async function decideInspectionAction(
       photoIds,
       acceptCapacity: formData.get("acceptCapacity") === "1",
     });
+    if (
+      !result.ok &&
+      result.reason === "pending_approval" &&
+      result.requestId
+    ) {
+      revalidatePath(`/calidad/verificaciones/${idOf(fixed.inspectionId)}`);
+      return {
+        pendingRequestId: result.requestId,
+        values,
+        answers: previous.answers + 1,
+      };
+    }
     if (!result.ok) {
       // The service names the lines by position among the filled ones;
       // the form, by state or cause.

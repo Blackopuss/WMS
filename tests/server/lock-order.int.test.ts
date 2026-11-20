@@ -5,6 +5,7 @@ import {
   acceptTask,
   changeStockStatus,
   confirmPick,
+  disposeStock,
   createOutboundOrder,
   createTask,
   deliverTask,
@@ -1035,6 +1036,122 @@ describe("locks in one order (WMS-76)", () => {
         reported.status === "fulfilled" && reported.value.ok
           ? reported.value.reportId
           : null;
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    void cancelInspection;
+  }, 240_000);
+
+  it("deciding a verification never deadlocks with the reversal of its report, a new report, scrap, status changes and disposals of the same slot, nor with a second inspector (WMS-30B)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop(["inventory", "production", "quality"]);
+    await production.setting(owner, "production.report.photo", "optional");
+    await production.enter(owner, board, shelf, "3000");
+    await production.enter(owner, screw, shelf, "3000");
+    const inspectorA = await production.member(owner.organizationId, [
+      "quality_inspector",
+    ]);
+    const inspectorB = await production.member(owner.organizationId, [
+      "quality_inspector",
+    ]);
+    const id = await production.order(owner, crate, area, "400");
+    const released = await releaseProductionOrder(owner, id);
+    if (!released.ok) throw new Error(JSON.stringify(released));
+    const material = (await production.linesOf(id))[0]!;
+    const errors: string[] = [];
+    for (let round = 0; round < 6; round++) {
+      // A lot to verify, another left loose in the same slot (part of it
+      // damaged), and a third lot whose report is reversed meanwhile.
+      const lot = await reportProduction(owner, id, {
+        good: "4",
+        idempotencyKey: newId(),
+      });
+      const loose = await reportProduction(owner, id, {
+        good: "3",
+        idempotencyKey: newId(),
+      });
+      if (!lot.ok || !loose.ok) throw new Error(JSON.stringify([lot, loose]));
+      const damaged = await changeStockStatus(owner, {
+        productId: crate,
+        locationId: area,
+        from: "INSPECTION",
+        to: "DAMAGED",
+        quantity: "1",
+        reason: "Golpe",
+        idempotencyKey: newId(),
+      });
+      if (!damaged.ok) throw new Error(JSON.stringify(damaged));
+      const output = await db.productionReportLine.findFirstOrThrow({
+        where: { reportId: lot.reportId, kind: "OUTPUT" },
+      });
+      const started = await startInspection(inspectorA, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId: output.id,
+        idempotencyKey: newId(),
+      });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      const decide = (actor: typeof owner) =>
+        decideInspection(actor, {
+          inspectionId: started.inspectionId,
+          idempotencyKey: newId(),
+          outcomes: [
+            { status: "AVAILABLE", quantity: "3", toLocationId: shelf },
+            { status: "REJECTED", quantity: "1", reason: "No cumple" },
+          ],
+        });
+      const results = await Promise.allSettled([
+        decide(inspectorA),
+        decide(inspectorB),
+        reverseProductionReport(owner, lot.reportId, "Prueba de candados"),
+        reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+        reportMaterialScrap(owner, id, {
+          orderLineId: material.id,
+          quantity: "1",
+          reason: "Se rompió",
+          idempotencyKey: newId(),
+        }),
+        changeStockStatus(owner, {
+          productId: crate,
+          locationId: area,
+          from: "INSPECTION",
+          to: "REJECTED",
+          quantity: "1",
+          reason: "No cumple",
+          idempotencyKey: newId(),
+        }),
+        disposeStock(owner, {
+          productId: crate,
+          locationId: area,
+          status: "DAMAGED",
+          quantity: "1",
+          reason: "Se tira",
+          idempotencyKey: newId(),
+        }),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+      // Exactly one inspector decides; the reversal never takes what is held.
+      const decided = results
+        .slice(0, 2)
+        .filter(
+          (each) =>
+            each.status === "fulfilled" && (each.value as { ok: boolean }).ok,
+        ).length;
+      if (decided !== 1) errors.push(`round ${round}: ${decided} decisions`);
+      const reversed = results[2];
+      if (
+        reversed?.status === "fulfilled" &&
+        (reversed.value as { ok: boolean }).ok
+      ) {
+        errors.push(`round ${round}: a held lot was reversed`);
+      }
     }
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
