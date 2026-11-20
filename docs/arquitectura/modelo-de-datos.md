@@ -2,7 +2,7 @@
 
 <!-- Generado por scripts/data-model.mjs a partir de prisma/schema.prisma. No editar a mano: correr `node scripts/data-model.mjs`. -->
 
-151 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
+155 tablas en 32 áreas, en el orden de abajo. Para cada tabla: nombre del modelo de Prisma y de la tabla en MySQL, su comentario del esquema (en inglés, como el código), columnas, llaves únicas, índices y relaciones que guarda (las inversas se ven en la otra tabla). Un tipo con `?` admite `NULL`. Las reglas que viven en la base (`CHECK`, disparadores) están en `prisma/migrations/`, no en el esquema.
 
 | Área | Tablas | Documento |
 | --- | --- | --- |
@@ -36,7 +36,7 @@
 | Inventario › Equipos | 3 | [inventory](modulos/inventory.md) |
 | Inventario › Importaciones | 5 | [inventory](modulos/inventory.md) |
 | Compras | 11 | [purchasing](modulos/purchasing.md) |
-| Calidad | 6 | [quality](modulos/quality.md) |
+| Calidad | 10 | [quality](modulos/quality.md) |
 | Producción | 15 | [production](modulos/production.md) |
 
 ## Plataforma › Cuentas y sesiones
@@ -1418,13 +1418,14 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 | `warehouseTaskId` | `String? · Char(36)` |  | A warehouse task, photographed where it was left (WMS-37B, ADR 0076). |
 | `purchaseReceiptId` | `String? · Char(36)` |  | A receipt, for what was rejected at the door (WMS-84, ADR 0079). |
 | `productionReportId` | `String? · Char(36)` |  | A production report, photographed by who reports (WMS-29, ADR 0087). |
+| `qualityInspectionId` | `String? · Char(36)` |  | A verification of Calidad (WMS-30B, ADR 0091). |
 | `position` | `Int` |  | Order inside its owner (0, 1, 2…). |
 | `createdByUserId` | `String · Char(36)` |  |  |
 | `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
 
 - Únicas: (`organizationId`, `id`); (`organizationId`, `fileId`).
-- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`); (`organizationId`, `purchaseReceiptId`, `position`); (`organizationId`, `productionReportId`, `position`).
-- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict); `purchaseReceipt` → `PurchaseReceipt` por (`organizationId`, `purchaseReceiptId`) (al borrar: Restrict); `productionReport` → `ProductionReport` por (`organizationId`, `productionReportId`) (al borrar: Restrict).
+- Índices: (`organizationId`, `incidentId`, `position`); (`organizationId`, `incidentNoteId`); (`organizationId`, `processStepId`, `position`); (`organizationId`, `warehouseTaskId`, `position`); (`organizationId`, `purchaseReceiptId`, `position`); (`organizationId`, `productionReportId`, `position`); (`organizationId`, `qualityInspectionId`, `position`).
+- Relaciones: `file` → `StoredFile` por (`organizationId`, `fileId`) (al borrar: Restrict); `incident` → `Incident` por (`organizationId`, `incidentId`) (al borrar: Restrict); `incidentNote` → `IncidentNote` por (`organizationId`, `incidentNoteId`) (al borrar: Restrict); `processStep` → `ProcessStep` por (`organizationId`, `processStepId`) (al borrar: Restrict); `warehouseTask` → `WarehouseTask` por (`organizationId`, `warehouseTaskId`) (al borrar: Restrict); `purchaseReceipt` → `PurchaseReceipt` por (`organizationId`, `purchaseReceiptId`) (al borrar: Restrict); `productionReport` → `ProductionReport` por (`organizationId`, `productionReportId`) (al borrar: Restrict); `qualityInspection` → `QualityInspection` por (`organizationId`, `qualityInspectionId`) (al borrar: Restrict).
 
 ### StorageCleanup · `storage_cleanup`
 
@@ -3348,7 +3349,7 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 ## Calidad
 
-Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A).
+Planes de inspección de cada producto, con sus versiones, puntos de revisión y opciones, y el catálogo de defectos de la empresa (WMS-30A); las verificaciones con sus resultados, respuestas y defectos (WMS-30B).
 
 Documento: [modulos/quality.md](modulos/quality.md).
 
@@ -3480,6 +3481,112 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 
 - Únicas: (`organizationId`, `id`); `organizationId`.
 
+### QualityInspection · `quality_inspection`
+
+A verification (IN-0001): stock of one product, place, state and lot that waits for a decision, held while it is open (ADR 0068), and what was decided. Who and what it covers never change; the decision is written once (triggers). Never deleted.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `number` | `Int` |  |  |
+| `facilityId` | `String · Char(36)` |  |  |
+| `productId` | `String · Char(36)` |  |  |
+| `locationId` | `String · Char(36)` |  |  |
+| `stockStatus` | `StockStatus` |  | INSPECTION or QUARANTINE (CHECK). |
+| `lotId` | `String? · Char(36)` |  |  |
+| `origin` | `QualityInspectionOrigin` |  |  |
+| `productionReportId` | `String? · Char(36)` |  |  |
+| `productionReportLineId` | `String? · Char(36)` |  |  |
+| `purchaseReceiptLineId` | `String? · Char(36)` |  |  |
+| `customerReturnLineId` | `String? · Char(36)` |  |  |
+| `openKey` | `String? · Char(36)` |  | The origin line while it is open: one open verification per line. |
+| `expectedQuantity` | `Decimal · Decimal(12, 3)` |  | In the product's unit. |
+| `unitCode` | `String · VarChar(12)` |  |  |
+| `holdId` | `String? · Char(36)` |  | The stock_hold it made (none for a customer return, held by it). |
+| `byQuality` | `Boolean` |  | Made by Calidad (true) or, without Calidad, by who verifies produced output. |
+| `planVersionId` | `String? · Char(36)` |  |  |
+| `sampling` | `String? · VarChar(8)` |  | FULL or SAMPLE, fixed when it is decided. |
+| `checkedQuantity` | `Decimal? · Decimal(12, 3)` |  |  |
+| `countedQuantity` | `Decimal? · Decimal(12, 3)` |  |  |
+| `state` | `QualityInspectionState` | `OPEN` |  |
+| `startKey` | `String · VarChar(64)` |  |  |
+| `decideKey` | `String? · VarChar(64)` |  |  |
+| `note` | `String? · VarChar(500)` |  |  |
+| `createdByUserId` | `String · Char(36)` |  |  |
+| `createdAt` | `DateTime · DateTime(3)` | `now()` |  |
+| `decidedByUserId` | `String? · Char(36)` |  |  |
+| `decidedAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelledByUserId` | `String? · Char(36)` |  |  |
+| `cancelledAt` | `DateTime? · DateTime(3)` |  |  |
+| `cancelReason` | `String? · VarChar(300)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `number`); (`organizationId`, `openKey`); (`organizationId`, `startKey`); (`organizationId`, `decideKey`).
+- Índices: (`organizationId`, `facilityId`, `state`, `id`); (`organizationId`, `productionReportId`); (`organizationId`, `productionReportLineId`); (`organizationId`, `purchaseReceiptLineId`); (`organizationId`, `customerReturnLineId`).
+- Relaciones: `facility` → `Facility` por (`organizationId`, `facilityId`) (al borrar: Restrict); `product` → `Product` por (`organizationId`, `productId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `lot` → `Lot` por (`organizationId`, `lotId`) (al borrar: Restrict); `productionReportLine` → `ProductionReportLine` por (`organizationId`, `productionReportLineId`) (al borrar: Restrict); `purchaseReceiptLine` → `PurchaseReceiptLine` por (`organizationId`, `purchaseReceiptLineId`) (al borrar: Restrict); `customerReturnLine` → `CustomerReturnLine` por (`organizationId`, `customerReturnLineId`) (al borrar: Restrict); `planVersion` → `QualityPlanVersion` por (`organizationId`, `planVersionId`) (al borrar: Restrict).
+
+### QualityInspectionResult · `quality_inspection_result`
+
+What a verification decided: a destination of what was counted (OUTCOME, with its state) or a cause of what was missing (MISSING: MERMA, OVER_REPORTED, OTHER), with its movement. Never changes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `inspectionId` | `String · Char(36)` |  |  |
+| `position` | `Int` |  |  |
+| `kind` | `QualityInspectionResultKind` |  |  |
+| `status` | `StockStatus?` |  | OUTCOME: the state it ends in. |
+| `cause` | `String? · VarChar(16)` |  | MISSING: MERMA, OVER_REPORTED or OTHER. |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+| `reason` | `String? · VarChar(300)` |  |  |
+| `locationId` | `String? · Char(36)` |  |  |
+| `movementId` | `String · Char(36)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `inspectionId`, `position`).
+- Índices: (`organizationId`, `movementId`).
+- Relaciones: `inspection` → `QualityInspection` por (`organizationId`, `inspectionId`) (al borrar: Restrict); `location` → `Location` por (`organizationId`, `locationId`) (al borrar: Restrict); `movement` → `StockMovement` por (`organizationId`, `movementId`) (al borrar: Restrict).
+
+### QualityInspectionAnswer · `quality_inspection_answer`
+
+The answer to one point of the plan and how it was judged. Never changes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `inspectionId` | `String · Char(36)` |  |  |
+| `pointId` | `String · Char(36)` |  |  |
+| `answer` | `String? · VarChar(500)` |  |  |
+| `result` | `String · VarChar(8)` |  | pass, fail, noted or skipped. |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `inspectionId`, `pointId`).
+- Relaciones: `inspection` → `QualityInspection` por (`organizationId`, `inspectionId`) (al borrar: Restrict); `point` → `QualityPlanPoint` por (`organizationId`, `pointId`) (al borrar: Restrict).
+
+### QualityInspectionDefect · `quality_inspection_defect`
+
+A defect found, with how many pieces had it. Never changes.
+
+De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
+
+| Columna | Tipo | Por omisión | Nota |
+| --- | --- | --- | --- |
+| `id` | `String · Char(36)` |  | llave primaria |
+| `organizationId` | `String · Char(36)` |  |  |
+| `inspectionId` | `String · Char(36)` |  |  |
+| `defectId` | `String · Char(36)` |  |  |
+| `quantity` | `Decimal · Decimal(12, 3)` |  |  |
+
+- Únicas: (`organizationId`, `id`); (`organizationId`, `inspectionId`, `defectId`).
+- Índices: (`organizationId`, `defectId`).
+- Relaciones: `inspection` → `QualityInspection` por (`organizationId`, `inspectionId`) (al borrar: Restrict); `defect` → `QualityDefect` por (`organizationId`, `defectId`) (al borrar: Restrict).
+
 #### Enumeraciones de Calidad
 
 - `QualityPlanStatus`: `DRAFT`, `ACTIVE`, `RETIRED`, `DISCARDED`.
@@ -3487,6 +3594,9 @@ De empresa: lleva `organizationId` y está en `TENANT_MODELS`.
 - `QualitySampleRule`: `FIXED`, `PERCENT`.
 - `QualityPointKind`: `CHECK`, `NUMBER`, `CHOICE`, `TEXT`.
 - `QualityDefectSeverity`: `MINOR`, `MAJOR`, `CRITICAL`.
+- `QualityInspectionState`: `OPEN`, `DECIDED`, `CANCELLED`.
+- `QualityInspectionOrigin`: `PRODUCTION`, `RECEIPT`, `CUSTOMER_RETURN`, `OTHER`.
+- `QualityInspectionResultKind`: `OUTCOME`, `MISSING`.
 
 ## Producción
 

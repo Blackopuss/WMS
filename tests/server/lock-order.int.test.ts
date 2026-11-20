@@ -40,6 +40,11 @@ import {
   reportProduction,
   reverseProductionReport,
 } from "@/modules/production";
+import {
+  cancelInspection,
+  decideInspection,
+  startInspection,
+} from "@/modules/quality";
 import { db } from "@/server";
 
 import * as production from "../setup/production";
@@ -933,5 +938,106 @@ describe("locks in one order (WMS-76)", () => {
     }
     expect(errors).toEqual([]);
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  }, 240_000);
+
+  it("deciding a verification never deadlocks with reports, reversals, status changes, exits and changes of the area (WMS-30B)", async () => {
+    const { owner, area, shelf, crate, board, screw } =
+      await production.workshop(["inventory", "production", "quality"]);
+    await production.setting(owner, "production.report.photo", "optional");
+    const other = await production.product(owner, "Otro en la línea");
+    await production.enter(owner, other, area, "500");
+    await production.enter(owner, board, shelf, "2000");
+    await production.enter(owner, screw, shelf, "2000");
+    const quarantine = await production.place(owner, "Cuarentena", {
+      type: "QUARANTINE",
+    });
+    const errors: string[] = [];
+    const id = await production.order(owner, crate, area, "200");
+    const released = await releaseProductionOrder(owner, id);
+    if (!released.ok) throw new Error(JSON.stringify(released));
+    const reportLine = async (reportId: string) =>
+      (
+        await db.productionReportLine.findFirstOrThrow({
+          where: { reportId, kind: "OUTPUT" },
+        })
+      ).id;
+    let spare: string | null = null;
+    for (let round = 0; round < 6; round++) {
+      const lot = await reportProduction(owner, id, {
+        good: "4",
+        idempotencyKey: newId(),
+      });
+      if (!lot.ok) throw new Error(JSON.stringify(lot));
+      const started = await startInspection(owner, {
+        productId: crate,
+        locationId: area,
+        origin: "PRODUCTION",
+        lineId: await reportLine(lot.reportId),
+        idempotencyKey: newId(),
+      });
+      if (!started.ok) throw new Error(JSON.stringify(started));
+      const toReverse: string | null = spare;
+      const results: PromiseSettledResult<unknown>[] = await Promise.allSettled(
+        [
+          decideInspection(owner, {
+            inspectionId: started.inspectionId,
+            idempotencyKey: newId(),
+            outcomes: [
+              { status: "AVAILABLE", quantity: "2", toLocationId: shelf },
+              {
+                status: "QUARANTINE",
+                quantity: "1",
+                reason: "Revisar",
+                toLocationId: quarantine,
+              },
+              { status: "REJECTED", quantity: "1", reason: "No cumple" },
+            ],
+          }),
+          reportProduction(owner, id, { good: "1", idempotencyKey: newId() }),
+          toReverse
+            ? reverseProductionReport(owner, toReverse, "Prueba de candados")
+            : Promise.resolve(null),
+          changeStockStatus(owner, {
+            productId: other,
+            locationId: area,
+            from: "AVAILABLE",
+            to: "DAMAGED",
+            quantity: "1",
+            reason: "Golpe",
+            idempotencyKey: newId(),
+          }),
+          registerExit(owner, {
+            productId: other,
+            locationId: area,
+            quantity: "1",
+          }),
+          registerTransfer(owner, {
+            productId: board,
+            locationId: shelf,
+            toLocationId: quarantine,
+            quantity: "1",
+            acceptCapacity: true,
+          }),
+          editLocation(owner, area, { name: `Línea ${++counter}` }),
+        ],
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          errors.push(
+            String((result.reason as Error)?.message ?? result.reason),
+          );
+        }
+      }
+      const reported = results[1] as PromiseSettledResult<
+        Awaited<ReturnType<typeof reportProduction>>
+      >;
+      spare =
+        reported.status === "fulfilled" && reported.value.ok
+          ? reported.value.reportId
+          : null;
+    }
+    expect(errors).toEqual([]);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    void cancelInspection;
   }, 240_000);
 });

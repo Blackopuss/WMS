@@ -3,6 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib";
 import { runGlobalSearch } from "@/platform/search";
 import {
+  cancelInspection,
+  getInspection,
+  getInspectionStart,
+  startInspection,
+} from "@/modules/quality";
+import {
   createEquipment,
   getEquipment,
   getIncident,
@@ -2301,6 +2307,81 @@ describe("PC-12: production reports (WMS-29)", () => {
     expect(
       (await traceProduction(free, { lotId: lotId! }))?.madeIn.length,
     ).toBe(1);
+    expect(await reconcileStock(owner.organizationId)).toEqual([]);
+  });
+});
+
+describe("PC-12: verifications (WMS-30B)", () => {
+  it("a verification of A does not exist from B, nor can B start one there", async () => {
+    await updateOperationSetting(
+      owner,
+      operationSettings,
+      "production.report.photo",
+      "optional",
+    );
+    const area = await createLocation(owner, {
+      level: 1,
+      name: "Línea verificada A",
+      type: "PRODUCTION",
+    });
+    if (!area.ok) throw new Error(JSON.stringify(area));
+    const box = await createProduct(owner, {
+      sku: "ALC-VERIF",
+      name: "Caja verificada",
+    });
+    if (!box.ok) throw new Error(JSON.stringify(box));
+    const recipe = await createRecipe(owner, box.productId, {
+      baseQuantity: "1",
+    });
+    if (!recipe.ok) throw new Error(JSON.stringify(recipe));
+    await setRecipeInput(owner, recipe.versionId, { productId, quantity: "1" });
+    await activateRecipeVersion(owner, recipe.versionId);
+    const made = await createProductionOrder(owner, {
+      productId: box.productId,
+      quantity: "1",
+      areaLocationId: area.locationId,
+    });
+    if (!made.ok) throw new Error(JSON.stringify(made));
+    await releaseProductionOrder(owner, made.orderId);
+    const done = await reportProduction(owner, made.orderId, {
+      good: "1",
+      idempotencyKey: newId(),
+    });
+    if (!done.ok) throw new Error(JSON.stringify(done));
+    const line = await db.productionReportLine.findFirstOrThrow({
+      where: { reportId: done.reportId, kind: "OUTPUT" },
+    });
+    const slot = { productId: box.productId, locationId: area.locationId };
+    expect(await getInspectionStart(limited, slot)).toBeNull();
+    expect(
+      await startInspection(limited, {
+        ...slot,
+        origin: "PRODUCTION",
+        lineId: line.id,
+        idempotencyKey: newId(),
+      }),
+    ).toMatchObject({ ok: false, reason: "not_found" });
+    const started = await startInspection(free, {
+      ...slot,
+      origin: "PRODUCTION",
+      lineId: line.id,
+      idempotencyKey: newId(),
+    });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(await getInspection(limited, started.inspectionId)).toBeNull();
+    expect(
+      await cancelInspection(limited, {
+        inspectionId: started.inspectionId,
+        reason: "Desde fuera",
+      }),
+    ).toMatchObject({ ok: false });
+    expect(await getInspection(free, started.inspectionId)).not.toBeNull();
+    expect(
+      await cancelInspection(free, {
+        inspectionId: started.inspectionId,
+        reason: "Prueba",
+      }),
+    ).toMatchObject({ ok: true });
     expect(await reconcileStock(owner.organizationId)).toEqual([]);
   });
 });
