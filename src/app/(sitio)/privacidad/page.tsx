@@ -194,6 +194,18 @@ export default function PrivacyPage() {
                 mientras confirmas tu dirección.
               </li>
               <li>
+                <strong>Dispositivo conocido:</strong> después de entrar, una
+                cookie firmada recuerda que ese navegador ya entró a tu cuenta,
+                para que nadie pueda bloquearte el acceso desde él escribiendo
+                contraseñas equivocadas con tu correo. No guarda tu correo ni tu
+                contraseña.
+              </li>
+              <li>
+                <strong>Terminal compartida:</strong> en un dispositivo que tu
+                empresa registró como terminal, una cookie lo identifica para
+                entrar con PIN.
+              </li>
+              <li>
                 <strong>Preferencias:</strong> tu elección de modo claro u
                 oscuro se guarda solo en tu navegador.
               </li>

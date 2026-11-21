@@ -8,6 +8,11 @@ import {
   resendVerification,
   signIn,
 } from "@/platform/auth";
+// Not in index.ts: the cookie is set by the sign-in itself.
+import {
+  KNOWN_DEVICE_COOKIE,
+  knownDeviceCookieValue,
+} from "@/platform/auth/known-device";
 import { db } from "@/server";
 
 // PLT-06: brute force is blocked per account and per IP, without revealing
@@ -17,10 +22,11 @@ const password = "una-frase-larga-y-segura";
 const stamp = Date.now();
 const victim = `victima.${stamp}@example.test`;
 const bystander = `tercero.${stamp}@example.test`;
+const owner = `duena.${stamp}@example.test`;
 const from = (ip: string) => new Headers({ "x-forwarded-for": ip });
 
 beforeAll(async () => {
-  for (const email of [victim, bystander]) {
+  for (const email of [victim, bystander, owner]) {
     await auth.api.signUpEmail({ body: { name: "Límite", email, password } });
     await db.user.update({ where: { email }, data: { emailVerified: true } });
   }
@@ -90,6 +96,76 @@ describe("per-account limit", () => {
       where: { key: { startsWith: "signin:acct:" } },
     });
     expect(rows.some((r) => r.key.includes(victim))).toBe(false); // emails are hashed
+  });
+});
+
+// WMS-95 (security audit WMS-SEC-03): a stranger who knows an email can
+// block it with five wrong passwords, but not keep its owner out of the
+// devices where they already signed in.
+describe("known devices", () => {
+  const withDevice = (ip: string, cookie: string) =>
+    new Headers({
+      "x-forwarded-for": ip,
+      cookie: `otra=1; ${KNOWN_DEVICE_COOKIE}=${cookie}`,
+    });
+
+  it("lets the owner in from a known device while the email is blocked", async () => {
+    const known = knownDeviceCookieValue(owner, undefined);
+    for (let i = 0; i < 5; i++) {
+      expect(
+        await signIn(
+          { email: owner, password: "mala-123456" },
+          from(`10.7.0.${i + 1}`),
+        ),
+      ).toEqual({ ok: false, reason: "invalid" });
+    }
+    // Blocked for anyone without the device: guessing still stops here.
+    expect(
+      await signIn({ email: owner, password }, from("10.7.0.50")),
+    ).toMatchObject({ ok: false, reason: "throttled" });
+    // A device remembered for another email, or a forged one, does not help.
+    const other = knownDeviceCookieValue(bystander, undefined);
+    const forged = `${known.slice(0, 23)}${"A".repeat(43)}`;
+    for (const cookie of [other, forged]) {
+      expect(
+        await signIn(
+          { email: owner, password },
+          withDevice("10.7.0.51", cookie),
+        ),
+      ).toMatchObject({ ok: false, reason: "throttled" });
+    }
+    // The owner's own device: in.
+    expect(
+      await signIn({ email: owner, password }, withDevice("10.7.0.52", known)),
+    ).toEqual({ ok: true });
+  });
+
+  it("still limits wrong passwords on a known device", async () => {
+    const known = knownDeviceCookieValue(owner, undefined);
+    for (let i = 0; i < 5; i++) {
+      expect(
+        await signIn(
+          { email: owner, password: "mala-123456" },
+          withDevice(`10.8.0.${i + 1}`, known),
+        ),
+      ).toEqual({ ok: false, reason: "invalid" });
+    }
+    expect(
+      await signIn({ email: owner, password }, withDevice("10.8.0.50", known)),
+    ).toMatchObject({ ok: false, reason: "throttled" });
+  });
+
+  it("keeps one entry per account, newest first, up to five", () => {
+    let cookie: string | undefined;
+    const emails = Array.from(
+      { length: 7 },
+      (_, i) => `cuenta.${i}.${stamp}@example.test`,
+    );
+    for (const email of emails) cookie = knownDeviceCookieValue(email, cookie);
+    expect(cookie!.split(",")).toHaveLength(5);
+    // Signing in again with a remembered account keeps its nonce.
+    const again = knownDeviceCookieValue(emails[6]!, cookie);
+    expect(again.split(",")[0]).toBe(cookie!.split(",")[0]);
   });
 });
 

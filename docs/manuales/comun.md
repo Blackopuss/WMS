@@ -12,7 +12,7 @@ Este documento junta lo que es igual para cualquier rol: cómo entrar, cómo mov
 ### Entrar cada día (en tu teléfono o computadora)
 En **Inicia sesión** escribe tu correo y tu contraseña y toca **Iniciar sesión**. Si tu cuenta tiene verificación en dos pasos, después escribes el código de 6 números de tu app de autenticación. Si no tienes tu teléfono, usa **¿No tienes tu teléfono? Usa un código de recuperación** (cada código sirve una sola vez).
 
-Si fallas muchas veces, el sistema te bloquea un rato por seguridad. Si olvidaste tu contraseña, toca **¿Olvidaste tu contraseña?**, escribe tu correo y abre el enlace que te llega (vence en 60 minutos). Al cambiarla se cierran todas tus sesiones abiertas.
+Si fallas muchas veces, el sistema te bloquea un rato por seguridad. En un navegador donde ya entraste antes, ese bloqueo cuenta solo los intentos hechos desde ese navegador: si alguien escribe contraseñas equivocadas con tu correo desde otro lado, tú sigues entrando desde tus dispositivos de siempre. Si olvidaste tu contraseña, toca **¿Olvidaste tu contraseña?**, escribe tu correo y abre el enlace que te llega (vence en 60 minutos). Al cambiarla se cierran todas tus sesiones abiertas.
 
 ### Verificación en dos pasos
 - Es **obligatoria para el titular y los administradores**; para los demás roles es opcional.
@@ -93,4 +93,4 @@ Un reporte **no cambia existencias**: avisa a quien supervisa. Si lo que pasa es
 
 Una persona puede tener **varios roles a la vez**: recibe la suma de lo que permite cada uno y ocupa un solo lugar del plan. Un rol de Producción o de Calidad solo se asigna si el módulo está contratado.
 
-Vigente al 2026-11-20 (configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86; empresa de demostración: WMS-44)
+Vigente al 2026-11-21 (dispositivo conocido al iniciar sesión: WMS-95; configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86; empresa de demostración: WMS-44)

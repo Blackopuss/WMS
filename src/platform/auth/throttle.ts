@@ -22,6 +22,9 @@ export type ThrottleRule = {
 
 export const RULES = {
   signInAccount: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+  // The same budget, for an email on a device where it already signed in
+  // (WMS-95): a stranger blocking the email does not block that device.
+  signInDevice: { max: 5, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   // Higher: several employees often share one shop connection.
   signInIp: { max: 20, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
   registerIp: { max: 10, windowSeconds: 60 * 60, blockSeconds: 60 * 60 },
@@ -91,6 +94,10 @@ export const throttleKeys = {
   signInAccount: (email: string): ThrottleKey => ({
     key: `signin:acct:${hash(email)}`,
     rule: RULES.signInAccount,
+  }),
+  signInDevice: (nonce: string, email: string): ThrottleKey => ({
+    key: `signin:device:${hash(`${nonce}|${email}`)}`,
+    rule: RULES.signInDevice,
   }),
   signInIp: (ip: string): ThrottleKey => ({
     key: `signin:ip:${ip}`,

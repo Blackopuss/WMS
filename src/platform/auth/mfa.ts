@@ -11,6 +11,7 @@ import {
 import { recordSecurityEvent } from "@/platform/audit";
 import { db } from "@/server";
 
+import { rememberDevice } from "./known-device";
 import { noteCodeLock, noteFailedCode, noteSignIn } from "./access-history";
 import { TOTP_DIGITS, auth } from "./auth";
 import { normalizeBackupCode } from "./backup-codes";
@@ -321,6 +322,7 @@ export async function verifySignInCode(
     await sendEmail(
       backupCodeUsedEmail({ to: user.email, name: user.name, left }),
     );
+    await rememberDevice(user.email);
     return { ok: true };
   }
 
@@ -344,5 +346,15 @@ export async function verifySignInCode(
     metadata: { mfa: true },
     headers,
   });
+  await rememberSignedInDevice(session.userId);
   return { ok: true };
+}
+
+/** WMS-95: after the second step, this browser is a known device. */
+async function rememberSignedInDevice(userId: string): Promise<void> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  if (user) await rememberDevice(user.email);
 }

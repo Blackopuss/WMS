@@ -14,7 +14,7 @@ export const LEGAL_DOCUMENTS = {
     href: "/terminos",
   },
   privacy: {
-    version: "2026-11-17",
+    version: "2026-11-21",
     title: "Aviso de privacidad",
     href: "/privacidad",
   },

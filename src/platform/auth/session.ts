@@ -9,6 +9,7 @@ import { z } from "zod";
 import { pendingLegalDocuments } from "@/platform/legal";
 import { db } from "@/server";
 
+import { knownDeviceOf, rememberDevice } from "./known-device";
 import { noteFailedSignIn, noteSignIn } from "./access-history";
 import { VERIFY_EMAIL_COOKIE, auth } from "./auth";
 import { isMfaRequired } from "./mfa-policy";
@@ -213,7 +214,18 @@ export async function signIn(
   const ip = clientIp(requestHeaders);
   const email = parsed.success ? parsed.data.email : "";
   const keys = [throttleKeys.signInIp(ip)];
-  if (email) keys.push(throttleKeys.signInAccount(email));
+  // WMS-95: on a device where this email already signed in, its attempts
+  // are counted for the device, so a stranger who blocks the email (five
+  // wrong passwords) does not keep its owner out. Elsewhere, per email.
+  const device = email ? knownDeviceOf(requestHeaders, email) : null;
+  const accountKeys = email
+    ? [
+        device
+          ? throttleKeys.signInDevice(device, email)
+          : throttleKeys.signInAccount(email),
+      ]
+    : [];
+  keys.push(...accountKeys);
 
   // The attempt is counted before the password is checked: requests sent
   // all at once each take a place, and those past the limit are refused.
@@ -235,13 +247,15 @@ export async function signIn(
       body: parsed.data,
       headers: requestHeaders,
     });
-    await clearAttempts([throttleKeys.signInAccount(email)]);
+    await clearAttempts([throttleKeys.signInAccount(email), ...accountKeys]);
     await refundAttempt([throttleKeys.signInIp(ip)]);
     // MFA on: Better Auth kept no session and set a short-lived challenge
-    // cookie; the code is checked by verifySignInCode (./mfa.ts).
+    // cookie; the code is checked by verifySignInCode (./mfa.ts), which
+    // remembers the device once the second step is done too.
     if ("twoFactorRedirect" in result && result.twoFactorRedirect) {
       return { ok: false, reason: "mfa" };
     }
+    await rememberDevice(email);
     // The password proves who it is: a PIN blocked after wrong tries works
     // again (WMS-38, ADR 0061 §6).
     await clearPinAttempts(result.user.id);
@@ -258,7 +272,10 @@ export async function signIn(
       if (error.body?.code === "EMAIL_NOT_VERIFIED") {
         // Right password: not a guessing attempt on the account. The IP
         // keeps the attempt: each one costs a password hash.
-        await clearAttempts([throttleKeys.signInAccount(email)]);
+        await clearAttempts([
+          throttleKeys.signInAccount(email),
+          ...accountKeys,
+        ]);
         // The verification link was opened in this browser and whoever
         // knows the password is here: both proofs, the email is confirmed
         // and the sign-in goes on (security audit 2: the link alone left a
