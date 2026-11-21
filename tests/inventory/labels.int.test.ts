@@ -626,6 +626,20 @@ describe("labels of containers, packages, orders and shipments", () => {
     await expect(
       buildLabels(buyer, { kind: "embarque", id: shipment.shipmentId }),
     ).rejects.toMatchObject({ kind: "forbidden" });
+    // WMS-99: the label of one package names the order and its recipient,
+    // so it asks the order's permission too (forklift and buyer hold stock
+    // read, not outbound read). A pallet label still prints for them.
+    for (const role of ["buyer", "forklift"] as const) {
+      const person =
+        role === "buyer" ? buyer : await member(owner.organizationId, role);
+      expect(
+        await buildLabels(person, { kind: "contenedor", id: box.id }),
+      ).toEqual(notFound);
+    }
+    expect(
+      (await print(buyer, { kind: "contenedor", id: packed.containerId }))
+        .count,
+    ).toBe(1);
 
     // Another company finds none of it.
     const stranger = await company();

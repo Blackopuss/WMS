@@ -143,6 +143,14 @@ por etiqueta.
 - Pruebas: `src/platform/files/code128.test.ts`, `labels.test.ts`,
   `pdf.test.ts` y `tests/inventory/labels.int.test.ts`.
 
+## Etiqueta de un bulto suelto (WMS-99, 2026-11-21)
+
+La etiqueta de tipo `contenedor` de un bulto de empaque imprimía el número
+y el destinatario del pedido con solo `inventory.stock.read`. Ahora pide lo
+mismo que la de tipo `bultos`: `inventory.outbound.read` y el almacén del
+pedido dentro del alcance; si no, el bulto «no existe» para esa persona. La
+etiqueta de una tarima sigue igual.
+
 ## Lo que quedó fuera
 
 - Impresión directa a una impresora de etiquetas (ZPL, EPL u otro lenguaje de

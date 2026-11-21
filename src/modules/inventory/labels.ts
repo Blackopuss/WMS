@@ -439,16 +439,34 @@ async function containerLabels(
   const box = id ? await getContainer(actor, id) : null;
   if (!box) return { ok: false, reason: "not_found" };
   if (box.package) {
-    const order = await forOrganization(
-      actor.organizationId,
-    ).outboundOrder.findFirst({
+    // WMS-99 (ADR 0047): a package names an outbound order and its
+    // recipient, so its label asks what the order asks: its read permission
+    // and its warehouse in scope, like the «bultos» labels. Holding stock
+    // read is not enough (forklift, buyer, production and quality roles).
+    const client = forOrganization(actor.organizationId);
+    if (
+      !(await isAllowed(
+        actor.organizationId,
+        actor.userId,
+        "inventory.outbound.read",
+      ))
+    ) {
+      return { ok: false, reason: "not_found" };
+    }
+    const order = await client.outboundOrder.findFirst({
       where: { id: box.package.orderId },
-      select: { recipient: true },
+      select: { recipient: true, facilityId: true },
     });
+    if (
+      !order ||
+      !(await isFacilityInScope(client, actor.userId, order.facilityId))
+    ) {
+      return { ok: false, reason: "not_found" };
+    }
     return [
       {
         code: box.code,
-        title: `${box.package.orderNumberText} · ${order?.recipient ?? ""}`,
+        title: `${box.package.orderNumberText} · ${order.recipient}`,
         lines: [box.name, box.package.weightText ?? ""],
       },
     ];
