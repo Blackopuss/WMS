@@ -119,6 +119,7 @@ En el servidor, esta llave solo puede desplegar: no abre una terminal.
    - `DEPLOY_HOST`: el dominio, o la IP.
    - `DEPLOY_SSH_KEY`: el contenido de `~/.ssh/almacen-despliegue`, la privada.
    - `DEPLOY_KNOWN_HOSTS`: la salida de `ssh-keyscan -t ed25519 almacen.mx`.
+   - En _Settings → Environments → produccion_: activa **Required reviewers** (tú) y en **Deployment branches** deja solo `produccion`. En _Settings → Rules_, protege `produccion` para que solo avance desde `pruebas` con el check de CI requerido.
 
 5. **Desplegar:** lleva a la rama `produccion` un commit que ya pasó CI en `pruebas`.
 
@@ -126,7 +127,7 @@ En el servidor, esta llave solo puede desplegar: no abre una terminal.
    git push origin pruebas:produccion
    ```
 
-   El workflow «Desplegar» arranca solo; míralo en _Actions_. Cuando el archivo del workflow esté también en la rama principal, aparece además el botón _Actions → Desplegar → Run workflow_, para elegir rama o commit. Al terminar:
+   El workflow «Desplegar» arranca solo; míralo en _Actions_. Cuando el archivo del workflow esté también en la rama principal, aparece además el botón _Actions → Desplegar → Run workflow_, para elegir rama o commit; desde WMS-98 solo acepta un commit que ya esté en `pruebas` con CI en verde (o cuyo único cambio posterior sea documentación `.md`), y si no, se detiene antes de usar la llave. Al terminar:
 
    ```bash
    almacen correo:prueba tu@correo.mx

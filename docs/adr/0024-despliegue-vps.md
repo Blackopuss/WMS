@@ -54,6 +54,17 @@
 
 - **Conexión a MySQL por loopback:** la app acepta la llave pública de MySQL (`allowPublicKeyRetrieval`) solo si la base está en 127.0.0.1. MySQL 9 la manda en el primer inicio de sesión de un usuario sin TLS, y por loopback nadie puede suplantarla (`isLoopbackHost`). Una base en otra máquina tendría que usar TLS.
 
+## Solo se despliega lo que pasó CI (WMS-98, 2026-11-21)
+
+El workflow «Desplegar» se partió en dos trabajos. `verificar`, sin secretos
+ni environment, resuelve la ref (también la escrita a mano en
+`workflow_dispatch`), exige que el commit esté en `pruebas` y que CI haya
+pasado en él, o en su ancestro más cercano con CI en verde si lo que sigue
+solo cambia `.md`. `desplegar`, con el environment `produccion` y la llave
+SSH, construye exactamente ese commit. El environment `produccion` en GitHub
+debe seguir pidiendo un revisor (lo configura el dueño; no se ve en el
+código).
+
 ## Alternativas descartadas
 
 - **Todo en Docker Compose:** una imagen más que construir y vigilar. El worker con `tsx` y los hooks de `server-only` complican la imagen. Solo MySQL gana algo en un contenedor (la versión exacta).

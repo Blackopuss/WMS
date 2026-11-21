@@ -10,6 +10,13 @@
 #   DEPLOY_SSH_KEY      private key whose public half went in --llave-ci
 #   DEPLOY_KNOWN_HOSTS  output of: ssh-keyscan -t ed25519 <server>
 # That key can only run the deploy script (forced command on the server).
+#
+# WMS-98 (security audit WMS-SEC-06): whatever starts it (a push to
+# «produccion» or a manual run with any ref), only a commit that is already
+# in «pruebas» and passed CI there is built and sent. The check runs in a
+# job without secrets or environment; the job that holds the SSH key builds
+# exactly the commit that job verified, never the ref typed by hand. The
+# environment «produccion» should still ask for a reviewer (docs/DESPLIEGUE.md).
 name: Desplegar
 
 on:
@@ -18,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Rama o commit a desplegar"
+        description: "Rama o commit a desplegar (debe estar en pruebas con CI en verde)"
         required: true
         default: pruebas
 
@@ -30,16 +37,86 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verificar:
+    name: Verificar el commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.resolver.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolver la ref y exigir CI en verde en pruebas
+        id: resolver
+        env:
+          # Never interpolated into the script: read as data.
+          REF: ${{ inputs.ref || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$REF" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$'; then
+            echo "::error::Ref no válida."
+            exit 1
+          fi
+          SHA="$(git rev-parse --verify --quiet "refs/remotes/origin/$REF^{commit}" \
+            || git rev-parse --verify --quiet "refs/tags/$REF^{commit}" \
+            || git rev-parse --verify --quiet "$REF^{commit}" || true)"
+          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::No se encontró el commit de «$REF»."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SHA" origin/pruebas; then
+            echo "::error::$SHA no está en pruebas: solo se despliega lo que ya pasó por ahí."
+            exit 1
+          fi
+          passed() {
+            gh api -X GET "repos/$REPO/actions/workflows/ci.yml/runs" \
+              -f head_sha="$1" -f status=success -f per_page=1 --jq '.total_count'
+          }
+          # CI does not run on commits that only touch documentation: the
+          # nearest ancestor with CI in green counts if what follows it is
+          # only .md files.
+          BASE=""
+          for CANDIDATE in $(git rev-list --max-count=50 "$SHA"); do
+            if [ "$(passed "$CANDIDATE")" -gt 0 ]; then
+              BASE="$CANDIDATE"
+              break
+            fi
+          done
+          if [ -z "$BASE" ]; then
+            echo "::error::Ni $SHA ni sus 50 commits anteriores tienen CI en verde."
+            exit 1
+          fi
+          if [ "$BASE" != "$SHA" ] && git diff --name-only "$BASE" "$SHA" | grep -vqE '\.md$'; then
+            echo "::error::$SHA cambia código después del último commit con CI en verde ($BASE)."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Se despliega $SHA (CI en verde en $BASE)."
+
   desplegar:
     name: Construir y desplegar
+    needs: verificar
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: produccion
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ needs.verificar.outputs.sha }}
           persist-credentials: false
+
+      - name: Comprobar que es el commit verificado
+        env:
+          EXPECTED: ${{ needs.verificar.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
@@ -54,13 +131,14 @@ jobs:
           HOST: ${{ secrets.DEPLOY_HOST }}
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          COMMIT: ${{ needs.verificar.outputs.sha }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/despliegue
           chmod 600 ~/.ssh/despliegue
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          COMMIT="$(git rev-parse HEAD)"
           SUMA="$(cat "$RUNNER_TEMP/paquete.tgz.sha256")"
           ssh -i ~/.ssh/despliegue -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o ServerAliveInterval=30 \
             "almacen@$HOST" "paquete $COMMIT $SUMA" < "$RUNNER_TEMP/paquete.tgz"
+          rm -f ~/.ssh/despliegue
