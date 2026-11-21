@@ -121,6 +121,7 @@ export type {
 } from "./invitation-accept";
 export {
   assignRoles,
+  fitsTeamScope,
   countSeatsInUse,
   disableMember,
   listScopeOptions,

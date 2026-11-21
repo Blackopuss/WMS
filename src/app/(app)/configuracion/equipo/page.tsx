@@ -8,6 +8,7 @@ import {
   companyModules,
   assignableRoles,
   checkTeamChange,
+  fitsTeamScope,
   getAccess,
   getSeatUsage,
   listPendingInvitations,
@@ -76,10 +77,14 @@ export default async function EquipoPage() {
     label: ROLE_LABELS[role],
   }));
   // The server decides what each row offers; the actions check it again.
+  // WMS-94: someone limited only changes people inside their scope.
+  const mine = members.find((member) => member.userId === access.user.id);
   const allows = (
     target: (typeof members)[number],
     kind: "assign_roles" | "disable" | "set_scope",
   ) =>
+    mine !== undefined &&
+    fitsTeamScope(mine, target) &&
     checkTeamChange(
       me,
       target,

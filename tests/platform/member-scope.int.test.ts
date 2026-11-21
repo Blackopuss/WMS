@@ -5,10 +5,15 @@ import { moduleRegistry } from "@/modules/registry";
 import { describeAuditFacts, listAuditTrail } from "@/platform/audit";
 import {
   acceptInvitation,
+  assignRoles,
   can,
+  disableMember,
+  reactivateMember,
+  revokeAllMemberSessions,
   createInvitation,
   listPendingInvitations,
   previewInvitation,
+  listMemberSessions,
   listScopeOptions,
   listTeamMembers,
   loadScope,
@@ -291,6 +296,20 @@ describe("setMemberScope", () => {
       ]),
     ).toEqual({ ok: true });
 
+    // WMS-94: a person without limit does not fit in the admin's scope, so
+    // the admin cannot rewrite where they work (only the titular can).
+    expect(
+      await limit(admin, worker.userId, [
+        { facilityId: facilityB, zoneIds: [zoneB] },
+      ]),
+    ).toMatchObject({ ok: false, reason: "target_outside_scope" });
+    expect(await scopeRows(worker.userId)).toEqual([]);
+    expect(
+      await limit(owner, worker.userId, [
+        { facilityId: facilityB, zoneIds: [zoneB] },
+      ]),
+    ).toEqual({ ok: true });
+
     for (const facilities of [
       [],
       [{ facilityId: facilityA }],
@@ -302,12 +321,12 @@ describe("setMemberScope", () => {
         reason: "scope_exceeds",
       });
     }
-    expect(await scopeRows(worker.userId)).toEqual([]);
+    // What they have is accepted (here it is already the worker's scope).
     expect(
       await limit(admin, worker.userId, [
         { facilityId: facilityB, zoneIds: [zoneB] },
       ]),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: false, reason: "unchanged" });
 
     // And is offered only that.
     expect(await listScopeOptions(owner.organizationId, admin.userId)).toEqual({
@@ -682,5 +701,113 @@ describe("two companies", () => {
       ),
     ).toMatchObject({ ok: false, reason: "not_found" });
     expect((await getActiveFacility(both)).id).toBe(facilityB);
+  });
+});
+
+// WMS-94 (security audit WMS-SEC-02, ADR 0038): someone limited to
+// warehouses or zones only changes people whose own scope fits in theirs.
+describe("team changes by someone limited (WMS-94)", () => {
+  it("cannot touch a person without limit or of another warehouse", async () => {
+    // Its own company: reactivating needs a free seat.
+    const local = await company();
+    const second = await createFacility(local, { name: "Bodega B", code: "B" });
+    if (!second.ok) throw new Error(JSON.stringify(second));
+    const localB = second.facilityId;
+    const localA = (await listFacilities(local)).find(
+      (each) => each.isDefault,
+    )!.id;
+    await switchFacility(local, localB);
+    const zone = await createLocation(local, { level: 1, name: "Zona 1" });
+    if (!zone.ok) throw new Error(JSON.stringify(zone));
+    await switchFacility(local, localA);
+    const owner = local;
+    const facilityA = localA;
+    const facilityB = localB;
+    const zoneB = zone.locationId;
+    const admin = await member(owner.organizationId, "administrator", true);
+    const free = await member(owner.organizationId, "viewer");
+    const other = await member(owner.organizationId, "warehouse");
+    const own = await member(owner.organizationId, "warehouse");
+    expect(
+      await limit(owner, admin.userId, [{ facilityId: facilityB }]),
+    ).toEqual({ ok: true });
+    expect(
+      await limit(owner, other.userId, [{ facilityId: facilityA }]),
+    ).toEqual({ ok: true });
+    expect(
+      await limit(owner, own.userId, [
+        { facilityId: facilityB, zoneIds: [zoneB] },
+      ]),
+    ).toEqual({ ok: true });
+
+    // Roles that would work in every warehouse: refused.
+    expect(
+      await assignRoles(owner.organizationId, admin.userId, {
+        userId: free.userId,
+        roles: ["warehouse"],
+      }),
+    ).toMatchObject({ ok: false, reason: "target_outside_scope" });
+    const roles = await db.membershipRole.findMany({
+      where: {
+        membership: {
+          organizationId: owner.organizationId,
+          userId: free.userId,
+        },
+      },
+      select: { role: true },
+    });
+    expect(roles.map((row) => row.role)).toEqual(["viewer"]);
+
+    // Disable and close sessions of someone of another warehouse.
+    expect(
+      await disableMember(owner.organizationId, admin.userId, {
+        userId: other.userId,
+      }),
+    ).toMatchObject({ ok: false, reason: "target_outside_scope" });
+    expect(
+      await revokeAllMemberSessions(owner.organizationId, admin.userId, {
+        userId: other.userId,
+      }),
+    ).toEqual({
+      ok: false,
+      error:
+        "Solo puedes hacer cambios a personas que trabajan dentro de los almacenes o zonas que tú tienes asignados.",
+    });
+
+    // The screen does not offer it either.
+    const sessions = await listMemberSessions(
+      owner.organizationId,
+      admin.userId,
+      other.userId,
+      "no-session",
+    );
+    expect(sessions).toMatchObject({ canRevoke: false });
+    expect(sessions?.revokeBlocked).toContain("dentro de los almacenes");
+
+    // Inside their scope it works as before.
+    expect(
+      await assignRoles(owner.organizationId, admin.userId, {
+        userId: own.userId,
+        roles: ["supervisor"],
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      await disableMember(owner.organizationId, admin.userId, {
+        userId: own.userId,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      await reactivateMember(owner.organizationId, admin.userId, {
+        userId: own.userId,
+      }),
+    ).toEqual({ ok: true });
+
+    // The titular and an administrator without limit are not affected.
+    expect(
+      await assignRoles(owner.organizationId, owner.userId, {
+        userId: free.userId,
+        roles: ["warehouse"],
+      }),
+    ).toEqual({ ok: true });
   });
 });

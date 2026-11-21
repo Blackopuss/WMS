@@ -11,6 +11,7 @@ import {
 import {
   OWNER_ONLY_PERMISSIONS,
   buildScope,
+  scopeWithin,
   can,
   canAll,
   canAny,
@@ -701,5 +702,34 @@ describe("the cut of an API key", () => {
     expect([...(both?.facilities.get("B") ?? [])]).toEqual(["z1"]);
     const none = intersectScopes(zones, { facilities: new Map([["C", null]]) });
     expect(none?.facilities.size).toBe(0);
+  });
+});
+
+// WMS-94: someone limited only acts on people whose scope fits in theirs.
+describe("scopeWithin", () => {
+  const scope = (rows: { facilityId: string; locationId: string | null }[]) =>
+    buildScope(rows);
+  const whole = scope([{ facilityId: "A", locationId: null }]);
+  const zone = scope([{ facilityId: "A", locationId: "z1" }]);
+
+  it("anything fits in no limit", () => {
+    expect(scopeWithin(null, null)).toBe(true);
+    expect(scopeWithin(zone, null)).toBe(true);
+  });
+
+  it("no limit never fits in a limited scope", () => {
+    expect(scopeWithin(null, whole)).toBe(false);
+  });
+
+  it("compares warehouses and zones", () => {
+    expect(scopeWithin(zone, whole)).toBe(true);
+    expect(scopeWithin(whole, zone)).toBe(false);
+    expect(scopeWithin(zone, zone)).toBe(true);
+    expect(
+      scopeWithin(scope([{ facilityId: "A", locationId: "z2" }]), zone),
+    ).toBe(false);
+    expect(
+      scopeWithin(scope([{ facilityId: "B", locationId: null }]), whole),
+    ).toBe(false);
   });
 });

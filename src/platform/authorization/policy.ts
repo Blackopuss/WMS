@@ -187,6 +187,24 @@ export function intersectScopes(
  * inside when the person may work in any part of it; a location, when its
  * warehouse is open or one of its ancestors (or itself) is an open zone.
  */
+/**
+ * True when every place `inner` reaches is also reached by `outer` (null =
+ * no limit). Someone limited only acts on people whose own scope fits in
+ * theirs (WMS-94): a person without limit never fits in a limited scope.
+ */
+export function scopeWithin(inner: Scope | null, outer: Scope | null): boolean {
+  if (outer === null) return true;
+  if (inner === null || inner.facilities.size === 0) return false;
+  for (const [facilityId, zones] of inner.facilities) {
+    if (!outer.facilities.has(facilityId)) return false;
+    const outerZones = outer.facilities.get(facilityId) ?? null;
+    if (outerZones === null) continue;
+    if (zones === null || zones.size === 0) return false;
+    for (const zone of zones) if (!outerZones.has(zone)) return false;
+  }
+  return true;
+}
+
 export function inScope(subject: Subject, place: Place): boolean {
   const scope = scopeOf(subject);
   if (!scope) return true;

@@ -40,6 +40,13 @@ quita todo `platform.*` salvo `TERMINAL_PLATFORM_KEEP`. Desactivar a una
 persona borra su PIN (`member_pin`). Las sesiones del equipo muestran
 `terminalName`.
 
+Auditoría 6 (WMS-93 y WMS-94): `changesCompanyConfig` y
+`WHOLE_COMPANY_CONFIG_MESSAGE` deciden quién cambia la configuración de
+toda la empresa (solo quien no está limitado a almacenes); `withTeamChange`
+exige que el alcance de la persona quepa en el de quien cambia (`scopeWithin`
+de `policy.ts`, motivo `target_outside_scope`) y `fitsTeamScope` da la misma
+respuesta a la pantalla de Equipo.
+
 ## Permisos
 
 Usa: `platform.team.read|invite|assign_roles|disable`,

@@ -7,7 +7,14 @@ import { db, forOrganization } from "@/server";
 
 import { modulesOf } from "./access";
 import { isRole, type Role } from "./catalog";
-import { buildScope, can, inScope, knownRoles } from "./policy";
+import {
+  buildScope,
+  can,
+  inScope,
+  knownRoles,
+  scopeWithin,
+  type Scope,
+} from "./policy";
 import { resolveScopeRows } from "./scope-rows";
 import { SeatLimitError, assertSeatAvailable } from "./seats";
 import {
@@ -32,7 +39,8 @@ export type TeamActionReason =
   | "unchanged"
   | "no_seats"
   | "invalid_scope"
-  | "scope_exceeds";
+  | "scope_exceeds"
+  | "target_outside_scope";
 
 export type TeamActionResult =
   { ok: true } | { ok: false; reason: TeamActionReason; error: string };
@@ -46,6 +54,8 @@ const MESSAGES: Record<TeamActionReason, string> = {
     "Elige almacenes y zonas que existan y estén activos. Si un almacén ya no aparece, vuelve a abrir esta ventana.",
   scope_exceeds:
     "Solo puedes dar acceso a los almacenes o zonas que tú tienes asignados.",
+  target_outside_scope:
+    "Solo puedes hacer cambios a personas que trabajan dentro de los almacenes o zonas que tú tienes asignados.",
 };
 
 export const fail = (reason: TeamActionReason) =>
@@ -56,6 +66,8 @@ export type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 export type LoadedMember = TeamPerson & {
   membershipId: string;
   status: "ACTIVE" | "DISABLED";
+  /** Where they may work (WMS-20); null = no limit (also the titular). */
+  workScope: Scope | null;
 };
 
 async function memberIn(
@@ -66,15 +78,22 @@ async function memberIn(
 ): Promise<LoadedMember | null> {
   const membership = await tx.membership.findUnique({
     where: { organizationId_userId: { organizationId, userId } },
-    select: { id: true, status: true, roles: { select: { role: true } } },
+    select: {
+      id: true,
+      status: true,
+      roles: { select: { role: true } },
+      scopes: { select: { facilityId: true, locationId: true } },
+    },
   });
   if (!membership) return null;
+  const isOwner = ownerUserId === userId;
   return {
     userId,
     membershipId: membership.id,
     status: membership.status,
-    isOwner: ownerUserId === userId,
+    isOwner,
     roles: membership.roles.map((r) => r.role),
+    workScope: isOwner ? null : buildScope(membership.scopes),
   };
 }
 
@@ -128,6 +147,13 @@ export async function withTeamChange(
     if (!rule.ok && rule.reason === "forbidden") return fail("forbidden");
     if (!target) return fail("not_found");
     if (!rule.ok) return fail(rule.reason);
+    // WMS-94 (ADR 0038): someone limited to warehouses or zones only acts on
+    // people whose own scope fits in theirs. Without this, an administrator
+    // limited to one warehouse could hand roles that work in every other one
+    // to a person without limit, or disable people of other warehouses.
+    if (!scopeWithin(target.workScope, actor.workScope)) {
+      return fail("target_outside_scope");
+    }
     return (
       (await apply(tx, { ...target, actorIsOwner: actor.isOwner === true })) ??
       ({ ok: true } as const)
@@ -497,6 +523,32 @@ function scopeEntries(
         entry.zones?.sort((a, b) => a.name.localeCompare(b.name, "es")) ?? null,
     }))
     .sort((a, b) => a.facilityName.localeCompare(b.facilityName, "es"));
+}
+
+/**
+ * Whether someone may act on a member of the team list by scope (WMS-94):
+ * the same rule `withTeamChange` applies, for the screen to offer only what
+ * the server accepts. The titular and anyone without limit always fit.
+ */
+export function fitsTeamScope(
+  actor: Pick<TeamMember, "isOwner" | "limitedTo">,
+  target: Pick<TeamMember, "isOwner" | "limitedTo">,
+): boolean {
+  const toScope = (member: Pick<TeamMember, "isOwner" | "limitedTo">) =>
+    member.isOwner
+      ? null
+      : buildScope(
+          member.limitedTo.flatMap(
+            (entry): { facilityId: string; locationId: string | null }[] =>
+              entry.zones === null
+                ? [{ facilityId: entry.facilityId, locationId: null }]
+                : entry.zones.map((zone) => ({
+                    facilityId: entry.facilityId,
+                    locationId: zone.id,
+                  })),
+          ),
+        );
+  return scopeWithin(toScope(target), toScope(actor));
 }
 
 /** A warehouse and the zones that can be chosen in it, for the team screen. */

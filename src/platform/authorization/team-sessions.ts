@@ -14,8 +14,9 @@ import { db, forOrganization } from "@/server";
 import { assertAllowed, loadSubject } from "./access";
 import { isRole } from "./catalog";
 import { SESSIONS_CLOSED_NOTICE } from "./notices";
-import { knownRoles } from "./policy";
-import { withTeamChange, type TeamActionResult, type Tx } from "./team";
+import { knownRoles, scopeWithin } from "./policy";
+import { loadScope } from "./scope";
+import { fail, withTeamChange, type TeamActionResult, type Tx } from "./team";
 import { checkTeamChange, type TeamRuleReason } from "./team-rules";
 
 /**
@@ -165,10 +166,22 @@ export async function listMemberSessions(
     userId: actorUserId,
   };
   const rule = checkTeamChange(actor, target, { kind: "revoke_sessions" });
+  // WMS-94: someone limited only closes sessions of people inside their scope.
+  const client = forOrganization(organizationId);
+  const fits =
+    !rule.ok ||
+    scopeWithin(
+      await loadScope(client, target.userId),
+      await loadScope(client, actorUserId),
+    );
   return {
     sessions,
-    canRevoke: rule.ok,
-    revokeBlocked: rule.ok ? null : (BLOCKED[rule.reason] ?? null),
+    canRevoke: rule.ok && fits,
+    revokeBlocked: !rule.ok
+      ? (BLOCKED[rule.reason] ?? null)
+      : fits
+        ? null
+        : fail("target_outside_scope").error,
   };
 }
 

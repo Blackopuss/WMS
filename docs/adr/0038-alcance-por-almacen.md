@@ -88,6 +88,25 @@ Almacén y zona, comprobado en el servidor:
 Solo por almacén (un documento es del almacén, no de una zona): pedidos de
 salida (ver, editar, liberar, cancelar, listar, importar).
 
+## Configuración de toda la empresa y cambios de equipo (WMS-93 y WMS-94, 2026-11-21)
+
+La auditoría de seguridad 6 encontró dos huecos de la regla «quien está
+limitado solo reparte lo que tiene»:
+
+- **WMS-93.** Lo que vale para todos los almacenes (ajustes de operación,
+  reglas de aprobación, definiciones de campos personalizados y nomenclatura
+  de lotes de producción) solo lo cambia quien ve toda la empresa
+  (`changesCompanyConfig` de `@/platform/authorization`), como ya pasaba con
+  procesos, automatizaciones, webhooks, tipos de equipo y crear almacenes.
+  Quien está limitado ve los valores en solo lectura.
+- **WMS-94.** Asignar roles, desactivar, reactivar, cerrar sesiones y
+  cambiar el alcance de otra persona exige que el alcance de esa persona
+  quepa en el de quien hace el cambio (`scopeWithin` en `withTeamChange`,
+  motivo `target_outside_scope`). Una persona sin límite nunca cabe en un
+  alcance limitado: solo el titular o alguien sin límite la cambian. La
+  pantalla de Equipo y la ficha de sesiones usan la misma regla
+  (`fitsTeamScope`) para no ofrecer lo que el servidor rechaza.
+
 ## Lo que no cubre (pendiente)
 
 - Cifras de toda la empresa (2026-11-12, cerrado): existencias bajas, valor
