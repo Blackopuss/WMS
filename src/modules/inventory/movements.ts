@@ -33,6 +33,7 @@ import {
 import { readSetting } from "@/platform/settings";
 import { LOCKING_TRANSACTION, forOrganization, lockRows } from "@/server";
 
+import { requesterNoLongerMay } from "./approval-requester";
 import { COST_FORMAT_ERROR, parseCost } from "./average-cost";
 import { agoText } from "./entry-repeat";
 import {
@@ -2710,6 +2711,15 @@ export async function applyApprovedAdjustment(
     organizationId: context.organizationId,
     userId: context.request.requestedByUserId,
   };
+  // WMS-97 (NEG-20): who asked still works here and may still adjust.
+  const gone = await requesterNoLongerMay(
+    tx,
+    actor.organizationId,
+    actor.userId,
+    ["inventory.adjustment.create"],
+    "la corrección",
+  );
+  if (gone) throw new ApprovalExpired(gone);
   const failed = (result: {
     fieldErrors: Partial<Record<string, string>>;
     formError?: string;

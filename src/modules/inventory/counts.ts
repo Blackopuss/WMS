@@ -42,6 +42,7 @@ import {
   type InventoryActor,
   type MovementType,
 } from "./movements";
+import { requesterNoLongerMay } from "./approval-requester";
 import { containedAt } from "./contained";
 import { lineCost, openCostBook } from "./valuation";
 import { availableOfLot, lotColumns } from "./stock-status";
@@ -1812,6 +1813,16 @@ export async function applyApprovedCount(
     organizationId: context.organizationId,
     userId: context.request.requestedByUserId,
   };
+  // WMS-97 (NEG-20): who asked still works here and may still apply counts
+  // (applying writes adjustments: both permissions, as applyCount asks).
+  const gone = await requesterNoLongerMay(
+    tx,
+    actor.organizationId,
+    actor.userId,
+    ["inventory.count.apply", "inventory.adjustment.create"],
+    "aplicar el conteo",
+  );
+  if (gone) throw new ApprovalExpired(gone);
   const client = tx as unknown as CountTx;
   const known = await client.stockCountLine.findMany({
     where: { countId: stored.data.countId },

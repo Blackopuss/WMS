@@ -374,6 +374,48 @@ describe("PC-7: a correction is audited and needs an authorization by the rules"
     expect(await adjustmentsOf(owner.organizationId, item.productId)).toBe(0);
   });
 
+  it("expires when who asked lost the permission or left the company (WMS-97)", async () => {
+    for (const lose of ["role", "membership"] as const) {
+      const asker = await member(owner.organizationId, "warehouse", "Ana");
+      const item = await stocked(owner, "100");
+      const asked = await registerAdjustment(asker, {
+        productId: item.productId,
+        locationId: item.locationId,
+        quantity: "40",
+        reason: REASON,
+      });
+      if (asked.ok || asked.reason !== "pending_approval") {
+        throw new Error(JSON.stringify(asked));
+      }
+      if (lose === "role") {
+        await db.membershipRole.updateMany({
+          where: { membership: { userId: asker.userId } },
+          data: { role: "viewer" },
+        });
+      } else {
+        await db.membership.updateMany({
+          where: { userId: asker.userId },
+          data: { status: "DISABLED" },
+        });
+      }
+      const decided = await decideApproval(
+        boss,
+        approvalTypes,
+        asked.requestId,
+        {
+          decision: "approve",
+        },
+      );
+      expect(decided).toMatchObject({ ok: false, reason: "expired" });
+      if (decided.ok) return;
+      expect(decided.error).toMatch(
+        lose === "role" ? /ya no tiene permiso/ : /ya no trabaja/,
+      );
+      expect(await item.stock()).toBe("100");
+      expect(await adjustmentsOf(owner.organizationId, item.productId)).toBe(0);
+    }
+  });
+
   it("if the stock moved after asking, it expires instead of applying an old difference", async () => {
     const item = await stocked(owner, "100");
     const asked = await registerAdjustment(clerk, {
@@ -591,6 +633,40 @@ describe("counts with big differences", () => {
         pendingApprovalId: null,
       });
       expect(await reconcileStock(owner.organizationId)).toEqual([]);
+    } finally {
+      await ruleOn(owner, COUNT_APPROVAL.key, false);
+    }
+  });
+
+  it("an authorized count expires when who asked may no longer apply counts (WMS-97)", async () => {
+    await ruleOn(owner, COUNT_APPROVAL.key);
+    try {
+      const asker = await member(owner.organizationId, "warehouse", "Lidia");
+      const count = await scene(owner);
+      const asked = await applyCount(asker, {
+        countId: count.countId,
+        reason: REASON,
+        reviewed: true,
+      });
+      if (asked.ok || asked.reason !== "pending_approval") {
+        throw new Error(JSON.stringify(asked));
+      }
+      await db.membershipRole.updateMany({
+        where: { membership: { userId: asker.userId } },
+        data: { role: "operator" },
+      });
+      const decided = await decideApproval(
+        boss,
+        approvalTypes,
+        asked.requestId,
+        {
+          decision: "approve",
+        },
+      );
+      expect(decided).toMatchObject({ ok: false, reason: "expired" });
+      if (decided.ok) return;
+      expect(decided.error).toMatch(/ya no tiene permiso/);
+      expect(await count.stock()).toBe("100");
     } finally {
       await ruleOn(owner, COUNT_APPROVAL.key, false);
     }

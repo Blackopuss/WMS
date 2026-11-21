@@ -181,9 +181,10 @@ sí.»
 - El tipo hermano `inventory.adjustment` tiene el mismo defecto latente con
   listas largas de series (admite hasta 5,000): pasaría del tope del motor y
   respondería con la página de error en vez de un mensaje.
-- El efecto de `inventory.adjustment` no vuelve a comprobar que quien pidió
-  conserve `inventory.adjustment.create` al autorizar (el desecho sí, desde la
-  revisión de WMS-83).
+- ~~El efecto de `inventory.adjustment` no vuelve a comprobar que quien pidió
+  conserve `inventory.adjustment.create` al autorizar.~~ Cerrado con WMS-97
+  (2026-11-21): el ajuste y la aplicación de un conteo revisan la membresía
+  activa y los permisos de quien pidió (`requesterNoLongerMay`).
 
 ## Decisiones que el fundador puede cambiar
 

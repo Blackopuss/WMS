@@ -181,6 +181,15 @@ huella ya no coincide o el conteo ya no puede aplicarse, la solicitud vence.
 Quien autoriza necesita `inventory.count.apply` y
 `inventory.adjustment.create`.
 
+## Quien pidió sigue pudiendo (WMS-97, 2026-11-21)
+
+Al autorizar un ajuste (`inventory.adjustment`) o la aplicación de un conteo
+(`inventory.count_apply`), el efecto vuelve a leer con la transacción de la
+decisión la membresía activa de quien pidió y sus permisos vigentes
+(`inventory.adjustment.create`, y para el conteo también
+`inventory.count.apply`); si ya no los tiene, la solicitud vence con su
+motivo (`requesterNoLongerMay`, NEG-20), como el desecho desde WMS-83.
+
 ## Pendientes
 
 - **Aviso por correo** a quien puede autorizar (con `enqueueJob` y la regla
