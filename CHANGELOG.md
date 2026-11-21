@@ -6,6 +6,31 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-21
+
+Correcciones de la auditoría de seguridad 6 (`docs/seguridad/AUDITORIA_6.md`),
+hallazgos de prioridad alta y media:
+
+- **WMS-93** La configuración de toda la empresa (ajustes de operación, reglas
+  de aprobación, campos personalizados, nomenclatura de lotes de producción)
+  solo la cambia quien ve toda la empresa; quien está limitado a almacenes la
+  ve en solo lectura (WMS-SEC-01, ADR 0038).
+- **WMS-94** Asignar roles, desactivar, reactivar, cerrar sesiones y cambiar
+  el alcance exigen que la persona quepa en el alcance de quien hace el
+  cambio (WMS-SEC-02, ADR 0038).
+- **WMS-95** Dispositivo conocido al iniciar sesión: un tercero que bloquea un
+  correo con contraseñas equivocadas ya no saca a su dueño de los
+  dispositivos donde ya entró (WMS-SEC-03, ADR 0095; aviso de privacidad
+  `2026-11-21`).
+- **WMS-96** El lector de XLSX limpia cada cadena compartida una vez (11.8 s a
+  1.3 s con el peor archivo medido) (WMS-SEC-04).
+- **WMS-97** Al autorizar un ajuste o un conteo se revisa que quien lo pidió
+  siga activo y con permiso (WMS-SEC-05, ADR 0053).
+- **WMS-98** «Desplegar» solo construye y envía un commit que ya está en
+  `pruebas` con CI en verde (WMS-SEC-06, ADR 0024).
+- **WMS-99** La etiqueta de un bulto pide permiso para ver pedidos
+  (WMS-SEC-07, ADR 0047).
+
 ## 2026-11-20
 
 - **WMS-79** Pedido del cliente ligado a producción y embarque (ADR 0094,

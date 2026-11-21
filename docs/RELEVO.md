@@ -5,6 +5,17 @@ dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando.
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
 
+## Auditoría de seguridad 6 (2026-11-21)
+
+El fundador pidió una auditoría completa previa al lanzamiento con la skill
+`security-audit` de Cloudflare (instalada en `.agents/skills/security-audit`;
+`npm run skills:link`) y después corregir los hallazgos de prioridad alta y
+media. Se hizo en la rama `ccr-fdf0297c-zlsjrr` como WMS-93 a WMS-99
+(`docs/seguridad/AUDITORIA_6.md`, ADR 0095). Quedan sin corregir los de
+prioridad baja (WMS-SEC-08 a 10, anotados como WMS-100) y, del fundador,
+activar revisores y ramas del environment `produccion` en GitHub. Siguiente
+ADR libre: 0096.
+
 ## Relevo de quien coordina (2026-11-19)
 
 Una sesión nueva (`session_01QMjUPVCDkWanf5mfnUYJRu`) relevó a quien coordinaba. El fundador indicó ese día: abrir WMS-83 con la forma de trabajo del relevo y «además implementa lo que queda pendiente y no choca con ningún paso, digamos que si el 83 pide el 82 no hagas el 83, entonces abre todos los chats que se puedan para implementar multiagéntico; cuando el chat de implementación pase de los 500k de contexto, creas otro chat para que siga implementando». Es decir: (1) se abren a la vez todos los pasos pendientes cuyas dependencias ya están hechas y que no se pisan; (2) el relevo de un chat que implementa pasa de 400,000 a 500,000 tokens; (3) quien coordina no implementa ni escribe código.

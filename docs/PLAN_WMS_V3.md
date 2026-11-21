@@ -788,6 +788,14 @@ costos solo para quien puede verlos; carga con p95 < 500 ms.
 | ~~WMS-68~~ | Historial de accesos por persona y alertas de accesos sospechosos (dispositivo nuevo, muchos fallos). **Hecho (ADR 0064).** Pendiente: país por IP con la cabecera de Cloudflare cuando haya servidor, retención de los eventos, reintento del correo de alerta | — |
 | ~~WMS-42~~ | Equipos del almacén: registro, mantenimiento e incidencias; la tarea puede pedir un tipo de equipo. **Hecho (ADR 0065).** Pendiente: mantenimiento por horas, pedir equipo por regla o en tareas del sistema, trasladar un equipo a otro almacén, capacidad de carga, fotos | — |
 | ~~WMS-67~~ | Almacenamiento externo de archivos (compatible con S3, pensado para Cloudflare R2) detrás de la interfaz actual, con cupo por empresa y respaldo independiente. **Hecho (ADR 0070).** Pendiente: probar contra una cuenta real de R2 cuando haya servidor, purgar del respaldo lo borrado en la app | — |
+| ~~WMS-93~~ | Configuración de toda la empresa solo para quien ve toda la empresa (auditoría 6, WMS-SEC-01). **Hecho (2026-11-21, ADR 0038).** | — |
+| ~~WMS-94~~ | Cambios de equipo solo sobre personas dentro del alcance de quien cambia (auditoría 6, WMS-SEC-02). **Hecho (2026-11-21, ADR 0038).** | — |
+| ~~WMS-95~~ | Dispositivo conocido al iniciar sesión contra el bloqueo dirigido (auditoría 6, WMS-SEC-03). **Hecho (2026-11-21, ADR 0095).** Pendiente: desafío por correo para un dispositivo nuevo bloqueado | — |
+| ~~WMS-96~~ | Lector de XLSX sin amplificación de CPU por cadenas compartidas (auditoría 6, WMS-SEC-04). **Hecho (2026-11-21).** Pendiente: guardar la vista previa al subir para no releer el archivo en cada visita | — |
+| ~~WMS-97~~ | Efectos de autorización de ajustes y conteos revalidan a quien pidió (auditoría 6, WMS-SEC-05). **Hecho (2026-11-21, ADR 0053).** | — |
+| ~~WMS-98~~ | «Desplegar» solo con commits de `pruebas` con CI en verde (auditoría 6, WMS-SEC-06). **Hecho (2026-11-21, ADR 0024).** Pendiente del fundador: revisores y ramas del environment `produccion` en GitHub | — |
+| ~~WMS-99~~ | Etiqueta de un bulto con permiso de pedidos (auditoría 6, WMS-SEC-07). **Hecho (2026-11-21, ADR 0047).** | — |
+| WMS-100 | Pendientes de prioridad baja de la auditoría 6: importaciones de pedidos por almacén (WMS-SEC-08), ubicaciones fuera del alcance en fichas de producción y Calidad (WMS-SEC-09), copiador de respaldos desde código de root (WMS-SEC-10) y las notas de endurecimiento | Fundador decide si se hacen |
 | WMS-47 | Ambientes de desarrollo, pruebas y producción; VPS, dominio, Cloudflare, contenedores, respaldos fuera del servidor, monitoreo, logs centralizados, alertas, restauración periódica (**PC-8**) | Fundador elige proveedor |
 
 Operar sin conexión (cola local con idempotencia) solo después de WMS-35 y
