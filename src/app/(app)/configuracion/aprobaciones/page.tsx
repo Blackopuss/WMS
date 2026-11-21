@@ -4,11 +4,13 @@ import Link from "next/link";
 
 import { NoAccessState, PageContainer, PageHeader } from "@/components/states";
 import { approvalTypes, operationSettings } from "@/modules/registry";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getApprovalRules } from "@/platform/approvals";
 import { getModuleAccess } from "@/platform/billing";
 import { getOperationSettings } from "@/platform/settings";
 
 import { SettingForm } from "../operacion/setting-forms";
+import { WholeCompanyNotice } from "../whole-company-notice";
 import { RuleForm } from "./rule-form";
 
 export const metadata: Metadata = { title: "Reglas de aprobación" };
@@ -44,15 +46,19 @@ export default async function ReglasAprobacionPage() {
     organizationId: access.organization.id,
     userId: access.user.id,
   };
-  const [rules, settings] = await Promise.all([
+  const [rules, settings, wholeCompany] = await Promise.all([
     getApprovalRules(actor, approvalTypes),
     getOperationSettings(actor, operationSettings),
+    changesCompanyConfig(actor.organizationId, actor.userId),
   ]);
+  // WMS-93: someone limited to warehouses sees the rules, cannot change them.
+  const readOnly = !wholeCompany;
 
   return (
     <PageContainer>
       {back}
       <PageHeader title="Reglas de aprobación" />
+      {readOnly && <WholeCompanyNotice />}
       <p>
         <Link href="/aprobaciones" className={linkClass}>
           Ver solicitudes
@@ -70,13 +76,41 @@ export default async function ReglasAprobacionPage() {
             </h2>
             <p className="text-sm text-muted-foreground">{rule.description}</p>
           </div>
-          <RuleForm
-            typeKey={rule.key}
-            enabled={rule.enabled}
-            roles={rule.roles}
-            allowSelfApproval={rule.allowSelfApproval}
-            roleOptions={rule.roleOptions}
-          />
+          {readOnly ? (
+            <dl className="space-y-1 text-sm">
+              <div>
+                <dt className="inline font-medium">Pide autorización: </dt>
+                <dd className="inline">{rule.enabled ? "Sí" : "No"}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium">Quién autoriza: </dt>
+                <dd className="inline">
+                  {[
+                    "El titular",
+                    ...rule.roleOptions
+                      .filter((option) => rule.roles.includes(option.role))
+                      .map((option) => option.label),
+                  ].join(", ")}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-medium">
+                  Quien lo pide puede autorizarlo:{" "}
+                </dt>
+                <dd className="inline">
+                  {rule.allowSelfApproval ? "Sí" : "No"}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <RuleForm
+              typeKey={rule.key}
+              enabled={rule.enabled}
+              roles={rule.roles}
+              allowSelfApproval={rule.allowSelfApproval}
+              roleOptions={rule.roleOptions}
+            />
+          )}
           {settings
             .filter((setting) => rule.settingKeys.includes(setting.key))
             .map((setting) => (
@@ -87,6 +121,7 @@ export default async function ReglasAprobacionPage() {
                   value={setting.value}
                   defaultValue={setting.defaultValue}
                   options={setting.options}
+                  readOnly={readOnly}
                 />
               </div>
             ))}

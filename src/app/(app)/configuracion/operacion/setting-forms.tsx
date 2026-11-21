@@ -38,16 +38,33 @@ export function SettingForm({
   value,
   defaultValue,
   options,
+  readOnly = false,
 }: {
   settingKey: string;
   label: string;
   value: string;
   defaultValue: string;
   options: readonly { value: string; label: string; help: string }[];
+  /** Who is limited to warehouses only sees the value (WMS-93). */
+  readOnly?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(updateSettingAction, {
     answers: 0,
   } satisfies SettingFormState);
+  if (readOnly) {
+    const current = options.find((option) => option.value === value);
+    return (
+      <div className="space-y-1">
+        <p className="font-medium">{label}</p>
+        <p className="text-sm">
+          {current?.label ?? value}
+          {current && (
+            <span className="block text-muted-foreground">{current.help}</span>
+          )}
+        </p>
+      </div>
+    );
+  }
   return (
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="key" value={settingKey} />

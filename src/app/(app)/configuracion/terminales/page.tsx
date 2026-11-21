@@ -10,6 +10,7 @@ import {
 } from "@/components/states";
 import { formatDateTime } from "@/lib";
 import { operationSettings } from "@/modules/registry";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getOperationSettings } from "@/platform/settings";
 import {
@@ -51,6 +52,11 @@ export default async function TerminalesPage() {
     organizationId: access.organization.id,
     userId: access.user.id,
   };
+  // WMS-93: settings apply to every warehouse; someone limited only sees them.
+  const settingsReadOnly = !(await changesCompanyConfig(
+    actor.organizationId,
+    actor.userId,
+  ));
   const canManage = access.can("platform.terminal.manage");
   const canConfigure = access.can("platform.organization.update");
   const [terminals, facilities, settings] = await Promise.all([
@@ -156,6 +162,7 @@ export default async function TerminalesPage() {
               value={setting.value}
               defaultValue={setting.defaultValue}
               options={setting.options}
+              readOnly={settingsReadOnly}
             />
           ))}
           <p className="text-sm text-muted-foreground">

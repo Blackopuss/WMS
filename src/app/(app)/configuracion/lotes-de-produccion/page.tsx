@@ -17,7 +17,10 @@ import {
   LOT_SEQUENCE_SCOPES,
   getLotNumbering,
 } from "@/modules/production";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
+
+import { WholeCompanyNotice } from "../whole-company-notice";
 
 import { LotNumberingForm } from "./lot-numbering-form";
 
@@ -54,10 +57,14 @@ export default async function LotesProduccionPage() {
       </PageContainer>
     );
   }
-  const view = await getLotNumbering({
-    organizationId: access.organization.id,
-    userId: access.user.id,
-  });
+  const [view, wholeCompany] = await Promise.all([
+    getLotNumbering({
+      organizationId: access.organization.id,
+      userId: access.user.id,
+    }),
+    // WMS-93: the numbering applies to every warehouse.
+    changesCompanyConfig(access.organization.id, access.user.id),
+  ]);
   return (
     <PageContainer>
       {back}
@@ -67,21 +74,24 @@ export default async function LotesProduccionPage() {
           ? `El siguiente lote se verá como ${view.preview}.`
           : "Sin nomenclatura, cada lote se llama como su orden y su reporte: OP-0001-01."}
       </p>
-      <LotNumberingForm
-        rule={{ ...view.rule, digits: String(view.rule.digits) }}
-        dates={LOT_DATE_FORMATS.map((value) => ({
-          value,
-          label: LOT_DATE_LABELS[value],
-        }))}
-        resets={LOT_RESETS.map((value) => ({
-          value,
-          label: LOT_RESET_LABELS[value],
-        }))}
-        scopes={LOT_SEQUENCE_SCOPES.map((value) => ({
-          value,
-          label: LOT_SCOPE_LABELS[value],
-        }))}
-      />
+      {!wholeCompany && <WholeCompanyNotice />}
+      {wholeCompany && (
+        <LotNumberingForm
+          rule={{ ...view.rule, digits: String(view.rule.digits) }}
+          dates={LOT_DATE_FORMATS.map((value) => ({
+            value,
+            label: LOT_DATE_LABELS[value],
+          }))}
+          resets={LOT_RESETS.map((value) => ({
+            value,
+            label: LOT_RESET_LABELS[value],
+          }))}
+          scopes={LOT_SEQUENCE_SCOPES.map((value) => ({
+            value,
+            label: LOT_SCOPE_LABELS[value],
+          }))}
+        />
+      )}
     </PageContainer>
   );
 }

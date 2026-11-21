@@ -18,6 +18,7 @@ import {
   planSetupSteps,
   setupAbilities,
 } from "@/modules/inventory";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getOperationSettings } from "@/platform/settings";
 
@@ -84,6 +85,11 @@ export default async function ConfiguracionInicialPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
+  // WMS-93: settings apply to every warehouse; someone limited only sees them.
+  const settingsReadOnly = !(await changesCompanyConfig(
+    actor.organizationId,
+    actor.userId,
+  ));
   const can = setupAbilities((permission) => access.allows(permission));
   const [steps, settings] = await Promise.all([
     getFirstSteps(actor, {
@@ -137,6 +143,7 @@ export default async function ConfiguracionInicialPage({
                       value={setting.value}
                       defaultValue={setting.defaultValue}
                       options={setting.options}
+                      readOnly={settingsReadOnly}
                     />
                   ))}
                   <p>

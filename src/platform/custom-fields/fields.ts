@@ -2,6 +2,10 @@ import "server-only";
 
 import { newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import {
+  WHOLE_COMPANY_CONFIG_MESSAGE,
+  changesCompanyConfig,
+} from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getEntitlements } from "@/platform/entitlements";
 import {
@@ -70,8 +74,20 @@ function fail(error: string, field?: Failure["field"]): never {
 }
 
 /** The person may configure, and the module of the entity is active. */
-async function guard(actor: Actor, entity: CustomFieldEntity) {
+async function guard(
+  actor: Actor,
+  entity: CustomFieldEntity,
+  { reading = false }: { reading?: boolean } = {},
+) {
   await assertModulePermission(actor.organizationId, actor.userId, PERMISSION);
+  // A field applies to every warehouse: only someone not limited changes it
+  // (WMS-93); someone limited may still read the setup.
+  if (
+    !reading &&
+    !(await changesCompanyConfig(actor.organizationId, actor.userId))
+  ) {
+    return { ok: false as const, error: WHOLE_COMPANY_CONFIG_MESSAGE };
+  }
   const entitlements = await getEntitlements(actor.organizationId);
   if (!entitlements.hasModule(CUSTOM_FIELD_ENTITIES[entity].module)) {
     return {
@@ -124,7 +140,7 @@ export async function listCustomFieldSetup(
   if (!isCustomFieldEntity(entity)) {
     return { ok: false, error: "Eso no lleva campos personalizados." };
   }
-  const refused = await guard(actor, entity);
+  const refused = await guard(actor, entity, { reading: true });
   if (refused) return refused;
   const client = forOrganization(actor.organizationId);
   const fields = await readCustomFields(client, entity, {

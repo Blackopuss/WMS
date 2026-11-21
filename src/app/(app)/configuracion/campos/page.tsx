@@ -9,6 +9,7 @@ import {
   ReadOnlyNotice,
 } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import {
   CUSTOM_FIELD_ENTITIES,
@@ -33,6 +34,7 @@ import {
   EditFieldForm,
   OptionLabelForm,
 } from "./field-forms";
+import { WholeCompanyNotice } from "../whole-company-notice";
 
 export const metadata: Metadata = { title: "Campos personalizados" };
 
@@ -92,11 +94,15 @@ export default async function CamposPage({
     );
   }
   const info = CUSTOM_FIELD_ENTITIES[entity];
-  const writable = access.moduleState(info.module) === "active";
-  const setup = await listCustomFieldSetup(
-    { organizationId: access.organization.id, userId: access.user.id },
-    entity,
-  );
+  const [setup, wholeCompany] = await Promise.all([
+    listCustomFieldSetup(
+      { organizationId: access.organization.id, userId: access.user.id },
+      entity,
+    ),
+    // WMS-93: a field applies to every warehouse; someone limited only reads.
+    changesCompanyConfig(access.organization.id, access.user.id),
+  ]);
+  const writable = access.moduleState(info.module) === "active" && wholeCompany;
   const fields = setup.ok ? setup.fields : [];
   const inUse = fields.filter((field) => !field.archived);
   const archived = fields.filter((field) => field.archived);
@@ -219,6 +225,7 @@ export default async function CamposPage({
         />
       )}
       <PageHeader title="Campos personalizados" />
+      {!wholeCompany && <WholeCompanyNotice />}
       {entities.length > 1 && (
         <nav aria-label="Para qué" className="flex flex-wrap gap-2">
           {entities.map((each) => (

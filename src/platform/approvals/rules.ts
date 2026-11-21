@@ -7,6 +7,8 @@ import {
   ROLE_LABELS,
   ROLE_MODULE,
   ROLE_PERMISSIONS,
+  WHOLE_COMPANY_CONFIG_MESSAGE,
+  changesCompanyConfig,
   isRole,
   type Role,
 } from "@/platform/authorization";
@@ -156,6 +158,10 @@ export async function updateApprovalRule(
   input: { enabled: unknown; roles: unknown; allowSelfApproval: unknown },
 ): Promise<UpdateApprovalRuleResult> {
   await assertModulePermission(actor.organizationId, actor.userId, PERMISSION);
+  // A rule applies to every warehouse: not for someone limited (WMS-93).
+  if (!(await changesCompanyConfig(actor.organizationId, actor.userId))) {
+    return { ok: false, error: WHOLE_COMPANY_CONFIG_MESSAGE };
+  }
   const type = types.find((each) => each.key === String(key));
   if (!type) return { ok: false, error: "Ese tipo de aprobación no existe." };
   const entitlements = await getEntitlements(actor.organizationId);

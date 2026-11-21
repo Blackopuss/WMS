@@ -1,6 +1,6 @@
 import "server-only";
 
-import { delegationOf, type TenantDb } from "@/server";
+import { delegationOf, forOrganization, type TenantDb } from "@/server";
 
 import { buildScope, intersectScopes, type Scope } from "./policy";
 
@@ -52,4 +52,23 @@ export async function seesWholeCompany(
   userId: string,
 ): Promise<boolean> {
   return (await loadScope(client, userId)) === null;
+}
+
+/**
+ * Configuration that applies to every warehouse of the company (operation
+ * settings, approval rules, custom fields, production lot numbering) is
+ * changed only by someone not limited to warehouses or zones (WMS-93): a
+ * member limited on purpose by the titular must not weaken the controls of
+ * the warehouses outside their scope. Same rule as processes (N6),
+ * automations and webhooks.
+ */
+export const WHOLE_COMPANY_CONFIG_MESSAGE =
+  "Esto vale para toda la empresa: lo cambia quien no está limitado a un almacén.";
+
+/** seesWholeCompany for a page or a service that has no client at hand. */
+export async function changesCompanyConfig(
+  organizationId: string,
+  userId: string,
+): Promise<boolean> {
+  return seesWholeCompany(forOrganization(organizationId), userId);
 }

@@ -5,6 +5,10 @@ import { z } from "zod";
 import { newId } from "@/lib";
 import { dayWindow } from "@/modules/inventory";
 import { recordAuditEvent } from "@/platform/audit";
+import {
+  WHOLE_COMPANY_CONFIG_MESSAGE,
+  changesCompanyConfig,
+} from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getEntitlements } from "@/platform/entitlements";
 import { forOrganization, lockRows } from "@/server";
@@ -120,6 +124,10 @@ export async function saveLotNumbering(
     userId,
     "production.order.create",
   );
+  // The numbering applies to every warehouse: not for someone limited (WMS-93).
+  if (!(await changesCompanyConfig(organizationId, userId))) {
+    return { ok: false, formError: WHOLE_COMPANY_CONFIG_MESSAGE };
+  }
   const entitlements = await getEntitlements(organizationId);
   if (!entitlements.hasModule("production")) {
     return {

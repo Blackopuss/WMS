@@ -5,11 +5,13 @@ import Link from "next/link";
 import { NoAccessState, PageContainer, PageHeader } from "@/components/states";
 import { EQUIPMENT_SETTINGS } from "@/modules/inventory";
 import { approvalTypes, operationSettings } from "@/modules/registry";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { listLocations } from "@/platform/locations";
 import { getOperationSettings } from "@/platform/settings";
 import { TERMINAL_SETTINGS } from "@/platform/terminals";
 
+import { WholeCompanyNotice } from "../whole-company-notice";
 import { SettingForm, StagingForm } from "./setting-forms";
 
 export const metadata: Metadata = { title: "Operación" };
@@ -66,11 +68,17 @@ export default async function OperacionPage() {
     (location) => !location.isDefault && !location.archived,
   );
   const areas = [...new Set(settings.map((setting) => setting.area))];
+  // WMS-93: someone limited to warehouses sees the values, cannot change them.
+  const readOnly = !(await changesCompanyConfig(
+    actor.organizationId,
+    actor.userId,
+  ));
 
   return (
     <PageContainer>
       {back}
       <PageHeader title="Operación" />
+      {readOnly && <WholeCompanyNotice />}
       {areas.map((area) => (
         <section
           key={area}
@@ -90,6 +98,7 @@ export default async function OperacionPage() {
                 value={setting.value}
                 defaultValue={setting.defaultValue}
                 options={setting.options}
+                readOnly={readOnly}
               />
             ))}
           {area === "Surtido" && inventory && (

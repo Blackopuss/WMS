@@ -19,6 +19,7 @@ import {
   type EquipmentSummary,
 } from "@/modules/inventory";
 import { operationSettings } from "@/modules/registry";
+import { changesCompanyConfig } from "@/platform/authorization";
 import { getModuleAccess } from "@/platform/billing";
 import { getOperationSettings } from "@/platform/settings";
 
@@ -88,6 +89,11 @@ export default async function EquiposPage({
     organizationId: access.organization.id,
     userId: access.user.id,
   };
+  // WMS-93: settings apply to every warehouse; someone limited only sees them.
+  const settingsReadOnly = !(await changesCompanyConfig(
+    actor.organizationId,
+    actor.userId,
+  ));
   const { ver, pagina } = await searchParams;
   const filter: EquipmentListFilter =
     ver === "atencion" ? "attention" : ver === "baja" ? "retired" : "active";
@@ -265,6 +271,7 @@ export default async function EquiposPage({
               value={setting.value}
               defaultValue={setting.defaultValue}
               options={setting.options}
+              readOnly={settingsReadOnly}
             />
           ))}
         </section>

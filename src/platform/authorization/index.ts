@@ -36,7 +36,12 @@ export type {
   Subject,
   SubjectLimit,
 } from "./policy";
-export { loadScope, seesWholeCompany } from "./scope";
+export {
+  WHOLE_COMPANY_CONFIG_MESSAGE,
+  changesCompanyConfig,
+  loadScope,
+  seesWholeCompany,
+} from "./scope";
 export type { ScopeReader } from "./scope";
 export {
   FORBIDDEN_MESSAGE,

@@ -2,6 +2,10 @@ import "server-only";
 
 import { log, newId } from "@/lib";
 import { recordAuditEvent } from "@/platform/audit";
+import {
+  WHOLE_COMPANY_CONFIG_MESSAGE,
+  changesCompanyConfig,
+} from "@/platform/authorization";
 import { assertModulePermission } from "@/platform/billing";
 import { getEntitlements } from "@/platform/entitlements";
 import { forOrganization, type TenantDb } from "@/server";
@@ -91,6 +95,10 @@ export async function updateOperationSetting(
   raw: unknown,
 ): Promise<UpdateSettingResult> {
   await assertModulePermission(actor.organizationId, actor.userId, PERMISSION);
+  // Settings apply to every warehouse: not for someone limited (WMS-93).
+  if (!(await changesCompanyConfig(actor.organizationId, actor.userId))) {
+    return { ok: false, error: WHOLE_COMPANY_CONFIG_MESSAGE };
+  }
   const definition = definitions.find((each) => each.key === String(key));
   if (!definition) return { ok: false, error: "Ese ajuste no existe." };
   if (definition.module) {
