@@ -426,6 +426,38 @@ describe("readXlsx", () => {
     expect(read[1_999]![0]).toHaveLength(READ_LIMITS.cell);
   });
 
+  it("a long shared string used by every cell of a full sheet costs its length once (WMS-96)", () => {
+    // The worst case the audit found: 20,000 rows × 60 columns pointing at
+    // one 8,000-character string (~26 MB of XML, under the unpacked limit).
+    const columns = Array.from({ length: READ_LIMITS.columns }, (_, i) =>
+      i < 26
+        ? String.fromCharCode(65 + i)
+        : `${String.fromCharCode(64 + Math.floor(i / 26))}${String.fromCharCode(65 + (i % 26))}`,
+    );
+    const rowCount = READ_LIMITS.rows - 1;
+    const parts: string[] = [];
+    for (let r = 1; r <= rowCount; r++) {
+      parts.push(`<row r="${r}">`);
+      for (const column of columns) {
+        parts.push(`<c r="${column}${r}" t="s"><v>0</v></c>`);
+      }
+      parts.push("</row>");
+    }
+    const file = workbook(parts.join(""), {
+      "xl/sharedStrings.xml": `<sst ${NS}><si><t>${"x".repeat(READ_LIMITS.cell * 4)}</t></si></sst>`,
+    });
+    const started = performance.now();
+    const read = rowsOf(readXlsx(file));
+    const spent = performance.now() - started;
+    expect(read).toHaveLength(rowCount);
+    expect(read[rowCount - 1]![READ_LIMITS.columns - 1]).toHaveLength(
+      READ_LIMITS.cell,
+    );
+    // Measured on 2026-11-21 with a 2.4 MB file: 11.8 s cleaning the string
+    // in every cell, 1.3 s now (the cost of scanning the XML).
+    expect(spent).toBeLessThan(6_000);
+  }, 60_000);
+
   it("counts rows and cells as written, not only where they say they go", () => {
     // Rows that all claim to be row 1 still count.
     expect(

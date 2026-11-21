@@ -495,7 +495,9 @@ function readSheet(
       else if (type === "e") text = "";
       else text = value === "" ? "" : numberText(unescapeXml(value));
       while (row.length < at) row.push("");
-      row[at] = clean(text);
+      // A shared string is already clean (readXlsx): cleaning it again per
+      // cell would cost cells × its length (WMS-96).
+      row[at] = type === "s" ? text : clean(text);
     }
     while (rows.length < index) rows.push([]);
     rows[index] = row;
@@ -553,11 +555,12 @@ export function readXlsx(bytes: Uint8Array): ReadSpreadsheetResult {
     if (!chosen) return fail("format", NOT_XLSX);
 
     const sharedPart = parts.get("xl/sharedStrings.xml");
-    // Cut to what a cell keeps, so a long string used by many cells is
-    // cleaned at that size each time, not at its full length.
+    // Cleaned once here, to what a cell keeps: a long string used by many
+    // cells then costs its length once, not once per cell (WMS-96; audit 1
+    // only cut it before cleaning it again in every cell).
     const shared = sharedPart
       ? Array.from(elements(xmlText(sharedPart), "si"), ({ body }) =>
-          textOf(body).slice(0, READ_LIMITS.cell * 4),
+          clean(textOf(body)),
         )
       : [];
     const sheet = readSheet(xmlText(parts.get(chosen.path)), shared);
