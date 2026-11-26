@@ -237,3 +237,32 @@ texto es un número de su tipo. Por eso (revisión independiente, 2026-11-19):
 - Buscar por referencia del pedido (la del cliente) y por número de guía.
 - Olas (`OL-`), conteos, equipos y recetas.
 - Resultados de almacenes archivados.
+
+## Ampliación (WMS-101, 2026-11-26)
+
+El fundador pidió que el buscador «le salgan los parecidos» y no exija el
+nombre tal cual. Cambios, sin tablas, permisos ni migraciones:
+
+- **Documentos con número incompleto.** `documentNumberQuery` convierte lo
+  escrito en el número exacto (si lo hay) y en rangos de los números cuyos
+  dígitos mostrados (con el relleno a 4, «0012») empiezan con lo escrito:
+  «INC-000» → 1 a 9; «PS-12» → 12, 1200 a 1299, 12000 a 12999…; solo las
+  letras («INC», «INC-») → todos. Una letra sola sin separador («t») no se
+  toma. `searchByNumber` lee primero la fila exacta y después las de los
+  rangos, la más reciente primero, sobre el índice único
+  `(organizationId, number)`; cada una se confirma con el getter de su ficha,
+  de una en una, hasta 5 (y como mucho 4 filas de más), así que lo de fuera
+  del alcance sigue sin listarse ni contarse. Un número completo como se
+  imprime («PS-0012», lo que lee un escáner) da solo ese documento y lo abre.
+- **Lotes y series por su inicio**, desde 3 caracteres (`startsWith` con `%`,
+  `_` y `\` escapados, sobre los índices `lot(organizationId, code)` y
+  `serial_unit(organizationId, serial)`); el exacto va primero y es el único
+  «exacto». El rastreo (`findTraceMatches`) sigue buscando solo el código
+  exacto.
+- Costo: un número incompleto cuesta hasta un getter por resultado; la
+  prueba de costo fija 40 sentencias también para «PS-000».
+
+Decisiones que el fundador puede cambiar: el tope de 5 por tipo, los 3
+caracteres mínimos de lotes y series, que una letra sola no liste tareas, y
+que productos y proveedores sigan buscando por palabras contenidas (sin
+tolerancia a errores de escritura).

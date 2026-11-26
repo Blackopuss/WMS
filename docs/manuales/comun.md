@@ -31,7 +31,7 @@ En una terminal se ve **menos** que en tu cuenta normal: no aparecen costos, exp
 
 ## 2. Cómo se ve el sistema
 
-- **Escritorio:** menú a la izquierda. **Teléfono:** barra de abajo con las primeras 4 secciones que tu rol puede ver y un botón **Más** con el resto. Arriba, en el teléfono, ves el nombre de la sección y los botones **Buscar** y **Avisos**; el interruptor **Modo oscuro** (claro u oscuro) está en **Más**, y en escritorio, en el menú de la izquierda.
+- **Escritorio:** menú a la izquierda. **Teléfono:** barra de abajo con las primeras 4 secciones que tu rol puede ver y un botón **Más** con el resto. Arriba, en el teléfono, ves el nombre de la sección, el botón **Buscar** y la campana de avisos; el interruptor **Modo oscuro** (claro u oscuro) está en **Más**, y en escritorio, en el menú de la izquierda.
 - Solo ves las secciones que tu rol puede usar. El orden del menú es: Inicio, Tareas, Recepción, Pedidos, Producción, Inventario, Movimientos, Conteos, Incidencias, Compras y Configuración.
 - Si una sección dice **no está activo en tu empresa**, el módulo no está contratado; si dice **solo lectura**, el plan venció o el módulo se quitó: puedes consultar y exportar, pero no registrar nada. **Configuración › Mi plan** solo se consulta: para contratar o renovar, el titular escribe al correo de contacto que aparece ahí y el personal de la plataforma lo activa.
 - Si ves **No tienes acceso a esta sección**, tu rol no la incluye: pídesela al titular o a un administrador.
@@ -41,14 +41,14 @@ En una terminal se ve **menos** que en tu cuenta normal: no aparecen costos, exp
 
 ## 3. Avisos
 
-- La campana **Avisos** (en la barra lateral, o arriba en el teléfono) muestra lo que te toca o lo que cambió en algo que pediste. Tocar un aviso lo marca como leído y te lleva a la pantalla. También hay **Marcar todos como leídos** y **Ver todos** (`/avisos`).
+- La campana de avisos (arriba a la derecha, en escritorio y en el teléfono; muestra cuántos tienes sin leer) muestra lo que te toca o lo que cambió en algo que pediste. Tocar un aviso lo marca como leído y te lleva a la pantalla. También hay **Marcar todos como leídos** y **Ver todos** (`/avisos`).
 - **Configuración › Avisos que recibo** decide qué avisos recibes. Por omisión llegan solo a la campana; el correo está apagado y lo enciendes tú por tipo (**Recibir por correo**), si la empresa lo permite.
 - Los avisos nunca llevan costos ni datos que tú no puedas ver.
 
 ## 4. Buscar
 
-- **Buscar** (en la barra lateral junto a **Avisos**, o arriba en el teléfono) abre una sola caja para encontrar cualquier cosa que tu rol pueda ver. Escribe o escanea y toca **Buscar**.
-- Busca productos (por nombre, clave o código de barras), ubicaciones del almacén donde trabajas (por nombre o código), proveedores (por nombre o RFC), lotes, series y tarimas (por su código exacto) y documentos por su número con sus letras: pedidos `PS-0012`, embarques `EM-0003`, devoluciones `DV-0002`, traslados `TR-0004`, tareas `T-0021`, incidencias `INC-0005`, órdenes y solicitudes de compra (`OC-0007`, `SC-0003`) y órdenes y solicitudes de producción (`OP-0004`, `SP-0002`). Un número solo, sin letras, no se busca.
+- **Buscar** (en la barra lateral, o arriba en el teléfono) abre una sola caja para encontrar cualquier cosa que tu rol pueda ver. Escribe o escanea y toca **Buscar**.
+- Busca productos (por nombre, clave o código de barras), ubicaciones del almacén donde trabajas (por nombre o código), proveedores (por nombre o RFC), lotes y series (por su código completo o por cómo empieza, desde tres letras o números), tarimas (por su código exacto) y documentos por su número con sus letras: pedidos `PS-0012`, embarques `EM-0003`, devoluciones `DV-0002`, traslados `TR-0004`, tareas `T-0021`, incidencias `INC-0005`, órdenes y solicitudes de compra (`OC-0007`, `SC-0003`) y órdenes y solicitudes de producción (`OP-0004`, `SP-0002`). Un número solo, sin letras, no se busca. No hace falta el número completo: `INC-000` lista de `INC-0001` a `INC-0009`, `PS-12` pone primero el `PS-0012` y después los que empiezan así, y solo las letras (`INC`) listan las más recientes.
 - Si lo que escaneas o escribes es exactamente un código o número y solo hay un resultado, se abre directo. Si hay varios, los ves agrupados; toca la fila que quieres. **Ver todos** lleva a la lista completa de productos o proveedores.
 - Solo aparece lo que puedes abrir: lo de otros almacenes o zonas fuera de tu alcance, de módulos que tu empresa no tiene o de secciones que tu rol no incluye no se muestra. Nunca muestra costos. Con la caja vacía, la pantalla dice qué puedes buscar.
 
@@ -93,4 +93,4 @@ Un reporte **no cambia existencias**: avisa a quien supervisa. Si lo que pasa es
 
 Una persona puede tener **varios roles a la vez**: recibe la suma de lo que permite cada uno y ocupa un solo lugar del plan. Un rol de Producción o de Calidad solo se asigna si el módulo está contratado.
 
-Vigente al 2026-11-21 (dispositivo conocido al iniciar sesión: WMS-95; configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86; empresa de demostración: WMS-44)
+Vigente al 2026-11-26 (búsqueda con números incompletos y campana arriba a la derecha: WMS-101; dispositivo conocido al iniciar sesión: WMS-95; configuración inicial: WMS-43; tema en «Más» en teléfono: WMS-86; empresa de demostración: WMS-44)

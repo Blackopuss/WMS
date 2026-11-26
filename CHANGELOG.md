@@ -6,6 +6,14 @@ su commit en `pruebas` y su ADR cuando tiene. El detalle de cada paso está en
 anteriores); la arquitectura, en `docs/arquitectura/`. Se agrega una línea al
 cerrar cada paso.
 
+## 2026-11-26
+
+- **WMS-101** Búsqueda con números y códigos incompletos: «INC-000», «PS-12»
+  o solo «INC» listan los documentos que empiezan así (el exacto primero, los
+  más recientes después, hasta 5); lotes y series también por su inicio desde
+  3 caracteres. La campana de avisos sale de la barra lateral y queda sola
+  arriba a la derecha, en escritorio y en teléfono (ADR 0081, ampliación).
+
 ## 2026-11-21
 
 Correcciones de la auditoría de seguridad 6 (`docs/seguridad/AUDITORIA_6.md`),

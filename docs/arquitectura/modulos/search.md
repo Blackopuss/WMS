@@ -13,7 +13,7 @@ declara las suyas y `src/modules/registry/search.ts` las junta en
 | --- | --- | --- |
 | Contrato | `sources.ts` | tipos `SearchSource` (`kind` `modulo.cosa`, `label`, `permission` de lectura de la pantalla que abre, `hint`, `limit` 1 a 20, `moreHref`, `search`), `SearchHit` (`title`, `detail`, `href` propio, `exact`), `SearchQuery`, `SearchActor`; `assertValidSearchSources` (clave única, permiso conocido y solo de lectura o exportación, tope válido) |
 | Motor | `run.ts` | `runGlobalSearch(actor, texto, fuentes)`: un `loadSubject` y un `getEntitlements` para todas, corre solo las fuentes con `can` + `entitles`, cada una con su tope + 1, descarta `href` que no sean rutas propias, deja vacío un grupo cuya fuente lanza un `AppError`; `open` = el único resultado si es exacto. `searchQueryOf` (texto con `normalizeSearch`, hasta 6 palabras) |
-| Números | `numbers.ts`, `by-number.ts` | `documentNumber(prefijo, texto)` (puro: «PS-0012», «ps 12», «PS12»); `searchByNumber` (fuente que busca la fila por número y la confirma con el servicio de la ficha); `searchIdPath` |
+| Números | `numbers.ts`, `by-number.ts` | `documentNumber(prefijo, texto)` (puro: «PS-0012», «ps 12», «PS12»); `documentNumberQuery(prefijo, texto)` (puro, WMS-101: número exacto, rangos de los números cuyos dígitos mostrados empiezan con lo escrito, «solo las letras» y si está completo como se imprime); `searchByNumber` (fuente que busca las filas por número, la exacta primero y luego las del inicio, más recientes primero, hasta 5, y confirma cada una con el servicio de la ficha); `searchIdPath` |
 
 ## Reglas
 

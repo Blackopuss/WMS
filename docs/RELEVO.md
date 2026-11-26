@@ -5,6 +5,14 @@ dónde quedó el trabajo, cómo levantar el entorno y cómo se viene trabajando.
 detalle vive en los documentos que se enlazan; aquí solo va lo que hace falta
 para arrancar sin releer la conversación anterior.
 
+## Búsqueda incompleta y campana (WMS-101, 2026-11-26)
+
+El fundador pidió (2026-11-25) que el buscador encuentre lo parecido y que
+«Avisos» sea solo la campana arriba a la derecha. Hecho como WMS-101 en la
+rama `claude/vibrant-bohr-zl3std` y subido a `pruebas` a pedido del fundador,
+que lo une él a `main`. Detalle en `MEMORY.md` y en la ampliación del ADR
+0081. Siguiente ADR libre: 0096; siguiente número de paso: WMS-102.
+
 ## Auditoría de seguridad 6 (2026-11-21)
 
 El fundador pidió una auditoría completa previa al lanzamiento con la skill
