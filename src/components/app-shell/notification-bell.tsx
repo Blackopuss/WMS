@@ -47,8 +47,8 @@ const POLL_MAX = 30;
 const countText = (count: number) => (count > 99 ? "99+" : String(count));
 
 /**
- * The bell (WMS-39, ADR 0057): «Avisos» with the number of unread notices
- * in the sidebar and in the mobile header; one list in a side sheet with
+ * The bell (WMS-39, ADR 0057): the bell with the number of unread notices,
+ * top right of the frame (desktop and phone); one list in a side sheet with
  * the latest ones. The count comes from the server: painted with the
  * layout, asked again when the screen changes and once a minute while the
  * tab is visible, up to half an hour without navigating. No open
@@ -147,43 +147,41 @@ export function useNotificationBell(props: NotificationBellProps) {
 
 type Bell = ReturnType<typeof useNotificationBell>;
 
-/** The button that opens the list; always with its visible name. */
+/**
+ * The button that opens the list: only the bell, top right of the frame
+ * (fundador, 2026-11-25), with its number of unread notices. Its name
+ * («Avisos, 2 sin leer») goes to screen readers and to the tooltip.
+ */
 export function BellButton({
   bell,
   className,
-  compact = false,
 }: {
   bell: Bell;
   className?: string;
-  /** The mobile header: less padding, same name. */
-  compact?: boolean;
 }) {
   const { count } = bell;
+  const name =
+    count === 0
+      ? "Avisos, ninguno sin leer"
+      : `Avisos, ${count === 1 ? "1 sin leer" : `${countText(count)} sin leer`}`;
   return (
     <button
       type="button"
       aria-haspopup="dialog"
       aria-expanded={bell.open}
-      aria-label={
-        count === 0
-          ? "Avisos, ninguno sin leer"
-          : `Avisos, ${count === 1 ? "1 sin leer" : `${countText(count)} sin leer`}`
-      }
+      aria-label={name}
+      title={name}
       onClick={(event) => bell.show(event.currentTarget)}
       className={cn(
-        "relative inline-flex min-h-11 items-center gap-2 rounded-lg text-sm font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-        compact ? "px-2" : "w-full px-3",
+        "relative inline-grid size-11 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
         className,
       )}
     >
-      <Bell aria-hidden="true" className="size-4.5 shrink-0" />
-      <span aria-hidden="true" className={compact ? "" : "flex-1 text-left"}>
-        Avisos
-      </span>
+      <Bell aria-hidden="true" className="size-5" />
       {count > 0 && (
         <span
           aria-hidden="true"
-          className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground tabular-nums"
+          className="absolute top-1 right-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[0.6875rem] leading-none font-semibold text-primary-foreground tabular-nums"
         >
           {countText(count)}
         </span>

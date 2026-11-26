@@ -31,6 +31,9 @@ import {
   parseFacilityTransferNumber,
 } from "./facility-transfer-states";
 import { STOCK_STATUS_LABELS } from "./stock-status";
+
+/** `%`, `_` and `\` are text to find, not wildcards (INV-11). */
+const likeLiteral = (term: string) => term.replace(/[\\%_]/g, "\\$&");
 import { formatTaskNumber } from "./task-states";
 
 /**
@@ -160,6 +163,8 @@ export async function findLotsByCode(
   take: number,
   /** The zones of the person, when the caller already read them. */
   known?: LocationScopeWhere,
+  /** Also the codes that start with the text (the global search). */
+  startsWith = false,
 ): Promise<FoundLot[]> {
   const lotCode = normalizeLotCode(text);
   if (!lotCode.ok) return [];
@@ -167,10 +172,13 @@ export async function findLotsByCode(
   const scoped = known ?? (await locationScopeWhere(client, actor.userId));
   const lots = await client.lot.findMany({
     where: {
-      code: lotCode.code,
+      code: startsWith
+        ? { startsWith: likeLiteral(lotCode.code) }
+        : lotCode.code,
       ...(isLimited(scoped) ? { lines: { some: { location: scoped } } } : {}),
     },
-    orderBy: { id: "asc" },
+    // The exact code sorts first: it is the shortest that starts so.
+    orderBy: startsWith ? [{ code: "asc" }, { id: "asc" }] : { id: "asc" },
     take,
     select: {
       id: true,
@@ -198,6 +206,8 @@ export async function findSerialsBySerial(
   take: number,
   /** The zones of the person, when the caller already read them. */
   known?: LocationScopeWhere,
+  /** Also the serials that start with the text (the global search). */
+  startsWith = false,
 ): Promise<FoundSerial[]> {
   const serial = normalizeSerial(text);
   if (!serial.ok) return [];
@@ -205,10 +215,13 @@ export async function findSerialsBySerial(
   const scoped = known ?? (await locationScopeWhere(client, actor.userId));
   const units = await client.serialUnit.findMany({
     where: {
-      serial: serial.serial,
+      serial: startsWith
+        ? { startsWith: likeLiteral(serial.serial) }
+        : serial.serial,
       ...(isLimited(scoped) ? { moves: { some: { location: scoped } } } : {}),
     },
-    orderBy: { id: "asc" },
+    // The exact serial sorts first: it is the shortest that starts so.
+    orderBy: startsWith ? [{ serial: "asc" }, { id: "asc" }] : { id: "asc" },
     take,
     select: {
       id: true,

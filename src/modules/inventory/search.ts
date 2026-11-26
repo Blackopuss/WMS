@@ -211,21 +211,36 @@ const LOCATIONS: SearchSource = {
   },
 };
 
+/**
+ * Lots and serials also by their start (fundador, 2026-11-25: «que le
+ * salgan los parecidos»), from three characters: fewer would list half
+ * the warehouse. The exact code comes first and is the only «exact».
+ */
+const PREFIX_MIN = 3;
+const startsWithFrom = (query: SearchQuery) => query.text.length >= PREFIX_MIN;
+
 const LOTS: SearchSource = {
   kind: "inventory.lot",
   label: "Lotes",
   permission: "inventory.stock.read",
-  hint: "Código exacto del lote.",
+  hint: "Código del lote, completo o su inicio.",
   limit: 5,
   async search(actor, query, take) {
     const { scoped } = await reachOf(actor, query);
-    const lots = await findLotsByCode(actor, query.text, take, scoped);
+    const lots = await findLotsByCode(
+      actor,
+      query.text,
+      take,
+      scoped,
+      startsWithFrom(query),
+    );
+    const code = query.text.toUpperCase();
     return lots.map((lot) => ({
       id: lot.id,
       title: `Lote ${lot.code}`,
       detail: `${lot.productName} · ${lot.sku}`,
       href: `/inventario/lotes/${idPath(lot.id)}`,
-      exact: true,
+      exact: lot.code === code,
     }));
   },
 };
@@ -234,17 +249,24 @@ const SERIALS: SearchSource = {
   kind: "inventory.serial",
   label: "Números de serie",
   permission: "inventory.movement.read",
-  hint: "Número de serie exacto.",
+  hint: "Número de serie, completo o su inicio.",
   limit: 5,
   async search(actor, query, take) {
     const { scoped } = await reachOf(actor, query);
-    const units = await findSerialsBySerial(actor, query.text, take, scoped);
+    const units = await findSerialsBySerial(
+      actor,
+      query.text,
+      take,
+      scoped,
+      startsWithFrom(query),
+    );
+    const serial = query.text.toUpperCase();
     return units.map((unit) => ({
       id: unit.id,
       title: `Serie ${unit.serial}`,
       detail: `${unit.productName} · ${unit.sku}`,
       href: `/inventario/rastrear?serie=${idPath(unit.id)}`,
-      exact: true,
+      exact: unit.serial === serial,
     }));
   },
 };
@@ -291,9 +313,11 @@ const OUTBOUND_ORDERS = searchByNumber({
   permission: "inventory.outbound.read",
   prefix: "PS",
   hint: "Número del pedido, como PS-0012.",
-  find: (actor, number) =>
-    client(actor).outboundOrder.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).outboundOrder.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, recipient: true, status: true },
     }),
   visible: getOutboundOrder,
@@ -310,9 +334,11 @@ const SHIPMENTS = searchByNumber({
   permission: "inventory.shipment.read",
   prefix: "EM",
   hint: "Número del embarque, como EM-0003.",
-  find: (actor, number) =>
-    client(actor).shipment.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).shipment.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, status: true },
     }),
   visible: getShipment,
@@ -329,9 +355,11 @@ const CUSTOMER_RETURNS = searchByNumber({
   permission: "inventory.customer_return.read",
   prefix: "DV",
   hint: "Número de la devolución, como DV-0002.",
-  find: (actor, number) =>
-    client(actor).customerReturn.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).customerReturn.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, status: true, returnedBy: true },
     }),
   visible: getCustomerReturn,
@@ -348,9 +376,11 @@ const FACILITY_TRANSFERS = searchByNumber({
   permission: "inventory.facility_transfer.read",
   prefix: "TR",
   hint: "Número del traslado, como TR-0004.",
-  find: (actor, number) =>
-    client(actor).facilityTransfer.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).facilityTransfer.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, status: true },
     }),
   visible: getFacilityTransfer,
@@ -369,9 +399,11 @@ const TASKS = searchByNumber({
   permission: "inventory.task.read",
   prefix: "T",
   hint: "Número de la tarea, como T-0021.",
-  find: (actor, number) =>
-    client(actor).warehouseTask.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).warehouseTask.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, status: true },
     }),
   visible: getTask,
@@ -388,9 +420,11 @@ const INCIDENTS = searchByNumber({
   permission: "inventory.incident.read",
   prefix: "INC",
   hint: "Número de la incidencia, como INC-0005.",
-  find: (actor, number) =>
-    client(actor).incident.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).incident.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, status: true },
     }),
   visible: getIncident,

@@ -173,7 +173,7 @@ export default async function BuscarPage({
                       Ver todos
                     </Link>
                   ) : (
-                    "Hay más. Escribe más del nombre o el código para acotar."
+                    "Hay más. Escribe más del nombre, el código o el número para acotar."
                   )}
                 </p>
               )}

@@ -32,9 +32,11 @@ const PRODUCTION_ORDERS = searchByNumber({
   permission: "production.order.read",
   prefix: "OP",
   hint: "Número de la orden, como OP-0004.",
-  find: (actor, number) =>
-    client(actor).productionOrder.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).productionOrder.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: {
         id: true,
         number: true,
@@ -56,9 +58,11 @@ const PRODUCTION_REQUESTS = searchByNumber({
   permission: "production.request.read",
   prefix: "SP",
   hint: "Número de la solicitud, como SP-0002.",
-  find: (actor, number) =>
-    client(actor).productionRequest.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).productionRequest.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: {
         id: true,
         number: true,

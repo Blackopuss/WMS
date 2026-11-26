@@ -270,6 +270,78 @@ describe("global search", () => {
     expect(JSON.stringify(byName)).not.toMatch(/cost/i);
   });
 
+  it("lists the documents whose number starts with what was typed", async () => {
+    const owner = await company();
+    const orders: string[] = [];
+    for (const recipient of ["Uno", "Dos", "Tres"]) {
+      const made = await createOutboundOrder(owner, { recipient });
+      if (!made.ok) throw new Error(JSON.stringify(made));
+      orders.push(made.orderId);
+    }
+    const latestFirst = [...orders].reverse();
+    // «PS-000», «PS-» and «PS» list them, the latest first, and open none.
+    for (const text of ["PS-000", "ps-", "PS", "ps 00"]) {
+      const found = await search(owner, text);
+      expect(idsOf(found, "inventory.outbound_order"), text).toEqual(
+        latestFirst,
+      );
+      expect(found.open, text).toBeNull();
+    }
+    // The number exactly as typed goes first and is the only «exact».
+    const two = await search(owner, "PS-2");
+    expect(idsOf(two, "inventory.outbound_order")).toEqual([orders[1]]);
+    expect(two.open).toBe(`/pedidos/${orders[1]}`);
+    // As printed (a scanner read) it gives only that document.
+    expect(
+      idsOf(await search(owner, "PS-0003"), "inventory.outbound_order"),
+    ).toEqual([orders[2]]);
+    // Nothing starts so: nothing comes.
+    expect((await search(owner, "PS-0009")).groups).toEqual([]);
+    // «PS-01» is the order 1, as it was typed (and 0100-0199 do not exist).
+    expect(
+      idsOf(await search(owner, "PS-01"), "inventory.outbound_order"),
+    ).toEqual([orders[0]]);
+    // A single letter alone is a word, not every task.
+    expect(kindsOf(await search(owner, "t"))).not.toContain("inventory.task");
+  });
+
+  it("finds lots by the start of their code, the exact one first", async () => {
+    const owner = await company();
+    const made = await createProduct(owner, {
+      sku: `LP-${stamp}`,
+      name: "Resina por lote",
+      tracking: "LOT",
+      lotExpiry: "OPTIONAL",
+    });
+    if (!made.ok) throw new Error("product");
+    const place = await createLocation(owner, { level: 1, name: "Zona L" });
+    if (!place.ok) throw new Error("zone");
+    for (const lotCode of [`PX${stamp}-2`, `PX${stamp}`, `PX${stamp}-1`]) {
+      const entry = await registerEntry(owner, {
+        productId: made.productId,
+        locationId: place.locationId,
+        quantity: "1",
+        lotCode,
+        acceptRepeat: true,
+      });
+      if (!entry.ok) throw new Error(JSON.stringify(entry));
+    }
+    const lots = await search(owner, `px${stamp}`);
+    const group = lots.groups.find((g) => g.kind === "inventory.lot");
+    expect(group?.hits.map((hit) => hit.title)).toEqual([
+      `Lote PX${stamp}`,
+      `Lote PX${stamp}-1`,
+      `Lote PX${stamp}-2`,
+    ]);
+    expect(group?.hits.map((hit) => hit.exact)).toEqual([true, false, false]);
+    expect(lots.open).toBeNull();
+    // Only the start: «PX…-2» alone is exact and opens.
+    const one = await search(owner, `PX${stamp}-2`);
+    expect(one.groups.find((g) => g.kind === "inventory.lot")?.hits).toEqual([
+      expect.objectContaining({ title: `Lote PX${stamp}-2`, exact: true }),
+    ]);
+  });
+
   it("offers each role only what its screens show", async () => {
     const owner = await company();
     const supplier = await createSupplier(owner, { name: "Proveedor visible" });
@@ -552,6 +624,7 @@ describe("global search", () => {
       "uno dos tres cuatro cinco seis",
       `QRY-${stamp}`,
       "PS-0001",
+      "PS-000",
     ]) {
       await search(owner, text); // warm: the entitlements are cached
       count = 0;
@@ -571,7 +644,9 @@ describe("global search", () => {
     // its own checks, runs too).
     for (const [text, queries] of Object.entries(measured)) {
       expect(queries, text).toBeGreaterThan(0);
-      expect(queries, text).toBeLessThanOrEqual(text === "PS-0001" ? 40 : 25);
+      expect(queries, text).toBeLessThanOrEqual(
+        text.startsWith("PS-") ? 40 : 25,
+      );
     }
   });
 

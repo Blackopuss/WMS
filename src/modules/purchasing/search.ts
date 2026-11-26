@@ -31,9 +31,11 @@ const PURCHASE_ORDERS = searchByNumber({
   permission: "purchasing.order.read",
   prefix: "OC",
   hint: "Número de la orden, como OC-0007.",
-  find: (actor, number) =>
-    client(actor).purchaseOrder.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).purchaseOrder.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: {
         id: true,
         number: true,
@@ -55,9 +57,11 @@ const PURCHASE_REQUESTS = searchByNumber({
   permission: "purchasing.request.read",
   prefix: "SC",
   hint: "Número de la solicitud, como SC-0003.",
-  find: (actor, number) =>
-    client(actor).purchaseRequest.findFirst({
-      where: { number },
+  find: (actor, where, take) =>
+    client(actor).purchaseRequest.findMany({
+      where,
+      orderBy: { number: "desc" },
+      take,
       select: { id: true, number: true, status: true },
     }),
   visible: getPurchaseRequest,

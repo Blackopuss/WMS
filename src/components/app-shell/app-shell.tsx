@@ -109,7 +109,6 @@ export function AppShell({
         <div className="-mt-2 px-3 pb-2">
           {switcher}
           {canSearch && <SearchLink active={searching} />}
-          <BellButton bell={bell} />
         </div>
         <nav
           aria-label="Principal"
@@ -145,12 +144,16 @@ export function AppShell({
           )}
           <BellButton
             bell={bell}
-            compact
-            className={canSearch ? undefined : "ml-auto"}
+            className={canSearch ? "-mr-2" : "-mr-2 ml-auto"}
           />
           {/* The theme switch lives in «Más» on the phone (WMS-86): with
               «Buscar» and «Avisos» it left no room for the section's name. */}
         </header>
+        {/* Desktop: only the bell, top right; its list opens from the
+            right side, right under it (fundador, 2026-11-25). */}
+        <div className="hidden h-14 items-center justify-end px-4 md:-mb-6 md:flex lg:px-6 print:hidden">
+          <BellButton bell={bell} />
+        </div>
         <OfflineNotice />
 
         <main
